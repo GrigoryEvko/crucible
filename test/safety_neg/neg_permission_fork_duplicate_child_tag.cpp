@@ -49,7 +49,7 @@ int main() {
     // all_distinct_tags_v<A, A> is false; the fix-07 fork static_assert
     // (and the split_n it delegates to) fires.
     auto rebuilt = safe::mint_permission_fork<tags::A, tags::A>(
-        safe::PermissionForkSpawnCtx{}, std::move(whole),
+        safe::PermissionForkSpawnCtx{::crucible::effects::testing::bg()}, std::move(whole),
         [](safe::Permission<tags::A>, safe::PermissionForkSpawnCtx const&) noexcept {},
         [](safe::Permission<tags::A>, safe::PermissionForkSpawnCtx const&) noexcept {});
     safe::permission_drop(std::move(rebuilt));

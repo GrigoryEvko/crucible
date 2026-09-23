@@ -22,7 +22,7 @@ namespace fsess = ::crucible::fixy::sess;
 int main() {
     namespace eff = ::crucible::effects;
     using SendInt = fsess::Send<int, fsess::End>;
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     neg_fixy_sess_mint_session_deleted::DummyResource res{};
     // Calling the =deleted overload via fixy:: alias.
     fsess::mint_session<SendInt>(ctx, std::move(res));

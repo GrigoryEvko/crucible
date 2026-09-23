@@ -37,7 +37,7 @@ int main() {
     (void)prod_perm;
     auto cons_handle = ch.consumer(std::move(cons_perm));
 
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the ConsumerHandle to mint_producer_session — fails.
     [[maybe_unused]] auto bad = fsubstr::spsc::mint_producer_session<Channel>(ctx, cons_handle);
     return 0;

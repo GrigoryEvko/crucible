@@ -17,7 +17,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     // Should FAIL: empty rationale fails rationale_nonempty_v.
     [[maybe_unused]] auto g = ::crucible::fixy::hw::mint_asm_grant<"">(ctx);
     return 0;

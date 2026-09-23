@@ -246,7 +246,7 @@ int main() {
         bool seq_fired = false;
         bool par_fired = false;
         ParallelismDecision::Kind observed_kind = ParallelismDecision::Kind::Parallel;
-        ::crucible::effects::BgDrainCtx bg_ctx{};
+        ::crucible::effects::BgDrainCtx bg_ctx{::crucible::effects::testing::bg()};
         // A fresh decision keeps this check independent of the one
         // above.
         const TaggedParallelismDecision tagged2 = profiler.recommend(tiny_budget);

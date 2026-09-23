@@ -161,7 +161,7 @@ static void test_mint_cog_mimic_round_trip() {
                                      effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
                                      effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
 
-    InitCtx ctx{};
+    InitCtx ctx{::crucible::effects::testing::init()};
     auto m = mimic::mint_cog_mimic<cog::CogKind::Gpu>(ctx, id, caps, tbl);
 
     assert(m.identity == &id);
@@ -192,7 +192,7 @@ static void test_mint_cog_mimic_round_trip() {
                          effects::ctx_resid::L3, effects::Row<effects::Effect::Bg, effects::Effect::Alloc>,
                          effects::ctx_workload::Unspecified>;
 
-    BgCtx bg_ctx{};
+    BgCtx bg_ctx{::crucible::effects::testing::bg()};
     auto m_bg = mimic::mint_cog_mimic<cog::CogKind::Gpu>(bg_ctx, id, caps, tbl);
     assert(m_bg.identity == &id);
     volatile std::uint64_t bg_per_cog_key = m_bg.cog_kernel_cache_key();
@@ -218,7 +218,7 @@ static void test_mint_cpu_paths() {
     using InitCtx = effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound,
                                      effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
                                      effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
-    InitCtx ctx{};
+    InitCtx ctx{::crucible::effects::testing::init()};
 
     auto cpu_core_mimic = mimic::mint_cog_mimic<cog::CogKind::CpuCore>(
         ctx, cpu_id, cpu_caps, cog::OpcodeLatencyTable<cog::CogKind::CpuCore>{});

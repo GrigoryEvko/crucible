@@ -32,7 +32,7 @@ int main() {
     Snap snap{};
     auto writer = snap.writer(fsafe::mint_permission_root<typename Snap::writer_tag>());
 
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the WriterHandle to the reader-runtime mint — expects
     // Snap::ReaderHandle&.
     [[maybe_unused]] auto bad = fsubstr::swmr::mint_reader_runtime_session<Snap>(ctx, writer);

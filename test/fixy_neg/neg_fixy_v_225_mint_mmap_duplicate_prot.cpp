@@ -29,7 +29,7 @@ int main() {
     namespace share = fwmm::share;
     namespace grant = fwmm::grant;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: two with_prot<X> grants.
     [[maybe_unused]] auto r =

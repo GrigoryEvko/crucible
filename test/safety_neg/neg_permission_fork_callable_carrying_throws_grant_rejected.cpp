@@ -76,7 +76,7 @@ int main() {
     // static_assert in mint_permission_fork fires, the build reddens.
     //
     // If this file compiles, V-087's type-level reject regressed.
-    auto rebuilt = safe::mint_permission_fork<tags::Left, tags::Right>(safe::PermissionForkSpawnCtx{}, std::move(whole),
+    auto rebuilt = safe::mint_permission_fork<tags::Left, tags::Right>(safe::PermissionForkSpawnCtx{::crucible::effects::testing::bg()}, std::move(whole),
                                                                        tags::ThrowingCallable<ctrl::throws>{},
                                                                        tags::ThrowingCallable<ctrl::throws>{});
     safe::permission_drop(std::move(rebuilt));

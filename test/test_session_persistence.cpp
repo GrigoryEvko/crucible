@@ -80,7 +80,7 @@ void drive_5000_events(crucible::Cipher& cipher) {
         .time_threshold = std::chrono::steady_clock::duration::zero(),
     };
 
-    eff::TestRunnerCtx ctx{};
+    eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     auto handle = proto::mint_persisted_session<PersistProto>(ctx, cipher, view, CounterResource{}, Session, kClient,
                                                               kServer, policy);
 
@@ -132,8 +132,8 @@ int test_two_sessions_replay_after_reopen(const std::string& dir) {
     assert(suffix.front().step_id.value == 1001);
 
     const auto replayed = decltype(proto::mint_persisted_session<PersistProto>(
-        eff::TestRunnerCtx{}, reopened, view, CounterResource{}, proto::SessionTagId{42}, kClient,
-        kServer))::replay(eff::TestRunnerCtx{}, reopened, view, proto::SessionTagId{9002}, proto::StepId{4001});
+        eff::TestRunnerCtx{::crucible::effects::testing::test()}, reopened, view, CounterResource{}, proto::SessionTagId{42}, kClient,
+        kServer))::replay(eff::TestRunnerCtx{::crucible::effects::testing::test()}, reopened, view, proto::SessionTagId{9002}, proto::StepId{4001});
     assert(replayed.size() == 1000);
     assert(replayed.front().step_id.value == 4001);
     assert(replayed.back().op == proto::SessionOp::Close);
@@ -151,7 +151,7 @@ int test_manual_flush_and_existing_handle_overload(const std::string& dir) {
         .time_threshold = std::chrono::steady_clock::duration::zero(),
     };
 
-    eff::TestRunnerCtx ctx{};
+    eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     auto bare = proto::mint_session_handle<PersistProto>(CounterResource{});
     auto handle = proto::mint_persisted_session(ctx, std::move(bare), cipher, view, proto::SessionTagId{9100}, kClient,
                                                 kServer, no_auto_flush);
@@ -196,7 +196,7 @@ int test_fixy_a2_007_stored_view_discipline(const std::string& dir) {
         .time_threshold = std::chrono::steady_clock::duration::zero(),
     };
 
-    eff::TestRunnerCtx ctx{};
+    eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     auto handle = [&]() {
         auto local_view = cipher.mint_open_view();

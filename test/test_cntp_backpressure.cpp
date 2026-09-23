@@ -55,8 +55,8 @@ void test_admission_helpers() {
 }
 
 void test_credit_flow_control() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto controller = cntp::mint_credit_flow_control<2>(init);
 
     auto fd0 = cntp::admit_socket_fd(20).value();
@@ -83,8 +83,8 @@ void test_credit_flow_control() {
 }
 
 void test_credit_flow_control_parallel_grants() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto controller = cntp::mint_credit_flow_control<1>(init);
 
     auto fd = cntp::admit_socket_fd(23).value();
@@ -118,8 +118,8 @@ void test_credit_flow_control_parallel_grants() {
 }
 
 void test_credit_flow_control_parallel_start_same_fd() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto controller = cntp::mint_credit_flow_control<1>(init);
 
     auto fd = cntp::admit_socket_fd(24).value();
@@ -149,8 +149,8 @@ void test_credit_flow_control_parallel_start_same_fd() {
 }
 
 void test_admission_controller() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto controller = cntp::mint_admission_controller<2, 2>(init);
 
     auto nic_limit = cntp::mint_resource_limit<effects::ResourceKind::NicQ>(900000).value();

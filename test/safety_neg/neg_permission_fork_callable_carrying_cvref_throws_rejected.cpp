@@ -72,7 +72,7 @@ int main() {
     // and `ctrl::throws` can be laundered past the reject by adding a
     // const-ref qualifier.
     auto rebuilt = safe::mint_permission_fork<tags::Left, tags::Right>(
-        safe::PermissionForkSpawnCtx{}, std::move(whole), tags::CvRefThrowingCallable<ctrl::throws const&>{},
+        safe::PermissionForkSpawnCtx{::crucible::effects::testing::bg()}, std::move(whole), tags::CvRefThrowingCallable<ctrl::throws const&>{},
         tags::CvRefThrowingCallable<ctrl::throws const&>{});
     safe::permission_drop(std::move(rebuilt));
     return 0;

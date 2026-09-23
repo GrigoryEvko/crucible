@@ -34,7 +34,7 @@ static_assert(ledger::CtxFitsLedgerStore<effects::TestRunnerCtx>,
 static_assert(!ledger::CtxFitsRefreshDaemon<effects::TestRunnerCtx>,
               "premise: a fixture context does not claim effects::Bg");
 
-constexpr effects::TestRunnerCtx g_test_ctx{};
+constexpr effects::TestRunnerCtx g_test_ctx{::crucible::effects::testing::test()};
 
 // The line under test.  Reading a ledger is not the same permission as
 // running a thread that refreshes one.

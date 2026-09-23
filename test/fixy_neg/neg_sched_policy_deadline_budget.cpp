@@ -20,7 +20,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::BgDrainCtx bg{};
+    ::crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     // Should FAIL: runtime 100 >= deadline 50 violates CBS admission.
     auto policy =

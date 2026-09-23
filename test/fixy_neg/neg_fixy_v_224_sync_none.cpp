@@ -26,7 +26,7 @@ int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
     namespace so = fwfs::sync_op;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // We don't need a real fd — the concept check fires BEFORE
     // the body runs; a default-constructed handle suffices.

@@ -36,8 +36,8 @@ static observe::ProbeOutcome outcome(bool ok, std::uint64_t seq) {
 
 template <class Detector>
 static void record_pair(Detector& detector, cog::CogIdentity const& p, bool outbound, bool inbound, std::uint64_t seq) {
-    assert(detector.record_outbound(effects::BgDrainCtx{}, p, outbound, seq));
-    assert(detector.record_inbound(effects::BgDrainCtx{}, p, inbound, seq + 1));
+    assert(detector.record_outbound(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, outbound, seq));
+    assert(detector.record_inbound(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, inbound, seq + 1));
 }
 
 static void test_name_accessors() {
@@ -48,7 +48,7 @@ static void test_name_accessors() {
 }
 
 static void test_local_bidirectional_classification() {
-    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 8, 4, 4>(effects::ColdInitCtx{},
+    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 8, 4, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()},
                                                                                               test_policy());
 
     auto ok = peer(1);
@@ -75,7 +75,7 @@ static void test_local_bidirectional_classification() {
 }
 
 static void test_multi_vantage_overrides_naive_dead_peer() {
-    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 4, 4, 4>(effects::ColdInitCtx{},
+    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 4, 4, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()},
                                                                                               test_policy());
 
     auto target = peer(10);
@@ -83,8 +83,8 @@ static void test_multi_vantage_overrides_naive_dead_peer() {
     record_pair(detector, target, false, false, 3);
     assert(detector.classify(target) == topology::FailureClass::BidiFailed);
 
-    assert(detector.record_witness(effects::BgDrainCtx{}, target, peer(100), true, 5));
-    assert(detector.record_witness(effects::BgDrainCtx{}, target, peer(101), true, 6));
+    assert(detector.record_witness(effects::BgDrainCtx{::crucible::effects::testing::bg()}, target, peer(100), true, 5));
+    assert(detector.record_witness(effects::BgDrainCtx{::crucible::effects::testing::bg()}, target, peer(101), true, 6));
     auto summary = detector.summary(target);
     assert(summary.witnesses == 2);
     assert(summary.witness_reachable == 2);
@@ -96,14 +96,14 @@ static void test_multi_vantage_overrides_naive_dead_peer() {
 }
 
 static void test_witness_majority_unreachable_keeps_dead_class() {
-    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 4, 4, 4>(effects::ColdInitCtx{},
+    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 4, 4, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()},
                                                                                               test_policy());
 
     auto target = peer(11);
     record_pair(detector, target, false, false, 1);
     record_pair(detector, target, false, false, 3);
-    assert(detector.record_witness(effects::BgDrainCtx{}, target, peer(100), false, 5));
-    assert(detector.record_witness(effects::BgDrainCtx{}, target, peer(101), false, 6));
+    assert(detector.record_witness(effects::BgDrainCtx{::crucible::effects::testing::bg()}, target, peer(100), false, 5));
+    assert(detector.record_witness(effects::BgDrainCtx{::crucible::effects::testing::bg()}, target, peer(101), false, 6));
 
     auto summary = detector.summary(target);
     assert(summary.with_witnesses == topology::FailureClass::BidiFailed);
@@ -115,12 +115,12 @@ static void test_witness_majority_unreachable_keeps_dead_class() {
 }
 
 static void test_synthetic_round_and_transition_events() {
-    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 2, 4, 2>(effects::ColdInitCtx{},
+    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 2, 4, 2>(effects::ColdInitCtx{::crucible::effects::testing::init()},
                                                                                               test_policy());
     auto target = peer(12);
 
-    assert(detector.record_synthetic_round(effects::BgDrainCtx{}, target, outcome(false, 1), outcome(true, 2)));
-    assert(detector.record_synthetic_round(effects::BgDrainCtx{}, target, outcome(false, 3), outcome(true, 4)));
+    assert(detector.record_synthetic_round(effects::BgDrainCtx{::crucible::effects::testing::bg()}, target, outcome(false, 1), outcome(true, 2)));
+    assert(detector.record_synthetic_round(effects::BgDrainCtx{::crucible::effects::testing::bg()}, target, outcome(false, 3), outcome(true, 4)));
 
     assert(detector.classify(target) == topology::FailureClass::TxBroken);
     assert(detector.event_count() >= 1);

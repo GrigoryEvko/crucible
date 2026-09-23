@@ -23,7 +23,7 @@ int main() {
     namespace engine = fwio::engine;
     namespace grant = fwio::grant;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: two engine<IoUring> grants in the pack triggers
     // has_duplicate_engine_v<>; even though both name the SAME

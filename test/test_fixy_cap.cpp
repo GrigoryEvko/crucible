@@ -35,7 +35,7 @@ int main() {
         std::move(alloc_cap).consume();
     }
     {
-        eff::BgCompileCtx bg_ctx{};
+        eff::BgCompileCtx bg_ctx{::crucible::effects::testing::bg()};
         auto io_cap = cap::mint_from_ctx<eff::Effect::IO>(bg_ctx);
         std::move(io_cap).consume();
     }

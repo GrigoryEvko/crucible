@@ -513,7 +513,7 @@ void test_session_fork_two_role_request_reply() {
     auto whole = ::crucible::safety::mint_permission_root<fork_test::Whole>();
 
     auto rebuilt = session_fork<G, fork_test::Whole, fork_test::ClientRole, fork_test::ServerRole>(
-        ch, std::move(whole),
+        ::crucible::safety::PermissionForkSpawnCtx{::crucible::effects::testing::bg()}, ch, std::move(whole),
         // The client's projected protocol sends, then receives.
         [](auto h_client) noexcept {
             constexpr int kRequest = 7;

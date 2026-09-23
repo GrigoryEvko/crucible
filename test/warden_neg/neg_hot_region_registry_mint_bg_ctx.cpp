@@ -10,7 +10,7 @@
 #include <crucible/warden/Registry.h>
 
 int main() {
-    auto handle = crucible::warden::mint_hot_region_registry_handle(crucible::effects::BgDrainCtx{});
+    auto handle = crucible::warden::mint_hot_region_registry_handle(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()});
     (void)handle;
     return 0;
 }

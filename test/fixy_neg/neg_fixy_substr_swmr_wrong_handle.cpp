@@ -31,7 +31,7 @@ int main() {
     Snap snap{};
     auto reader = snap.reader();
 
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the ReaderHandle to mint_writer_session — fails.
     [[maybe_unused]] auto bad = fsubstr::swmr::mint_writer_session<Snap>(ctx, reader);
     return 0;

@@ -10,7 +10,7 @@ int main() {
         crucible::effects::Init, crucible::effects::ctx_numa::Any, crucible::effects::ctx_alloc::Unbound,
         crucible::effects::ctx_heat::Cold, crucible::effects::ctx_resid::DRAM,
         crucible::effects::Row<crucible::effects::Effect::Init>, crucible::effects::ctx_workload::Unspecified>;
-    Ctx ctx{};
+    Ctx ctx{::crucible::effects::testing::init()};
     auto snapshot = crucible::topology::DefaultDiscoverySnapshot{};
     auto parsed = crucible::topology::parse_lspci_vmm_tree("Slot:\t0000:00:00.0\n", snapshot);
     (void)parsed;

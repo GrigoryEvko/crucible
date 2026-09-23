@@ -35,7 +35,7 @@ int main() {
 
     auto whole = safe::mint_permission_root<tags::Whole>();
     auto rebuilt = safe::mint_permission_fork<tags::Left, tags::Right>(
-        eff::BgDrainCtx{}, std::move(whole), [](safe::Permission<tags::Left>, eff::HotFgCtx const&) noexcept {},
+        eff::BgDrainCtx{::crucible::effects::testing::bg()}, std::move(whole), [](safe::Permission<tags::Left>, eff::HotFgCtx const&) noexcept {},
         [](safe::Permission<tags::Right>, eff::HotFgCtx const&) noexcept {});
     safe::permission_drop(std::move(rebuilt));
     return 0;

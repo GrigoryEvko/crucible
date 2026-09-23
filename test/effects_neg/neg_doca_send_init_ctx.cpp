@@ -21,7 +21,7 @@ int main() {
         },
     };
     std::array<std::byte, 1> payload{};
-    auto sent = channel.send_to_dpu(eff::ColdInitCtx{}, payload);
+    auto sent = channel.send_to_dpu(eff::ColdInitCtx{::crucible::effects::testing::init()}, payload);
     (void)sent;
     return 0;
 }

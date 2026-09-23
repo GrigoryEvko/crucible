@@ -29,7 +29,7 @@ int main() {
     namespace share = fwmm::share;
     namespace grant = fwmm::grant;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: Private + Shared in one pack (both primary).
     [[maybe_unused]] auto r =

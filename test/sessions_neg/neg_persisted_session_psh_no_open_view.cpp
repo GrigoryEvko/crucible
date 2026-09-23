@@ -24,7 +24,7 @@ struct Resource {};
 
 int main() {
     auto cipher = crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_persist_psh_no_view"});
-    eff::TestRunnerCtx ctx{};
+    eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     auto psh = proto::mint_permissioned_session<proto::Send<int, proto::End>>(ctx, Resource{});
 

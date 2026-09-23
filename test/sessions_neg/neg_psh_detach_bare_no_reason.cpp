@@ -27,7 +27,7 @@ using P = proto::Send<int, proto::End>;
 int main() {
     auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_psh_detach_bare"});
     auto view = cipher.mint_open_view();
-    eff::TestRunnerCtx ctx{};
+    eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     auto h = proto::mint_persisted_session<P>(ctx, cipher, view, Resource{}, proto::SessionTagId{1},
                                               proto::RoleTagId{1}, proto::RoleTagId{2});
 

@@ -8,7 +8,7 @@ namespace eff = crucible::effects;
 
 // fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
 using FederationFitCtx =
-    decltype(eff::BgCompileCtx{}
+    decltype(eff::BgCompileCtx{::crucible::effects::testing::bg()}
                  .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 struct Key {};

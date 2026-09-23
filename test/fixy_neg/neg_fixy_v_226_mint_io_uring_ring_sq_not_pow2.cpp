@@ -24,7 +24,7 @@ int main() {
     namespace engine = fwio::engine;
     namespace grant = fwio::grant;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: sq_entries<3> engages the axis but fails the
     // pow2-ness check (is_pow2_(3) is false).

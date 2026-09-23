@@ -82,8 +82,8 @@ static void test_parsers_and_drop_rate() {
 }
 
 static void test_effective_bandwidth_and_history() {
-    InitCtx init{};
-    BgCtx bg{};
+    InitCtx init{::crucible::effects::testing::init()};
+    BgCtx bg{::crucible::effects::testing::bg()};
     auto history = topology::mint_nic_telemetry_history<4>(init);
     auto counters = topology::declare_netdev_counters(topology::NetdevCounters{
         .rx_packets = 1000,

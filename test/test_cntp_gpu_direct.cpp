@@ -88,7 +88,7 @@ void test_admission_and_names() {
 }
 
 void test_rdma_plan_minting() {
-    auto plan = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(),
+    auto plan = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(),
                                             same_root(), *gd::admit_gpu_virtual_address(0x2000u),
                                             *gd::admit_gpu_direct_bytes(1u << 20u));
     assert(plan.has_value());
@@ -99,27 +99,27 @@ void test_rdma_plan_minting() {
 
     gd::PeerPlacement remote_root = same_root();
     remote_root.peer_pcie_root = gd::PcieRootId{std::uint16_t{8}};
-    auto mismatch = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nic_identity(),
+    auto mismatch = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nic_identity(),
                                                 nic_caps(), remote_root, *gd::admit_gpu_virtual_address(0x2000u),
                                                 *gd::admit_gpu_direct_bytes(4096));
     assert(!mismatch.has_value());
     assert(mismatch.error() == gd::GpuDirectError::PcieRootMismatch);
 
     remote_root.peer_bridge_present = true;
-    auto bridged = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nic_identity(),
+    auto bridged = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nic_identity(),
                                                nic_caps(), remote_root, *gd::admit_gpu_virtual_address(0x2000u),
                                                *gd::admit_gpu_direct_bytes(4096));
     assert(bridged.has_value());
 
     auto unknown_root = gd::mint_gpu_direct_mr_plan(
-        eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), gd::PeerPlacement{},
+        eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), gd::PeerPlacement{},
         *gd::admit_gpu_virtual_address(0x2000u), *gd::admit_gpu_direct_bytes(4096));
     assert(!unknown_root.has_value());
     assert(unknown_root.error() == gd::GpuDirectError::PcieRootUnknown);
 
     auto no_gpu_cap = gpu_caps();
     no_gpu_cap.features.unset(cog::GpuFeature::GpuDirectRdma);
-    auto missing_gpu_cap = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{}, gpu_identity(), no_gpu_cap, nic_identity(),
+    auto missing_gpu_cap = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), no_gpu_cap, nic_identity(),
                                                        nic_caps(), same_root(), *gd::admit_gpu_virtual_address(0x2000u),
                                                        *gd::admit_gpu_direct_bytes(4096));
     assert(!missing_gpu_cap.has_value());
@@ -129,7 +129,7 @@ void test_rdma_plan_minting() {
 }
 
 void test_registration_boundary() {
-    auto plan = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(),
+    auto plan = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(),
                                             same_root(), *gd::admit_gpu_virtual_address(0x3000u),
                                             *gd::admit_gpu_direct_bytes(4096));
     assert(plan.has_value());
@@ -138,7 +138,7 @@ void test_registration_boundary() {
     assert(!missing_module.has_value());
     assert(missing_module.error() == gd::GpuDirectError::PeerModuleUnavailable);
 
-    auto deferred = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nic_identity(),
+    auto deferred = gd::mint_gpu_direct_mr_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nic_identity(),
                                                 nic_caps(), same_root(), *gd::admit_gpu_virtual_address(0x3000u),
                                                 *gd::admit_gpu_direct_bytes(4096), gd::mrc_write_access(), true);
     assert(deferred.has_value());
@@ -147,7 +147,7 @@ void test_registration_boundary() {
     assert(reg_deferred.error() == gd::GpuDirectError::RegistrationDeferred);
 
     auto unavailable = gd::mint_gpu_direct_mr_plan(
-        eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
+        eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
         *gd::admit_gpu_virtual_address(0x3000u), *gd::admit_gpu_direct_bytes(4096), gd::mrc_write_access(), true, true);
     assert(unavailable.has_value());
     auto reg_unavailable = gd::register_gpu_memory(*unavailable);
@@ -158,7 +158,7 @@ void test_registration_boundary() {
 }
 
 void test_storage_plan_boundary() {
-    auto plan = gd::mint_gpu_direct_storage_plan(eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nvme_identity(),
+    auto plan = gd::mint_gpu_direct_storage_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nvme_identity(),
                                                  same_root(), *gd::admit_gpu_virtual_address(0x4000u),
                                                  *gd::admit_gpu_direct_bytes(8192), 128);
     assert(plan.has_value());
@@ -170,14 +170,14 @@ void test_storage_plan_boundary() {
     assert(read.error() == gd::GpuDirectError::StorageBackendUnavailable);
 
     auto unknown_root = gd::mint_gpu_direct_storage_plan(
-        eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), nvme_identity(), gd::PeerPlacement{},
+        eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), nvme_identity(), gd::PeerPlacement{},
         *gd::admit_gpu_virtual_address(0x4000u), *gd::admit_gpu_direct_bytes(8192));
     assert(!unknown_root.has_value());
     assert(unknown_root.error() == gd::GpuDirectError::PcieRootUnknown);
 
     auto bad_peer = nic_identity();
     auto non_nvme =
-        gd::mint_gpu_direct_storage_plan(eff::ColdInitCtx{}, gpu_identity(), gpu_caps(), bad_peer, same_root(),
+        gd::mint_gpu_direct_storage_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), gpu_caps(), bad_peer, same_root(),
                                          *gd::admit_gpu_virtual_address(0x4000u), *gd::admit_gpu_direct_bytes(8192));
     assert(!non_nvme.has_value());
     assert(non_nvme.error() == gd::GpuDirectError::NonNvmeCog);
@@ -185,7 +185,7 @@ void test_storage_plan_boundary() {
     auto no_storage = gpu_caps();
     no_storage.features.unset(cog::GpuFeature::GpuDirectStorage);
     auto missing_storage =
-        gd::mint_gpu_direct_storage_plan(eff::ColdInitCtx{}, gpu_identity(), no_storage, nvme_identity(), same_root(),
+        gd::mint_gpu_direct_storage_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(), no_storage, nvme_identity(), same_root(),
                                          *gd::admit_gpu_virtual_address(0x4000u), *gd::admit_gpu_direct_bytes(8192));
     assert(!missing_storage.has_value());
     assert(missing_storage.error() == gd::GpuDirectError::MissingGpuStorageCapability);

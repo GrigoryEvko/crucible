@@ -12,9 +12,9 @@ int main() {
     auto datagram = cntp::admit_quic_datagram_bytes(1200).value();
     auto config = cntp::mint_quic_config(
         streams, datagram, cntp::mint_cc_choice<cntp::CcAlgorithm::Bbr3, cntp::LinkClass::CrossDatacenter>());
-    auto connection = cntp::mint_quic_connection(crucible::effects::ColdInitCtx{}, fd, peer, config);
+    auto connection = cntp::mint_quic_connection(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()}, fd, peer, config);
     cntp::PathSwapPlan raw{};
-    auto migration = connection.plan_migration(crucible::effects::BgDrainCtx{}, raw);
+    auto migration = connection.plan_migration(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, raw);
     (void)migration;
     return 0;
 }

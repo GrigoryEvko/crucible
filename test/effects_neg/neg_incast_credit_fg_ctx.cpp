@@ -4,7 +4,7 @@
 // Foreground hot-path contexts cannot issue incast credits.
 
 int main() {
-    crucible::effects::ColdInitCtx init{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
     crucible::effects::HotFgCtx fg{};
     auto controller = crucible::cntp::mint_incast_controller<1>(init);
     auto fd = crucible::cntp::admit_socket_fd(3);

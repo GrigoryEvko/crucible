@@ -107,8 +107,8 @@ void test_config_minting() {
 }
 
 void test_credit_pacing_state() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto controller = cntp::mint_incast_controller<2>(init);
 
     auto fd0 = cntp::admit_socket_fd(10);

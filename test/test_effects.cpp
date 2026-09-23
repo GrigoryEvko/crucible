@@ -137,8 +137,8 @@ template <class Ctx>
 static void test_variadic_row_membership_lifts() {
     // The returned values carry no meaning.  What the calls prove is
     // that the overloads resolve at all.
-    BgDrainCtx bg{};
-    ColdInitCtx init{};
+    BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ColdInitCtx init{::crucible::effects::testing::init()};
     assert(needs_init_or_bg(bg) == 42);  // Bg ∈ Row<Bg, Alloc>
     assert(needs_init_or_bg(init) == 42);  // Init ∈ Row<Init, Alloc, IO>
     assert(needs_bg_and_alloc(bg) == 99);  // Bg ∧ Alloc both ∈ row

@@ -23,7 +23,7 @@
 int main() {
     namespace fwio = ::crucible::fixy::wrap::io;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: empty Grants pack fails has_engine_grant_v +
     // has_sq_entries_grant_v predicates in CtxFitsIoUringMint.

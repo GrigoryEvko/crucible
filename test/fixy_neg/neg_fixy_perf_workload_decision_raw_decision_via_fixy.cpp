@@ -27,7 +27,7 @@
 #include <crucible/fixy/Perf.h>
 
 int main() {
-    crucible::effects::BgDrainCtx bg_ctx{};
+    crucible::effects::BgDrainCtx bg_ctx{::crucible::effects::testing::bg()};
 
     // Hand-craft a bare ParallelismDecision — exactly the anti-pattern
     // V-074 prohibits.  No profiler in sight, no source tag.  The

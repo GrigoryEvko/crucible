@@ -10,7 +10,7 @@
 
 int main() {
     auto hub =
-        crucible::perf::mint_lock_contention(crucible::effects::BgDrainCtx{}, crucible::effects::testing::init());
+        crucible::perf::mint_lock_contention(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

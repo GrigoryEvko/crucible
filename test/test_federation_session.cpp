@@ -18,7 +18,7 @@ namespace eff = crucible::effects;
 // of the two obvious contexts carries both, so the row is widened here.
 // The widening compiles because the background context permits Block.
 using FederationFitCtx =
-    decltype(eff::BgCompileCtx{}
+    decltype(eff::BgCompileCtx{::crucible::effects::testing::bg()}
                  .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 #pragma GCC diagnostic push
@@ -63,7 +63,7 @@ static_assert(!fp::role_protocol_matches_v<fp::CoordRole, fp::SenderProto<TraceK
 
 int test_sender_receiver_views() {
     std::vector<int> events;
-    FederationFitCtx ctx{};
+    FederationFitCtx ctx{::crucible::effects::testing::bg()};
     auto pool = fp::mint_federation_pool<PeerOrg>(mint_test_admittance_permission());
     auto guard = pool.lend();
     assert(guard.has_value());
@@ -98,7 +98,7 @@ int test_sender_receiver_views() {
 
 int test_coord_view() {
     std::vector<int> events;
-    FederationFitCtx ctx{};
+    FederationFitCtx ctx{::crucible::effects::testing::bg()};
     auto pool = fp::mint_federation_pool<PeerOrg>(mint_test_admittance_permission());
     auto guard = pool.lend();
     assert(guard.has_value());

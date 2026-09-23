@@ -46,7 +46,7 @@ void test_admission() {
 }
 
 void test_socket_substrate_rings() {
-    effects::ColdInitCtx init{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
     auto socket = cntp::mint_af_xdp_socket<131072, 2048, 64, 64, 64, 64>(init, config());
 
     static_assert(decltype(socket)::umem_bytes == 131072);
@@ -102,7 +102,7 @@ void test_rings_are_in_process_only() {
     // The trait stays false for as long as the façade stands.
     assert(cntp::kernel_rings_shared == false);
 
-    effects::ColdInitCtx init{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
     auto socket = cntp::mint_af_xdp_socket<131072, 2048, 64, 64, 64, 64>(init, config());
 
     // A freshly minted socket carries nothing, because nothing in kernel

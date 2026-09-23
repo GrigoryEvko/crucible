@@ -9,7 +9,7 @@
 #include <crucible/perf/WorkloadProfiler.h>
 
 int main() {
-    auto wp = crucible::perf::mint_workload_profiler(crucible::effects::BgDrainCtx{},
+    auto wp = crucible::perf::mint_workload_profiler(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()},
                                                      /*senses=*/nullptr, crucible::effects::testing::init());
     (void)wp;
     return 0;

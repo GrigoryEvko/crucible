@@ -16,7 +16,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     namespace hw = ::crucible::fixy::hw;
     // Should FAIL: empty intrinsic id fails rationale_nonempty_v.
     [[maybe_unused]] auto g = hw::mint_vendor_intrinsic<"", hw::VendorBackend::NV>(ctx);

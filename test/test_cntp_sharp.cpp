@@ -74,7 +74,7 @@ void test_admission_and_names() {
 }
 
 void test_fabric_plan_minting() {
-    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{}, switch_identity(), switch_caps(),
+    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
                                             *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, shp::DeclaredSharpFabricPlan>);
@@ -82,14 +82,14 @@ void test_fabric_plan_minting() {
 
     auto no_cap = switch_caps();
     no_cap.features.unset(cog::SwitchFeature::Sharp);
-    auto missing_cap = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{}, switch_identity(), no_cap,
+    auto missing_cap = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), no_cap,
                                                    *shp::admit_sharp_participant_count(8));
     assert(!missing_cap.has_value());
     assert(missing_cap.error() == shp::SharpError::MissingSwitchSharpCapability);
 
     auto wrong_kind = switch_identity();
     wrong_kind.kind = cog::CogKind::NicPort;
-    auto non_switch = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{}, wrong_kind, switch_caps(),
+    auto non_switch = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, wrong_kind, switch_caps(),
                                                   *shp::admit_sharp_participant_count(8));
     assert(!non_switch.has_value());
     assert(non_switch.error() == shp::SharpError::NonSwitchCog);
@@ -98,7 +98,7 @@ void test_fabric_plan_minting() {
 }
 
 void test_recipe_eligibility() {
-    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{}, switch_identity(), switch_caps(),
+    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
                                             *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
 
@@ -127,7 +127,7 @@ void test_recipe_eligibility() {
 }
 
 void test_dispatch_boundary() {
-    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{}, switch_identity(), switch_caps(),
+    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
                                             *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
 
@@ -139,7 +139,7 @@ void test_dispatch_boundary() {
     assert(unavailable->value().fallback == shp::SharpFallback::RingOrTree);
     assert(unavailable->value().element_count == input.size());
 
-    auto deferred_plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{}, switch_identity(), switch_caps(),
+    auto deferred_plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
                                                      *shp::admit_sharp_participant_count(8), true);
     assert(deferred_plan.has_value());
     auto deferred =
@@ -147,7 +147,7 @@ void test_dispatch_boundary() {
     assert(deferred.has_value());
     assert(deferred->value().fallback == shp::SharpFallback::RingOrTree);
 
-    auto backend_plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{}, switch_identity(), switch_caps(),
+    auto backend_plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
                                                     *shp::admit_sharp_participant_count(8), true, true);
     assert(backend_plan.has_value());
     auto backend =
@@ -167,10 +167,10 @@ void test_dispatch_boundary() {
     assert(!shape.has_value());
     assert(shape.error() == shp::SharpError::OutputShapeMismatch);
 
-    auto context = shp::mint_sharp_context(eff::ColdInitCtx{}, *backend_plan);
+    auto context = shp::mint_sharp_context(eff::ColdInitCtx{::crucible::effects::testing::init()}, *backend_plan);
     assert(context.has_value());
     shp::SharpReducer reducer{std::move(*context)};
-    auto reduced = reducer.allreduce_via_sharp(eff::BgDrainCtx{}, input, output, recipe(),
+    auto reduced = reducer.allreduce_via_sharp(eff::BgDrainCtx{::crucible::effects::testing::bg()}, input, output, recipe(),
                                                shp::sharp_recipe_laws<GoodRecipe>(), *backend_plan);
     assert(!reduced.has_value());
     assert(reduced.error() == shp::SharpError::VendorBackendUnavailable);

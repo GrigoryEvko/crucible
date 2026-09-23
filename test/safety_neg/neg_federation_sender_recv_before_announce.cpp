@@ -10,7 +10,7 @@ namespace eff = crucible::effects;
 // Widen BgCompileCtx (which carries Bg + Alloc + IO already) to include
 // Block; Bg cap's permitted row includes Block so the widen compiles.
 using FederationFitCtx =
-    decltype(eff::BgCompileCtx{}
+    decltype(eff::BgCompileCtx{::crucible::effects::testing::bg()}
                  .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 struct Key {};

@@ -57,24 +57,24 @@ void test_admission_and_names() {
 }
 
 void test_plan_minting() {
-    auto plan = doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec());
+    auto plan = doca::mint_doca_deploy_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, dpu_identity(), doca_caps(), offload_spec());
     assert(plan.has_value());
     assert(plan->value().spec.program_id.value() == 0xd0ca);
 
     auto no_cap = doca_caps();
     no_cap.features.unset(cog::SwitchFeature::Doca);
-    auto missing_cap = doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), no_cap, offload_spec());
+    auto missing_cap = doca::mint_doca_deploy_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, dpu_identity(), no_cap, offload_spec());
     assert(!missing_cap.has_value());
     assert(missing_cap.error() == doca::DocaError::MissingDocaCapability);
 
     auto non_dpu =
-        doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(cog::CogKind::Gpu), doca_caps(), offload_spec());
+        doca::mint_doca_deploy_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, dpu_identity(cog::CogKind::Gpu), doca_caps(), offload_spec());
     assert(!non_dpu.has_value());
     assert(non_dpu.error() == doca::DocaError::NonDpuCog);
 
     auto zero = dpu_identity();
     zero.uuid = cog::Uuid{};
-    auto zero_dpu = doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, zero, doca_caps(), offload_spec());
+    auto zero_dpu = doca::mint_doca_deploy_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, zero, doca_caps(), offload_spec());
     assert(!zero_dpu.has_value());
     assert(zero_dpu.error() == doca::DocaError::ZeroDpuCog);
 
@@ -83,21 +83,21 @@ void test_plan_minting() {
 
 void test_deploy_boundary() {
     auto unavailable_plan =
-        doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec());
+        doca::mint_doca_deploy_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, dpu_identity(), doca_caps(), offload_spec());
     assert(unavailable_plan.has_value());
     auto unavailable = doca::deploy_doca_offload(*unavailable_plan);
     assert(!unavailable.has_value());
     assert(unavailable.error() == doca::DocaError::RuntimeUnavailable);
 
     auto deferred_plan =
-        doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec(true));
+        doca::mint_doca_deploy_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, dpu_identity(), doca_caps(), offload_spec(true));
     assert(deferred_plan.has_value());
     auto deferred = doca::deploy_doca_offload(*deferred_plan);
     assert(!deferred.has_value());
     assert(deferred.error() == doca::DocaError::DeployDeferred);
 
     auto backend_plan =
-        doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec(true, true));
+        doca::mint_doca_deploy_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, dpu_identity(), doca_caps(), offload_spec(true, true));
     assert(backend_plan.has_value());
     auto backend = doca::force_doca_backend_boundary(*backend_plan);
     assert(!backend.has_value());
@@ -122,11 +122,11 @@ void test_comm_boundary() {
         },
     };
     std::array<std::byte, 8> bytes{};
-    auto too_large = channel.send_to_dpu(eff::BgDrainCtx{}, bytes);
+    auto too_large = channel.send_to_dpu(eff::BgDrainCtx{::crucible::effects::testing::bg()}, bytes);
     assert(!too_large.has_value());
     assert(too_large.error() == doca::DocaError::PayloadTooLarge);
 
-    auto unavailable = channel.send_to_dpu(eff::BgDrainCtx{}, std::span<const std::byte>{bytes.data(), 4});
+    auto unavailable = channel.send_to_dpu(eff::BgDrainCtx{::crucible::effects::testing::bg()}, std::span<const std::byte>{bytes.data(), 4});
     assert(!unavailable.has_value());
     assert(unavailable.error() == doca::DocaError::CommChannelUnavailable);
 

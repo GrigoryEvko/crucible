@@ -52,7 +52,7 @@ int main() {
     namespace fpipe = ::crucible::fixy::pipe;
     namespace safe = ::crucible::safety;
 
-    eff::BgDrainCtx bg{};
+    eff::BgDrainCtx bg{::crucible::effects::testing::bg()};
     fpipe::Pool<> pool{fpipe::CoreCount{1}};
 
     // Mint a Permission token in the foreground.  In production this

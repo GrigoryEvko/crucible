@@ -50,7 +50,7 @@ int main() {
     // (Row<IO, Block>).  IsExecCtx is satisfied.  Row subset is
     // satisfied.  The failure is the third (admittance)
     // parameter type.
-    eff::TestRunnerCtx ctx{};
+    eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     int not_an_admittance = 0;
 
     auto bad = fsess::mint_sender<neg_fixy_sender_wrong_admit::PeerOrg, neg_fixy_sender_wrong_admit::TraceKey>(

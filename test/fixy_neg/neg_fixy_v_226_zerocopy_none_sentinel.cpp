@@ -29,7 +29,7 @@ int main() {
     namespace zerocopy = fwio::zerocopy;
     namespace grant = fwio::grant;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: zerocopy<None> engages the axis with the sentinel
     // enumerator; pack_zerocopy_is_none_v<> is true and the requires

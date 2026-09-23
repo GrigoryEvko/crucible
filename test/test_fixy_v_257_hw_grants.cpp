@@ -52,7 +52,7 @@ static_assert(std::is_same_v<hw::cache_prefetch_rw_t0, ghw::cache<hw::CacheOp::P
 static_assert(std::is_same_v<hw::cache_clflushopt, ghw::cache<hw::CacheOp::FlushOpt, 0>>);
 static_assert(std::is_same_v<hw::cache_clwb, ghw::cache<hw::CacheOp::Writeback, 0>>);
 
-constexpr eff::TestRunnerCtx sentinel_ctx{};
+constexpr eff::TestRunnerCtx sentinel_ctx{::crucible::effects::testing::test()};
 static_assert(std::is_same_v<decltype(hw::mint_simd_width<512>(sentinel_ctx)), ghw::simd_width<512>>);
 static_assert(std::is_same_v<decltype(hw::mint_tsc_grant<hw::TscMode::Raw>(sentinel_ctx, hw::CpuPinProof{})),
                              ghw::tsc<hw::TscMode::Raw>>);

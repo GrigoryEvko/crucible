@@ -23,7 +23,7 @@ namespace hw = crucible::fixy::hw;
 namespace eff = crucible::effects;
 
 int main() {
-    constexpr eff::TestRunnerCtx ctx{};
+    constexpr eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     // Thread (⊥) is the no-cross-thread-visibility sentinel — gate rejects.
     auto bad = hw::mint_scoped_fence<hw::MemoryScope::Thread, hw::BarrierArch::Arm>(ctx);
     (void)bad;

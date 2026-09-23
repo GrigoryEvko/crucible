@@ -20,7 +20,7 @@ namespace as = crucible::fixy::async;
 namespace eff = crucible::effects;
 
 int main() {
-    constexpr eff::TestRunnerCtx ctx{};
+    constexpr eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     auto bad = as::mint_async_copy<0, as::MemoryScope::Cta, 16>(ctx);  // 0 stages
     (void)bad;
     return 0;

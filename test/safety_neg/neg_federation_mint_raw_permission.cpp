@@ -42,7 +42,7 @@ struct Endpoint {};
 
 // fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
 using FederationFitCtx =
-    decltype(eff::BgCompileCtx{}
+    decltype(eff::BgCompileCtx{::crucible::effects::testing::bg()}
                  .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 #pragma GCC diagnostic push
@@ -61,7 +61,7 @@ int main() {
     // exclusive authority token.  The mint signature now expects
     // `SharedPermission<FederatedPeer<PeerOrg>>` (the empty proof
     // token from a pool guard).  No implicit conversion exists.
-    FederationFitCtx ctx{};
+    FederationFitCtx ctx{::crucible::effects::testing::bg()};
     auto sender = fp::mint_sender<neg_fed_raw_perm::PeerOrg, neg_fed_raw_perm::TraceKey>(
         ctx, neg_fed_raw_perm::Endpoint{}, *admitted);
     (void)sender;

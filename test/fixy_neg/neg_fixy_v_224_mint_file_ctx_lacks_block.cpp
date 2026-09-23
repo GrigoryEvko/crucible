@@ -30,7 +30,7 @@ int main() {
     namespace om = fwfs::open_mode;
 
     // ColdInitCtx — Row<Init, Alloc, IO> — admits IO but NOT Block.
-    ::crucible::effects::ColdInitCtx ctx{};
+    ::crucible::effects::ColdInitCtx ctx{::crucible::effects::testing::init()};
 
     fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v224_ctx_no_block"};
 

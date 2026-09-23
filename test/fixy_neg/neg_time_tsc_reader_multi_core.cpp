@@ -18,7 +18,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::ColdInitCtx init{};
+    ::crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
 
     // A proof pinned to cores {0,1} — popcount 2, not a singleton.
     auto multi = ::crucible::safety::mint_cpu_pinned<::crucible::algebra::lattices::AffinityMask::range(0, 1),

@@ -18,7 +18,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::ColdInitCtx init{};  // Init row carries no Block
+    ::crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};  // Init row carries no Block
 
     // Should FAIL: Init context cannot mint a Block-effect sleeper.
     auto sleeper = ::crucible::fixy::time::mint_bounded_sleep<1000>(init);

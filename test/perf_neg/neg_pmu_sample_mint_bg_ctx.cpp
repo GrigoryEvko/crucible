@@ -9,7 +9,7 @@
 #include <crucible/perf/PmuSample.h>
 
 int main() {
-    auto hub = crucible::perf::mint_pmu_sample(crucible::effects::BgDrainCtx{}, crucible::effects::testing::init());
+    auto hub = crucible::perf::mint_pmu_sample(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

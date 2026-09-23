@@ -63,8 +63,8 @@ void test_admission_and_names() {
 }
 
 void test_lease_return_and_capacity() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto id = remote(1);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init);
 
@@ -99,8 +99,8 @@ void test_lease_return_and_capacity() {
 }
 
 void test_unhealthy_idle_and_quarantine_eviction() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto id = remote(2);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(
         init,
@@ -136,8 +136,8 @@ void test_unhealthy_idle_and_quarantine_eviction() {
 }
 
 void test_configured_per_remote_limit() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto id = remote(3);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(
         init,
@@ -167,8 +167,8 @@ void test_event_ring_wrap_chronological_order() {
     // events.  Two additions plus four lease-and-return cycles produce
     // ten, so the first two fall off and the survivors are numbered
     // three through ten.
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto id = remote(10);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init);
 
@@ -210,8 +210,8 @@ void test_distinct_remote_counter_parity() {
     // The distinct-remote count is a cached counter rather than a
     // scan, so every path that can change it has to maintain it.  This
     // walks all of those paths and checks the count after each one.
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto a = remote(20);
     auto b = remote(21);
     auto c = remote(22);

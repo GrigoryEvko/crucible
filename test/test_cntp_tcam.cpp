@@ -104,26 +104,26 @@ void test_admission_and_names() {
 }
 
 void test_table_minting() {
-    auto table = tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(64));
+    auto table = tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(64));
     assert(table.has_value());
     assert(table->value().target_kind == tcam::TcamTargetKind::NicPort);
 
     auto sw =
-        tcam::mint_tcam_table(eff::ColdInitCtx{}, switch_identity(), switch_caps(), *tcam::admit_tcam_entries(128));
+        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(), *tcam::admit_tcam_entries(128));
     assert(sw.has_value());
     assert(sw->value().target_kind == tcam::TcamTargetKind::Switch);
 
     auto no_cap = nic_caps();
     no_cap.features.unset(cog::NicFeature::Tcam);
-    auto missing = tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(), no_cap, *tcam::admit_tcam_entries(64));
+    auto missing = tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), no_cap, *tcam::admit_tcam_entries(64));
     assert(!missing.has_value());
     assert(missing.error() == tcam::TcamError::MissingTcamCapability);
 
-    auto over = tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(), nic_caps(4), *tcam::admit_tcam_entries(8));
+    auto over = tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(4), *tcam::admit_tcam_entries(8));
     assert(!over.has_value());
     assert(over.error() == tcam::TcamError::CapacityExceeded);
 
-    auto wrong = tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(cog::CogKind::Gpu), nic_caps(),
+    auto wrong = tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(cog::CogKind::Gpu), nic_caps(),
                                        *tcam::admit_tcam_entries(64));
     assert(!wrong.has_value());
     assert(wrong.error() == tcam::TcamError::WrongTargetKind);
@@ -133,7 +133,7 @@ void test_table_minting() {
 
 void test_rule_table_lifecycle() {
     auto table_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(1));
+        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(1));
     assert(table_plan.has_value());
 
     tcam::TcamRules<4> table{*table_plan};
@@ -172,13 +172,13 @@ void test_backend_boundary() {
     assert(declared.has_value());
 
     auto ready_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
+        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
     assert(ready_plan.has_value());
     auto ready = tcam::force_tcam_backend_boundary(*ready_plan, *declared);
     assert(ready.has_value());
 
     auto pending_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
+        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
     assert(pending_plan.has_value());
     auto pending = tcam::force_tcam_backend_boundary(*pending_plan, *declared);
     assert(!pending.has_value());
@@ -217,7 +217,7 @@ void test_apply_paths_are_stubbed() {
     // Success here is a transition inside this process and nothing
     // more.
     auto ready_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
+        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
     assert(ready_plan.has_value());
     auto ready_boundary = tcam::force_tcam_backend_boundary(*ready_plan, *declared);
     assert(ready_boundary.has_value());
@@ -248,7 +248,7 @@ void test_apply_paths_are_stubbed() {
     // The unavailable error must stay reachable, or the ready path
     // would be the only outcome the code can produce.
     auto pending_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
+        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
     assert(pending_plan.has_value());
     auto pending_boundary = tcam::force_tcam_backend_boundary(*pending_plan, *declared);
     assert(!pending_boundary.has_value());

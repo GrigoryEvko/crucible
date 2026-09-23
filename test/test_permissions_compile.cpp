@@ -167,7 +167,7 @@ void test_permission_row_compile() {
     static_assert(saf::CtxAdmitsPermission<NetworkBuffer, eff::BgCompileCtx>);
     static_assert(!saf::CtxAdmitsPermission<NetworkBuffer, eff::HotFgCtx>);
 
-    eff::BgCompileCtx bg_compile{};
+    eff::BgCompileCtx bg_compile{::crucible::effects::testing::bg()};
     auto huge = saf::mint_permission_root<HugePage>(bg_compile);
     auto huge_shared = saf::mint_permission_share(bg_compile, std::move(huge));
     (void)huge_shared;
@@ -186,7 +186,7 @@ void test_permission_row_compile() {
     bool ran = saf::with_shared_read(bg_compile, fair, [](saf::SharedPermission<HugePage>) noexcept {});
     if (!ran) std::abort();
 
-    eff::TestRunnerCtx test_ctx{};
+    eff::TestRunnerCtx test_ctx{::crucible::effects::testing::test()};
     auto disk = saf::mint_permission_root<DiskSpilled>(test_ctx);
     auto handed = saf::permission_handoff(test_ctx, std::move(disk));
     saf::permission_drop(std::move(handed));

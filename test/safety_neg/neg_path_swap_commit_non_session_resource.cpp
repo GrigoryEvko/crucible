@@ -13,8 +13,8 @@ int main() {
     namespace cntp = crucible::cntp;
     namespace proto = crucible::safety::proto;
 
-    crucible::effects::ColdInitCtx init{};
-    crucible::effects::BgDrainCtx bg{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto swapper = cntp::mint_path_swapper(init);
     auto handle = proto::mint_session_handle<proto::Send<int, proto::End>>(Wire{.id = 1});
     Wire next{.id = 2};

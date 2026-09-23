@@ -54,7 +54,7 @@ void test_admission() {
 }
 
 void test_routes_and_message_plan() {
-    effects::ColdInitCtx init{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
     auto local = overlay_peer(1);
     std::array peers{overlay_peer(3), overlay_peer(4), overlay_peer(5)};
     auto stripes = cntp::admit_overlay_stripe_count(4);
@@ -111,7 +111,7 @@ void test_routes_and_message_plan() {
 }
 
 void test_peer_mutation_errors() {
-    effects::ColdInitCtx init{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
     auto local = overlay_peer(10);
     auto other = overlay_peer(11);
     std::array peers{other};

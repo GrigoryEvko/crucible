@@ -28,7 +28,7 @@ struct GateTag {};
 int main() {
     crucible::fixy::concurrent::SpinLock<GateTag> gate{};
     auto perm = crucible::safety::mint_permission_root<GateTag>();
-    crucible::effects::BgDrainCtx bg{};
+    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     // ✗ lock_in from a Bg context — constraint rejects.
     gate.lock_in(bg, perm);

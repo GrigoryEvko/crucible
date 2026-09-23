@@ -128,8 +128,8 @@ void test_aggregate_and_drift() {
 }
 
 void test_worker_recording() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto worker = topology::mint_congestion_telemetry_worker<2, 8>(init);
 
     std::array nics{nic(10), nic(11)};

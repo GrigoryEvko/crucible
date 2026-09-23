@@ -26,7 +26,7 @@ int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
     namespace om = fwfs::open_mode;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v224_duplicate_mode"};
 

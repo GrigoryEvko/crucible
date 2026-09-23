@@ -144,7 +144,7 @@ void test_preshared_key_and_endpoint_validation() {
 }
 
 void test_tunnel_plan_mutation() {
-    eff::ColdInitCtx init{};
+    eff::ColdInitCtx init{::crucible::effects::testing::init()};
     auto tunnel = cntp::mint_wireguard_tunnel<2>(init, config_one_peer());
     assert(tunnel.has_value());
     assert(tunnel->peer_count() == 1);

@@ -18,7 +18,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     namespace hw = ::crucible::fixy::hw;
     // Should FAIL: no CpuPinProof argument supplied.
     [[maybe_unused]] auto g = hw::mint_tsc_grant<hw::TscMode::SerializedPinned>(ctx);

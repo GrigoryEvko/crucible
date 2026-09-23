@@ -25,7 +25,7 @@ inline void elevate_priority() {
     // The affinity probe stays a raw sched_setaffinity because it pins to the
     // calling thread's current cpu, which is a runtime choice.  The mint path
     // takes the mask as a template argument and cannot express it.
-    auto p = ::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::TestRunnerCtx{});
+    auto p = ::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
     (void)p;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
@@ -38,7 +38,7 @@ inline void elevate_priority() {
 // TU that includes this header.
 #ifdef __linux__
 static_assert(
-    std::is_same_v<decltype(::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::TestRunnerCtx{})),
+    std::is_same_v<decltype(::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()})),
                    std::expected<::crucible::fixy::sched::SchedPriority<-10>, int>>,
     "elevate_priority must mint SchedPriority<-10> via "
     "fixy::sched::mint_priority<-10>(TestRunnerCtx).");

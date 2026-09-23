@@ -17,7 +17,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::BgDrainCtx bg{};
+    ::crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     // Should FAIL: 50 is outside the POSIX nice range [-20, 19].
     auto prio = ::crucible::fixy::sched::mint_priority<50>(bg);

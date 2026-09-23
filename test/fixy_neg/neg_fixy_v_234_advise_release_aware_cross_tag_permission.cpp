@@ -43,7 +43,7 @@ int main() {
     namespace prot = fwmm::prot;
     namespace share = fwmm::share;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     fwmm::OwnedMmap<RegionA, prot::ReadOnly, share::Private> region_a{};
 

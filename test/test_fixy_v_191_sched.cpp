@@ -43,7 +43,7 @@ int main() {
 
     // The pin is best-effort.  When it succeeds, the proof feeds a TSC reader
     // and the read runs.
-    eff::BgDrainCtx bg{};
+    eff::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto pin = fsc::mint_affinity<ml::AffinityMask::single(0)>(bg);
     if (pin) {
         auto reader = ft::mint_tsc_reader<ft::TscMode::Raw>(bg, std::move(*pin));

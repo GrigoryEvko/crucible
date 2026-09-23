@@ -66,7 +66,7 @@ int main() {
 
     // Ctx declares ByteBudget<8 KiB> — a third of the pipeline's WS.
     // WorkloadBudgetCoherent must reject the pair.
-    using TooTightCtx = decltype(eff::BgDrainCtx{}.with_workload<eff::ctx_workload::ByteBudget<8 * KiB>>());
+    using TooTightCtx = decltype(eff::BgDrainCtx{::crucible::effects::testing::bg()}.with_workload<eff::ctx_workload::ByteBudget<8 * KiB>>());
 
     // The load-bearing static_assert — MUST FAIL.
     static_assert(cc::WorkloadBudgetCoherent<TooTightCtx, BigPipeline>,

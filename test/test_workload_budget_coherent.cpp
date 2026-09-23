@@ -76,16 +76,16 @@ static_assert(LargePipeline::aggregate_working_set_known);
 static_assert(cc::WorkloadBudgetCoherent<eff::BgDrainCtx, SmallPipeline>);
 static_assert(cc::WorkloadBudgetCoherent<eff::BgDrainCtx, LargePipeline>);
 
-using TinyBudgetCtx = decltype(eff::BgDrainCtx{}.with_workload<eff::ctx_workload::ByteBudget<16 * KiB>>());
+using TinyBudgetCtx = decltype(eff::BgDrainCtx{::crucible::effects::testing::bg()}.with_workload<eff::ctx_workload::ByteBudget<16 * KiB>>());
 static_assert(cc::WorkloadBudgetCoherent<TinyBudgetCtx, SmallPipeline>);
 static_assert(!cc::WorkloadBudgetCoherent<TinyBudgetCtx, MediumPipeline>);
 
-using LargeBudgetCtx = decltype(eff::BgDrainCtx{}.with_workload<eff::ctx_workload::ByteBudget<16 * MiB>>());
+using LargeBudgetCtx = decltype(eff::BgDrainCtx{::crucible::effects::testing::bg()}.with_workload<eff::ctx_workload::ByteBudget<16 * MiB>>());
 static_assert(cc::WorkloadBudgetCoherent<LargeBudgetCtx, LargePipeline>);
 
 // A channel budget bounds the working set the same way a byte budget does.
 using ChannelBudgetCtx =
-    decltype(eff::BgDrainCtx{}.with_workload<eff::ctx_workload::ChannelBudget<8 * KiB, 1, 1, false>>());
+    decltype(eff::BgDrainCtx{::crucible::effects::testing::bg()}.with_workload<eff::ctx_workload::ChannelBudget<8 * KiB, 1, 1, false>>());
 static_assert(!cc::WorkloadBudgetCoherent<ChannelBudgetCtx, MediumPipeline>);
 
 // The hot foreground context allocates on the stack, which caps a

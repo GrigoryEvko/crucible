@@ -25,7 +25,7 @@ struct Resource {};
 
 int main() {
     auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_fixy_persist_no_openview"});
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
 
     // Should FAIL: deleted overload — Ctx present, Cipher present,
     // but no OpenView passed.

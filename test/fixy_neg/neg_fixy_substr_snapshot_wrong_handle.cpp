@@ -40,7 +40,7 @@ int main() {
     auto reader_opt = snap.reader();
     (void)writer;
 
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the (optional unwrapped) ReaderHandle to the WRITER session
     // mint — fails because mint_snapshot_writer_session expects
     // `Snap::WriterHandle&`.

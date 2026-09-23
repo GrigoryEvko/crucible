@@ -185,7 +185,7 @@ void test_fork_with_shared_read_view() {
     CRUCIBLE_TEST_REQUIRE(fork_decision.kind == ::crucible::concurrent::ParallelismDecision::Kind::Sequential);
 
     auto rebuilt = mint_permission_fork<fork_tags::Left, fork_tags::Right>(
-        ::crucible::effects::BgDrainCtx{}, std::move(whole),
+        ::crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, std::move(whole),
         [cv, &left_done](Permission<fork_tags::Left>, ::crucible::effects::BgDrainCtx const&) noexcept {
             // The view exposes no mutating operation at all, so read-only
             // is a property of the type rather than of the body.

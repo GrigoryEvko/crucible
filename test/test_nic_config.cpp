@@ -85,7 +85,7 @@ void test_mint_and_apply_boundaries() {
     auto valid_sysctl = nic::validate_sysctl_config(sysctl);
     assert(valid_sysctl.has_value());
 
-    auto minted = nic::mint_nic_config(eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, qdisc, sysctl);
+    auto minted = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), *iface, ethtool, qdisc, sysctl);
     assert(minted.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*minted)>, nic::DeclaredNicConfig>);
     assert(minted->value().identity.kind == cog::CogKind::NicPort);
@@ -106,7 +106,7 @@ void test_mint_and_apply_boundaries() {
     assert(!qdisc_apply.has_value());
     assert(qdisc_apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto privileged = nic::mint_nic_config(eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, qdisc, sysctl, true);
+    auto privileged = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), *iface, ethtool, qdisc, sysctl, true);
     assert(privileged.has_value());
     auto privileged_apply = nic::apply_config(*privileged);
     assert(!privileged_apply.has_value());
@@ -119,13 +119,13 @@ void test_identity_and_sysctl_validation() {
     auto iface = cntp::NicInterfaceName::from("eth0");
     assert(iface.has_value());
 
-    auto zero = nic::mint_nic_config(eff::ColdInitCtx{}, cog::CogIdentity{}, *iface);
+    auto zero = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, cog::CogIdentity{}, *iface);
     assert(!zero.has_value());
     assert(zero.error() == nic::NicConfigError::ZeroCog);
 
     auto gpu = nic_identity();
     gpu.kind = cog::CogKind::Gpu;
-    auto wrong_kind = nic::mint_nic_config(eff::ColdInitCtx{}, gpu, *iface);
+    auto wrong_kind = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu, *iface);
     assert(!wrong_kind.has_value());
     assert(wrong_kind.error() == nic::NicConfigError::NonNicCog);
 
@@ -184,7 +184,7 @@ void test_apply_paths_are_stubbed() {
     ethtool.rx_queues = *nic::admit_queue_count(8);
 
     // A configuration that does not ask for privileged work.
-    auto deferred = nic::mint_nic_config(eff::ColdInitCtx{}, nic_identity(), *iface, ethtool);
+    auto deferred = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), *iface, ethtool);
     assert(deferred.has_value());
     auto deferred_apply = nic::apply_config(*deferred);
     assert(!deferred_apply.has_value());
@@ -199,7 +199,7 @@ void test_apply_paths_are_stubbed() {
     assert(deferred_qdisc.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
     // One that does ask, and is told the backend is missing.
-    auto requested = nic::mint_nic_config(eff::ColdInitCtx{}, nic_identity(), *iface, ethtool, {}, {}, true);
+    auto requested = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), *iface, ethtool, {}, {}, true);
     assert(requested.has_value());
     auto requested_apply = nic::apply_config(*requested);
     assert(!requested_apply.has_value());

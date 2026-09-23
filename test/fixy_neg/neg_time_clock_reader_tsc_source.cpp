@@ -17,7 +17,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::ColdInitCtx init{};
+    ::crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
 
     // Should FAIL: TscRaw is not clock_gettime-backed.
     auto reader = ::crucible::fixy::time::mint_clock_reader<::crucible::fixy::time::ClockSource_v::TscRaw>(init);

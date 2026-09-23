@@ -56,19 +56,19 @@ static void test_name_accessors() {
 }
 
 static void test_healthy_snapshot_is_stale_wrapped() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 4, 4>(effects::ColdInitCtx{}, test_policy());
+    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 4, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
     auto const p = peer(1);
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{}, p, 1000, 1));
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{}, p, 2000, 2));
-    assert(scorer.update_thermal(effects::BgDrainCtx{}, p,
+    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 1000, 1));
+    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 2000, 2));
+    assert(scorer.update_thermal(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p,
                                  topology::ThermalSample{
                                      .temperature_millicelsius = 45000,
                                      .clock_degraded_pct = 0,
                                      .sequence = 3,
                                  }));
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(0, 0, 4)));
-    assert(scorer.update_drops(effects::BgDrainCtx{}, p, drops(100000, 0, 5)));
-    assert(scorer.update_wear(effects::BgDrainCtx{}, p, topology::WearSample{.used_ppm = 100000, .sequence = 6}));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 0, 5)));
+    assert(scorer.update_wear(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 100000, .sequence = 6}));
 
     auto snapshot = scorer.compute(p, 2500, 7);
     assert(snapshot.peek().state == topology::HealthState::Healthy);
@@ -83,14 +83,14 @@ static void test_healthy_snapshot_is_stale_wrapped() {
 }
 
 static void test_phi_delay_drives_suspect_state() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{}, test_policy());
+    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
     auto const p = peer(2);
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{}, p, 1000, 1));
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{}, p, 2000, 2));
-    assert(scorer.update_thermal(effects::BgDrainCtx{}, p,
+    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 1000, 1));
+    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 2000, 2));
+    assert(scorer.update_thermal(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p,
                                  topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 3}));
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(0, 0, 4)));
-    assert(scorer.update_drops(effects::BgDrainCtx{}, p, drops(100000, 0, 5)));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 0, 5)));
 
     auto snapshot = scorer.compute(p, 7000, 6);
     assert(snapshot.peek().phi.raw() >= test_policy().suspect_phi.raw());
@@ -104,20 +104,20 @@ static void test_phi_delay_drives_suspect_state() {
 }
 
 static void test_thermal_ecc_and_drops_degrade_score() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{}, test_policy());
+    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
     auto const p = peer(3);
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{}, p, 1000, 1));
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{}, p, 2000, 2));
-    assert(scorer.update_thermal(effects::BgDrainCtx{}, p,
+    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 1000, 1));
+    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 2000, 2));
+    assert(scorer.update_thermal(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p,
                                  topology::ThermalSample{
                                      .temperature_millicelsius = 82000,
                                      .clock_degraded_pct = 12,
                                      .sequence = 3,
                                  }));
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(0, 0, 4)));
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(8, 0, 5)));
-    assert(scorer.update_drops(effects::BgDrainCtx{}, p, drops(100000, 0, 6)));
-    assert(scorer.update_drops(effects::BgDrainCtx{}, p, drops(200000, 1200, 7)));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(8, 0, 5)));
+    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 0, 6)));
+    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(200000, 1200, 7)));
 
     auto snapshot = scorer.compute(p, 2200, 8);
     assert(snapshot.peek().score.raw() < 900);
@@ -130,36 +130,36 @@ static void test_thermal_ecc_and_drops_degrade_score() {
 }
 
 static void test_counter_regression_is_rejected() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{}, test_policy());
+    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
     auto const p = peer(33);
 
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(10, 0, 1)));
-    assert(!scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(9, 0, 2)));
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(11, 0, 2)));
-    assert(scorer.update_drops(effects::BgDrainCtx{}, p, drops(100000, 10, 3)));
-    assert(!scorer.update_drops(effects::BgDrainCtx{}, p, drops(90000, 10, 4)));
-    assert(scorer.update_drops(effects::BgDrainCtx{}, p, drops(110000, 10, 4)));
-    assert(!scorer.update_wear(effects::BgDrainCtx{}, p, topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
-    assert(scorer.update_wear(effects::BgDrainCtx{}, p, topology::WearSample{.used_ppm = 900000, .sequence = 5}));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(10, 0, 1)));
+    assert(!scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(9, 0, 2)));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(11, 0, 2)));
+    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 10, 3)));
+    assert(!scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(90000, 10, 4)));
+    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(110000, 10, 4)));
+    assert(!scorer.update_wear(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
+    assert(scorer.update_wear(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 900000, .sequence = 5}));
     std::printf("  test_counter_regression_is_rejected: PASSED\n");
 }
 
 static void test_permanent_fault_is_sticky() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{}, test_policy());
+    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
     auto const p = peer(4);
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{}, p, 1000, 1));
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{}, p, 2000, 2));
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(0, 0, 3)));
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(0, 1, 4)));
-    assert(scorer.update_thermal(effects::BgDrainCtx{}, p,
+    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 1000, 1));
+    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 2000, 2));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 0, 3)));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 1, 4)));
+    assert(scorer.update_thermal(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p,
                                  topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 5}));
-    assert(scorer.update_drops(effects::BgDrainCtx{}, p, drops(100000, 0, 6)));
+    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 0, 6)));
 
     auto failed = scorer.compute(p, 2500, 7);
     assert(failed.peek().state == topology::HealthState::Permanent);
     assert(failed.peek().issues.test(topology::HealthIssue::UncorrectedEcc));
 
-    assert(scorer.update_ecc(effects::BgDrainCtx{}, p, ecc(0, 1, 8)));
+    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 1, 8)));
     auto still_failed = scorer.compute(p, 2600, 9);
     assert(still_failed.peek().state == topology::HealthState::Permanent);
     assert(scorer.transition_event_count() == 1);

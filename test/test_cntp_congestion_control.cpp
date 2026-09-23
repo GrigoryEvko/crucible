@@ -184,7 +184,7 @@ void test_io_gated_overload_dispatches() {
     // This context carries the input and output effect, so every gate
     // below admits it.  The contexts that do not are rejected during
     // substitution, and the assertions at file scope witness that.
-    eff::ColdInitCtx init{};
+    eff::ColdInitCtx init{::crucible::effects::testing::init()};
 
     {
         auto gated = cntp::set_cc_for_socket(init, *fd, choice);

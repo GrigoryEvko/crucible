@@ -24,7 +24,7 @@
 int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v224_empty_grants"};
 

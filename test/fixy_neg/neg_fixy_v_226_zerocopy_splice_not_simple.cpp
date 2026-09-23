@@ -30,7 +30,7 @@ int main() {
     namespace zerocopy = fwio::zerocopy;
     namespace grant = fwio::grant;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: zerocopy<Splice> engages the axis with a non-simple-
     // transfer enumerator; pack_zerocopy_is_simple_transfer_v<> is false.

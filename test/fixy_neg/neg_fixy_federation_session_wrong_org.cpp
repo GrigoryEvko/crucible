@@ -49,7 +49,7 @@ int main() {
     auto handshake_a = ff::make_self_signed_handshake<NegFedWrongOrg_OrgA>();
     auto admitted_a = ff::mint_federation_admittance<NegFedWrongOrg_OrgA>(local, handshake_a);
 
-    crucible::effects::BgCompileCtx ctx{};
+    crucible::effects::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     int endpoint = 0;
 
     // Try to mint a session to OrgB using an OrgA admittance — the

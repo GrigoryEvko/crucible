@@ -23,7 +23,7 @@ int main() {
     namespace engine = fwio::engine;
     namespace grant = fwio::grant;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: engine<Synchronous> engages the engine axis but with
     // the wrong enumerator; engine_is_io_uring_v<> is false.

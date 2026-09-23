@@ -9,7 +9,7 @@ namespace effects = crucible::effects;
 namespace cntp = crucible::cntp;
 
 int main() {
-    effects::ColdInitCtx init{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
     effects::HotFgCtx hot{};
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::Tcp, 1, 1>(init);
 

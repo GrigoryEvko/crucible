@@ -24,7 +24,7 @@
 int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
 
-    ::crucible::effects::ColdInitCtx ctx{};
+    ::crucible::effects::ColdInitCtx ctx{::crucible::effects::testing::init()};
 
     fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v226_durable_append_no_block"};
 

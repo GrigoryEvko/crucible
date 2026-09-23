@@ -5,8 +5,8 @@
 // live transport-resource transition.
 
 int main() {
-    crucible::effects::ColdInitCtx init{};
-    crucible::effects::BgDrainCtx bg{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto swapper = crucible::cntp::mint_path_swapper(init);
     crucible::cntp::PathSwapPlan raw{};
     auto result = swapper.begin_swap(bg, raw, 0);

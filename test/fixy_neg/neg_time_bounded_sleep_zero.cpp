@@ -17,7 +17,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::BgDrainCtx bg{};  // Block-capable, so only the cap fails
+    ::crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};  // Block-capable, so only the cap fails
 
     // Should FAIL: MaxNanos == 0 is rejected (degenerate cap).
     auto sleeper = ::crucible::fixy::time::mint_bounded_sleep<0>(bg);

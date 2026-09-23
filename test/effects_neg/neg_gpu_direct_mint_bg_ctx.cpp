@@ -23,7 +23,7 @@ int main() {
     nic_caps.features.set(cog::NicFeature::GpuDirectRdma);
 
     auto result =
-        gd::mint_gpu_direct_mr_plan(eff::BgDrainCtx{}, gpu, gpu_caps, nic, nic_caps, gd::PeerPlacement{},
+        gd::mint_gpu_direct_mr_plan(eff::BgDrainCtx{::crucible::effects::testing::bg()}, gpu, gpu_caps, nic, nic_caps, gd::PeerPlacement{},
                                     *gd::admit_gpu_virtual_address(0x1000u), *gd::admit_gpu_direct_bytes(4096));
     return result.has_value() ? 0 : 1;
 }

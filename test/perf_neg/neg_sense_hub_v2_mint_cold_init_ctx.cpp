@@ -10,7 +10,7 @@
 #include <crucible/perf/SenseHubV2.h>
 
 int main() {
-    auto hub = crucible::perf::mint_sense_hub_v2(crucible::effects::ColdInitCtx{}, crucible::effects::testing::init());
+    auto hub = crucible::perf::mint_sense_hub_v2(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

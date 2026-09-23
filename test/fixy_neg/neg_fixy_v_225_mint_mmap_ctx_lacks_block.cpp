@@ -32,7 +32,7 @@ int main() {
     namespace grant = fwmm::grant;
 
     // ColdInitCtx — Row<Init, Alloc, IO> — admits IO but NOT Block.
-    ::crucible::effects::ColdInitCtx ctx{};
+    ::crucible::effects::ColdInitCtx ctx{::crucible::effects::testing::init()};
 
     // Should FAIL: mint_mmap's CtxFitsMmapMint folds in
     // CtxAdmitsIoBlock<Ctx>; ColdInitCtx's row lacks Effect::Block.

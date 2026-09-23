@@ -55,7 +55,7 @@ int main() {
     using Handle = neg_fixy_substr_snapshot_unfit_snap::FakeHandle;
 
     Handle handle{};
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Snap does not satisfy SnapshotSessionSurface → concept-rejection.
     [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_writer_session<Snap>(ctx, handle);
     return 0;

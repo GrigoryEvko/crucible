@@ -40,7 +40,7 @@ namespace eff = crucible::effects;
 // SessionResource_NotPinned check, so the surface row gate must pass
 // — widen BgCompileCtx to admit Block via `.in_row<>()`.
 using FederationFitCtx =
-    decltype(eff::BgCompileCtx{}
+    decltype(eff::BgCompileCtx{::crucible::effects::testing::bg()}
                  .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 struct NegFedChannelWrongEp_PeerOrg {};
@@ -62,7 +62,7 @@ int main() {
     // gate (CtxFitsFederation) is satisfied; the constraint chain then
     // reaches the inner mint_permissioned_session call and fires
     // SessionResource_NotPinned for the void* endpoints.
-    FederationFitCtx ctx{};
+    FederationFitCtx ctx{::crucible::effects::testing::bg()};
     void* bad_sender = nullptr;
     void* bad_receiver = nullptr;
     auto bad =

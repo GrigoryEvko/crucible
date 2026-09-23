@@ -17,7 +17,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::BgDrainCtx bg{};
+    ::crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     // Should FAIL: a NotPinned posture is not a pin proof.
     auto pin = ::crucible::fixy::sched::mint_affinity<::crucible::algebra::lattices::AffinityMask::single(0),

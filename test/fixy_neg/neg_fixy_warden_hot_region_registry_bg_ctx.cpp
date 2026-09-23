@@ -19,7 +19,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    auto handle = crucible::fixy::warden::mint_hot_region_registry_handle(crucible::effects::BgDrainCtx{});
+    auto handle = crucible::fixy::warden::mint_hot_region_registry_handle(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()});
     (void)handle;
     return 0;
 }

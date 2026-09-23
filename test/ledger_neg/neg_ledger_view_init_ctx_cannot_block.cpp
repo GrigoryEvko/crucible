@@ -44,7 +44,7 @@ static_assert(!ledger::CtxFitsLedgerStore<effects::ColdInitCtx>, "premise: the s
 static_assert(ledger::CtxFitsLedgerStore<ledger::LedgerIoCtx>,
               "control: a background context admits both and is accepted");
 
-constexpr effects::ColdInitCtx g_init_ctx{};
+constexpr effects::ColdInitCtx g_init_ctx{::crucible::effects::testing::init()};
 
 // The line under test.  Claiming IO is not enough; the read blocks.
 ledger::LedgerView g_view = ledger::mint_ledger_view(g_init_ctx, ledger::HostFingerprint{});

@@ -57,7 +57,7 @@ void integration_test() {
     using grant_prot = ::crucible::fixy::grant::mmap::with_prot<prot::ReadWrite>;
     using grant_share = ::crucible::fixy::grant::mmap::with_share<share::Anonymous>;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     auto root_perm = ::crucible::safety::mint_permission_root<SenseHubRegion>();
     ::crucible::safety::SharedPermissionPool<SenseHubRegion> pool{std::move(root_perm)};

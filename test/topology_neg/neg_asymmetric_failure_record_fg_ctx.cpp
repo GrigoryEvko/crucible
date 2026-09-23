@@ -2,7 +2,7 @@
 
 int main() {
     auto detector = crucible::topology::mint_asymmetric_failure_detector<crucible::effects::ColdInitCtx, 2>(
-        crucible::effects::ColdInitCtx{});
+        crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
     crucible::cog::CogIdentity peer{};
     peer.uuid = crucible::cog::Uuid{0x127, 0x1};
 

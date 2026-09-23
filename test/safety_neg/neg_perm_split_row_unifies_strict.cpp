@@ -49,8 +49,8 @@ int main() {
     namespace eff = ::crucible::effects;
     namespace saf = ::crucible::safety;
 
-    auto whole = saf::mint_permission_root<tags::Whole>(eff::TestRunnerCtx{});
-    auto split = saf::mint_permission_split<tags::IoChild, tags::BlockChild>(eff::BgCompileCtx{}, std::move(whole));
+    auto whole = saf::mint_permission_root<tags::Whole>(eff::TestRunnerCtx{::crucible::effects::testing::test()});
+    auto split = saf::mint_permission_split<tags::IoChild, tags::BlockChild>(eff::BgCompileCtx{::crucible::effects::testing::bg()}, std::move(whole));
     saf::permission_drop(std::move(split.first));
     saf::permission_drop(std::move(split.second));
     return 0;

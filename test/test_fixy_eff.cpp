@@ -107,7 +107,7 @@ int main() {
         std::move(cap).consume();
     }
     {
-        fe::BgCompileCtx ctx{};
+        fe::BgCompileCtx ctx{::crucible::effects::testing::bg()};
         auto cap = fe::mint_from_ctx<fe::Effect::IO>(ctx);
         std::move(cap).consume();
     }

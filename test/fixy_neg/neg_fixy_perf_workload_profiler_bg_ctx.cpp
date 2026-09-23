@@ -22,7 +22,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    auto wp = crucible::fixy::perf::mint_workload_profiler(crucible::effects::BgDrainCtx{},
+    auto wp = crucible::fixy::perf::mint_workload_profiler(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()},
                                                            /*senses=*/nullptr, crucible::effects::testing::init());
     (void)wp;
     return 0;

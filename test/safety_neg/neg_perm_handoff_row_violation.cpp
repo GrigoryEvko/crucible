@@ -19,8 +19,8 @@ int main() {
     namespace perm = ::crucible::permissions;
     namespace saf = ::crucible::safety;
 
-    auto p = saf::mint_permission_root<perm::tag::DiskSpilledRegionTag>(eff::TestRunnerCtx{});
-    auto handed = saf::permission_handoff(eff::BgCompileCtx{}, std::move(p));
+    auto p = saf::mint_permission_root<perm::tag::DiskSpilledRegionTag>(eff::TestRunnerCtx{::crucible::effects::testing::test()});
+    auto handed = saf::permission_handoff(eff::BgCompileCtx{::crucible::effects::testing::bg()}, std::move(p));
     saf::permission_drop(std::move(handed));
     return 0;
 }

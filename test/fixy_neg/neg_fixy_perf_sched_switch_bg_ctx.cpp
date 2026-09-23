@@ -18,7 +18,7 @@
 
 int main() {
     auto hub =
-        crucible::fixy::perf::mint_sched_switch(crucible::effects::BgDrainCtx{}, crucible::effects::testing::init());
+        crucible::fixy::perf::mint_sched_switch(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

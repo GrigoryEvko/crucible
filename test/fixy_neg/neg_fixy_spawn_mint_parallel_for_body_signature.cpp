@@ -50,7 +50,7 @@ int main() {
     // BgDrainCtx::row admits Bg, so CtxOwnsCapability passes.  Body
     // takes the WHOLE tag, not Slice<Whole, 0> — the noexcept-invocable
     // gate inside CtxFitsParallelFor rejects on parameter-type mismatch.
-    auto rebuilt = fspawn::mint_parallel_for<2>(eff::BgDrainCtx{}, std::move(region),
+    auto rebuilt = fspawn::mint_parallel_for<2>(eff::BgDrainCtx{::crucible::effects::testing::bg()}, std::move(region),
                                                 [](safe::OwnedRegion<int, tags::Whole>&&) noexcept {});
     (void)rebuilt;
     return 0;

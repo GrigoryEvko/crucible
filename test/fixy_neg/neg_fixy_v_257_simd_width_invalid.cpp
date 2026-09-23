@@ -17,7 +17,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     // Should FAIL: 100 is not in {0, 128, 256, 512}.
     [[maybe_unused]] auto g = ::crucible::fixy::hw::mint_simd_width<100>(ctx);
     return 0;

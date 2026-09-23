@@ -42,7 +42,7 @@ int main() {
     // This renames the running thread to crux-smoke.
     ::crucible::safety::detail::thread_name_self_test::runtime_smoke_test();
 
-    eff::ColdInitCtx cold{};
+    eff::ColdInitCtx cold{::crucible::effects::testing::init()};
     auto witness = sf::mint_thread_name<"crux-cold">(cold);
     if (std::string_view{witness.c_str()} != "crux-cold") return 1;
     if (witness.visible_length() != 9) return 2;

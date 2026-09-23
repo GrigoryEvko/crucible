@@ -47,7 +47,7 @@ int main() {
     auto guard = pool.lend();
 
     // BgCompileCtx carries Row<Bg, Alloc, IO> — missing Block.
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     auto channel = fsess::mint_federation_channel<neg_fixy_fed_bg::PeerOrg, neg_fixy_fed_bg::TraceKey>(
         ctx, neg_fixy_fed_bg::Endpoint{}, neg_fixy_fed_bg::Endpoint{}, guard->token());
     (void)channel;

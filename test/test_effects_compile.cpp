@@ -79,7 +79,7 @@ void test_exec_ctx_compile() {
     // the type level, so there is no runtime behaviour to drive.
     namespace ce = ::crucible::effects;
     constexpr auto bg = ce::ExecCtx<>{}
-                            .with_cap<ce::Bg>()
+                            .with_cap(ce::testing::bg())
                             .pinned_to<ce::ctx_numa::Local>()
                             .with_alloc<ce::ctx_alloc::Arena>()
                             .with_residency<ce::ctx_resid::L2>()

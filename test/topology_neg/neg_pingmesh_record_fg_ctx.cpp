@@ -6,7 +6,7 @@
 #include <crucible/topology/Pingmesh.h>
 
 int main() {
-    auto mesh = crucible::topology::mint_pingmesh<crucible::effects::ColdInitCtx, 2>(crucible::effects::ColdInitCtx{});
+    auto mesh = crucible::topology::mint_pingmesh<crucible::effects::ColdInitCtx, 2>(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
     crucible::topology::DeclaredPingmeshMeasurement m{crucible::topology::PingmeshMeasurement{}};
     (void)mesh.record_measurement(crucible::effects::HotFgCtx{}, m);
     return 0;

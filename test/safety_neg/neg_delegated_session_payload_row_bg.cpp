@@ -49,7 +49,7 @@ int main() {
     // which is not a subrow of Row<Bg, Alloc, IO>.
     using OuterProto = proto::Send<proto::DelegatedSession<InnerProto, IPS_empty>, proto::End>;
 
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     auto bad = proto::mint_permissioned_session<OuterProto>(ctx, neg_a2_010_bg::Channel{});
     (void)bad;
     return 0;

@@ -31,7 +31,7 @@ int main() {
     namespace grant = fwio::grant;
 
     // ColdInitCtx — Row<Init, Alloc, IO> — admits IO but NOT Block.
-    ::crucible::effects::ColdInitCtx ctx{};
+    ::crucible::effects::ColdInitCtx ctx{::crucible::effects::testing::init()};
 
     // Should FAIL: mint_io_uring_ring's CtxFitsIoUringMint folds in
     // CtxAdmitsIoBlock<Ctx>; ColdInitCtx's row lacks Effect::Block.

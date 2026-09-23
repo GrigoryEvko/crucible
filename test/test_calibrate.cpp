@@ -160,25 +160,25 @@ void test_nic_result() {
 }
 
 void test_backend_boundaries() {
-    auto init = cog::calibrate_cog<cog::CogKind::Gpu>(eff::ColdInitCtx{}, gpu_identity());
+    auto init = cog::calibrate_cog<cog::CogKind::Gpu>(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity());
     assert(!init.has_value());
     assert(init.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto bg = cog::calibrate_cog<cog::CogKind::Gpu>(eff::BgDrainCtx{}, gpu_identity());
+    auto bg = cog::calibrate_cog<cog::CogKind::Gpu>(eff::BgDrainCtx{::crucible::effects::testing::bg()}, gpu_identity());
     assert(!bg.has_value());
     assert(bg.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto wrong_kind = cog::calibrate_cog<cog::CogKind::Gpu>(eff::ColdInitCtx{}, nic_identity());
+    auto wrong_kind = cog::calibrate_cog<cog::CogKind::Gpu>(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity());
     assert(!wrong_kind.has_value());
     assert(wrong_kind.error() == cog::CalibrationError::KindMismatch);
 
     std::array<cog::GpuOpcode, 1> opcodes{cog::GpuOpcode::GemmPlain};
-    auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(eff::ColdInitCtx{}, gpu_identity(),
+    auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(),
                                                                        std::span<const cog::GpuOpcode>{opcodes});
     assert(!specific.has_value());
     assert(specific.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto empty_specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(eff::ColdInitCtx{}, gpu_identity(),
+    auto empty_specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(),
                                                                              std::span<const cog::GpuOpcode>{});
     assert(!empty_specific.has_value());
     assert(empty_specific.error() == cog::CalibrationError::EmptyOpcodeSet);
@@ -192,7 +192,7 @@ void test_drift_gate() {
         .threshold_bps = *cog::admit_drift_basis_points(1000),
     };
     assert(!cog::should_recalibrate(below));
-    auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(eff::BgDrainCtx{}, gpu_identity(), below);
+    auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(eff::BgDrainCtx{::crucible::effects::testing::bg()}, gpu_identity(), below);
     assert(!below_result.has_value());
     assert(below_result.error() == cog::CalibrationError::DriftBelowThreshold);
 
@@ -201,7 +201,7 @@ void test_drift_gate() {
         .threshold_bps = *cog::admit_drift_basis_points(1000),
     };
     assert(cog::should_recalibrate(above));
-    auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(eff::BgDrainCtx{}, gpu_identity(), above);
+    auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(eff::BgDrainCtx{::crucible::effects::testing::bg()}, gpu_identity(), above);
     assert(!above_result.has_value());
     assert(above_result.error() == cog::CalibrationError::BackendUnavailable);
 

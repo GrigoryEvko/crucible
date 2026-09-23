@@ -27,7 +27,7 @@ using TestPeerAdmittance = saf::SharedPermission<perm::tag::FederatedPeer<test_f
 // context carries Bg, Alloc and IO only.  Widening is legal because the
 // permitted row behind Bg already includes Block.
 using FederationFitCtx =
-    decltype(eff::BgCompileCtx{}
+    decltype(eff::BgCompileCtx{::crucible::effects::testing::bg()}
                  .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 static_assert(fed::CtxFitsFederation<FederationFitCtx>, "the widened context must satisfy the federation gate");
 static_assert(!fed::CtxFitsFederation<eff::BgCompileCtx>, "the unwidened context must not satisfy the gate; it carries "

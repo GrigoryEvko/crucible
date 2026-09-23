@@ -13,7 +13,7 @@ int main() {
     caps.features.set(cog::SwitchFeature::P4);
 
     p4::P4ProgramSpec spec{};
-    auto program = p4::mint_p4_program(eff::BgDrainCtx{}, sw, caps, spec);
+    auto program = p4::mint_p4_program(eff::BgDrainCtx{::crucible::effects::testing::bg()}, sw, caps, spec);
     (void)program;
     return 0;
 }

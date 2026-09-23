@@ -48,7 +48,7 @@ int main() {
     auto guard = pool.lend();
 
     // BgCompileCtx carries Row<Bg, Alloc, IO> — missing Block.
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     auto sender = fp::mint_sender<neg_fed_row_bg::PeerOrg, neg_fed_row_bg::TraceKey>(ctx, neg_fed_row_bg::Endpoint{},
                                                                                      guard->token());
     (void)sender;

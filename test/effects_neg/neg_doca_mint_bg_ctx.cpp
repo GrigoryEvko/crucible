@@ -13,7 +13,7 @@ int main() {
     caps.features.set(cog::SwitchFeature::Doca);
 
     doca::DocaOffloadSpec spec{};
-    auto plan = doca::mint_doca_deploy_plan(eff::BgDrainCtx{}, dpu, caps, spec);
+    auto plan = doca::mint_doca_deploy_plan(eff::BgDrainCtx{::crucible::effects::testing::bg()}, dpu, caps, spec);
     (void)plan;
     return 0;
 }

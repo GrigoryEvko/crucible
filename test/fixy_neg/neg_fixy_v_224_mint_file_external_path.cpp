@@ -24,7 +24,7 @@ int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
     namespace om = fwfs::open_mode;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Trust-boundary path — NOT sanitized.
     fwfs::Path<::crucible::fixy::tags::source::External> external_path{"/tmp/crucible_neg_v224_external"};

@@ -25,7 +25,7 @@ int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
     namespace at_ = fwfs::atomicity;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     fwfs::Path<::crucible::fixy::tags::source::Sanitized> tmp_path{"/tmp/crucible_neg_v224_tmp"};
     // Target is External — operator-supplied, NOT sanitized.

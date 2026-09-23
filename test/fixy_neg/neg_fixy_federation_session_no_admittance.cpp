@@ -29,7 +29,7 @@ struct NegFedNoAdmit_PeerOrg {};
 struct NegFedNoAdmit_KeyTag {};
 
 int main() {
-    crucible::effects::BgCompileCtx ctx{};
+    crucible::effects::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     int endpoint = 0;
 
     // Missing the 3rd (admittance) argument — must fail arity check.

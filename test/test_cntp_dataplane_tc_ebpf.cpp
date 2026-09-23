@@ -57,7 +57,7 @@ void test_names_and_admission() {
 }
 
 void test_program_caps() {
-    effects::ColdInitCtx init{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
     auto ifindex = dataplane::admit_xdp_ifindex(11);
     assert(ifindex.has_value());
 

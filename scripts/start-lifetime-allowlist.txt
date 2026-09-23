@@ -73,6 +73,10 @@ src/topology/Ptp.cpp:start_lifetime_as_array<timespec>
 # one proof type and must fail to compile, which proves that the proof
 # type is not an implicit-lifetime type.  The fixture that compiled would
 # fail its own test.
+test/effects_neg/neg_effects_bg_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<eff::Bg>
+test/effects_neg/neg_effects_bg_drain_ctx_forged_by_start_lifetime_as.cpp:start_lifetime_as<eff::BgDrainCtx>
+test/effects_neg/neg_effects_capability_forged_by_start_lifetime_as.cpp:start_lifetime_as<eff::Capability<eff::Effect::Block,eff::Bg>>
+test/effects_neg/neg_effects_epoch_ctx_over_bg_forged_by_start_lifetime_as.cpp:start_lifetime_as<proto::EpochExecCtx<1,1,eff::BgDrainCtx>>
 test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp:start_lifetime_as<s::SessionEvent>
 test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Bg>
 test/foundation/neg/neg_bg_exec_ctx_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::ExecCtx<fe::Bg,fe::Row<fe::Effect::Bg,fe::Effect::Block>>>
@@ -85,3 +89,9 @@ test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp:start_lifetim
 test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp:start_lifetime_as<fp::ReadView<Region>>
 test/foundation/neg/neg_test_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Test>
 test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::detail::ctx_mint::test_key>
+
+# A probe in a requires-expression, which is an unevaluated operand, so no
+# lifetime starts.  T is a template parameter.  The attack test uses the
+# probe to show that the call is well-formed for an array of contexts, the
+# open route that its shrink-only ledger pins.
+test/test_effects_ctx_forge_attacks.cpp:start_lifetime_as<T>

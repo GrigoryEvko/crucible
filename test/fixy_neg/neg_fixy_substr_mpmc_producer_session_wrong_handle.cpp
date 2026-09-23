@@ -29,7 +29,7 @@ int main() {
 
     auto consumer_opt = ch.consumer();
 
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the ConsumerHandle to the producer-session mint — expects
     // Channel::ProducerHandle&.
     [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_producer_session<decltype(ch)>(ctx, *consumer_opt);

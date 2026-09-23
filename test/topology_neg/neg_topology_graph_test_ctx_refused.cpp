@@ -48,7 +48,7 @@ inline constexpr std::span<const topology::TopologyEdge> kNoEdges{};
 // conjunct passes) but its effect row carries Effect::Test, NOT
 // Effect::Init — the second conjunct refuses substitution.
 [[maybe_unused]] static auto try_mint_with_test_ctx() {
-    TestCtx ctx{};
+    TestCtx ctx{::crucible::effects::testing::test()};
     return topology::mint_topology_graph(ctx, kNoNodes, kNoEdges);
 }
 

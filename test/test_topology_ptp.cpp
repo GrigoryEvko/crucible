@@ -96,11 +96,11 @@ static void test_handle_status_and_timestamp() {
         .skew_bound_ns = topology::PositivePtpSkewBoundNs{90},
         .sequence = 4,
     };
-    auto handle = topology::mint_ptp_handle(effects::ColdInitCtx{}, nic(3), *fd, status);
+    auto handle = topology::mint_ptp_handle(effects::ColdInitCtx{::crucible::effects::testing::init()}, nic(3), *fd, status);
     assert(handle.status().synchronized());
     assert(handle.latest_timestamp().error() == topology::PtpError::NoTimestamp);
 
-    handle.record_timestamp(effects::BgDrainCtx{}, topology::PtpTimestampNs{123456}, 5);
+    handle.record_timestamp(effects::BgDrainCtx{::crucible::effects::testing::bg()}, topology::PtpTimestampNs{123456}, 5);
     auto latest = handle.latest_timestamp();
     assert(latest.has_value());
     assert(latest->value() == 123456);
@@ -114,7 +114,7 @@ static void test_handle_status_and_timestamp() {
         .skew_bound_ns = topology::PositivePtpSkewBoundNs{1500},
         .sequence = 6,
     }};
-    handle.record_status(effects::BgDrainCtx{}, degraded);
+    handle.record_status(effects::BgDrainCtx{::crucible::effects::testing::bg()}, degraded);
     assert(handle.status().servo == topology::PtpServoState::Degraded);
     assert(handle.status().sequence == 6);
     std::printf("  test_handle_status_and_timestamp: PASSED\n");
@@ -149,7 +149,7 @@ static bool status_is_self_consistent(topology::PtpStatus const& observed) noexc
 static void test_status_seqlock_never_tears() {
     auto fd = topology::admit_ptp_clock_fd(11);
     assert(fd.has_value());
-    auto handle = topology::mint_ptp_handle(effects::ColdInitCtx{}, nic(4), *fd, status_at_tick(0));
+    auto handle = topology::mint_ptp_handle(effects::ColdInitCtx{::crucible::effects::testing::init()}, nic(4), *fd, status_at_tick(0));
 
     constexpr std::uint64_t ticks = 200000;
     std::atomic<bool> writer_done{false};
@@ -159,7 +159,7 @@ static void test_status_seqlock_never_tears() {
     {
         std::jthread writer{[&handle, &writer_done] {
             for (std::uint64_t tick = 1; tick <= ticks; ++tick) {
-                handle.record_status(effects::BgDrainCtx{}, topology::DeclaredPtpStatus{status_at_tick(tick)});
+                handle.record_status(effects::BgDrainCtx{::crucible::effects::testing::bg()}, topology::DeclaredPtpStatus{status_at_tick(tick)});
             }
             writer_done.store(true, std::memory_order_release);
         }};
@@ -199,7 +199,7 @@ static void test_daemon_report_boundary() {
         .max_accepted_offset_ns = topology::PositivePtpOffsetBoundNs{100},
         .sequence = 7,
     };
-    auto declared = topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report);
+    auto declared = topology::admit_ptp_daemon_report(effects::BgDrainCtx{::crucible::effects::testing::bg()}, report);
     auto status = topology::ptp_status_from_daemon_report(declared);
     assert(status.value().synchronized());
     assert(status.value().offset_from_master_ns == -80);
@@ -212,7 +212,7 @@ static void test_daemon_report_boundary() {
 
     report.grandmaster_present = false;
     auto no_grandmaster =
-        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{::crucible::effects::testing::bg()}, report));
     assert(no_grandmaster.value().degraded());
     assert(no_grandmaster.value().reason == topology::PtpDegradationReason::GrandmasterMissing);
     assert(no_grandmaster.value().status.servo == topology::PtpServoState::Degraded);
@@ -220,13 +220,13 @@ static void test_daemon_report_boundary() {
     report.grandmaster_present = true;
     report.offset_from_master_ns = -101;
     auto excessive_offset =
-        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{::crucible::effects::testing::bg()}, report));
     assert(excessive_offset.value().reason == topology::PtpDegradationReason::ExcessiveOffset);
 
     report.offset_from_master_ns = 0;
     report.skew_bound_ns = topology::PositivePtpSkewBoundNs{101};
     auto excessive_skew =
-        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{::crucible::effects::testing::bg()}, report));
     assert(excessive_skew.value().reason == topology::PtpDegradationReason::ExcessiveSkew);
 
     std::printf("  test_daemon_report_boundary: PASSED\n");

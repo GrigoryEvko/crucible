@@ -59,7 +59,7 @@ void test_admission() {
 }
 
 void test_plan_registration_and_publish() {
-    effects::ColdInitCtx init{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
     auto bytes = cntp::admit_gossip_payload_bytes(128);
     auto window = cntp::admit_gossip_dedup_window_ns(30000000000ULL);
     assert(bytes.has_value());

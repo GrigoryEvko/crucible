@@ -10,7 +10,7 @@ int main() {
     nic.uuid = crucible::cog::Uuid{0x129, 2};
     nic.kind = crucible::cog::CogKind::NicPort;
     auto fd = crucible::topology::admit_ptp_clock_fd(5).value();
-    auto handle = crucible::topology::mint_ptp_handle(crucible::effects::ColdInitCtx{}, nic, fd);
+    auto handle = crucible::topology::mint_ptp_handle(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()}, nic, fd);
     handle.record_timestamp(crucible::effects::HotFgCtx{}, crucible::topology::PtpTimestampNs{7}, 1);
     return 0;
 }

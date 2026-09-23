@@ -22,7 +22,7 @@ struct TestRegion {};  // dummy Tag
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: empty Grants pack fails has_prot_grant_v +
     // has_primary_share_grant_v predicates in CtxFitsMmapMint.

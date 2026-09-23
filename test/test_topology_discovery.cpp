@@ -26,7 +26,7 @@ static void test_name_coverage() {
 }
 
 static void test_lspci_and_graph_materialization() {
-    InitCtx ctx{};
+    InitCtx ctx{::crucible::effects::testing::init()};
     auto snapshot = topology::DefaultDiscoverySnapshot{};
     constexpr std::string_view lspci = "Slot:\t0000:00:00.0\n"
                                        "Class:\tPCI bridge\n"
@@ -64,7 +64,7 @@ static void test_lspci_and_graph_materialization() {
 }
 
 static void test_ethtool_features_and_lldp() {
-    InitCtx ctx{};
+    InitCtx ctx{::crucible::effects::testing::init()};
     auto snapshot = topology::DefaultDiscoverySnapshot{};
     topology::DiscoveryNodeFact local{
         .kind = cog::CogKind::NicPort,
@@ -114,7 +114,7 @@ static void test_ethtool_features_and_lldp() {
 }
 
 static void test_lldp_record_state_reset() {
-    InitCtx ctx{};
+    InitCtx ctx{::crucible::effects::testing::init()};
     auto snapshot = topology::DefaultDiscoverySnapshot{};
     auto local_idx = snapshot.add_node(topology::DiscoveryNodeFact{
         .kind = cog::CogKind::NicPort,
@@ -144,14 +144,14 @@ static void test_lldp_record_state_reset() {
 }
 
 static void test_graceful_empty_live_discovery() {
-    InitCtx ctx{};
+    InitCtx ctx{::crucible::effects::testing::init()};
     auto snapshot = topology::mint_discovery_snapshot<4, 4>(ctx);
     auto result = topology::discover_local_topology(ctx, snapshot);
     assert(result.node_count() == 0);
     assert(snapshot.report().view().size() == 1);
     assert(snapshot.report().view()[0].outcome == topology::DiscoveryOutcome::NotAttempted);
 
-    BgCtx bg{};
+    BgCtx bg{::crucible::effects::testing::bg()};
     auto trigger = topology::notify_rediscovery_trigger(bg, topology::DiscoverySource::Udev);
     assert(trigger.has_value());
     assert(trigger->source == topology::DiscoverySource::Udev);

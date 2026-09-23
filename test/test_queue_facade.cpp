@@ -564,7 +564,7 @@ void test_spsc_mint_permission_fork() {
 
     auto rebuilt =
         mint_permission_fork<Producer<permissioned_test::SpscChannel>, Consumer<permissioned_test::SpscChannel>>(
-            ::crucible::safety::PermissionForkSpawnCtx{}, std::move(whole),
+            ::crucible::safety::PermissionForkSpawnCtx{::crucible::effects::testing::bg()}, std::move(whole),
             [&q](Permission<Producer<permissioned_test::SpscChannel>>&& p,
                  ::crucible::safety::PermissionForkSpawnCtx const&) noexcept {
                 auto handle = q.producer_handle(std::move(p));

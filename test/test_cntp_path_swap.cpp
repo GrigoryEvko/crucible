@@ -53,8 +53,8 @@ void test_admission() {
 }
 
 void test_state_machine_and_session_resource_transition() {
-    crucible::effects::ColdInitCtx init{};
-    crucible::effects::BgDrainCtx bg{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<8>(init);
     static_assert(std::is_same_v<decltype(swapper), cntp::PathSwapper<8>>);
@@ -95,8 +95,8 @@ void test_state_machine_and_session_resource_transition() {
 // thread is writing it.  A plain enum field would be torn by that, and
 // the observer would see a value that is not any of the states.
 void test_concurrent_observer_sees_only_valid_states() {
-    crucible::effects::ColdInitCtx init{};
-    crucible::effects::BgDrainCtx bg{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<16>(init);
 
@@ -150,8 +150,8 @@ void test_concurrent_observer_sees_only_valid_states() {
 // new one is the whole proof: there is no path by which it could
 // arrive.
 void test_commit_sender_loses_in_flight_bytes() {
-    crucible::effects::ColdInitCtx init{};
-    crucible::effects::BgDrainCtx bg{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<8>(init);
     auto plan = make_plan();
@@ -193,8 +193,8 @@ void test_commit_sender_loses_in_flight_bytes() {
 // from is no longer the state that is there.
 void test_concurrent_complete_receiver_exactly_one_wins() {
     constexpr int kRacers = 16;
-    crucible::effects::ColdInitCtx init{};
-    crucible::effects::BgDrainCtx bg{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<32>(init);
     auto plan = make_plan();
@@ -252,8 +252,8 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
 }
 
 void test_invalid_transition_and_timeout() {
-    crucible::effects::ColdInitCtx init{};
-    crucible::effects::BgDrainCtx bg{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<4>(init);
     auto bad_ack = swapper.sender_observed_drain_ack(bg, 1);

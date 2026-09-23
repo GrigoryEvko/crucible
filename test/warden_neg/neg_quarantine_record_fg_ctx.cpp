@@ -2,7 +2,7 @@
 
 int main() {
     auto policy =
-        crucible::warden::mint_quarantine_policy<crucible::effects::ColdInitCtx, 2>(crucible::effects::ColdInitCtx{});
+        crucible::warden::mint_quarantine_policy<crucible::effects::ColdInitCtx, 2>(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
     crucible::cog::CogIdentity cog{};
     cog.uuid = crucible::cog::Uuid{0x118, 0x1};
     crucible::topology::HealthSnapshot health{};

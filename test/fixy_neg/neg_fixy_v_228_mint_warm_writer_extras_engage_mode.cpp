@@ -33,7 +33,7 @@ int main() {
     namespace om = fwfs::open_mode;
 
     // TestRunnerCtx — Row<Test, Alloc, IO, Block> — admits IO+Block.
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v228_warm_extras_engage_mode"};
 

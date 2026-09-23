@@ -30,7 +30,7 @@ int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
 
     // ColdInitCtx — Row<Init, Alloc, IO> — admits IO but NOT Block.
-    ::crucible::effects::ColdInitCtx ctx{};
+    ::crucible::effects::ColdInitCtx ctx{::crucible::effects::testing::init()};
 
     fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v226_durable_truncate_no_block"};
 

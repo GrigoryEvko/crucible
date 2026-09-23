@@ -32,7 +32,7 @@ struct Endpoint {};
 }  // namespace neg_fixy_receiver_wrong_admit
 
 int main() {
-    eff::TestRunnerCtx ctx{};
+    eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     int not_an_admittance = 0;
 
     auto bad = fsess::mint_receiver<neg_fixy_receiver_wrong_admit::PeerOrg, neg_fixy_receiver_wrong_admit::TraceKey>(

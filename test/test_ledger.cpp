@@ -499,7 +499,7 @@ void test_store_round_trips_through_the_filesystem() {
     const int overrode = ::setenv("XDG_CACHE_HOME", directory, 1);
     assert(overrode == 0);
 
-    constexpr effects::TestRunnerCtx ctx{};
+    constexpr effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     static_assert(ledger::CtxFitsLedgerStore<effects::TestRunnerCtx>);
 
     const ledger::Ledger written = sample_ledger();

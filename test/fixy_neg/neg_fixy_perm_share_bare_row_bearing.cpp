@@ -24,7 +24,7 @@ namespace safe = ::crucible::safety;
 int main() {
     // Mint a GpuMemory token via the ctx-bound root (the bare form is
     // rejected for row-bearing tags at root mint too).
-    eff::BgCompileCtx ctx{};
+    eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     auto exc = fperm::mint_permission_root<ptag::GpuMemoryTag>(ctx);
 
     // Should FAIL: bare share is only valid for permission_row<Tag>

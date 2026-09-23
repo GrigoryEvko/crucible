@@ -45,7 +45,7 @@ int main() {
     namespace prot = fwmm::prot;
     namespace share = fwmm::share;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Construct a dummy OwnedMmap; the concept check fires BEFORE
     // the body runs, so an unmapped region is fine.

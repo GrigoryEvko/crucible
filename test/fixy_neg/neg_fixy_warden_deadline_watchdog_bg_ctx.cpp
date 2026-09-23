@@ -22,7 +22,7 @@ int main() {
     p.deadline_miss_budget = 100;
     p.watchdog_window_sec = 1;
     auto watchdog =
-        crucible::fixy::warden::mint_deadline_watchdog(crucible::effects::BgDrainCtx{}, /*senses=*/nullptr, p);
+        crucible::fixy::warden::mint_deadline_watchdog(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, /*senses=*/nullptr, p);
     (void)watchdog;
     return 0;
 }

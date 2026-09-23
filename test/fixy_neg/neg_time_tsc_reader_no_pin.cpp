@@ -18,7 +18,7 @@
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {
-    ::crucible::effects::ColdInitCtx init{};
+    ::crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
 
     // Should FAIL: 7 is not a CpuPinned proof.
     auto reader = ::crucible::fixy::time::mint_tsc_reader<::crucible::fixy::time::TscMode::Raw>(init, 7);

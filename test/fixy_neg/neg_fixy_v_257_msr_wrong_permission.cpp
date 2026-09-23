@@ -24,7 +24,7 @@ struct other_region {};
 }  // namespace
 
 int main() {
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     namespace hw = ::crucible::fixy::hw;
     auto wrong = ::crucible::safety::mint_permission_root<other_region>();
     // Should FAIL: Permission<other_region> is not Permission<hw::root>.

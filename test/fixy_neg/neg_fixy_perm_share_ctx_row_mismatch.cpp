@@ -29,7 +29,7 @@ int main() {
     // Mint a root with the proper bg-compile ctx so we have a token
     // to share; then attempt to share it via a ctx that doesn't admit
     // IO.  The share-mint requires CtxAdmitsPermission<Tag, Ctx>.
-    eff::BgCompileCtx good_ctx{};
+    eff::BgCompileCtx good_ctx{::crucible::effects::testing::bg()};
     auto exc = fperm::mint_permission_root<ptag::NetworkBufferTag>(good_ctx);
 
     // Should FAIL: HotFgCtx does NOT admit Row<Effect::IO>.

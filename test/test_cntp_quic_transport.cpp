@@ -117,8 +117,8 @@ void test_admission_and_backend_boundary() {
 }
 
 void test_stream_budgeting() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto peer_name = cntp::MtlsDnsName::from("peer-stream.example.org");
     assert(peer_name.has_value());
     auto mtls = mtls_config(*peer_name);
@@ -150,8 +150,8 @@ void test_stream_budgeting() {
 }
 
 void test_datagram_zero_rtt_and_migration_plans() {
-    effects::ColdInitCtx init{};
-    effects::BgDrainCtx bg{};
+    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
     auto peer_name = cntp::MtlsDnsName::from("peer-data.example.org");
     assert(peer_name.has_value());
     auto mtls = mtls_config(*peer_name);

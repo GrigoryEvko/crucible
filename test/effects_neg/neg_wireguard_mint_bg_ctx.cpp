@@ -22,5 +22,5 @@ int main() {
             public_key, crucible::cntp::_wip::WireguardEndpoint{.ipv4_be = 0xc0000201u, .port = port}, allowed),
     };
     auto config = crucible::cntp::_wip::mint_wireguard_config(iface, port, std::move(private_key), peers).value();
-    (void)crucible::cntp::_wip::mint_wireguard_tunnel(crucible::effects::BgDrainCtx{}, std::move(config));
+    (void)crucible::cntp::_wip::mint_wireguard_tunnel(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, std::move(config));
 }

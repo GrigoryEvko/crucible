@@ -2,7 +2,7 @@
 
 int main() {
     auto scorer =
-        crucible::topology::mint_topology_health<crucible::effects::ColdInitCtx, 2>(crucible::effects::ColdInitCtx{});
+        crucible::topology::mint_topology_health<crucible::effects::ColdInitCtx, 2>(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
     crucible::cog::CogIdentity peer{};
     peer.uuid = crucible::cog::Uuid{0x113, 0x5};
 

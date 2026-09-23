@@ -82,7 +82,7 @@ void test_mint_and_handles() {
     config.max_qps = *sriov::admit_resource_limit(1024);
     config.max_mrs = *sriov::admit_resource_limit(2048);
 
-    auto plan = sriov::mint_sriov_plan(eff::ColdInitCtx{}, nic_identity(), sriov_caps(), iface(),
+    auto plan = sriov::mint_sriov_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), sriov_caps(), iface(),
                                        *sriov::admit_vf_count(4), config);
     assert(plan.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, sriov::DeclaredSrIovPlan>);
@@ -115,21 +115,21 @@ void test_mint_and_handles() {
 }
 
 void test_identity_and_capability_gates() {
-    auto zero = sriov::mint_sriov_plan(eff::ColdInitCtx{}, cog::CogIdentity{}, sriov_caps(), iface(),
+    auto zero = sriov::mint_sriov_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, cog::CogIdentity{}, sriov_caps(), iface(),
                                        *sriov::admit_vf_count(1));
     assert(!zero.has_value());
     assert(zero.error() == sriov::SrIovError::ZeroCog);
 
     auto gpu = nic_identity();
     gpu.kind = cog::CogKind::Gpu;
-    auto wrong_kind = sriov::mint_sriov_plan(eff::ColdInitCtx{}, gpu, sriov_caps(), iface(), *sriov::admit_vf_count(1));
+    auto wrong_kind = sriov::mint_sriov_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu, sriov_caps(), iface(), *sriov::admit_vf_count(1));
     assert(!wrong_kind.has_value());
     assert(wrong_kind.error() == sriov::SrIovError::NonNicCog);
 
     auto caps = sriov_caps();
     caps.features.unset(cog::NicFeature::SrIov);
     auto missing_cap =
-        sriov::mint_sriov_plan(eff::ColdInitCtx{}, nic_identity(), caps, iface(), *sriov::admit_vf_count(1));
+        sriov::mint_sriov_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), caps, iface(), *sriov::admit_vf_count(1));
     assert(!missing_cap.has_value());
     assert(missing_cap.error() == sriov::SrIovError::MissingSrIovCapability);
 
@@ -142,7 +142,7 @@ void test_identity_and_capability_gates() {
 
 void test_privileged_boundaries() {
     auto plan =
-        sriov::mint_sriov_plan(eff::ColdInitCtx{}, nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(2));
+        sriov::mint_sriov_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(2));
     assert(plan.has_value());
 
     std::array<sriov::VfHandle, 2> handles{};
@@ -150,7 +150,7 @@ void test_privileged_boundaries() {
     assert(!enable.has_value());
     assert(enable.error() == sriov::SrIovError::PrivilegedApplyDeferred);
 
-    auto privileged = sriov::mint_sriov_plan(eff::ColdInitCtx{}, nic_identity(), sriov_caps(), iface(),
+    auto privileged = sriov::mint_sriov_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), sriov_caps(), iface(),
                                              *sriov::admit_vf_count(2), {}, true);
     assert(privileged.has_value());
     auto privileged_enable = sriov::enable(*privileged, std::span<sriov::VfHandle>{handles});
@@ -181,7 +181,7 @@ void test_apply_paths_are_stubbed() {
                   "the honesty trait must be a compile-time bool");
 
     auto plan =
-        sriov::mint_sriov_plan(eff::ColdInitCtx{}, nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(2));
+        sriov::mint_sriov_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(2));
     assert(plan.has_value());
 
     std::array<sriov::VfHandle, 2> handles{};
@@ -189,7 +189,7 @@ void test_apply_paths_are_stubbed() {
     assert(!deferred.has_value());
     assert(deferred.error() == sriov::SrIovError::PrivilegedApplyDeferred);
 
-    auto requested = sriov::mint_sriov_plan(eff::ColdInitCtx{}, nic_identity(), sriov_caps(), iface(),
+    auto requested = sriov::mint_sriov_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), sriov_caps(), iface(),
                                             *sriov::admit_vf_count(2), {}, true);
     assert(requested.has_value());
     auto requested_enable = sriov::enable(*requested, std::span<sriov::VfHandle>{handles});

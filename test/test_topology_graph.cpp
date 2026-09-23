@@ -197,7 +197,7 @@ static void test_mint_topology_graph_round_trip() {
     edges[3].kind = topology::LinkKind::Ethernet;
     edges[3].peer = &nodes[1];
 
-    InitCtx ctx{};
+    InitCtx ctx{::crucible::effects::testing::init()};
     auto g = topology::mint_topology_graph(ctx, std::span<const cog::CogIdentity>{nodes, 3},
                                            std::span<const topology::TopologyEdge>{edges, 4});
 

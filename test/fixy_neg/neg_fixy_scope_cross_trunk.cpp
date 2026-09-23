@@ -23,7 +23,7 @@ namespace hw = crucible::fixy::hw;
 namespace eff = crucible::effects;
 
 int main() {
-    constexpr eff::TestRunnerCtx ctx{};
+    constexpr eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
     // accel scope on the ARM fence dialect — cross-trunk, gate rejects.
     auto bad = hw::mint_scoped_fence<hw::MemoryScope::Gpu, hw::BarrierArch::Arm>(ctx);
     (void)bad;

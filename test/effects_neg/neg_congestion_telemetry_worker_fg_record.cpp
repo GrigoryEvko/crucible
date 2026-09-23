@@ -10,7 +10,7 @@
 int main() {
     namespace topology = crucible::topology;
     namespace topology = crucible::topology;
-    crucible::effects::ColdInitCtx init{};
+    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
     crucible::effects::HotFgCtx fg{};
     crucible::cog::CogIdentity nic{};
     nic.kind = crucible::cog::CogKind::NicPort;

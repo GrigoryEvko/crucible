@@ -11,7 +11,7 @@
 
 int main() {
     auto hub =
-        crucible::perf::mint_lock_contention(crucible::effects::ColdInitCtx{}, crucible::effects::testing::init());
+        crucible::perf::mint_lock_contention(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

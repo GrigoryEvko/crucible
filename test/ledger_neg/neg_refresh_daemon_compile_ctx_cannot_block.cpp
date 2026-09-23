@@ -29,7 +29,7 @@ static_assert(effects::CtxOwnsCapability<effects::BgCompileCtx, effects::Effect:
               "premise: the compile context really is a background context");
 static_assert(!ledger::CtxFitsRefreshDaemon<effects::BgCompileCtx>, "premise: it does not claim effects::Block");
 
-constexpr effects::BgCompileCtx g_compile_ctx{};
+constexpr effects::BgCompileCtx g_compile_ctx{::crucible::effects::testing::bg()};
 
 // The line under test.  Being a background context does not by itself
 // permit waiting on a disk.

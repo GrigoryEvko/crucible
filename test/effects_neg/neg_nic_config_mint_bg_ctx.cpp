@@ -15,6 +15,6 @@ int main() {
     id.uuid = cog::Uuid{1, 2};
     id.kind = cog::CogKind::NicPort;
     auto iface = cntp::NicInterfaceName::from("eth0").value();
-    auto config = nic::mint_nic_config(eff::BgDrainCtx{}, id, iface);
+    auto config = nic::mint_nic_config(eff::BgDrainCtx{::crucible::effects::testing::bg()}, id, iface);
     return config.has_value() ? 0 : 1;
 }

@@ -32,7 +32,7 @@ int main() {
     namespace share = fwmm::share;
     namespace grant = fwmm::grant;
 
-    ::crucible::effects::TestRunnerCtx ctx{};
+    ::crucible::effects::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     // Should FAIL: mint_mmap_anon requires with_share<Anonymous>;
     // pack only has Private.
