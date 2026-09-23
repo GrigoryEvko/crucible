@@ -1418,6 +1418,72 @@ target_include_directories(test_armed_roster PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
 fixy_test(test_forgeable_proofs)
 target_include_directories(test_forgeable_proofs PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/armed_roster)
 
+# Attacks on ownership transfer that use the discipline correctly.  The
+# threaded half runs under a watchdog, and it is the half that means
+# anything under the tsan preset.
+fixy_test(test_session_ownership_attacks)
+
+# A hold used after a move, and a hold dropped with a loan open, each
+# abort with a named diagnostic.  Each attack runs in a child process,
+# and each test passes only on its diagnostic.
+fixy_test(test_session_hold_consumed_aborts)
+fixy_test(test_session_hold_open_loan_aborts)
+
+# The payload walk refuses a token laundered through a pair, behind a
+# pointer or inside a std::optional, and a payload behind type erasure.
+fixy_neg_compile_test(neg_session_payload_token_behind_pointer
+  "Payload_Refused.: the payload cannot travel on a session channel"
+  "reaches a permission token through a pointer or a reference")
+fixy_neg_compile_test(neg_session_payload_token_in_optional
+  "Payload_Refused.: the payload cannot travel on a session channel"
+  "holds a permission token in a union, a std::optional or a std::variant")
+fixy_neg_compile_test(neg_session_payload_type_erased
+  "Payload_Refused.: the payload cannot travel on a session channel"
+  "holds a type-erasure family")
+
+# A token reaches a hold once: never by name, and never twice by tag.
+fixy_neg_compile_test(neg_session_hold_lvalue_token
+  "use of deleted function .foundation::permissions::Permission<Tag, Brand>::Permission\\(const foundation::permissions::Permission<Tag, Brand>&\\)"
+  "Permission<Tag>: linear")
+fixy_neg_compile_test(neg_session_hold_duplicate_tag
+  "no matching function for call to .mint_permission_hold\\("
+  "perm_tags_unique_v<Tags ...> .with Tags = .<unnamed>::Region, <unnamed>::Region.*evaluated to .false")
+
+# A read loan carries a read proof of its own region, and a hold lends
+# only a region it holds.
+fixy_neg_compile_test(neg_session_borrowed_without_proof
+  "no matching function for call to .fixy::session::Borrowed<int, .anonymous.::Region>::Borrowed\\("
+  "candidate expects 2 arguments, 1 provided")
+fixy_neg_compile_test(neg_session_borrowed_proof_of_another_region
+  "no matching function for call to .fixy::session::Borrowed<int, .anonymous.::Region>::Borrowed\\("
+  "mismatched types ..anonymous.::Region. and ..anonymous.::Other.")
+fixy_neg_compile_test(neg_session_hold_lend_without_token
+  "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<.anonymous.::Other> >::lend<.anonymous.::Region>"
+  "required for the satisfaction of .SendablePayload<fixy::session::Borrowed<T, Tag>")
+
+# A read proof from a reader that dies at the end of the statement.
+fixy_neg_compile_test(neg_session_shared_reader_view_of_temporary
+  "use of deleted function .foundation::permissions::ReadView<Tag, Brand> fixy::session::SharedReader<Tag, Brand>::view\\(\\) const &&"
+  "a read proof taken from a temporary reader outlives the share")
+
+# A classified value travels only in DeclassifyOnSend under an admitted
+# policy, and a constant-time value only in CTPayload, which has no ==.
+fixy_neg_compile_test(neg_session_payload_secret_bare
+  "Payload_Refused.: the payload cannot travel on a session channel"
+  "holds a fixy::Secret outside DeclassifyOnSend")
+fixy_neg_compile_test(neg_session_payload_secret_in_optional
+  "Payload_Refused.: the payload cannot travel on a session channel"
+  "holds a fixy::Secret outside DeclassifyOnSend")
+fixy_neg_compile_test(neg_session_payload_constant_time_bare
+  "Payload_Refused.: the payload cannot travel on a session channel"
+  "holds a constant-time value outside CTPayload")
+fixy_neg_compile_test(neg_session_ctpayload_equality
+  "use of deleted function .bool fixy::session::CTPayload<T>::operator==\\(const fixy::session::CTPayload<T>&\\) const"
+  "a CTPayload compares only through fixy::session::eq")
+fixy_neg_compile_test(neg_session_declassify_unadmitted_policy
+  "template constraint failure for .template<class T, class Policy>  requires  AdmittedDeclassification<Policy> class fixy::session::DeclassifyOnSend"
+  "required for the satisfaction of .AdmittedDeclassification<Policy>. .with Policy = <unnamed>::UnadmittedPolicy")
+
 # ── The lock-free rings ───────────────────────────────────────────────
 #
 # The threaded half of this test is what checks the ordering claim, so
