@@ -467,22 +467,28 @@ inline constexpr corpus_entry rule_corpus[] = {
     // than a gap someone has to notice.  absent_rule_codes below names the
     // same set, and the set only shrinks.
     //
-    // Three read a premise nothing in the tree can write.
+    // Three read a premise that no binding in the tree can state.
     {"F002", Disposition::Absent,
-     "reads a federation-peer role; Canopy membership is not a grade, and no atom or band names it"},
+     "reads a federation peer against cost_unbounded. No atom, band or role names a federation peer, and the "
+     "Canopy layer that would define one is not ported"},
     {"N002", Disposition::Absent,
-     "reads an exact-decimal payload against overflow_wrap; the tree has no decimal type and Axis::Precision "
-     "carries f32, f64 and higham only"},
+     "reads an exact-decimal payload against overflow_wrap. The tree has no decimal type, so the premise has no "
+     "type to read and no witness to arm"},
     {"L004", Disposition::Absent,
-     "reads whether a linear in_region<Tag> binding holds Permission<Tag>; the proof is a call argument, fn "
-     "carries one payload, and in_region names its tag as a value where Permission names it as a type"},
+     "reads a linear in_region binding that holds no Permission for its region. The Permission is an argument "
+     "at the call, and a binding sees no call. in_region names its region by a value and Permission by a type"},
 
     // Three hold across several bindings.  rules_of is handed one binding,
     // so a relation over a set of bindings has no place here.
-    {"F001", Disposition::Absent, "a frame-level agreement across several bindings"},
-    {"L005", Disposition::Absent, "compares two linear bindings that share a region tag"},
+    {"F001", Disposition::Absent,
+     "every binding in one frame names the same Security grade. A Stage names a function pointer and a "
+     "context, and no gate in the tree takes a set of fixy::fn bindings"},
+    {"L005", Disposition::Absent,
+     "no two linear bindings in one frame name the same in_region tag. The rule needs the set of bindings "
+     "that F001 needs, and no gate takes one"},
     {"S004", Disposition::Absent,
-     "walks the init-dependency graph across every registered singleton; global::singleton<Tag> names no edge"},
+     "walks the init-dependency graph of every singleton for a cycle. global::singleton<Tag> names no edge, "
+     "and the old SingletonInitGraph.h, which states the edges, is not ported"},
 
     // Retired: the rule is not carried further, and the note says why.
     // Each of these is discharged by the shape of the new tree — the
