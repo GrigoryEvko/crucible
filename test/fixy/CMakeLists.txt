@@ -1471,6 +1471,30 @@ fixy_neg_compile_test(neg_sess_crash_delegation_opaque_pointer
 fixy_neg_compile_test(neg_sess_crash_token_not_held
   "no matching function for call to .mint_crash_session"
   "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::Transferable<")
+fixy_neg_compile_test(neg_sess_crash_between_label_and_payload
+  "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
+  "CrashWatched<Handle, Self, Peer, Reliable, Position>::crash\\(")
+fixy_neg_compile_test(neg_sess_crash_recorded_between_label_and_payload
+  "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
+  "required from .fixy::session::Recorded<Inner>::resource_type fixy::session::Recorded<Inner>::crash\\(")
+fixy_neg_compile_test(neg_sess_crash_recv_blocking_read
+  "fixy::session::diagnostic \\[Crash_Read_Must_Poll\\]: recv\\(\\)"
+  "CrashWatched<Handle, Self, Peer, Reliable, Position>::recv\\(Read\\)")
+fixy_neg_compile_test(neg_sess_crash_branch_blocking_poll
+  "fixy::session::diagnostic \\[Crash_Read_Must_Poll\\]: branch\\(\\)"
+  "CrashWatched<Handle, Self, Peer, Reliable, Position>::branch\\(Poll, Handler\\)")
+fixy_neg_compile_test(neg_sess_crash_token_send_without_refusal
+  "fixy::session::diagnostic \\[Crash_Send_Must_Refuse\\]"
+  "is_plain_payload_v<fixy::session::Transferable<int, .anonymous.::Region> >")
+fixy_neg_compile_test(neg_sess_crash_recorded_token_send_without_refusal
+  "fixy::session::diagnostic \\[Crash_Send_Must_Refuse\\]"
+  "required from .constexpr auto fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
+fixy_neg_compile_test(neg_sess_crash_send_transport_result
+  "fixy::session::diagnostic \\[Crash_Transport_Result\\]"
+  "std::is_void_v<bool>")
+fixy_neg_compile_test(neg_sess_crash_recorded_send_transport_result
+  "fixy::session::diagnostic \\[Crash_Transport_Result\\]"
+  "required from .constexpr auto fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
 
 # ── Checkpoint and rollback ───────────────────────────────────────────
 #
