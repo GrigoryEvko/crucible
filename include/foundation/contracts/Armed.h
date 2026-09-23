@@ -92,6 +92,57 @@ inline constexpr bool armed_cell_holds_v =
     detail::accepts_every<Pred, typename armed_cell<Pred>::accepts>::value
     && detail::refuses_every<Pred, typename armed_cell<Pred>::refuses>::value;
 
+// The instance cell.
+//
+// A cell names a template of one type parameter.  A predicate over two
+// arguments, or over a value and a type, cannot take one.  The instance
+// cell names the predicate by its reflection instead, and its witnesses
+// are whole specializations of that predicate:
+//
+//   template <>
+//   struct foundation::contracts::armed_instances<^^is_at_or_above_> {
+//       using accepts = witnesses<is_at_or_above_<Tier::Low, high_grade>>;
+//       using refuses = witnesses<is_at_or_above_<Tier::High, low_grade>>;
+//   };
+//
+// Each witness must be a specialization of the predicate the cell names.
+// Otherwise a list of std::true_type, or of another predicate, would arm
+// any predicate at all.  The primary is declared and never defined, for
+// the reason the primary of armed_cell states.
+
+template <std::meta::info Pred>
+struct armed_instances;
+
+namespace detail {
+
+// True when W is a specialization of the class template that Pred
+// reflects.
+template <std::meta::info Pred, class W>
+[[nodiscard]] consteval bool is_instance_of_predicate() noexcept {
+    return std::meta::has_template_arguments(^^W) && std::meta::template_of(^^W) == Pred;
+}
+
+template <std::meta::info Pred, class Witnesses>
+struct instances_answer;
+template <std::meta::info Pred, class... Instances>
+struct instances_answer<Pred, witnesses<Instances...>> {
+    static constexpr bool is_all_true =
+        sizeof...(Instances) > 0
+        && ((is_instance_of_predicate<Pred, Instances>() && static_cast<bool>(Instances::value)) && ...);
+    static constexpr bool is_all_false =
+        sizeof...(Instances) > 0
+        && ((is_instance_of_predicate<Pred, Instances>() && !static_cast<bool>(Instances::value)) && ...);
+};
+
+}  // namespace detail
+
+// True when the instance cell for Pred holds in both directions.  Each
+// list must be non-empty, and each witness must instantiate Pred.
+template <std::meta::info Pred>
+inline constexpr bool armed_instances_hold_v =
+    detail::instances_answer<Pred, typename armed_instances<Pred>::accepts>::is_all_true
+    && detail::instances_answer<Pred, typename armed_instances<Pred>::refuses>::is_all_false;
+
 // The predicate roster.
 //
 // A predicate here is a class template whose name asks a question, under
@@ -105,8 +156,9 @@ inline constexpr bool armed_cell_holds_v =
 // that is a naming defect the guide already rejects.
 //
 // A walked template that cannot take one type argument cannot hold a
-// cell, and the walk counts it unarmed rather than skipping it.  An
-// unhandled shape is therefore unproven, never passed.
+// cell.  It can hold an instance cell.  Without one, the walk counts it
+// unarmed rather than skipping it.  An unhandled shape is therefore
+// unproven, never passed.
 //
 // Namespaces whose name contains `self_test` hold the scaffolding of a
 // header's own checks, not gates, and the walk skips them.
@@ -151,14 +203,21 @@ consteval void collect_predicates(std::meta::info scope, std::vector<std::meta::
     return found;
 }
 
-// True when the predicate that `tmpl` reflects has a cell, and the cell
-// holds.  A cell that does not hold is not an arm: it is the unarmed
-// shape with a comment beside it.
+// True when the predicate that `tmpl` reflects has a cell or an instance
+// cell, and that cell holds.  A cell that does not hold is not an arm: it
+// is the unarmed shape with a comment beside it.  A cell is read first.
+// The instance cell is read only when the predicate has no cell.
 [[nodiscard]] consteval bool is_armed(std::meta::info tmpl) {
-    if (!std::meta::can_substitute(^^armed_cell, {tmpl})) return false;
-    const std::meta::info cell = std::meta::substitute(^^armed_cell, {tmpl});
-    if (!std::meta::is_complete_type(cell)) return false;
-    return std::meta::extract<bool>(std::meta::substitute(^^armed_cell_holds_v, {tmpl}));
+    if (std::meta::can_substitute(^^armed_cell, {tmpl})) {
+        const std::meta::info cell = std::meta::substitute(^^armed_cell, {tmpl});
+        if (std::meta::is_complete_type(cell)) {
+            return std::meta::extract<bool>(std::meta::substitute(^^armed_cell_holds_v, {tmpl}));
+        }
+    }
+    const std::meta::info key = std::meta::reflect_constant(tmpl);
+    const std::meta::info instance_cell = std::meta::substitute(^^armed_instances, {key});
+    if (!std::meta::is_complete_type(instance_cell)) return false;
+    return std::meta::extract<bool>(std::meta::substitute(^^armed_instances_hold_v, {key}));
 }
 
 // The walk's verdict over a roster and a ledger of predicates known to
@@ -244,10 +303,13 @@ static_assert(!predicate_refuses<always_true, int>());
 
 }  // namespace detail::armed_self_test
 
-// The roster walk, over a stand-in namespace.  Four predicates: one with
+// The roster walk, over a stand-in namespace.  Six predicates: one with
 // a cell that holds, one with no cell, one with a cell whose accepting
-// witness the predicate refuses, and one whose parameter is a value.
-// The walk must count one arm and three unarmed predicates.
+// witness the predicate refuses, one whose parameter is a value and that
+// has no cell, one over a value and a type with an instance cell that
+// holds, and one with an instance cell whose witness instantiates a
+// different predicate.  The walk must count two arms and four unarmed
+// predicates.
 //
 // The walk skips a self_test namespace only below its root.  So a roster
 // over the whole foundation tree skips this stand-in, and the walk
@@ -272,7 +334,29 @@ struct width_of : std::integral_constant<std::size_t, sizeof(T)> {};
 template <int N>
 struct is_even : std::bool_constant<N % 2 == 0> {};
 
+// A predicate over a value and a type.  Its instance cell holds.
+template <std::size_t Bytes, class T>
+struct is_wider_than : std::bool_constant<(sizeof(T) > Bytes)> {};
+
+// A predicate whose instance cell lists a specialization of is_even.
+// That witness answers true, but it proves nothing about is_odd.
+template <int N>
+struct is_odd : std::bool_constant<N % 2 != 0> {};
+
 }  // namespace detail::armed_roster_self_test_stand_in
+
+template <>
+struct armed_instances<^^detail::armed_roster_self_test_stand_in::is_wider_than> {
+    using accepts = witnesses<detail::armed_roster_self_test_stand_in::is_wider_than<1, int>>;
+    using refuses = witnesses<detail::armed_roster_self_test_stand_in::is_wider_than<8, int>,
+                              detail::armed_roster_self_test_stand_in::is_wider_than<1, char>>;
+};
+
+template <>
+struct armed_instances<^^detail::armed_roster_self_test_stand_in::is_odd> {
+    using accepts = witnesses<detail::armed_roster_self_test_stand_in::is_even<2>>;
+    using refuses = witnesses<detail::armed_roster_self_test_stand_in::is_odd<2>>;
+};
 
 template <>
 struct armed_cell<detail::armed_roster_self_test_stand_in::is_char> {
@@ -295,12 +379,20 @@ static_assert(names_a_predicate("is_char") && names_a_predicate("row_admits_bg_"
 static_assert(armed_cell_holds_v<::foundation::contracts::detail::armed_roster_self_test_stand_in::is_char>);
 static_assert(!armed_cell_holds_v<::foundation::contracts::detail::armed_roster_self_test_stand_in::is_short>);
 
-static_assert(armed_roster_verdict(stand_in_scope, {}).walked == 4);
-static_assert(armed_roster_verdict(stand_in_scope, {}).armed == 1);
-static_assert(armed_roster_verdict(stand_in_scope, {}).unarmed_outside_ledger == 3,
-              "the walk must count the predicate with no cell, the predicate whose cell does not hold, and the "
-              "predicate that cannot hold a cell.");
-static_assert(armed_roster_verdict(stand_in_scope, no_ledger).unarmed_outside_ledger == 2);
+namespace stand_in = ::foundation::contracts::detail::armed_roster_self_test_stand_in;
+
+static_assert(armed_instances_hold_v<^^stand_in::is_wider_than>);
+static_assert(!armed_instances_hold_v<^^stand_in::is_odd>,
+              "a witness that instantiates a different predicate must not arm this one.");
+static_assert(!detail::is_instance_of_predicate<^^stand_in::is_odd, std::true_type>());
+static_assert(detail::is_instance_of_predicate<^^stand_in::is_odd, stand_in::is_odd<3>>());
+
+static_assert(armed_roster_verdict(stand_in_scope, {}).walked == 6);
+static_assert(armed_roster_verdict(stand_in_scope, {}).armed == 2);
+static_assert(armed_roster_verdict(stand_in_scope, {}).unarmed_outside_ledger == 4,
+              "the walk must count the predicate with no cell, the predicate whose cell does not hold, the "
+              "predicate over a value with no cell, and the predicate whose instance cell does not hold.");
+static_assert(armed_roster_verdict(stand_in_scope, no_ledger).unarmed_outside_ledger == 3);
 static_assert(armed_roster_verdict(stand_in_scope, no_ledger).ledgered == 1);
 static_assert(armed_roster_verdict(stand_in_scope, no_ledger).stale_ledger_entries == 0);
 
@@ -318,6 +410,6 @@ static_assert(first_unarmed_outside_ledger(stand_in_scope, no_ledger)
               || first_unarmed_outside_ledger(stand_in_scope, no_ledger)
                      == ^^::foundation::contracts::detail::armed_roster_self_test_stand_in::is_even);
 
-}  // namespace detail::armed_self_test
+}  // namespace detail::armed_roster_self_test
 
 }  // namespace foundation::contracts
