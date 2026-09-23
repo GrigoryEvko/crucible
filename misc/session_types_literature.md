@@ -100,11 +100,13 @@ Each item gives the file, the defect and the rule in section 2 that it breaks. A
 
 ### 3.2 Ported core, `include/fixy/session`
 
-| File | Defect | Rule |
-|---|---|---|
-| `Stepping.h`, lines 172-177 | `DefaultAbandonmentPolicy` is `check::Off` when `NDEBUG` is set. A Release handle can disappear before `End`, and the peer then waits forever. | 7 |
-| `Protocol.h`, line 380 | The primary of `is_dual_involutive` is `true_type`. A combinator added later is involutive by default. | 11 |
-| `Protocol.h` | The epoch and generation lattices are not in foundation. The epoch axis of the session layer cannot be ported until they are. | — |
+All three defects of this table are fixed. The table keeps them as a record of the port.
+
+| File | Defect | Rule | Status |
+|---|---|---|---|
+| `Stepping.h`, lines 172-177 | `DefaultAbandonmentPolicy` is `check::Off` when `NDEBUG` is set. A Release handle can disappear before `End`, and the peer then waits forever. | 7 | Fixed at bda37c4b. The policy aborts or cancels in Release too. |
+| `Protocol.h`, line 380 | The primary of `is_dual_involutive` is `true_type`. A combinator added later is involutive by default. | 11 | Fixed at ecdf9b99. At 31f724c7 the registry itself enforces the involution, and the predicate is removed. |
+| `Protocol.h` | The epoch and generation lattices are not in foundation. The epoch axis of the session layer cannot be ported until they are. | — | Fixed at c1f4750a and 16e009dc, with the dual order. |
 
 ## 4. Findings by topic
 
