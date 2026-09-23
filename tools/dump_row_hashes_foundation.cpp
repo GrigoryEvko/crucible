@@ -75,7 +75,7 @@
 // different compiler. So the first line of the diff answers the question
 // the rest of it raises.
 //
-// A diff in the tag alone, with all thirty-one payload lines unchanged,
+// A diff in the tag alone, with all thirty-nine payload lines unchanged,
 // means the toolchain moved and the fold did not. Recapture the golden
 // and say which toolchain in the commit message. Nothing is broken.
 //
@@ -92,6 +92,11 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/Modality.h>
+#include <foundation/algebra/lattices/DualLattice.h>
+#include <foundation/algebra/lattices/HappensBefore.h>
+#include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Effect.h>
@@ -104,10 +109,19 @@
 #include <cstdint>
 #include <cstdio>
 
+namespace fa = ::foundation::algebra;
 namespace fd = ::foundation::diag;
 namespace fe = ::foundation::effects;
+namespace fl = ::foundation::algebra::lattices;
 
 using fd::row_hash_contribution_v;
+
+// A clock tag is part of the clock's identity.  The tag lives in a named
+// namespace, because its reflected name enters the hash and an anonymous
+// namespace has no name to print.
+namespace row_hash_witness {
+struct ReplayClock {};
+}  // namespace row_hash_witness
 
 namespace {
 
@@ -131,6 +145,29 @@ using G07_Monotonic = ::fixy::Monotonic<std::uint64_t>;
 // trait to express.
 using G08_RefinedPositive = ::fixy::Refined<::fixy::positive, int>;
 using G09_RefinedNonNegative = ::fixy::Refined<::fixy::non_negative, int>;
+
+// ── The counter axes ───────────────────────────────────────────────
+//
+// The four axes are one lattice template under four tags, so the tag is
+// the only input that separates them.  They must print four values.
+template <typename L>
+using OnAxis = fa::Graded<fa::ModalityKind::Absolute, L, int>;
+using K01_OnEpoch = OnAxis<fl::EpochLattice>;
+using K02_OnGeneration = OnAxis<fl::GenerationLattice>;
+using K03_OnPeakBytes = OnAxis<fl::PeakBytesLattice>;
+using K04_OnBitsBudget = OnAxis<fl::BitsBudgetLattice>;
+
+// A version grades by the order dual, which is a different lattice from
+// the counter it turns over and must take a different slot.
+using K05_OnDualEpoch = OnAxis<fl::DualLattice<fl::EpochLattice>>;
+
+// ── The vector clock ───────────────────────────────────────────────
+//
+// The width and the tag are both part of the key.  H01 and H02 differ
+// only in the tag, and H01 and H03 differ only in the width.
+using H01_ClockOfFour = OnAxis<fl::HappensBeforeLattice<4>>;
+using H02_ClockOfFourTagged = OnAxis<fl::HappensBeforeLattice<4, row_hash_witness::ReplayClock>>;
+using H03_ClockOfEight = OnAxis<fl::HappensBeforeLattice<8>>;
 
 // ── Nesting order ──────────────────────────────────────────────────
 //
@@ -202,7 +239,7 @@ struct LabeledEntry {
     std::uint64_t value;
 };
 
-inline constexpr std::array<LabeledEntry, 31> kEntries = {{
+inline constexpr std::array<LabeledEntry, 39> kEntries = {{
     {"G01_Linear", row_hash_contribution_v<G01_Linear>},
     {"G02_Affine", row_hash_contribution_v<G02_Affine>},
     {"G03_TaggedVerified", row_hash_contribution_v<G03_TaggedVerified>},
@@ -234,6 +271,14 @@ inline constexpr std::array<LabeledEntry, 31> kEntries = {{
     {"S03_IoFunction", row_hash_contribution_v<S03_IoFunction>},
     {"S04_BgWorker", row_hash_contribution_v<S04_BgWorker>},
     {"S05_CtCrypto", row_hash_contribution_v<S05_CtCrypto>},
+    {"K01_OnEpoch", row_hash_contribution_v<K01_OnEpoch>},
+    {"K02_OnGeneration", row_hash_contribution_v<K02_OnGeneration>},
+    {"K03_OnPeakBytes", row_hash_contribution_v<K03_OnPeakBytes>},
+    {"K04_OnBitsBudget", row_hash_contribution_v<K04_OnBitsBudget>},
+    {"K05_OnDualEpoch", row_hash_contribution_v<K05_OnDualEpoch>},
+    {"H01_ClockOfFour", row_hash_contribution_v<H01_ClockOfFour>},
+    {"H02_ClockOfFourTagged", row_hash_contribution_v<H02_ClockOfFourTagged>},
+    {"H03_ClockOfEight", row_hash_contribution_v<H03_ClockOfEight>},
 }};
 
 inline constexpr std::size_t kEntryCount = kEntries.size();
@@ -244,7 +289,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x5c4cdadc8d81222bULL;
+inline constexpr std::uint64_t kFoldAnchor = 0x74b17e98c65f2144ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -334,7 +379,29 @@ static_assert(no_reserved_values(), "an entry took a reserved row_hash value. Ze
                                     "plain payload. UINT64_MAX is the EMPTY-slot sentinel, so the entry is "
                                     "indistinguishable from an unaddressed cache slot.");
 
-// Every entry is distinct except the three repeats named above.
+// The tag is the only input that separates the four counter axes, and the
+// tag and the width are both inputs of a clock.  A value graded on one of
+// these must never reach a cache entry filed under another.
+[[nodiscard]] consteval bool counters_and_clocks_are_distinct() noexcept {
+    std::uint64_t const values[] = {
+        row_hash_contribution_v<K01_OnEpoch>,     row_hash_contribution_v<K02_OnGeneration>,
+        row_hash_contribution_v<K03_OnPeakBytes>, row_hash_contribution_v<K04_OnBitsBudget>,
+        row_hash_contribution_v<K05_OnDualEpoch>,
+        row_hash_contribution_v<H01_ClockOfFour>, row_hash_contribution_v<H02_ClockOfFourTagged>,
+        row_hash_contribution_v<H03_ClockOfEight>,
+    };
+    for (std::size_t i = 0; i < std::size(values); ++i) {
+        for (std::size_t j = i + 1; j < std::size(values); ++j) {
+            if (values[i] == values[j]) return false;
+        }
+    }
+    return true;
+}
+
+static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two clocks that differ in tag or width, "
+                                                  "took one slot");
+
+// Every entry is distinct except the repeats named above.
 [[nodiscard]] consteval std::size_t distinct_value_count() noexcept {
     std::size_t distinct = 0;
     for (std::size_t i = 0; i < kEntryCount; ++i) {
@@ -347,11 +414,11 @@ static_assert(no_reserved_values(), "an entry took a reserved row_hash value. Ze
     return distinct;
 }
 
-// Thirty-one entries carry twenty-six distinct values. Five entries
-// repeat one that stands above them: R05 repeats R04, B02 and B07 and S01
-// each repeat B01, and S05 repeats B03. Every one of those five has its
-// own assert above, with the property that makes the repeat correct.
-static_assert(distinct_value_count() == 26,
+// Thirty-nine entries carry thirty-four distinct values. Five entries repeat
+// one that stands above them: R05 repeats R04, B02 and B07 and S01 each
+// repeat B01, and S05 repeats B03. Every one of those five has its own
+// assert above, with the property that makes the repeat correct.
+static_assert(distinct_value_count() == 34,
               "the number of distinct values moved. Every repeat in this matrix is "
               "named by an assert above, so a new one is a collision between two "
               "claims that must not share a cache slot.");

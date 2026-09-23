@@ -116,8 +116,10 @@
 #include <foundation/algebra/lattices/ClockSourceLattice.h>
 #include <foundation/algebra/lattices/ConfLattice.h>
 #include <foundation/algebra/lattices/DetSafeLattice.h>
+#include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/EnumValuePins.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
+#include <foundation/algebra/lattices/HappensBefore.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/algebra/lattices/LifetimeLattice.h>
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
@@ -129,6 +131,7 @@
 #include <foundation/algebra/lattices/SchedulerPolicyLattice.h>
 #include <foundation/algebra/lattices/SeqPrefixLattice.h>
 #include <foundation/algebra/lattices/StalenessSemiring.h>
+#include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
 #include <foundation/algebra/lattices/TrustLattice.h>
@@ -655,6 +658,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::refined::row_discipline, "discipline identities, declared and never defined; they name claims"},
     {^^::foundation::algebra::modality, kGradeVocabulary},
     {^^::foundation::algebra::lattices, kGradeVocabulary},
+    {^^::foundation::algebra::lattices::counter_tags, kGradeVocabulary},
     {^^::foundation::effects::cap, kGradeVocabulary},
     {^^::foundation::effects::ctx_cap, kGradeVocabulary},
     {^^::foundation::effects::host, "the owners a context is minted for, never passed as values"},

@@ -35,6 +35,8 @@ foundation_test(test_signature)
 foundation_test(test_algebra_core)
 foundation_test(test_lattices_core)
 foundation_test(test_lattices_bands)
+foundation_test(test_lattices_counters)
+foundation_test(test_counter_clock_attacks)
 foundation_test(test_effects_core)
 foundation_test(test_ctx)
 foundation_test(test_capability)
@@ -115,6 +117,65 @@ foundation_neg_compile_test(neg_graded_stored_grade_outside_the_order
 foundation_neg_compile_test(neg_graded_weaken_below_current_grade
   "is not a constant expression"
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro")
+
+# Two counter axes are one lattice under two tags.  The element types
+# have no conversion, so comparing an epoch with a generation has no
+# candidate.  The second regex names the two operand types.
+foundation_neg_compile_test(neg_strong_counter_axes_do_not_mix
+  "no match for .operator==."
+  "operand types are .const foundation::algebra::lattices::Epoch. .aka .const foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type")
+
+# A clock slot at the largest value cannot advance, because the
+# increment would wrap.  The CRUCIBLE_PRE guard in successor_at poisons
+# the constant evaluation, and the location regex proves the trap came
+# from that guard.
+foundation_neg_compile_test(neg_happens_before_successor_overflows
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .foundation::algebra::lattices::HappensBeforeLattice<2>::successor_at\\("
+  "foundation/algebra/lattices/HappensBefore\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+
+# The attacks on the counters and the clock that the compiler refuses.
+# test_counter_clock_attacks holds the ones that compile.
+#
+# The largest count has no successor, because the step would wrap.
+foundation_neg_compile_test(neg_strong_counter_successor_overflows
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::successor\\("
+  "foundation/algebra/lattices/StrongCounterLattice\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+# A counter that exists cannot be edited in place.
+foundation_neg_compile_test(neg_strong_counter_count_is_private
+  "is private within this context"
+  "StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type::value_.")
+# A generation cannot be built from an epoch.
+foundation_neg_compile_test(neg_strong_counter_retag_by_construction
+  "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation>::element_type::element_type\\(<brace-enclosed initializer list>\\)."
+  "no known conversion for argument 1 from .const foundation::algebra::lattices::Epoch. .aka .const foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type.. to .uint64_t.")
+# The join of one axis takes that axis only.
+foundation_neg_compile_test(neg_strong_counter_join_across_axes
+  "cannot convert .element_type<foundation::algebra::lattices::counter_tags::generation>. to .element_type<foundation::algebra::lattices::counter_tags::epoch>."
+  "initializing argument 2 of .static constexpr foundation::algebra::lattices::StrongCounterLattice<Tag>::element_type foundation::algebra::lattices::StrongCounterLattice<Tag>::join\\(")
+# A slot counts events, so a signed argument is refused.
+foundation_neg_compile_test(neg_happens_before_signed_slot
+  "no matching function for call to .make_clock<HB>\\(int, int\\)."
+  "the expression .\\(ClockSlot<Slots> && \\.\\.\\.\\) .with Slots = .int, int... evaluated to .false.")
+# A clock of two slots has no slot two.
+foundation_neg_compile_test(neg_happens_before_slot_out_of_range
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .clock\\.foundation::algebra::lattices::HappensBeforeLattice<2>::element_type::operator..\\(2\\)."
+  "foundation/algebra/lattices/HappensBefore\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+# A receive onto a slot at the largest count cannot count the receive.
+foundation_neg_compile_test(neg_happens_before_merge_overflows
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .foundation::algebra::lattices::HappensBeforeLattice<2>::causal_merge\\(local, received, 0\\)."
+  "in .constexpr. expansion of .foundation::algebra::lattices::HappensBeforeLattice<2>::successor_at\\(")
+# A clock that exists cannot be edited in place.
+foundation_neg_compile_test(neg_happens_before_clock_is_private
+  "is private within this context"
+  "HappensBeforeLattice<2>::element_type::clock_.")
+# Clocks of two protocols do not join.
+foundation_neg_compile_test(neg_happens_before_tags_do_not_join
+  "cannot convert .element_type<.*KernelOrderClock>. to .element_type<.*ReplayClock>."
+  "initializing argument 2 of .static constexpr foundation::algebra::lattices::HappensBeforeLattice<N, Tag>::element_type foundation::algebra::lattices::HappensBeforeLattice<N, Tag>::join\\(")
 
 # A capability source authorizes only its permitted row.
 foundation_neg_compile_test(neg_mint_cap_outside_permitted_row
