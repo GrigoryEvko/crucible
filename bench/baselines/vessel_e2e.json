@@ -6,6 +6,7 @@
     "_comment4": "gate=1 means the run-to-run spread of p50 stayed at or below 5%. gate=0 means the host was contended and the row is void.",
     "_comment5": "No fast-path row. Measured from the source: call_recording in record_kernel.h calls Op::redispatch on every path and discards the result of dispatch_op_pure, so a replayed operation still executes eagerly. This tier adds cost rather than removing it. A shadow tensor type would let a replayed op return a handle without reaching the kernel; the vessel has none, and nothing here approximates it.",
     "_comment6": "add1 is a microbenchmark, not a workload. It is kept because it isolates the per-op cost that the models bury under real arithmetic. Read the models for what the vessel costs a loop.",
+    "_comment7": "add1k, add64k and add1m are the same add at 1K, 64K and 1M elements, each arm in its own process like every other row. At 64K the add's time depends on the physical pages a process gets, so those rows measure the page layout as much as the vessel. The _size_sweep block pairs the arms in one process and is the figure to read for how the cost scales with size.",
     "host": {
       "cpu_model": "AMD EPYC 9655 96-Core Processor",
       "cpu_count": 376,
@@ -22,7 +23,7 @@
       "torch": "2.15.0a0+git8be2400",
       "python": "3.14.7",
       "torch_num_threads": 1,
-      "build_dir": "build-vesselbench"
+      "build_dir": "/tmp/claude-1000/-home-grigory-iprit-crucible/4447896e-ad25-4c93-af89-e879b67abe8f/scratchpad/e2esweep/build"
     },
     "name": "",
     "p50_ns": 0,
@@ -37,66 +38,66 @@
   },
   {
     "name": "mlp_train [INACTIVE, PyTorch alone]",
-    "p50_ns": 164859,
-    "p99_ns": 168651,
-    "p999_ns": 174414,
-    "max_ns": 307768,
-    "p50_ns_per_op": 2258.3,
+    "p50_ns": 161839,
+    "p99_ns": 165136,
+    "p999_ns": 174760,
+    "max_ns": 297768,
+    "p50_ns_per_op": 2217.0,
     "ops_per_iteration": 73,
     "runs": 10,
     "samples_total": 10000,
-    "p50_spread": 0.018,
+    "p50_spread": 0.0088,
     "gate": 1
   },
   {
     "name": "mlp_train [RECORD, first iterations after attach]",
-    "p50_ns": 353252,
-    "p99_ns": 1311982,
-    "p999_ns": 7488696,
-    "max_ns": 60087092,
-    "p50_ns_per_op": 4839.1,
+    "p50_ns": 523585,
+    "p99_ns": 1269840,
+    "p999_ns": 1658557,
+    "max_ns": 61286554,
+    "p50_ns_per_op": 7172.4,
     "ops_per_iteration": 73,
     "runs": 10,
-    "samples_total": 902,
-    "p50_spread": 0.4657,
+    "samples_total": 811,
+    "p50_spread": 0.1111,
     "gate": 0,
-    "_note": "a startup cost: a real loop pays it once, over 391 attaches here because one attach offers only the iterations before the region is built",
-    "_variance": "The spread is in what this row measures, not in the host: the control held 1.80% on the same host in the same session. Recording races the background thread building the region, so its cost varies by nature."
+    "_note": "a startup cost: a real loop pays it once, over 400 attaches here because one attach offers only the iterations before the region is built",
+    "_variance": "The spread is in what this row measures, not in the host: the control held 0.88% on the same host in the same session. Recording races the background thread building the region, so its cost varies by nature."
   },
   {
     "name": "mlp_train [COMPILED, steady state, region replays]",
-    "p50_ns": 205978,
-    "p99_ns": 211066,
-    "p999_ns": 213641,
-    "max_ns": 297006,
-    "p50_ns_per_op": 2821.6,
+    "p50_ns": 201967,
+    "p99_ns": 206214,
+    "p999_ns": 226402,
+    "max_ns": 354895,
+    "p50_ns_per_op": 2766.7,
     "ops_per_iteration": 73,
     "runs": 10,
     "samples_total": 10000,
-    "p50_spread": 0.0212,
+    "p50_spread": 0.0078,
     "gate": 1,
     "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append"
   },
   {
     "name": "mlp_train: RECORD - INACTIVE [startup cost per iteration]",
-    "p50_ns": 188393,
-    "p99_ns": 1143331,
-    "p999_ns": 7314282,
+    "p50_ns": 361746,
+    "p99_ns": 1104704,
+    "p999_ns": 1483797,
     "max_ns": null,
-    "p50_ns_per_op": 2580.7,
-    "p50_overhead_pct": 114.28,
+    "p50_ns_per_op": 4955.4,
+    "p50_overhead_pct": 223.52,
     "ops_per_iteration": 73,
     "gate": 0,
     "_note": "max is absent: the worst iteration of two arms is not a difference"
   },
   {
     "name": "mlp_train: COMPILED - INACTIVE [steady-state cost per iteration]",
-    "p50_ns": 41119,
-    "p99_ns": 42415,
-    "p999_ns": 39227,
+    "p50_ns": 40128,
+    "p99_ns": 41078,
+    "p999_ns": 51642,
     "max_ns": null,
-    "p50_ns_per_op": 563.3,
-    "p50_overhead_pct": 24.94,
+    "p50_ns_per_op": 549.7,
+    "p50_overhead_pct": 24.8,
     "ops_per_iteration": 73,
     "gate": 1,
     "_note": "max is absent: the worst iteration of two arms is not a difference"
@@ -119,9 +120,9 @@
       }
     },
     "_record_samples_per_attach": {
-      "min": 1,
+      "min": 2,
       "median": 2,
-      "max": 55
+      "max": 7
     },
     "_compiled_runs_interrupted": 0,
     "_compiled_divergences": 0
@@ -132,94 +133,93 @@
   },
   {
     "name": "mlp_infer [INACTIVE, PyTorch alone]",
-    "p50_ns": 38554,
-    "p99_ns": 39099,
-    "p999_ns": 40286,
-    "max_ns": 70177,
-    "p50_ns_per_op": 3504.9,
+    "p50_ns": 37712,
+    "p99_ns": 38237,
+    "p999_ns": 39365,
+    "max_ns": 68345,
+    "p50_ns_per_op": 3428.4,
     "ops_per_iteration": 11,
     "runs": 10,
     "samples_total": 40000,
-    "p50_spread": 0.0226,
+    "p50_spread": 0.0147,
     "gate": 1
   },
   {
     "name": "mlp_infer [RECORD, first iterations after attach]",
-    "p50_ns": 60217,
-    "p99_ns": 254907,
-    "p999_ns": 511181,
-    "max_ns": 5236093,
-    "p50_ns_per_op": 5474.3,
+    "p50_ns": 60465,
+    "p99_ns": 396241,
+    "p999_ns": 469834,
+    "max_ns": 714246,
+    "p50_ns_per_op": 5496.8,
     "ops_per_iteration": 11,
     "runs": 10,
-    "samples_total": 2000,
+    "samples_total": 1989,
     "p50_spread": 0.0275,
     "gate": 1,
-    "_note": "a startup cost: a real loop pays it once, over 96 attaches here because one attach offers only the iterations before the region is built"
+    "_note": "a startup cost: a real loop pays it once, over 215 attaches here because one attach offers only the iterations before the region is built"
   },
   {
     "name": "mlp_infer [COMPILED, steady state, region replays]",
-    "p50_ns": 54187,
-    "p99_ns": 59831,
-    "p999_ns": 60464,
-    "max_ns": 61999,
-    "p50_ns_per_op": 4926.1,
+    "p50_ns": 54346,
+    "p99_ns": 60118,
+    "p999_ns": 61929,
+    "max_ns": 94246,
+    "p50_ns_per_op": 4940.5,
     "ops_per_iteration": 11,
-    "runs": 7,
-    "samples_total": 28000,
-    "p50_spread": 0.1008,
-    "gate": 0,
-    "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append",
-    "_variance": "The spread is in what this row measures, not in the host: the control held 2.26% on the same host in the same session. Recording races the background thread building the region, so its cost varies by nature."
+    "runs": 3,
+    "samples_total": 12000,
+    "p50_spread": 0.033,
+    "gate": 1,
+    "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append"
   },
   {
     "name": "mlp_infer: RECORD - INACTIVE [startup cost per iteration]",
-    "p50_ns": 21663,
-    "p99_ns": 215808,
-    "p999_ns": 470895,
+    "p50_ns": 22753,
+    "p99_ns": 358004,
+    "p999_ns": 430469,
     "max_ns": null,
-    "p50_ns_per_op": 1969.4,
-    "p50_overhead_pct": 56.19,
+    "p50_ns_per_op": 2068.5,
+    "p50_overhead_pct": 60.33,
     "ops_per_iteration": 11,
     "gate": 1,
     "_note": "max is absent: the worst iteration of two arms is not a difference"
   },
   {
     "name": "mlp_infer: COMPILED - INACTIVE [steady-state cost per iteration]",
-    "p50_ns": 15633,
-    "p99_ns": 20732,
-    "p999_ns": 20178,
+    "p50_ns": 16634,
+    "p99_ns": 21881,
+    "p999_ns": 22564,
     "max_ns": null,
-    "p50_ns_per_op": 1421.2,
-    "p50_overhead_pct": 40.55,
+    "p50_ns_per_op": 1512.2,
+    "p50_overhead_pct": 44.11,
     "ops_per_iteration": 11,
-    "gate": 0,
+    "gate": 1,
     "_note": "max is absent: the worst iteration of two arms is not a difference"
   },
   {
     "_vigil_state": {
       "record": {
         "compiled": false,
-        "compiled_iterations": 3,
-        "diverged": 173,
+        "compiled_iterations": 6,
+        "diverged": 149,
         "active_num_ops": 12,
-        "bg_iterations": 190
+        "bg_iterations": 169
       },
       "compiled": {
-        "compiled": true,
-        "compiled_iterations": 16446,
-        "diverged": 8223,
+        "compiled": false,
+        "compiled_iterations": 62,
+        "diverged": 7130,
         "active_num_ops": 12,
-        "bg_iterations": 32
+        "bg_iterations": 7161
       }
     },
     "_record_samples_per_attach": {
-      "min": 0,
-      "median": 2,
-      "max": 196
+      "min": 1,
+      "median": 3,
+      "max": 195
     },
-    "_compiled_runs_interrupted": 3,
-    "_compiled_divergences": 111959
+    "_compiled_runs_interrupted": 6,
+    "_compiled_divergences": 107438
   },
   {
     "_workload": "add1",
@@ -228,22 +228,22 @@
   {
     "name": "add1 [INACTIVE, PyTorch alone]",
     "p50_ns": 752,
-    "p99_ns": 792,
-    "p999_ns": 1080,
-    "max_ns": 9188,
+    "p99_ns": 782,
+    "p999_ns": 1099,
+    "max_ns": 12613,
     "p50_ns_per_op": 752.0,
     "ops_per_iteration": 1,
     "runs": 10,
     "samples_total": 1000000,
-    "p50_spread": 0.0266,
+    "p50_spread": 0.0013,
     "gate": 1
   },
   {
     "name": "add1 [harness floor, clock read only]",
     "p50_ns": 50,
     "p99_ns": 60,
-    "p999_ns": 70,
-    "max_ns": 1346,
+    "p999_ns": 80,
+    "max_ns": 1307,
     "p50_ns_per_op": 50.0,
     "ops_per_iteration": 1,
     "runs": 10,
@@ -254,52 +254,52 @@
   },
   {
     "name": "add1 [RECORD, first iterations after attach]",
-    "p50_ns": 921,
-    "p99_ns": 1178,
-    "p999_ns": 2367,
-    "max_ns": 198225,
-    "p50_ns_per_op": 921.0,
+    "p50_ns": 971,
+    "p99_ns": 1278,
+    "p999_ns": 3267,
+    "max_ns": 1352809,
+    "p50_ns_per_op": 971.0,
     "ops_per_iteration": 1,
     "runs": 10,
     "samples_total": 20000,
-    "p50_spread": 0.0424,
+    "p50_spread": 0.0309,
     "gate": 1,
-    "_note": "a startup cost: a real loop pays it once, over 560 attaches here because one attach offers only the iterations before the region is built"
+    "_note": "a startup cost: a real loop pays it once, over 601 attaches here because one attach offers only the iterations before the region is built"
   },
   {
     "name": "add1 [COMPILED, steady state, region replays]",
-    "p50_ns": 930,
-    "p99_ns": 970,
-    "p999_ns": 1158,
-    "max_ns": 241076,
-    "p50_ns_per_op": 930.0,
+    "p50_ns": 911,
+    "p99_ns": 950,
+    "p999_ns": 1188,
+    "max_ns": 120434,
+    "p50_ns_per_op": 911.0,
     "ops_per_iteration": 1,
     "runs": 10,
     "samples_total": 1000000,
-    "p50_spread": 0.0227,
+    "p50_spread": 0.011,
     "gate": 1,
     "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append"
   },
   {
     "name": "add1: RECORD - INACTIVE [startup cost per iteration]",
-    "p50_ns": 169,
-    "p99_ns": 386,
-    "p999_ns": 1287,
+    "p50_ns": 219,
+    "p99_ns": 496,
+    "p999_ns": 2168,
     "max_ns": null,
-    "p50_ns_per_op": 169.0,
-    "p50_overhead_pct": 22.47,
+    "p50_ns_per_op": 219.0,
+    "p50_overhead_pct": 29.12,
     "ops_per_iteration": 1,
     "gate": 1,
     "_note": "max is absent: the worst iteration of two arms is not a difference"
   },
   {
     "name": "add1: COMPILED - INACTIVE [steady-state cost per iteration]",
-    "p50_ns": 178,
-    "p99_ns": 178,
-    "p999_ns": 78,
+    "p50_ns": 159,
+    "p99_ns": 168,
+    "p999_ns": 89,
     "max_ns": null,
-    "p50_ns_per_op": 178.0,
-    "p50_overhead_pct": 23.67,
+    "p50_ns_per_op": 159.0,
+    "p50_overhead_pct": 21.14,
     "ops_per_iteration": 1,
     "gate": 1,
     "_note": "max is absent: the worst iteration of two arms is not a difference"
@@ -311,7 +311,7 @@
         "compiled_iterations": 0,
         "diverged": 0,
         "active_num_ops": 0,
-        "bg_iterations": 14
+        "bg_iterations": 0
       },
       "compiled": {
         "compiled": true,
@@ -330,39 +330,441 @@
     "_compiled_divergences": 0
   },
   {
+    "_workload": "add1k",
+    "ops_per_iteration": 1
+  },
+  {
+    "name": "add1k [INACTIVE, PyTorch alone]",
+    "p50_ns": 851,
+    "p99_ns": 881,
+    "p999_ns": 1109,
+    "max_ns": 12842,
+    "p50_ns_per_op": 851.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 1000000,
+    "p50_spread": 0.0118,
+    "gate": 1
+  },
+  {
+    "name": "add1k [RECORD, first iterations after attach]",
+    "p50_ns": 1079,
+    "p99_ns": 1337,
+    "p999_ns": 2505,
+    "max_ns": 191393,
+    "p50_ns_per_op": 1079.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 20000,
+    "p50_spread": 0.0466,
+    "gate": 1,
+    "_note": "a startup cost: a real loop pays it once, over 620 attaches here because one attach offers only the iterations before the region is built"
+  },
+  {
+    "name": "add1k [COMPILED, steady state, region replays]",
+    "p50_ns": 1020,
+    "p99_ns": 1060,
+    "p999_ns": 1297,
+    "max_ns": 118820,
+    "p50_ns_per_op": 1020.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 1000000,
+    "p50_spread": 0.0294,
+    "gate": 1,
+    "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append"
+  },
+  {
+    "name": "add1k: RECORD - INACTIVE [startup cost per iteration]",
+    "p50_ns": 228,
+    "p99_ns": 456,
+    "p999_ns": 1396,
+    "max_ns": null,
+    "p50_ns_per_op": 228.0,
+    "p50_overhead_pct": 26.79,
+    "ops_per_iteration": 1,
+    "gate": 1,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "name": "add1k: COMPILED - INACTIVE [steady-state cost per iteration]",
+    "p50_ns": 169,
+    "p99_ns": 179,
+    "p999_ns": 188,
+    "max_ns": null,
+    "p50_ns_per_op": 169.0,
+    "p50_overhead_pct": 19.86,
+    "ops_per_iteration": 1,
+    "gate": 1,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "_vigil_state": {
+      "record": {
+        "compiled": false,
+        "compiled_iterations": 0,
+        "diverged": 0,
+        "active_num_ops": 0,
+        "bg_iterations": 0
+      },
+      "compiled": {
+        "compiled": true,
+        "compiled_iterations": 20020,
+        "diverged": 0,
+        "active_num_ops": 5,
+        "bg_iterations": 2
+      }
+    },
+    "_record_samples_per_attach": {
+      "min": 0,
+      "median": 60,
+      "max": 60
+    },
+    "_compiled_runs_interrupted": 0,
+    "_compiled_divergences": 0
+  },
+  {
+    "_workload": "add64k",
+    "ops_per_iteration": 1
+  },
+  {
+    "name": "add64k [INACTIVE, PyTorch alone]",
+    "p50_ns": 5663,
+    "p99_ns": 6346,
+    "p999_ns": 6534,
+    "max_ns": 41949,
+    "p50_ns_per_op": 5663.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 200000,
+    "p50_spread": 0.1886,
+    "gate": 0,
+    "_variance": "The control was void too, so the host was contended and this row is void with it. Re-run on a quiet host."
+  },
+  {
+    "name": "add64k [RECORD, first iterations after attach]",
+    "p50_ns": 6515,
+    "p99_ns": 154344,
+    "p999_ns": 186373,
+    "max_ns": 2607650,
+    "p50_ns_per_op": 6515.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 6000,
+    "p50_spread": 0.0365,
+    "gate": 1,
+    "_note": "a startup cost: a real loop pays it once, over 131 attaches here because one attach offers only the iterations before the region is built"
+  },
+  {
+    "name": "add64k [COMPILED, steady state, region replays]",
+    "p50_ns": 5386,
+    "p99_ns": 6159,
+    "p999_ns": 6386,
+    "max_ns": 24030,
+    "p50_ns_per_op": 5386.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 200000,
+    "p50_spread": 0.055,
+    "gate": 0,
+    "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append",
+    "_variance": "The control was void too, so the host was contended and this row is void with it. Re-run on a quiet host."
+  },
+  {
+    "name": "add64k: RECORD - INACTIVE [startup cost per iteration]",
+    "p50_ns": 852,
+    "p99_ns": 147998,
+    "p999_ns": 179839,
+    "max_ns": null,
+    "p50_ns_per_op": 852.0,
+    "p50_overhead_pct": 15.05,
+    "ops_per_iteration": 1,
+    "gate": 0,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "name": "add64k: COMPILED - INACTIVE [steady-state cost per iteration]",
+    "p50_ns": -277,
+    "p99_ns": -187,
+    "p999_ns": -148,
+    "max_ns": null,
+    "p50_ns_per_op": -277.0,
+    "p50_overhead_pct": -4.89,
+    "ops_per_iteration": 1,
+    "gate": 0,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "_vigil_state": {
+      "record": {
+        "compiled": false,
+        "compiled_iterations": 0,
+        "diverged": 0,
+        "active_num_ops": 0,
+        "bg_iterations": 0
+      },
+      "compiled": {
+        "compiled": true,
+        "compiled_iterations": 4020,
+        "diverged": 0,
+        "active_num_ops": 5,
+        "bg_iterations": 2
+      }
+    },
+    "_record_samples_per_attach": {
+      "min": 1,
+      "median": 30,
+      "max": 313
+    },
+    "_compiled_runs_interrupted": 0,
+    "_compiled_divergences": 0
+  },
+  {
+    "_workload": "add1m",
+    "ops_per_iteration": 1
+  },
+  {
+    "name": "add1m [INACTIVE, PyTorch alone]",
+    "p50_ns": 90563,
+    "p99_ns": 106612,
+    "p999_ns": 111374,
+    "max_ns": 112790,
+    "p50_ns_per_op": 90563.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 10000,
+    "p50_spread": 0.0056,
+    "gate": 1
+  },
+  {
+    "name": "add1m [RECORD, first iterations after attach]",
+    "p50_ns": 98345,
+    "p99_ns": 414280,
+    "p999_ns": 678166,
+    "max_ns": 1237890,
+    "p50_ns_per_op": 98345.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 3000,
+    "p50_spread": 0.1217,
+    "gate": 0,
+    "_note": "a startup cost: a real loop pays it once, over 200 attaches here because one attach offers only the iterations before the region is built",
+    "_variance": "The spread is in what this row measures, not in the host: the control held 0.56% on the same host in the same session. Recording races the background thread building the region, so its cost varies by nature."
+  },
+  {
+    "name": "add1m [COMPILED, steady state, region replays]",
+    "p50_ns": 90612,
+    "p99_ns": 103147,
+    "p999_ns": 111156,
+    "max_ns": 113533,
+    "p50_ns_per_op": 90612.0,
+    "ops_per_iteration": 1,
+    "runs": 10,
+    "samples_total": 10000,
+    "p50_spread": 0.0033,
+    "gate": 1,
+    "_note": "dispatch still reaches the recording kernel and the operation still executes eagerly; the replay only replaces the ring append"
+  },
+  {
+    "name": "add1m: RECORD - INACTIVE [startup cost per iteration]",
+    "p50_ns": 7782,
+    "p99_ns": 307668,
+    "p999_ns": 566792,
+    "max_ns": null,
+    "p50_ns_per_op": 7782.0,
+    "p50_overhead_pct": 8.59,
+    "ops_per_iteration": 1,
+    "gate": 0,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "name": "add1m: COMPILED - INACTIVE [steady-state cost per iteration]",
+    "p50_ns": 49,
+    "p99_ns": -3465,
+    "p999_ns": -218,
+    "max_ns": null,
+    "p50_ns_per_op": 49.0,
+    "p50_overhead_pct": 0.05,
+    "ops_per_iteration": 1,
+    "gate": 1,
+    "_note": "max is absent: the worst iteration of two arms is not a difference"
+  },
+  {
+    "_vigil_state": {
+      "record": {
+        "compiled": false,
+        "compiled_iterations": 0,
+        "diverged": 0,
+        "active_num_ops": 0,
+        "bg_iterations": 1
+      },
+      "compiled": {
+        "compiled": true,
+        "compiled_iterations": 221,
+        "diverged": 0,
+        "active_num_ops": 5,
+        "bg_iterations": 1
+      }
+    },
+    "_record_samples_per_attach": {
+      "min": 13,
+      "median": 15,
+      "max": 16
+    },
+    "_compiled_runs_interrupted": 0,
+    "_compiled_divergences": 0
+  },
+  {
+    "_size_sweep": [
+      {
+        "name": "add.out 1 elements [paired: COMPILED - INACTIVE]",
+        "elements": 1,
+        "inactive_p50_ns": 821,
+        "compiled_p50_ns": 1040,
+        "inactive_after_p50_ns": 812,
+        "overhead_p50_ns": 208,
+        "overhead_p50_ns_min": 199,
+        "overhead_p50_ns_max": 247,
+        "overhead_pct": 25.62,
+        "overhead_pct_min": 23.66,
+        "overhead_pct_max": 30.42,
+        "inactive_p50_ns_across_processes": [
+          812,
+          841
+        ],
+        "inactive_p99_ns": 852,
+        "compiled_p99_ns": 1080,
+        "inactive_p999_ns": 1149,
+        "compiled_p999_ns": 1346,
+        "inactive_max_ns": 13693,
+        "compiled_max_ns": 74177,
+        "worst_arm_p50_spread": 0.0373,
+        "worst_drift": 0.011,
+        "processes": 5,
+        "runs_per_arm": 10,
+        "gate": 1
+      },
+      {
+        "name": "add.out 1024 elements [paired: COMPILED - INACTIVE]",
+        "elements": 1024,
+        "inactive_p50_ns": 861,
+        "compiled_p50_ns": 1069,
+        "inactive_after_p50_ns": 851,
+        "overhead_p50_ns": 208,
+        "overhead_p50_ns_min": 199,
+        "overhead_p50_ns_max": 219,
+        "overhead_pct": 24.16,
+        "overhead_pct_min": 23.11,
+        "overhead_pct_max": 25.44,
+        "inactive_p50_ns_across_processes": [
+          852,
+          871
+        ],
+        "inactive_p99_ns": 901,
+        "compiled_p99_ns": 1109,
+        "inactive_p999_ns": 1217,
+        "compiled_p999_ns": 1367,
+        "inactive_max_ns": 18337,
+        "compiled_max_ns": 123512,
+        "worst_arm_p50_spread": 0.0358,
+        "worst_drift": 0.0116,
+        "processes": 5,
+        "runs_per_arm": 10,
+        "gate": 1
+      },
+      {
+        "name": "add.out 65536 elements [paired: COMPILED - INACTIVE]",
+        "elements": 65536,
+        "inactive_p50_ns": 4653,
+        "compiled_p50_ns": 4920,
+        "inactive_after_p50_ns": 4683,
+        "overhead_p50_ns": 267,
+        "overhead_p50_ns_min": 109,
+        "overhead_p50_ns_max": 356,
+        "overhead_pct": 6.13,
+        "overhead_pct_min": 2.37,
+        "overhead_pct_max": 6.93,
+        "inactive_p50_ns_across_processes": [
+          4356,
+          5139
+        ],
+        "inactive_p99_ns": 5535,
+        "compiled_p99_ns": 5881,
+        "inactive_p999_ns": 5752,
+        "compiled_p999_ns": 6079,
+        "inactive_max_ns": 896450,
+        "compiled_max_ns": 20257,
+        "worst_arm_p50_spread": 0.0503,
+        "worst_drift": 0.0319,
+        "processes": 5,
+        "runs_per_arm": 10,
+        "gate": 0
+      },
+      {
+        "name": "add.out 1048576 elements [paired: COMPILED - INACTIVE]",
+        "elements": 1048576,
+        "inactive_p50_ns": 90276,
+        "compiled_p50_ns": 90602,
+        "inactive_after_p50_ns": 90236,
+        "overhead_p50_ns": 287,
+        "overhead_p50_ns_min": -1842,
+        "overhead_p50_ns_max": 326,
+        "overhead_pct": 0.32,
+        "overhead_pct_min": -1.99,
+        "overhead_pct_max": 0.36,
+        "inactive_p50_ns_across_processes": [
+          90256,
+          92504
+        ],
+        "inactive_p99_ns": 108444,
+        "compiled_p99_ns": 106979,
+        "inactive_p999_ns": 110642,
+        "compiled_p999_ns": 110870,
+        "inactive_max_ns": 112810,
+        "compiled_max_ns": 116880,
+        "worst_arm_p50_spread": 0.0086,
+        "worst_drift": 0.0014,
+        "processes": 5,
+        "runs_per_arm": 10,
+        "gate": 1
+      }
+    ],
+    "_size_sweep_note": "The add at four sizes, each arm paired in one process: INACTIVE, then COMPILED, then INACTIVE again over the same buffers, so the page layout cancels in the difference. Figures are medians over 5 processes of per-process p50s. A flat overhead in ns across sizes puts the cost in the dispatch machinery; a flat overhead in percent puts it in the kernel's arithmetic. The add writes into a preallocated output, so the allocator is out of the loop at every size."
+  },
+  {
     "_perf_stat": [
       {
         "workload": "mlp_train",
         "arm": "record",
         "events": {
-          "cycles:u": 11316886321.0,
-          "instructions:u": 11118398600.0,
-          "L1-dcache-load-misses:u": 447508257.0
+          "cycles:u": 10745021857.0,
+          "instructions:u": 12536328749.0,
+          "L1-dcache-load-misses:u": 437016869.0
         },
         "paranoid": "2",
-        "insn_per_cycle": 0.982
+        "insn_per_cycle": 1.167
       },
       {
         "workload": "mlp_train",
         "arm": "compiled",
         "events": {
-          "cycles:u": 17529209884.0,
-          "instructions:u": 17101221241.0,
-          "L1-dcache-load-misses:u": 340270857.0
+          "cycles:u": 17165669880.0,
+          "instructions:u": 17019593034.0,
+          "L1-dcache-load-misses:u": 339931394.0
         },
         "paranoid": "2",
-        "insn_per_cycle": 0.976
+        "insn_per_cycle": 0.991
       },
       {
         "workload": "mlp_train",
         "arm": "inactive",
         "events": {
-          "cycles:u": 7376831727.0,
-          "instructions:u": 12688549417.0,
-          "L1-dcache-load-misses:u": 318629944.0
+          "cycles:u": 7356769512.0,
+          "instructions:u": 12696054516.0,
+          "L1-dcache-load-misses:u": 317829276.0
         },
         "paranoid": "2",
-        "insn_per_cycle": 1.72
+        "insn_per_cycle": 1.726
       }
     ],
     "_perf_note": "Counters over the whole arm process, interpreter startup included, so this is a profile of the arm and not a per-iteration decomposition. A `:u` suffix means the host counts user mode only."

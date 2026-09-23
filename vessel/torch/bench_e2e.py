@@ -23,6 +23,11 @@ to measure. A model gives the runtime the shape it was built for.
                 11 ATen operations per iteration
     add1        One-element add. A microbenchmark, kept because it isolates the
                 per-op cost that the models bury under real arithmetic
+    add1k       The same add at 1K, 64K and 1M float32 elements. The size sweep
+    add64k      separates two causes of the attached arms' cost. A cost that
+    add1m       stays flat in nanoseconds as the add grows is in the dispatch
+                machinery. A cost that stays a flat fraction of a growing add
+                is in the kernel's arithmetic itself
 
 RECORDING IS A STARTUP COST, REPLAY IS THE STEADY STATE
 
@@ -56,6 +61,7 @@ USAGE
     taskset -c 88 .venv-torch/bin/python vessel/torch/bench_e2e.py
     taskset -c 88 .venv-torch/bin/python vessel/torch/bench_e2e.py \
         --workload mlp_train --arm record
+    taskset -c 88 .venv-torch/bin/python vessel/torch/bench_e2e.py --sweep-only
 
 The pin matters. Refer to the Code Guide, "Measurement discipline". Set
 CRUCIBLE_BUILD_DIR to the directory holding the libraries under test.
@@ -82,7 +88,12 @@ SEED = 42
 # Iterations per run, per workload. Chosen so a run is about a fifth of a
 # second: long enough for a stable per-run p50, short enough that ten runs of
 # nine (workload, arm) pairs finish in about a minute.
-ITERATIONS = {"mlp_train": 1_000, "mlp_infer": 4_000, "add1": 100_000}
+ITERATIONS = {"mlp_train": 1_000, "mlp_infer": 4_000, "add1": 100_000,
+              "add1k": 100_000, "add64k": 20_000, "add1m": 1_000}
+
+# The element count of each add workload. One operation per iteration for all
+# four, so a per-iteration figure is a per-op figure.
+ADD_SIZES = {"add1": 1, "add1k": 1 << 10, "add64k": 1 << 16, "add1m": 1 << 20}
 
 # The model. Small enough that one core runs an iteration in a few hundred
 # microseconds, large enough that each operation does real arithmetic: at batch
@@ -96,13 +107,20 @@ DEPTH = 4
 # them for the first time, so the RECORD arm holds its attach count down. It
 # takes every iteration a window offers, which is what makes a small count
 # enough.
-RECORD_ATTACH_BUDGET = {"mlp_train": 40, "mlp_infer": 40, "add1": 80}
-RECORD_SAMPLES_PER_RUN = {"mlp_train": 120, "mlp_infer": 200, "add1": 2_000}
+RECORD_ATTACH_BUDGET = {"mlp_train": 40, "mlp_infer": 40, "add1": 80,
+                        "add1k": 80, "add64k": 40, "add1m": 20}
+RECORD_SAMPLES_PER_RUN = {"mlp_train": 120, "mlp_infer": 200, "add1": 2_000,
+                          "add1k": 2_000, "add64k": 600, "add1m": 300}
 
 # The add1 microbenchmark reaches a replayed region after a couple of hundred
 # ops, so it is timed in chunks and only chunks the mode brackets are kept.
 ADD1_CHUNK = 10
 ADD1_KEEP_CHUNKS = 6
+
+# The adds short enough that a mode check between two of them would cost as much
+# as the add. The larger adds are timed one at a time, because the Vigil builds
+# a region before enough chunks of them pass.
+ADD_CHUNKED = {"add1", "add1k"}
 
 # The run-to-run spread of p50 above which the host is judged to be contended
 # and the numbers are discarded rather than reported with a caveat.
@@ -228,10 +246,12 @@ def build_workload(kind: str):
 
     torch.manual_seed(SEED)
 
-    if kind == "add1":
+    if kind in ADD_SIZES:
         # No model of its own, but attach wants one. Identity adds no operation
         # to the iteration, because nothing calls it.
-        left, right = torch.ones(1), torch.ones(1)
+        elements = ADD_SIZES[kind]
+        left = torch.ones(elements, dtype=torch.float32)
+        right = torch.ones(elements, dtype=torch.float32)
 
         def add_step() -> None:
             """One elementwise add."""
@@ -402,8 +422,10 @@ def record_window(kind: str, ctx, step, clock, want: int) -> list[int]:
     Returns:
         The samples taken while the Vigil recorded
     """
-    if kind == "add1":
+    if kind in ADD_CHUNKED:
         return add1_window(ctx, step, clock, want)
+    if kind in ADD_SIZES:
+        return add_window(ctx, step, clock, want)
 
     samples: list[int] = []
     previous = clock()
@@ -439,6 +461,27 @@ def add1_window(ctx, step, clock, want: int) -> list[int]:
         return []
     kept = [s for c in collected[1:1 + ADD1_KEEP_CHUNKS] for s in c]
     return kept[:want]
+
+
+def add_window(ctx, step, clock, want: int) -> list[int]:
+    """Time single adds of one attach for as long as the Vigil still records.
+
+    A large add runs for microseconds, so the Vigil publishes a region after too
+    few of them to fill the chunks that add1_window wants. Here each add is its
+    own sample, and the clock brackets the add alone: the mode check sits
+    outside the bracket, where it cannot bias an add of a few microseconds.
+    """
+    samples: list[int] = []
+    while len(samples) < want and not ctx.is_compiled():
+        before = clock()
+        step()
+        after = clock()
+        # Read after the add. A True here means the add straddled the
+        # transition, so it belongs to neither mode.
+        if ctx.is_compiled():
+            break
+        samples.append(after - before)
+    return samples
 
 
 def arm_compiled(kind: str, runs: int, count: int) -> dict:
@@ -526,6 +569,206 @@ def vigil_state(ctx) -> dict:
 
 
 ARMS = {"inactive": arm_inactive, "record": arm_record, "compiled": arm_compiled}
+
+
+# =====================================================================
+# Paired size sweep
+# =====================================================================
+#
+# The add workloads above run each arm in a process of its own, and at 64K
+# elements that design measures page placement as much as the vessel: three
+# 256 KB buffers fill most of a 1 MB L2, so the add's time depends on which
+# physical pages a process happens to get. Measured on the bench host, one
+# add.out at 64K took 4.8 us in one process and 6.0 us in another, with each
+# process steady to 1% inside itself. A difference of two separate-process
+# p50s at that size is therefore mostly a difference of two page layouts.
+#
+# The sweep pairs the arms instead. One process times INACTIVE, attaches and
+# times COMPILED, detaches and times INACTIVE again, all over the same three
+# buffers, so the layout cancels in the difference. The second INACTIVE is the
+# drift witness: if it moved from the first, something other than the vessel
+# changed between them. Several processes repeat the triple, so the difference
+# is shown to hold across layouts rather than for one.
+#
+# The add writes into a preallocated output (add.out). The `+` form allocates
+# its output every iteration, and measured at 64K the allocator then handed out
+# addresses that alternated the per-run p50 by 10% inside one process.
+
+SWEEP_SIZES = (1, 1 << 10, 1 << 16, 1 << 20)
+SWEEP_ITERATIONS = {1: 100_000, 1 << 10: 100_000, 1 << 16: 20_000, 1 << 20: 1_000}
+SWEEP_PROCESSES = 5
+
+
+def build_add_out(elements: int):
+    """Build the sweep's add: two float32 inputs added into a fixed output.
+
+    Args:
+        elements: The element count of each of the three tensors
+
+    Returns:
+        The callable that performs one add
+    """
+    import torch
+
+    left = torch.ones(elements, dtype=torch.float32)
+    right = torch.ones(elements, dtype=torch.float32)
+    out = torch.empty(elements, dtype=torch.float32)
+
+    def add_out_step() -> None:
+        """One elementwise add into the preallocated output."""
+        torch.add(left, right, out=out)
+
+    return add_out_step
+
+
+def timed_runs(step, runs: int, count: int) -> list[list[int]]:
+    """The per-iteration samples of `runs` back-to-back runs of `count` steps."""
+    clock = time.perf_counter_ns
+    stamps = [0] * (count + 1)
+    per_run = []
+    for _ in range(runs):
+        time_iterations(count, step, stamps, clock)
+        per_run.append(diffs(stamps, count))
+    return per_run
+
+
+def sweep_process(elements: int, runs: int, count: int) -> dict:
+    """One paired triple: INACTIVE, COMPILED, INACTIVE again, one process.
+
+    Args:
+        elements: The element count of the add
+        runs: Runs per arm
+        count: Adds per run
+
+    Returns:
+        The three reduced arms, and the Vigil state at the end of COMPILED
+    """
+    import torch.nn as nn
+    from crucible_native import attach
+
+    step = build_add_out(elements)
+    for _ in range(min(count, 200)):
+        step()                                    # warm the caches
+
+    before = across_runs(timed_runs(step, runs, count))
+
+    with attach(nn.Identity(), None) as ctx:
+        if not pump_until_replaying(ctx, step, 30.0):
+            return {"elements": elements, "unavailable": "the Vigil never replayed",
+                    "vigil": vigil_state(ctx)}
+        timed_runs(step, 1, min(count, 100))      # settle
+        compiled_runs = timed_runs(step, runs, count)
+        # A divergence inside the window would mix recorded adds into the
+        # steady-state figure, so it voids the triple rather than hiding in it.
+        replayed_throughout = ctx.is_compiled() and ctx.diverged_count() == 0
+        state = vigil_state(ctx)
+    compiled = across_runs(compiled_runs)
+
+    after = across_runs(timed_runs(step, runs, count))
+
+    return {"elements": elements, "inactive_before": before, "compiled": compiled,
+            "inactive_after": after, "replayed_throughout": replayed_throughout,
+            "vigil": state}
+
+
+def spawn_sweep(elements: int, runs: int) -> dict:
+    """Run one paired triple in a process of its own and return its report."""
+    done = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()),
+         "--sweep-size", str(elements), "--runs", str(runs), "--emit-json"],
+        capture_output=True, text=True)
+    if done.returncode != 0:
+        raise RuntimeError(f"sweep {elements} failed:\n{done.stdout}\n{done.stderr}")
+    for line in reversed(done.stdout.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            continue
+    raise RuntimeError(f"sweep {elements} printed no JSON report:\n{done.stdout}")
+
+
+def run_sweep(runs: int) -> list:
+    """Run every size of the sweep, SWEEP_PROCESSES processes each.
+
+    The sizes interleave across the processes rather than running one size to
+    the end, so a slow change in the host lands on every size alike.
+    """
+    by_size: dict[int, list[dict]] = {size: [] for size in SWEEP_SIZES}
+    for index in range(SWEEP_PROCESSES):
+        for size in SWEEP_SIZES:
+            print(f"[bench_e2e] sweep {size} elements, process {index + 1}/"
+                  f"{SWEEP_PROCESSES} ...", file=sys.stderr, flush=True)
+            by_size[size].append(spawn_sweep(size, runs))
+    return sweep_rows(by_size)
+
+
+def sweep_rows(by_size: dict[int, list[dict]]) -> list:
+    """Reduce the paired triples of every size to one row per size.
+
+    The row's figures are medians over the processes of per-process values, so a
+    process whose layout made the add slow counts once and does not move the
+    row. The gate reads three things: every arm of every process held its
+    run-to-run spread, the second INACTIVE stayed within the same bound of the
+    first, and the Vigil replayed without a divergence for the whole window.
+
+    Args:
+        by_size: The triples of each size, one per process
+
+    Returns:
+        One row per size, in size order
+    """
+    rows = []
+    for elements in sorted(by_size):
+        triples = [t for t in by_size[elements] if "compiled" in t]
+        if not triples:
+            rows.append({"name": f"add.out {elements} elements [paired]",
+                         "elements": elements, "gate": 0,
+                         "_unavailable": "no process reached a replayed region"})
+            continue
+
+        base = [t["inactive_before"]["p50_ns"] for t in triples]
+        comp = [t["compiled"]["p50_ns"] for t in triples]
+        after = [t["inactive_after"]["p50_ns"] for t in triples]
+        delta = [c - b for c, b in zip(comp, base)]
+        pct = [100.0 * d / b for d, b in zip(delta, base)]
+        drift = [abs(a - b) / b for a, b in zip(after, base)]
+        spreads = [t[arm]["p50_spread"] for t in triples
+                   for arm in ("inactive_before", "compiled", "inactive_after")]
+
+        passes = (len(triples) == len(by_size[elements])
+                  and all(s is not None and s <= VARIANCE_GATE for s in spreads)
+                  and all(d <= VARIANCE_GATE for d in drift)
+                  and all(t["replayed_throughout"] for t in triples))
+
+        rows.append({
+            "name": f"add.out {elements} elements [paired: COMPILED - INACTIVE]",
+            "elements": elements,
+            "inactive_p50_ns": median(base),
+            "compiled_p50_ns": median(comp),
+            "inactive_after_p50_ns": median(after),
+            "overhead_p50_ns": median(delta),
+            "overhead_p50_ns_min": min(delta),
+            "overhead_p50_ns_max": max(delta),
+            "overhead_pct": round(median(pct), 2),
+            "overhead_pct_min": round(min(pct), 2),
+            "overhead_pct_max": round(max(pct), 2),
+            "inactive_p50_ns_across_processes": [min(base), max(base)],
+            "inactive_p99_ns": median([t["inactive_before"]["p99_ns"] for t in triples]),
+            "compiled_p99_ns": median([t["compiled"]["p99_ns"] for t in triples]),
+            "inactive_p999_ns": median([t["inactive_before"]["p999_ns"] for t in triples]),
+            "compiled_p999_ns": median([t["compiled"]["p999_ns"] for t in triples]),
+            "inactive_max_ns": max(t["inactive_before"]["max_ns"] for t in triples),
+            "compiled_max_ns": max(t["compiled"]["max_ns"] for t in triples),
+            "worst_arm_p50_spread": round(max(s for s in spreads if s is not None), 4),
+            "worst_drift": round(max(drift), 4),
+            "processes": len(triples),
+            "runs_per_arm": triples[0]["compiled"]["runs"],
+            "gate": 1 if passes else 0,
+        })
+    return rows
 
 
 # =====================================================================
@@ -829,7 +1072,8 @@ def workload_block(kind: str, reports: dict[str, dict]) -> list:
 
 
 def build_document(by_workload: dict[str, dict], runs: int,
-                   perf: list[dict] | None) -> list:
+                   perf: list[dict] | None,
+                   sweep: list | None = None) -> list:
     """Assemble the baseline document.
 
     The shape follows bench/baselines/record_leaf.json: a list whose first
@@ -866,6 +1110,12 @@ def build_document(by_workload: dict[str, dict], runs: int,
         "_comment6": "add1 is a microbenchmark, not a workload. It is kept because it "
                      "isolates the per-op cost that the models bury under real "
                      "arithmetic. Read the models for what the vessel costs a loop.",
+        "_comment7": "add1k, add64k and add1m are the same add at 1K, 64K and 1M "
+                     "elements, each arm in its own process like every other row. "
+                     "At 64K the add's time depends on the physical pages a process "
+                     "gets, so those rows measure the page layout as much as the "
+                     "vessel. The _size_sweep block pairs the arms in one process "
+                     "and is the figure to read for how the cost scales with size.",
         "host": host,
         "name": "", "p50_ns": 0, "p99_ns": 0, "p999_ns": 0, "max_ns": 0, "gate": 0,
     }
@@ -873,6 +1123,21 @@ def build_document(by_workload: dict[str, dict], runs: int,
     document: list = [header]
     for kind in by_workload:
         document += workload_block(kind, by_workload[kind])
+
+    if sweep:
+        document.append({
+            "_size_sweep": sweep,
+            "_size_sweep_note": "The add at four sizes, each arm paired in one "
+                                "process: INACTIVE, then COMPILED, then INACTIVE "
+                                "again over the same buffers, so the page layout "
+                                "cancels in the difference. Figures are medians over "
+                                f"{SWEEP_PROCESSES} processes of per-process p50s. "
+                                "A flat overhead in ns across sizes puts the cost in "
+                                "the dispatch machinery; a flat overhead in percent "
+                                "puts it in the kernel's arithmetic. The add writes "
+                                "into a preallocated output, so the allocator is out "
+                                "of the loop at every size.",
+        })
 
     if perf:
         document.append({
@@ -901,7 +1166,25 @@ def main() -> int:
                         help="skip the hardware-counter table")
     parser.add_argument("--perf-runs", type=int, default=2,
                         help="runs to give each arm under perf")
+    parser.add_argument("--sweep-size", type=int, choices=SWEEP_SIZES,
+                        help="run one paired triple of the size sweep in this process")
+    parser.add_argument("--no-sweep", action="store_true",
+                        help="skip the paired size sweep")
+    parser.add_argument("--sweep-only", action="store_true",
+                        help="run the paired size sweep and print it, write nothing")
     args = parser.parse_args()
+
+    if args.sweep_size:
+        import torch
+        torch.set_num_threads(1)
+        count = args.iterations or SWEEP_ITERATIONS[args.sweep_size]
+        report = sweep_process(args.sweep_size, args.runs, count)
+        print(json.dumps(report))
+        return 0
+
+    if args.sweep_only:
+        print(json.dumps(run_sweep(args.runs), indent=2))
+        return 0
 
     if args.arm:
         kind = args.workload or "mlp_train"
@@ -930,7 +1213,9 @@ def main() -> int:
             perf.append(perf_stat("mlp_train", name, args.perf_runs,
                                   ITERATIONS["mlp_train"]))
 
-    document = build_document(by_workload, args.runs, perf)
+    sweep = None if args.no_sweep else run_sweep(args.runs)
+
+    document = build_document(by_workload, args.runs, perf, sweep)
     text = json.dumps(document, indent=2) + "\n"
 
     out = Path(args.out)
