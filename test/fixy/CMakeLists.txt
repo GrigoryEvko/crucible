@@ -1873,6 +1873,12 @@ fixy_neg_compile_test(neg_session_payload_token_in_optional
 fixy_neg_compile_test(neg_session_payload_type_erased
   "Payload_Refused.: the payload cannot travel on a session channel"
   "holds a type-erasure family")
+fixy_neg_compile_test(neg_session_payload_token_in_boxed_pointee
+  "Payload_Refused.: the payload cannot travel on a session channel, because it reaches a permission token through a pointer or a reference"
+  "payload_perm_delta<std::unique_ptr<.anonymous.::Box<int> > >")
+fixy_neg_compile_test(neg_session_payload_declared_template_behind_pointer
+  "Payload_Refused.: the payload cannot travel on a session channel, because it reaches a class or a template that is only declared"
+  "payload_verdict_of\\(\\) \\[with P = .anonymous.::OpaqueFrame<int>\\*\\]")
 
 # A token reaches a hold once: never by name, and never twice by tag.
 fixy_neg_compile_test(neg_session_hold_lvalue_token
