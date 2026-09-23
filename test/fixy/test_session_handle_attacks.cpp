@@ -624,17 +624,20 @@ struct CycleLeftB {
 
 // ── A hot path that waits in a receive ───────────────────────────────
 //
-// A hot binding that holds a handle at a receive compiles.  The wait is
-// the transport's, and the binding states no wait strategy, so W001 has
-// nothing to read.  This is not in the runtime ledger because nothing
-// runs; it is pinned here so that a rule for it replaces the pin.
+// A hot binding that holds a handle at a receive waits in the transport,
+// and the transport can wait in the kernel.  Collision rule W003 refuses
+// the binding until it states its wait strategy.  With a stated spin the
+// binding is admitted, and with a stated kernel wait W001 refuses it.
 struct hot_invariant final {};
-using HotWaitsInRecv =
+template <class... Wait>
+using HotHoldsRecv =
     ::fixy::collision::live_rules<::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
                                   ::fixy::atom::refined_with<hot_invariant>, ::fixy::atom::as_public,
-                                  ::fixy::atom::session::live_handle<s::Recv<Ping, s::End>>>;
-static_assert(HotWaitsInRecv::valid,
-              "a hot binding that holds a handle at a receive is admitted: no rule reads the wait of a transport");
+                                  ::fixy::atom::session::live_handle<s::Recv<Ping, s::End>>, Wait...>;
+static_assert(!HotHoldsRecv<>::W003_ok && !HotHoldsRecv<>::valid,
+              "a hot binding that holds a handle at a receive and states no wait is refused");
+static_assert(HotHoldsRecv<::fixy::atom::sync::spin_pause>::valid, "a stated spin is the hot-path wait");
+static_assert(!HotHoldsRecv<::fixy::atom::sync::park>::W001_ok, "a stated kernel wait is refused by W001");
 
 // ── The runner ───────────────────────────────────────────────────────
 

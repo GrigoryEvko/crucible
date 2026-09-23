@@ -72,6 +72,12 @@ struct NamesNoexceptSignature {
 struct NamesDataSignature {
     using signature = int;
 };
+// Two grades that name no wait strategy: an atom on the axis with no
+// member, and a type whose member is not a WaitStrategy.
+struct NamesNoStrategy final : at::atom_of<::fixy::Axis::Synchronization> {};
+struct NamesIntStrategy {
+    static constexpr int strategy = 0;
+};
 
 using BgCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg>>;
 using BgIoCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::IO>>;
@@ -360,6 +366,14 @@ template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::is_busy_wait_> {
     using accepts = witnesses<at::sync::bounded_spin, at::sync::spin_pause>;
     using refuses = witnesses<at::sync::umwait_c01, at::sync::block, int>;
+};
+
+// A grade names a wait strategy when its `strategy` member is a
+// WaitStrategy.  A type on the axis with no strategy names none.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::has_wait_strategy_> {
+    using accepts = witnesses<at::sync::block, at::sync::umwait_c01, at::sync::spin_pause>;
+    using refuses = witnesses<int, w::Plain, w::NamesNoStrategy, w::NamesIntStrategy>;
 };
 
 // A family names a noexcept signature through a function type, a pointer

@@ -493,6 +493,17 @@ fixy_neg_compile_test(neg_rule_r004_copy_frame_suspends_handle_payload
   "Collision rule\\(s\\) R004:"
   "${_fixy_tier5_member}")
 
+# W003: the hot regime, a live session handle and no stated wait.  One
+# fixture states the handle as an atom, and one carries it as the payload.
+fixy_neg_compile_test(neg_rule_w003_hot_live_handle_unstated_wait
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) W003:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_w003_hot_session_payload_unstated_wait
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) W003:"
+  "${_fixy_tier5_member}")
+
 # The Security grade is read through one closed relation, and its primary
 # has no definition.  An atom on the axis that the relation does not name
 # stops the build with one message, rather than reading as public.

@@ -297,6 +297,9 @@ enum class RuleCode : std::uint8_t {
     // fixy/atoms/Session.h and the payload of a binding that is a
     // session handle.
     R004,
+    // Written here, not inherited.  It reads the same live handle as
+    // R004, against the regime and the wait strategy that W001 reads.
+    W003,
 };
 
 // ---------------------------------------------------------------------
@@ -454,6 +457,7 @@ inline constexpr corpus_entry rule_corpus[] = {
     // catalog.  It reads the live-handle atom of fixy/atoms/Session.h, or
     // a payload that is a session handle, against a suspension.
     {"R004", Disposition::Live, "a suspension x a live session handle x a frame that is not linear"},
+    {"W003", Disposition::Live, "hot x a live session handle x no stated wait"},
 
     // Nothing waits on an atom any more.  pending_rules above is empty and
     // says why in two parts; the rest of this list is the second part.
@@ -779,7 +783,7 @@ static_assert(every_pending_axis_is_still_empty(),
 // Each compares two things that were written separately.  None computes
 // one side from the other.
 
-// Fifty-four inherited codes plus two written here.
+// Fifty-four inherited codes plus three written here.
 //
 // The 54 come from the RuleCode enum of
 // include/crucible/safety/CollisionCatalog.h and the count is stated
@@ -794,12 +798,13 @@ static_assert(every_pending_axis_is_still_empty(),
 // for the second would have discarded a theorem that has its own remedy,
 // and the codes are stable API precisely so that cannot happen quietly.
 //
-// R004 is the other addition.  The old catalog has no rule for a
-// continuation that captures a live session handle.
-static_assert(rule_corpus_size == 56,
+// R004 and W003 are the other two.  The old catalog has no rule for a
+// continuation that captures a live session handle, and none for a hot
+// binding that holds one and states no wait.
+static_assert(rule_corpus_size == 57,
               "fixy/Collision.h: the rule corpus must account for the 54 codes inherited from the RuleCode "
-              "enum of include/crucible/safety/CollisionCatalog.h, plus B002 and R004, which are written here.  "
-              "A code dropped from this list stops being reported as absent.");
+              "enum of include/crucible/safety/CollisionCatalog.h, plus B002, R004 and W003, which are written "
+              "here.  A code dropped from this list stops being reported as absent.");
 
 // Every code the corpus says ships has an enumerator, and every code it
 // says is absent or retired has none.  A rule written without a corpus entry, or
@@ -1164,6 +1169,17 @@ struct is_busy_wait_ : std::false_type {};
 template <class G>
     requires requires { G::strategy; }
 struct is_busy_wait_<G> : std::bool_constant<::fixy::atom::sync::burns_the_core(G::strategy)> {};
+
+// Whether a grade names a wait strategy.  The atom set is open, so a type
+// can engage Synchronization and name no strategy.  Such a type states no
+// wait, and W003 does not read it as one.
+template <class G>
+struct has_wait_strategy_ : std::false_type {};
+template <class G>
+    requires requires {
+        { G::strategy } -> std::same_as<const ::foundation::algebra::lattices::WaitStrategy&>;
+    }
+struct has_wait_strategy_<G> : std::true_type {};
 
 template <class G>
 struct row_admits_alloc_or_io_ : std::false_type {};
@@ -1807,6 +1823,20 @@ struct rules_of {
     static constexpr bool suspends = coroutine || suspends_in_control_flow;
     static constexpr bool R004_ok = !(has_live_handle && suspends && !linear);
 
+    // W003 reads the same live handle against the hot regime.  A handle
+    // that still owes its protocol takes its next step through a
+    // transport: a receive waits for a message, and a send waits for
+    // room.  The transport decides how it waits, and a futex is one of the
+    // ways.  W001 refuses a hot binding that states a kernel wait, and it
+    // has nothing to read on a binding that states no wait at all.  W003
+    // refuses that silence: a hot binding that holds a live handle states
+    // its wait strategy, and W001 then judges the strategy it states.  The
+    // rule reads the strategy that W001 reads, not the axis, so a type on
+    // the axis that names no strategy does not satisfy it.
+    static constexpr bool states_a_wait =
+        detail::has_wait_strategy_<typename G::template on<Axis::Synchronization>>::value;
+    static constexpr bool W003_ok = !(hot && has_live_handle && !states_a_wait);
+
     // ── Naming the rules a pack trips ────────────────────────────────
     //
     // fn's tier-5 message carries these codes, so a reader and a
@@ -1842,6 +1872,7 @@ struct rules_of {
             rule_verdict{F103_ok, "F103"}, rule_verdict{F104_ok, "F104"}, rule_verdict{F105_ok, "F105"},
             rule_verdict{E044_ok, "E044"}, rule_verdict{S010_ok, "S010"}, rule_verdict{I004_ok, "I004"},
             rule_verdict{I003_ok, "I003"}, rule_verdict{I002_ok, "I002"}, rule_verdict{R004_ok, "R004"},
+            rule_verdict{W003_ok, "W003"},
         };
     }
 
@@ -2012,6 +2043,11 @@ struct rules_of {
                                "suspension makes the frame a continuation that holds the handle. A continuation "
                                "that is dropped drops the protocol, and one that is resumed twice does one step two "
                                "times. Keep the Usage grade linear, or close the session before the suspension.");
+        static_assert(W003_ok, "W003: hot x a live session handle x no stated wait. The next step of the handle goes "
+                               "through a transport, and a receive or a full send waits there. An unstated wait can "
+                               "be a futex at 1-5 us against a budget of 10-40 ns. State the wait strategy with a "
+                               "fixy::atom::sync atom, a spin such as sync::spin_pause, or close the session before "
+                               "the hot path.");
         return valid;
     }
 
@@ -2323,6 +2359,30 @@ static_assert(rules_of<graded_not_stepping, Suspends, at::affine>::R004_ok, "ano
 static_assert(!rules_of<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, owes_a_step>, Suspends, at::affine>::R004_ok,
               "a band does not hide the handle it grades");
 static_assert(live_rules<Suspends, at::affine>::R004_ok, "the payload half stands down under the pack-only view");
+
+// W003 needs three premises: the hot regime, a live handle, and no stated
+// wait.  A stated wait moves the judgement to W001, which refuses a
+// kernel wait and admits a spin.
+struct hot_invariant final {};
+template <class... Extra>
+using hot_rules = live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public,
+                             Extra...>;
+static_assert(!hot_rules<Live>::W003_ok, "a hot handle with no stated wait");
+static_assert(hot_rules<Live, at::sync::spin_pause>::valid, "a stated spin is the hot-path wait");
+static_assert(hot_rules<Live, at::sync::bounded_spin>::valid);
+static_assert(hot_rules<Live, at::sync::umwait_c01>::valid, "UMWAIT stays in user space, as W001 reads it");
+static_assert(hot_rules<Live, at::sync::park>::W003_ok && !hot_rules<Live, at::sync::park>::W001_ok,
+              "a stated kernel wait is W001's refusal, not W003's");
+static_assert(live_rules<Live>::W003_ok, "not hot, so the wait is the regime's business");
+static_assert(hot_rules<>::W003_ok, "no handle, so no transport wait");
+struct names_no_strategy final : at::atom_of<Axis::Synchronization> {};
+static_assert(!hot_rules<Live, names_no_strategy>::W003_ok, "a type on the axis that names no strategy states no wait");
+static_assert(!rules_of<owes_a_step, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
+                        at::as_public>::W003_ok,
+              "a payload that is a live handle waits as the atom does");
+static_assert(rules_of<at_the_end, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
+                       at::as_public>::W003_ok,
+              "a handle at End takes no step");
 }  // namespace session_cells
 
 }  // namespace detail::collision_self_test

@@ -694,16 +694,17 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // roster and held while 22 rules were missing.  The three dispositions
 // are counted separately and must sum to the catalog's size.
 //
-// That size is 56, not 54: the 54 are inherited from the old catalog's
+// That size is 57, not 54: the 54 are inherited from the old catalog's
 // RuleCode enum, and B002 is written in fixy/Collision.h, because
 // Axis::Observability carries two theorems where the old catalog recorded
 // one.  B001 keeps its back-pressure theorem rather than being reread as
-// the containment rule, because the codes are stable API.  R004 is also
-// written in fixy/Collision.h: the old catalog has no rule for a
-// continuation that holds a live session handle.
+// the containment rule, because the codes are stable API.  R004 and W003
+// are also written in fixy/Collision.h: the old catalog has no rule for a
+// continuation that holds a live session handle, and none for a hot
+// binding that holds one and states no wait.
 
-static_assert(col::rule_corpus_size == 56);
-static_assert(col::live_rule_count == 42);
+static_assert(col::rule_corpus_size == 57);
+static_assert(col::live_rule_count == 43);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -712,7 +713,7 @@ static_assert(col::live_rule_count == 42);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 42);
+static_assert(corpus_entries_with(col::Disposition::Live) == 43);
 static_assert(corpus_entries_with(col::Disposition::Pending) == 0);
 static_assert(corpus_entries_with(col::Disposition::Absent) == 6);
 static_assert(corpus_entries_with(col::Disposition::Retired) == 8);
@@ -919,7 +920,7 @@ static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D00
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
     if (col::pending_rule_count != 0) return 2;
-    if (col::live_rule_count != 42) return 3;
+    if (col::live_rule_count != 43) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -943,9 +944,9 @@ static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D00
             default: return 8;
         }
     }
-    if (live != 42 || pending != 0 || absent != 6 || retired != 8) return 9;
+    if (live != 43 || pending != 0 || absent != 6 || retired != 8) return 9;
     if (live + pending + absent + retired != col::rule_corpus_size) return 10;
-    if (col::rule_corpus_size != 56) return 11;
+    if (col::rule_corpus_size != 57) return 11;
 
     // The binding the rules admit still carries its value.
     const auto bound = ::fixy::mint_fn<int, at::borrow>(11);
