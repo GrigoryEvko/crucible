@@ -42,8 +42,9 @@
 // Why rules_of<Payload, Atoms...> takes the payload, and still not fn
 //
 // Five rules pair a grade with the payload's replay claim, which is the
-// DetSafe band the payload carries and nothing in the pack.  So the
-// rules take the payload as a template parameter of their own.  That is
+// DetSafe band the payload carries and nothing in the pack.  I002 and
+// I003 read a failure that the payload returns as std::expected<T, E>.
+// So the rules take the payload as a template parameter of their own.  That is
 // the fn's FIRST template parameter, read directly from the partial
 // specialisation, and never a member of the fn: reading fn::type_t would
 // complete fn, and the cycle above closes.  live_rules<Atoms...> is the
@@ -69,12 +70,14 @@
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
+#include <fixy/Secret.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Row.h>
 
 #include <array>
 #include <cstddef>
+#include <expected>
 #include <meta>
 #include <string>
 #include <string_view>
@@ -264,12 +267,9 @@ enum class RuleCode : std::uint8_t {
     // An Absent or Retired code has no enumerator, and the pin below is
     // why: this enum holds exactly the codes a rule in this file can be
     // named by, and any other code is named only by the corpus, as a
-    // string.  F103, F104, F105 and V102 were briefly here while they
-    // were Pending, because a pending rule keeps its code against the day
-    // its axis gains an atom; when FpMode and SimdIsa gained atoms and
-    // the four still could not fire, they gave their enumerators up.
-    // Nothing renamed and nothing reused: the corpus still carries each
-    // string, with the reason it cannot fire or is not carried.
+    // string.  Nothing is renamed and nothing is reused: the corpus
+    // carries each string, with the reason it cannot fire or is not
+    // carried.
     V101,
     V201,
     V202,
@@ -283,6 +283,17 @@ enum class RuleCode : std::uint8_t {
     S011,
     D001,
     L003,
+    // The constant-time family and the failure family.  Each reads the
+    // Security grade atom::constant_time, a failure path in the type, or
+    // both.  foundation/effects/Effect.h says why neither is a row atom.
+    F103,
+    F104,
+    F105,
+    E044,
+    S010,
+    I004,
+    I003,
+    I002,
 };
 
 // ---------------------------------------------------------------------
@@ -307,13 +318,14 @@ struct pending_rule {
 // scope AND a strength, V402 a scope AND a pinned ISA, so each waited on
 // whichever of its two axes was still atomless.
 //
-// Four left for rule_corpus instead, because the atom their axis gained
-// did not make them fire.  F103, F104 and F105 read a constant-time grade
-// that no atom or band carries, and are Absent.  V102 reads a SIMD width,
-// and is Retired, because the one ISA grade a binding names already fixes
-// its width.  That is the distinction this list exists to draw: pending
-// means waiting on an atom, and absent means waiting on something this
-// layer does not have.
+// Four sit in rule_corpus instead, because the FpMode or SimdIsa atom is
+// not all they read.  F103, F104 and F105, which read an FP mode against
+// a constant-time claim, read that claim from the Security grade
+// atom::constant_time.  V102, which reads a SIMD width, is Retired,
+// because the one ISA grade a binding names already fixes its width.
+// That is the distinction this list exists to draw: pending means
+// waiting on an atom, and absent means waiting on something this layer
+// does not have.
 inline constexpr std::array<pending_rule, 0> pending_rules{};
 
 inline constexpr std::size_t pending_rule_count = pending_rules.size();
@@ -423,6 +435,21 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"D001", Disposition::Live, "an indirect call whose named signature is not noexcept"},
     {"L003", Disposition::Live, "borrow x a spawn that no structured join ties to the frame"},
 
+    // The constant-time family and the failure family.  The specification
+    // writes the constant-time claim and the failure path as effects in
+    // the row, `with CT` and Fail(E), and neither is a row atom here:
+    // foundation/effects/Effect.h says why at its top.  Constant time is
+    // the Security grade atom::constant_time, and a failure is the payload
+    // std::expected<T, E> or the ControlFlow grade ctrl::throws<E>.
+    {"F103", Disposition::Live, "constant time x FP reassociation by an unrestricted rewrite"},
+    {"F104", Disposition::Live, "constant time x an FP mode that honours denormal inputs"},
+    {"F105", Disposition::Live, "constant time x an FP mode that preserves subnormal results"},
+    {"E044", Disposition::Live, "constant time x a suspension or a Bg row"},
+    {"S010", Disposition::Live, "constant time x a staleness window"},
+    {"I004", Disposition::Live, "classified x a suspension or a Bg row x a session protocol, without constant time"},
+    {"I003", Disposition::Live, "constant time x a failure path"},
+    {"I002", Disposition::Live, "classified x a failure whose error type is not Secret"},
+
     // Nothing waits on an atom any more.  pending_rules above is empty and
     // says why in two parts; the rest of this list is the second part.
 
@@ -431,24 +458,6 @@ inline constexpr corpus_entry rule_corpus[] = {
     // than a gap someone has to notice.  absent_rule_codes below names the
     // same set, and the set only shrinks.
     //
-    // Seven read a constant-time grade, two a failure path, and one both.
-    // The specification carries each as an effect in the row — `with CT`
-    // and Fail(E) — and foundation/effects/Effect.h defines Alloc, IO,
-    // Block, Bg, Init and Test and nothing else.  Neither can be added in
-    // this layer: an effect is a foundation enumerator, and every consumer
-    // of the row reads the enumeration.
-    {"F103", Disposition::Absent, "reads Effect::CT against FP reassociation; foundation defines no CT effect"},
-    {"F104", Disposition::Absent, "reads Effect::CT against honoured denormal inputs; foundation defines no CT effect"},
-    {"F105", Disposition::Absent, "reads Effect::CT against preserved subnormal results; foundation defines no CT effect"},
-    {"E044", Disposition::Absent, "reads Effect::CT against async scheduling; foundation defines no CT effect"},
-    {"S010", Disposition::Absent, "reads Effect::CT against a staleness window; foundation defines no CT effect"},
-    {"I004", Disposition::Absent,
-     "reads the absence of Effect::CT on a classified async session send; foundation defines no CT effect"},
-    {"I003", Disposition::Absent, "reads Effect::CT and a Fail(E) on a secret condition; foundation defines neither"},
-    {"I002", Disposition::Absent,
-     "reads the error payload of Fail(E) against a classified value; foundation defines no Fail effect"},
-    {"M011", Disposition::Absent, "reads a Fail(E) path live across a linear value; foundation defines no Fail effect"},
-
     // Three read a premise nothing in the tree can write.
     {"F002", Disposition::Absent,
      "reads a federation-peer role; Canopy membership is not a grade, and no atom or band names it"},
@@ -492,6 +501,11 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"M001", Disposition::Retired,
      "the old catalog declares M001_DontNeedRequiresReleaseAware and ships no CRUCIBLE_COLLISION_DIAGNOSTIC for it, "
      "so the code has a name and no theorem to port"},
+    {"M011", Disposition::Retired,
+     "discharged: a failure here is a std::expected return or a throw, and each runs every destructor in scope, so "
+     "a linear value is released on the failure path; the one exit that skips destructors is longjmp, and L006 "
+     "refuses it against a linear binding.  Which values are live at the failure point is a property of the body, "
+     "and a binding carries no body"},
 
 };
 
@@ -839,8 +853,7 @@ static_assert(detail::code_the_corpus_never_listed_().empty(),
 // is the one edit that grows the set, and it is a visible line in a diff
 // rather than a disposition changed in passing.
 inline constexpr std::string_view absent_rule_codes[] = {
-    "F103", "F104", "F105", "E044", "S010", "I004", "I003", "I002", "M011", "F002",
-    "N002", "L004", "F001", "L005", "S004",
+    "F002", "N002", "L004", "F001", "L005", "S004",
 };
 
 namespace detail {
@@ -1206,6 +1219,89 @@ struct spawn_outlives_the_frame_<::fixy::atom::spawn::detach_with<Rationale>> : 
 template <::fixy::atom::ctrl::rationale Rationale>
 struct spawn_outlives_the_frame_<::fixy::atom::spawn::syscall_only<Rationale>> : std::true_type {};
 
+// ── The failure path, in the two spellings the tree has ──────────────
+//
+// A failure is not a row atom.  foundation/effects/Effect.h says why: an
+// enumerator is one bit, and the error type is part of the failure.  The
+// tree spells a failure in the type, one of two ways, and each way is
+// the only spelling of its mechanism:
+//
+//   the payload is std::expected<T, E>  — the body returns the failure
+//   ControlFlow is ctrl::throws<E>      — the body throws it
+//
+// So there is no second declaration of a failure to drift from the
+// return type: the return type IS the declaration.  A band grades a
+// payload and does not change what it holds, so the payload is read
+// through every band first.  Every other wrapper is left in place.  In
+// particular Secret<std::expected<T, E>> is not read as a failure,
+// because its discriminant and its error are both inside the secret.
+//
+// Each reader answers two things: whether the path exists, and whether
+// its error type is fixy::Secret.  An error type the reader cannot see
+// — ctrl::any_exception, the family a bare throws<> names — is not
+// Secret, which is the answer that refuses rather than the one that
+// admits.
+template <class Payload>
+struct unbanded_ {
+    using type = Payload;
+};
+template <class Payload>
+    requires ::fixy::IsBand<Payload>
+struct unbanded_<Payload> {
+    using type = typename unbanded_<::fixy::band_value_t<Payload>>::type;
+};
+
+template <class Payload>
+struct returned_failure_ {
+    static constexpr bool fails = false;
+    static constexpr bool error_is_secret = false;
+};
+template <class Value, class Error>
+struct returned_failure_<std::expected<Value, Error>> {
+    static constexpr bool fails = true;
+    static constexpr bool error_is_secret = ::fixy::IsSecret<Error>;
+};
+
+template <class G>
+struct thrown_failure_ {
+    static constexpr bool fails = false;
+    static constexpr bool error_is_secret = false;
+};
+template <class ExceptionFamily>
+struct thrown_failure_<::fixy::atom::ctrl::throws<ExceptionFamily>> {
+    static constexpr bool fails = true;
+    static constexpr bool error_is_secret = ::fixy::IsSecret<ExceptionFamily>;
+};
+
+// The class of the Security grade, read so that a grade the closed
+// relation in fixy/Atom.h does not name stops the build with one message.
+// The relation's primary has no definition, so a direct read would also
+// stop the build, but with one error at each use and more in fn's tier
+// walk.  After the assertion the answer is Classified, which is the
+// answer that refuses, so nothing downstream reads the unnamed grade as
+// public.
+template <class G>
+[[nodiscard]] consteval ::fixy::atom::SecurityClass security_class_or_refuse_() noexcept {
+    static_assert(::fixy::atom::IsSecurityGrade<G>,
+                  "fixy/Collision.h: the Security grade of this binding has no entry in "
+                  "fixy::atom::detail::security_class_of_, so no rule can tell whether the binding is classified. "
+                  "Give the atom a SecurityClass beside the others in fixy/Atom.h.");
+    if constexpr (::fixy::atom::IsSecurityGrade<G>) {
+        return ::fixy::atom::security_class_of_v<G>;
+    } else {
+        return ::fixy::atom::SecurityClass::Classified;
+    }
+}
+
+// Whether the Protocol grade names a session.  The same axis carries the
+// spawn atoms L003 reads, and protocol<proto::None> writes the strict
+// pole out, so neither is a session.
+template <class G>
+struct is_session_protocol_ : std::false_type {};
+template <class Proto>
+struct is_session_protocol_<::fixy::atom::protocol<Proto>>
+    : std::bool_constant<!std::is_same_v<Proto, ::fixy::pole::proto::None>> {};
+
 // Whether ControlFlow states a suspension.  ctrl::coroutine<Policy> is
 // the same suspension that atom::coroutine states on Reentrancy, written
 // on the axis of the ways a frame is left.
@@ -1228,10 +1324,11 @@ struct suspends_in_control_flow_<::fixy::atom::ctrl::coroutine<SuspensionPolicy>
 // Most rules read the pack alone, through grades<Atoms...>.  Five read
 // the PAYLOAD as well — F101, F102, V101, V203 and S011 each pair a grade with
 // a replay claim, and the replay claim is the DetSafe band the payload
-// carries, not anything in the pack.  So the struct takes the payload as
+// carries, not anything in the pack.  I002 and I003 also read the
+// payload, for a failure it returns.  So the struct takes the payload as
 // its first parameter, and `live_rules<Atoms...>` below is the pack-only
-// view with the payload set to void, under which every payload rule
-// stands down.  The two names are one struct: there is one verdicts()
+// view with the payload set to void, under which the payload half of
+// every such rule stands down.  The two names are one struct: there is one verdicts()
 // list, and a rule cannot be in the pack view and out of the bound one.
 //
 // Payload is the fn's first template parameter, never the fn.  Reading a
@@ -1528,6 +1625,77 @@ struct rules_of {
                                                || G::template mentions<Axis::SyscallSurface>;
     static constexpr bool P002_ok = !(ghost && emits_outside_the_row);
 
+    // ── The constant-time family and the failure family ─────────────
+    //
+    // Constant time is the Security grade atom::constant_time, read here
+    // through the closed relation fixy/Atom.h declares beside the
+    // Security atoms, so a new point on that axis cannot read as public.
+    // A failure is the payload std::expected<T, E> or ctrl::throws<E>,
+    // read by the two detail readers above.  Neither is in the effect
+    // row, and foundation/effects/Effect.h says why at its top.
+    static constexpr ::fixy::atom::SecurityClass security_class =
+        detail::security_class_or_refuse_<typename G::template on<Axis::Security>>();
+    static constexpr bool constant_time = security_class == ::fixy::atom::SecurityClass::ConstantTime;
+    static constexpr bool classified = constant_time || security_class == ::fixy::atom::SecurityClass::Classified;
+
+    // The payload rule's side of the failure reads the payload, as the
+    // replay claim does, so it stands down under the pack-only view.
+    using returned_failure = detail::returned_failure_<typename detail::unbanded_<Payload>::type>;
+    using thrown_failure = detail::thrown_failure_<typename G::template on<Axis::ControlFlow>>;
+    static constexpr bool fails = returned_failure::fails || thrown_failure::fails;
+    static constexpr bool fails_with_plain_error = (returned_failure::fails && !returned_failure::error_is_secret)
+                                                || (thrown_failure::fails && !thrown_failure::error_is_secret);
+
+    // F103, F104 and F105 read the FP mode against the timing claim, as
+    // F101 and F102 read it against the replay claim.  F103 refuses only
+    // the unrestricted rewrite: a tree of bounded depth has a topology
+    // that the data cannot choose, so it keeps the timing independent
+    // even though F101 refuses it for replay.
+    //
+    // F104 and F105 refuse a mode that does not NAME the flush.  A
+    // setting the mode does not name is at its strict value, and on these
+    // two enums the strict value is the slow one: denormals honoured,
+    // subnormals preserved.  So a constant-time body that names an FP mode
+    // at all must name the flush.  A body that names no FP mode claims
+    // nothing about floating point, and the two rules stand down for it.
+    static constexpr bool fp_mode_stated = G::template mentions<Axis::FpMode>;
+    static constexpr bool fp_flushes_denormal_inputs =
+        detail::fp_names_<::fixy::atom::fp::FpDenormalInput::DenormalsAreZero, fp_mode_grade>::value;
+    static constexpr bool fp_flushes_subnormal_results =
+        detail::fp_names_<::fixy::atom::fp::FpFtz::FlushToZero, fp_mode_grade>::value;
+    static constexpr bool fp_rewrites_without_bound =
+        detail::fp_names_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value;
+
+    static constexpr bool F103_ok = !(constant_time && fp_rewrites_without_bound);
+    static constexpr bool F104_ok = !(constant_time && fp_mode_stated && !fp_flushes_denormal_inputs);
+    static constexpr bool F105_ok = !(constant_time && fp_mode_stated && !fp_flushes_subnormal_results);
+
+    // E044 and I004 read the one concurrency premise above, so a
+    // classified async session is refused both ways: E044 when it claims
+    // constant time, I004 when it does not.  That is the theorem.  The
+    // one remedy is a synchronous constant-time region, or a
+    // declassification before the send.
+    static constexpr bool E044_ok = !(constant_time && concurrent);
+
+    // A constant-time binding is classified, so every S010 trip is also a
+    // trip of the corpus entry staleness_secret_without_declassify.  The
+    // rule is kept for its own theorem and its own remedy, as R002 is
+    // kept beside L002.
+    static constexpr bool S010_ok = !(constant_time && G::template mentions<Axis::Staleness>);
+
+    static constexpr bool session_protocol =
+        detail::is_session_protocol_<typename G::template on<Axis::Protocol>>::value;
+    static constexpr bool I004_ok = !(classified && concurrent && session_protocol && !constant_time);
+
+    // I003 needs no condition beyond the failure path.  A constant-time
+    // body works on classified data by definition, and the caller of a
+    // body that can fail branches on the discriminant, so the failure is
+    // a branch on the secret that leaves the constant-time region.
+    // fixy::ct::eq traps on a length mismatch for this reason.
+    static constexpr bool I003_ok = !(constant_time && fails);
+
+    static constexpr bool I002_ok = !(classified && fails_with_plain_error);
+
     // ── Naming the rules a pack trips ────────────────────────────────
     //
     // fn's tier-5 message carries these codes, so a reader and a
@@ -1560,6 +1728,9 @@ struct rules_of {
             rule_verdict{V301_ok, "V301"}, rule_verdict{V401_ok, "V401"}, rule_verdict{V101_ok, "V101"},
             rule_verdict{V402_ok, "V402"}, rule_verdict{F101_ok, "F101"}, rule_verdict{F102_ok, "F102"},
             rule_verdict{S011_ok, "S011"}, rule_verdict{D001_ok, "D001"}, rule_verdict{L003_ok, "L003"},
+            rule_verdict{F103_ok, "F103"}, rule_verdict{F104_ok, "F104"}, rule_verdict{F105_ok, "F105"},
+            rule_verdict{E044_ok, "E044"}, rule_verdict{S010_ok, "S010"}, rule_verdict{I004_ok, "I004"},
+            rule_verdict{I003_ok, "I003"}, rule_verdict{I002_ok, "I002"},
         };
     }
 
@@ -1695,6 +1866,35 @@ struct rules_of {
                                "raw-cloned child shares the address space and can run after the caller's frame "
                                "has unwound, so the borrow dangles. Spawn through mint_spawn, which joins, or "
                                "move ownership into the child.");
+        static_assert(F103_ok, "F103: constant time x FP reassociation by an unrestricted rewrite. The compiler "
+                               "can pick the tree of the sum from the magnitudes of the operands, so the count of "
+                               "operations follows the data. Forbid reassociation, or bound it to a tree of fixed "
+                               "depth.");
+        static_assert(F104_ok, "F104: constant time x an FP mode that honours denormal inputs. A denormal input "
+                               "costs 30 to 100 times the cycles of a normal one on x86 and ARM, so the time tells "
+                               "the magnitude of the input. Name FpDenormalInput::DenormalsAreZero in the mode "
+                               "(MXCSR.DAZ, FPCR.FZ).");
+        static_assert(F105_ok, "F105: constant time x an FP mode that preserves subnormal results. A subnormal "
+                               "result costs 30 to 100 times the cycles of a normal one, so the time tells the "
+                               "magnitude of the result. Name FpFtz::FlushToZero in the mode.");
+        static_assert(E044_ok, "E044: constant time x a suspension or a Bg row. The scheduler then decides when the "
+                               "body runs, and it sees the classified data through the timing. Keep the "
+                               "constant-time core synchronous, and put only its boundary in async code.");
+        static_assert(S010_ok, "S010: constant time x a staleness window. A stale value makes the body check "
+                               "freshness at run time, and that check is a branch whose time follows the data. "
+                               "Keep Staleness at Fresh, or drop constant_time.");
+        static_assert(I004_ok, "I004: classified x a suspension or a Bg row x a session protocol, without constant "
+                               "time. The peer sees each send, and the time of each send follows the classified "
+                               "data. Send from a synchronous binding that states atom::constant_time, or "
+                               "declassify before the send.");
+        static_assert(I003_ok, "I003: constant time x a failure path. The caller branches on success or failure, "
+                               "so the discriminant leaks the condition that chose it, and that condition reads "
+                               "classified data. Select the result with fixy::ct::select and fail after a "
+                               "declassification, or trap as fixy::ct::eq does.");
+        static_assert(I002_ok, "I002: classified x a failure whose error type is not fixy::Secret. The error value "
+                               "leaves the classified binding and carries what the body knew when it failed. "
+                               "Wrap the error type in fixy::Secret, declassify with a named policy, or state "
+                               "atom::as_public.");
         return valid;
     }
 
@@ -1885,6 +2085,76 @@ static_assert(live_rules<::fixy::atom::ghost, ::fixy::atom::stdio::write<::fixy:
               "P002 must be the rule that catches this pair; if P010 already did, P002 would be redundant");
 static_assert(live_rules<::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>>::P002_ok);
 static_assert(live_rules<::fixy::atom::ghost>::P002_ok);
+
+// The constant-time family.  constant_time alone trips nothing, and each
+// rule needs its second premise.
+namespace ct_cells {
+namespace at = ::fixy::atom;
+namespace fp = ::fixy::atom::fp;
+using CT = at::constant_time;
+using FlushBoth = fp::mode<fp::FpDenormalInput::DenormalsAreZero, fp::FpFtz::FlushToZero>;
+
+static_assert(live_rules<CT>::valid);
+static_assert(live_rules<CT, FlushBoth>::valid, "a constant-time mode that names both flushes is legal");
+
+static_assert(!live_rules<CT, fp::mode<fp::FpReassociate::UnrestrictedRewrite, fp::FpDenormalInput::DenormalsAreZero,
+                                       fp::FpFtz::FlushToZero>>::F103_ok);
+static_assert(live_rules<CT, fp::mode<fp::FpReassociate::BoundedTreeDepth, fp::FpDenormalInput::DenormalsAreZero,
+                                      fp::FpFtz::FlushToZero>>::valid,
+              "a tree of bounded depth keeps its topology apart from the data, so F103 admits it");
+static_assert(live_rules<fp::mode<fp::FpReassociate::UnrestrictedRewrite>>::F103_ok, "no timing claim, no F103");
+
+static_assert(!live_rules<CT, fp::mode<fp::FpFtz::FlushToZero>>::F104_ok, "an unnamed setting honours denormals");
+static_assert(!live_rules<CT, fp::mode<fp::FpDenormalInput::HonorDenormals, fp::FpFtz::FlushToZero>>::F104_ok);
+static_assert(live_rules<CT, fp::mode<fp::FpDenormalInput::DenormalsAreZero, fp::FpFtz::FlushToZero>>::F104_ok);
+static_assert(!live_rules<CT, fp::mode<fp::FpDenormalInput::DenormalsAreZero>>::F105_ok);
+static_assert(!live_rules<CT, fp::mode<fp::FpFtz::PreserveSubnormals, fp::FpDenormalInput::DenormalsAreZero>>::F105_ok);
+static_assert(live_rules<CT>::F104_ok && live_rules<CT>::F105_ok, "no FP mode stated, no FP claim to refuse");
+static_assert(live_rules<fp::mode<>>::F104_ok && live_rules<fp::mode<>>::F105_ok, "no timing claim");
+
+static_assert(!live_rules<CT, at::coroutine>::E044_ok);
+static_assert(!live_rules<CT, at::ctrl::coroutine<at::ctrl::async_task>>::E044_ok);
+static_assert(!live_rules<CT, at::with<::foundation::effects::Effect::Bg>>::E044_ok);
+static_assert(live_rules<CT, at::with<>>::E044_ok);
+
+static_assert(!live_rules<CT, at::stale_to<1>>::S010_ok);
+static_assert(live_rules<at::stale_to<1>>::S010_ok);
+
+struct session_witness final {};
+using Session = at::protocol<session_witness>;
+static_assert(!live_rules<at::coroutine, Session>::I004_ok, "the strict Security pole is classified");
+static_assert(!live_rules<at::as_secret, at::ctrl::coroutine<at::ctrl::async_task>, Session>::I004_ok);
+static_assert(live_rules<CT, at::coroutine, Session>::I004_ok, "I004 stands down for constant time; E044 fires");
+static_assert(!live_rules<CT, at::coroutine, Session>::E044_ok);
+static_assert(live_rules<at::as_public, at::coroutine, Session>::valid);
+static_assert(live_rules<at::as_internal, at::coroutine, Session>::valid, "internal is below the carrier");
+static_assert(live_rules<at::declassify<::fixy::tags::secret_policy::WireSerialize>, at::coroutine, Session>::valid);
+static_assert(live_rules<at::coroutine, at::protocol<::fixy::pole::proto::None>>::valid, "no session");
+static_assert(live_rules<Session>::valid, "a synchronous session sends at no time the scheduler chooses");
+
+// The failure family.  The payload half stands down under void, so these
+// cells name the payload.
+struct plain_error final {};
+using SecretError = ::fixy::Secret<plain_error>;
+using ::fixy::collision::rules_of;
+
+static_assert(!rules_of<std::expected<int, plain_error>>::I002_ok, "the strict Security pole is classified");
+static_assert(!rules_of<int, at::ctrl::throws<>>::I002_ok, "an exception family the reader cannot see is plain");
+static_assert(!rules_of<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, std::expected<int, plain_error>>>::I002_ok,
+              "a band does not hide the failure it grades");
+static_assert(rules_of<std::expected<int, SecretError>>::valid);
+static_assert(rules_of<int, at::ctrl::throws<SecretError>>::valid);
+static_assert(rules_of<std::expected<int, plain_error>, at::as_public>::valid);
+static_assert(rules_of<std::expected<int, plain_error>, at::as_internal>::valid);
+static_assert(rules_of<::fixy::Secret<std::expected<int, plain_error>>>::valid,
+              "the error inside a Secret is secret, and the discriminant with it");
+static_assert(live_rules<at::ctrl::throws<SecretError>>::valid);
+
+static_assert(!rules_of<std::expected<int, SecretError>, CT>::I003_ok);
+static_assert(rules_of<std::expected<int, SecretError>, CT>::I002_ok, "a Secret error isolates I003");
+static_assert(!rules_of<int, CT, at::ctrl::throws<SecretError>>::I003_ok);
+static_assert(rules_of<int, CT>::valid);
+}  // namespace ct_cells
 
 }  // namespace detail::collision_self_test
 

@@ -392,6 +392,85 @@ fixy_neg_compile_test(neg_rule_l003_borrow_raw_clone
   "Collision rule\\(s\\) L003:"
   "${_fixy_tier5_member}")
 
+# The constant-time family and the failure family.  The constant-time
+# claim is the Security grade atom::constant_time, and a failure is the
+# payload std::expected<T, E> or the ControlFlow grade ctrl::throws<E>.
+# Two fixtures per rule, one per mismatch class the rule reads, and each
+# pack trips its rule alone.  The S010 packs also match the corpus entry
+# staleness_secret_without_declassify, because a constant-time binding is
+# classified; S010 is still the only collision rule each one trips.
+fixy_neg_compile_test(neg_rule_f103_ct_rewrite_unrestricted
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F103:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_f103_ct_rewrite_with_fast_contraction
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F103:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_f104_ct_denormals_unnamed
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F104:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_f104_ct_denormals_honoured
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F104:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_f105_ct_subnormals_unnamed
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F105:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_f105_ct_subnormals_preserved
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) F105:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_e044_ct_coroutine
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) E044:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_e044_ct_control_flow_suspension
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) E044:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_s010_ct_stale_narrow
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) S010:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_s010_ct_stale_wide
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) S010:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i004_classified_coroutine_session
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I004:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i004_secret_control_flow_session
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I004:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i003_ct_returned_failure
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I003:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i003_ct_thrown_failure
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I003:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i002_returned_plain_error
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I002:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i002_thrown_unseen_family
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I002:"
+  "${_fixy_tier5_member}")
+
+# The Security grade is read through one closed relation, and its primary
+# has no definition.  An atom on the axis that the relation does not name
+# stops the build with one message, rather than reading as public.
+fixy_neg_compile_test(neg_security_grade_without_class
+  "the Security grade of this binding has no entry in fixy::atom::detail::security_class_of_"
+  "security_class_or_refuse_.+unlisted_level")
+
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
 # entry that lost its literature reference.

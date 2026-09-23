@@ -245,6 +245,13 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_recursing
     using refuses = witnesses<int, void>;
 };
 
+// protocol<proto::None> writes the strict pole out, so it names no session.
+template <>
+struct foundation::contracts::armed_cell<::fixy::collision::detail::is_session_protocol_> {
+    using accepts = witnesses<at::protocol<armed_roster_witness::Plain>>;
+    using refuses = witnesses<int, at::protocol<::fixy::pole::proto::None>, at::spawn::detach_with<"no join">>;
+};
+
 // ── fixy: concurrency handles and pipelines ─────────────────────────
 
 template <>

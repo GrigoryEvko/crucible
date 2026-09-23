@@ -13,12 +13,14 @@
 #include <fixy/Collision.h>
 #include <fixy/Fn.h>
 #include <fixy/os/Spawn.h>
+#include <fixy/Secret.h>
 
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 
 #include <cstddef>
+#include <expected>
 #include <meta>
 #include <type_traits>
 #include <utility>
@@ -675,7 +677,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 // reread as the containment rule, because the codes are stable API.
 
 static_assert(col::rule_corpus_size == 55);
-static_assert(col::live_rule_count == 33);
+static_assert(col::live_rule_count == 41);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -684,10 +686,10 @@ static_assert(col::live_rule_count == 33);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 33);
+static_assert(corpus_entries_with(col::Disposition::Live) == 41);
 static_assert(corpus_entries_with(col::Disposition::Pending) == 0);
-static_assert(corpus_entries_with(col::Disposition::Absent) == 15);
-static_assert(corpus_entries_with(col::Disposition::Retired) == 7);
+static_assert(corpus_entries_with(col::Disposition::Absent) == 6);
+static_assert(corpus_entries_with(col::Disposition::Retired) == 8);
 static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(col::Disposition::Pending)
                   + corpus_entries_with(col::Disposition::Absent) + corpus_entries_with(col::Disposition::Retired)
               == col::rule_corpus_size);
@@ -764,11 +766,34 @@ static_assert(!::fixy::IsAccepted<int, at::capability_usage, at::trust_unverifie
 static_assert(col::CollisionRules<::fixy::fn<int, at::copy>>::valid);
 static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::valid);
 
+// The constant-time family and the failure family reach the same gate.
+// The failure rules read the payload, which only the bound view carries,
+// so these cells name it.
+struct gate_error final {};
+static_assert(::fixy::IsAccepted<int, at::constant_time>);
+static_assert(!::fixy::IsAccepted<int, at::constant_time, at::coroutine>, "E044");
+static_assert(!::fixy::IsAccepted<std::expected<int, gate_error>>, "I002 on the strict Security pole");
+static_assert(::fixy::IsAccepted<std::expected<int, gate_error>, at::as_public>);
+static_assert(::fixy::IsAccepted<std::expected<int, ::fixy::Secret<gate_error>>>);
+static_assert(!::fixy::IsAccepted<std::expected<int, ::fixy::Secret<gate_error>>, at::constant_time>, "I003");
+
+// A constant-time binding takes a cache slot of its own.  A kernel built
+// without the discipline must never be served to a caller that claims
+// it, so constant_time may not share a key with as_classified, with the
+// strict pole, or with as_secret.
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::constant_time>>
+              != ::foundation::diag::row_hash_contribution_v<::fixy::fn<int>>);
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::constant_time>>
+              != ::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::as_classified>>);
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::constant_time>>
+              != ::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::as_secret>>);
+static_assert(::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::constant_time>> != 0);
+
 // A static_assert proves the constant-evaluated path only.
 [[nodiscard]] int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
     if (col::pending_rule_count != 0) return 2;
-    if (col::live_rule_count != 33) return 3;
+    if (col::live_rule_count != 41) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -792,7 +817,7 @@ static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::
             default: return 8;
         }
     }
-    if (live != 33 || pending != 0 || absent != 15 || retired != 7) return 9;
+    if (live != 41 || pending != 0 || absent != 6 || retired != 8) return 9;
     if (live + pending + absent + retired != col::rule_corpus_size) return 10;
     if (col::rule_corpus_size != 55) return 11;
 
