@@ -903,6 +903,16 @@ fixy_neg_compile_test(neg_budgeted_substrate_weaken_below
   ".anonymous.::measured\\.foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::bits_budget>"
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
+# Two values at one version are one event only when their payloads agree,
+# so select_fresher does not exist for a payload with no equality.  The
+# moving form fails the same constraint in both candidates.
+fixy_neg_compile_test(neg_epoch_versioned_select_without_equality
+  "no matching function for call to .select_fresher\\(const fixy::EpochVersioned<Reading>&, const fixy::EpochVersioned<Reading>&\\)."
+  "satisfaction of .equality_comparable<T>. .with T = Reading.")
+fixy_neg_compile_test(neg_epoch_versioned_select_rvalue_without_equality
+  "no matching function for call to .select_fresher\\(std::remove_reference<fixy::EpochVersioned<Reading>&>::type, std::remove_reference<fixy::EpochVersioned<Reading>&>::type\\)."
+  "(?s)satisfaction of .equality_comparable<T>. .with T = Reading..*satisfaction of .equality_comparable<T>. .with T = Reading.")
+
 # ── The consumed bands and the F* aliases ─────────────────────────────
 fixy_test(test_bands)
 fixy_test(test_aliases)

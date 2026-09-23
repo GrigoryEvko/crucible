@@ -287,6 +287,36 @@ void attack_payload_owns_what_it_reaches() {
            "the claims stay true of the payload they describe");
 }
 
+// ── Equal versions ──────────────────────────────────────────────────
+
+struct NoEquality {
+    int v = 0;
+};
+template <typename T>
+concept can_select_copies = requires(EpochVersioned<T> const& a, EpochVersioned<T> const& b) {
+    fixy::select_fresher(a, b);
+};
+template <typename T>
+concept can_select_moves = requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) {
+    fixy::select_fresher(std::move(a), std::move(b));
+};
+static_assert(!can_select_copies<NoEquality> && !can_select_moves<NoEquality>,
+              "a payload that cannot compare cannot show that two values at one version are one event");
+static_assert(can_select_copies<std::string> && can_select_moves<std::string>);
+
+void attack_equal_versions_compare_payloads() {
+    std::uint64_t const s = g_seed;
+    EpochVersioned<std::string> const left{std::string("same"), Epoch{s}, Generation{s}};
+    EpochVersioned<std::string> const agrees{std::string("same"), Epoch{s}, Generation{s}};
+    EpochVersioned<std::string> const differs{std::string("other"), Epoch{s}, Generation{s}};
+    auto const one_event = fixy::select_fresher(left, agrees);
+    expect(one_event.has_value() && one_event->peek() == "same", "agreeing payloads at one version are one event");
+    auto const conflict = fixy::select_fresher(left, differs);
+    expect(!conflict && conflict.error() == VersionConflict::Divergent, "differing payloads at one version conflict");
+    auto const moved = fixy::select_fresher(EpochVersioned<std::string>{differs}, EpochVersioned<std::string>{left});
+    expect(!moved && moved.error() == VersionConflict::Divergent, "the moving form refuses the same conflict");
+}
+
 // ── The substrate under each wrapper ────────────────────────────────
 
 void attack_the_substrate() {
@@ -321,9 +351,10 @@ struct KnownLimit {
 };
 
 inline constexpr KnownLimit kLedger[] = {
-    {"equal versions, payload without equality",
-     "select_fresher refuses equal versions with different payloads only when the payload can compare. A payload "
-     "with no operator== gives the left operand, and the conflict goes unseen."},
+    {"an equality that is not equality-preserving",
+     "Two values at one version are one event when the payload type says they are equal. A type whose operator== "
+     "holds for values that differ in what a reader can observe does not model std::equality_comparable "
+     "([concepts.equality]), and select_fresher cannot know sameness better than the type that defines it."},
     {"a claim stated by the producer",
      "The constructor takes the grade the producer states, and nothing in foundation or fixy can produce a grade "
      "instead: a version comes from a committed fleet membership change, and a budget from a measurement of the "
@@ -332,17 +363,21 @@ inline constexpr KnownLimit kLedger[] = {
 };
 static_assert(std::size(kLedger) <= 2, "the ledger only shrinks");
 
-struct NoEquality {
+// Every value compares equal, so two values at one version always read as
+// one event, whatever they hold.
+struct EqualToEverything {
     int v = 0;
+    [[nodiscard]] constexpr bool operator==(EqualToEverything const&) const noexcept { return true; }
 };
 
 void reproduce_the_ledger() {
     std::uint64_t const s = g_seed;
 
-    EpochVersioned<NoEquality> const first{NoEquality{1}, Epoch{s}, Generation{s}};
-    EpochVersioned<NoEquality> const second{NoEquality{2}, Epoch{s}, Generation{s}};
+    EpochVersioned<EqualToEverything> const first{EqualToEverything{1}, Epoch{s}, Generation{s}};
+    EpochVersioned<EqualToEverything> const second{EqualToEverything{2}, Epoch{s}, Generation{s}};
     auto const pick = fixy::select_fresher(first, second);
-    expect(pick.has_value() && pick->peek().v == 1, "ledger: equal versions without equality still pick the left");
+    expect(pick.has_value() && pick->peek().v == 1,
+           "ledger: an equality that holds for different values still hides a conflict at one version");
 
     std::uint64_t const allowance = s * 1000;
     std::uint64_t const over_budget = allowance + 500;
@@ -364,6 +399,7 @@ int main() {
     attack_moved_from_budget();
     attack_budget_edges();
     attack_payload_owns_what_it_reaches();
+    attack_equal_versions_compare_payloads();
     attack_the_substrate();
     reproduce_the_ledger();
     if (g_failures != 0) {

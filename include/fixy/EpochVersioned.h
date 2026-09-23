@@ -20,7 +20,9 @@
 //     version produced an old payload marked with the newer version.
 //     select_fresher() below returns the operand whose own version is
 //     the higher one, together with that version, and refuses an
-//     incomparable pair.
+//     incomparable pair.  It needs a payload that can compare, because
+//     two equal versions are one event only when the two payloads agree,
+//     and a payload with no equality cannot show that.
 //
 // The grade is the order dual of the version order.  Graded reads up as
 // the weaker claim, and an older version is the weaker claim, so the
@@ -213,15 +215,10 @@ public:
 
 namespace detail::epoch_versioned {
 
-// Refuses two equal versions whose payloads differ, when the payload can
-// say so.  A payload with no equality cannot, and the left operand wins.
-template <typename T>
+// True when two values at one version hold different payloads.
+template <std::equality_comparable T>
 [[nodiscard]] constexpr bool payloads_diverge(EpochVersioned<T> const& a, EpochVersioned<T> const& b) {
-    if constexpr (std::equality_comparable<T>) {
-        return !(a.peek() == b.peek());
-    } else {
-        return false;
-    }
+    return !(a.peek() == b.peek());
 }
 
 }  // namespace detail::epoch_versioned
@@ -230,11 +227,13 @@ template <typename T>
 // payload and that version.  Equal versions with equal payloads are one
 // event, and the left operand stands for it.  Equal versions with
 // different payloads are Divergent.  An incomparable pair has no fresher
-// operand, so the result is Incomparable.
+// operand, so the result is Incomparable.  A payload that cannot compare
+// cannot show that two equal versions are one event, so the selection
+// does not exist for it.
 //
 // In the dual order, "a is at or above b" is leq(a, b).
 template <typename T>
-    requires std::copy_constructible<T>
+    requires std::copy_constructible<T> && std::equality_comparable<T>
 [[nodiscard]] constexpr std::expected<EpochVersioned<T>, VersionConflict>
 select_fresher(EpochVersioned<T> const& a, EpochVersioned<T> const& b) noexcept(
     std::is_nothrow_copy_constructible_v<T>) {
@@ -250,7 +249,7 @@ select_fresher(EpochVersioned<T> const& a, EpochVersioned<T> const& b) noexcept(
     return std::unexpected(VersionConflict::Incomparable);
 }
 
-template <typename T>
+template <std::equality_comparable T>
 [[nodiscard]] constexpr std::expected<EpochVersioned<T>, VersionConflict>
 select_fresher(EpochVersioned<T>&& a, EpochVersioned<T>&& b) noexcept(std::is_nothrow_move_constructible_v<T>) {
     using L = EpochVersionLattice;
@@ -394,6 +393,17 @@ struct MoveOnly {
     [[nodiscard]] constexpr bool operator==(MoveOnly const&) const noexcept = default;
 };
 
+// A payload that cannot compare cannot show that two equal versions are
+// one event, so neither form of the selection exists for it.
+struct NoEquality {
+    int v{0};
+};
+template <typename T>
+concept can_select_rvalues = requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) {
+    select_fresher(std::move(a), std::move(b));
+};
+static_assert(!can_select_rvalues<NoEquality> && can_select_rvalues<int>);
+
 static_assert(!std::is_copy_constructible_v<EpochVersioned<MoveOnly>>);
 static_assert(std::is_move_constructible_v<EpochVersioned<MoveOnly>>);
 
@@ -432,6 +442,8 @@ concept can_select_lvalues = requires(L const& a, R const& b) { select_fresher(a
 static_assert(can_select_lvalues<EV, EV>);
 static_assert(!can_select_lvalues<EpochVersioned<MoveOnly>, EpochVersioned<MoveOnly>>,
               "the lvalue form copies, so a move-only payload leaves it by the constraint");
+static_assert(!can_select_lvalues<EpochVersioned<NoEquality>, EpochVersioned<NoEquality>>,
+              "a payload that cannot compare leaves the lvalue form by the constraint");
 
 struct Lookalike {
     using value_type = int;
