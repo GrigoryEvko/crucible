@@ -2001,6 +2001,49 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
         std::forward<Resource>(r), loc);
 }
 
+// ── A session that starts with permissions ───────────────────────────
+//
+// The permission set of a handle names the regions whose tokens its
+// messages can move.  mint_session_handle starts with the empty set.
+// mint_permissioned_session consumes one token for each tag, and starts
+// the session with the set of those tags.  It returns the handle and a
+// PermHold of the same set.  The handle carries the set as a type, and
+// the hold carries the tokens.  The caller takes a token from the hold
+// for each message that moves one.  This is the CSL frame rule at the
+// start of a session: the set of the handle is backed by tokens that no
+// other holder has, and each region has one owner (Actris per-message
+// resources).
+//
+// The gate is one concept.  The context is an execution context, and it
+// admits the permission row of each tag (foundation/permissions/
+// Permission.h).  The tags are distinct, and there is one tag or more.
+// The protocol is runnable, the Resource is a SessionResource, and the
+// permission flow of the whole protocol closes from the set of the
+// tokens, on every branch.
+//
+// The tokens are the last parameters, so the mint cannot take a
+// source_location after them.  The session records the site of the mint.
+// Complexity: linear in the size of the protocol, at compile time.
+
+template <typename Ctx, typename Proto, typename Resource, typename... Tags>
+concept CtxFitsPermissionedSession =
+    ::foundation::effects::IsExecCtx<Ctx> && sizeof...(Tags) != 0
+    && ::foundation::permissions::detail::perm_tags_unique_v<Tags...>
+    && (::foundation::permissions::CtxAdmitsPermission<Tags, Ctx> && ...) && WellFormedRunnableProtocol<Proto>
+    && SessionResource<Resource> && PermissionFlowCloses<Proto, ::foundation::permissions::PermSet<Tags...>>;
+
+template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
+          typename... Tags, typename... Brands>
+    requires CtxFitsPermissionedSession<Ctx, Proto, Resource, Tags...>
+[[nodiscard]] constexpr auto mint_permissioned_session(Ctx const&, Resource resource,
+                                                       ::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
+    using Set = ::foundation::permissions::PermSet<Tags...>;
+    auto hold = mint_permission_hold(std::move(tokens)...);
+    auto head = detail::open_session_<Proto, Resource, Policy, Set>(std::forward<Resource>(resource),
+                                                                   std::source_location::current());
+    return std::pair{std::move(head), std::move(hold)};
+}
+
 // ── The callback entry point ─────────────────────────────────────────
 //
 // The library owns the handle.  It builds the first handle, gives it to

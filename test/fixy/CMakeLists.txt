@@ -1688,12 +1688,34 @@ fixy_neg_compile_test(neg_sess_send_unheld_permission
 fixy_neg_compile_test(neg_sess_mint_unselected_arm_sends_unheld_permission
   "no matching function for call to .mint_session_handle"
   "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<")
+# HS14 for mint_permissioned_session.  Its gate is one concept, and each
+# fixture fails one clause of it: the permission flow on three shapes of
+# protocol, the row of a tag, and the empty set.  A token passed as an
+# lvalue fails at its copy, before the gate.
 fixy_neg_compile_test(neg_sess_loop_iteration_sends_permission
-  "static assertion failed: fixy::session::diagnostic \\[PermissionImbalance\\]: a path of the protocol"
-  "open_session_\\(Resource, std::source_location\\) \\[with Proto = fixy::session::Loop<fixy::session::Send<")
+  "no matching function for call to .mint_permissioned_session<loop_iteration_fixture::Forever>"
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Loop<fixy::session::Send<"
+  "permission_flow_<Proto, PS, void>::closes")
 fixy_neg_compile_test(neg_sess_unselected_arm_leaves_loan_open
-  "static assertion failed: fixy::session::diagnostic \\[PermissionImbalance\\]: a path of the protocol"
-  "open_session_\\(Resource, std::source_location\\) \\[with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<fixy::session::Borrowed<int")
+  "no matching function for call to .mint_permissioned_session<unselected_arm_fixture::Proto>"
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<fixy::session::Borrowed<int, unselected_arm_fixture::Region>"
+  "permission_flow_<Proto, PS, void>::closes")
+fixy_neg_compile_test(neg_sess_permissioned_session_flow_open
+  "no matching function for call to .mint_permissioned_session<flow_open_fixture::SendsTwice>"
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Send<foundation::permissions::Permission<flow_open_fixture::Region"
+  "permission_flow_<Proto, PS, void>::closes")
+fixy_neg_compile_test(neg_sess_permissioned_session_row_refused
+  "no matching function for call to .mint_permissioned_session<row_refused_fixture::SendsRegion>"
+  "CtxAdmitsPermission<Tags, Ctx> && \\.\\.\\.\\) .with Tags = \\{row_refused_fixture::DiskRegion\\}"
+  "evaluated to .false.")
+fixy_neg_compile_test(neg_sess_permissioned_session_no_tokens
+  "no matching function for call to .mint_permissioned_session<no_tokens_fixture::SendsPing>\\(const foundation::effects::detail::ctx_witnesses::BgWitness&, no_tokens_fixture::Wire\\)"
+  "sizeof \\.\\.\\. \\(Tags \\.\\.\\.\\) != 0 .with Tags = \\{\\}"
+  "evaluated to .false.")
+fixy_neg_compile_test(neg_sess_permissioned_session_token_kept
+  "use of deleted function .foundation::permissions::Permission<Tag, Brand>::Permission\\(const foundation::permissions::Permission<Tag, Brand>&\\) .with Tag = token_kept_fixture::Region"
+  "duplicating creates two simultaneous owners of the same region"
+  "initializing argument 3 of .constexpr auto fixy::session::mint_permissioned_session")
 
 # ── The machine and Vigil-mode session bridges ────────────────────────
 fixy_test(test_session_bridges)

@@ -555,13 +555,15 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 //
 // A handle that holds a permission walks a loop three times.  Each
 // Continue checks that the iteration left the set as the loop found it.
-// The handle is built through the internal factory that a token-
-// consuming mint calls, because no public mint builds a non-empty set.
+// The mint consumes the token of the region, and the hold keeps it.
 [[nodiscard]] int walk_loop_with_permission_set() {
     using Forever = s::Loop<s::Send<Ping, s::Continue>>;
-    auto head = s::detail::open_session_<Forever, ValueWire, s::check::Enforced, HoldsRegion>(
-        ValueWire{}, std::source_location::current());
+    using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
+    const BgCtx ctx{::foundation::effects::testing::bg()};
+    auto [head, hold] = s::mint_permissioned_session<Forever, s::check::Enforced>(
+        ctx, ValueWire{}, ::foundation::permissions::mint_permission_root<Region>());
     static_assert(std::is_same_v<typename decltype(head)::perm_set, HoldsRegion>);
+    static_assert(std::is_same_v<typename decltype(hold)::perm_set, HoldsRegion>);
     static_assert(std::is_same_v<typename decltype(head)::loop_ctx, s::detail::PermLoopFrame<Forever, HoldsRegion>>);
     for (int round = 0; round < 3; ++round) {
         auto next = std::move(head).send(Ping{round}, [](ValueWire& w, Ping& p) noexcept {
@@ -576,6 +578,8 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
         return 1;
     }
     std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
+    auto [token] = std::move(hold).into_permissions();
+    ::foundation::permissions::permission_drop(std::move(token));
     return 0;
 }
 
@@ -607,14 +611,19 @@ struct TokenWire {
 
 [[nodiscard]] int move_token_through_session() {
     std::optional<Token> slot;
-    auto sender = s::detail::open_session_<s::Send<Token, s::End>, TokenWire, s::check::Enforced, HoldsRegion>(
-        TokenWire{&slot}, std::source_location::current());
-    auto sender_done = std::move(sender).send(::foundation::permissions::mint_permission_root<Region>(),
-                                              [](TokenWire& w, Token& token) noexcept {
-                                                  w.slot->emplace(std::move(token));
-                                                  return true;
-                                              });
+    using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
+    const BgCtx ctx{::foundation::effects::testing::bg()};
+    auto [sender, hold] = s::mint_permissioned_session<s::Send<Token, s::End>, s::check::Enforced>(
+        ctx, TokenWire{&slot}, ::foundation::permissions::mint_permission_root<Region>());
+    // The token that the message moves is the token that the mint consumed.
+    auto [sent_token, spent] = std::move(hold).take<Region>();
+    auto sender_done = std::move(sender).send(std::move(sent_token), [](TokenWire& w, Token& token) noexcept {
+        w.slot->emplace(std::move(token));
+        return true;
+    });
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, NoPerms>);
+    static_assert(std::is_same_v<typename decltype(spent)::perm_set, NoPerms>);
+    static_cast<void>(std::move(spent).into_permissions());
     (void)std::move(sender_done).close();
 
     auto receiver = s::mint_session_handle<s::Recv<Token, s::End>>(TokenWire{&slot});
