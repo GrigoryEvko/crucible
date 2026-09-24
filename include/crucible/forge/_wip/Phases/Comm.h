@@ -5,6 +5,7 @@
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/safety/_Tagged.h>
+#include <foundation/reflect/Hash.h>
 
 #include <cstdint>
 #include <expected>
@@ -22,18 +23,8 @@ struct ForgeFused {};
 }  // namespace source
 
 namespace detail {
-[[nodiscard]] constexpr std::uint64_t fmix64(std::uint64_t k) noexcept {
-    k ^= k >> 33;
-    k *= 0xff51afd7ed558ccdULL;
-    k ^= k >> 33;
-    k *= 0xc4ceb9fe1a85ec53ULL;
-    k ^= k >> 33;
-    return k;
-}
-
-[[nodiscard]] constexpr std::uint64_t hash_mix(std::uint64_t h, std::uint64_t v) noexcept {
-    return fmix64(h ^ (v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2)));
-}
+// The fused key folds through the one combine_ids body of the tree.
+using ::foundation::reflect::combine_ids;
 }  // namespace detail
 
 enum class CommPhaseKind : std::uint8_t {
@@ -309,7 +300,7 @@ admit_comm_fusion(ir::DeclaredIr001Node<ComputeNode> producer, ir::DeclaredIr001
     auto const producer_hash = producer.value().content_hash;
     auto const comm_hash = comm.value().content_hash;
     auto const fused_raw =
-        detail::hash_mix(detail::hash_mix(producer_hash.raw(), comm_hash.raw()), std::to_underlying(Pattern));
+        detail::combine_ids(detail::combine_ids(producer_hash.raw(), comm_hash.raw()), std::to_underlying(Pattern));
 
     return DeclaredFusedCommDecision{FusedCommDecision{
         .pattern = Pattern,

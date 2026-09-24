@@ -24,20 +24,6 @@ constexpr std::array<std::uint64_t, 7> hash_inputs() {
     return words;
 }
 
-// The old forge body and the canonical call give the same value on every
-// pair of inputs.  Complexity: O(n^2) for n inputs.
-constexpr bool old_and_canonical_agree() {
-    constexpr auto words = hash_inputs();
-    for (std::uint64_t const left : words) {
-        if (ir::detail::fmix64(left) != ::foundation::reflect::fmix64(left)) return false;
-        for (std::uint64_t const right : words) {
-            if (ir::detail::hash_mix(left, right) != ::foundation::reflect::combine_ids(left, right)) return false;
-        }
-    }
-    return true;
-}
-static_assert(old_and_canonical_agree());
-
 // A fold of every combine value over the input pairs and of every finalized
 // input.  The fold is a weighted sum with no hash of its own, so it cannot
 // hide a change of combine_ids.  Complexity: O(n^2) for n inputs.

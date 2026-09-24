@@ -9,6 +9,7 @@
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/_Tagged.h>
+#include <foundation/reflect/Hash.h>
 
 #include <array>
 #include <cstdint>
@@ -361,18 +362,10 @@ struct Ir001WireHeader {
 };
 
 namespace detail {
-[[nodiscard]] constexpr std::uint64_t fmix64(std::uint64_t k) noexcept {
-    k ^= k >> 33;
-    k *= 0xff51afd7ed558ccdULL;
-    k ^= k >> 33;
-    k *= 0xc4ceb9fe1a85ec53ULL;
-    k ^= k >> 33;
-    return k;
-}
-
-[[nodiscard]] constexpr std::uint64_t hash_mix(std::uint64_t h, std::uint64_t v) noexcept {
-    return fmix64(h ^ (v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2)));
-}
+// The content key folds through the one combine_ids body of the tree, so a
+// change to the salt, the mix or the finalizer reaches this key as well.
+using ::foundation::reflect::combine_ids;
+using ::foundation::reflect::fmix64;
 
 template <typename E>
 [[nodiscard]] constexpr std::uint64_t enum_hash_word(E value) noexcept {
@@ -380,40 +373,40 @@ template <typename E>
 }
 
 [[nodiscard]] constexpr std::uint64_t hash_tensor_meta(std::uint64_t h, TensorMeta const& meta) noexcept {
-    h = hash_mix(h, meta.ndim);
-    h = hash_mix(h, enum_hash_word(meta.dtype));
-    h = hash_mix(h, enum_hash_word(meta.device_type));
-    h = hash_mix(h, static_cast<std::uint64_t>(static_cast<std::int64_t>(meta.device_idx)));
-    h = hash_mix(h, enum_hash_word(meta.layout));
-    h = hash_mix(h, meta.requires_grad ? 1U : 0U);
-    h = hash_mix(h, meta.flags);
-    h = hash_mix(h, meta.output_nr);
-    h = hash_mix(h, static_cast<std::uint64_t>(meta.storage_offset));
-    h = hash_mix(h, meta.version);
-    h = hash_mix(h, meta.storage_nbytes);
+    h = combine_ids(h, meta.ndim);
+    h = combine_ids(h, enum_hash_word(meta.dtype));
+    h = combine_ids(h, enum_hash_word(meta.device_type));
+    h = combine_ids(h, static_cast<std::uint64_t>(static_cast<std::int64_t>(meta.device_idx)));
+    h = combine_ids(h, enum_hash_word(meta.layout));
+    h = combine_ids(h, meta.requires_grad ? 1U : 0U);
+    h = combine_ids(h, meta.flags);
+    h = combine_ids(h, meta.output_nr);
+    h = combine_ids(h, static_cast<std::uint64_t>(meta.storage_offset));
+    h = combine_ids(h, meta.version);
+    h = combine_ids(h, meta.storage_nbytes);
     for (std::uint8_t i = 0; i < kMaxTensorNDim; ++i) {
-        h = hash_mix(h, static_cast<std::uint64_t>(meta.sizes[i].value()));
-        h = hash_mix(h, static_cast<std::uint64_t>(meta.strides[i].value()));
+        h = combine_ids(h, static_cast<std::uint64_t>(meta.sizes[i].value()));
+        h = combine_ids(h, static_cast<std::uint64_t>(meta.strides[i].value()));
     }
     return h;
 }
 
 [[nodiscard]] constexpr std::uint64_t hash_tensor_port(std::uint64_t h, TensorPort const& port) noexcept {
     h = hash_tensor_meta(h, port.meta);
-    return hash_mix(h, port.slot.raw());
+    return combine_ids(h, port.slot.raw());
 }
 
 [[nodiscard]] constexpr std::uint64_t hash_cog_identity(std::uint64_t h, cog::CogIdentity const& peer) noexcept {
-    h = hash_mix(h, peer.uuid.hi);
-    h = hash_mix(h, peer.uuid.lo);
-    h = hash_mix(h, enum_hash_word(peer.level));
-    return hash_mix(h, enum_hash_word(peer.kind));
+    h = combine_ids(h, peer.uuid.hi);
+    h = combine_ids(h, peer.uuid.lo);
+    h = combine_ids(h, enum_hash_word(peer.level));
+    return combine_ids(h, enum_hash_word(peer.kind));
 }
 
 [[nodiscard]] constexpr std::uint64_t hash_peer_set(std::uint64_t h, PeerSetRef const& participants) noexcept {
     auto const peers = participants.peers.value();
-    h = hash_mix(h, participants.count.value());
-    h = hash_mix(h, peers.size());
+    h = combine_ids(h, participants.count.value());
+    h = combine_ids(h, peers.size());
     auto const declared = static_cast<std::size_t>(participants.count.value());
     auto const n = peers.size() < declared ? peers.size() : declared;
     for (std::size_t i = 0; i < n; ++i) {
@@ -423,7 +416,7 @@ template <typename E>
 }
 
 [[nodiscard]] constexpr std::uint64_t hash_recipe_semantics(std::uint64_t h, NumericalRecipe const& recipe) noexcept {
-    return hash_mix(h, compute_recipe_hash(recipe).raw());
+    return combine_ids(h, compute_recipe_hash(recipe).raw());
 }
 }  // namespace detail
 
@@ -500,28 +493,28 @@ using TelemetryEmitOp = Ir001Node<Ir001OpKind::IntTelemetryEmit, TelemetryAttrs>
 template <Ir001NodeLike Node>
 [[nodiscard]] constexpr ContentHash compute_ir001_content_hash(Node const& node) noexcept {
     auto h = detail::fmix64(0x4952303031ULL);
-    h = detail::hash_mix(h, std::to_underlying(Node::kind));
-    h = detail::hash_mix(h, sizeof(typename Node::attrs_type));
+    h = detail::combine_ids(h, std::to_underlying(Node::kind));
+    h = detail::combine_ids(h, sizeof(typename Node::attrs_type));
     if constexpr (std::same_as<typename Node::attrs_type, CollectiveAttrs>) {
         h = detail::hash_tensor_port(h, node.attrs.input);
         h = detail::hash_tensor_port(h, node.attrs.output);
         h = detail::hash_peer_set(h, node.attrs.participants);
         h = detail::hash_recipe_semantics(h, node.attrs.recipe);
-        h = detail::hash_mix(h, std::to_underlying(node.attrs.algorithm));
+        h = detail::combine_ids(h, std::to_underlying(node.attrs.algorithm));
     } else if constexpr (std::same_as<typename Node::attrs_type, PointToPointAttrs>) {
         h = detail::hash_tensor_port(h, node.attrs.payload);
         h = detail::hash_cog_identity(h, node.attrs.peer);
-        h = detail::hash_mix(h, node.attrs.timeout_ms.value());
+        h = detail::combine_ids(h, node.attrs.timeout_ms.value());
     } else if constexpr (std::same_as<typename Node::attrs_type, BarrierAttrs>) {
         h = detail::hash_peer_set(h, node.attrs.participants);
-        h = detail::hash_mix(h, node.attrs.quorum.value());
-        h = detail::hash_mix(h, node.attrs.timeout_ms.value());
+        h = detail::combine_ids(h, node.attrs.quorum.value());
+        h = detail::combine_ids(h, node.attrs.timeout_ms.value());
     } else if constexpr (std::same_as<typename Node::attrs_type, StorageAttrs>) {
         h = detail::hash_tensor_port(h, node.attrs.tensor);
-        h = detail::hash_mix(h, node.attrs.object.raw());
+        h = detail::combine_ids(h, node.attrs.object.raw());
     } else if constexpr (std::same_as<typename Node::attrs_type, TelemetryAttrs>) {
-        h = detail::hash_mix(h, node.attrs.row.raw());
-        h = detail::hash_mix(h, node.attrs.value);
+        h = detail::combine_ids(h, node.attrs.row.raw());
+        h = detail::combine_ids(h, node.attrs.value);
     }
     return ContentHash::from_raw(h == 0 ? 1 : h);
 }

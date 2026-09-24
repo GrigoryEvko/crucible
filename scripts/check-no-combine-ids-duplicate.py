@@ -52,10 +52,6 @@ CANONICAL = ("include/foundation/reflect/Hash.h", ("foundation", "reflect"))
 # Each path that may hold a second body, with its reason.
 EXEMPT: dict[str, str] = {
     "include/crucible/Expr.h": "a frozen copy of the old tree, which the consumer migration moves onto Hash.h",
-    "include/crucible/forge/Ir001/Comm.h": "a defect: hash_mix is a copy of combine_ids, and the file has its own "
-                                           "fmix64.  Both route through foundation/reflect/Hash.h",
-    "include/crucible/forge/_wip/Phases/Comm.h": "a defect: hash_mix is a copy of combine_ids, and the file has its "
-                                                 "own fmix64.  Both route through foundation/reflect/Hash.h",
 }
 NAME = "combine_ids"
 ROOTS = ("include", "src", "test", "bench", "tools", "vessel", "fuzz")
