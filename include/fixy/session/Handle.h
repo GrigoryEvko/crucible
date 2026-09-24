@@ -732,6 +732,7 @@ template <typename Transport, typename Resource>
 template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 class handle_core : public SessionHandleBase<Proto, SessionHandle<Proto, Resource, LoopCtx, Policy, PS>, Policy> {
     using base_type = SessionHandleBase<Proto, SessionHandle<Proto, Resource, LoopCtx, Policy, PS>, Policy>;
+    friend struct endpoint_transfer;
 
     static_assert(Policy::action != AbandonAction::Cancel || CancellableResource<Resource>,
                   "fixy::session::diagnostic [Cancel_Needs_A_Channel]: check::Cancel sends a cancellation to the "
@@ -812,6 +813,65 @@ public:
         cancel_resource<Resource>(resource_);
         this->release_endpoint_();
         this->mark_consumed_();
+    }
+};
+
+// ── Delegation's door ────────────────────────────────────────────────
+//
+// A delegated endpoint travels inside a message and continues at the
+// receiver.  Its session does not end, so its record in
+// fixy/session/Watch.h must stay live.  Every other exit from a live
+// handle ends the record: a step to End, a detach and a cancellation.
+//
+// endpoint_transfer is the one exit that keeps it.  handle_core names it
+// as a friend, and it is defined here, beside handle_core, so a
+// translation unit that sees a handle also sees this definition.  A
+// second definition is then a redefinition error, and no other code can
+// take the friendship.  The struct has one operation, and that operation
+// is its only way to change a handle.
+
+// A live endpoint that left its handle.  It holds the Resource and the
+// record of the session, which stays live: the session still owes its
+// protocol, and the receiver builds a handle from the two.  Only
+// endpoint_transfer builds one, and a copy would give one endpoint two
+// holders, so it moves only.
+template <typename Resource>
+class [[nodiscard]] transferred_endpoint {
+    friend struct endpoint_transfer;
+
+    constexpr transferred_endpoint(Resource taken, watch::session_ref record) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : resource{std::forward<Resource>(taken)}, session{record} {}
+
+public:
+    Resource resource;
+    watch::session_ref session;
+
+    constexpr transferred_endpoint(transferred_endpoint&&) noexcept(std::is_nothrow_move_constructible_v<Resource>) =
+        default;
+    transferred_endpoint(const transferred_endpoint&) =
+        delete("a transferred endpoint has one holder, like the handle it left");
+    transferred_endpoint& operator=(const transferred_endpoint&) =
+        delete("a transferred endpoint has one holder, like the handle it left");
+    transferred_endpoint& operator=(transferred_endpoint&&) =
+        delete("a transferred endpoint is built once and read once");
+    ~transferred_endpoint() = default;
+};
+
+struct endpoint_transfer {
+    // Moves the Resource and the record out of a live handle, and marks
+    // the handle consumed without ending its session.  The handle's
+    // destructor then reports nothing, and the record stays live until a
+    // handle that the receiver builds from it reaches End, detaches or
+    // cancels.  A consumed handle aborts here, as at every operation.
+    template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
+    [[nodiscard]] static constexpr transferred_endpoint<Resource>
+    take(SessionHandle<Proto, Resource, LoopCtx, Policy, PS>&& handle) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>) {
+        handle_core<Proto, Resource, LoopCtx, Policy, PS>& core = handle;
+        core.require_live_();
+        const watch::session_ref record = core.session_();
+        return transferred_endpoint<Resource>{core.take_resource_(), record};
     }
 };
 

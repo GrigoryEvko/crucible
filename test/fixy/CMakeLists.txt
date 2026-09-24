@@ -1097,6 +1097,17 @@ fixy_test(test_session_wire_word test_session_wire_word.cpp test_session_wire_wo
 # that can only shrink.
 fixy_test(test_session_handle_attacks)
 
+# Delegation's door moves a live endpoint out of its handle and keeps its
+# watch record live.  The door is defined beside the handle, so a second
+# definition is refused, and only the door builds the value it returns.
+fixy_test(test_session_endpoint_transfer)
+fixy_neg_compile_test(neg_sess_endpoint_transfer_redefined
+  "redefinition of .struct fixy::session::detail::endpoint_transfer."
+  "previous definition of .struct fixy::session::detail::endpoint_transfer.")
+fixy_neg_compile_test(neg_sess_transferred_endpoint_forged
+  "is private within this context"
+  "detail::transferred_endpoint<Resource>::transferred_endpoint.Resource, fixy::session::watch::session_ref.")
+
 # A channel whose two endpoints are not duals has no deadlock-freedom
 # guarantee.  Both operands here are individually well-formed, so the
 # refusal can only come from the duality clause.
