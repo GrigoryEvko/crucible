@@ -16136,13 +16136,18 @@ set_tests_properties(parse_clean parse_clean_self_test tsast_self_test mintmodel
     LABELS "ci_guard;ast")
 set_tests_properties(parse_clean tsast_self_test mintmodel_self_test PROPERTIES SKIP_RETURN_CODE 3)
 # The mutation tool weakens one gate of a header at a time and asks whether a
-# test notices.  Its self-test plants a header with three gates: a negative
-# fixture witnesses two of them and nothing witnesses the third.  The tool
-# must report two kills and one survivor, which proves that it tells a
-# witnessed gate from a bare one.  Exit 3 (no tree-sitter kit) is a skip.
+# test notices.  Its self-test plants a header with four gates.  A negative
+# fixture witnesses two of them, a test that ninja builds and runs witnesses
+# a contract, and nothing witnesses the fourth.  The tool must report three
+# kills and one survivor, which proves that it tells a witnessed gate from a
+# bare one in each tier.  Exit 3 (no tree-sitter kit) is a skip.
+set(_mutation_ninja "")
+if(CMAKE_GENERATOR MATCHES "Ninja")
+  set(_mutation_ninja --ninja ${CMAKE_MAKE_PROGRAM})
+endif()
 add_test(NAME mutation_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/tools/mutation/run.py selftest
-          --compiler ${CMAKE_CXX_COMPILER})
+          --compiler ${CMAKE_CXX_COMPILER} ${_mutation_ninja})
 set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 
 add_subdirectory(foundation)

@@ -255,6 +255,11 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
         elif callee in SEAL_CALLS:
             add("seal", call, "static_cast<void>(0)")
 
+    # The grammar parses contract_assert as a statement of its own, not as a call.
+    for statement in tree.find("contract_assert_statement"):
+        if statement.children:
+            add("contract", statement.children[0], "true")
+
     for base in tree.find("base_class_clause"):
         struct = base.parent
         if struct is None or struct.type not in ("struct_specifier", "class_specifier"):
@@ -270,6 +275,25 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
     # own mutant, because each mutant replaces one span of the original bytes.
     gates.sort(key=lambda gate: (gate.start, gate.kind))
     return gates
+
+
+def entity_users(path: Path) -> dict[str, list[str]]:
+    """For each name in a header, the declarations of the header that use it.
+
+    A test that witnesses a gate often names a declaration that uses the
+    gated one: a fixture calls the door, not the concept the door checks.
+    Complexity: linear in the size of the parse tree."""
+    tree = next(tsast.parse([path], strict=False))
+    users: dict[str, list[str]] = {}
+    for node_type in ("identifier", "type_identifier", "field_identifier"):
+        for node in tree.find(node_type):
+            user = _entity(node)
+            # A structured binding has no name of its own, so it names no user.
+            if re.fullmatch(r"[A-Za-z_]\w*", user) and user != node.text:
+                named = users.setdefault(node.text, [])
+                if user not in named:
+                    named.append(user)
+    return users
 
 
 def apply(source: bytes, gate: Gate) -> bytes:
