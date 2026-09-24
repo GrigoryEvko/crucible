@@ -496,9 +496,16 @@ public:
     // These two hand out the producer surface of the ring and of the
     // metadata log.  A caller that appends through one of them is the
     // producer, so each asks for the context of this Vigil's producer claim,
-    // as record_op and dispatch_op do.
-    [[nodiscard]] TraceRing& ring(VigilFgCtx const&) CRUCIBLE_LIFETIMEBOUND { return *ring_; }
-    [[nodiscard]] MetaLog& meta_log(VigilFgCtx const&) CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
+    // as record_op and dispatch_op do.  No op path calls them, so each also
+    // checks the calling thread against the claim at run time.
+    [[nodiscard]] TraceRing& ring(VigilFgCtx const&) CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_FATAL_INVARIANT(producer_claim_.is_claimable_by_caller());
+        return *ring_;
+    }
+    [[nodiscard]] MetaLog& meta_log(VigilFgCtx const&) CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_FATAL_INVARIANT(producer_claim_.is_claimable_by_caller());
+        return *meta_log_;
+    }
 
     // Counters that any thread can read with no context.  Each value is a
     // snapshot, and it can be stale by the time the caller reads it.

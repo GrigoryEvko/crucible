@@ -55,6 +55,11 @@ template <class Brand>
 class ProducerClaim;
 }  // namespace host
 
+// Declared here so that a branded source can name the one context that
+// builds it in place.  The definition and its default arguments are below.
+template <class Cap, class Row>
+class ExecCtx;
+
 namespace detail::ctx_mint {
 
 // Both constructors are user-provided, for the reason Effect.h gives for
@@ -87,12 +92,30 @@ namespace ctx_cap {
 // unit can declare a brand of its own, so no route turns a branded source
 // into an unbranded one.  Only the test door builds the unbranded source.
 //
-// The copy constructor stays trivial, so a call passes the source in no
-// register at all.  The copy assignment is user-provided, so the type is
-// not trivially copyable and std::bit_cast refuses it.  A trivial copy
-// constructor still makes the type implicit-lifetime, and the annotation
-// is what makes the checked lifetime start refuse it and every class
-// that holds one.  The unbranded source obeys the same copy rules.
+// A branded source has no copy and no move, so the context that holds one
+// has none either.  A by-value lambda capture or a thread argument makes
+// a copy, and the copy on the other thread is evidence of a claim that
+// the thread does not hold.  The context builds the source in place from
+// the key, and every gate takes the context by reference.  The destructor
+// is user-provided, so the type is not trivially copyable and
+// std::bit_cast refuses it.  The annotation makes the checked lifetime
+// start refuse it and every class that holds one.
+//
+// A reference to a context can still reach another thread, for example
+// through a lambda that captures it by reference.  A cold gate of the
+// brand therefore also checks the calling thread at run time, against the
+// live claims of the brand (host::require_brand_thread below).  A gate
+// that runs for each op does not do this check, because the check reads
+// the thread identity.  One residual stays: a reference to a context,
+// captured and used on another thread, at a gate that runs for each op.
+// The run-time check also admits every thread while no claim of the brand
+// is live.  The test door builds a context with no claim, and a context
+// can stay after the claim that built it.
+//
+// The unbranded source keeps a trivial copy constructor, so a call passes
+// it in no register.  Its copy assignment is user-provided, so
+// std::bit_cast refuses it, and the annotation refuses the checked
+// lifetime start.
 template <class Brand>
 class [[=::foundation::lifetime::no_start_over_bytes{}]] BrandedFg {
 public:
@@ -101,17 +124,22 @@ public:
     template <template <Effect...> class R>
     using permitted_as = R<>;
 
-    constexpr BrandedFg(const BrandedFg&) noexcept = default;
-    constexpr BrandedFg(BrandedFg&&) noexcept = default;
-    constexpr BrandedFg& operator=(const BrandedFg&) noexcept { return *this; }
-    constexpr BrandedFg& operator=(BrandedFg&&) noexcept { return *this; }
-    ~BrandedFg() = default;
+    BrandedFg(const BrandedFg&) = delete("a copy of a branded source can go to a thread that holds no claim");
+    BrandedFg(BrandedFg&&) = delete("a moved branded source can go to a thread that holds no claim");
+    BrandedFg& operator=(const BrandedFg&) = delete("a copy of a branded source can go to a thread that holds no claim");
+    BrandedFg& operator=(BrandedFg&&) = delete("a moved branded source can go to a thread that holds no claim");
+
+    // User-provided, so the source is not trivially copyable.  GCC counts a
+    // class whose copies are all deleted as trivially copyable, and
+    // std::bit_cast would then build one from a byte.
+    constexpr ~BrandedFg() noexcept {}
 
 private:
     constexpr explicit BrandedFg(detail::ctx_mint::fg_key) noexcept {}
 
-    friend class ::foundation::effects::host::ProducerClaim<Brand>;
-    friend struct ::foundation::effects::testing::ForegroundWitness;
+    // Only the context builds the source, from the key that a producer
+    // claim or the test witness gives it.
+    friend class ::foundation::effects::ExecCtx<BrandedFg, ::foundation::effects::Row<>>;
 };
 
 class [[=::foundation::lifetime::no_start_over_bytes{}]] Fg {
@@ -222,7 +250,23 @@ public:
     // make that claim.  An older form of it was public for every
     // specialization, and `ExecCtx<Init, Row<Init, Alloc, IO>>{}` then
     // built an init context without the init key.
-    constexpr explicit ExecCtx(Cap cap) noexcept : cap_{cap} {}
+    constexpr explicit ExecCtx(Cap cap) noexcept
+        requires(!IsBrandedForeground<Cap>)
+        : cap_{cap} {}
+
+private:
+    // A branded source has no copy, so the context builds it in place from
+    // the key.  This constructor is private, so only a producer claim and
+    // the test witness build a branded context.
+    constexpr explicit ExecCtx(detail::ctx_mint::fg_key key) noexcept
+        requires IsBrandedForeground<Cap>
+        : cap_{key} {}
+
+    template <class Brand>
+    friend class host::ProducerClaim;
+    friend struct testing::ForegroundWitness;
+
+public:
 
     // The only way to reach the capability, and it borrows rather than
     // copies.  Code that wants a copy has to write one, which a grep
@@ -298,8 +342,11 @@ public:
     // User-provided, so the claim is neither trivially copyable nor an
     // implicit-lifetime type.  GCC counts a class whose copies are all
     // deleted as trivially copyable, and std::start_lifetime_as would
-    // then build a claim over bytes that a thread already holds.
-    constexpr ~ProducerClaim() noexcept {}
+    // then build a claim over bytes that a thread already holds.  A claim
+    // that a thread won also removes itself from the record of its brand.
+    ~ProducerClaim() noexcept {
+        if (holder_.load(std::memory_order_relaxed) != std::thread::id{}) leave_brand_();
+    }
 
     // The part that inlines is a relaxed load, a comparison and a branch.
     // The claim and the failure report sit out of line and cold.
@@ -308,7 +355,7 @@ public:
         const auto current_tid = std::this_thread::get_id();
         if (holder_.load(std::memory_order_relaxed) != current_tid) [[unlikely]]
             claim_or_reject_(current_tid);
-        return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ctx_cap::BrandedFg<Brand>{ForegroundOwner::key()}};
+        return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ForegroundOwner::key()};
     }
 
     // True when no thread holds the claim yet, or the calling thread
@@ -316,6 +363,14 @@ public:
     // true, and the loser of the claim then ends the process.
     [[nodiscard]] bool is_claimable_by_caller() const noexcept {
         const auto holder = holder_.load(std::memory_order_relaxed);
+        return holder == std::thread::id{} || holder == std::this_thread::get_id();
+    }
+
+    // True when no claim of this brand is live, or the calling thread
+    // holds the live claims.  A cold gate of the brand asks this through
+    // require_brand_thread below.
+    [[nodiscard]] static bool can_caller_use_brand() noexcept {
+        const auto holder = brand_holder_.load(std::memory_order_acquire);
         return holder == std::thread::id{} || holder == std::this_thread::get_id();
     }
 
@@ -330,7 +385,15 @@ private:
             // Relaxed is enough: the claim synchronizes nothing, it only
             // records which thread arrived first.  A failed exchange leaves
             // the winner's id in `holder`, which the check below reports.
-            if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_relaxed)) return;
+            if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_relaxed)) {
+                const bool is_only_brand_thread = enter_brand_(current_tid);
+                if (is_only_brand_thread) return;
+                // Another thread holds a live claim of this brand.  The claim
+                // is undone first, so that its destructor removes no entry
+                // that it did not make.
+                holder_.store(std::thread::id{}, std::memory_order_relaxed);
+                CRUCIBLE_FATAL_INVARIANT(is_only_brand_thread);
+            }
         }
         // Not a contract clause.  The predicate is about a thread identity
         // this function just read, and a contract evaluates to nothing in a
@@ -338,12 +401,58 @@ private:
         CRUCIBLE_FATAL_INVARIANT(holder == current_tid);
     }
 
+    // The record of a brand names the one thread that holds its live
+    // claims, and counts them.  A second thread that wins a claim of the
+    // brand while the first holds one is refused, because the record then
+    // cannot tell the two threads apart.  Only a won claim and its
+    // destructor write the record, so the flag that guards the count is
+    // never on the path that runs for each op.
+    [[gnu::cold, gnu::noinline]] static bool enter_brand_(std::thread::id current_tid) noexcept {
+        lock_brand_();
+        const bool is_only_brand_thread =
+            brand_claims_ == 0 || brand_holder_.load(std::memory_order_relaxed) == current_tid;
+        if (is_only_brand_thread) {
+            brand_holder_.store(current_tid, std::memory_order_release);
+            ++brand_claims_;
+        }
+        unlock_brand_();
+        return is_only_brand_thread;
+    }
+
+    [[gnu::cold, gnu::noinline]] static void leave_brand_() noexcept {
+        lock_brand_();
+        const bool has_entry = brand_claims_ != 0;
+        if (has_entry && --brand_claims_ == 0) brand_holder_.store(std::thread::id{}, std::memory_order_release);
+        unlock_brand_();
+        CRUCIBLE_FATAL_INVARIANT(has_entry);
+    }
+
+    static void lock_brand_() noexcept {
+        while (brand_lock_.test_and_set(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
+    }
+
+    static void unlock_brand_() noexcept { brand_lock_.clear(std::memory_order_release); }
+
     // A thread id is not a lock-free atomic on every target, and a hidden
     // mutex on this check would put a lock on the dispatch path.
     static_assert(std::atomic<std::thread::id>::is_always_lock_free,
                   "std::atomic<std::thread::id> must be lock-free on this target.");
     std::atomic<std::thread::id> holder_{};
+
+    static inline constinit std::atomic_flag brand_lock_{};
+    static inline constinit std::atomic<std::thread::id> brand_holder_{};
+    static inline constinit std::size_t brand_claims_ = 0;
 };
+
+// The run-time half of a cold gate of a brand.  The context is evidence
+// that a claim of its brand was won, but a reference to the context can
+// reach another thread.  This check ends the process when a claim of the
+// brand is live and the calling thread does not hold it.  It reads the
+// thread identity, so a gate that runs for each op does not call it.
+template <class Brand>
+void require_brand_thread(ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> const&) noexcept {
+    CRUCIBLE_FATAL_INVARIANT(ProducerClaim<Brand>::can_caller_use_brand());
+}
 
 }  // namespace host
 
@@ -359,7 +468,7 @@ struct ForegroundWitness {
 
     template <class Brand>
     [[nodiscard]] static constexpr auto branded_fg() noexcept -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
-        return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ctx_cap::BrandedFg<Brand>{detail::ctx_mint::fg_key{}}};
+        return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{detail::ctx_mint::fg_key{}};
     }
 };
 
@@ -527,8 +636,15 @@ static_assert(IsCapType<ctx_cap::BrandedFg<BrandWitness>> && IsBrandedForeground
 static_assert(!IsBrandedForeground<ctx_cap::Fg> && !IsBrandedForeground<Bg> && !IsBrandedForeground<int>);
 static_assert(sizeof(BrandedFgWitness) == 1);
 static_assert(std::is_same_v<cap_permitted_row_t<ctx_cap::BrandedFg<BrandWitness>>, Row<>>);
-static_assert(!std::is_trivially_copyable_v<BrandedFgWitness> && std::is_trivially_copy_constructible_v<BrandedFgWitness>,
-              "A branded foreground context copies for free and is refused by std::bit_cast.");
+static_assert(!std::is_copy_constructible_v<BrandedFgWitness> && !std::is_move_constructible_v<BrandedFgWitness>
+                  && !std::is_copy_assignable_v<BrandedFgWitness> && !std::is_move_assignable_v<BrandedFgWitness>,
+              "A branded foreground context must have no copy and no move, or a by-value capture or a thread "
+              "argument takes it to a thread that holds no claim.");
+static_assert(!std::is_trivially_copyable_v<BrandedFgWitness>
+                  && !std::is_trivially_copyable_v<ctx_cap::BrandedFg<BrandWitness>>,
+              "A branded foreground context must not be trivially copyable, or std::bit_cast builds it from a byte.");
+static_assert(!std::is_constructible_v<BrandedFgWitness, detail::ctx_mint::fg_key>,
+              "Only a producer claim and the test witness build a branded context from the key.");
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<BrandedFgWitness>
                   && !::foundation::lifetime::ImplicitLifetimeThroughout<ctx_cap::BrandedFg<BrandWitness>>,
               "The checked lifetime start must refuse the branded foreground context and its source.");

@@ -1091,6 +1091,12 @@ foundation_neg_compile_test(neg_branded_foreground_ctx_bit_cast
 foundation_neg_compile_test(neg_branded_foreground_ctx_start_as_array
   "no matching function for call to .start_as_array<foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<")
+foundation_neg_compile_test(neg_branded_ctx_lambda_capture_copy
+  "use of deleted function .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Brand>, foundation::effects::Row<> >::ExecCtx.const foundation::effects::ExecCtx<"
+  "use of deleted function .foundation::effects::ctx_cap::BrandedFg<Brand>::BrandedFg.const foundation::effects::ctx_cap::BrandedFg<Brand>&. .with Brand = .anonymous.::Brand..: a copy of a branded source can go to a thread that holds no claim")
+foundation_neg_compile_test(neg_branded_ctx_jthread_argument
+  "no matching function for call to .std::tuple<void .{4}const foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Brand>, foundation::effects::Row<> >&. noexcept, foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Brand>, foundation::effects::Row<> > >::tuple"
+  "neg_branded_ctx_jthread_argument.cpp:25:[0-9]+: +required from here")
 
 # A stable id refuses a template argument that names an object by address
 # or by reference, a class value that holds an address, and a reflection
