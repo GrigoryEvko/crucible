@@ -16,6 +16,12 @@ THE RULE
       `namespace foundation::effects::host { struct X {}; }` are all owner
       definitions.  A declaration without a body, such as a friend
       declaration, is not.
+    - A qualifier resolves through each namespace alias of the whole scan,
+      a chain of aliases included, and not only through the aliases of its
+      own file.  So `struct h::X {}` is an owner definition when any file
+      defines `namespace h = foundation::effects::host;`, and a file that
+      spells only the alias is parsed too.  An alias name with two targets
+      keeps both, so a spelling can only be found more often.
     - A class definition inside a macro body counts, read from the macro
       text, because the parse keeps a macro body as raw text.
     - Each owner definition must match a roster row by name and file.
@@ -55,10 +61,9 @@ SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "fuzz", "exa
 SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inl", ".ipp", ".tpp"})
 CLASSES = ("class_specifier", "struct_specifier", "union_specifier")
 MACROS = ("preproc_def", "preproc_function_def")
-# A file that names a namespace host at all.  Only such a file is parsed.
-HOST_HINT = re.compile(r"\bhost\s*(?:::|\{)|\bnamespace\s+(?:[\w:]*::)?host\b")
-# A class head in a namespace host, inside a macro body or an unparseable file.
-TEXT_DEFINITION = re.compile(r"\b(?:class|struct|union)\s+(?:::)?(?:\w+\s*::\s*)*host\s*::\s*(\w+)\s*(?:final\s*)?[{:]")
+# A namespace alias definition, read as text so that one lexical pass over
+# every file builds the alias table before any parse.
+ALIAS = re.compile(r"\bnamespace\s+(\w+)\s*=\s*((?:::\s*)?\w+(?:\s*::\s*\w+)*)\s*;")
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")
 
 
@@ -103,6 +108,62 @@ def spelled(text: str) -> str:
     return re.sub(r"\s+", "", cxx_lex.blank(text)[0])
 
 
+def segments(text: str) -> list[str]:
+    """Return the names of a qualified spelling, without template arguments."""
+    return [re.sub(r"<.*", "", part) for part in spelled(text).split("::") if part]
+
+
+class Aliases:
+    """The namespace aliases of the whole scan, by alias name.
+
+    An alias name that two files define with two targets keeps both, so a
+    spelling can only resolve to more paths, never to fewer.
+    """
+
+    def __init__(self) -> None:
+        """Start with no alias."""
+        self.targets: dict[str, set[tuple[str, ...]]] = {}
+
+    def add(self, name: str, target: str) -> None:
+        """Record one alias definition."""
+        self.targets.setdefault(name, set()).add(tuple(segments(target)))
+
+    def expand(self, path: list[str], depth: int = 0) -> list[list[str]]:
+        """Return the path and each path that its first name reaches through an alias.
+
+        Complexity: bounded by the depth limit of 8 on a chain of aliases,
+        which also stops a cycle.
+        """
+        found = [path]
+        if depth < 8 and path and path[0] in self.targets:
+            for target in self.targets[path[0]]:
+                found += self.expand(list(target) + path[1:], depth + 1)
+        return found
+
+    def host_names(self) -> set[str]:
+        """Return each alias name that reaches a namespace named host."""
+        return {name for name in self.targets if any(p and p[-1] == "host" for p in self.expand([name]))}
+
+
+def names_host(path: list[str], aliases: Aliases) -> bool:
+    """Return True when a class path, through any alias, puts the class directly in a namespace named host."""
+    return any(len(candidate) >= 2 and candidate[-2] == "host" for candidate in aliases.expand(path))
+
+
+def text_definitions(text: str, aliases: Aliases) -> list[tuple[str, int]]:
+    """Return (owner, line) for each class head in raw text whose qualifier reaches a namespace host."""
+    found = []
+    for match in TEXT_HEAD.finditer(text):
+        path = segments(match.group(1)) + [match.group(2)]
+        if names_host(path, aliases):
+            found.append((match.group(2), text.count("\n", 0, match.start()) + 1))
+    return found
+
+
+# A qualified class head, inside a macro body or an unparseable file.
+TEXT_HEAD = re.compile(r"\b(?:class|struct|union)\s+((?:::\s*)?(?:\w+\s*::\s*)+)(\w+)\s*(?:final\s*)?[{:]")
+
+
 def scope_of(node: tsast.Node) -> list[str]:
     """Return the names of the namespaces around a node, outermost first.  An inline namespace is transparent."""
     parts: list[str] = []
@@ -116,20 +177,25 @@ def scope_of(node: tsast.Node) -> list[str]:
     return parts
 
 
-def definitions(tree: tsast.Tree) -> list[tuple[str, int]]:
-    """Return (owner name, line) for each class that the parse defines in a namespace named host."""
+def definitions(tree: tsast.Tree, aliases: Aliases) -> list[tuple[str, int]]:
+    """Return (owner name, line) for each class that the parse defines in a namespace named host.
+
+    A relative qualifier is read two ways: from the enclosing namespaces and
+    from the global namespace.  Either way can reach an alias, and a match
+    through any of them counts, so a spelling can only be found more often.
+    """
     found = []
     for node in tree.find(*CLASSES):
         name, body = node.child_by_field("name"), node.child_by_field("body")
         if name is None or body is None:
             continue
         written = spelled(name.text)
-        qualifier = [p for p in written.split("::") if p]
-        path = qualifier if written.startswith("::") else scope_of(node) + qualifier
-        if len(path) >= 2 and path[-2] == "host":
-            found.append((re.sub(r"<.*", "", path[-1]), node.line))
+        qualifier = segments(written)
+        paths = [qualifier] if written.startswith("::") else [scope_of(node) + qualifier, qualifier]
+        if any(names_host(path, aliases) for path in paths):
+            found.append((qualifier[-1], node.line))
     for node in tree.find(*MACROS):
-        found += [(match.group(1), node.line) for match in TEXT_DEFINITION.finditer(node.text)]
+        found += [(owner, node.line + line - 1) for owner, line in text_definitions(node.text, aliases)]
     return found
 
 
@@ -137,13 +203,17 @@ def scan(root: Path) -> tuple[list[tuple[str, str, int]], list[str]]:
     """Return every owner definition as (owner, path, line), and a line for each file that does not parse.
 
     Complexity: one lexical pass over each file, and one parse of each file
-    that names a namespace host.
+    that names a namespace host or an alias that reaches one.
     """
-    hinted = []
+    texts = {}
+    aliases = Aliases()
     for rel in scope_files(root):
-        text, _ = cxx_lex.blank(cxx_lex.splice((root / rel).read_text(errors="replace"))[0])
-        if HOST_HINT.search(text):
-            hinted.append(rel)
+        text, _ = cxx_lex.blank(cxx_lex.splice((root / rel).read_text(errors="replace"))[0], blank_literals=True)
+        texts[rel] = text
+        for match in ALIAS.finditer(text):
+            aliases.add(match.group(1), match.group(2))
+    hint = re.compile(r"\b(?:" + "|".join(sorted({"host"} | aliases.host_names())) + r")\b")
+    hinted = [rel for rel, text in texts.items() if hint.search(text)]
     found: list[tuple[str, str, int]] = []
     problems: list[str] = []
     for tree in tsast.parse([root / rel for rel in hinted], strict=False):
@@ -153,10 +223,9 @@ def scan(root: Path) -> tuple[list[tuple[str, str, int]], list[str]]:
                 problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot see its "
                                 f"owner definitions: {tree.diagnostic}")
                 continue
-            text, _ = cxx_lex.blank((root / rel).read_text(errors="replace"))
-            found += [(m.group(1), rel, text.count("\n", 0, m.start()) + 1) for m in TEXT_DEFINITION.finditer(text)]
+            found += [(owner, rel, line) for owner, line in text_definitions(texts[rel], aliases)]
             continue
-        found += [(owner, rel, line) for owner, line in definitions(tree)]
+        found += [(owner, rel, line) for owner, line in definitions(tree, aliases)]
     return found, problems
 
 
@@ -230,15 +299,19 @@ def self_test() -> int:
         root = Path(work)
         throwaway_repo.init(root)
         write(root, "include/foundation/effects/Effect.h",
-              "#pragma once\nnamespace foundation::effects {\nnamespace host {\nstruct InitOwner { static int key(); };\n"
-              "struct BackgroundOwner;\n}\nstruct Bg { friend struct ::foundation::effects::host::BackgroundOwner; };\n}\n")
+              "#pragma once\nnamespace foundation::effects {\nnamespace host {\n"
+              "struct InitOwner { static int key(); };\nstruct BackgroundOwner;\n}\n"
+              "struct Bg { friend struct ::foundation::effects::host::BackgroundOwner; };\n}\n")
         write(root, "include/foundation/effects/Owners.h",
               "#pragma once\nstruct foundation::effects::host::BackgroundOwner final { static int key(); };\n")
         write(root, ROSTER, "# planted\n"
               "InitOwner — include/foundation/effects/Effect.h — the init context\n"
               "BackgroundOwner — include/foundation/effects/Owners.h — the background context\n")
         write(root, "src/Uses.cpp", "int n = foundation::effects::host::InitOwner::key();\n")
-        expect(root, 0, "2 owner definition(s)", "each owner in its roster file, uses and a friend pass")
+        write(root, "src/OtherAlias.cpp", "namespace q = foundation::effects;\nstruct q::Unrelated {};\n"
+                                          "namespace host_like = foundation::effects;\nstruct host_like::Other {};\n")
+        expect(root, 0, "2 owner definition(s)",
+               "each owner in its roster file, uses, a friend and a class through an alias of another namespace pass")
 
         forgeries = {
             "src/Qualified.cpp": "struct foundation::effects::host::InitOwner { static int key(); };\n",
@@ -249,11 +322,22 @@ def self_test() -> int:
             "src/Using.cpp": "using namespace foundation::effects;\nstruct host::ForegroundOwner {};\n",
             "src/Macro.cpp": "#define FORGE struct foundation::effects::host::InitOwner {}\nFORGE;\n",
             "src/Commented.cpp": "struct foundation::effects::/* hidden */host::\n    InitOwner { };\n",
+            "src/HostAlias.cpp": "namespace h = foundation::effects::host;\nstruct h::InitOwner {};\n",
+            "src/ChainAlias.cpp": "namespace e = ::foundation::effects;\nnamespace h2 = e::host;\n"
+                                  "namespace h3 = h2;\nstruct h3::ForegroundOwner {};\n",
+            "src/MacroAlias.cpp": "namespace hm = foundation::effects::host;\n"
+                                  "#define FORGE_ALIAS struct hm::BackgroundOwner {}\nFORGE_ALIAS;\n",
         }
         for rel, text in forgeries.items():
             write(root, rel, text)
             expect(root, 1, f"UNLISTED  {rel}", f"an owner defined outside the roster: {rel}", True)
             (root / rel).unlink()
+        write(root, "include/foundation/effects/Alias.h", "#pragma once\nnamespace fh = foundation::effects::host;\n")
+        write(root, "src/CrossFile.cpp", "#include <foundation/effects/Alias.h>\nstruct fh::InitOwner {};\n")
+        expect(root, 1, "UNLISTED  src/CrossFile.cpp", "an owner defined through an alias that another file defines",
+               True)
+        (root / "include/foundation/effects/Alias.h").unlink()
+        (root / "src/CrossFile.cpp").unlink()
 
         write(root, "test/foundation/neg/neg_forge_owner.cpp",
               "struct foundation::effects::host::InitOwner {};\n")
