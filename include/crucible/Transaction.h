@@ -4,8 +4,10 @@
 // is built and hashed, then becomes the live one. The transaction it displaced
 // is kept rather than discarded, so a regression can restore it.
 //
-// The log is owned by a single writing thread, and every state read here is a
-// plain read for that reason.
+// One thread owns the log, and every state read here is a plain read for that
+// reason. The type holds that rule instead of a comment: each member takes a
+// proof of type Owner, and only the owning thread can hold one. A second
+// thread that wants a change sends it to the owner as a message.
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
@@ -20,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 
 namespace crucible {
 
@@ -63,10 +66,30 @@ static_assert(
 static_assert(sizeof(::crucible::safety::MonotonicClockBytes<std::uint64_t>) == sizeof(std::uint64_t),
               "a clock-source-tagged timestamp must be the size of the value it wraps");
 
-// Not thread-safe: one thread writes it. A pointer it returns stays valid for
-// as long as the ring has not wrapped past the slot it points into.
+// A proof that the caller is the one thread that owns some state. It is
+// empty, so it costs nothing at a call. It cannot be copied or moved, so a
+// thread cannot hand it to another thread by value. It has no public default
+// constructor, so only its owner can build one. It is not trivially copyable
+// and not an implicit-lifetime type, so no bit_cast and no lifetime start over
+// bytes can build one either.
+//
+// This is the ownership half of concurrent separation logic (O'Hearn,
+// Resources, Concurrency and Local Reasoning, 2007): one thread owns the
+// resource, and the frame rule keeps every other thread out of it.
+//
+// GCC counts a class whose copy and move are all deleted as trivially
+// copyable, so an owner type also needs a destructor that is not trivial.
+// An empty user-provided destructor is enough and costs nothing.
+template <typename P>
+concept OwnerProof = std::is_empty_v<P> && !std::is_copy_constructible_v<P> && !std::is_move_constructible_v<P>
+                     && !std::is_default_constructible_v<P> && !std::is_trivially_copyable_v<P>
+                     && !std::is_implicit_lifetime_v<P>;
 
-template <uint32_t N = 16>
+// A pointer the log returns stays valid for as long as the ring has not
+// wrapped past the slot it points into, and it is the owner's to use: the
+// proof admits the call, and the pointer must stay on the owning thread.
+
+template <uint32_t N, OwnerProof Owner>
 class TransactionLog {
     static_assert((N & (N - 1)) == 0, "N must be a power of 2");
 
@@ -83,7 +106,7 @@ public:
     TransactionLog(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
     TransactionLog& operator=(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
 
-    [[nodiscard, gnu::cold]] Transaction* begin_tx(uint64_t step_id) noexcept {
+    [[nodiscard, gnu::cold]] Transaction* begin_tx(Owner const&, uint64_t step_id) noexcept {
         // Claiming advances only the cursor, so the reference it hands back
         // stays valid across the reset that follows.
         Transaction* tx = &ring_.claim();
@@ -107,8 +130,9 @@ public:
     // committed entry carrying zero is indistinguishable from an uncommitted
     // one and any search over the log becomes ambiguous. Refusing it here also
     // catches the case where the commit runs before the hash was recomputed.
-    [[nodiscard]] bool commit(Transaction* const tx, Transaction::ArenaRegion region, ContentHash content_hash,
-                              MerkleHash merkle_root) noexcept pre(tx != nullptr) pre(region.value() != nullptr)
+    [[nodiscard]] bool commit(Owner const&, Transaction* const tx, Transaction::ArenaRegion region,
+                              ContentHash content_hash, MerkleHash merkle_root) noexcept pre(tx != nullptr)
+        pre(region.value() != nullptr)
         pre(::crucible::decide::is_non_zero(merkle_root)) {
         // A contract predicate that reads through a parameter's pointee is
         // skipped when the compiler folds the body at compile time, so every
@@ -133,7 +157,7 @@ public:
 
     // Returns the transaction this one displaces, which is the target a
     // rollback would restore, or null if there was none.
-    [[nodiscard]] Transaction* activate(Transaction* const tx) noexcept pre(tx != nullptr) {
+    [[nodiscard]] Transaction* activate(Owner const&, Transaction* const tx) noexcept pre(tx != nullptr) {
         if (tx->status != TxStatus::COMMITTED) {
             CRUCIBLE_POST(static_cast<Transaction*>(nullptr), true || tx->status == TxStatus::ACTIVE);
             return nullptr;
@@ -164,8 +188,8 @@ public:
 
     // Restores the most recently displaced transaction and marks the current
     // one rolled back. Returns false when there is nothing to restore.
-    [[nodiscard]] bool rollback() noexcept {
-        Transaction* prev = previous();
+    [[nodiscard]] bool rollback(Owner const& owner) noexcept {
+        Transaction* prev = previous(owner);
         if (!prev) return false;
 
         if (active_tx_.value() != nullptr) {
@@ -179,9 +203,9 @@ public:
     }
 
     // Not const: the caller may need to change the transaction it returns.
-    [[nodiscard]] Transaction* active() CRUCIBLE_LIFETIMEBOUND { return active_tx_.value(); }
+    [[nodiscard]] Transaction* active(Owner const&) CRUCIBLE_LIFETIMEBOUND { return active_tx_.value(); }
 
-    [[nodiscard]] Transaction* previous() CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] Transaction* previous(Owner const&) CRUCIBLE_LIFETIMEBOUND {
         // Walks back from the most recently claimed slot, so the first
         // displaced transaction it finds is the newest one.
         for (typename Ring::size_type i = 0; i < ring_.size(); i++) {
@@ -191,7 +215,7 @@ public:
         return nullptr;
     }
 
-    [[nodiscard]] uint32_t size() const {
+    [[nodiscard]] uint32_t size(Owner const&) const {
         // The fill saturates at the capacity, which is far below what the
         // narrower type holds, so the conversion loses nothing.
         return static_cast<uint32_t>(ring_.size());

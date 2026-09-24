@@ -9,10 +9,22 @@
 
 #include <crucible/Transaction.h>
 
+// A valid owner, so the commit is refused for its region argument alone.
+class Owner {
+public:
+    static Owner claim() noexcept { return Owner{}; }
+    Owner(const Owner&) = delete;
+    ~Owner() {}
+
+private:
+    Owner() noexcept {}
+};
+
 int main() {
-    crucible::TransactionLog<16> log{};
-    auto* tx = log.begin_tx(1);
+    const Owner owner = Owner::claim();
+    crucible::TransactionLog<16, Owner> log{};
+    auto* tx = log.begin_tx(owner, 1);
     crucible::RegionNode* region = nullptr;
-    (void)log.commit(tx, region, crucible::ContentHash{}, crucible::MerkleHash{1});
+    (void)log.commit(owner, tx, region, crucible::ContentHash{}, crucible::MerkleHash{1});
     return 0;
 }

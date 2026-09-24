@@ -166,8 +166,10 @@ public:
                 Cipher::open(crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>{cfg_.cipher_path}));
         }
 
-        bg_.set_region_ready_callback(this, [](void* self, effects::Bg const& bg, RegionNode* region) noexcept {
-            static_cast<Vigil*>(self)->on_region_ready(bg, region);
+        bg_.set_region_ready_callback(this, [](void* self, effects::Bg const& bg,
+                                               BackgroundThread::PublishStage const& stage,
+                                               RegionNode* region) noexcept {
+            static_cast<Vigil*>(self)->on_region_ready(bg, stage, region);
         });
 
         // The watchdog is constructed before the background thread starts,
@@ -411,30 +413,30 @@ public:
     // Makes the previously superseded transaction active again, restoring
     // the replay state to match.
     //
-    // Call this only while the background thread is idle, which means after
-    // flush() and with nothing appended to the ring since.  TransactionLog
-    // says of itself that one thread writes it, and the background thread is
-    // the usual one: on_region_ready opens, commits and activates a
-    // transaction for every region it publishes.  This is the one path on
-    // which the foreground writes the same log, so the two overlap only if a
-    // publication is in flight when this is called.
-    //
-    // The constraint is documented rather than enforced because a check here
-    // would report the state of one moment and not hold it.  Closing it
-    // properly means giving the log an owner, which is a change to
-    // Transaction.h rather than to this call.
+    // The publish stage owns the transaction log, and on_region_ready writes
+    // it for every region it publishes.  So the rollback runs there, as a job
+    // between two publications, and never beside one.  The job copies out the
+    // restored region, because a transaction pointer belongs to the owning
+    // thread and a later publication can recycle its slot.  The foreground
+    // part below then acts on that copy alone.
     [[nodiscard, gnu::cold]] bool rollback() {
-        if (!tx_log_.rollback()) return false;
+        bool restored_one = false;
+        RegionNode* restored = nullptr;
+        bg_.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
+            restored_one = tx_log_.rollback(stage);
+            if (!restored_one) return;
+            if (const Transaction* tx = tx_log_.active(stage)) restored = tx->region.value();
+        });
+        if (!restored_one) return false;
         // The deactivation abandons the replayed region the way a divergence
         // does, so the mode takes the same transition.  A restored region
         // with a memory plan takes it back to COMPILED below.
         if (ctx_.is_compiled()) ctx_.deactivate();
         mode_.publish_recording_after_divergence();
-        const Transaction* tx = tx_log_.active();
-        if (tx && tx->region.value()) {
-            bg_.active_region.store(tx->region.value(), std::memory_order_release);
-            if (ctx_.activate(tx->region.value())) {
-                register_externals_from_region_(tx->region.value());
+        if (restored != nullptr) {
+            bg_.active_region.store(restored, std::memory_order_release);
+            if (ctx_.activate(restored)) {
+                register_externals_from_region_(restored);
                 mode_.publish_compiled();
             }
         }
@@ -508,8 +510,6 @@ public:
     [[nodiscard]] const CrucibleContext& context() const CRUCIBLE_LIFETIMEBOUND { return ctx_; }
     [[nodiscard]] const RegionCache& region_cache() const CRUCIBLE_LIFETIMEBOUND { return region_cache_; }
 
-    [[nodiscard]] const TransactionLog<16>& tx_log() const CRUCIBLE_LIFETIMEBOUND { return tx_log_; }
-
     // These two hand out the producer surface of the ring and of the
     // metadata log directly, so the thread gate that record_op and
     // dispatch_op carry does not travel with them.  A caller that appends
@@ -568,21 +568,22 @@ private:
     // log state and belongs to the foreground.  The background thread hands
     // over its own context, so the observation below acts under a context the
     // caller holds, not one built here.
-    [[gnu::cold]] void on_region_ready(::crucible::effects::Bg const& bg, RegionNode* region) {
+    [[gnu::cold]] void on_region_ready(::crucible::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
+                                       RegionNode* region) {
         // bump returns the previous value, which is the index this call
         // reserved.  The background thread is the sole writer.
         const uint64_t step = step_.bump();
 
-        auto* tx = tx_log_.begin_tx(step);
+        auto* tx = tx_log_.begin_tx(stage, step);
         // The result is discarded because a state-machine logic error here
         // is not something the background thread can recover from.
         //
         // The merkle root goes through the checked accessor so the non-zero
         // invariant is witnessed at this call site: its precondition fires
         // here if the hash was never recomputed.
-        (void)tx_log_.commit(tx, Transaction::ArenaRegion{region}, region->content_hash,
+        (void)tx_log_.commit(stage, tx, Transaction::ArenaRegion{region}, region->content_hash,
                              ::crucible::make_merkle_root(region->computed_merkle_hash()));
-        (void)tx_log_.activate(tx);
+        (void)tx_log_.activate(stage, tx);
 
         // Publishing the region signals the foreground, which picks it up
         // on its next dispatch.  The mode stays RECORDING here.  The
@@ -868,7 +869,9 @@ private:
     Config cfg_;
     std::unique_ptr<TraceRing> ring_;
     std::unique_ptr<MetaLog> meta_log_;
-    TransactionLog<16> tx_log_;
+    // Owned by the publish stage: each member takes that stage's proof, and
+    // the foreground reaches the log only through run_on_publish_stage.
+    TransactionLog<16, BackgroundThread::PublishStage> tx_log_;
     std::optional<Cipher> cipher_;
     // Every dispatch and every record must come from one and the same
     // thread.  Another thread entering breaks the ring's single-producer

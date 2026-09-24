@@ -32,10 +32,19 @@
 
 #include <crucible/Transaction.h>
 
+// A valid owner, so the capacity is the one thing refused.
+class Owner {
+    Owner() noexcept {}
+
+public:
+    Owner(const Owner&) = delete;
+    ~Owner() {}
+};
+
 int main() {
     // Bridge fires: 7 & 6 == 6 != 0 → the power-of-2 static_assert fails
     // AND CyclicBuffer<Transaction, 7>'s requires-clause is unsatisfied.
-    crucible::TransactionLog<7> bad;
+    crucible::TransactionLog<7, Owner> bad;
     (void)bad;
     return 0;
 }

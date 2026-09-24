@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <crucible/MetaLog.h>
@@ -59,6 +60,47 @@ struct BackgroundThread {
     // writes the fields that follow.
     alignas(64) std::atomic<RegionNode*> active_region{nullptr};
 
+    // Proof that the caller owns the state that the region callback writes.
+    //
+    // The publish stage builds one on its own stack and hands it, by
+    // reference, to every call that runs on that thread: the region
+    // callback, and each job that run_on_publish_stage posts.  While no
+    // publish stage runs, run_on_publish_stage builds one for its caller,
+    // who then owns that state.  Nothing else can build one.  The class
+    // cannot be copied or moved, so a thread cannot pass it to another
+    // thread by value, and it is not trivially copyable and not an
+    // implicit-lifetime type, so no bit_cast and no lifetime start over
+    // bytes can make one.
+    //
+    // This is the ownership half of concurrent separation logic (O'Hearn,
+    // Resources, Concurrency and Local Reasoning, 2007).  One thread owns
+    // the resource, the frame rule keeps every other thread out of it, and
+    // ownership moves by a message to the owner, never by sharing.
+    class PublishStage {
+        PublishStage() noexcept {}
+        friend struct BackgroundThread;
+
+    public:
+        PublishStage(const PublishStage&) = delete("the publish-stage proof stays on the thread that owns the state");
+        PublishStage(PublishStage&&) = delete("the publish-stage proof stays on the thread that owns the state");
+        PublishStage& operator=(const PublishStage&) =
+            delete("the publish-stage proof stays on the thread that owns the state");
+        PublishStage& operator=(PublishStage&&) =
+            delete("the publish-stage proof stays on the thread that owns the state");
+        // User-provided, because GCC counts a class whose copy and move are
+        // all deleted as trivially copyable.  A destructor that is not
+        // trivial takes the class out of trivially copyable and out of
+        // implicit-lifetime, and costs nothing: the body is empty.
+        ~PublishStage() {}
+    };
+
+    static_assert(std::is_empty_v<PublishStage>);
+    static_assert(!std::is_default_constructible_v<PublishStage>);
+    static_assert(!std::is_copy_constructible_v<PublishStage> && !std::is_move_constructible_v<PublishStage>);
+    static_assert(!std::is_trivially_copyable_v<PublishStage>, "a trivially copyable proof is forgeable by bit_cast");
+    static_assert(!std::is_implicit_lifetime_v<PublishStage>,
+                  "an implicit-lifetime proof is forgeable by a lifetime start over bytes");
+
     struct RegionReadyCallback {
         // The noexcept is load-bearing.  This fires mid-publish on the
         // background thread, so an escaping exception would unwind through
@@ -68,21 +110,83 @@ struct BackgroundThread {
         //
         // The callback receives the background context of the thread that
         // runs it.  A callee that acts under a background context takes that
-        // one, and never builds its own.
-        using Fn = void (*)(void*, effects::Bg const&, RegionNode*) noexcept;
+        // one, and never builds its own.  It also receives the publish-stage
+        // proof, which is what lets it write state that the publish stage
+        // owns.
+        using Fn = void (*)(void*, effects::Bg const&, PublishStage const&, RegionNode*) noexcept;
 
         void* ctx = nullptr;
         Fn fn = nullptr;
 
         [[nodiscard]] constexpr explicit operator bool() const noexcept { return fn != nullptr; }
 
-        void operator()(effects::Bg const& bg, RegionNode* region) const noexcept { fn(ctx, bg, region); }
+        void operator()(effects::Bg const& bg, PublishStage const& stage, RegionNode* region) const noexcept {
+            fn(ctx, bg, stage, region);
+        }
     };
 
     // Own cache line: background-only state.  Sharing a line with
     // active_region would drag the callback object into the foreground's
     // cache on every acquire load.
     alignas(64) RegionReadyCallback region_ready_cb;
+
+    // A job that a caller hands to the owner of the publish-stage state.
+    // It lives on the caller's stack, and the caller waits on done, so the
+    // record outlives every read the publish stage makes of it.
+    struct OwnerJob {
+        void* ctx = nullptr;
+        void (*fn)(void*, PublishStage const&) noexcept = nullptr;
+        std::atomic<bool> done{false};
+    };
+
+    // Runs job on the thread that owns the publish-stage state, and returns
+    // when it has run.  While the publish stage runs, that thread is the
+    // publish stage, which runs the job between two publications.  While
+    // no publish stage runs, the state has no other writer, and the caller
+    // runs the job itself.  Either way, the job and the region callback
+    // never overlap.
+    //
+    // Cold path.  The caller spins while the publish stage finishes the
+    // publication in hand, which is bounded by one region build.  A thread
+    // that holds the stage already, in a region callback or in a job, must
+    // not call this: it would wait on itself, so the contract stops it.
+    template <typename Job>
+        requires std::is_nothrow_invocable_v<Job&, PublishStage const&>
+    void run_on_publish_stage(Job&& job) noexcept {
+        CRUCIBLE_ASSERT(stage_held_by_this_thread_ != this);
+        using JobType = std::remove_reference_t<Job>;
+        OwnerJob request{};
+        request.ctx = static_cast<void*>(std::addressof(job));
+        request.fn = [](void* ctx, PublishStage const& stage) noexcept { (*static_cast<JobType*>(ctx))(stage); };
+        while (true) {
+            OwnerJob* seen = owner_mailbox_.load(std::memory_order_acquire);
+            if (seen == nullptr) {
+                if (owner_mailbox_.compare_exchange_weak(seen, &request, std::memory_order_acq_rel,
+                                                         std::memory_order_acquire)) {
+                    while (!request.done.load(std::memory_order_acquire)) {
+                        CRUCIBLE_SPIN_PAUSE;
+                    }
+                    return;
+                }
+                continue;
+            }
+            if (seen == &mailbox_closed_) {
+                if (owner_mailbox_.compare_exchange_weak(seen, &mailbox_inline_, std::memory_order_acq_rel,
+                                                         std::memory_order_acquire)) {
+                    const PublishStage stage;
+                    const BackgroundThread* const held_before = stage_held_by_this_thread_;
+                    stage_held_by_this_thread_ = this;
+                    request.fn(request.ctx, stage);
+                    stage_held_by_this_thread_ = held_before;
+                    owner_mailbox_.store(&mailbox_closed_, std::memory_order_release);
+                    return;
+                }
+                continue;
+            }
+            // Another job is in flight, on the publish stage or inline.
+            CRUCIBLE_SPIN_PAUSE;
+        }
+    }
 
     IterationDetector detector;
 
@@ -213,6 +317,85 @@ struct BackgroundThread {
     // dropped region for flush() to return.
     alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint32_t> reset_epoch{0};
 
+    // The mailbox of the publish-stage state.  It holds one of four values:
+    //   &mailbox_closed_  no publish stage runs, so a caller may own the state
+    //   &mailbox_inline_  a caller runs a job while no publish stage runs
+    //   nullptr           the publish stage runs and no job waits
+    //   a job             the publish stage runs, and this job waits for it
+    // The publish stage opens it as its first act and closes it as its last,
+    // so a job posted while the stage runs runs on the stage, and any other
+    // job runs on its caller.  The stage waits to open while a caller runs a
+    // job inline.  No job is claimed twice, because each side claims it by
+    // one compare-and-swap on this word.
+    // Defined after the class: a job's member initializers are not usable
+    // until the enclosing class is complete.
+    static OwnerJob mailbox_closed_;
+    static OwnerJob mailbox_inline_;
+    alignas(64) std::atomic<OwnerJob*> owner_mailbox_{&mailbox_closed_};
+
+    // One acquire load when no job waits, which is the common case.  While
+    // the stage runs, the mailbox holds no sentinel: the stage opened it,
+    // and only the stage closes it.
+    void serve_owner_mailbox_(PublishStage const& stage) noexcept {
+        OwnerJob* const job = owner_mailbox_.load(std::memory_order_acquire);
+        if (job == nullptr) return;
+        CRUCIBLE_ASSERT(job != &mailbox_closed_ && job != &mailbox_inline_);
+        job->fn(job->ctx, stage);
+        owner_mailbox_.store(nullptr, std::memory_order_release);
+        // The caller returns once it reads done, and its record dies with
+        // its stack frame, so nothing reads the record after this store.
+        job->done.store(true, std::memory_order_release);
+    }
+
+    void close_owner_mailbox_(PublishStage const& stage) noexcept {
+        OwnerJob* const last = owner_mailbox_.exchange(&mailbox_closed_, std::memory_order_acq_rel);
+        if (last == nullptr) return;
+        last->fn(last->ctx, stage);
+        last->done.store(true, std::memory_order_release);
+    }
+
+    void open_owner_mailbox_() noexcept {
+        while (true) {
+            OwnerJob* seen = &mailbox_closed_;
+            if (owner_mailbox_.compare_exchange_weak(seen, nullptr, std::memory_order_acq_rel,
+                                                     std::memory_order_acquire)) {
+                return;
+            }
+            // The stage waits while a caller runs a job inline.  Any value
+            // that is not a sentinel means a second stage runs, and the
+            // state would then have two owners.
+            CRUCIBLE_ASSERT(seen == &mailbox_inline_ || seen == &mailbox_closed_);
+            CRUCIBLE_SPIN_PAUSE;
+        }
+    }
+
+    // The background thread whose stage this thread holds, or null.  Read
+    // only by the contract in run_on_publish_stage, on the cold path.
+    static inline thread_local const BackgroundThread* stage_held_by_this_thread_ = nullptr;
+
+    // The publish stage holds the mailbox open for as long as this scope
+    // lives, so every way out of the stage closes it.  A mailbox left open
+    // would make each later job wait for a stage that no longer runs.
+    class OwnerMailboxScope {
+    public:
+        OwnerMailboxScope(BackgroundThread& owner, PublishStage const& stage) noexcept
+            : owner_{owner}, stage_{stage}, held_before_{stage_held_by_this_thread_} {
+            owner_.open_owner_mailbox_();
+            stage_held_by_this_thread_ = &owner_;
+        }
+        ~OwnerMailboxScope() {
+            stage_held_by_this_thread_ = held_before_;
+            owner_.close_owner_mailbox_(stage_);
+        }
+        OwnerMailboxScope(const OwnerMailboxScope&) = delete("the scope closes the mailbox once");
+        OwnerMailboxScope& operator=(const OwnerMailboxScope&) = delete("the scope closes the mailbox once");
+
+    private:
+        BackgroundThread& owner_;
+        PublishStage const& stage_;
+        const BackgroundThread* held_before_;
+    };
+
     static constexpr uint32_t BATCH_SIZE = 4096;
 
     struct BgTraceBatch {
@@ -279,7 +462,12 @@ struct BackgroundThread {
     using BuildWorkChannel = concurrent::PermissionedSpscChannel<BgBuildWork*, 64, BgBuildWorkTag>;
     using GraphPublishChannel = concurrent::PermissionedSpscChannel<BgGraphPublish*, 64, BgGraphPublishTag>;
 
+    // Also carries the owner to the publish stage from its first
+    // iteration, so the stage can serve the owner mailbox before any
+    // region arrives.
     struct BgSinkProducerHandle {
+        BackgroundThread* owner = nullptr;
+
         [[nodiscard]] bool try_push(BgPipelineDone* const& done) noexcept {
             delete done;
             return true;
@@ -376,7 +564,7 @@ struct BackgroundThread {
         }
     }
 
-    void publish_trace_graph(effects::Alloc a, TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY {
+    void publish_trace_graph(effects::Alloc a, PublishStage const& stage, TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY {
         if (!graph) return;
 
         const uint32_t num_ops = graph->num_ops.get_assuming_set();
@@ -412,7 +600,7 @@ struct BackgroundThread {
 
         active_region.store(region, std::memory_order_release);
         if (region_ready_cb) {
-            region_ready_cb(effects::mint_bg_context(effects::detail::ctx_mint::bg_key{}), region);
+            region_ready_cb(effects::mint_bg_context(effects::detail::ctx_mint::bg_key{}), stage, region);
         }
     }
 
@@ -601,10 +789,20 @@ struct BackgroundThread {
     // after every region produced from its batch and from preceding batches
     // has gone through publish_trace_graph.  A completed flush therefore
     // implies every region is published.
+    //
+    // This stage owns the state the region callback writes.  It builds the
+    // publish-stage proof once, serves the owner mailbox before every pop,
+    // and closes the mailbox on its way out, so a job posted to it runs
+    // here between two publications and never beside one.
     static void MakeRegionFn(typename GraphPublishChannel::ConsumerHandle&& in, BgSinkProducerHandle&& out) {
         [[maybe_unused]] auto bg = effects::mint_bg_context(effects::detail::ctx_mint::bg_key{});
+        BackgroundThread* const owner = out.owner;
+        CRUCIBLE_ASSERT(owner != nullptr);
+        const PublishStage stage;
+        const OwnerMailboxScope mailbox{*owner, stage};
 
         while (true) {
+            owner->serve_owner_mailbox_(stage);
             auto maybe_publish = in.try_pop();
             if (!maybe_publish) {
                 CRUCIBLE_SPIN_PAUSE;
@@ -619,7 +817,6 @@ struct BackgroundThread {
                 return;
             }
 
-            BackgroundThread* owner = publish->owner;
             if (publish->commit_only) {
                 // The marker sits strictly after every publish message from
                 // the same and earlier batches, so this bump happens-after
@@ -649,7 +846,7 @@ struct BackgroundThread {
                 continue;
             }
 
-            owner->publish_trace_graph(bg.alloc, publish->graph);
+            owner->publish_trace_graph(bg.alloc, stage, publish->graph);
         }
     }
 
@@ -973,7 +1170,7 @@ private:
             concurrent::mint_stage<&DetectIterationFn>(ctx, std::move(trace_cons), std::move(build_prod));
         auto build_stage = concurrent::mint_stage<&BuildTraceFn>(ctx, std::move(build_cons), std::move(publish_prod));
         auto publish_stage =
-            concurrent::mint_stage<&MakeRegionFn>(ctx, std::move(publish_cons), BgSinkProducerHandle{});
+            concurrent::mint_stage<&MakeRegionFn>(ctx, std::move(publish_cons), BgSinkProducerHandle{this});
 
         auto pipeline = concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
                                                   std::move(build_stage), std::move(publish_stage));
@@ -1527,5 +1724,9 @@ public:
         return plan;
     }
 };
+
+// The two sentinels of the owner mailbox.  Only their addresses matter.
+inline constinit BackgroundThread::OwnerJob BackgroundThread::mailbox_closed_{};
+inline constinit BackgroundThread::OwnerJob BackgroundThread::mailbox_inline_{};
 
 }  // namespace crucible

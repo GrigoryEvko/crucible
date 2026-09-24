@@ -27,11 +27,20 @@
 
 #include <crucible/Transaction.h>
 
+// A valid owner, so the capacity is the one thing refused.
+class Owner {
+    Owner() noexcept {}
+
+public:
+    Owner(const Owner&) = delete;
+    ~Owner() {}
+};
+
 int main() {
     // Bridge fires: the power-of-2 static_assert passes for N = 0, but
     // CyclicBuffer<Transaction, 0>'s `requires (N > 0 ...)` rejects the
     // Ring alias → no valid TransactionLog<0> specialization.
-    crucible::TransactionLog<0> bad;
+    crucible::TransactionLog<0, Owner> bad;
     (void)bad;
     return 0;
 }

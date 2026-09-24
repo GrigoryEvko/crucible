@@ -10,8 +10,9 @@
 // specifier from the typedef (e.g., misguided "make the API
 // flexible by accepting any callable") would silently break the
 // load-bearing discipline.  This fixture pins the type-identity
-// at the SURFACE: `Fn` is `void(*)(void*, RegionNode*) noexcept`,
-// nothing else.
+// at the SURFACE: `Fn` is `void(*)(void*, effects::Bg const&,
+// BackgroundThread::PublishStage const&, RegionNode*) noexcept`, nothing
+// else.
 //
 // Distinct mismatch class (HS14 "≥2 distinct mismatch classes"):
 // TYPE-IDENTITY half — the typedef MUST NOT be is-same with the
@@ -34,7 +35,14 @@ namespace c = crucible;
 //
 // We assert the NEGATIVE direction below — a correct V-086 surface
 // reddens the assertion at compile time.
-using non_noexcept_fn = void (*)(void*, c::RegionNode*);
+// It spells the whole parameter list of Fn, so the one difference the
+// assertion can see is the noexcept.
+using non_noexcept_fn = void (*)(void*, c::effects::Bg const&, c::BackgroundThread::PublishStage const&,
+                                 c::RegionNode*);
+static_assert(std::is_same_v<c::BackgroundThread::RegionReadyCallback::Fn,
+                             void (*)(void*, c::effects::Bg const&, c::BackgroundThread::PublishStage const&,
+                                      c::RegionNode*) noexcept>,
+              "the parameter list above must track Fn, or this fixture fails for the wrong reason");
 
 static_assert(std::is_same_v<c::BackgroundThread::RegionReadyCallback::Fn, non_noexcept_fn>,
               "FIXY-V-086 HS14 fixture #2: RegionReadyCallback::Fn MUST be the "

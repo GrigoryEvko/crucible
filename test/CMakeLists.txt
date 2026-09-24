@@ -490,6 +490,7 @@ set_tests_properties(test_serialize test_serialize_release_gate PROPERTIES
 crucible_test(test_cipher)
 crucible_test(test_transaction)
 crucible_test(test_permissioned_moved_from_handles)
+crucible_test(test_transaction_owner)
 crucible_test(test_vigil)
 crucible_test(test_ckernel)
 crucible_test(test_graph)
@@ -6904,6 +6905,22 @@ crucible_neg_compile_test(neg_transaction_step_id_assign_from_raw
   "no match for|cannot convert|no viable|deleted|operator=")
 crucible_neg_compile_test(neg_transaction_step_id_advance_retrograde
   "contract|Monotonic|not a constant|non-constant|constexpr|leq")
+
+# The transaction log has one owner.  Each member takes the owner proof,
+# a call with no proof does not compile, and a proof that could travel to
+# a second thread is refused as an owner.  The publish-stage proof is
+# built by the background thread alone, and neither bit_cast nor the
+# checked lifetime start can make one from bytes.
+crucible_neg_compile_test(neg_transaction_log_rollback_without_owner
+  "no matching function for call to .*rollback|candidate expects 1 argument")
+crucible_neg_compile_test(neg_transaction_log_copyable_owner
+  "OwnerProof|constraints not satisfied|template constraint failure")
+crucible_neg_compile_test(neg_publish_stage_built_outside
+  "PublishStage\\(\\)[^\\n]*private within this context|is private within this context")
+crucible_neg_compile_test(neg_publish_stage_forged_by_bit_cast
+  "bit_cast|trivially copyable|no matching function")
+crucible_neg_compile_test(neg_publish_stage_forged_by_lifetime_start
+  "ImplicitLifetimeThroughout|constraints not satisfied")
 
 # WRAP-Serialize-6 (#1015) — ValidTraceNodeKindRaw =
 #   safety::Refined<safety::bounded_above<TraceNodeKind::TERMINAL>, uint8_t>

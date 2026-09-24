@@ -604,7 +604,8 @@ struct Gate {
     static constexpr uint64_t FAMILY_MASK = 0x00FF0000ULL;
 };
 
-static void on_region_ready(void* ctx, crucible::effects::Bg const&, crucible::RegionNode* region) noexcept {
+static void on_region_ready(void* ctx, crucible::effects::Bg const&, crucible::BackgroundThread::PublishStage const&,
+                            crucible::RegionNode* region) noexcept {
     auto* gate = static_cast<Gate*>(ctx);
 
     // The hash the background thread folded while streaming the ops must

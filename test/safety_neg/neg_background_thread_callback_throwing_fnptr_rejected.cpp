@@ -32,7 +32,8 @@ namespace c = crucible;
 // the noexcept specifier.  Pre-V-086 this would have converted to
 // `RegionReadyCallback::Fn` silently; post-V-086 it MUST be
 // rejected.
-void throwing_callback(void* /*ctx*/, c::RegionNode* /*region*/) {
+void throwing_callback(void* /*ctx*/, c::effects::Bg const& /*bg*/, c::BackgroundThread::PublishStage const& /*stage*/,
+                       c::RegionNode* /*region*/) {
     // Body intentionally non-noexcept; the typedef MUST reject
     // this function pointer at assignment.
 }
