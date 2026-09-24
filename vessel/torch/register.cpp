@@ -14,7 +14,7 @@
 // everything else — the signature by reflection, the schema hash, the arity,
 // the masks and the mutability from the row at that index.
 
-#include "record_kernel.h"  // first: it fences the two sibling substrates
+#include "record_kernel.h"
 
 #include <ATen/Operators.h>
 

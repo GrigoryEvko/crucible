@@ -621,12 +621,12 @@ static void test_assertion_triad() {
 
     // The answer depends on how the binary was started, so only the fact
     // that the probe links and returns a defined bool is checked.
-    bool dbg = ::crucible::detail::is_debugger_present();
+    bool dbg = ::foundation::detail::is_debugger_present();
     (void)dbg;
 
     // The call traps only under a debugger, and the test runner attaches
     // none, so it is a no-op here.
-    ::crucible::detail::breakpoint_if_debugging();
+    ::foundation::detail::breakpoint_if_debugging();
 
     std::printf("  AssertionTriad: ok (debugger_present=%s)\n", dbg ? "true" : "false");
 }

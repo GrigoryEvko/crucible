@@ -32,6 +32,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
+#include <foundation/contracts/Pre.h>
 
 namespace crucible::detail {
 
@@ -53,16 +54,6 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 // The release arm keeps the consteval check rather than collapsing to
 // the hint alone, so a negative-compile fixture behaves the same in
 // release as in debug.
-#define CRUCIBLE_PRE(cond)              \
-    do {                                \
-        if consteval {                  \
-            if (!(cond)) [[unlikely]] { \
-                __builtin_trap();       \
-            }                           \
-        }                               \
-        CRUCIBLE_CONTRACT_FENCE_();     \
-        [[assume(cond)]];               \
-    } while (0)
 
 #elif defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
 
@@ -76,31 +67,9 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 //
 // Only the build system defines this, per target.  Defining it in a
 // header would silently disarm every consumer.
-#define CRUCIBLE_PRE(cond)              \
-    do {                                \
-        if consteval {                  \
-            if (!(cond)) [[unlikely]] { \
-                __builtin_trap();       \
-            }                           \
-        }                               \
-        CRUCIBLE_CONTRACT_FENCE_();     \
-        [[assume(cond)]];               \
-    } while (0)
 
 #else
 
-#define CRUCIBLE_PRE(cond)                                                                                           \
-    do {                                                                                                             \
-        if (!(cond)) [[unlikely]] {                                                                                  \
-            if consteval {                                                                                           \
-                __builtin_trap();                                                                                    \
-            } else {                                                                                                 \
-                ::crucible::detail::contract_failed(#cond, __builtin_FILE(), __builtin_LINE(), __PRETTY_FUNCTION__); \
-            }                                                                                                        \
-        }                                                                                                            \
-        CRUCIBLE_CONTRACT_FENCE_();                                                                                  \
-        [[assume(cond)]];                                                                                            \
-    } while (0)
 
 #endif
 
@@ -110,27 +79,9 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 // diagnostic has been measured and found to matter.
 #ifdef NDEBUG
 
-#define CRUCIBLE_PRE_FAST(cond)         \
-    do {                                \
-        if consteval {                  \
-            if (!(cond)) [[unlikely]] { \
-                __builtin_trap();       \
-            }                           \
-        }                               \
-        CRUCIBLE_CONTRACT_FENCE_();     \
-        [[assume(cond)]];               \
-    } while (0)
 
 #else
 
-#define CRUCIBLE_PRE_FAST(cond)     \
-    do {                            \
-        if (!(cond)) [[unlikely]] { \
-            __builtin_trap();       \
-        }                           \
-        CRUCIBLE_CONTRACT_FENCE_(); \
-        [[assume(cond)]];           \
-    } while (0)
 
 #endif
 
@@ -138,33 +89,9 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 // evaluation carries no extra text either way.
 #if defined(NDEBUG) || defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
 
-#define CRUCIBLE_PRE_MSG(cond, msg)     \
-    do {                                \
-        if consteval {                  \
-            if (!(cond)) [[unlikely]] { \
-                __builtin_trap();       \
-            }                           \
-        }                               \
-        (void)(msg);                    \
-        CRUCIBLE_CONTRACT_FENCE_();     \
-        [[assume(cond)]];               \
-    } while (0)
 
 #else
 
-#define CRUCIBLE_PRE_MSG(cond, msg)                                                                \
-    do {                                                                                           \
-        if (!(cond)) [[unlikely]] {                                                                \
-            if consteval {                                                                         \
-                __builtin_trap();                                                                  \
-            } else {                                                                               \
-                ::crucible::detail::contract_failed_msg(#cond, __builtin_FILE(), __builtin_LINE(), \
-                                                        __PRETTY_FUNCTION__, (msg));               \
-            }                                                                                      \
-        }                                                                                          \
-        CRUCIBLE_CONTRACT_FENCE_();                                                                \
-        [[assume(cond)]];                                                                          \
-    } while (0)
 
 #endif
 
@@ -179,7 +106,5 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 // theoretical hole would carry real cost, such as key derivation and
 // other secret handling.
 #if defined(CRUCIBLE_CONTRACT_OBSERVABLE)
-#define CRUCIBLE_CONTRACT_FENCE_() __builtin_observable_checkpoint()
 #else
-#define CRUCIBLE_CONTRACT_FENCE_() ((void)0)
 #endif

@@ -35,61 +35,11 @@
 //      equal the masks the generator computed from the schema string. Two
 //      readings of one argument list must name the same positions. Measured
 //      over all 3110 operators of the fork: zero disagreements.
-//
-// THE MACRO FENCE
-//
-// This unit needs crucible::Vigil and crucible::TraceRing from
-// include/crucible, and the role, the binding and the context gate from
-// include/fixy. The two trees are siblings for the duration of the port, and
-// they spell the same macro names. GCC accepts an identical redefinition
-// silently. A comparison of the macro tables of the two sides, with and
-// without NDEBUG, finds four CRUCIBLE_ macros that differ. They come from
-// contracts/Pre.h and from the diagnostic catalog of each tree. Three of them
-// differ in a debug build. CRUCIBLE_PRE and CRUCIBLE_PRE_MSG differ only in
-// the namespace of the helper they call: ::crucible::detail::contract_failed
-// against ::foundation::detail::contract_failed, and the same for the message
-// helper. CRUCIBLE_DIAG_ASSERT differs only in the prefix of its message, and
-// it differs in the two build modes. CRUCIBLE_PRE_FAST differs only under
-// NDEBUG. There,
-// foundation spells it through CRUCIBLE_PRE, and crucible writes the same
-// consteval trap and hint in full. Neither spelling means something the other
-// does not. The list below is the union of the two build modes.
-//
-// The invariant macros are not in the list. include/crucible/Platform.h
-// includes foundation/Platform.h, so they have one definition. The fence must
-// not undefine them, because foundation/Platform.h is already parsed when
-// crucible/Platform.h is reached, and nothing defines them again.
-//
-// The fence gives each tree its own four. fixy comes first and parses with
-// foundation's four. The four are then undefined. crucible comes second, and
-// its first include of the old contracts header leaves crucible's four in
-// force to the end of the unit. Every crucible header, here and after this,
-// therefore parses with crucible's macros, so no inline function acquires two
-// definitions across units.
-//
-// That holds only if no header of the two trees was parsed before the fence.
-// A header already parsed cannot define anything again, and the four would
-// stay foundation's for the rest of the unit. The check below enforces it.
-// Only foundation/Platform.h defines CRUCIBLE_INLINE, and every header of the
-// two trees includes it, so its presence means that one of them came first.
-//
-// The fence goes when the old contracts header and the old diagnostic catalog
-// leave this unit.
-
-#if defined(CRUCIBLE_INLINE)
-#error \
-    "record_kernel.h must precede every crucible/ and fixy/ include in this translation unit. It parses the two sibling substrates in a fixed order so each keeps its own spelling of the four CRUCIBLE_ macros the two trees define differently."
-#endif
 
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/Role.h>
 #include <fixy/Tagged.h>
-
-#undef CRUCIBLE_DIAG_ASSERT
-#undef CRUCIBLE_PRE
-#undef CRUCIBLE_PRE_FAST
-#undef CRUCIBLE_PRE_MSG
 
 #include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>

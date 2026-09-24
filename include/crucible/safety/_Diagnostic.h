@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
+#include <foundation/diag/Catalog.h>
 
 #include <array>
 #include <cstddef>
@@ -1128,7 +1129,6 @@ template <typename Tag, typename... Args>
 
 // A condition holding a comma, such as a template argument list, must be
 // parenthesised whole, or the preprocessor splits it across the parameters.
-#define CRUCIBLE_DIAG_ASSERT(cond, tag, msg) static_assert(cond, "crucible::safety::diag [" #tag "]: " msg)
 
 namespace crucible::safety::diag::detail::diag_self_test {
 

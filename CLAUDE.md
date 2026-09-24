@@ -1892,7 +1892,7 @@ foot of `CMakeLists.txt`, which is the complete and only opt-out list in the tre
 
 `observe` does not mean the program keeps running. P2900 says the handler returns
 and execution resumes, but this project's `handle_contract_violation`
-(`src/ContractHandler.cpp`) is `[[gnu::weak, noreturn]]` and ends in
+(`src/foundation/ContractHandler.cpp`) is `[[gnu::weak, noreturn]]` and ends in
 `std::abort()`. A Release binary therefore checks and dies. The handler is weak,
 so a program that wants true log-and-continue overrides it with a returning
 definition — that is a production failure-policy decision, not a build flag.

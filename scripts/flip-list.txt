@@ -232,7 +232,6 @@ include/crucible/warden/DeadlineWatchdog.h
 include/crucible/warden/Hardening.h
 include/crucible/warden/Quarantine.h
 include/crucible/warden/Registry.h
-src/ContractHandler.cpp
 src/_DiagRuntime.cpp
 src/cntp/CongestionControl.cpp
 src/cntp/Pacing.cpp

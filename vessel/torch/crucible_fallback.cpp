@@ -14,14 +14,8 @@
 // Loaded via torch.ops.load_library() -- the TORCH_LIBRARY_IMPL registration
 // fires on dlopen, no explicit init needed.
 
-// First, and before every crucible/ include below: record_kernel.h parses the
-// two sibling substrates in a fixed order so each keeps its own spelling of the
-// six CRUCIBLE_ macros the two trees define differently, and it
-// refuses to compile after one of them.
 #include "record_kernel.h"
 
-// Parsed inside the fence above. This line records the dependency and
-// parses nothing.
 #include <fixy/Tagged.h>
 
 #include <c10/core/CrucibleState.h>

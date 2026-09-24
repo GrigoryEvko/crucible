@@ -280,12 +280,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # target they attach to moved.
 add_library(crucible_dialect INTERFACE)
 
-# Header-only library plus one TU for the weak contract-violation handler.
-# Downstream tests/benches need `handle_contract_violation` defined at link
-# time (GCC 16 libstdc++ does not provide a default); the weak symbol lets
-# production binaries override with a stronger one that calls crucible_abort.
+# The weak contract-violation handler and the failure arm of CRUCIBLE_PRE come
+# from `foundation`, which crucible links below.  Downstream tests and benches
+# need `handle_contract_violation` at link time, because GCC 16 libstdc++
+# ships no default.  The weak symbol lets a production binary override it.
 add_library(crucible STATIC
-  src/ContractHandler.cpp
   src/_DiagRuntime.cpp
   src/fixy/_Fs.cpp
   src/canopy/HyParView.cpp
@@ -353,6 +352,13 @@ add_library(foundation STATIC
 target_include_directories(foundation PUBLIC include/)
 target_link_libraries(foundation PUBLIC crucible_dialect)
 set_target_properties(foundation PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# crucible owns no contract handler of its own.  Every crucible header that
+# uses CRUCIBLE_PRE expands to the foundation failure arm, so crucible links
+# foundation for it and for `handle_contract_violation`.  This call comes
+# before the crucible_perf link below, so the consumer link order is
+# libcrucible.a, libfoundation.a, libcrucible_perf.a.
+target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy INTERFACE)
 target_link_libraries(fixy INTERFACE foundation)
@@ -739,10 +745,11 @@ if (CRUCIBLE_HAVE_BPF)
   # opt-out list; do not cite it as precedent for a performance
   # exemption.  Under an evaluating semantic, every WriteOnce::set /
   # .get contract emits a reference to `handle_contract_violation`.
-  # That symbol lives in crucible's `src/ContractHandler.cpp`, but
-  # crucible_perf is scanned AFTER crucible in the consumer link order
-  # (crucible.a then crucible_perf.a; ld reads left-to-right and will
-  # not re-resolve crucible.a once it has moved past).  Ignoring
+  # That symbol lives in foundation's `src/foundation/ContractHandler.cpp`,
+  # but crucible_perf is scanned AFTER foundation in the consumer link
+  # order (crucible.a, foundation.a, then crucible_perf.a; ld reads
+  # left-to-right and will not re-resolve foundation.a once it has
+  # moved past).  Ignoring
   # contracts in this TU compiles them out entirely — the discipline
   # still binds at the type-system level, because WriteOnce's
   # nodiscard-set-once-or-burn semantics are a property of the type
@@ -753,12 +760,12 @@ if (CRUCIBLE_HAVE_BPF)
     -fcontracts
     # NOTE: under default `=enforce`, every WriteOnce::set / .get / etc.
     # contract emits a reference to `handle_contract_violation`.  That
-    # symbol is defined in `src/ContractHandler.cpp` (compiled into
-    # libcrucible.a).  The consumer link order is `libcrucible.a
-    # libcrucible_perf.a libbpf.so`; ld scans left-to-right and picks
-    # up only what the test exec directly references, so by the time
-    # it reaches libcrucible_perf.a the handle_contract_violation
-    # object from libcrucible.a has been discarded.
+    # symbol is defined in `src/foundation/ContractHandler.cpp` (compiled
+    # into libfoundation.a).  The consumer link order is `libcrucible.a
+    # libfoundation.a libcrucible_perf.a libbpf.so`; ld scans
+    # left-to-right and picks up only what the test exec directly
+    # references, so by the time it reaches libcrucible_perf.a an
+    # unreferenced handler object from libfoundation.a has been discarded.
     #
     # Two viable fixes:
     #   (a) `-fcontract-evaluation-semantic=ignore` here — type-level
@@ -773,9 +780,9 @@ if (CRUCIBLE_HAVE_BPF)
     -fcontract-evaluation-semantic=ignore
   )
   # Same link-order problem applies to CRUCIBLE_PRE / CRUCIBLE_POST
-  # body-level macros (safety/Pre.h, safety/Post.h).  Under !NDEBUG
-  # they emit references to `crucible::detail::contract_failed`,
-  # which lives in the same libcrucible.a ContractHandler.cpp.o that
+  # body-level macros (foundation/contracts/Pre.h, safety/Post.h).  Under
+  # !NDEBUG they emit references to `foundation::detail::contract_failed`,
+  # which lives in the same libfoundation.a ContractHandler.cpp.o that
   # gets discarded under the consumer link order.  The
   # `-fcontract-evaluation-semantic=ignore` flag above only affects
   # P2900 parser clauses, NOT the body-level macro family.
@@ -1040,7 +1047,7 @@ unset(_line)
 unset(_cmake_sorted)
 unset(_script_sorted)
 
-# `<stacktrace>` (C++23, libstdc++ 16) — used by src/ContractHandler.cpp
+# `<stacktrace>` (C++23, libstdc++ 16) — used by src/foundation/ContractHandler.cpp
 # to emit a 16-frame stack trace on contract violations.  The header
 # pulls symbols from `libstdc++exp.a` (libstdc++'s experimental archive,
 # which also hosts contracts runtime + observable_checkpoint + a few
@@ -1597,7 +1604,7 @@ endif()
 #
 # READ THIS BEFORE ASSUMING "log and continue".  P2900 says `observe`
 # evaluates, reports, and resumes.  This project's handler does not
-# resume: `handle_contract_violation` in src/ContractHandler.cpp is
+# resume: `handle_contract_violation` in src/foundation/ContractHandler.cpp is
 # `[[gnu::weak, noreturn]]` and ends in `std::abort()`.  So a Release
 # binary under this flag CHECKS AND DIES, which is stronger than the
 # word "observe" suggests and is the behaviour this build now ships.

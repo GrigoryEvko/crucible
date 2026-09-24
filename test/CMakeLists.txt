@@ -141,7 +141,7 @@ function(crucible_test name)
   # -Werror=alloc-size-larger-than on any test TU that uses std::string. It is a
   # library-internal branch that never executes. Suppress on the test sources in
   # Release config only — source-file COMPILE_OPTIONS sort after the inherited
-  # -Walloc-size-larger-than, so this wins (mirrors src/ContractHandler.cpp).
+  # -Walloc-size-larger-than, so this wins.
   set_source_files_properties(${CRUCIBLE_TEST_SOURCES} PROPERTIES
     COMPILE_OPTIONS "$<$<CONFIG:Release>:-Wno-alloc-size-larger-than>")
   # Test binaries must keep their assertions in Release too.  CMake's
