@@ -820,6 +820,21 @@ add_test(NAME start_lifetime
           --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
     LABELS "ci_guard")
+# A union, a cast of a void pointer, an allocator, an explicit
+# instantiation and a specialization of a door each build a proof type
+# with no call to its door, and the language refuses none of them.
+# scripts/check-proof-routes.py refuses each one outside a reviewed and
+# counted list.  It reads the names of the proof types from the witness
+# roster and from the reflection walk of test_forgeable_proofs, and it
+# reads the compile database, so a route that a macro forms is seen too.
+add_test(NAME proof_routes_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-proof-routes.py --self-test)
+add_test(NAME proof_routes
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-proof-routes.py
+          --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json
+          --proof-names-binary $<TARGET_FILE:test_forgeable_proofs>)
+set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
+    LABELS "ci_guard")
 # A linear token is an empty class, so a moved-from token looks live, and
 # a second std::move of one Permission gives two owners of one region.
 # sizeof(Permission) stays 1, so no byte records the move.
