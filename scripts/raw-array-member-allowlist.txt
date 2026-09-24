@@ -7,7 +7,3 @@
 # commit.
 include/fixy/session/EventLog.h pad explicit padding of a wire record, move to std::array<std::uint8_t, 5>
 include/fixy/session/EventLog.h pad_ explicit padding of a wire record, move to std::array<std::uint8_t, 5>
-include/fixy/session/Watch.h endpoints live-session table, move to std::array with the watch changes
-include/fixy/session/Watch.h threads live-thread table, move to std::array with the watch changes
-include/fixy/session/Watch.h previous saved fatal-signal handlers, move to std::array with the watch changes
-include/fixy/session/Watch.h links wait-chain scratch, move to std::array with the watch changes

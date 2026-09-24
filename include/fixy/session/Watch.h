@@ -123,6 +123,7 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -209,8 +210,8 @@ struct alignas(64) thread_record {
 };
 
 struct registry {
-    endpoint_record endpoints[endpoint_capacity]{};
-    thread_record threads[thread_capacity]{};
+    std::array<endpoint_record, endpoint_capacity> endpoints{};
+    std::array<thread_record, thread_capacity> threads{};
     // The free list of released records: a one-based index packed with a
     // tag that changes at each push and pop, which removes the ABA case.
     std::atomic<std::uint64_t> free_head{0};
@@ -232,7 +233,7 @@ inline constinit registry g_registry{};
 inline constexpr int fatal_signals[] = {SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE};
 
 struct signal_chain {
-    struct sigaction previous[std::size(fatal_signals)]{};
+    std::array<struct sigaction, std::size(fatal_signals)> previous{};
 };
 
 inline constinit signal_chain g_signal_chain{};
@@ -532,7 +533,7 @@ struct chain_link {
 };
 
 struct wait_chain {
-    chain_link links[max_chain]{};
+    std::array<chain_link, max_chain> links{};
     std::size_t count = 0;
     bool is_cycle = false;
 
