@@ -81,7 +81,7 @@ bench/bench_serialize.cpp
 bench/bench_session_persistence.cpp
 bench/bench_spsc_session.cpp
 bench/bench_swmr_session.cpp
-fuzz/boundary/fuzz_serialize.cpp
+fuzz/boundary/old_tree.h
 fuzz/property/prop_arena_alloc_invariants.cpp
 fuzz/property/prop_callsite_table_dedup.cpp
 fuzz/property/prop_checked_arith.cpp
