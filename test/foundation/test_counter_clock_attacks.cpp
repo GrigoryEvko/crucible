@@ -132,8 +132,18 @@ static_assert(!std::is_constructible_v<VersionPair, std::uint64_t, std::uint64_t
 
 // ── The vector clock ───────────────────────────────────────────────
 
+}  // namespace
+
+// The clock tags and the forged tag below have a name outside an unnamed
+// namespace, because a stable id refuses a type with internal linkage.
+namespace test_counter_clock_types {
 struct ReplayClock {};
 struct KernelClock {};
+}  // namespace test_counter_clock_types
+
+namespace {
+
+using namespace test_counter_clock_types;
 
 // Clocks of two protocols, or of two widths, never meet.
 static_assert(!lattice_accepts<fl::HappensBeforeLattice<2, ReplayClock>, fl::HappensBeforeLattice<2, ReplayClock>::element_type,
@@ -296,13 +306,21 @@ void attack_clock_against_the_causal_order() {
 
 // ── Row-hash identity ───────────────────────────────────────────────
 
+}  // namespace
+
 // A tag of another axis that reports the epoch's diagnostic name.  The
 // name is a diagnostic and not an identity, so the fold must still keep
 // the two apart.
+namespace test_counter_clock_types {
 struct forged_epoch_name {
     static constexpr std::string_view lattice_name = "EpochLattice";
-    static constexpr fa::ClaimOrientation claim_orientation = fa::ClaimOrientation::stronger_is_higher;
+    static constexpr ::foundation::algebra::ClaimOrientation claim_orientation =
+        ::foundation::algebra::ClaimOrientation::stronger_is_higher;
 };
+}  // namespace test_counter_clock_types
+
+namespace {
+
 using ForgedEpochLattice = fl::StrongCounterLattice<forged_epoch_name>;
 static_assert(ForgedEpochLattice::name() == fl::EpochLattice::name(), "the forged tag does report the same name");
 

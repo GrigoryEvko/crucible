@@ -72,10 +72,20 @@ template <std::size_t N>
 static_assert(pairwise_distinct(kAxisIdentities), "two counter axes share one lattice identity");
 static_assert(pairwise_distinct(kCarrierHashes), "two counter axes share one row-hash slot");
 
+}  // namespace
+
 // Two clocks of one width and different tags are two protocols, so they
-// must take two slots too.
+// must take two slots too.  The tags have a name outside an unnamed
+// namespace, because a stable id refuses a type with internal linkage.
+namespace test_lattices_counters_types {
 struct ReplayTag {};
 struct KernelTag {};
+}  // namespace test_lattices_counters_types
+
+namespace {
+
+using namespace test_lattices_counters_types;
+
 static_assert(fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, ReplayTag>>>
               != fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, KernelTag>>>);
 static_assert(fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, ReplayTag>>> != 0);
