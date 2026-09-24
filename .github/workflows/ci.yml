@@ -167,8 +167,8 @@ jobs:
 
       - name: permission storage antipattern (self-test + scan)
         run: |
-          bash scripts/check-permission-storage.sh --self-test
-          bash scripts/check-permission-storage.sh
+          python3 scripts/check-permission-storage.py --self-test
+          python3 scripts/check-permission-storage.py
 
       - name: no reinterpret_cast, no vector::reserve, no band-3 file stream (self-test + scan)
         run: |

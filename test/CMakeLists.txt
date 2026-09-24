@@ -703,25 +703,21 @@ add_test(NAME witness_roster
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
-# fixy-L-03 #1519 — Permission<Tag> long-lived-struct antipattern
-# guard (Permission.h:144-148 doc-block, CLAUDE.md §IX).  Every
-# Permission<*> declared as a class/struct member MUST be on a line
-# containing [[no_unique_address]] — the canonical handle-storage
-# marker (see PermissionedSpscChannel / PermissionedMpscChannel /
-# SwmrSession / KernelCacheSlot for the production shape).  Without
-# the marker, holders may be aliased across threads silently,
-# defeating CSL linearity (Permission move-only at value-level but
-# the type system can't see pointer-based escape through struct
-# sharing).  Initial state: clean — all 15 current sites use the
-# discipline; allowlist is empty.  Self-test mode plants a synthetic
-# violation to guard against regex regression.
+# A Permission held as a class member is the [[no_unique_address]]
+# member of a handle (CLAUDE.md §IX).  Without the mark, the holder can
+# be aliased across threads and the type system does not see it.
+# scripts/check-permission-storage.py reads each member from the parse
+# tree, so an initializer, two declarators, a member over two lines, an
+# array and an alias do not hide one.  Exit 3 when the kit is absent
+# reports a skip.
 add_test(NAME permission_storage_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.py
           --self-test)
 add_test(NAME permission_storage
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.py)
 set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
 # The reinterpret_cast ban (CLAUDE.md §III), the std::vector::reserve ban
 # (CLAUDE.md §IV) and the file-stream ban of the fixy-only band-3
 # directories, read from the parse tree of the pinned kit.  Each ban has a
