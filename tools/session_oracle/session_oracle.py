@@ -1268,24 +1268,67 @@ def evaluate_keskin(rows: list[Row]) -> list[Row]:
     return out
 
 
+def crash_systems(rows: list[Row]) -> list[tuple[str, str, frozenset[int], str, dict[int, Local]]]:
+    """Return each crash-stop variant whose projection fixy gives for every role.
+
+    The rows are the fixy.crash_projection rows of the golden file: the role
+    column is "<variant>/<role>", where the variant is "<kind>.u<unreliable
+    roles>", and the ours column spells project_crash_t.  Each result is
+    (case, variant, unreliable roles, labelled global text, context).
+    O(rows).
+    """
+    from probe import SpellingError, read_fixy_projection
+    groups: dict[tuple[str, str], list[Row]] = {}
+    for r in rows:
+        if r.family == "fixy.crash_projection":
+            groups.setdefault((r.case, r.role.rpartition("/")[0]), []).append(r)
+    out = []
+    for (case, variant), group in groups.items():
+        system: dict[int, Local] = {}
+        for r in group:
+            try:
+                local = read_fixy_projection(r.ours, int(r.role.rpartition("/")[2]))
+            except SpellingError:
+                break
+            if isinstance(local, str):
+                break
+            system[int(r.role.rpartition("/")[2])] = local
+        else:
+            digits = variant.rpartition(".u")[2]
+            out.append((case, variant, frozenset(int(d) for d in digits), group[0].global_text, system))
+    return out
+
+
 def evaluate_semantics(rows: list[Row], env: Env) -> list[Row]:
     """Walk the transition systems of Semantics.h along the runs of each projected context.
 
-    ``rows`` are the rows of the multiparty families.  A case enters when fixy
-    projects every role (semantics.py).  O(cases × nodes).
+    ``rows`` are the rows of the multiparty and crash-stop families.  A case
+    enters when fixy projects every role, and a crash-stop variant enters
+    when fixy's crash-stop projection gives every role (semantics.py).
+    O((cases + variants) × nodes).
     """
     import semantics
+    from labelled import cpp_fixy_global as labelled_global
+    from labelled import read as read_labelled
     from probe import run_many
     work = []
     for live, g, system in keskin_systems(rows):
         nodes = semantics.walk(system)
         if nodes:
-            work.append((live.case, g, sorted(system), nodes))
-    sources = [semantics.probe_source(g, roles, nodes) for _, g, roles, nodes in work]
+            work.append((live.case, "", frozenset(), show_global(g), cpp_fixy_global(g), sorted(system), nodes))
+    for case, variant, unreliable, text, system in crash_systems(rows):
+        nodes = semantics.walk(system, unreliable, semantics.MAX_CRASH_NODES)
+        if nodes:
+            work.append((case, variant, unreliable, text, labelled_global(read_labelled(text)), sorted(system),
+                         nodes))
+    sources = [semantics.probe_source(spelling, roles, nodes, unreliable)
+               for _, _, unreliable, _, spelling, roles, nodes in work]
     measured = run_many(env.cxx, env.include, sources, env.workers, env.heads)
     out: list[Row] = []
-    for (case, g, _, nodes), m in zip(work, measured, strict=True):
-        out += semantics.classify(case, g, nodes, m)
+    for (case, variant, _, text, _, _, nodes), m in zip(work, measured, strict=True):
+        out += semantics.classify(case, text, nodes, m, variant)
+    for note in semantics.check_ledger(out):
+        LOG.warning("%s", note)
     return out
 
 
@@ -2446,6 +2489,13 @@ def check() -> int:
     if drift:
         print("session_oracle check: these tests differ from what golden.csv emits: "
               + ", ".join(drift) + ".  Run scripts/session-oracle.sh --emit.", file=sys.stderr)
+        return 1
+    import semantics
+    try:
+        for note in semantics.check_ledger(rows):
+            print(f"session_oracle check: {note}", file=sys.stderr)
+    except RuntimeError as exc:
+        print(f"session_oracle check: {exc}", file=sys.stderr)
         return 1
     div = sum(r.status == "divergence" for r in rows)
     gap = sum(r.status == "gap" for r in rows)
