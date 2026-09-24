@@ -95,8 +95,13 @@ case "${1:-}" in
             printf 'fixy_grant_purity: SELF-TEST ABORTED — ripgrep (rg) is required.\n' >&2
             exit 2
         fi
-        tmp_root="$(mktemp -d)"
-        trap 'rm -rf "$tmp_root"' EXIT
+        # One directory per run holds the planted tree and both reports, and
+        # the trap removes it on every exit, so parallel runs share nothing.
+        # The reports stay outside the tree, because they quote the text
+        # that the scan looks for.
+        work_dir="$(mktemp -d)"
+        trap 'rm -rf "$work_dir"' EXIT
+        tmp_root="$work_dir/tree"
         mkdir -p "$tmp_root/src/planted" \
                  "$tmp_root/include/crucible/fixy" \
                  "$tmp_root/test/safety_attack"
@@ -157,7 +162,7 @@ struct planted_misc final {};
 }  // namespace crucible::fixy::grant
 MISC
 
-        result_file="$(mktemp)"
+        result_file="$work_dir/result"
         if CRUCIBLE_FIXY_GRANT_PURITY_TEST_ROOT="$tmp_root" \
            bash "${BASH_SOURCE[0]}" 2>"$result_file"; then
             printf 'fixy_grant_purity: SELF-TEST FAILED — planted reopen not caught.\n' >&2
@@ -170,7 +175,7 @@ MISC
         # The same scan from another working directory must give the same
         # report, byte for byte.
         script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-        other_file="$(mktemp)"
+        other_file="$work_dir/other"
         (cd / && CRUCIBLE_FIXY_GRANT_PURITY_TEST_ROOT="$tmp_root" bash "$script_path") 2>"$other_file" || true
         if ! cmp -s "$result_file" "$other_file"; then
             printf 'fixy_grant_purity: SELF-TEST FAILED — the report from / differs from the report from the scan root.\n' >&2
@@ -355,9 +360,11 @@ while IFS=: read -r file line text; do
     status=1
 # rg matches an exclude glob against the path it prints, which is relative
 # to the search argument.  Search `.` from inside the scan root, so each
-# glob sees a root-relative path from any working directory.
+# glob sees a root-relative path from any working directory.  rg searches
+# files on several threads and prints them in the order they finish, so
+# --sort path makes the report the same on each run.
 done < <(
-    cd "$scan_root" && rg -n --no-heading --pcre2 \
+    cd "$scan_root" && rg -n --no-heading --pcre2 --sort path \
         --glob '!build*/**' \
         --glob '!cmake-build-*/**' \
         --glob '!third_party/**' \
