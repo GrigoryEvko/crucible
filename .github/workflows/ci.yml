@@ -243,6 +243,11 @@ jobs:
           python3 scripts/check-splits-orphan.py --self-test
           python3 scripts/check-splits-orphan.py
 
+      - name: unchecked access context only in reviewed walks (self-test + scan)
+        run: |
+          python3 scripts/check-no-unchecked-access.py --self-test
+          python3 scripts/check-no-unchecked-access.py
+
       - name: single combine_ids source of truth (self-test + scan)
         run: |
           bash scripts/check-no-combine-ids-duplicate.sh --self-test

@@ -819,6 +819,16 @@ add_test(NAME use_after_move_attacks
   COMMAND python3 ${CMAKE_SOURCE_DIR}/test/guard_attacks/test_use_after_move_attacks.py ${CMAKE_SOURCE_DIR})
 set_tests_properties(use_after_move_attacks PROPERTIES
     LABELS "ci_guard")
+# A splice of a private data member has no access check, so
+# access_context::unchecked() is the one door to a proof's private state.
+# scripts/check-no-unchecked-access.py admits it only in the files that
+# scripts/unchecked-access-allowlist.txt names, each with its reason.
+add_test(NAME no_unchecked_access_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-unchecked-access.py --self-test)
+add_test(NAME no_unchecked_access
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-unchecked-access.py)
+set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIES
+    LABELS "ci_guard")
 # A write past the end of a C array member lands in the next member of the
 # same object, where the address sanitizer sees valid memory, and no build
 # checks the subscript.  scripts/check-no-raw-array-member.py refuses a C
