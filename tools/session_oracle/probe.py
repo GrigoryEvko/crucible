@@ -61,6 +61,8 @@ HEADS = {
     "subtype": "#include <fixy/session/Subtype.h>\n#include <type_traits>\n",
     "keyed": "#include <fixy/session/Projection.h>\n#include <fixy/session/Subtype.h>\n"
              "#include <type_traits>\n",
+    "semantics": "#include <fixy/session/CrashAssociation.h>\n#include <fixy/session/Semantics.h>\n"
+                 "#include <type_traits>\n",
 }
 # The constexpr budget is the one that the project build passes (CMakeLists.txt),
 # so a probe answers where the build answers.

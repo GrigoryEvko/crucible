@@ -17,6 +17,9 @@ lets something go wrong.  The oracles:
   keskin.py  the liveness theorem of Keskin, Yoshida and van Glabbeek
              (ITP 2026), which coqc applies with a certificate for each
              projected context
+  sprout.py  Sprout(A) of Li and Wies (PLDI 2026), which decides the
+             implementability of a global type on per-pair FIFO queues,
+             on a mailbox for each receiver and on a bag for each receiver
 
 Modes:
 
@@ -25,9 +28,12 @@ Modes:
               write test/session_oracle/golden.csv and the emitted
               tests.  Needs the toolchains that scripts/session-oracle.sh
               names and the project compiler.
-  derive      Compute the liveness rows again from the multiparty rows of
-              the golden file, and write the golden file.  Needs the
-              toolchain of keskin.py only.
+  derive      Compute the liveness and implementability rows again from
+              the multiparty rows of the golden file, and write the golden
+              file.  Needs the toolchains of keskin.py and sprout.py only.
+              Regenerate does not run sprout.py, which is slow under
+              emulation: it keeps each implementability row whose case did
+              not change, and derive computes the others.
   emit        Write the emitted tests from the golden file only.  Use it
               after a note in the golden file changes.
   check       Emit into memory and compare with the committed tests.  No
@@ -67,6 +73,11 @@ The relations under test:
                    "En-route global types")
   liveness         is_live_by_construction_v against a coqc-checked proof
                    of liveCtx for fixy's projected context (keskin.py)
+  implementability fixy's projection verdict against implementability on
+                   three kinds of network (sprout.py)
+  semantics        the global and configuration transition systems and
+                   crash association of Semantics.h and CrashAssociation.h,
+                   along the run of each projected context (semantics.py)
 
 The corpora are listed in emit.CORPORA, and the families in emit.FAMILIES.
 """
@@ -163,6 +174,10 @@ HAND_CASES: tuple[Case, ...] = (
                               GBranch(1, 2, (GMsg(2, 0, "nat", GEnd()), GMsg(2, 0, "nat", GEnd()))))),
          cite="a third role that sees one answering choice in each branch of an outer choice; the keyed form "
               "orders its labels differently in the two branches"),
+    Case("h6", GBranch(0, 1, (GMsg(0, 2, "nat", GEnd()), GBranch(0, 2, (GEnd(),)))),
+         cite="the counterexample to Theorem 4.20 of Barwell, Hou, Yoshida and Zhou (LMCS 2025, arXiv "
+              "2311.11851v6), where the en-route sender acts before its message arrives.  The value label and "
+              "the branch label 0 stand for its labels a and b"),
 )
 
 PAPER_OLD: tuple[Case, ...] = (
@@ -1241,7 +1256,7 @@ def evaluate_keskin(rows: list[Row]) -> list[Row]:
             out.append(Row(fam, live.case, "-", live.global_text,"liveCtx proved", live.ours, "divergence",
                            "run-contradicts-proof",
                            f"harness defect: coqc checks liveCtx of fixy's context, and the run of the same "
-                           f"context is {live.oracle}; the run or the certificate generator is wrong"))
+                           f"context is {live.oracle}.  The run or the certificate generator is wrong"))
         elif live.ours == "true":
             out.append(Row(fam, live.case, "-", live.global_text,"liveCtx proved", live.ours, "agree", "", ""))
         else:
@@ -1250,6 +1265,97 @@ def evaluate_keskin(rows: list[Row]) -> list[Row]:
                            "ours incomplete, not unsound: coqc checks liveCtx of fixy's projected context by the "
                            "liveness theorem of the ITP 2026 development (wfgC, projectableA, tctx_wf and assoc "
                            "hold), and is_live_by_construction_v is false"))
+    return out
+
+
+def evaluate_semantics(rows: list[Row], env: Env) -> list[Row]:
+    """Walk the transition systems of Semantics.h along the runs of each projected context.
+
+    ``rows`` are the rows of the multiparty families.  A case enters when fixy
+    projects every role (semantics.py).  O(cases × nodes).
+    """
+    import semantics
+    from probe import run_many
+    work = []
+    for live, g, system in keskin_systems(rows):
+        nodes = semantics.walk(system)
+        if nodes:
+            work.append((live.case, g, sorted(system), nodes))
+    sources = [semantics.probe_source(g, roles, nodes) for _, g, roles, nodes in work]
+    measured = run_many(env.cxx, env.include, sources, env.workers, env.heads)
+    out: list[Row] = []
+    for (case, g, _, nodes), m in zip(work, measured, strict=True):
+        out += semantics.classify(case, g, nodes, m)
+    return out
+
+
+def sprout_verdicts(rows: list[Row]) -> list[tuple[Row, str]]:
+    """Return the fixy.global_wf row and fixy's projection verdict of each well-formed multiparty case.
+
+    The verdict is "projects" when fixy projects every role, and "refuses"
+    when it refuses one.  A case with a gap or an unparsed row has none.
+    """
+    from probe import SpellingError, read_fixy_projection
+    by_case: dict[str, list[Row]] = {}
+    for r in rows:
+        if r.family == "fixy.projection":
+            by_case.setdefault(r.case, []).append(r)
+    out = []
+    for wf in (r for r in rows if r.family == "fixy.global_wf" and r.ours == "true"):
+        projections = by_case.get(wf.case, [])
+        if not projections or any(r.status == "gap" for r in projections):
+            continue
+        try:
+            refused = any(r.ours != "=" and isinstance(read_fixy_projection(r.ours, int(r.role)), str)
+                          for r in projections)
+        except SpellingError:
+            continue
+        out.append((wf, "refuses" if refused else "projects"))
+    return out
+
+
+def evaluate_sprout(rows: list[Row]) -> list[Row]:
+    """Check fixy's projection verdicts against implementability on three kinds of network.
+
+    ``rows`` are the rows of the multiparty families.  Sprout(A) decides the
+    implementability of each well-formed case on per-pair FIFO queues, one
+    FIFO mailbox for each receiver and one unordered bag for each receiver
+    (sprout.py).  On per-pair queues, fixy's projection must imply
+    implementability.  On the two other networks, a type that fixy projects
+    and no implementation carries marks a protocol that our SPSC channels
+    carry and our MPSC and MPMC channels cannot.  O(cases × networks).
+    """
+    import sprout
+    from model import read_global
+    fam = "sprout.implementable"
+    cite = "Li and Wies, PLDI 2026, doi 10.1145/3808319"
+    cases = sprout_verdicts(rows)
+    verdicts = sprout.decide([(read_global(wf.global_text),
+                               sprout.NETWORKS if ours == "projects" else ("p2pbox",)) for wf, ours in cases])
+    out: list[Row] = []
+    for (wf, ours), by_network in zip(cases, verdicts, strict=True):
+        for network, verdict in by_network.items():
+            row = (fam, wf.case, network, wf.global_text, verdict, ours)
+            if verdict in ("inconclusive", "no-tree"):
+                out.append(Row(*row, "gap", verdict,
+                               f"Sprout(A) gives no verdict on the network {network} ({verdict})"))
+            elif network == "p2pbox" and ours == "projects" and verdict != "implementable":
+                out.append(Row(*row, "divergence", "projects-unimplementable",
+                               "ours wrong: fixy projects every role, and Sprout(A) decides that no implementation "
+                               f"on per-pair FIFO queues is free of deadlock and of communication errors ({cite})"))
+            elif network == "p2pbox" and ours == "refuses" and verdict == "implementable":
+                out.append(Row(*row, "divergence", "incomplete",
+                               "ours incomplete, not unsound: fixy's projection refuses a type that an "
+                               f"implementation on per-pair FIFO queues carries ({cite}).  Projection is a "
+                               "sufficient condition only"))
+            elif network != "p2pbox" and ours == "projects" and verdict != "implementable":
+                out.append(Row(*row, "divergence", f"{network}-unimplementable",
+                               f"ours has no check that depends on the network: fixy projects every role, and "
+                               f"Sprout(A) decides that no implementation on the network {network} is free of "
+                               f"deadlock and of communication errors ({cite}).  An SPSC channel for each pair "
+                               "carries the type, and one shared MPSC or MPMC channel does not"))
+            else:
+                out.append(Row(*row, "agree", "", ""))
     return out
 
 
@@ -2217,7 +2323,8 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
             cases = {("old", c.ident): c for c in old} | {("fixy", c.ident): c for c in fixy}
             minimal = minimal_corpus(rows, cases, Evaluator(env), shrinkable)
         rows += minimal
-    rows += evaluate_keskin(rows)
+        rows += evaluate_semantics(rows, env)
+    rows += evaluate_keskin(rows) + _carried_sprout_rows(rows)
     import ekici
     import mpstk
     import sr
@@ -2227,7 +2334,7 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
         f"# oracle: github.com/{sr.SUBJECT_REDUCTION.repo} at {sr.SUBJECT_REDUCTION.commit}",
         f"# oracle: github.com/{ekici.REPO} at {ekici.COMMIT}",
         f"# oracle: github.com/{mpstk.REPO} at {mpstk.COMMIT}",
-        *_keskin_meta(),
+        *_derived_meta(),
         f"# toolchain: {rocq.coq_version()}; for {ekici.REPO}: {ekici.coq_version()}",
         f"# relations measured at commit {measured}",
         f"# fixy corpora: fr seed {FIXY_SEED}, {FIXY_COUNT} types, depth {FIXY_DEPTH}; "
@@ -2252,27 +2359,66 @@ def _write_tests(rows: list[Row]) -> None:
         (TEST_DIR / name).write_text(text, encoding="utf-8")
 
 
-def _keskin_meta() -> list[str]:
-    """Return the metadata lines of the liveness family: the pinned commit and the toolchain."""
+DERIVED_FAMILIES = ("keskin.live", "sprout.implementable")
+
+
+def _derived_meta() -> list[str]:
+    """Return the metadata lines of the derived families: the pinned oracles and their toolchains."""
     import keskin
+    import sprout
     return [f"# oracle: github.com/{keskin.REPO} at {keskin.COMMIT}",
+            f"# oracle: doi {sprout.ARTIFACT}, image {sprout.image_id()}",
             f"# toolchain for {keskin.REPO}: {keskin.coq_version()}"]
 
 
-def derive() -> int:
+def _derived_rows(base: list[Row]) -> list[Row]:
+    return evaluate_keskin(base) + evaluate_sprout(base)
+
+
+def _carried_sprout_rows(rows: list[Row]) -> list[Row]:
+    """Return the sprout.implementable rows of the committed golden file that still hold for ``rows``.
+
+    Sprout(A) runs under emulation for minutes per case, so regenerate does
+    not run it.  A row carries over when its case has the same global type
+    and the same projection verdict of fixy.  The derive mode computes the
+    rows of the other cases.
+    """
+    if not GOLDEN.is_file():
+        return []
+    current = {(wf.case, wf.global_text): ours for wf, ours in sprout_verdicts(rows)}
+    return [r for r in read_golden(GOLDEN)[1]
+            if r.family == "sprout.implementable" and current.get((r.case, r.global_text)) == r.ours]
+
+
+def derive(cxx: str | None, workers: int) -> int:
     """Recompute the rows that the golden file derives from its own rows, and write it again.
 
-    The liveness family (keskin.live) reads only the multiparty rows, so a
-    change to its checker needs no compiler and no other oracle.
+    The liveness family (keskin.live) and the implementability family
+    (sprout.implementable) read only the multiparty rows, so a change to
+    their oracles needs no compiler and no other oracle.  With ``cxx``, the
+    families of Semantics.h are measured again too, against the include tree
+    of the commit that the golden file names.
     """
     import keskin
+    import semantics
+    import sprout
     meta, rows = read_golden(GOLDEN)
-    base = [r for r in rows if r.family != "keskin.live"]
-    ours = (f"# oracle: github.com/{keskin.REPO} ", f"# toolchain for {keskin.REPO}:")
+    base = [r for r in rows if r.family not in DERIVED_FAMILIES]
+    if cxx is not None:
+        from probe import pch_heads
+        marker = "# relations measured at commit "
+        commit = next(line[len(marker):].split(",")[0] for line in meta if line.startswith(marker))
+        base = [r for r in base if r.family not in semantics.FAMILIES]
+        with measured_tree(commit) as (include, _), pch_heads(cxx, include) as heads:
+            base += evaluate_semantics(base, Env(cxx, heads, workers, include))
+    cited = (*HAND_CASES, *PAPER_OLD, *FIXY_HAND, *PAPER_FIXY)
+    ours = (f"# oracle: github.com/{keskin.REPO} ", f"# oracle: doi {sprout.ARTIFACT}",
+            f"# toolchain for {keskin.REPO}:", *(f"# {c.ident}: " for c in cited))
     kept = [line for line in meta if not line.startswith(ours)]
     last_oracle = max(i for i, line in enumerate(kept) if line.startswith("# oracle: "))
-    meta = kept[:last_oracle + 1] + _keskin_meta() + kept[last_oracle + 1:]
-    write_golden(GOLDEN, meta, base + evaluate_keskin(base))
+    meta = (kept[:last_oracle + 1] + _derived_meta() + kept[last_oracle + 1:]
+            + [f"# {c.ident}: {c.cite}" for c in cited])
+    write_golden(GOLDEN, meta, base + _derived_rows(base))
     _write_tests(read_golden(GOLDEN)[1])
     return check()
 
@@ -2452,7 +2598,7 @@ def main(argv: list[str]) -> int:
         regenerate(args.cxx, args.jobs, do_shrink=not args.no_shrink, at=args.at)
         return check()
     if args.mode == "derive":
-        return derive()
+        return derive(args.cxx, args.jobs)
     if args.mode == "emit":
         _write_tests(read_golden(GOLDEN)[1])
         return check()

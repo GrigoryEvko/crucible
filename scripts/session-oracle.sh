@@ -23,6 +23,10 @@
 #                      No licence.  coqc applies it to fixy's projected
 #                      context of each multiparty case, with a certificate
 #                      for its four premises (tools/session_oracle/coq).
+#   implementability   Sprout(A) of Li and Wies (PLDI 2026), the container
+#                      image of the artifact doi 10.5281/zenodo.19600644.
+#                      CC BY 4.0.  It decides implementability on per-pair
+#                      FIFO queues, a mailbox and a bag for each receiver.
 #   crash-stop         mpstk-crash-stop of Barwell, Scalas, Yoshida and
 #                      Zhou (CONCUR 2022), github.com/alcestes/mpstk-crash-stop.
 #                      MIT licence.  It model-checks the context of each
@@ -54,9 +58,12 @@
 #   --regenerate   Run the oracles and the probes, shrink every divergence,
 #                  and write golden.csv and the emitted tests.  Give the
 #                  compiler as the second argument.  CI does not run it.
-#   --derive       Compute the liveness rows again from the multiparty rows
-#                  of golden.csv, and write golden.csv.  This mode needs
-#                  the liveness toolchain only.  CI does not run it.
+#   --derive       Compute the liveness and implementability rows again from
+#                  the multiparty rows of golden.csv, and write golden.csv.
+#                  This mode needs those two toolchains only.  With the
+#                  compiler as the second argument, it also measures the
+#                  transition systems of Semantics.h again, at the commit
+#                  that golden.csv names.  CI does not run it.
 #
 # --self-test and --regenerate take a commit as an optional third
 # argument, for example HEAD.  The tool then measures the include tree of
@@ -94,7 +101,13 @@
 #            coq-mmaps coq-equations
 #      The first run builds the development, which takes about ten
 #      minutes.  SESSION_ORACLE_KESKIN_SWITCH names a different switch.
-#   4. The crash-stop oracle needs a Java 17 runtime, sbt (the build of
+#   4. The implementability oracle needs podman and the image of the
+#      artifact.  Download sprout-a.tar (2.7 GB) from doi
+#      10.5281/zenodo.19600644, then load it:
+#        podman load -i sprout-a.tar
+#      The image is built for arm64.  On x86_64, podman runs it with
+#      qemu-user-static, which is slow but gives the same verdicts.
+#   5. The crash-stop oracle needs a Java 17 runtime, sbt (the build of
 #      the pinned commit asks for sbt 1.6.1 and downloads it), and the
 #      mCRL2 tools mcrl22lps, lps2pbes and pbes2bool.  Put the three on
 #      PATH before --regenerate.
@@ -131,7 +144,7 @@ Usage:
   session-oracle.sh --self-test CXX [COMMIT]
   session-oracle.sh --emit
   session-oracle.sh --regenerate CXX [COMMIT]
-  session-oracle.sh --derive
+  session-oracle.sh --derive [CXX]
   session-oracle.sh -h | --help
 USAGE
 }
@@ -193,6 +206,11 @@ case "${1:-}" in
         activate_opam
         exec python3 "$driver" regenerate --cxx "$1" ${at:+"$at"} ;;
     --derive)
+        shift
+        if [[ -n "${1:-}" ]]; then
+            need_cxx "$1"
+            exec python3 "$driver" derive --cxx "$1"
+        fi
         exec python3 "$driver" derive ;;
     -h|--help)
         usage

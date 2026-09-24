@@ -104,11 +104,14 @@ WIRE_SEEDS = (0, 1)
 # frozen tree's projection, the run of the oracle's own projection, the
 # run of the subject-reduction development's projection, mpstk's model
 # check of fixy's crash-stop context, the coqc-checked verdict of the
-# ITP 2025 subtyping relation on each synchronous subtyping pair, and the
+# ITP 2025 subtyping relation on each synchronous subtyping pair, the
 # coqc-checked liveness of fixy's projected context by the ITP 2026
-# liveness theorem.
+# liveness theorem, the implementability verdict of Sprout(A) on each
+# kind of network, and the walks of the transition systems of Semantics.h
+# along the run of each projected context.
 RECORD_FAMILIES = ("old.execution", "oracle.safety", "sr.safety", "mpstk.crash", "ekici.subtype",
-                   "keskin.live")
+                   "keskin.live", "sprout.implementable", "fixy.global_lts", "fixy.config_lts",
+                   "fixy.crash_association")
 FAMILIES = (FIXY_FAMILIES + MULTI_FAMILIES + SUBTYPE_FAMILIES + KEYED_SUBTYPE_FAMILIES + KEYED_MULTI_FAMILIES
             + CRASH_FAMILIES + ENROUTE_FAMILIES + WIRE_FAMILIES + OLD_FAMILIES + RECORD_FAMILIES)
 # The roles that a multiparty case is projected onto: every role it names,
