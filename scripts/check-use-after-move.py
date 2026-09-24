@@ -6,11 +6,12 @@ The rule
 After `std::move(x)`, `std::forward<T>(x)` or `static_cast<T&&>(x)`, the
 name `x` is spent.  A later read of `x`, a second move of `x`, or a member
 of `x` is a use after move, unless an assignment to `x` comes first.  The
-guard checks each path
-through a function body: a move in one branch of an `if` does not spend the
-name in the other branch, a move that is followed by a return spends
-nothing after it, and a move inside a loop spends the name on the next
-iteration unless the loop declares or assigns the name again.
+guard checks each path through a function body: a move in one branch of
+an `if` does not spend the name in the other branch, a move that is
+followed by a return spends nothing after it, and a move inside a loop
+spends the name on the next iteration unless the loop declares or assigns
+the name again.  The guard reports the first use after each move, because
+the next uses of the same move are the same defect.
 
 Why
 ---
@@ -42,6 +43,21 @@ on it, restores it.  A declaration restores its name in the scope that
 declares it.  Uses in unevaluated operands (sizeof, alignof, decltype,
 noexcept, typeid, requires, static_assert) are not uses.
 
+Four shapes leave a name whole, and the self-test holds each one:
+- A call whose name starts with try_ leaves its argument whole when it
+  fails.  std::map::try_emplace states this rule.  So in
+  `while (!ring.try_push(std::move(v)))` the loop body sees v live, and
+  the code after the loop sees v spent.  An if, a while and a do-while
+  whose whole condition is one such call, or its negation, split this way.
+- swap(a, b), std::swap(a, b) and a.swap(b) exchange the spent state of a
+  and b, as they exchange the values.  The swap itself is not a use.
+- In a move constructor C(C&& other), an initializer whose whole argument
+  is a move of other can only be a base, because C cannot hold a member of
+  type C.  The base moves only its own subobject, so the next initializers
+  can read other.member.  The body sees other as spent.
+- static_cast<T&&>(x) for a scalar T, such as int, leaves x whole, because
+  a scalar has no moved-from state.
+
 A lambda body is a new body.  It starts with the spent names of the point
 where the lambda appears, minus its parameters and its init-captures, so
 a body that names a spent capture is a use after move.  A move inside a
@@ -61,7 +77,11 @@ What it does not see, stated rather than implied
   source, so the guard reads it with the name live.
 - The guard does not know types, so it also reports a use after move of
   a type whose moved-from state is specified, such as a std::vector.
-  Assign the name first, or add an allowlist entry that says why.
+  Assign the name first.  The allowlist is only for a test that probes a
+  moved-from object on purpose.
+- A try_ function that moves its argument when it fails, for example one
+  that takes a parameter by value of a type that is not trivially
+  copyable, breaks the try_ rule, and the guard does not see that.
 
 Negative-compile fixtures (a test directory named neg or *_neg) are out of
 scope, because each one must fail to compile.
@@ -70,7 +90,10 @@ The allowlist
 -------------
 scripts/use-after-move-allowlist.txt holds reviewed findings.  An entry
 is `path:function:key`, or `path:function:key xN` for N findings, with
-a comment above it that gives the reason.  The key survives a line shift.
+a comment above it that names the probe.  The key survives a line shift.
+Only a test that reads or uses a moved-from object on purpose belongs on
+the list.  A real use after move is fixed in the code, and a finding that
+the guard reads wrongly is fixed in the guard, with a self-test line.
 
 Exit codes
   0  every finding has an entry, and every entry has its findings
@@ -129,6 +152,13 @@ NOT_A_TYPE = frozenset({"return", "delete", "throw", "co_return", "co_await", "c
                         "goto", "else", "do", "sizeof", "not", "and", "or"})
 REINIT_METHODS = frozenset({"reset", "clear", "emplace", "assign"})
 CLASS_KEYS = frozenset({"class", "struct", "union"})
+# The words of a scalar type.  static_cast<int&&>(x) leaves x whole,
+# because a scalar has no moved-from state.
+SCALAR_TYPE_WORDS = frozenset("""
+    bool char char8_t char16_t char32_t wchar_t short int long signed unsigned float double const volatile
+    std :: byte size_t ptrdiff_t intptr_t uintptr_t int8_t int16_t int32_t int64_t uint8_t uint16_t uint32_t
+    uint64_t
+""".split())
 
 
 @dataclass
@@ -210,6 +240,17 @@ def restore(state: dict[str, int], key: str) -> None:
         del state[spent]
 
 
+def exchange(state: dict[str, int], left: str, right: str) -> None:
+    """Swap the spent keys under left with the spent keys under right, as swap(left, right) swaps the values."""
+    moved: dict[str, int] = {}
+    for spent in list(state):
+        for source, target in ((left, right), (right, left)):
+            if spent == source or spent.startswith(source + ".") or spent.startswith(source + "->"):
+                moved[target + spent[len(source):]] = state.pop(spent)
+                break
+    state.update(moved)
+
+
 class Body:
     """The walk of one file: every function body, lambda body and initializer list in it."""
 
@@ -222,8 +263,11 @@ class Body:
         self.balanced = partner is not None
         self.partner = partner or []
         self.findings: list[Finding] = []
-        self.seen: set[tuple[int, str, str]] = set()
+        self.seen: set[tuple[str, str, int]] = set()
         self.function = "<file>"
+        # True while a condition is walked for the path where its try_ call
+        # failed: a move in the call then leaves the name whole.
+        self.hold_moves = False
 
     # ── helpers ──────────────────────────────────────────────────────
 
@@ -233,13 +277,21 @@ class Body:
     def t(self, i: int) -> str:
         return self.toks[i].text if 0 <= i < len(self.toks) else ""
 
-    def report(self, i: int, key: str, what: str, moved_at: int) -> None:
-        line = self.line(i)
-        mark = (line, key, what)
+    def report(self, i: int, key: str, what: str, spent: str, moved_at: int) -> None:
+        """Record the first use after one move.  Later uses of the same move are the same defect."""
+        mark = (self.function, spent, moved_at)
         if mark in self.seen:
             return
         self.seen.add(mark)
-        self.findings.append(Finding(self.path, line, self.function, key, what, moved_at))
+        self.findings.append(Finding(self.path, self.line(i), self.function, key, what, moved_at))
+
+    def spend(self, state: dict[str, int], k: int, path: str) -> None:
+        """Spend path at the move at token k, and report a move of a path that a move spent before."""
+        spent = spent_prefix(state, path)
+        if spent is not None:
+            self.report(k, path, "second move", spent, state[spent])
+        if not self.hold_moves:
+            state[path] = self.line(k)
 
     def skip_angle(self, i: int, hi: int) -> int:
         """The index after a template argument list that opens at i."""
@@ -301,7 +353,7 @@ class Body:
                 self.function = self.function_name(start, k)
                 state: State = {}
                 if init_colon >= 0:
-                    state = self.eval(init_colon + 1, k, state, [])
+                    state = self.member_inits(start, init_colon, k, state)
                 self.walk_body(k, end, state)
                 self.function = "<file>"
                 start, init_colon = end + 1, -1
@@ -311,6 +363,77 @@ class Body:
                 self.function = "<file>"
                 start, init_colon = end + 1, -1
             k = end + 1
+
+    def member_inits(self, start: int, colon: int, brace: int, state: State) -> State:
+        """Walk the member-initializer list of the constructor declared from start to brace.
+
+        In a move constructor C(C&& other), an initializer whose whole argument is a move of
+        other can only be a base: a member of type C cannot exist inside C.  The base moves its
+        own subobject, so the next initializers can still read other.member.  The body sees
+        other as spent, as after any other move.
+        """
+        source = self.move_source(start, colon)
+        if source is None:
+            return self.eval(colon + 1, brace, state, [])
+        base_moved_at = None
+        for lo, hi in self.initializers(colon + 1, brace):
+            if self.moves_whole(lo, hi, source):
+                self.eval(lo, hi, state, [])
+                base_moved_at = base_moved_at or self.line(lo)
+            else:
+                state = self.eval(lo, hi, state, [])
+        if base_moved_at is not None and state is not None:
+            state = {**state, source: base_moved_at}
+        return state
+
+    def move_source(self, start: int, colon: int) -> str | None:
+        """The parameter name when the declaration from start to colon is a move constructor C(C&& p)."""
+        name = self.function_name(start, colon)
+        for k in range(start, colon):
+            if self.t(k) != name or self.t(k + 1) != "(":
+                continue
+            close = self.partner[k + 1]
+            i = k + 2
+            if self.t(i) != name:
+                return None
+            i += 1
+            if self.t(i) == "<":
+                i = self.skip_angle(i, close)
+            if self.t(i) != "&&" or self.toks[i + 1].kind != "id" or i + 2 != close:
+                return None
+            return self.t(i + 1)
+        return None
+
+    def initializers(self, lo: int, hi: int) -> list[tuple[int, int]]:
+        """The extent of each initializer in a member-initializer list."""
+        out: list[tuple[int, int]] = []
+        k = lo
+        while k < hi:
+            first = k
+            while k < hi and self.t(k) not in ("(", "{"):
+                k = self.skip_angle(k, hi) if self.t(k) == "<" else k + 1
+            if k >= hi:
+                break
+            end = self.partner[k] + 1
+            if self.t(end) == "...":
+                end += 1
+            out.append((first, end))
+            k = end + 1 if self.t(end) == "," else end
+        return out
+
+    def moves_whole(self, lo: int, hi: int, source: str) -> bool:
+        """Whether the argument of the initializer from lo to hi is exactly a move of source."""
+        close = hi - 2 if self.t(hi - 1) == "..." else hi - 1
+        m = self.partner[close] + 1
+        if self.t(m) == "std" and self.t(m + 1) == "::" and self.t(m + 2) in ("move", "forward"):
+            m += 3
+            if self.t(m) == "<":
+                m = self.skip_angle(m, close)
+        elif self.t(m) == "static_cast" and self.t(m + 1) == "<":
+            m = self.skip_angle(m + 1, close)
+        else:
+            return False
+        return self.t(m) == "(" and self.t(m + 1) == source and m + 2 == close - 1 and self.t(m + 2) == ")"
 
     def decl_has_params(self, lo: int, hi: int) -> bool:
         return any(self.t(i) == "(" for i in range(lo, hi))
@@ -567,14 +690,17 @@ class Body:
             k += 1
         if self.t(k) == "consteval":
             k += 1
-            cond = state
-        else:
-            cond = self.header(k, state, scope)
+            when_true = when_false = state
+        elif self.try_call(k + 1, self.partner[k]) is not None:
+            when_true, when_false = self.condition(k + 1, self.partner[k], state)
             k = self.partner[k] + 1
-        k, then = self.sub_stmt(k, hi, cond, ctx)
-        other = cond
+        else:
+            when_true = when_false = self.header(k, state, scope)
+            k = self.partner[k] + 1
+        k, then = self.sub_stmt(k, hi, when_true, ctx)
+        other = when_false
         if self.t(k) == "else":
-            k, other = self.sub_stmt(k + 1, hi, cond, ctx)
+            k, other = self.sub_stmt(k + 1, hi, when_false, ctx)
         return k, self.close_scope(join(then, other), scope)
 
     def loop_stmt(self, k: int, hi: int, state: State, ctx: list[dict], outer: dict) -> tuple[int, State]:
@@ -623,9 +749,10 @@ class Body:
         exit_state: State = None
         head = entry
         for _ in range(2):
+            leave = head
             if cond_lo >= 0:
-                head = self.eval(cond_lo, cond_hi, head, [])
-            exit_state = join(exit_state, head)
+                head, leave = self.condition(cond_lo, cond_hi, head)
+            exit_state = join(exit_state, leave)
             frame = {"kind": "loop"}
             ctx.append(frame)
             inner = self.declare(head, scope, loop_names) if loop_names else head
@@ -681,8 +808,8 @@ class Body:
             _, tail = self.sub_stmt(body, hi, head, ctx)
             ctx.pop()
             tail = join(tail, frame.get("continue"))
-            tail = self.eval(cond + 1, self.partner[cond], tail, [])
-            exit_state = join(join(exit_state, tail), frame.get("break"))
+            tail, leave = self.condition(cond + 1, self.partner[cond], tail)
+            exit_state = join(join(exit_state, leave), frame.get("break"))
             head = join(entry, tail)
         return self.stmt_end(body_end, hi) + 1, exit_state
 
@@ -746,6 +873,57 @@ class Body:
             return None
         path, end = self.path_at(k, close)
         return path if end == close else None
+
+    def swap_arguments(self, open_paren: int) -> tuple[str, str] | None:
+        """The two paths of swap(a, b) when each argument is a plain path."""
+        close = self.partner[open_paren]
+        paths: list[str] = []
+        k = open_paren + 1
+        while k < close:
+            if self.toks[k].kind != "id" or self.t(k) in KEYWORDS:
+                return None
+            path, end = self.path_at(k, close)
+            paths.append(path)
+            if end < close and self.t(end) != ",":
+                return None
+            k = end + 1
+        return (paths[0], paths[1]) if len(paths) == 2 else None
+
+    def try_call(self, lo: int, hi: int) -> bool | None:
+        """Whether the condition from lo to hi is !f(...), for one call f whose name starts with try_.
+
+        The result is True for !f(...), False for f(...), and None for any other condition.  The
+        callee can be a member, as in !ring->try_push(std::move(v)).
+        """
+        negated = self.t(lo) == "!"
+        start = lo + 1 if negated else lo
+        close = hi - 1
+        if close <= start or self.t(close) != ")":
+            return None
+        open_paren = self.partner[close]
+        name = open_paren - 1
+        if self.toks[name].kind != "id" or not self.t(name).startswith("try_"):
+            return None
+        chain_is_plain = all(self.toks[i].kind == "id" or self.t(i) in (".", "->", "::")
+                             for i in range(start, name))
+        return negated if chain_is_plain else None
+
+    def condition(self, lo: int, hi: int, state: State) -> tuple[State, State]:
+        """The states where the condition from lo to hi is true and where it is false.
+
+        A function whose name starts with try_ leaves its argument whole when it fails, the rule
+        that std::map::try_emplace states.  So a move into such a call spends the name only on
+        the path where the call succeeded.
+        """
+        negated = self.try_call(lo, hi)
+        if negated is None:
+            after = self.eval(lo, hi, state, [])
+            return after, after
+        self.hold_moves = True
+        failed = self.eval(lo, hi, state, [])
+        self.hold_moves = False
+        succeeded = self.eval(lo, hi, state, [])
+        return (failed, succeeded) if negated else (succeeded, failed)
 
     def element_of_get(self, k: int) -> str | None:
         """The index of std::get<I>( std::move(t) ), which moves element I of t and not t."""
@@ -840,27 +1018,28 @@ class Body:
                     if path is not None and element is not None:
                         path = f"{path}[{element}]"
                     if path is not None:
-                        spent = spent_prefix(state, path)
-                        if spent is not None:
-                            self.report(k, path, "second move", state[spent])
-                        state[path] = self.line(k)
+                        self.spend(state, k, path)
                         k = self.partner[m] + 1
                         continue
                     k = m + 1
                     continue
             if text == "static_cast" and self.t(k + 1) == "<":
                 m = self.skip_angle(k + 1, hi)
-                if self.t(m - 2) == "&&" and self.t(m) == "(":
+                scalar = all(self.t(i) in SCALAR_TYPE_WORDS for i in range(k + 2, m - 2))
+                if self.t(m - 2) == "&&" and self.t(m) == "(" and not scalar:
                     path = self.move_argument(m)
                     if path is not None:
-                        spent = spent_prefix(state, path)
-                        if spent is not None:
-                            self.report(k, path, "second move", state[spent])
-                        state[path] = self.line(k)
+                        self.spend(state, k, path)
                         k = self.partner[m] + 1
                         continue
                 k = m
                 continue
+            if text == "swap" and self.t(k + 1) == "(" and self.t(k - 1) not in (".", "->"):
+                pair = self.swap_arguments(k + 1)
+                if pair is not None:
+                    exchange(state, *pair)
+                    k = self.partner[k + 1] + 1
+                    continue
             if tok.kind == "id" and text not in KEYWORDS and k not in decl_at:
                 prev = self.t(k - 1)
                 if prev in (".", "->", "::") or self.t(k + 1) == "::":
@@ -883,9 +1062,15 @@ class Body:
                     pending.append(path)
                     k = end + 2
                     continue
+                if nxt in (".", "->") and self.t(end + 1) == "swap" and self.t(end + 2) == "(":
+                    other = self.move_argument(end + 2)
+                    if other is not None:
+                        exchange(state, path, other)
+                        k = self.partner[end + 2] + 1
+                        continue
                 spent = spent_prefix(state, path)
                 if spent is not None:
-                    self.report(k, path, "use after move", state[spent])
+                    self.report(k, path, "use after move", spent, state[spent])
                 k = end
                 continue
             k += 1
@@ -911,7 +1096,7 @@ class Body:
             elif len(part) == 1 and self.toks[k].kind == "id" and part[0] not in KEYWORDS:
                 spent = spent_prefix(state, part[0])
                 if spent is not None:
-                    self.report(k, part[0], "copy capture after move", state[spent])
+                    self.report(k, part[0], "copy capture after move", spent, state[spent])
             k = end + 1
         m = close + 1
         if self.t(m) == "<":
@@ -1044,6 +1229,20 @@ void must_catch_token_moves_twice(Token& token) {
     auto first = Transferable{1, std::move(token)};
     auto second = Transferable{2, std::move(token)};
 }
+void must_catch_try_loop_exit(Ring& r, Token t) { while (!r.try_push(std::move(t))) {} read(t); }
+void must_catch_try_if(Token t) { if (try_take(std::move(t))) { read(t); } }
+void must_catch_plain_call_loop(Ring& r, Token t) { while (!r.push(std::move(t))) {} }
+void must_catch_swap(Token t, Token u) { take(std::move(t)); std::swap(t, u); read(u); }
+void must_catch_repeated_reads(Token t) { take(std::move(t)); read(t); read(t); read(t); }
+struct must_catch_move_ctor_member_twice {
+    Token a; Token b;
+    must_catch_move_ctor_member_twice(must_catch_move_ctor_member_twice&& other)
+        : a{std::move(other.a)}, b{std::move(other.a)} {}
+};
+struct must_catch_converting_ctor {
+    Token a; int n;
+    must_catch_converting_ctor(Pair&& p) : a{std::move(p)}, n{p.size} {}
+};
 
 // Each must_accept function is correct, and a finding in it is a false alarm.
 void must_accept_reassign(Token t) { take(std::move(t)); t = Token{}; read(t); }
@@ -1068,6 +1267,20 @@ void must_accept_try(Token t) { try { read(t); } catch (...) { read(t); } take(s
 void must_accept_rebuild(Token t) { take(std::move(t)); std::destroy_at(&t); std::construct_at(&t); read(t); }
 void must_accept_other_element(Tuple t) { take(std::get<1>(std::move(t))); read(std::get<0>(t)); }
 void must_accept_global_subscript(Table s) { s.cells[::ns::index] = 1; take(std::move(s)); }
+void must_accept_try_loop(Ring& r, Token t) { while (!r->try_push(std::move(t))) { read(t); } }
+void must_accept_try_do(Ring& r, Token t) { do { read(t); } while (!r.try_push(std::move(t))); }
+void must_accept_try_if(Token t) { if (!try_take(std::move(t))) { read(t); } }
+void must_accept_try_if_else(Token t) { if (try_take(std::move(t))) { return; } else { read(t); } }
+void must_accept_swap(Token t, Token u) { take(std::move(t)); swap(t, u); read(t); }
+void must_accept_member_swap(Token t, Token u) { take(std::move(t)); t.swap(u); read(t); }
+void must_accept_scalar_cast(int x) { take_int(static_cast<int&&>(x)); read(x); }
+struct must_accept_base_move : Base {
+    Token r;
+    must_accept_base_move(must_accept_base_move&& other) : Base(std::move(other)), r{std::move(other.r)} {}
+};
+struct must_accept_two_bases : Left, Right {
+    must_accept_two_bases(must_accept_two_bases&& other) : Left{std::move(other)}, Right{std::move(other)} {}
+};
 template <class T> concept Moves = requires(T& t) { take(std::move(t)); take(std::move(t)); };
 '''
 
@@ -1089,6 +1302,9 @@ def self_test() -> int:
             failures.append(f"false alarm in {name}: {[f.what + ' ' + f.key for f in findings if f.function == name]}")
     if by_function["Moves"] or by_function["<file>"]:
         failures.append("a requires-expression or a declaration outside a body was read as a use")
+    if by_function["must_catch_repeated_reads"] != 1:
+        failures.append("three reads after one move gave "
+                        f"{by_function['must_catch_repeated_reads']} findings, and one move is one finding")
     # The allowlist admits a finding, and an entry above its count is stale.
     with tempfile.TemporaryDirectory() as tmp:
         allow = Path(tmp) / "allow.txt"
