@@ -558,13 +558,18 @@ add_test(NAME lifetime_twin
 set_tests_properties(lifetime_twin lifetime_twin_self_test PROPERTIES
   LABELS "ci_guard")
 
+# A substrate trait or a fail-closed relation is specialized only beside
+# the declarations it names.  scripts/check-trait-injection.py reads each
+# specialization and each reopening of a relation namespace from the parse
+# tree.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME trait_guard_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.py
           --self-test)
 add_test(NAME trait_guard
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.py)
 set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
 
 # The coarse, tree-wide net for the escape surface: every public
 # function that hands out a raw reference or pointer is a sanctioned
@@ -645,7 +650,7 @@ set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test P
 # greenfield rule: directories opted into CRUCIBLE_FIXY_ONLY must
 # spell fixy::fn<Type, Grants...> at consumer call sites rather
 # than reaching past the umbrella to safety::fn::Fn<...> directly.
-# Mirrors the discipline of check-trait-injection.sh +
+# Mirrors the discipline of check-trait-injection.py +
 # check-refined-pre-subsumption.sh — self-test mode is wired
 # separately so a regex regression (rg upgrade, anchor drift)
 # fails CI on its own diagnostic rather than silently letting the

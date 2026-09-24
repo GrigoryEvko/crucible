@@ -137,8 +137,8 @@ jobs:
 
       - name: trait injection guard (self-test + scan)
         run: |
-          bash scripts/check-trait-injection.sh --self-test
-          bash scripts/check-trait-injection.sh
+          python3 scripts/check-trait-injection.py --self-test
+          python3 scripts/check-trait-injection.py
 
       - name: contract cite regression (self-test + pre-callsite count vs baseline)
         run: |

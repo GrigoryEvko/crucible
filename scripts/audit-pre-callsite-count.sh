@@ -26,8 +26,8 @@
 #                      exit if a counter regressed (decreased without
 #                      explanation), zero otherwise
 #
-# Mirrors scripts/check-trait-injection.sh in shell idioms (ripgrep-only,
-# set -euo pipefail, no awk/sed) per the user's tool preferences.
+# Written in plain shell idioms: ripgrep only, set -euo pipefail, and no
+# awk or sed.
 #
 # Exit status:
 #   0  — successful audit (or --check pass)
@@ -505,8 +505,8 @@ case "$mode" in
         fi
         current_json="$(print_json)"
         # Field-by-field comparison.  We use printf+rg rather than jq to
-        # keep the script self-contained — same dep set as
-        # check-trait-injection.sh.
+        # keep the script self-contained, with ripgrep as its one
+        # dependency.
         regressed=0
         for field in crucible_pre crucible_pre_fast crucible_pre_msg \
                      crucible_post crucible_post_fast crucible_post_msg \
