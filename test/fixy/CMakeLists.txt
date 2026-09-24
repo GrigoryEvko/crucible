@@ -3113,6 +3113,39 @@ fixy_neg_compile_test(neg_os_mmap_release_erased_mapping
   "required for the satisfaction of .MappingIsBranded<Region>. .with Region = fixy::OwnedMmap<<unnamed>::MappedRegion, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, foundation::brand::DefaultBrand>"
   "the expression .!\\(is_same_v<B, foundation::brand::DefaultBrand>\\) .with B = foundation::brand::DefaultBrand.. evaluated to .false.")
 
+# ── A mapping is minted with the exclusive permission of its region ──
+#
+# mint_mmap and mint_mmap_anon read the tag and the brand of the
+# permission the caller presents, and the mapping takes both.  Three
+# fixtures for each mint, one reason each: a share where the exclusive
+# is asked for, a context whose row lacks IO, and a capability token in
+# the place of a context.
+fixy_neg_compile_test(neg_os_mmap_shared_permission
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoBlockCtx&, foundation::permissions::SharedPermissionGuard<"
+  ".foundation::permissions::SharedPermissionGuard<\\{anonymous\\}::FileRegion, foundation::permissions::<lambda\\(\\)> >. is not derived from .const foundation::permissions::Permission<Tag, Brand>.")
+
+fixy_neg_compile_test(neg_os_mmap_ctx_lacks_io
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::BlockOnlyCtx&"
+  "required for the satisfaction of .CtxFitsMmapMint<Ctx, Atoms ...>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block> >"
+  "the expression .is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block>.. evaluated to .false.")
+
+fixy_neg_compile_test(neg_os_mmap_non_ctx
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(const foundation::effects::Test&"
+  "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = foundation::effects::Test.")
+
+fixy_neg_compile_test(neg_os_mmap_anon_pool_share
+  "no matching function for call to .mint_mmap_anon<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(\\{anonymous\\}::IoBlockCtx&, const foundation::permissions::SharedPermission<"
+  ".const foundation::permissions::SharedPermission<\\{anonymous\\}::AnonRegion, foundation::permissions::<lambda\\(\\)> >. is not derived from .const foundation::permissions::Permission<Tag, Brand>.")
+
+fixy_neg_compile_test(neg_os_mmap_anon_ctx_lacks_io
+  "no matching function for call to .mint_mmap_anon<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(\\{anonymous\\}::BlockOnlyCtx&"
+  "required for the satisfaction of .CtxFitsAnonMmapMint<Ctx, Atoms ...>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block> >"
+  "the expression .is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block>.. evaluated to .false.")
+
+fixy_neg_compile_test(neg_os_mmap_anon_non_ctx
+  "no matching function for call to .mint_mmap_anon<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(const foundation::effects::Test&"
+  "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = foundation::effects::Test.")
+
 # ── A NUMA placement comes only from a successful mbind ─────────────
 #
 # The proof owns an anonymous region, and fixy::numa::mint_numa_placement

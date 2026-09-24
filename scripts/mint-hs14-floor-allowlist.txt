@@ -108,8 +108,6 @@ mint_sealed_refined_trusted|include/fixy/Refined.h
 # include/fixy/os
 mint_io_uring_ring|include/fixy/os/Io.h
 mint_zerocopy_transfer|include/fixy/os/Io.h
-mint_mmap|include/fixy/os/Mmap.h
-mint_mmap_anon|include/fixy/os/Mmap.h
 mint_sched_class|include/fixy/os/SchedClass.h
 mint_parallel_for|include/fixy/os/Spawn.h
 mint_thread_name|include/fixy/os/ThreadName.h
