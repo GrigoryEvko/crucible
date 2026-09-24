@@ -180,6 +180,11 @@ jobs:
           bash scripts/check-fixy-hw-discipline.sh --self-test
           bash scripts/check-fixy-hw-discipline.sh
 
+      - name: hardening grant coverage (self-test + scan)
+        run: |
+          bash scripts/check-syscall-grant-coverage.sh --self-test
+          bash scripts/check-syscall-grant-coverage.sh
+
       - name: no -ffast-math (self-test + scan)
         run: |
           bash scripts/check-no-ffast-math.sh --self-test

@@ -757,6 +757,16 @@ add_test(NAME fixy_hw_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.sh)
 set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
     LABELS "ci_guard")
+# The hardening grant set.  scripts/check-syscall-grant-coverage.sh
+# derives the system calls that the hardening apply path issues, and fails
+# when that set and the declared hardening_syscall_atoms tuple disagree.
+add_test(NAME syscall_grant_coverage_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.sh
+          --self-test)
+add_test(NAME syscall_grant_coverage
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.sh)
+set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PROPERTIES
+    LABELS "ci_guard")
 # std::start_lifetime_as over an array of proofs, over an aggregate that
 # holds one, and std::start_lifetime_as_array over proofs each give a
 # pointer to a proof whose lifetime never started, and no property of a
