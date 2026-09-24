@@ -90,7 +90,7 @@ using ModeProtocol =
 
 static_assert(is_well_formed_v<ModeProtocol>);
 
-class ModeCell {
+class ModeCell : public ::foundation::Pinned<ModeCell> {
     std::atomic<Mode> value_{Mode::RECORDING};
 
 public:
@@ -140,7 +140,8 @@ using ModeSessionHandle = decltype(mint_atomic_session<ModeProtocol>(std::declva
 // publish_from_session, both overloads are non-const, and no transport
 // a call site could write would compile through a const pointer.  Only
 // the End branch is walkable, so the factory hands back a handle for a
-// protocol it cannot perform.
+// protocol it cannot perform.  The Resource is a reference to the
+// Pinned cell, not a pointer, so no copy of it reaches the cell.
 //
 // The frozen tree's own test shows the split: through
 // mint_vigil_mode_bridge it takes branch 2 and closes, and where it
@@ -151,7 +152,7 @@ using ModeSessionHandle = decltype(mint_atomic_session<ModeProtocol>(std::declva
 //
 // Observing the mode does not need a handle and stays const: that is
 // atomic_machine_state(cell), which takes a const reference.
-static_assert(std::is_same_v<typename ModeSessionHandle::resource_type, ModeCell*>);
+static_assert(std::is_same_v<typename ModeSessionHandle::resource_type, ModeCell&>);
 
 // The factory is a constrained template rather than a plain function
 // taking the cell directly.  The concept pins the parameter to exactly

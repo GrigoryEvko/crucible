@@ -1586,6 +1586,18 @@ fixy_neg_compile_test(neg_sess_mint_unpinned_reference
   "constraints not satisfied"
   "satisfaction of .SessionResource<Resource>.")
 
+# A copyable Resource that reaches a channel is a second channel to the
+# peer, so SessionResource refuses it: once for a struct that holds a
+# pointer, and once for a raw pointer.
+fixy_neg_compile_test(neg_sess_resource_copy_reaches_channel
+  "no matching function for call to .mint_session_handle<Once>\\(resource_copy_fixture::SharedWire\\)"
+  "satisfaction of .SessionResource<Resource>. \\[with Resource = resource_copy_fixture::SharedWire\\]"
+  "no operand of the disjunction is satisfied")
+fixy_neg_compile_test(neg_sess_resource_raw_pointer
+  "no matching function for call to .mint_session_handle<Once, resource_pointer_fixture::Queue\\*>"
+  "satisfaction of .SessionResource<Resource>. \\[with Resource = resource_pointer_fixture::Queue\\*\\]"
+  "no operand of the disjunction is satisfied")
+
 # A new-expression gives a handle storage that nothing has to free, so
 # the protocol never ends.  The handle deletes its allocation functions,
 # and a smart pointer that allocates reaches the same deleted function.
@@ -1706,6 +1718,13 @@ fixy_neg_compile_test(neg_sess_atomic_ill_formed
   "no matching function for call to .mint_atomic_session"
   "constraints not satisfied"
   "is_well_formed_v<Proto>")
+
+# The address of a cell is its identity, so a cell with the read shape
+# that is not Pinned is refused by the same concept.
+fixy_neg_compile_test(neg_sess_atomic_cell_not_pinned
+  "no matching function for call to .mint_atomic_session<Once>\\(loose_cell_fixture::LoosePhaseCell&\\)"
+  "satisfaction of .AtomicMachineCell<Cell>. \\[with Cell = loose_cell_fixture::LoosePhaseCell\\]"
+  "_Base = foundation::Pinned<loose_cell_fixture::LoosePhaseCell>")
 
 # HS14 for mint_vigil_mode_bridge.  Its gate is one clause, so the two
 # fixtures separate the two ways to fail it: an unrelated type, and a

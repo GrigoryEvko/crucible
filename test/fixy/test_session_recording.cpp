@@ -163,6 +163,7 @@ struct Mailbox {
 struct Port {
     Mailbox* in = nullptr;
     Mailbox* out = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // A write tries, and the queue has no bound, so each try takes the value.

@@ -101,6 +101,7 @@
 // so that the inner handle sends the cancellation.  If it does not, the
 // base destructor aborts, because the base cannot reach a Resource.
 
+#include <fixy/SelfContained.h>
 #include <fixy/session/Payload.h>
 #include <fixy/session/Stepping.h>
 
@@ -1656,29 +1657,69 @@ template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy
     return handle.is_live();
 }
 
-// The Resource is what a handle stores at runtime, and the concept
-// exists to stop a handle from outliving what it points at.
+// ── The Resource ─────────────────────────────────────────────────────
 //
-// A value type is safe because the handle owns it and their lifetimes
-// coincide.  An lvalue reference to a Pinned object is safe because a
-// Pinned object cannot be moved, so its address is stable for its whole
-// lifetime and the caller only has to outlive the handles.  An lvalue
-// reference to a non-Pinned object is rejected: moving or assigning to
-// the referent relocates it and every live handle dangles with no
-// diagnostic.  An rvalue reference is rejected because it would bind to
-// a temporary that dies before the handle is used.
+// The Resource is what a handle stores at runtime.  The concept stops a
+// handle from outliving what it points at, and it stops a second holder
+// from reaching the channel of a live session.
 //
-// A raw object pointer is admitted without requiring a Pinned pointee.
-// Code that reaches for a raw pointer is already in a manual-lifetime
-// regime the type system can only partly support, and the pointer
-// itself is a value the handle owns.  A function pointer is admitted
-// because a function's address is stable by language rule.
+// A value type is safe when the handle owns it: their lifetimes coincide.
+// An lvalue reference to a Pinned object is safe because a Pinned object
+// cannot be moved, so its address is stable for its whole lifetime and
+// the caller only has to outlive the handles.  An lvalue reference to a
+// non-Pinned object is refused: a move of the referent relocates it and
+// every live handle dangles.  An rvalue reference is refused because it
+// binds to a temporary that dies before the handle is used.
+//
+// A value Resource that reaches state outside itself has one holder.  A
+// copy of it is a second channel to the peer: the holder could send the
+// copy in a message, or build a second handle on it, and write outside
+// the protocol.  This is the one-holder rule of per-message resources in
+// Actris: a channel end is an exclusive resource, never a duplicable one.
+// So a Resource that can be copied must be fixy::SelfContained, which
+// reads every base and member, private ones too, and names the part that
+// reaches out.  A raw pointer, a function pointer and a
+// std::reference_wrapper are copyable and reach out, so they are refused.
+// A Resource that reaches a channel holds a MoveOnlyResource member,
+// which deletes its copy and keeps it an aggregate.
+//
+// The reach is conservative in the way SelfContained is: a member that
+// the walk cannot account for counts as a reach.  Complexity: linear in
+// the distinct types reached from the Resource.
+
+// A member that makes the Resource that holds it move-only.  It is empty,
+// and [[no_unique_address]] gives it no byte.
+struct MoveOnlyResource {
+    constexpr MoveOnlyResource() noexcept = default;
+    constexpr MoveOnlyResource(MoveOnlyResource&&) noexcept = default;
+    constexpr MoveOnlyResource& operator=(MoveOnlyResource&&) noexcept = default;
+    MoveOnlyResource(const MoveOnlyResource&) =
+        delete("[Resource_Copy] a Resource that reaches a channel has one holder.  A copy is a second channel");
+    MoveOnlyResource& operator=(const MoveOnlyResource&) =
+        delete("[Resource_Copy] a Resource that reaches a channel has one holder.  A copy is a second channel");
+    ~MoveOnlyResource() = default;
+};
+
+// True when a value of the type can be duplicated: by construction from
+// a copy, or by assignment from one.
+template <typename Resource>
+inline constexpr bool resource_is_copyable_v =
+    std::is_copy_constructible_v<Resource> || std::is_copy_assignable_v<Resource>;
+
+// A value Resource: owned by the handle, and either self-contained or
+// impossible to copy.
+template <typename Resource>
+concept OwnedSessionResource =
+    !std::is_reference_v<Resource> && (!resource_is_copyable_v<Resource> || ::fixy::SelfContained<Resource>);
+
+// A reference Resource: an lvalue reference to a Pinned object.
+template <typename Resource>
+concept PinnedSessionResource =
+    std::is_lvalue_reference_v<Resource>
+    && std::derived_from<std::remove_reference_t<Resource>, ::foundation::Pinned<std::remove_reference_t<Resource>>>;
 
 template <typename Resource>
-concept SessionResource = !std::is_reference_v<Resource>
-                       || (std::is_lvalue_reference_v<Resource>
-                           && std::derived_from<std::remove_reference_t<Resource>,
-                                                ::foundation::Pinned<std::remove_reference_t<Resource>>>);
+concept SessionResource = OwnedSessionResource<Resource> || PinnedSessionResource<Resource>;
 
 // ── The priority of a session ────────────────────────────────────────
 //
@@ -1937,19 +1978,18 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
                                              "more at every reachable choice position, for example "
                                              "Select<Send<Stop, End>>.");
 
-    static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_NotPinned]: "
-                                             "mint_session_handle<Proto, Resource>: Resource must be either "
-                                             "a value type (handle owns it by value) or an lvalue reference "
-                                             "to a type derived from foundation::Pinned<T>.  An lvalue "
-                                             "reference to a non-Pinned object lets a subsequent move of the "
-                                             "channel leave live handles dangling (use-after-free).  Either: "
-                                             "(a) make the channel Pinned by deriving it from "
-                                             "foundation::Pinned<ChannelType>, or (b) pass the channel by "
-                                             "value (copies are fine for value-like channels), or (c) wrap "
-                                             "the channel in std::reference_wrapper if the caller's "
-                                             "lifetime contract is satisfied by other means.  Rvalue-"
-                                             "reference Resource is also rejected — the handle would bind "
-                                             "to a temporary and dangle immediately on return.");
+    static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_Refused]: "
+                                             "mint_session_handle<Proto, Resource>: the Resource must be a "
+                                             "value the handle owns, or an lvalue reference to a type "
+                                             "derived from foundation::Pinned<T>.  A value that can be "
+                                             "copied must be fixy::SelfContained: a copy of a Resource that "
+                                             "reaches a channel is a second channel to the peer.  Either: "
+                                             "(a) give the Resource a [[no_unique_address]] "
+                                             "fixy::session::MoveOnlyResource member, or (b) make the "
+                                             "channel Pinned and pass it by lvalue reference.  A raw "
+                                             "pointer, a function pointer and a std::reference_wrapper are "
+                                             "refused.  An rvalue-reference Resource binds to a temporary "
+                                             "and is refused too.");
 
     static_assert(!std::is_same_v<Proto, Continue>, "fixy::session::diagnostic [Continue_Without_Loop]: "
                                                     "Continue cannot be the top-level protocol.");

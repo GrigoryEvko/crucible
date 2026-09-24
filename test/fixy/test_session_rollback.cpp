@@ -142,6 +142,7 @@ struct Mailbox {
 struct Port {
     Mailbox* in = nullptr;
     Mailbox* out = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // The two ends run on one thread, and each send comes before its receive.

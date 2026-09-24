@@ -228,6 +228,7 @@ struct Mailbox {
 struct Port {
     Mailbox* in = nullptr;
     Mailbox* out = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // Every message of these binary views is keyed, so each is its label word.

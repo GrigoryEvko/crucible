@@ -694,9 +694,11 @@ struct WordWire {
 };
 struct PickerEnd {
     WordWire* wire = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct OffererEnd {
     WordWire* wire = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // Returns the label that the picker sent and the label that the offerer
@@ -759,9 +761,11 @@ struct SharedWire {
 };
 struct StepEnd {
     SharedWire* wire = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct WideEnd {
     SharedWire* wire = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 [[nodiscard]] int keyed_step_meets_wider_offer() {

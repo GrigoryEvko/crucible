@@ -238,6 +238,22 @@ struct SharedChannel {
     int* out = nullptr;
 };
 
+// A copy of the Resource of a live session is closed: a Resource that can
+// be copied and reaches a channel is not a Resource, so no session holds
+// one.  The one-holder form moves, and it is on the ledger below.
+static_assert(!s::SessionResource<SharedChannel>);
+static_assert(!s::SessionResource<int*>);
+
+struct OneHolderChannel {
+    int* in = nullptr;
+    int* out = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+static_assert(s::SessionResource<OneHolderChannel>);
+static_assert(!std::is_copy_constructible_v<OneHolderChannel>);
+static_assert(!std::is_copy_assignable_v<OneHolderChannel>);
+static_assert(sizeof(OneHolderChannel) == 2 * sizeof(int*), "the move-only member takes no storage");
+
 struct delegation_gap {
     std::string_view carrier;
     std::string_view why;
@@ -250,11 +266,11 @@ constexpr delegation_gap delegation_gaps[] = {
      "pointer to the endpoint, and an index into a table of endpoints needs no cast at all.  C++ has no provenance "
      "on an integer, so no type can refuse it",
      s::payload_conveys_delegation_v<std::uintptr_t>},
-    {"a copy of the Resource of a live session",
-     "a Resource of raw pointers is a channel held as plain data, and no type marks it.  A copy lets the recipient "
-     "write outside the protocol.  A move-only Resource would close the copy through resource(), but not a "
-     "Resource that the recipient builds again from its raw parts",
-     s::payload_conveys_delegation_v<SharedChannel>},
+    {"a Resource moved out through the reference a transport receives",
+     "a transport gets the Resource by non-const reference, so it can move the Resource out and send it, and the "
+     "handle keeps a moved-from Resource.  The handle must lend the Resource to the transport, and a C++ reference "
+     "cannot stop a move through it.  A Resource that the recipient builds again from raw parts is the same case",
+     s::payload_conveys_delegation_v<OneHolderChannel>},
 };
 
 consteval bool delegation_gaps_are_open() {
@@ -332,6 +348,7 @@ struct Mailbox {
 struct Port {
     Mailbox* in = nullptr;
     Mailbox* out = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // The failure detector reports the crash of the peer that `cell` watches:
@@ -1000,9 +1017,29 @@ void on_watchdog(int) { std::_Exit(kDeadlockExit); }
     }
 }
 
+// The one-holder Resource at run time: a handle takes it by move, a step
+// hands it on, and close() gives back the two channel addresses.
+[[nodiscard]] int one_holder_resource_moves() {
+    int in = 0;
+    int out = 0;
+    OneHolderChannel channel{&in, &out};
+    auto head = s::mint_session_handle<s::Send<int, s::End>>(std::move(channel));
+    auto at_end = std::move(head).send(9, [](OneHolderChannel& ch, int& value) noexcept {
+        *ch.out = value;
+        return true;
+    });
+    const OneHolderChannel back = std::move(at_end).close();
+    if (back.in != &in || back.out != &out || out != 9) {
+        std::fprintf(stderr, "the one-holder Resource did not carry its channel through the session\n");
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
+    if (const int rc = one_holder_resource_moves(); rc != 0) return rc;
     std::fprintf(stderr, "[expected] the attack campaign below prints diagnostics from child processes\n");
     int failures = 0;
     for (const attack_case& attack : kAttacks) {

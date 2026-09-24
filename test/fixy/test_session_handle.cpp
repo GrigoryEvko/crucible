@@ -450,28 +450,34 @@ static_assert(s::branch_wire_word_v<PlainOffer, 1> == 1 && s::branch_of_wire_wor
 static_assert(s::branch_of_wire_word<PlainOffer>(s::branch_wire_word_v<KeyedSelect, 0>) == s::no_branch,
               "a label word is no position");
 
+// One word that the two ends share.  It is Pinned, so each handle holds
+// it by reference and no copy of a pointer to it exists.
+struct WordWire : ::foundation::Pinned<WordWire> {
+    std::uint64_t word = 0;
+};
+
 // The Select holds Hello first and the Offer holds it second.  The word
 // of Hello reaches the Hello branch.
 [[nodiscard]] int walk_keyed_choice_in_another_order() {
-    std::uint64_t wire = 0;
-    auto sender = s::mint_session_handle<KeyedSelect, std::uint64_t*>(&wire);
-    auto receiver = s::mint_session_handle<KeyedOfferSwapped, std::uint64_t*>(&wire);
+    WordWire wire{};
+    auto sender = s::mint_session_handle<KeyedSelect, WordWire&>(wire);
+    auto receiver = s::mint_session_handle<KeyedOfferSwapped, WordWire&>(wire);
 
     // The word is the whole keyed message, so the sender stands at the
     // reply of Hello, past its label step.
-    auto awaiting = std::move(sender).select<0>([](std::uint64_t* box, std::size_t word) noexcept {
-        *box = word;
+    auto awaiting = std::move(sender).select<0>([](WordWire& box, std::size_t word) noexcept {
+        box.word = word;
         return true;
     });
     static_assert(std::is_same_v<typename decltype(awaiting)::protocol, s::Recv<int, s::End>>);
 
     const int taken = std::move(receiver).branch(
-        [](std::uint64_t* box) noexcept -> std::optional<std::size_t> { return *box; },
+        [](WordWire& box) noexcept -> std::optional<std::size_t> { return box.word; },
         [](auto branch_handle) {
             using B = typename decltype(branch_handle)::protocol;
             if constexpr (std::is_same_v<B, s::Send<int, s::End>>) {
-                auto at_end = std::move(branch_handle).send(7, [](std::uint64_t* box, int& value) noexcept {
-                    *box = static_cast<std::uint64_t>(value);
+                auto at_end = std::move(branch_handle).send(7, [](WordWire& box, int& value) noexcept {
+                    box.word = static_cast<std::uint64_t>(value);
                     return true;
                 });
                 (void)std::move(at_end).close();
@@ -486,7 +492,7 @@ static_assert(s::branch_of_wire_word<PlainOffer>(s::branch_wire_word_v<KeyedSele
         return 1;
     }
     auto [reply, sender_end] =
-        std::move(awaiting).recv([](std::uint64_t* box) noexcept { return std::optional{static_cast<int>(*box)}; });
+        std::move(awaiting).recv([](WordWire& box) noexcept { return std::optional{static_cast<int>(box.word)}; });
     (void)std::move(sender_end).close();
     return reply == 7 ? 0 : 1;
 }
@@ -596,6 +602,7 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 
 struct TokenWire {
     std::optional<Token>* slot = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 [[nodiscard]] int move_token_through_session() {
@@ -647,9 +654,11 @@ struct Pipe : ::foundation::Pinned<Pipe> {
 
 struct SelfEnd {
     Pipe* pipe = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct PeerEnd {
     Pipe* pipe = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // A trying write: the one slot takes a value only while it is empty.

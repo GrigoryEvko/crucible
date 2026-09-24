@@ -160,10 +160,12 @@ struct Mailbox {
     std::deque<std::uint64_t> slots;
 };
 
-// One endpoint's view of the wire.
+// One endpoint's view of the wire.  It reaches the two queues, so it has
+// one holder.
 struct Port {
     Mailbox* in = nullptr;
     Mailbox* out = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // A crash-watched send tries its write: the queue has no bound, so each
@@ -352,6 +354,7 @@ private:
 struct WirePort {
     WireQueue* in = nullptr;
     WireQueue* out = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 using StreamP = s::Loop<s::Select<s::Send<int, s::Continue>>>;

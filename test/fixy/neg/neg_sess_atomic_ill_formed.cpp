@@ -19,7 +19,7 @@ enum class Phase : unsigned char {
     Busy
 };
 
-struct PhaseCell {
+struct PhaseCell : ::foundation::Pinned<PhaseCell> {
     using state_type = Phase;
     [[nodiscard]] Phase load(std::memory_order order = std::memory_order_relaxed) const noexcept {
         return value_.load(order);

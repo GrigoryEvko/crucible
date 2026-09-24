@@ -1020,6 +1020,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::is_permission_classified, kMetafunction},
     {^^::fixy::session::payload_perm_delta, kMetafunction},
     {^^::fixy::session::is_plain_payload, kMetafunction},
+    {^^::fixy::session::MoveOnlyResource,
+     "an empty member that deletes the copy of a session Resource: it holds nothing, makes no claim, and is "
+     "never a value in a signature"},
 
     {^^::fixy::session::vigil_mode::mode_tag, kVocabulary},
     {^^::fixy::session::vigil_mode::ModeTransition, kProtocol},

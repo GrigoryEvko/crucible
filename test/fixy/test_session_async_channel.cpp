@@ -117,10 +117,12 @@ struct Deadline {
 struct LeftEnd {
     static constexpr std::size_t channel_capacity = 1;
     Pipe* pipe = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct RightEnd {
     static constexpr std::size_t channel_capacity = 1;
     Pipe* pipe = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // Ends of a channel that holds two messages each way, and an end that

@@ -7,9 +7,11 @@
 // state is driven imperatively from inside and read structurally from
 // outside.
 //
-// The bridge is pinned because a minted handle stores the address of
-// the machine it borrows.  Moving the bridge would leave the handle
-// pointing at freed storage, and the next session step would follow it.
+// The bridge is pinned because a minted handle holds a reference to the
+// bridge.  The Resource of that handle is the Pinned bridge, not a
+// pointer, because a copy of a pointer is a second holder of the
+// machine.  Moving the bridge would leave the reference at freed
+// storage, and Pinned deletes the move.
 //
 // Proto is not constrained to a single party.  Party count is a claim
 // about the protocol a caller picked, not a structural property of any
@@ -85,8 +87,6 @@ public:
     using row_discipline = ::fixy::row_discipline::session_from_machine<Proto>;
     using row_payload = machine_type;
 
-    using session_handle_type = decltype(mint_session_handle<Proto>(std::declval<machine_type*>()));
-
     ~SessionFromMachine() = default;
 
     [[nodiscard]] constexpr machine_type& machine() & noexcept { return machine_; }
@@ -97,15 +97,14 @@ public:
 
     [[nodiscard]] constexpr State& state_mut() & noexcept { return machine_.data_mut(); }
 
-    // The bridge is the resource anchor and each handle is a lens for
-    // one observable transition, so a fresh handle is minted per call.
-    // At most one may be live at a time: two handles would drive the
-    // same machine state against each other.  Nothing here enforces
+    // The bridge is the Resource of each handle, and each handle is a
+    // lens for one observable transition, so a fresh handle is minted per
+    // call.  At most one may be live at a time: two handles would drive
+    // the same machine state against each other.  Nothing here enforces
     // that, exactly as nothing enforces it for two mutable borrows of
-    // the machine.
-    [[nodiscard]] auto session_view() & noexcept -> session_handle_type {
-        return mint_session_handle<Proto>(&machine_);
-    }
+    // the machine.  The return type is deduced, because the class is
+    // complete only in the body, and the Pinned check needs it complete.
+    [[nodiscard]] auto session_view() & noexcept { return mint_session_handle<Proto, SessionFromMachine&>(*this); }
 
     [[nodiscard]] static constexpr std::string_view protocol_name() noexcept { return type_display_name_v<Proto>; }
 
@@ -125,28 +124,16 @@ mint_session_from_machine(Args&&... args) noexcept(std::is_nothrow_constructible
     return SessionFromMachine<State, Proto, Edges>{::fixy::mint_machine<State, Edges>(std::forward<Args>(args)...)};
 }
 
-// The recovered pointer is a borrow.  The bridge that minted the handle
-// has to outlive every pointer recovered from it.
-
-template <typename State, std::meta::info Edges, typename LoopCtx, AbandonmentPolicy Policy>
-[[nodiscard]] constexpr ::fixy::Machine<State, Edges>*
-machine_from_session(SessionHandle<End, ::fixy::Machine<State, Edges>*, LoopCtx, Policy>&& handle) noexcept {
-    return std::move(handle).close();
-}
-
-// Recovering the machine before the protocol ends is the lossy
-// direction of the mapping.  The remaining steps the protocol declared
-// never happen, and the detach is what tells the handle's destructor
-// that the abandonment was deliberate.  The usual reason is that the
-// bridge is about to be destroyed.
-template <typename Proto, typename State, std::meta::info Edges, typename LoopCtx, AbandonmentPolicy Policy>
-    requires(!std::is_same_v<Proto, End>)
-[[nodiscard]] constexpr ::fixy::Machine<State, Edges>*
-machine_from_session(SessionHandle<Proto, ::fixy::Machine<State, Edges>*, LoopCtx, Policy>&& handle) noexcept {
-    ::fixy::Machine<State, Edges>* machine = handle.resource();
-    std::move(handle).detach(detach_reason::OwnerLifetimeBoundEarlyExit{});
-    return machine;
-}
+// The handle type that session_view() of Bridge returns.
+//
+// A view gives nothing back that its caller does not already hold: the
+// caller owns the bridge, and the bridge owns the machine.  So the view
+// ends through the handle API.  At End, close() returns the reference to
+// the bridge.  Before End, detach() with a reason tells the destructor
+// that the remaining steps are abandoned on purpose, and the caller goes
+// on with its own bridge.
+template <typename Bridge>
+using session_view_t = decltype(std::declval<Bridge&>().session_view());
 
 // A state machine whose address is its cross-thread publication
 // identity cannot be owned by a bridge: readers on other threads hold
@@ -158,12 +145,18 @@ machine_from_session(SessionHandle<Proto, ::fixy::Machine<State, Edges>*, LoopCt
 // are not: each cell decides which transitions are legal and can delete
 // the illegal ones under its own diagnostic, so the write helper only
 // forwards to the cell's own publish step.
+//
+// The address of a cell is its identity, so the concept also asks that
+// the cell derive from foundation::Pinned.  A handle then holds the cell
+// by lvalue reference, and no copy of a pointer to it exists.
 
 template <typename Cell>
-concept AtomicMachineCell = requires(const std::remove_cvref_t<Cell>& cell, std::memory_order order) {
-    typename std::remove_cvref_t<Cell>::state_type;
-    { cell.load(order) } -> std::same_as<typename std::remove_cvref_t<Cell>::state_type>;
-};
+concept AtomicMachineCell =
+    std::derived_from<std::remove_cvref_t<Cell>, ::foundation::Pinned<std::remove_cvref_t<Cell>>>
+    && requires(const std::remove_cvref_t<Cell>& cell, std::memory_order order) {
+           typename std::remove_cvref_t<Cell>::state_type;
+           { cell.load(order) } -> std::same_as<typename std::remove_cvref_t<Cell>::state_type>;
+       };
 
 // The cell is taken by non-const reference on purpose.  A protocol over
 // a cell is written in terms of the transitions the cell publishes, and
@@ -174,7 +167,7 @@ concept AtomicMachineCell = requires(const std::remove_cvref_t<Cell>& cell, std:
 template <typename Proto, typename Cell>
     requires(AtomicMachineCell<Cell> && WellFormedRunnableProtocol<Proto>)
 [[nodiscard]] constexpr auto mint_atomic_session(Cell& cell) noexcept {
-    return mint_session_handle<Proto>(&cell);
+    return mint_session_handle<Proto, Cell&>(cell);
 }
 
 template <typename Cell>
@@ -186,18 +179,19 @@ atomic_machine_state(const Cell& cell, std::memory_order order = std::memory_ord
 
 // The transport for a Send step over an atomic cell.  The signature is
 // the try-write that a handle's send() accepts, bool(Resource&, Event&),
-// where Resource is the cell pointer that the mint stored.  The result
-// is the answer of the cell: true when the cell took the event.  A cell
-// that answers false makes the handle wait through the watch and try
-// again, so a cell must answer false only when a later try can succeed.
+// where Resource is the reference to the cell that the mint stored.  The
+// result is the answer of the cell: true when the cell took the event.
+// A cell that answers false makes the handle wait through the watch and
+// try again, so a cell must answer false only when a later try can
+// succeed.
 template <typename Event, AtomicMachineCell Cell>
-[[nodiscard]] constexpr bool publish_atomic_machine_transition(Cell*& cell, Event& event) noexcept(
-    noexcept(cell->publish_from_session(std::move(event), std::memory_order_release)))
+[[nodiscard]] constexpr bool publish_atomic_machine_transition(Cell& cell, Event& event) noexcept(
+    noexcept(cell.publish_from_session(std::move(event), std::memory_order_release)))
     requires requires {
-        { cell->publish_from_session(std::move(event), std::memory_order_release) } -> std::same_as<bool>;
+        { cell.publish_from_session(std::move(event), std::memory_order_release) } -> std::same_as<bool>;
     }
 {
-    return cell->publish_from_session(std::move(event), std::memory_order_release);
+    return cell.publish_from_session(std::move(event), std::memory_order_release);
 }
 
 }  // namespace fixy::session

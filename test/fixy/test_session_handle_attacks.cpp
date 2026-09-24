@@ -211,9 +211,11 @@ struct Pipe : ::foundation::Pinned<Pipe> {
 
 struct LeftEnd {
     Pipe* pipe = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 struct RightEnd {
     Pipe* pipe = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
 // The left end can cancel: it tells the right end through the pipe.

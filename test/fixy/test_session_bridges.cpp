@@ -34,9 +34,9 @@ using Bridge = s::SessionFromMachine<Payload, Reporting>;
 
 // ── The bridge owns, and cannot move ─────────────────────────────────
 //
-// A minted handle stores the address of the machine it borrows, so a
-// bridge that moved would leave every live handle pointing at freed
-// storage and the next step would follow the pointer.
+// A minted handle holds a reference to the bridge, so a bridge that
+// moved would leave every live handle referring to freed storage and the
+// next step would follow the reference.
 static_assert(!std::is_copy_constructible_v<Bridge>);
 static_assert(!std::is_move_constructible_v<Bridge>);
 static_assert(!std::is_copy_assignable_v<Bridge>);
@@ -54,10 +54,12 @@ static_assert(std::is_same_v<typename Bridge::protocol, Reporting>);
 
 // A loop is unrolled one step at mint time, so the handle carries the
 // loop body as its protocol and the loop itself as the context.  That
-// unroll is what binds the Continue inside the body.
-using ExpectedView =
-    s::SessionHandle<s::Select<s::Send<int, s::Continue>, s::End>, ::fixy::Machine<Payload>*, Reporting>;
-static_assert(std::is_same_v<typename Bridge::session_handle_type, ExpectedView>);
+// unroll is what binds the Continue inside the body.  The Resource is a
+// reference to the Pinned bridge, never a pointer to the machine.
+using ExpectedView = s::SessionHandle<s::Select<s::Send<int, s::Continue>, s::End>, Bridge&, Reporting>;
+static_assert(std::is_same_v<s::session_view_t<Bridge>, ExpectedView>);
+static_assert(s::SessionResource<Bridge&>);
+static_assert(!s::SessionResource<::fixy::Machine<Payload>*>, "a pointer to the machine is a second holder");
 
 // The bridge adds nothing to the state it owns: the Pinned base is
 // empty and the machine is the only member.  The ported header asserted
@@ -76,8 +78,20 @@ static_assert(s::WellFormedRunnableProtocol<vm::ModeProtocol>);
 static_assert(sizeof(vm::ModeCell) == sizeof(std::atomic<vm::Mode>));
 
 // The handle borrows the cell mutably, which is what lets a Send branch
-// reach publish_from_session.
-static_assert(std::is_same_v<typename vm::ModeSessionHandle::resource_type, vm::ModeCell*>);
+// reach publish_from_session.  The address of the cell is its identity,
+// so the cell is Pinned and the handle holds a reference to it.
+static_assert(std::is_same_v<typename vm::ModeSessionHandle::resource_type, vm::ModeCell&>);
+static_assert(std::is_base_of_v<::foundation::Pinned<vm::ModeCell>, vm::ModeCell>);
+
+// A cell with the read shape that is not Pinned is refused: a copy of
+// such a cell is a second cell, and a pointer to it is a second holder.
+struct LoosePhaseCell {
+    using state_type = vm::Mode;
+    [[nodiscard]] vm::Mode load(std::memory_order = std::memory_order_relaxed) const noexcept {
+        return vm::Mode::RECORDING;
+    }
+};
+static_assert(!s::AtomicMachineCell<LoosePhaseCell>);
 
 // ── The transition relation ──────────────────────────────────────────
 //
@@ -107,7 +121,7 @@ static_assert(vm::ModeCompiledToRecording::to == vm::Mode::RECORDING);
 // The mint's gate is nominal, not structural: a cell that reads exactly
 // like ModeCell is still refused, so a call cannot pick up the mode
 // protocol by accident.
-struct LookalikeCell {
+struct LookalikeCell : ::foundation::Pinned<LookalikeCell> {
     using state_type = vm::Mode;
     [[nodiscard]] vm::Mode load(std::memory_order = std::memory_order_relaxed) const noexcept {
         return vm::Mode::RECORDING;
@@ -130,25 +144,31 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
     bridge.state_mut().ticks = 6;
 
     auto view = bridge.session_view();
-    if (view.resource() != &bridge.machine()) {
-        std::fprintf(stderr, "the handle borrowed something other than the bridge's machine\n");
+    if (&view.resource() != &bridge || &view.resource().machine() != &bridge.machine()) {
+        std::fprintf(stderr, "the handle borrowed something other than the bridge\n");
         return 1;
     }
 
-    // Recovering the machine before the protocol ends is the lossy
-    // direction, and the detach inside machine_from_session is what
-    // tells the destructor the abandonment was deliberate.  Without it
-    // this function would abort under the checking policy.
-    ::fixy::Machine<Payload>* recovered = s::machine_from_session(std::move(view));
-    if (recovered != &bridge.machine() || recovered->data().ticks != 6) {
-        std::fprintf(stderr, "machine_from_session did not return the borrowed machine\n");
+    // A step reaches the machine through the bridge that the handle holds.
+    auto sending = std::move(view).select_local<0>();
+    auto again = std::move(sending).send(7, [](Bridge& held, int& value) noexcept {
+        held.state_mut().ticks = value;
+        return true;
+    });
+    if (bridge.state().ticks != 7) {
+        std::fprintf(stderr, "the send did not reach the machine of the bridge\n");
         return 1;
     }
+
+    // The protocol has not ended.  The detach tells the destructor that
+    // the abandonment is deliberate.  Without it this function would
+    // abort under the checking policy.
+    std::move(again).detach(s::detach_reason::OwnerLifetimeBoundEarlyExit{});
 
     // extract() is the only way the state leaves the bridge, because
     // the bridge itself cannot be moved.
     const Payload taken = std::move(bridge).extract();
-    if (taken.ticks != 6) {
+    if (taken.ticks != 7) {
         std::fprintf(stderr, "extract did not carry the state out\n");
         return 1;
     }
@@ -160,17 +180,16 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
     return 0;
 }
 
-// The End overload of machine_from_session closes rather than detaches,
-// because at End the protocol owes nothing and the handle is entitled
-// to hand its resource back.
-[[nodiscard]] int terminal_recovery_closes() {
+// At End the protocol owes nothing, so close() hands back the reference
+// to the bridge that the handle held.
+[[nodiscard]] int terminal_view_closes() {
     auto bridge = s::mint_session_from_machine<s::End, Payload>(1);
     auto view = bridge.session_view();
     static_assert(std::is_same_v<typename decltype(view)::protocol, s::End>);
 
-    ::fixy::Machine<Payload>* recovered = s::machine_from_session(std::move(view));
-    if (recovered != &bridge.machine()) {
-        std::fprintf(stderr, "the terminal overload returned a different machine\n");
+    auto& recovered = std::move(view).close();
+    if (&recovered != &bridge || &recovered.machine() != &bridge.machine()) {
+        std::fprintf(stderr, "close returned a different bridge\n");
         return 1;
     }
     return 0;
@@ -188,7 +207,7 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
     // The transport is the cell's own publish step.  Each Send branch
     // exists for exactly one of its overloads, so the branch index and
     // the transition type cannot drift apart without a compile error.
-    auto apply = []<typename Transition>(vm::ModeCell*& target, Transition& transition) noexcept {
+    auto apply = []<typename Transition>(vm::ModeCell& target, Transition& transition) noexcept {
         return s::publish_atomic_machine_transition(target, transition);
     };
 
@@ -210,8 +229,8 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
 
     // Branch 2 is End, which is the protocol's only exit.
     auto terminal = std::move(after_recording).select_local<2>();
-    vm::ModeCell* recovered = std::move(terminal).close();
-    if (recovered != &cell) {
+    vm::ModeCell& recovered = std::move(terminal).close();
+    if (&recovered != &cell) {
         std::fprintf(stderr, "close returned a different cell\n");
         return 1;
     }
@@ -236,7 +255,7 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
 
 int main() {
     if (const int rc = bridge_owns_and_lends(); rc != 0) return rc;
-    if (const int rc = terminal_recovery_closes(); rc != 0) return rc;
+    if (const int rc = terminal_view_closes(); rc != 0) return rc;
     if (const int rc = mode_protocol_round_trip(); rc != 0) return rc;
     return 0;
 }
