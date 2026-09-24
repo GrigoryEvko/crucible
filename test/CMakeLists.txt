@@ -742,21 +742,20 @@ add_test(NAME permission_storage
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh)
 set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
   LABELS "ci_guard")
-# FIXY-U-097 std::vector::reserve ban enforcement (CLAUDE.md §IV
-# opt-out matrix).  scripts/check-no-reserve.sh flags every NEW
-# `.reserve(` / `->reserve(` call site outside the allowlist; 12
-# grandfathered sites are tracked in scripts/no-reserve-allowlist.txt
-# with their migration tickets (fixy-A5-020, WRAP-Cipher-*,
-# WRAP-BgThread-6, etc.).  Self-test mode plants a violation,
-# allowlist entry, inline-suppressed call, and commented-out call
-# to verify all four exemption axes work.
-add_test(NAME no_reserve_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reserve.sh
+# The reinterpret_cast ban (CLAUDE.md §III) and the std::vector::reserve
+# ban (CLAUDE.md §IV), read from the parse tree of the pinned kit.  Each
+# ban has a content-keyed allowlist: scripts/no-reinterpret-allowlist.txt
+# and scripts/no-reserve-allowlist.txt.  The self-test plants each shape
+# that a line regex misses or misreads.  Exit 3 when the kit is absent
+# reports a skip.
+add_test(NAME banned_calls_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-banned-calls.py
           --self-test)
-add_test(NAME no_reserve
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reserve.sh)
-set_tests_properties(no_reserve no_reserve_self_test PROPERTIES
-    LABELS "ci_guard")
+add_test(NAME banned_calls
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-banned-calls.py)
+set_tests_properties(banned_calls banned_calls_self_test PROPERTIES
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # FIXY-V-237 raw C++ file-stream ban in band-3 dirs (Agent 9 Phase F6).
 # scripts/check-no-raw-ofstream.sh flags any std::[basic_][oi]?fstream
 # use or `#include <fstream>` in the eight fixy-only band-3 subsystems
@@ -787,23 +786,6 @@ add_test(NAME fixy_hw_discipline_self_test
 add_test(NAME fixy_hw_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.sh)
 set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
-    LABELS "ci_guard")
-# FIXY-U-105 reinterpret_cast ban enforcement (CLAUDE.md §III opt-out
-# matrix).  scripts/check-no-reinterpret-cast.sh flags every NEW
-# `reinterpret_cast<` call site outside the allowlist; 20 grandfathered
-# sites are tracked in scripts/no-reinterpret-allowlist.txt with their
-# migration tickets (FIXY-U-082, fixy-A5-028).  Self-test mode plants
-# five axes: drift, allowlist exempt, inline marker exempt, comment
-# filter exempt, and stale allowlist entry detection (stale entries
-# red CI at exit 2 so the allowlist drains in lockstep with substrate
-# fixes — every FIXY-U-082 site removal forces a same-PR allowlist
-# trim, preventing dead entries from masking future drift).
-add_test(NAME no_reinterpret_cast_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh
-          --self-test)
-add_test(NAME no_reinterpret_cast
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
-set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard")
 # std::start_lifetime_as over an array of proofs, over an aggregate that
 # holds one, and std::start_lifetime_as_array over proofs each give a

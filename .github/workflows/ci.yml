@@ -167,10 +167,10 @@ jobs:
           bash scripts/check-permission-storage.sh --self-test
           bash scripts/check-permission-storage.sh
 
-      - name: no vector::reserve (self-test + scan)
+      - name: no reinterpret_cast, no vector::reserve (self-test + scan)
         run: |
-          bash scripts/check-no-reserve.sh --self-test
-          bash scripts/check-no-reserve.sh
+          python3 scripts/check-banned-calls.py --self-test
+          python3 scripts/check-banned-calls.py
 
       - name: no raw fstream (self-test + scan)
         run: |
@@ -181,11 +181,6 @@ jobs:
         run: |
           bash scripts/check-fixy-hw-discipline.sh --self-test
           bash scripts/check-fixy-hw-discipline.sh
-
-      - name: no reinterpret_cast (self-test + scan)
-        run: |
-          bash scripts/check-no-reinterpret-cast.sh --self-test
-          bash scripts/check-no-reinterpret-cast.sh
 
       - name: no -ffast-math (self-test + scan)
         run: |

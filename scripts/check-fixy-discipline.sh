@@ -84,7 +84,7 @@
 #        reach-past-the-umbrella site — the file migrated to fixy::*;
 #        prune it) OR bad invocation / missing dependency
 #
-# Stale-entry detection (parity with check-no-reinterpret-cast.sh):
+# Stale-entry detection (parity with check-banned-calls.py):
 # every allowlist path must correspond to a file that STILL contains a
 # raw substrate spelling.  Once a grandfathered file migrates to
 # fixy::*, its allowlist entry is dead weight and could silently
@@ -568,7 +568,7 @@ fi
 # comment / inline-marker filters records its path here, allowlist-
 # blind.  After the scan, every allowlist path must be in this set;
 # entries that aren't (the file migrated to fixy::fn) are STALE and
-# flagged — parity with check-no-reinterpret-cast.sh.  This build sits
+# flagged — parity with check-banned-calls.py.  This build sits
 # AFTER the no-scan-paths early exit so absent opt-in dirs never make
 # every allowlist entry look stale.
 live_set_file="$(mktemp)"
@@ -797,7 +797,7 @@ HINT
     exit 1
 fi
 
-# ── Stale allowlist entries (parity with check-no-reinterpret-cast.sh) ─
+# ── Stale allowlist entries (parity with check-banned-calls.py) ─
 # A grandfathered path whose file no longer holds any banned substrate
 # spelling is dead weight: it would silently re-grandfather a future raw
 # spelling re-introduced in that file.  The live set above is allowlist-

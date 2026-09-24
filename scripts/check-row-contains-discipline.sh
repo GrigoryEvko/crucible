@@ -51,7 +51,7 @@
 #       longer exists — the site moved on a line shift, or was migrated
 #       to a named lift; prune it) OR bad invocation / missing dependency
 #
-# Stale-entry detection (parity with check-no-reinterpret-cast.sh):
+# Stale-entry detection (parity with check-banned-calls.py):
 # every allowlist entry must correspond to a LIVE inline site.  A
 # line-shifting edit silently invalidates a grandfather entry; without
 # this gate a migrated-away entry lingers and could re-grandfather a
@@ -237,7 +237,7 @@ allowlisted() {
 # blind.  After the scan, every allowlist entry's path:line key must be
 # in this set; entries that aren't (the site moved on a line shift, or
 # was migrated to a named lift) are STALE and flagged — parity with
-# check-no-reinterpret-cast.sh.
+# check-banned-calls.py.
 live_set_file="$(mktemp)"
 trap 'rm -f "$live_set_file"' EXIT
 

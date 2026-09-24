@@ -11,7 +11,7 @@
 # never `safety::Tagged`; prose that writes `safety::` is the regression
 # signal that a DimHash comment once tripped.
 #
-# This is the inverse polarity of check-no-reserve.sh / check-fixy-
+# This is the inverse polarity of check-banned-calls.py / check-fixy-
 # discipline.sh: those scan a wide tree for a BANNED pattern with an
 # exemption allowlist.  This scans a NARROW positive registry and
 # asserts each listed file stays clean — the registry is a promise,
@@ -80,7 +80,7 @@ case "${1:-}" in
         # `safety::` code ref — must be caught) and one CLEAN (uses the
         # fixy:: umbrella — must NOT be caught).  A scanner that fails to
         # flag the dirty file, or that false-flags the clean file, has a
-        # broken pattern and is a placebo.  Mirrors check-no-reserve.sh
+        # broken pattern and is a placebo.  Mirrors the check-banned-calls.py
         # --self-test discipline.
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
