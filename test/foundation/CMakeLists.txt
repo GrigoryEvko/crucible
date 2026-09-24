@@ -766,3 +766,20 @@ foundation_neg_compile_test(neg_row_mismatch_tag_not_a_tag
 # the proof that the fold did not move a single row already in a peer's
 # cache.
 foundation_test(test_row_hash)
+
+# Legal C++ that tries to give two types one stable id.  An attack that
+# still succeeds is a row of the shrink-only ledger in the file.
+foundation_test(test_identity_attacks)
+
+# A stable id refuses a template argument that names an object by address
+# or by reference, a class value that holds an address, and a reflection
+# of an entity with internal linkage.
+foundation_neg_compile_test(neg_stable_id_refuses_an_object_address
+  "a stable id refuses the type"
+  "names an object by its address or by a reference")
+foundation_neg_compile_test(neg_stable_id_refuses_an_address_inside_a_class_value
+  "a stable id refuses the type"
+  "cannot be read back to a declared name")
+foundation_neg_compile_test(neg_stable_id_refuses_a_reflection_of_an_internal_entity
+  "a stable id refuses the type"
+  "has internal linkage")
