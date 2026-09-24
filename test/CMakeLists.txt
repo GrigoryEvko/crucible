@@ -731,20 +731,22 @@ add_test(NAME banned_calls
 set_tests_properties(banned_calls banned_calls_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# The hardware-axis presence gate.  scripts/check-fixy-hw-discipline.sh
-# asserts that the four sites (SwissTable swiss_hw / Fec fec_hw / TraceRing
-# tracering_hw / ChaseLevDeque chaselev_hw) each keep their
-# 'namespace <site>_hw' block with the IsAtom<> and ::fixy::Axis:: static
-# asserts.  The C++ build proves the asserts correct, and this gate catches
-# a block that was deleted or gutted.  The self-test plants a gutted site,
-# a complete site, an old grant block and a missing file.
+# The hardware-axis presence gate.  scripts/check-fixy-hw-discipline.py
+# reads the parse tree of the four sites (SwissTable swiss_hw, Fec fec_hw,
+# TraceRing tracering_hw, ChaseLevDeque chaselev_hw).  Each site keeps its
+# block, and the block pins the atom of each axis that its row lists.  The
+# C++ build proves each pin correct.  Every `*_hw` namespace under include/
+# and src/ needs a row.  The self-test plants each evasion that the text
+# search of the old guard passed.  Exit 3 when the kit is absent reports a
+# skip.
 add_test(NAME fixy_hw_discipline_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.py
           --self-test)
 add_test(NAME fixy_hw_discipline
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.py)
 set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # The hardening grant set.  scripts/check-syscall-grant-coverage.sh
 # derives the system calls that the hardening apply path issues, and fails
 # when that set and the declared hardening_syscall_atoms tuple disagree.

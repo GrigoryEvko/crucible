@@ -177,8 +177,8 @@ jobs:
 
       - name: fixy hardware discipline (self-test + scan)
         run: |
-          bash scripts/check-fixy-hw-discipline.sh --self-test
-          bash scripts/check-fixy-hw-discipline.sh
+          python3 scripts/check-fixy-hw-discipline.py --self-test
+          python3 scripts/check-fixy-hw-discipline.py
 
       - name: hardening grant coverage (self-test + scan)
         run: |
