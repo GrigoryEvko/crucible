@@ -16,6 +16,14 @@
 // Member declaration order is load-bearing for destruction safety.  bg_ is
 // declared last, so it is destroyed first and joins the background thread
 // before every member that thread touches is invalidated.
+//
+// All live Vigils of a process share one foreground thread.  The schema
+// table and the kernel table are global, and each has one writer: the
+// foreground thread.  A Vigil claims the thread that first asks it for a
+// producer context.  A thread that claims a second Vigil while a different
+// thread holds a live claim ends the process (ProducerClaim in
+// foundation/effects/Ctx.h).  After every claim is gone, another thread can
+// claim.
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
