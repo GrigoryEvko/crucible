@@ -101,14 +101,28 @@
 #            coq-mmaps coq-equations
 #      The first run builds the development, which takes about ten
 #      minutes.  SESSION_ORACLE_KESKIN_SWITCH names a different switch.
-#   4. The implementability oracle needs podman and the image of the
-#      artifact.  Download sprout-a.tar (2.7 GB) from doi
-#      10.5281/zenodo.19600644, then load it:
-#        podman load -i sprout-a.tar
-#      The image is built for arm64.  On x86_64, podman runs it with
-#      qemu-user-static, and a MuVal query is 50 to 80 times slower than on
-#      arm64.  Then most multiparty cases exceed the query budget, and
-#      their rows are gaps (inconclusive).  Run --derive on an arm64 host.
+#   4. The implementability oracle builds Sprout(A) and its solver MuVal
+#      natively, from the pinned sources that tools/session_oracle/sprout.py
+#      names.  It needs a switch with OCaml 5.2.1 and the package versions
+#      of the artifact's MuVal build, which the debug information of the
+#      artifact's MuVal binary names:
+#        opam switch create sprout ocaml-base-compiler.5.2.1 --no-switch
+#        opam pin add -n --switch=sprout libsvm.0.10.0~modified \
+#            git+https://github.com/hiroshi-unno/libsvm-ocaml.git#5d3b175220f865e1ce60909bef11b7e2773451d8
+#        opam install --switch=sprout dune.3.18.2 menhir.20240715 \
+#            base.v0.17.1 core.v0.17.1 core_kernel.v0.17.0 core_unix.v0.17.0 \
+#            ppx_deriving.6.0.3 ppx_deriving_yojson.3.9.1 yojson.2.2.2 ppx_expect.v0.17.2 \
+#            ocaml-compiler-libs.v0.17.0 ocamlgraph.2.1.0 zarith.1.14 z3.4.14.1 \
+#            minisat.0.6 camlzip.1.13 lacaml.11.1.1 libsvm.0.10.0~modified \
+#            domainslib.0.5.0 num.1.5-1 logs.0.8.0 fmt.0.10.0 stdio.v0.17.0 \
+#            sexplib.v0.17.0 ppx_custom_printf.v0.17.0 ppx_compare.v0.17.0 \
+#            ppx_hash.v0.17.0 ppx_sexp_conv.v0.17.0
+#      The system needs the development files of gmp, mpfr, BLAS, LAPACK
+#      and zstd, and a static zlib.  On Fedora, install gmp-devel,
+#      mpfr-devel, blas-devel, lapack-devel, libzstd-devel and
+#      zlib-ng-compat-static.  The first run downloads and builds MuVal
+#      and the front end in the cache, which takes less than one minute.
+#      SESSION_ORACLE_SPROUT_SWITCH names a different switch.
 #   5. The crash-stop oracle needs a Java 17 runtime, sbt (the build of
 #      the pinned commit asks for sbt 1.6.1 and downloads it), and the
 #      mCRL2 tools mcrl22lps, lps2pbes and pbes2bool.  Put the three on

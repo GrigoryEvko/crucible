@@ -19,7 +19,8 @@ lets something go wrong.  The oracles:
              projected context
   sprout.py  Sprout(A) of Li and Wies (PLDI 2026), which decides the
              implementability of a global type on per-pair FIFO queues,
-             on a mailbox for each receiver and on a bag for each receiver
+             on a mailbox for each receiver and on a bag for each receiver,
+             built natively with its solver MuVal
 
 Modes:
 
@@ -31,9 +32,8 @@ Modes:
   derive      Compute the liveness and implementability rows again from
               the multiparty rows of the golden file, and write the golden
               file.  Needs the toolchains of keskin.py and sprout.py only.
-              Regenerate does not run sprout.py, which is slow under
-              emulation: it keeps each implementability row whose case did
-              not change, and derive computes the others.
+              With the compiler, it also measures the semantics families
+              again.
   emit        Write the emitted tests from the golden file only.  Use it
               after a note in the golden file changes.
   check       Emit into memory and compare with the committed tests.  No
@@ -1329,20 +1329,36 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
     from model import read_global
     fam = "sprout.implementable"
     cite = "Li and Wies, PLDI 2026, doi 10.1145/3808319"
+    substrate = {"p2pbox": "an SPSC channel for each ordered pair", "mailbox": "one MPSC channel for each receiver",
+                 "bag": "one MPMC queue with no order for each receiver"}
     cases = sprout_verdicts(rows)
-    verdicts = sprout.decide([(read_global(wf.global_text),
-                               sprout.NETWORKS if ours == "projects" else ("p2pbox",)) for wf, ours in cases])
+    answers = sprout.decide([(read_global(wf.global_text),
+                              sprout.NETWORKS if ours == "projects" else ("p2pbox",)) for wf, ours in cases])
     out: list[Row] = []
-    for (wf, ours), by_network in zip(cases, verdicts, strict=True):
-        for network, verdict in by_network.items():
+    for (wf, ours), by_network in zip(cases, answers, strict=True):
+        for network, answer in by_network.items():
+            verdict = str(answer["verdict"])
+            valid = list(answer["valid"])  # type: ignore[call-overload]
+            witness = f"  MuVal finds these queries valid: {' '.join(valid)}" if valid else ""
             row = (fam, wf.case, network, wf.global_text, verdict, ours)
-            if verdict in ("inconclusive", "no-tree"):
+            if verdict == "gclts-ineligible":
+                out.append(Row(*row, "gap", verdict,
+                               f"Sprout(A) decides implementability only for a sender-driven, sink-final, "
+                               f"deterministic protocol with no global deadlock, and this protocol is outside "
+                               f"that class, so it gives no verdict on the network {network}.{witness}"))
+            elif verdict == "modes-disagree":
+                modes = ", ".join(f"{mode} {v}" for mode, v in answer["modes"].items())  # type: ignore[attr-defined]
+                out.append(Row(*row, "gap", verdict,
+                               f"the two query generators of Sprout(A) give different verdicts on the network "
+                               f"{network} ({modes}), so neither counts.{witness}"))
+            elif verdict in ("inconclusive", "no-tree"):
                 out.append(Row(*row, "gap", verdict,
                                f"Sprout(A) gives no verdict on the network {network} ({verdict})"))
             elif network == "p2pbox" and ours == "projects" and verdict != "implementable":
                 out.append(Row(*row, "divergence", "projects-unimplementable",
                                "ours wrong: fixy projects every role, and Sprout(A) decides that no implementation "
-                               f"on per-pair FIFO queues is free of deadlock and of communication errors ({cite})"))
+                               f"on per-pair FIFO queues is free of deadlock and of communication errors "
+                               f"({cite}).{witness}"))
             elif network == "p2pbox" and ours == "refuses" and verdict == "implementable":
                 out.append(Row(*row, "divergence", "incomplete",
                                "ours incomplete, not unsound: fixy's projection refuses a type that an "
@@ -1352,8 +1368,8 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
                 out.append(Row(*row, "divergence", f"{network}-unimplementable",
                                f"ours has no check that depends on the network: fixy projects every role, and "
                                f"Sprout(A) decides that no implementation on the network {network} is free of "
-                               f"deadlock and of communication errors ({cite}).  An SPSC channel for each pair "
-                               "carries the type, and one shared MPSC or MPMC channel does not"))
+                               f"deadlock and of communication errors ({cite}).  {substrate['p2pbox']} carries "
+                               f"the type, and {substrate[network]} does not.{witness}"))
             else:
                 out.append(Row(*row, "agree", "", ""))
     return out
@@ -2324,7 +2340,7 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
             minimal = minimal_corpus(rows, cases, Evaluator(env), shrinkable)
         rows += minimal
         rows += evaluate_semantics(rows, env)
-    rows += evaluate_keskin(rows) + _carried_sprout_rows(rows)
+    rows += _derived_rows(rows)
     import ekici
     import mpstk
     import sr
@@ -2367,27 +2383,13 @@ def _derived_meta() -> list[str]:
     import keskin
     import sprout
     return [f"# oracle: github.com/{keskin.REPO} at {keskin.COMMIT}",
-            f"# oracle: doi {sprout.ARTIFACT}, image {sprout.image_id()}",
+            f"# oracle: doi {sprout.ARTIFACT}, built natively: {sprout.build()[1]}",
             f"# toolchain for {keskin.REPO}: {keskin.coq_version()}"]
 
 
 def _derived_rows(base: list[Row]) -> list[Row]:
+    """Return the rows that read only the multiparty rows: liveness and implementability."""
     return evaluate_keskin(base) + evaluate_sprout(base)
-
-
-def _carried_sprout_rows(rows: list[Row]) -> list[Row]:
-    """Return the sprout.implementable rows of the committed golden file that still hold for ``rows``.
-
-    Sprout(A) runs under emulation for minutes per case, so regenerate does
-    not run it.  A row carries over when its case has the same global type
-    and the same projection verdict of fixy.  The derive mode computes the
-    rows of the other cases.
-    """
-    if not GOLDEN.is_file():
-        return []
-    current = {(wf.case, wf.global_text): ours for wf, ours in sprout_verdicts(rows)}
-    return [r for r in read_golden(GOLDEN)[1]
-            if r.family == "sprout.implementable" and current.get((r.case, r.global_text)) == r.ours]
 
 
 def derive(cxx: str | None, workers: int) -> int:
