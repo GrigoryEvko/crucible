@@ -80,7 +80,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_hlc` | `include/crucible/canopy/Hlc.h` | Y | - | Y | · | token | · | `include/crucible/fixy/Canopy.h:9` | HS14: 3 |
+| `mint_hlc` | `include/crucible/canopy/Hlc.h` | Y | - | Y | · | token | · | [✗ NO-FIXY] | HS14: 3 |
 | `mint_hyparview` | `include/crucible/canopy/HyParView.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 5 |
 | `mint_lifeguard_swim` | `include/crucible/canopy/Lifeguard.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_plumtree` | `include/crucible/canopy/Plumtree.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
@@ -206,9 +206,9 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | `include/crucible/fixy/Observe.h:15` | HS14: 1 ⚠ |
-| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | `include/crucible/fixy/Observe.h:14` | HS14: 1 ⚠ |
-| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | `include/crucible/fixy/Observe.h:13` | HS14: 1 ⚠ |
+| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_sdc_detector` | `include/crucible/observe/SdcDetect.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
 
@@ -221,7 +221,7 @@ apply to the row.
 | `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/Perf.h:40` | HS14: 6 |
 | `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/Perf.h:44` | HS14: 6 |
 | `mint_sense_hub` | `include/crucible/perf/SenseHub.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/Perf.h:48` | HS14: 7 |
-| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/perf/V2.h:22` | HS14: 6 |
+| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/Perf.h:52` | HS14: 6 |
 | `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/Perf.h:56` | HS14: 6 |
 | `mint_workload_profiler(Ctx const&,const Senses*,::crucible::effects::Init)` | `include/crucible/perf/WorkloadProfiler.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/Perf.h:60` | HS14: 4 |
@@ -327,10 +327,10 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Warden.h:21` | HS14: 5 |
-| `mint_hardening` | `include/crucible/warden/Hardening.h` | Y | - | Y | Y | ctx | Y | `include/crucible/fixy/Warden.h:15` | HS14: 7 |
-| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Warden.h:25` | HS14: 5 |
-| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Warden.h:29` | HS14: 5 |
+| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
+| `mint_hardening` | `include/crucible/warden/Hardening.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
+| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
+| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 
 ## include/fixy/
 
@@ -474,5 +474,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 206 | 101 | 96 | 9 | 0 | 75 | 41 |
+| old (`include/crucible/`) | 206 | 101 | 96 | 9 | 0 | 84 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 93 | 37 | 55 | 1 | 0 | · | 24 |

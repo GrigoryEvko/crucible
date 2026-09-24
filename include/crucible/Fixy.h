@@ -31,15 +31,8 @@
 #include <crucible/fixy/Sess.h>
 #include <crucible/fixy/SessGlobal.h>
 #include <crucible/fixy/Mpst.h>
-#include <crucible/fixy/SessDecl.h>
-#include <crucible/fixy/SessCT.h>
 #include <crucible/fixy/SessContentAddr.h>
 #include <crucible/fixy/SessEventLog.h>
-#include <crucible/fixy/SessSubtype.h>
-#include <crucible/fixy/SessQueue.h>
-#include <crucible/fixy/SessDiagnostic.h>
-#include <crucible/fixy/SessContext.h>
-#include <crucible/fixy/SessGrade.h>
 #include <crucible/fixy/SessAssoc.h>
 #include <crucible/fixy/SessDelegate.h>
 #include <crucible/fixy/SessCheckpoint.h>

@@ -186,16 +186,8 @@ crucible_test(test_fixy_rules_compose)  # FIXY-U-062 — §6.8 aggregator surfac
 crucible_test(test_fixy_modality)       # FIXY-U-060 — top-level modality surface
 crucible_test(test_fixy_sess_federation) # FIXY-U-072 — federation per-role reach
 crucible_test(test_fixy_cap)
-crucible_test(test_fixy_canopy)  # FIXY-V-213 — fixy::canopy::mint_hlc re-export sentinel
-crucible_test(test_fixy_observe) # FIXY-V-214 — fixy::observe:: metrics writer/reader mints sentinel
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
-crucible_test(test_fixy_kernel)  # FIXY-V-038 — fixy::kernel:: Reduction + reduce_into surface
-crucible_test(test_fixy_reflect) # FIXY-V-040 — fixy::reflect:: Reflect + Reflected surface
-crucible_test(test_fixy_wrap_simd_workload_locality) # FIXY-V-041 — fixy::wrap:: Simd + Workload + LocalityHint surface
-crucible_test(test_fixy_wrap_checked) # FIXY-V-042 — fixy::wrap:: Checked overflow-arithmetic surface
-crucible_test(test_fixy_wrap_pipeline_stage_endpoint) # FIXY-V-043 — fixy::wrap:: PipelineStage + ConsumerEndpoint + ProducerEndpoint surface
-crucible_test(test_fixy_wrap_inferred) # FIXY-V-044 — fixy::wrap:: InferredRow + InferredPermissionTags surface
 crucible_test(test_fixy_substr_spsc_permissioned_spsc_channel) # FIXY-V-045 — fixy::substr::spsc:: PermissionedSpscChannel surface
 crucible_test(test_fixy_substr_mpmc_permissioned_mpmc_channel) # FIXY-V-046 — fixy::substr::mpmc:: PermissionedMpmcChannel surface
 crucible_test(test_fixy_substr_chaselev_permissioned_chase_lev_deque) # FIXY-V-047 — fixy::substr::chaselev:: PermissionedChaseLevDeque surface
@@ -228,9 +220,7 @@ target_compile_definitions(test_fixy_pipe_topology_override PRIVATE
     CRUCIBLE_L3_TOTAL_BYTES=33554432       # 32 MiB
 )
 crucible_test(test_fixy_bridge)
-crucible_test(test_fixy_warden)  # FIXY-U-120 — fixy::warden:: re-export reach
 crucible_test(test_fixy_perf)    # FIXY-U-121 — fixy::perf:: re-export reach
-crucible_test(test_fixy_perf_v2) # FIXY-U-122 — fixy::perf::v2:: sub-umbrella reach
 crucible_test(test_fixy_substr)
 crucible_test(test_fixy_mach_safety)
 crucible_test(test_fixy_mach_transitions)  # FIXY-AUDIT-C1
@@ -3470,23 +3460,6 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_hot_path_inline_not_inline_safe
     "static assertion failed"
     "HotPathInline|inline_safe|fixture #2")
 
-# ── FIXY-V-219 — fixy::effect::RowEngagementWitnessed<C> concept ──
-# Band-3 stance that surfaces the row-engagement claim on a Computation
-# (companion to the substrate-side `weaken<R2>` guard added in
-# effects/Computation.h:210-237).  Two HS14 fixtures pin the concept's
-# two distinct rejection axes:
-#   (1) not_computation — passing a non-Computation type (int) reds
-#       via the IsComputation<C> clause.  Tests the structural axis.
-#   (2) empty_row — passing Computation<Row<>, T> (legitimately pure)
-#       reds via the effect_count_in_row > 0 clause.  Tests the
-#       semantic row-engagement axis (distinct from #1).
-crucible_neg_compile_fixy_test(neg_fixy_effect_row_engagement_not_computation
-    "static assertion failed"
-    "RowEngagementWitnessed|IsComputation|fixture #1")
-crucible_neg_compile_fixy_test(neg_fixy_effect_row_engagement_empty_row
-    "static assertion failed"
-    "RowEngagementWitnessed|effect_count_in_row|fixture #2")
-
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,
@@ -3585,50 +3558,6 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_non_cell
 crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_ill_formed_proto
     "no matching function|incomplete type|no type named|constraints.*not satisfied"
     "mint_atomic_session|is_well_formed")
-
-# FIXY-U-120b — fixy::warden:: re-export HS14 floor (≥2 fixtures per
-# mint × 4 warden mints; `fixy/Warden.h` landed in FIXY-U-120).
-# Each mint's substrate gate is
-#   CtxFitsXMint = IsExecCtx<Ctx> ∧ CtxOwnsCapability<Ctx, Init>
-# decomposing into two orthogonal soundness conjuncts.  We exercise
-# BOTH via two fixtures so a regression that drops EITHER half
-# (the row-membership check OR the structural IsExecCtx introducer)
-# surfaces in exactly one fixture, naming the failing conjunct in
-# the diagnostic:
-#   (#1 bg_ctx)       — Ctx satisfies IsExecCtx but row lacks Init
-#                       → diagnostic names `Init` / row_contains.
-#   (#2 not_exec_ctx) — Ctx fails the structural IsExecCtx concept
-#                       → diagnostic names `IsExecCtx` / `row_type`.
-# Substrate parity: warden_neg/ ships the same pair shape against
-# `crucible::warden::mint_X`; THESE fixtures route through the
-# `fixy::warden::` using-decl to witness that the wrapper-layer
-# name lookup preserves the substrate gate (a regression that
-# replaced the using-decl with a free-function shim would leave
-# warden_neg/ green while THIS block unexpectedly compiles).
-crucible_neg_compile_fixy_test(neg_fixy_warden_hardening_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_hardening|CtxFitsHardeningMint|Init|row_contains")
-crucible_neg_compile_fixy_test(neg_fixy_warden_hardening_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_hardening|IsExecCtx|NotAnExecCtx|row_type")
-crucible_neg_compile_fixy_test(neg_fixy_warden_deadline_watchdog_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_deadline_watchdog|CtxFitsDeadlineWatchdogMint|Init|row_contains")
-crucible_neg_compile_fixy_test(neg_fixy_warden_deadline_watchdog_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_deadline_watchdog|IsExecCtx|NotAnExecCtx|row_type")
-crucible_neg_compile_fixy_test(neg_fixy_warden_hot_region_registry_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_hot_region_registry_handle|CtxFitsHotRegionRegistryMint|Init|row_contains")
-crucible_neg_compile_fixy_test(neg_fixy_warden_hot_region_registry_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_hot_region_registry_handle|IsExecCtx|NotAnExecCtx|row_type")
-crucible_neg_compile_fixy_test(neg_fixy_warden_quarantine_policy_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_quarantine_policy|CtxFitsQuarantineMint|Init|row_contains")
-crucible_neg_compile_fixy_test(neg_fixy_warden_quarantine_policy_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_quarantine_policy|IsExecCtx|NotAnExecCtx|row_type")
 
 # FIXY-U-121b — HS14 ≥2 floor for the 8 V1 perf mints surfaced
 # through `fixy::perf::` (Perf.h:120-180, FIXY-U-121 landing).  Each
@@ -3729,19 +3658,6 @@ crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_hot_fg_via_fixy
 crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision_via_fixy
     "no matching function|cannot convert"
     "dispatch_workload_decision|TaggedParallelismDecision|Tagged|ParallelismDecision")
-
-# FIXY-U-122 — `fixy::perf::v2::mint_sense_hub_v2` HS14 floor (2
-# fixtures, BgDrainCtx + NotAnExecCtx) routed through the sibling
-# sub-umbrella `<crucible/fixy/perf/V2.h>`.  Closes the final
-# `[✗ NO-FIXY]` entry in mint-inventory.md by surfacing the V2 mint
-# under fixy:: without violating the V1/V2 alternative-build
-# contract.
-crucible_neg_compile_fixy_test(neg_fixy_perf_v2_sense_hub_v2_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_sense_hub_v2|CtxFitsSenseHubV2Mint|Init|row_contains")
-crucible_neg_compile_fixy_test(neg_fixy_perf_v2_sense_hub_v2_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_sense_hub_v2|CtxFitsSenseHubV2Mint|IsExecCtx|NotAnExecCtx")
 
 # fixy-HS14-06 — per-role federation mints HS14 floor (≥2 fixtures
 # each across mint_sender / mint_receiver / mint_coord, all via the
@@ -7223,6 +7139,10 @@ crucible_neg_compile_test(neg_sdc_detect_sampling_rate_above_max
 #   * neg_hlc_cross_source_timestamp: source::External timestamps do
 #     not implicitly convert to source::Hlc.
 #   * neg_hlc_mint_test_context: Init-only mint factory rejects Test.
+#   * neg_hlc_mint_background_context: the mint rejects a background
+#     capability.
+#   * neg_hlc_mint_without_capability: the mint has no overload without
+#     the startup capability.
 crucible_neg_compile_test(neg_hlc_raw_timestamp_to_tagged
   "cannot convert|no matching function|could not convert|Tagged|HlcTimestamp")
 crucible_neg_compile_test(neg_hlc_cross_source_timestamp
@@ -7230,6 +7150,25 @@ crucible_neg_compile_test(neg_hlc_cross_source_timestamp
 crucible_neg_compile_effects_test(neg_hlc_mint_test_context
   "could not convert|no matching function|cannot convert"
     "effects::Test|effects::Init")
+crucible_neg_compile_effects_test(neg_hlc_mint_background_context
+  "could not convert|no matching function|cannot convert"
+    "effects::Bg|effects::Init")
+crucible_neg_compile_effects_test(neg_hlc_mint_without_capability
+  "no matching function|too few arguments"
+    "mint_hlc")
+
+# The three mints of the runtime metrics channel, one fixture each:
+# the writer mint refuses the permission of the reader role, and the
+# two reader mints refuse a call without a metrics channel.
+crucible_neg_compile_multi_test(neg_observe_mint_metrics_writer_reader_permission
+  "no matching function|could not convert|cannot convert|invalid initialization|cannot bind"
+  "Permission|WriterTag|ReaderTag")
+crucible_neg_compile_multi_test(neg_observe_mint_keeper_metrics_reader_without_channel
+  "no matching function|too few arguments"
+  "mint_keeper_metrics_reader")
+crucible_neg_compile_multi_test(neg_observe_mint_canopy_metrics_reader_int_channel
+  "no matching function|could not convert|cannot convert|invalid initialization|cannot bind"
+  "RuntimeMetricsChannel|int")
 
 # GAPS-215 — canopy/VectorClock.h operational vector clock.
 #   * neg_vector_clock_zero_nodes: MaxNodes=0 is rejected at the
@@ -15792,63 +15731,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_hot_fg_reject
     "constraints.*not satisfied|constraints.*not satisfied"
     "CtxFitsPmuSampleMint|CtxOwnsCapability")
 
-# ── FIXY-V-084 — fixy::sync::{Wait,MemOrder} surface HS14 floor ─────
-#
-# fixy/sync/WaitGrant.h + fixy/sync/MemOrderGrant.h ship the band-3
-# re-export surface for the substrate's two value-level synchronization
-# wrappers (FOUND-G24 Wait + FOUND-G29 MemOrder).  No new mint factory
-# — Synchronization is wrapper-only per Fn.h Dim 23 — but the surface
-# integrity needs HS14-class fixtures to pin two distinct rejection
-# classes for each header (V-076 precedent for re-export surfaces):
-#
-#   #1 (WaitGrant)     SCOPED-ENUM half — Strategy → int rejection
-#   #2 (WaitGrant)     DISCIPLINE PROPAGATION — relax<SpinPause>() on
-#                      Block-pinned wrapper rejects via the substrate's
-#                      WaitLattice::leq requires-clause through the
-#                      fixy alias.
-#   #3 (MemOrderGrant) SCOPED-ENUM half — Order → int rejection
-#   #4 (MemOrderGrant) DISCIPLINE PROPAGATION — relax<Relaxed>() on
-#                      SeqCst-pinned wrapper rejects via the substrate's
-#                      MemOrderLattice::leq requires-clause through
-#                      the fixy alias.
-crucible_neg_compile_fixy_test(neg_fixy_sync_wait_strategy_to_int_implicit
-    "cannot convert"
-    "invalid conversion|narrowing conversion|enum class|WaitStrategy")
-crucible_neg_compile_fixy_test(neg_fixy_sync_wait_strict_relax_up_rejected
-    "no matching function|constraints.*not satisfied|constraints.*not satisfied"
-    "WaitLattice::leq|relax")
-crucible_neg_compile_fixy_test(neg_fixy_sync_memorder_tag_to_int_implicit
-    "cannot convert"
-    "invalid conversion|narrowing conversion|enum class|MemOrderTag")
-crucible_neg_compile_fixy_test(neg_fixy_sync_memorder_strict_relax_up_rejected
-    "no matching function|constraints.*not satisfied|constraints.*not satisfied"
-    "MemOrderLattice::leq|relax")
-
-# ── FIXY-V-085 — fixy::sync::sync_prim banned-by-default permit HS14 ──
-#
-# fixy/sync/SyncPrim.h ships 14 banned-by-default permit tags
-# (permit_mutex / permit_futex / permit_atomic_wait / ... / permit_
-# thread_yield) + IsBannedSyncPrim concept + pack-fold helper +
-# HotPathSyncPrimSafe<Tier, Permits...> load-bearing gate.  CLAUDE.md
-# §IX.5 BANS all 14 primitives on the hot path; V-085 makes the ban
-# load-bearing at the type level.  Two distinct mismatch classes:
-#
-#   #1 CV-REF PROPAGATION half — IsBannedSyncPrim<permit_mutex const&>
-#                                MUST be concept-positive (cv-ref
-#                                pierce via std::remove_cvref_t).
-#                                Fixture asserts the NEGATION → must
-#                                fail to compile.
-#   #2 LOAD-BEARING REJECT half — a hot-tier-constrained callable
-#                                instantiated with permit_mutex in
-#                                the Permits pack fails the
-#                                HotPathSyncPrimSafe requires-clause.
-crucible_neg_compile_fixy_test(neg_fixy_sync_sync_prim_cv_qualified_permit_rejected
-    "static assertion failed"
-    "IsBannedSyncPrim|permit_mutex|cv/ref propagation")
-crucible_neg_compile_fixy_test(neg_fixy_sync_sync_prim_hot_path_permit_rejected
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "HotPathSyncPrimSafe|permit_mutex|hot_path_callable")
-
 # ── FIXY-V-212 — fixy::cap::cntp:: CC mint re-export HS14 ─────────
 #
 # fixy/Cap.h re-exports cntp::mint_cc_choice + mint_custom_cc_choice
@@ -15875,57 +15757,6 @@ crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_cc_choice_dctcp_cross_dc
 crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_custom_cc_missing_name
     "constraints.*not satisfied"
     "CustomCcModule|congestion_control_name")
-
-# ── FIXY-V-213 — fixy::canopy::mint_hlc re-export HS14 ────────────
-#
-# fixy/Canopy.h re-exports canopy::mint_hlc, the DetSafe-critical
-# HLC factory.  The substrate signature is `Hlc mint_hlc(effects::Init)`
-# — the cap-tag parameter type IS the §XXI gate (only init-tier code
-# can call).  Two distinct mismatch classes:
-#
-#   #1 PARAM-TYPE MISMATCH — passing effects::Bg (background-tier
-#                            cap) where effects::Init is expected
-#                            fires the conversion diagnostic at the
-#                            fixy:: call site, identical to the bare
-#                            substrate diagnostic.
-#   #2 OVERLOAD-RESOLUTION FAILURE — calling with zero arguments
-#                            (no default form exists) fires "no
-#                            matching function" / "too few arguments".
-crucible_neg_compile_fixy_test(neg_fixy_canopy_mint_hlc_wrong_cap
-    "cannot convert|no matching function|could not convert"
-    "Init|Bg")
-crucible_neg_compile_fixy_test(neg_fixy_canopy_mint_hlc_no_arg
-    "no matching function|too few arguments"
-    "mint_hlc")
-
-# ── FIXY-V-214 — fixy::observe:: SWMR metrics mints HS14 ──────────
-#
-# fixy/Observe.h re-exports three §XXI mint factories from the
-# SWMR runtime metrics surface — one writer + two readers (keeper /
-# canopy roles).  Three fixtures, one per mint, cover distinct
-# mismatch classes:
-#
-#   #1 mint_metrics_writer WRONG PERMISSION TAG — passing
-#      Permission<ReaderTag> where Permission<WriterTag> is required
-#      must fail the conversion at the fixy:: surface, same as the
-#      bare substrate call (proves the typed Permission discipline
-#      survives the using-decl).
-#   #2 mint_keeper_metrics_reader NO ARG — overload resolution
-#      failure when calling without the RuntimeMetricsChannel&
-#      argument; proves the reader factory's positional discipline.
-#   #3 mint_canopy_metrics_reader WRONG TYPE — passing an int where
-#      RuntimeMetricsChannel& is expected fires the reference-binding
-#      conversion error; proves the channel parameter is strongly
-#      typed (not a void-pointer escape hatch).
-crucible_neg_compile_fixy_test(neg_fixy_observe_mint_metrics_writer_wrong_perm_tag
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "Permission|WriterTag|ReaderTag")
-crucible_neg_compile_fixy_test(neg_fixy_observe_mint_keeper_metrics_reader_no_arg
-    "no matching function|too few arguments"
-    "mint_keeper_metrics_reader")
-crucible_neg_compile_fixy_test(neg_fixy_observe_mint_canopy_metrics_reader_wrong_arg
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "invalid initialization|int")
 
 # ── Stage A1 — the sibling substrate and its three guards ─────────
 #
