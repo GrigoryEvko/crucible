@@ -14,7 +14,7 @@
 // mint of its own instead of a re-export, that mint holds to the same
 // shape.
 
-#include <crucible/concurrent/ChaseLevDeque.h>
+#include <crucible/concurrent/_ChaseLevDeque.h>
 #include <crucible/concurrent/MpmcRing.h>
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedChainEdge.h>

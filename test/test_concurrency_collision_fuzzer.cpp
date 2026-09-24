@@ -14,7 +14,7 @@
 // tests re-run the same workload through the alias to catch that.
 
 #include <crucible/concurrent/AtomicSnapshot.h>
-#include <crucible/concurrent/ChaseLevDeque.h>
+#include <fixy/concurrent/ChaseLevDeque.h>
 #include <crucible/concurrent/MpmcRing.h>
 #include <crucible/concurrent/_MpscRing.h>
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
@@ -404,7 +404,7 @@ void test_chaselev_deque_no_duplicate_steal() {
     constexpr std::int32_t NUM_ITEMS = 3000;
     constexpr int NUM_THIEVES = 4;
 
-    ChaseLevDeque<std::int32_t, CAPACITY> deq;
+    ::fixy::concurrent::ChaseLevDeque<std::int32_t, CAPACITY> deq;
 
     for (std::int32_t i = 1; i <= NUM_ITEMS; ++i) {
         const bool ok = deq.push_bottom(i);

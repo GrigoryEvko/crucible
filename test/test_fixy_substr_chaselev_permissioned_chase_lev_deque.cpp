@@ -11,7 +11,7 @@
 
 #include <crucible/fixy/Substr.h>
 
-#include <crucible/concurrent/ChaseLevDeque.h>
+#include <crucible/concurrent/_ChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/permissions/_Permission.h>
 

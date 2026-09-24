@@ -40,7 +40,7 @@
 #include <span>
 #include <utility>
 
-#include <crucible/concurrent/ChaseLevDeque.h>
+#include <crucible/concurrent/_ChaseLevDeque.h>
 #include <crucible/concurrent/MpmcRing.h>
 #include <crucible/concurrent/_MpscRing.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>

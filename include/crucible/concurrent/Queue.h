@@ -15,7 +15,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/AtomicSnapshot.h>
-#include <crucible/concurrent/ChaseLevDeque.h>
+#include <crucible/concurrent/_ChaseLevDeque.h>
 #include <crucible/concurrent/_MpscRing.h>
 #include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/concurrent/_SpscRing.h>

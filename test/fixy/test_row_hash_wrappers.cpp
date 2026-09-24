@@ -44,6 +44,7 @@
 #include <fixy/Budgeted.h>
 #include <fixy/Checked.h>
 #include <fixy/Collision.h>
+#include <fixy/concurrent/ChaseLevDeque.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
@@ -840,6 +841,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::session::SessionFromMachine,
      ^^::fixy::session::SessionFromMachine<MachineState, ::fixy::session::End>},
 
+    {^^::fixy::concurrent::ChaseLevDeque, ^^::fixy::concurrent::ChaseLevDeque<int, 8>},
     {^^::fixy::concurrent::MpscRing, ^^::fixy::concurrent::MpscRing<int, 8>},
     {^^::fixy::concurrent::SpscRing, ^^::fixy::concurrent::SpscRing<int, 8>},
     {^^::fixy::concurrent::PermissionedMpscChannel, ^^::fixy::concurrent::PermissionedMpscChannel<int, 8>},

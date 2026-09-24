@@ -1,25 +1,32 @@
 // Sentinel TU for the hardware pins of the hot headers.  Each header
-// restates its compile-time-selected hardware construct as fixy atoms.
-// The SwissTable probe names its SIMD ISA and its instruction class.
-// This file compiles the headers under the project warning flags, so
-// their own static_asserts run, and it pins the atoms that the active
-// build selects.
+// restates its compile-time-selected hardware construct as fixy atoms:
+// the SwissTable probe names its SIMD ISA and its instruction class, the
+// TraceRing append its instruction class, and the Chase-Lev deque its
+// barrier strength.  This file compiles the headers under the project
+// warning flags, so their own static_asserts run, and it pins the atoms
+// that the active build selects.
 
 #include <crucible/SwissTable.h>
+#include <crucible/TraceRing.h>
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
+#include <fixy/atoms/Barrier.h>
 #include <fixy/atoms/Hw.h>
 #include <fixy/atoms/Simd.h>
+#include <fixy/concurrent/ChaseLevDeque.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <type_traits>
 
 namespace {
 
 namespace sw = ::crucible::detail::swiss_hw;
+namespace th = ::crucible::tracering_hw;
+namespace ch = ::fixy::concurrent::chaselev_hw;
 namespace fas = ::fixy::atom::simd;
 namespace fah = ::fixy::atom::hw;
 
@@ -48,6 +55,27 @@ static_assert(!fas::is_trunk_pinned(sw::ActiveSimdIsa::isa)
                   || ::crucible::detail::group_width() * 8U == fas::register_bits_v<sw::ActiveSimdIsa::isa>,
               "the control-byte group must be exactly one vector register of the active ISA.");
 
+// ── TraceRing: the append ────────────────────────────────────────────
+static_assert(::fixy::atom::IsAtom<th::InstructionTier>, "the TraceRing instruction tier must be a shipped atom.");
+static_assert(th::InstructionTier::axis == ::fixy::Axis::HwInstruction,
+              "the TraceRing instruction tier must engage the HwInstruction axis.");
+static_assert(std::is_same_v<th::InstructionTier, fah::scalar>,
+              "the ring issues loads, stores and a prefetch hint, which is the scalar tier.");
+static_assert(!fah::at_or_above(th::InstructionTier::tier, fah::HwInstruction::NonDeterministicTsc),
+              "the append runs on the hot path, which refuses the timestamp and privileged tiers.");
+static_assert(th::kPrefetchLocality == 3, "the wired prefetch locality must be 3, the highest reuse, which is the "
+                                          "value the four __builtin_prefetch calls share.");
+
+// ── ChaseLevDeque: the fences ────────────────────────────────────────
+static_assert(std::is_same_v<ch::BarrierTier, ::fixy::atom::barrier::seq_cst>,
+              "the deque's barrier tier is the join of its release and seq_cst fences.");
+static_assert(::fixy::atom::IsAtom<ch::BarrierTier> && ch::BarrierTier::axis == ::fixy::Axis::BarrierStrength);
+
+// A copy-paste that put the barrier atom on the instruction axis would
+// trip this.
+static_assert(ch::BarrierTier::axis != th::InstructionTier::axis,
+              "the barrier atom must not occupy the instruction axis of the ring.");
+
 }  // namespace
 
 int main() {
@@ -71,5 +99,14 @@ int main() {
     // H2 tag 5 is unique at index 5 within any group width.
     if (!static_cast<bool>(fives)) return 4;
     if (fives.lowest() != 5U) return 5;
-    return 0;
+
+    // The push and pop round trip ODR-uses the deque that carries the
+    // barrier pin.
+    ::fixy::concurrent::ChaseLevDeque<int, 16> deque{};
+    if (!deque.push_bottom(7)) return 6;
+    const std::optional<int> popped = deque.pop_bottom();
+    if (!popped.has_value() || *popped != 7) return 7;
+
+    // The return value ODR-uses the declared locality constant.
+    return (th::kPrefetchLocality == 3) ? 0 : 8;
 }

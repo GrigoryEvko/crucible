@@ -328,7 +328,6 @@ crucible_test(test_hardware_axis_pins)  # the hot headers pin their compile-time
 if(CRUCIBLE_FEC_CONST_SIMD_OK)
 crucible_test(test_fec_hardware_axis_pin)  # cntp/Fec.h pins its kernel arm as fixy atoms, with the stride one register wide
 endif()
-crucible_test(test_fixy_v_264_hw_grants)               # FIXY-V-264 TraceRing cache<Prefetch,3> (HwInstruction) + ChaseLevDeque barrier<Compiler,SeqCst> (BarrierStrength) grant declarations on distinct axes
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -759,14 +758,13 @@ add_test(NAME no_raw_ofstream
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-ofstream.sh)
 set_tests_properties(no_raw_ofstream no_raw_ofstream_self_test PROPERTIES
     LABELS "ci_guard")
-# FIXY-V-264 hardware-axis grant-declaration presence gate (Agent 11 Tier
-# 2 #17).  scripts/check-fixy-hw-discipline.sh asserts the four Tier-2
-# sites (SwissTable swiss_hw / Fec fec_hw / TraceRing tracering_hw /
-# ChaseLevDeque chaselev_hw) each keep their 'namespace <site>_hw' block
-# with the IsGrantTag<> + which_dim_v<> static_asserts.  Complements the
-# C++ build (which proves the asserts CORRECT) with a cheap PRESENCE gate
-# guarding against silent deletion/gutting.  Self-test plants a gutted
-# site, a complete site, and a missing file to verify all three axes.
+# The hardware-axis presence gate.  scripts/check-fixy-hw-discipline.sh
+# asserts that the four sites (SwissTable swiss_hw / Fec fec_hw / TraceRing
+# tracering_hw / ChaseLevDeque chaselev_hw) each keep their
+# 'namespace <site>_hw' block with the IsAtom<> and ::fixy::Axis:: static
+# asserts.  The C++ build proves the asserts correct, and this gate catches
+# a block that was deleted or gutted.  The self-test plants a gutted site,
+# a complete site, an old grant block and a missing file.
 add_test(NAME fixy_hw_discipline_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.sh
           --self-test)

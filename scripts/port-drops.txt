@@ -343,6 +343,7 @@ crucible/concurrent/_PermissionedMpscChannel.h:splits_into  — The header speci
 crucible/concurrent/_PermissionedMpscChannel.h:splits_into_pack  — The same for the pack manifest, which the ported header specialises as can_split_into_pack.
 crucible/concurrent/_PermissionedMpscChannel.h:splits_into_authoring_witness  — The same for the binary witness, which the ported header specialises as has_split_authoring_witness.
 crucible/concurrent/_PermissionedMpscChannel.h:splits_into_pack_authoring_witness  — The same for the pack witness, which the ported header specialises as has_split_pack_authoring_witness.
+crucible/concurrent/_ChaseLevDeque.h:ActiveBarrierGrant  → include/fixy/concurrent/ChaseLevDeque.h  — The alias named the old barrier grant of the deque's fences; the ported header names the same strength as the fixy atom BarrierTier, and the old grant layer has no place in the new tree.
 crucible/permissions/_ReadView.h:mint_read_view  → include/foundation/permissions/ReadView.h  — The mint returned a view by value, which a caller could bind to a name that outlived its source, so foundation/permissions/ReadView.h lends a view only inside the body of with_read_view and carries a read right that travels as the ReadLoan of mint_read_loan.
 
 # The old row hash carried one partial specialisation per wrapper and

@@ -2491,6 +2491,16 @@ fixy_neg_compile_test(neg_session_declassify_unadmitted_policy
 # it is the half that means anything under the tsan preset.
 fixy_test(test_concurrent_rings)
 
+# The Chase-Lev deque maps a position to a cell with a mask, and a thief
+# reads a cell without a lock.  So a capacity that is not a power of two
+# and a value that is not always lock-free are refused.
+fixy_neg_compile_test(neg_chase_lev_deque_capacity_not_power_of_two
+  "static assertion failed: Capacity must be a power of two"
+  "In instantiation of .class fixy::concurrent::ChaseLevDeque<int, 12>.")
+fixy_neg_compile_test(neg_chase_lev_deque_value_not_lock_free
+  "template constraint failure for .template<class T, long unsigned int Capacity>  requires  DequeValue<T> class fixy::concurrent::ChaseLevDeque."
+  "the expression .std::atomic<_Tp>::is_always_lock_free .with T = <unnamed>::WideValue.. evaluated to .false.")
+
 # A capacity that is not a power of two makes the mask drop bits, and
 # two live positions collide on one slot with nothing to detect it.
 fixy_neg_compile_test(neg_ring_capacity_not_power_of_two

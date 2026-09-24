@@ -6,7 +6,7 @@
 // dropped work; a repeated item means two threads were handed the same
 // work.  Either one is an ordering defect and neither can hide.
 
-#include <crucible/concurrent/ChaseLevDeque.h>
+#include <fixy/concurrent/ChaseLevDeque.h>
 
 #include <atomic>
 #include "test_assert.h"
@@ -17,7 +17,7 @@
 #include <type_traits>
 #include <vector>
 
-using namespace crucible::concurrent;
+using namespace fixy::concurrent;
 
 using TestDeque = ChaseLevDeque<uint64_t, 256>;
 

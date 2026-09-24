@@ -6,16 +6,15 @@
 # hardware construct — a SIMD ISA, a cache instruction, or a memory fence.
 # Each site declares the hardware claim the construct makes, inside a
 # dedicated `namespace <site>_hw` block with static_asserts that pin it.
-# A site on the old tree pins an old grant tag with `IsGrantTag<>` and
-# `which_dim_v<>`.  A site on the new tree pins a fixy atom with
-# `IsAtom<>` and the `::fixy::Axis` the atom engages.
+# Every site pins fixy atoms with `IsAtom<>` and the `::fixy::Axis` each
+# atom engages.
 #
-#   include/crucible/SwissTable.h            → swiss_hw      (SimdIsa, atom)
-#   include/crucible/cntp/Fec.h              → fec_hw        (SimdIsa, atom)
-#   include/crucible/TraceRing.h             → tracering_hw  (HwInstruction, atom)
-#   include/crucible/concurrent/ChaseLevDeque.h → chaselev_hw (BarrierStrength, grant)
+#   include/crucible/SwissTable.h            → swiss_hw      (SimdIsa, HwInstruction)
+#   include/crucible/cntp/Fec.h              → fec_hw        (SimdIsa, HwInstruction)
+#   include/crucible/TraceRing.h             → tracering_hw  (HwInstruction)
+#   include/fixy/concurrent/ChaseLevDeque.h  → chaselev_hw   (BarrierStrength)
 #
-# Those static_asserts are verified by the C++ BUILD (the hardware-grant
+# Those static_asserts are verified by the C++ BUILD (the hardware-axis
 # sentinel tests + every TU that includes the header).  This script is the
 # cheaper, complementary PRESENCE gate: it guards against the declaration
 # being silently DELETED or GUTTED (namespace kept, asserts stripped) in a
@@ -24,13 +23,12 @@
 #
 # It is a POSITIVE-presence check (not a negative-grep ban): each manifest
 # file MUST contain (a) its `namespace <site>_hw` marker and (b) every
-# fully-qualified assertion its kind requires.  A missing file or any
-# missing substring is a violation.
+# fully-qualified atom assertion.  A missing file or any missing substring
+# is a violation.
 #
 # A NEW hardware-axis site (a future #if-arm / prefetch / fence annotation)
 # adds a row to the manifest below in the same commit that ships the
-# declaration.  A site that moves to the new tree changes its kind from
-# grant to atom in the same commit.
+# declaration.
 #
 # Exit status:
 #   0 — clean (every manifest site has its declaration intact)
@@ -52,13 +50,13 @@ Usage:
 USAGE
 }
 
-# ── Manifest: parallel arrays (repo-relative file : namespace marker : kind) ─
+# ── Manifest: parallel arrays (repo-relative file : namespace marker) ─
 # Every entry is a production site that declares a hardware-axis claim.
 manifest_files=(
     "include/crucible/SwissTable.h"
     "include/crucible/cntp/Fec.h"
     "include/crucible/TraceRing.h"
-    "include/crucible/concurrent/ChaseLevDeque.h"
+    "include/fixy/concurrent/ChaseLevDeque.h"
 )
 manifest_markers=(
     "namespace swiss_hw"
@@ -66,21 +64,11 @@ manifest_markers=(
     "namespace tracering_hw"
     "namespace chaselev_hw"
 )
-manifest_kinds=(
-    "atom"
-    "atom"
-    "atom"
-    "grant"
-)
 
-# ── Substrings every declaration block of a kind MUST carry ──────────
+# ── Substrings every declaration block MUST carry ────────────────────
 # Fully qualified so a partial-namespace alias cannot satisfy the gate by
 # accident, and so a "namespace present but asserts stripped" gutting is
 # caught.
-grant_substrings=(
-    "::crucible::fixy::grant::IsGrantTag<"
-    "::crucible::fixy::grant::which_dim_v<"
-)
 atom_substrings=(
     "::fixy::atom::IsAtom<"
     "::fixy::Axis::"
@@ -93,7 +81,6 @@ run_scan() {
     for i in "${!manifest_files[@]}"; do
         local rel="${manifest_files[$i]}"
         local marker="${manifest_markers[$i]}"
-        local kind="${manifest_kinds[$i]}"
         local path="$scan_root/$rel"
 
         if [[ ! -f "$path" ]]; then
@@ -110,21 +97,11 @@ run_scan() {
             continue
         fi
 
-        local -a required=()
-        case "$kind" in
-            grant) required=("${grant_substrings[@]}") ;;
-            atom)  required=("${atom_substrings[@]}") ;;
-            *)
-                printf 'check-fixy-hw-discipline: manifest row %s has unknown kind "%s".\n' "$rel" "$kind" >&2
-                exit 2
-                ;;
-        esac
-
         local sub
-        for sub in "${required[@]}"; do
+        for sub in "${atom_substrings[@]}"; do
             if ! grep -qF -- "$sub" "$path"; then
-                printf 'FIXY-HW-DISCIPLINE violation: %s — declaration block "%s" present but GUTTED (missing "%s"). The %s declaration must keep its pinning static_asserts.\n' \
-                    "$rel" "$marker" "$sub" "$kind" >&2
+                printf 'FIXY-HW-DISCIPLINE violation: %s — declaration block "%s" present but GUTTED (missing "%s"). The atom declaration must keep its pinning static_asserts.\n' \
+                    "$rel" "$marker" "$sub" >&2
                 violations=$((violations + 1))
             fi
         done
@@ -136,32 +113,32 @@ case "${1:-}" in
     -h|--help) usage; exit 0 ;;
     --self-test)
         # Plant the four manifest files under a temp root: three COMPLETE
-        # (marker + the asserts of their kind), one GUTTED (marker, no
-        # asserts).  Phase 1 expects exit 1 with ONLY the gutted file
-        # flagged.  Phase 2 makes it complete → exit 0.  Phase 3 plants a
-        # grant block where an atom block belongs → exit 1.  Phase 4
-        # deletes a file → exit 1 (MISSING).
+        # (marker + the atom asserts), one GUTTED (marker, no asserts).
+        # Phase 1 expects exit 1 with ONLY the gutted file flagged.  Phase
+        # 2 makes it complete → exit 0.  Phase 3 plants an old grant block,
+        # which carries no atom assert → exit 1.  Phase 4 deletes a file →
+        # exit 1 (MISSING).
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/include/crucible/cntp" \
-                 "$tmp_root/include/crucible/concurrent"
+                 "$tmp_root/include/fixy/concurrent"
 
-        write_complete_grant() {  # $1=path  $2=namespace-name
-            cat >"$1" <<EOF
-#pragma once
-namespace $2 {
-using ActiveGrant = int;  // synthetic
-static_assert(::crucible::fixy::grant::IsGrantTag<ActiveGrant>, "x");
-static_assert(::crucible::fixy::grant::which_dim_v<ActiveGrant> == 0, "x");
-}  // namespace $2
-EOF
-        }
         write_complete_atom() {   # $1=path  $2=namespace-name
             cat >"$1" <<EOF
 #pragma once
 namespace $2 {
 using InstructionTier = int;  // synthetic
 static_assert(::fixy::atom::IsAtom<InstructionTier> && InstructionTier::axis == ::fixy::Axis::HwInstruction, "x");
+}  // namespace $2
+EOF
+        }
+        write_old_grant() {       # $1=path  $2=namespace-name (the retired grant shape)
+            cat >"$1" <<EOF
+#pragma once
+namespace $2 {
+using ActiveGrant = int;  // synthetic
+static_assert(::crucible::fixy::grant::IsGrantTag<ActiveGrant>, "x");
+static_assert(::crucible::fixy::grant::which_dim_v<ActiveGrant> == 0, "x");
 }  // namespace $2
 EOF
         }
@@ -174,10 +151,10 @@ using InstructionTier = int;  // synthetic — asserts deliberately stripped
 EOF
         }
 
-        write_complete_atom  "$tmp_root/include/crucible/SwissTable.h"            "swiss_hw"
-        write_complete_atom  "$tmp_root/include/crucible/cntp/Fec.h"             "fec_hw"
-        write_gutted         "$tmp_root/include/crucible/TraceRing.h"            "tracering_hw"
-        write_complete_grant "$tmp_root/include/crucible/concurrent/ChaseLevDeque.h" "chaselev_hw"
+        write_complete_atom "$tmp_root/include/crucible/SwissTable.h"            "swiss_hw"
+        write_complete_atom "$tmp_root/include/crucible/cntp/Fec.h"             "fec_hw"
+        write_gutted        "$tmp_root/include/crucible/TraceRing.h"            "tracering_hw"
+        write_complete_atom "$tmp_root/include/fixy/concurrent/ChaseLevDeque.h"   "chaselev_hw"
 
         # ── Phase 1: gutted site must be flagged, complete ones must not ──
         result_file="$(mktemp)"
@@ -215,19 +192,19 @@ EOF
             exit 2
         fi
 
-        # ── Phase 3: a grant block at an atom site → GUTTED (exit 1) ─────
-        write_complete_grant "$tmp_root/include/crucible/TraceRing.h" "tracering_hw"
+        # ── Phase 3: an old grant block → GUTTED (exit 1) ────────────────
+        write_old_grant "$tmp_root/include/crucible/SwissTable.h" "swiss_hw"
         kind_file="$(mktemp)"
         rc=0
         CRUCIBLE_HW_DISCIPLINE_TEST_ROOT="$tmp_root" \
             bash "${BASH_SOURCE[0]}" 2>"$kind_file" || rc=$?
-        if [[ "$rc" -ne 1 ]] || ! grep -qF 'TraceRing.h' "$kind_file"; then
-            printf 'check-fixy-hw-discipline: SELF-TEST FAILED (phase 3) — a grant block at an atom site was not flagged.\n' >&2
+        if [[ "$rc" -ne 1 ]] || ! grep -qF 'SwissTable.h' "$kind_file"; then
+            printf 'check-fixy-hw-discipline: SELF-TEST FAILED (phase 3) — an old grant block was not flagged.\n' >&2
             printf '── scanner stderr ───\n%s\n────────────────────\n' "$(cat "$kind_file")" >&2
             rm -f "$kind_file"; exit 2
         fi
         rm -f "$kind_file"
-        write_complete_atom "$tmp_root/include/crucible/TraceRing.h" "tracering_hw"
+        write_complete_atom "$tmp_root/include/crucible/SwissTable.h" "swiss_hw"
 
         # ── Phase 4: delete a manifest file → MISSING violation (exit 1) ─
         rm -f "$tmp_root/include/crucible/cntp/Fec.h"
@@ -246,7 +223,7 @@ EOF
         fi
         rm -f "$missing_file"
 
-        printf 'check-fixy-hw-discipline: self-test passed — gutted block caught, wrong kind caught, complete blocks pass, missing file caught.\n' >&2
+        printf 'check-fixy-hw-discipline: self-test passed — gutted block caught, old grant block caught, complete blocks pass, missing file caught.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -271,11 +248,10 @@ the compile-time-selected hardware construct makes.
 
 Remediations:
   (1) If you removed/renamed a hardware construct, restore (or relocate)
-      the matching block — see ChaseLevDeque.h chaselev_hw for a grant site
-      and SwissTable.h swiss_hw for an atom site.
-  (2) If you moved a site to a new file or to the new tree, update the
-      manifest arrays in scripts/check-fixy-hw-discipline.sh in the SAME
-      commit.
+      the matching block — see SwissTable.h swiss_hw or TraceRing.h
+      tracering_hw.
+  (2) If you moved a site to a new file, update the manifest arrays in
+      scripts/check-fixy-hw-discipline.sh in the SAME commit.
 HINT
     exit 1
 fi
