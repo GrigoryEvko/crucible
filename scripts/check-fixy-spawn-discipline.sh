@@ -261,19 +261,29 @@ PLANTED_STALE
             printf 'check-fixy-spawn-discipline: SELF-TEST FAILED — stale-only run expected exit 2, got %d.\n' "$rc" >&2
             exit 2
         fi
-        # Final: fully clean fixture (no stale, no violations).
+        # Final: fully clean fixture (no stale, no violations).  A raw
+        # fork under test/ is out of scope, so the exclude globs must drop
+        # it.  The run happens from the scan root and again from another
+        # working directory, and the two must agree.
         cat >"$tmp_root/scripts/no-spawn-process-allowlist.txt" <<'PLANTED_EMPTY'
 # Empty allowlist — nothing stale, nothing exempted.
 PLANTED_EMPTY
-        rc=0
-        CRUCIBLE_SPAWN_ALLOW_PATHS_FILE="$tmp_root/build/spawn-allow-process-paths.txt" \
-        CRUCIBLE_SPAWN_DISCIPLINE_SCAN_ROOT="$tmp_root" \
-        CRUCIBLE_SPAWN_DISCIPLINE_ALLOWLIST="$tmp_root/scripts/no-spawn-process-allowlist.txt" \
-            bash "$0" || rc=$?
-        if [[ "$rc" -ne 0 ]]; then
-            printf 'check-fixy-spawn-discipline: SELF-TEST FAILED — clean run expected exit 0, got %d.\n' "$rc" >&2
-            exit 2
-        fi
+        mkdir -p "$tmp_root/test"
+        printf 'int out_of_scope() { return fork(); }\n' >"$tmp_root/test/planted_test.cpp"
+        script_path="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+        for run_dir in "$tmp_root" /; do
+            rc=0
+            (cd "$run_dir" &&
+             CRUCIBLE_SPAWN_ALLOW_PATHS_FILE="$tmp_root/build/spawn-allow-process-paths.txt" \
+             CRUCIBLE_SPAWN_DISCIPLINE_SCAN_ROOT="$tmp_root" \
+             CRUCIBLE_SPAWN_DISCIPLINE_ALLOWLIST="$tmp_root/scripts/no-spawn-process-allowlist.txt" \
+                 bash "$script_path") || rc=$?
+            if [[ "$rc" -ne 0 ]]; then
+                printf 'check-fixy-spawn-discipline: SELF-TEST FAILED — clean run from %s expected exit 0, got %d.\n' \
+                    "$run_dir" "$rc" >&2
+                exit 2
+            fi
+        done
         printf 'check-fixy-spawn-discipline: SELF-TEST PASSED.\n'
         exit 0
         ;;
@@ -364,7 +374,7 @@ scan_pattern() {
             continue
         fi
 
-        rel="${file#"$scan_root"/}"
+        rel="${file#./}"
 
         # Opt-in directories: scanned for awareness but never flagged.
         if opt_in_directory "$rel"; then
@@ -380,8 +390,12 @@ scan_pattern() {
         printf 'SPAWN-PROCESS violation (%s): %s:%s — raw OS process-spawn banned (CLAUDE.md §IX).\n' \
             "$label" "$rel" "$line" >&2
         violation_count=$((violation_count + 1))
+    # rg matches an override glob against the path it prints, and that
+    # path is relative to the search argument.  Search `.` from inside the
+    # scan root, so each exclude glob sees a root-relative path from any
+    # working directory.
     done < <(
-        rg -nP \
+        cd "$scan_root" && rg -nP \
            --no-heading \
            --type=cpp \
            --glob '!build*/**' \
@@ -394,7 +408,7 @@ scan_pattern() {
            --glob '!examples/**' \
            --glob '!fuzz/**' \
            --glob '!include/crucible/perf/bpf/**' \
-           "$pattern" "$scan_root" 2>/dev/null || true
+           "$pattern" . 2>/dev/null || true
     )
 }
 
