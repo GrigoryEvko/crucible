@@ -1,4 +1,4 @@
-#include <crucible/concurrent/SpinLock.h>
+#include <crucible/concurrent/_SpinLock.h>
 
 #include "test_assert.h"
 

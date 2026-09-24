@@ -3,8 +3,8 @@
 // The spin gate: a bare test-and-set lock, and the witnessed lock over it
 // whose acquisition costs a Permission and a foreground context.
 //
-// Old spelling: include/crucible/fixy/concurrent/SpinLock.h for the
-// witnessed half and include/crucible/concurrent/SpinLock.h for the bare
+// Old spelling: include/crucible/fixy/concurrent/_SpinLock.h for the
+// witnessed half and include/crucible/concurrent/_SpinLock.h for the bare
 // one.  Both live here, because the witnessed lock embeds the bare one
 // and nothing else in the new tree has a use for it.
 //

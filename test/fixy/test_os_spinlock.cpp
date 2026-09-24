@@ -2,7 +2,7 @@
 // has, with a foreground context and a Permission.
 //
 // Old spelling: the runtime_smoke_test inside
-// include/crucible/fixy/concurrent/SpinLock.h, which acquired and
+// include/crucible/fixy/concurrent/_SpinLock.h, which acquired and
 // released without a context because both doors were public.
 //
 // The cells that prove a door is CLOSED cannot live here: a private

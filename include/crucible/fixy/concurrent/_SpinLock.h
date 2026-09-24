@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
-#include <crucible/concurrent/SpinLock.h>
+#include <crucible/concurrent/_SpinLock.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/cntp/Backpressure.h>
-#include <crucible/concurrent/SpinLock.h>
+#include <crucible/concurrent/_SpinLock.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
