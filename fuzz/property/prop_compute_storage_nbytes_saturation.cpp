@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
             // aborts on any input here, ASan / contract handler
             // fires.
             //
-            // After #1018: returns safety::Saturated<uint64_t>;
+            // The routine returns fixy::Saturated<uint64_t>, and the
             // determinism check uses the defaulted operator==
             // (compares value AND clamped flag).
             const auto r1 = compute_storage_nbytes(external_tensor_meta(*mp));

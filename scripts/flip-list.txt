@@ -120,7 +120,6 @@ include/crucible/RegionCache.h
 include/crucible/ReplayEngine.h
 include/crucible/SchemaTable.h
 include/crucible/Serialize.h
-include/crucible/StorageNbytes.h
 include/crucible/SwissTable.h
 include/crucible/SymbolTable.h
 include/crucible/TraceGraph.h

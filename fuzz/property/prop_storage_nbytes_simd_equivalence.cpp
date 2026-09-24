@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
             return meta;
         },
         [](const TensorMeta& meta) {
-            // After #1018: returns safety::Saturated<uint64_t>.  The
+            // Each routine returns fixy::Saturated<uint64_t>.  The
             // defaulted operator== compares value AND clamped flag —
             // exactly the DetSafe contract this fuzzer enforces.  Both
             // paths must agree on whether saturation occurred, not just

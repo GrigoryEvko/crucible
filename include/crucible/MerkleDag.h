@@ -133,15 +133,15 @@ template <std::size_t MaxLive>
 // not carry: the reference is also the fallback the vector routine takes
 // after its own screen, and re-checking ndim on that path would charge the
 // check twice for a value the caller already vouched for.
-[[nodiscard]] constexpr fixy::wrap::Saturated<uint64_t> compute_storage_nbytes(ExternalTensorMeta meta)
+[[nodiscard]] constexpr ::fixy::Saturated<uint64_t> compute_storage_nbytes(ExternalTensorMeta meta)
     pre(::crucible::decide::in_range<std::uint8_t>(meta.value().ndim, std::uint8_t{0}, std::uint8_t{8})) {
     return detail::compute_storage_nbytes_scalar(meta);
 }
 
-[[nodiscard]] constexpr fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
+[[nodiscard]] constexpr ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>
 compute_storage_nbytes_det(ExternalTensorMeta meta) {
-    return fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>{
-        compute_storage_nbytes(meta)};
+    return ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>{compute_storage_nbytes(meta),
+                                                                                    {}};
 }
 
 // Every variable-length array here is arena-allocated and outlives the entry.

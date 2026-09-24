@@ -24,7 +24,9 @@
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Wrap.h>
+#include <fixy/Bands.h>
+#include <fixy/FixedArray.h>
+#include <fixy/Saturated.h>
 #include <foundation/Simd.h>
 
 #include <cstdint>
@@ -49,9 +51,9 @@ namespace crucible::detail {
 // it. Nothing here is outside the constant-evaluation subset: the overflow
 // builtins are all constexpr-usable.
 
-[[nodiscard, gnu::const]] CRUCIBLE_INLINE constexpr fixy::wrap::Saturated<uint64_t>
+[[nodiscard, gnu::const]] CRUCIBLE_INLINE constexpr ::fixy::Saturated<uint64_t>
 compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
-    using Sat = fixy::wrap::Saturated<uint64_t>;
+    using Sat = ::fixy::Saturated<uint64_t>;
     const TensorMeta& raw = meta.value();
     if (raw.ndim == 0) {
         return Sat{element_size(raw.dtype).raw()};
@@ -101,10 +103,10 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
 }
 
 [[nodiscard, gnu::const]]
-CRUCIBLE_INLINE fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
+CRUCIBLE_INLINE ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>
 compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
-    return fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>{
-        compute_storage_nbytes_scalar(meta)};
+    return ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>{
+        compute_storage_nbytes_scalar(meta), {}};
 }
 
 // The screen leans one way. Answering false for an input that would in fact
@@ -150,9 +152,9 @@ compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
     return every_size_positive & bound_fits;
 }
 
-[[nodiscard, gnu::pure]] CRUCIBLE_INLINE fixy::wrap::Saturated<uint64_t>
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE ::fixy::Saturated<uint64_t>
 compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
-    using Sat = fixy::wrap::Saturated<uint64_t>;
+    using Sat = ::fixy::Saturated<uint64_t>;
     const TensorMeta& raw = meta.value();
     if (raw.ndim == 0) {
         return Sat{element_size(raw.dtype).raw()};
@@ -184,7 +186,7 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     auto extents = sizes_minus_one * ::foundation::simd::select(valid_mask, strides, i64x8(0));
 
     // The store below is the aligned form, hence the explicit alignment.
-    alignas(64) fixy::wrap::FixedArray<int64_t, 8> extents_buf{};
+    alignas(64) ::fixy::FixedArray<int64_t, 8> extents_buf{};
     ::foundation::simd::store_aligned(extents, extents_buf.data());
 
     int64_t max_offset = 0;
@@ -218,10 +220,10 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
 }
 
 [[nodiscard, gnu::pure]]
-CRUCIBLE_INLINE fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
+CRUCIBLE_INLINE ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>
 compute_storage_nbytes_simd_det(ExternalTensorMeta meta) noexcept {
-    return fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>{
-        compute_storage_nbytes_simd(meta)};
+    return ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>{
+        compute_storage_nbytes_simd(meta), {}};
 }
 
 }  // namespace crucible::detail

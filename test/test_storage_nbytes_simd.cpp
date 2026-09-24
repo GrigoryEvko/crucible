@@ -22,14 +22,14 @@
 using namespace crucible;
 using namespace crucible::detail;
 
-using StorageNbytesDet = safety::DetSafe<safety::DetSafeTier_v::Pure, safety::Saturated<uint64_t>>;
+using StorageNbytesDet = ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>;
 static_assert(
     std::is_same_v<decltype(compute_storage_nbytes_scalar_det(external_tensor_meta(std::declval<const TensorMeta&>()))),
                    StorageNbytesDet>);
 static_assert(
     std::is_same_v<decltype(compute_storage_nbytes_simd_det(external_tensor_meta(std::declval<const TensorMeta&>()))),
                    StorageNbytesDet>);
-static_assert(sizeof(StorageNbytesDet) == sizeof(safety::Saturated<uint64_t>));
+static_assert(sizeof(StorageNbytesDet) == sizeof(::fixy::Saturated<uint64_t>));
 
 [[nodiscard]] static TensorMeta make_meta(std::initializer_list<int64_t> sizes, std::initializer_list<int64_t> strides,
                                           ScalarType dtype = ScalarType::Float) noexcept {

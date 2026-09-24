@@ -36,8 +36,8 @@ namespace {
     auto nbytes = crucible::compute_storage_nbytes(crucible::external_tensor_meta(m));
     auto nbytes_det = crucible::compute_storage_nbytes_det(crucible::external_tensor_meta(m));
     static_assert(
-        std::is_same_v<decltype(nbytes_det), crucible::safety::DetSafe<crucible::safety::DetSafeTier_v::Pure,
-                                                                       crucible::safety::Saturated<uint64_t>>>);
+        std::is_same_v<decltype(nbytes_det),
+                       ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>>);
     assert(nbytes_det.peek() == nbytes);
     // (31*64 + 63*1 + 1) * 4 = 2048 * 4 = 8192 (= 32 * 64 * sizeof(float))
     assert(nbytes.value() == 8192);
