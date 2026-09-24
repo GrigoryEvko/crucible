@@ -8721,6 +8721,14 @@ crucible_neg_compile_test(neg_cpu_pinned_two_bit_mask_singleton
   "constraints not satisfied|no matching function|is_singleton_pin|require_singleton_pin")
 crucible_neg_compile_test(neg_cpu_pinned_auto_on_hotpath
   "constraints not satisfied|no matching function|meets_posture|on_hot_path")
+# The pin proof comes only from mint_affinity: the value constructor is
+# private, and the class is not trivially copyable, so bit_cast refuses it.
+crucible_neg_compile_multi_test(neg_cpu_pinned_forged_value
+  "is private within this context"
+  "crucible::safety::CpuPinned<Mask, Posture, Unit>::CpuPinned\\(Unit\\)")
+crucible_neg_compile_multi_test(neg_cpu_pinned_bit_cast
+  "no matching function for call to .bit_cast<Pin>.int.."
+  "is_trivially_copyable_v<_To>")
 
 # ─── FIXY-V-188 SuspendBehavior HS14 negative-compile fixtures ─────
 #   - neg_suspend_behavior_pauses_at_watchdog  (satisfies gate: Pauses ⋤ KeepsTicking)

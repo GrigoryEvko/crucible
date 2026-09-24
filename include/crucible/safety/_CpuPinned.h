@@ -7,11 +7,17 @@
 // The token is move-only, so one pin claim cannot be duplicated across
 // two readers racing the same core.
 //
-// Construction is permissive in both the mask and the posture.  The
-// tighter requirements, a single-core mask and an explicit pin, belong
-// to the site that consumes the proof, which reads them off the type.
-// Whether the mask is admissible under the process's cgroup limits is a
-// separate run-time question that the pinning site answers.
+// The proof is unforgeable.  Its one constructor is private, and the sole
+// friend is crucible::fixy::sched::detail::cpu_pin_access, whose builder
+// only crucible::fixy::sched::mint_affinity reaches, after
+// sched_setaffinity succeeded for the same mask.  There is no default
+// constructor, no in_place constructor and no free mint: each built a pin
+// that nobody performed.  include/fixy/os/CpuPinned.h carries the same
+// shape in the new tree.
+//
+// The mask and the posture stay permissive.  The tighter requirements, a
+// single-core mask and an explicit pin, belong to the site that consumes
+// the proof, which reads them off the type.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/_AffinityLattice.h>
@@ -22,6 +28,12 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+
+namespace crucible::fixy::sched::detail {
+// The door that builds a pin proof, defined in include/crucible/fixy/Sched.h
+// beside mint_affinity, which is its only caller.
+struct cpu_pin_access;
+}  // namespace crucible::fixy::sched::detail
 
 namespace crucible::safety {
 
@@ -48,21 +60,21 @@ public:
 private:
     Unit value_{};
 
-public:
-    constexpr CpuPinned() noexcept(std::is_nothrow_default_constructible_v<Unit>) = default;
-
     constexpr explicit CpuPinned(Unit value) noexcept(std::is_nothrow_move_constructible_v<Unit>)
         : value_{std::move(value)} {}
 
-    template <typename... Args>
-        requires std::is_constructible_v<Unit, Args...>
-    constexpr explicit CpuPinned(std::in_place_t,
-                                 Args&&... args) noexcept(std::is_nothrow_constructible_v<Unit, Args...>)
-        : value_{Unit(std::forward<Args>(args)...)} {}
+    friend struct ::crucible::fixy::sched::detail::cpu_pin_access;
 
-    CpuPinned(const CpuPinned&) = delete;
-    CpuPinned& operator=(const CpuPinned&) = delete;
-    constexpr CpuPinned(CpuPinned&&) = default;
+public:
+    CpuPinned() = delete("a default-constructed CpuPinned would claim a pin nobody performed.  Take one from "
+                         "crucible::fixy::sched::mint_affinity, which returns it only after sched_setaffinity "
+                         "succeeded.");
+    CpuPinned(const CpuPinned&) = delete("a pin proof cannot be duplicated: two readers would race one core.");
+    CpuPinned& operator=(const CpuPinned&) = delete("a pin proof cannot be duplicated.");
+    // User-provided, so the class is not trivially copyable and
+    // std::bit_cast cannot build a pin from bytes.
+    constexpr CpuPinned(CpuPinned&& other) noexcept(std::is_nothrow_move_constructible_v<Unit>)
+        : value_{std::move(other.value_)} {}
     constexpr CpuPinned& operator=(CpuPinned&&) = default;
     ~CpuPinned() = default;
 
@@ -76,14 +88,13 @@ public:
     static constexpr bool meets_posture = static_cast<std::uint8_t>(Posture) >= static_cast<std::uint8_t>(Required);
 };
 
-template <AffinityMask Mask, PinningPosture Posture, typename Unit, typename... Args>
-    requires std::is_constructible_v<Unit, Args...>
-[[nodiscard]] constexpr CpuPinned<Mask, Posture, Unit>
-mint_cpu_pinned(Args&&... args) noexcept(std::is_nothrow_constructible_v<Unit, Args...>) {
-    return CpuPinned<Mask, Posture, Unit>{std::in_place, std::forward<Args>(args)...};
-}
-
 static_assert(sizeof(CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>) == sizeof(int));
+static_assert(!std::is_default_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>
+                  && !std::is_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>,
+                                              int>
+                  && !std::is_trivially_copyable_v<
+                      CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
+              "a pin proof comes only from mint_affinity: no default, value or byte route may build one");
 static_assert(sizeof(CpuPinned<AffinityMask::single(7), PinningPosture::PinnedExplicit, unsigned long long>)
               == sizeof(unsigned long long));
 static_assert(!std::is_copy_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
@@ -128,15 +139,10 @@ using AutoC0 = CpuPinned<kCore0, PinningPosture::PinnedAuto, int>;
 using UnpinnedC0 = CpuPinned<kCore0, PinningPosture::NotPinned, int>;
 using TwoBitC = CpuPinned<kTwoBit, PinningPosture::PinnedExplicit, int>;
 
-inline constexpr PinnedC0 c_default{};
-static_assert(c_default.peek() == 0);
+// The value cells that stood here built a pin out of nothing, which is the
+// forgery the closed constructor refuses.  Posture and mask are read off
+// the type, so the cells below hold without building one.
 static_assert(PinnedC0::posture == PinningPosture::PinnedExplicit);
-
-inline constexpr PinnedC0 c_explicit{42};
-static_assert(c_explicit.peek() == 42);
-
-inline constexpr PinnedC0 c_in_place{std::in_place, 7};
-static_assert(c_in_place.peek() == 7);
 
 static_assert(PinnedC0::is_singleton_pin, "a single-core pin IS a singleton — admissible for a TSC read.");
 static_assert(!TwoBitC::is_singleton_pin, "a 2-core mask is NOT a singleton — the TSC reader gate "
@@ -163,25 +169,6 @@ static_assert(diag::row_hash_contribution_v<PinnedC0>
 static_assert(diag::row_hash_contribution_v<PinnedC0> != diag::row_hash_contribution_v<int>,
               "a CpuPinned proof MUST hash differently from the bare wrapped value.");
 
-[[nodiscard]] consteval bool consume_moves_out() noexcept {
-    PinnedC0 p{99};
-    return std::move(p).consume() == 99;
-}
-static_assert(consume_moves_out());
-
-[[nodiscard]] consteval bool peek_mut_works() noexcept {
-    PinnedC0 p{1};
-    p.peek_mut() = 55;
-    return p.peek() == 55;
-}
-static_assert(peek_mut_works());
-
-[[nodiscard]] consteval bool cpu_pinned_mint_works() noexcept {
-    auto p = mint_cpu_pinned<kCore0, PinningPosture::PinnedExplicit, int>(123);
-    return p.peek() == 123 && p.is_singleton_pin;
-}
-static_assert(cpu_pinned_mint_works());
-
 template <typename Proof>
 concept admissible_tsc_proof = Proof::is_singleton_pin && Proof::template meets_posture<PinningPosture::PinnedExplicit>;
 
@@ -190,24 +177,15 @@ static_assert(!admissible_tsc_proof<TwoBitC>, "a 2-core pin MUST be rejected (no
 static_assert(!admissible_tsc_proof<AutoC0>, "an AUTO pin MUST be rejected (a TSC reader needs an explicit, "
                                              "non-migrating pin).");
 
+// The accessors are exercised through a pin earned from mint_affinity in
+// test/test_fixy_v_191_sched.cpp.  This smoke test reads the gates at run
+// time, which needs no pin.
 inline void runtime_smoke_test() {
-    int seed = 21;
-    PinnedC0 p{seed * 2};
-    if (p.peek() != 42) std::abort();
-    p.peek_mut() = 9;
-    if (p.peek() != 9) std::abort();
-
-    auto m = mint_cpu_pinned<kCore7, PinningPosture::PinnedExplicit, unsigned long long>(
-        static_cast<unsigned long long>(seed));
-    if (std::move(m).consume() != 21) std::abort();
-
     [[maybe_unused]] bool g1 = PinnedC0::is_singleton_pin;
     [[maybe_unused]] bool g2 = TwoBitC::is_singleton_pin;
     if (!g1 || g2) std::abort();
-
-    AutoC0 a{1};
-    PinnedC0 moved{std::move(a).consume()};
-    if (moved.peek() != 1) std::abort();
+    [[maybe_unused]] bool g3 = AutoC0::meets_posture<PinningPosture::PinnedExplicit>;
+    if (g3) std::abort();
 }
 
 }  // namespace crucible::safety::detail::cpu_pinned_self_test

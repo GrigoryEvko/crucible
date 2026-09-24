@@ -32,10 +32,12 @@ template <typename Proof>
     return proof.peek();
 }
 
-int main() {
-    // A real, constructible proof — but its mask covers cores {0, 1}.
-    auto two_core = mint_cpu_pinned<AffinityMask::range(0, 1), PinningPosture::PinnedExplicit, int>(42);
-
+// The proof arrives as a parameter.  Only mint_affinity builds one, and it
+// pins the thread, so the fixture names the type and never builds a value.
+[[maybe_unused]] int read_two_core(CpuPinned<AffinityMask::range(0, 1), PinningPosture::PinnedExplicit, int> const&
+                                       two_core) {
     // Should FAIL: a 2-core mask is not a singleton; the gate rejects it.
     return require_singleton_pin(two_core);
 }
+
+int main() { return 0; }

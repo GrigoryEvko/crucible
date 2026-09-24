@@ -177,6 +177,32 @@ concept CtxFitsPriorityMint = eff::IsExecCtx<Ctx> && (Nice >= -20 && Nice <= 19)
 // §XXI carve-out: cx=alloc — setting affinity is a kernel side effect.
 template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExplicit, eff::IsExecCtx Ctx>
     requires CtxFitsAffinityMint<Ctx, Posture>
+[[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, ProofUnit>, int> mint_affinity(Ctx const&) noexcept;
+
+namespace detail {
+
+// The one builder of a pin proof.  CpuPinned befriends this struct, the
+// builder is private, and mint_affinity is its sole friend, so a proof is
+// built only after sched_setaffinity succeeded for the same mask.  The
+// friend spells a trailing return type, because a leading one ends in
+// `>::` and the parser takes it for a nested-name-specifier.
+struct cpu_pin_access final {
+private:
+    template <AffinityMask Mask, PinningPosture Posture>
+    [[nodiscard]] static sf::CpuPinned<Mask, Posture, ProofUnit> build() noexcept {
+        return sf::CpuPinned<Mask, Posture, ProofUnit>{ProofUnit{0}};
+    }
+
+    template <AffinityMask FriendMask, PinningPosture FriendPosture, eff::IsExecCtx FriendCtx>
+        requires CtxFitsAffinityMint<FriendCtx, FriendPosture>
+    friend auto ::crucible::fixy::sched::mint_affinity(FriendCtx const&) noexcept
+        -> std::expected<sf::CpuPinned<FriendMask, FriendPosture, ProofUnit>, int>;
+};
+
+}  // namespace detail
+
+template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
+    requires CtxFitsAffinityMint<Ctx, Posture>
 [[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, ProofUnit>, int> mint_affinity(Ctx const&) noexcept {
     cpu_set_t set;
     detail::fill_cpu_set(Mask, set);
@@ -184,7 +210,7 @@ template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExpl
         [[unlikely]] {  // SYSCALL-CAP-OK: mint_affinity body, CtxFitsAffinityMint ctx-gate (effects::Init)
         return std::unexpected(errno);
     }
-    return sf::mint_cpu_pinned<Mask, Posture, ProofUnit>(0);
+    return detail::cpu_pin_access::build<Mask, Posture>();
 }
 
 // Deadline admission requires runtime < deadline <= period. The SchedClass

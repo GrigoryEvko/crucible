@@ -32,10 +32,11 @@ template <typename Proof>
     return proof.peek();
 }
 
-int main() {
-    // A valid single-core pin, but only auto-pinned (can still migrate).
-    auto auto_pin = mint_cpu_pinned<AffinityMask::single(0), PinningPosture::PinnedAuto, int>(42);
-
+// The proof arrives as a parameter.  Only mint_affinity builds one, and it
+// pins the thread, so the fixture names the type and never builds a value.
+[[maybe_unused]] int read_auto_pin(CpuPinned<AffinityMask::single(0), PinningPosture::PinnedAuto, int> const& auto_pin) {
     // Should FAIL: PinnedAuto does not meet the PinnedExplicit HotPath floor.
     return on_hot_path(auto_pin);
 }
+
+int main() { return 0; }

@@ -4,6 +4,7 @@
 #include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Hw.h>
+#include <crucible/fixy/Sched.h>
 
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/_CpuPinned.h>
@@ -283,9 +284,14 @@ inline bool runtime_smoke_test() {
     const auto t0 = boot_reader.read();
     if (t0.peek() == 0) return false;  // a running system never reads zero here
 
-    auto pin = sf::mint_cpu_pinned<ml::AffinityMask::single(0), sf::PinningPosture::PinnedExplicit, int>(0);
-    auto tsc_reader = mint_tsc_reader<TscMode::Raw>(init, std::move(pin));
-    (void)tsc_reader.read();
+    // The pin is earned: mint_affinity calls sched_setaffinity and returns
+    // a proof only on success.  A restricted cpuset may refuse CPU 0, and
+    // then the leg is skipped rather than failed.
+    auto pin = ::crucible::fixy::sched::mint_affinity<ml::AffinityMask::single(0)>(bg);
+    if (pin) {
+        auto tsc_reader = mint_tsc_reader<TscMode::Raw>(init, std::move(*pin));
+        (void)tsc_reader.read();
+    }
 
     auto sleeper = mint_bounded_sleep<1000>(bg);
     sleeper.sleep_for(0);

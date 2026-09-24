@@ -392,6 +392,5 @@ crucible/safety/_ClockSource.h:mint_clock_source  — Removed, not ported, for t
 #
 # The two smoke tests follow the pattern already recorded above: an inline
 # runtime check in a public namespace, moved to a registered test.
-crucible/safety/_CpuPinned.h:mint_cpu_pinned  — Replaced by fixy::sched::mint_affinity, declared in fixy/os/CpuPinned.h:126 and defined in fixy/os/Sched.h:166, which returns std::expected and builds the pin only after sched_setaffinity returned 0; the CpuPinned constructor is now private with that mint its sole friend, so the door the old mint left open is closed.
 crucible/safety/_PipelineStage.h:pipeline_stage_smoke_test  — An inline smoke test in a public namespace; its body moved to test/fixy/test_stage_shape.cpp, which adds a real channel-handle cell the old fakes could not state.
 crucible/safety/_SignatureTraits.h:signature_traits_smoke_test  — An inline smoke test in a public namespace; its body moved to test/foundation/test_signature.cpp, which checks each result rather than returning a bool no caller consumed.
