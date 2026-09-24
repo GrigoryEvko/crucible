@@ -58,10 +58,28 @@ namespace fixy {
 
 // Every predicate is stateless, so that it can serve as a template
 // argument.
+//
+// Every predicate is also a named class type, never a closure.  The
+// predicate's type is a template argument of the refinement's lattice,
+// and the lattice's printed name keys the row hash.  GCC prints a
+// generic closure with a counter that runs across the translation unit,
+// so a closure predicate gave one refinement a different hash in each
+// translation unit.  foundation/reflect/Hash.h now refuses such a type
+// in every id, so a closure predicate fails to hash rather than hashing
+// wrong.  Each predicate therefore ships as a class and a value, and
+// call sites name the value as before.
 
-inline constexpr auto positive = [](auto x) constexpr noexcept { return x > decltype(x){0}; };
+struct IsPositive {
+    constexpr bool operator()(auto x) const noexcept { return x > decltype(x){0}; }
+};
 
-inline constexpr auto non_negative = [](auto x) constexpr noexcept { return x >= decltype(x){0}; };
+inline constexpr IsPositive positive{};
+
+struct IsNonNegative {
+    constexpr bool operator()(auto x) const noexcept { return x >= decltype(x){0}; }
+};
+
+inline constexpr IsNonNegative non_negative{};
 
 // For an unsigned type this coincides with positive. The two are kept
 // apart because they state different intents: non_zero reserves a
@@ -70,32 +88,52 @@ inline constexpr auto non_negative = [](auto x) constexpr noexcept { return x >=
 // The zero is value-initialised rather than written as a literal, so
 // that the zero value of a pointer type is spelled as the null pointer
 // it is.  For an arithmetic type the two spellings are the same value.
-inline constexpr auto non_zero = [](const auto& x) constexpr noexcept {
-    if constexpr (requires { x.raw(); })
-        return x.raw() != 0;
-    else
-        return x != decltype(x){};
+struct IsNonZero {
+    constexpr bool operator()(const auto& x) const noexcept {
+        if constexpr (requires { x.raw(); })
+            return x.raw() != 0;
+        else
+            return x != std::remove_cvref_t<decltype(x)>{};
+    }
 };
+
+inline constexpr IsNonZero non_zero{};
 
 // The dual of non_zero. It holds where a wire or disk format reserves
 // zero as the only valid payload for a field, so that the must-be-zero
 // invariant lives in the type instead of being discovered by reading a
 // write routine and noticing the zero literal.
-inline constexpr auto is_zero = [](const auto& x) constexpr noexcept {
-    if constexpr (requires { x.raw(); })
-        return x.raw() == 0;
-    else
-        return x == decltype(x){};
+struct IsZero {
+    constexpr bool operator()(const auto& x) const noexcept {
+        if constexpr (requires { x.raw(); })
+            return x.raw() == 0;
+        else
+            return x == std::remove_cvref_t<decltype(x)>{};
+    }
 };
 
-inline constexpr auto non_null = [](auto* p) constexpr noexcept { return p != nullptr; };
+inline constexpr IsZero is_zero{};
 
-inline constexpr auto power_of_two = [](auto x) constexpr noexcept {
-    using U = decltype(x);
-    return x != U{0} && (x & (x - U{1})) == U{0};
+struct IsNonNull {
+    constexpr bool operator()(auto* p) const noexcept { return p != nullptr; }
 };
 
-inline constexpr auto non_empty = [](const auto& c) constexpr noexcept { return !c.empty(); };
+inline constexpr IsNonNull non_null{};
+
+struct IsPowerOfTwo {
+    constexpr bool operator()(auto x) const noexcept {
+        using U = decltype(x);
+        return x != U{0} && (x & (x - U{1})) == U{0};
+    }
+};
+
+inline constexpr IsPowerOfTwo power_of_two{};
+
+struct IsNonEmpty {
+    constexpr bool operator()(const auto& c) const noexcept { return !c.empty(); }
+};
+
+inline constexpr IsNonEmpty non_empty{};
 
 // Each parameterised predicate is a named struct template rather than
 // a variable template of lambdas. A lambda produces a distinct

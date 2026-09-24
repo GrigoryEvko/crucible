@@ -75,9 +75,9 @@
 // different compiler. So the first line of the diff answers the question
 // the rest of it raises.
 //
-// A diff in the tag alone, with all forty payload lines unchanged,
-// means the toolchain moved and the fold did not. Recapture the golden
-// and say which toolchain in the commit message. Nothing is broken.
+// A diff in the tag alone, with every payload line unchanged, means the
+// toolchain moved and the fold did not. Recapture the golden and say
+// which toolchain in the commit message. Nothing is broken.
 //
 // A diff in the payload lines is the case this guard exists for. If the
 // R** lines moved, the portable half of the federation key stopped being
@@ -100,9 +100,14 @@
 #include <foundation/algebra/lattices/HappensBefore.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/permissions/PermSet.h>
+#include <foundation/permissions/Permission.h>
+#include <foundation/permissions/ReadView.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -115,14 +120,22 @@ namespace fa = ::foundation::algebra;
 namespace fd = ::foundation::diag;
 namespace fe = ::foundation::effects;
 namespace fl = ::foundation::algebra::lattices;
+namespace fp = ::foundation::permissions;
 
 using fd::row_hash_contribution_v;
 
 // A clock tag is part of the clock's identity.  The tag lives in a named
-// namespace, because its reflected name enters the hash and an anonymous
-// namespace has no name to print.
+// namespace, because its reflected name enters the hash.
+//
+// A permission tag is the region an instance owns, and it stays out of
+// the hash.  What folds is the row the tag declares, so the pure region
+// here and the IO region the permission header declares must print
+// different values.
 namespace row_hash_witness {
 struct ReplayClock {};
+struct PureRegion {
+    using permission_row = fe::Row<>;
+};
 }  // namespace row_hash_witness
 
 namespace {
@@ -242,12 +255,35 @@ using S03_IoFunction = ::fixy::role::IoFunction<int>;
 using S04_BgWorker = ::fixy::role::BgWorker<int>;
 using S05_CtCrypto = ::fixy::role::CtCrypto<int>;
 
+// ── The permission carriers ────────────────────────────────────────
+//
+// Each carrier folds its tag's row as its payload.  P01 and P02 differ
+// only in that row.  P03 and P04 are the share, which grades on the
+// fractional lattice and folds the same row, so the two must differ and
+// neither may repeat the exclusive token over the same region.
+using P01_PermissionPure = fp::Permission<row_hash_witness::PureRegion>;
+using P02_PermissionIo = fp::Permission<fp::tag::MmapRegionTag>;
+using P03_SharePure = fp::SharedPermission<row_hash_witness::PureRegion>;
+using P04_ShareIo = fp::SharedPermission<fp::tag::MmapRegionTag>;
+using P05_GuardIo = fp::SharedPermissionGuard<fp::tag::MmapRegionTag>;
+using P06_PoolIo = fp::SharedPermissionPool<fp::tag::MmapRegionTag>;
+using P07_ReadViewIo = fp::ReadView<fp::tag::MmapRegionTag>;
+using P08_PermSetPair = fp::PermSet<row_hash_witness::PureRegion, fp::tag::MmapRegionTag>;
+
+// ── The effect layer's own carriers ────────────────────────────────
+//
+// A context, an execution context and a capability each fold the row
+// they permit, under an identity that names the capability source.
+using X01_ContextBg = fe::Bg;
+using X02_ExecCtxBg = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg>>;
+using X03_CapabilityAllocBg = fe::Capability<fe::Effect::Alloc, fe::Bg>;
+
 struct LabeledEntry {
     const char* label;
     std::uint64_t value;
 };
 
-inline constexpr std::array<LabeledEntry, 40> kEntries = {{
+inline constexpr std::array<LabeledEntry, 51> kEntries = {{
     {"G01_Linear", row_hash_contribution_v<G01_Linear>},
     {"G02_Affine", row_hash_contribution_v<G02_Affine>},
     {"G03_TaggedVerified", row_hash_contribution_v<G03_TaggedVerified>},
@@ -288,6 +324,17 @@ inline constexpr std::array<LabeledEntry, 40> kEntries = {{
     {"H01_ClockOfFour", row_hash_contribution_v<H01_ClockOfFour>},
     {"H02_ClockOfFourTagged", row_hash_contribution_v<H02_ClockOfFourTagged>},
     {"H03_ClockOfEight", row_hash_contribution_v<H03_ClockOfEight>},
+    {"P01_PermissionPure", row_hash_contribution_v<P01_PermissionPure>},
+    {"P02_PermissionIo", row_hash_contribution_v<P02_PermissionIo>},
+    {"P03_SharePure", row_hash_contribution_v<P03_SharePure>},
+    {"P04_ShareIo", row_hash_contribution_v<P04_ShareIo>},
+    {"P05_GuardIo", row_hash_contribution_v<P05_GuardIo>},
+    {"P06_PoolIo", row_hash_contribution_v<P06_PoolIo>},
+    {"P07_ReadViewIo", row_hash_contribution_v<P07_ReadViewIo>},
+    {"P08_PermSetPair", row_hash_contribution_v<P08_PermSetPair>},
+    {"X01_ContextBg", row_hash_contribution_v<X01_ContextBg>},
+    {"X02_ExecCtxBg", row_hash_contribution_v<X02_ExecCtxBg>},
+    {"X03_CapabilityAllocBg", row_hash_contribution_v<X03_CapabilityAllocBg>},
 }};
 
 inline constexpr std::size_t kEntryCount = kEntries.size();
@@ -298,7 +345,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0xf72bf4e060ec24c5ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0x4d260c6590cf7839ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -348,6 +395,15 @@ static_assert(row_hash_contribution_v<B01_FnStrictPole> != row_hash_contribution
 // A carrier does not collapse over a payload that carries a row.
 static_assert(row_hash_contribution_v<C03_CompNested> != row_hash_contribution_v<C02_CompBg>,
               "a nested carrier must keep the inner row in the outer hash");
+
+// A permission carrier folds its tag's row, and a share is a different
+// claim from the exclusive token over the same region.
+static_assert(row_hash_contribution_v<P01_PermissionPure> != row_hash_contribution_v<P02_PermissionIo>,
+              "an exclusive token over an IO region and over a pure region must take two slots");
+static_assert(row_hash_contribution_v<P03_SharePure> != row_hash_contribution_v<P04_ShareIo>,
+              "a share over an IO region and over a pure region must take two slots");
+static_assert(row_hash_contribution_v<P03_SharePure> != row_hash_contribution_v<P01_PermissionPure>,
+              "a share and an exclusive token over one region must take two slots");
 
 // The three intended repeats in the golden. Each one is a property of the
 // fold, and naming it here is what keeps a later reader from filing a
@@ -423,11 +479,11 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
     return distinct;
 }
 
-// Forty entries carry thirty-five distinct values. Five entries repeat
+// Fifty-one entries carry forty-six distinct values. Five entries repeat
 // one that stands above them: R05 repeats R04, B02 and B07 and S01 each
 // repeat B01, and S05 repeats B03. Every one of those five has its own
 // assert above, with the property that makes the repeat correct.
-static_assert(distinct_value_count() == 35,
+static_assert(distinct_value_count() == 46,
               "the number of distinct values moved. Every repeat in this matrix is "
               "named by an assert above, so a new one is a collision between two "
               "claims that must not share a cache slot.");

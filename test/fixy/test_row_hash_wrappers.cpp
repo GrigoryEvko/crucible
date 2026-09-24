@@ -679,6 +679,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::diag::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::fail_closed, kMachinery},
     {^^::foundation::contracts, "armed cells and the roster verdict, which are gate machinery"},
+    {^^::foundation::lifetime, "the annotation that refuses a lifetime start over bytes, read at compile time"},
     {^^::foundation::reflect, kMachinery},
 };
 
@@ -900,6 +901,13 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::is_writeoncenonnull, kMetafunction},
     {^^::fixy::is_already_linear, kMetafunction},
     {^^::fixy::is_already_consume_disciplined, kMetafunction},
+    {^^::fixy::IsPositive, kVocabulary},
+    {^^::fixy::IsNonNegative, kVocabulary},
+    {^^::fixy::IsNonZero, kVocabulary},
+    {^^::fixy::IsZero, kVocabulary},
+    {^^::fixy::IsNonNull, kVocabulary},
+    {^^::fixy::IsPowerOfTwo, kVocabulary},
+    {^^::fixy::IsNonEmpty, kVocabulary},
     {^^::fixy::Aligned, kVocabulary},
     {^^::fixy::InRange, kVocabulary},
     {^^::fixy::BoundedAbove, kVocabulary},
@@ -1063,6 +1071,19 @@ static_assert(row_hash_contribution_v<fp::Permission<PureRegionTag>>
 static_assert(row_hash_contribution_v<fp::Permission<PureRegionTag>>
               != row_hash_contribution_v<fp::ReadView<PureRegionTag>>);
 
+// A share folds its tag's row as its payload, as the exclusive token
+// does.  Its published value type is the tag, a bare type that folds to
+// zero, so the published shape alone gave shares over an IO region and
+// over a pure region one slot.
+static_assert(row_hash_contribution_v<fp::SharedPermission<PureRegionTag>>
+                  != row_hash_contribution_v<fp::SharedPermission<IoRegionTag>>,
+              "a share over an IO region and a share over a pure region take one slot");
+static_assert(row_hash_contribution_v<fp::SharedPermission<IoRegionTag>>
+                  == ::foundation::diag::graded_row_hash_v<fp::SharedPermission<IoRegionTag>::modality,
+                                                           fp::SharedPermission<IoRegionTag>::lattice_type,
+                                                           fe::Row<fe::Effect::IO>>,
+              "a share must fold through the graded fold with its tag's row as the payload");
+
 // A permission set is a set, so its spelling order does not move it, and
 // its size does.
 static_assert(row_hash_contribution_v<fp::PermSet<PureRegionTag, IoRegionTag>>
@@ -1214,6 +1235,10 @@ void test_every_carrier_is_off_the_zero_slot() {
     std::uint64_t const handle = row_hash_contribution_v<::fixy::session::SessionHandle<::fixy::session::End, int>>;
     std::uint64_t const token = row_hash_contribution_v<::foundation::permissions::Permission<census::PureRegionTag>>;
     check(handle != 0 && token != 0, "a session handle or a permission token reaches the zero slot at run time");
+    std::uint64_t const pure_share =
+        row_hash_contribution_v<::foundation::permissions::SharedPermission<census::PureRegionTag>>;
+    std::uint64_t const io_share = row_hash_contribution_v<::foundation::permissions::SharedPermission<census::IoRegionTag>>;
+    check(pure_share != io_share, "a share over an IO region and a share over a pure region share a slot at run time");
 }
 
 }  // namespace

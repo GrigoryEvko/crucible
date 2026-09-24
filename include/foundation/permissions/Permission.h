@@ -1682,6 +1682,19 @@ using row_payload_of_tag_t = typename row_payload_of_tag<Tag>::type;
 // token over a pure region.
 namespace foundation::diag {
 
+// A share grades on the fractional lattice, and its published value type
+// is its tag, a bare type that contributes zero.  Through the published
+// shape alone, a share over an IO region and a share over a pure region
+// were one claim.  This specialization keeps the graded fold and takes
+// the tag's row as the payload, as the three carriers below do.
+template <typename Tag, typename Brand>
+struct row_hash_contribution<::foundation::permissions::SharedPermission<Tag, Brand>> {
+    using share_type = ::foundation::permissions::SharedPermission<Tag, Brand>;
+    static constexpr std::uint64_t value =
+        graded_row_hash_v<share_type::modality, typename share_type::lattice_type,
+                          ::foundation::permissions::detail::row_payload_of_tag_t<Tag>>;
+};
+
 template <typename Tag, typename Brand>
 struct row_hash_contribution<::foundation::permissions::Permission<Tag, Brand>> {
     static constexpr std::uint64_t value =

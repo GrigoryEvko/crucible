@@ -425,6 +425,16 @@ concept GradedShaped = requires {
     { W::modality } -> std::convertible_to<::foundation::algebra::ModalityKind>;
 };
 
+// The graded fold over its three inputs, spelled once so that a carrier
+// folded by a specialization and a carrier folded by its published shape
+// agree bit for bit.  A carrier whose payload is not its value type, such
+// as a share whose payload is its tag's effect row, specializes
+// row_hash_contribution through this.
+template <::foundation::algebra::ModalityKind M, typename Lattice, typename Payload>
+inline constexpr std::uint64_t graded_row_hash_v = detail::combine_ids(
+    detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(M), lattice_canonical_id_v<Lattice>),
+    row_hash_contribution_v<Payload>);
+
 // The one fold. Every graded wrapper in the tree reaches this, and
 // nothing else is needed for any of them.
 //
@@ -460,12 +470,15 @@ concept GradedShaped = requires {
 template <GradedShaped W>
 struct row_hash_contribution<W> {
     static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
-        std::uint64_t h = detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(W::modality),
-                                              lattice_canonical_id_v<typename W::lattice_type>);
         if constexpr (requires { typename W::row_discipline; }) {
+            std::uint64_t h =
+                detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(W::modality),
+                                    lattice_canonical_id_v<typename W::lattice_type>);
             h = detail::combine_ids(h, lattice_canonical_id_v<typename W::row_discipline>);
+            return detail::combine_ids(h, row_hash_contribution_v<typename W::value_type>);
+        } else {
+            return graded_row_hash_v<W::modality, typename W::lattice_type, typename W::value_type>;
         }
-        return detail::combine_ids(h, row_hash_contribution_v<typename W::value_type>);
     }();
 };
 
@@ -484,8 +497,10 @@ struct row_hash_contribution<W> {
 // change the claim. A carrier with no payload at all may name itself.
 //
 // Brands, owner tags and region tags are identities of instances, not
-// claims, and none of them folds in. That matches SharedPermission,
-// whose graded fold is blind to its tag.
+// claims, and none of them folds in.  What a tag implies does fold: every
+// permission carrier, the share included, folds its tag's effect row as
+// its payload, so a token over an IO region and a token over a pure
+// region are two claims.
 
 // The payload list of a carrier over more than one value. The fold reads
 // the entries in order, so two carriers that list the same payloads in a
