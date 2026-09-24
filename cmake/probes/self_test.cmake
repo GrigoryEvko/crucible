@@ -1,5 +1,9 @@
 # The test of cmake/PatchedGccProbe.cmake.  ctest runs it as:
-#   cmake -DCXX=<compiler> -DWORK=<directory> -P cmake/probes/self_test.cmake
+#   cmake -DCXX=<compiler> -DWORK=<directory> -DSOURCE=<source tree> -P cmake/probes/self_test.cmake
+#
+# With SOURCE, it also configures the tree with a compiler that lacks a fix,
+# and the configure must stop.  A ccache link must resolve to the compiler
+# that ccache runs.
 #
 # The compiler of the build must pass every probe.  Five stub compilers in
 # WORK must each get the result that their behaviour calls for:
@@ -59,6 +63,26 @@ endfunction()
 
 set(contract_reason "constexpr cache of contracts")
 set(memchr_reason "constant evaluation of memchr")
+
+# A ccache masquerade link resolves to the program of the same name that PATH
+# holds outside the directory of the link.  Any other compiler is itself.
+file(MAKE_DIRECTORY "${WORK}/masquerade" "${WORK}/real" "${WORK}/bin")
+write_stub(bin/ccache "exit 1\n")
+write_stub(real/c++ "exit 0\n")
+file(REMOVE "${WORK}/masquerade/c++")
+file(CREATE_LINK "${WORK}/bin/ccache" "${WORK}/masquerade/c++" SYMBOLIC)
+set(saved_path "$ENV{PATH}")
+set(ENV{PATH} "${WORK}/masquerade:${WORK}/real:${saved_path}")
+crucible_real_compiler("${WORK}/masquerade/c++" resolved)
+set(ENV{PATH} "${saved_path}")
+if(NOT resolved STREQUAL "${WORK}/real/c++")
+  message(SEND_ERROR "self_test: a ccache link must resolve to ${WORK}/real/c++, but it resolves to ${resolved}")
+endif()
+crucible_real_compiler("${WORK}/real/c++" itself)
+if(NOT itself STREQUAL "${WORK}/real/c++")
+  message(SEND_ERROR "self_test: a compiler that is not a ccache link must resolve to itself, not ${itself}")
+endif()
+
 expect_pass("${CXX}" "the compiler of the build (${CXX})")
 expect_pass("${WORK}/acts_patched" "a stub that acts as the patched compiler")
 expect_refusal("${WORK}/accepts_all" "a stub that accepts every file" "${contract_reason}")
@@ -66,3 +90,23 @@ expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${contrac
 expect_refusal("${WORK}/refuses_all" "a stub that refuses every file" "${memchr_reason}")
 expect_refusal("${WORK}/warns_only" "a stub that only warns" "${contract_reason}")
 expect_refusal("${WORK}/lacks_memchr_fix" "a stub without the memchr fix" "${memchr_reason}")
+
+# A configure of the tree, without the toolchain file, with a compiler that
+# lacks a fix, stops at the check after project().  The wrapper runs the
+# compiler of the build for everything but the contract probe, which it
+# accepts as the stock compiler does, so CMake's own compiler test passes.
+if(DEFINED SOURCE)
+  write_stub(unpatched_wrapper "case \"$probe\" in\n*contract_cache.cpp) exit 0 ;;\nesac\nexec \"${CXX}\" \"$@\"\n")
+  file(REMOVE_RECURSE "${WORK}/refusal")
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -S "${SOURCE}" -B "${WORK}/refusal" -G Ninja
+            "-DCMAKE_CXX_COMPILER=${WORK}/unpatched_wrapper" -DCRUCIBLE_USE_CCACHE=OFF
+    RESULT_VARIABLE refusal_code
+    OUTPUT_VARIABLE refusal_output
+    ERROR_VARIABLE refusal_output)
+  if(refusal_code EQUAL 0 OR NOT refusal_output MATCHES "${contract_reason}")
+    message(SEND_ERROR "self_test: a configure with a compiler that lacks the contract fix must stop, but it gave "
+                       "the exit status '${refusal_code}' and:\n${refusal_output}")
+  endif()
+  file(REMOVE_RECURSE "${WORK}/refusal")
+endif()

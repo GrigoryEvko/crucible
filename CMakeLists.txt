@@ -28,6 +28,19 @@ endif()
 
 project(crucible LANGUAGES CXX)
 
+# The compiler must have each fix in toolchain/gcc/patches.  A configure
+# without cmake/Toolchain-gcc16.cmake takes the compiler that CMake finds,
+# for example the stock Fedora GCC 16.2.1 behind /usr/lib64/ccache/c++,
+# which lacks the fixes.  So every configure probes the compiler here, and a
+# ccache link is probed through the compiler that ccache runs.  The two
+# probes take about 35 ms.
+include(cmake/PatchedGccProbe.cmake)
+crucible_real_compiler("${CMAKE_CXX_COMPILER}" CRUCIBLE_REAL_CXX)
+crucible_patched_gcc_problem("${CRUCIBLE_REAL_CXX}" CRUCIBLE_GCC_PROBLEM)
+if(NOT CRUCIBLE_GCC_PROBLEM STREQUAL "")
+  message(FATAL_ERROR "${CRUCIBLE_GCC_PROBLEM}")
+endif()
+
 if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
   # ccache with compiler_check=content hashes the driver binary only.
   # A compiler fix that changes cc1plus and not the driver, as the
@@ -37,24 +50,26 @@ if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
   # two binaries are configure dependencies.  A reinstall of the
   # compiler makes the next build configure again, and the new
   # identity makes every object compile again.
+  # The driver is the compiler that ccache runs, so a ccache link does not
+  # put the ccache binary in the identity.
   execute_process(
-      COMMAND "${CMAKE_CXX_COMPILER}" -print-prog-name=cc1plus
+      COMMAND "${CRUCIBLE_REAL_CXX}" -print-prog-name=cc1plus
       OUTPUT_VARIABLE CRUCIBLE_CC1PLUS
       OUTPUT_STRIP_TRAILING_WHITESPACE
       RESULT_VARIABLE CRUCIBLE_CC1PLUS_STATUS)
   if(NOT CRUCIBLE_CC1PLUS_STATUS EQUAL 0 OR NOT IS_ABSOLUTE "${CRUCIBLE_CC1PLUS}"
      OR NOT EXISTS "${CRUCIBLE_CC1PLUS}")
     message(FATAL_ERROR
-        "ccache: '${CMAKE_CXX_COMPILER} -print-prog-name=cc1plus' did not "
+        "ccache: '${CRUCIBLE_REAL_CXX} -print-prog-name=cc1plus' did not "
         "name an existing file (it gave '${CRUCIBLE_CC1PLUS}').  Without "
         "that file ccache cannot tell one compiler build from another.  "
         "Fix the compiler installation, or configure with "
         "-DCRUCIBLE_USE_CCACHE=OFF.")
   endif()
-  file(SHA256 "${CMAKE_CXX_COMPILER}" CRUCIBLE_DRIVER_SHA256)
+  file(SHA256 "${CRUCIBLE_REAL_CXX}" CRUCIBLE_DRIVER_SHA256)
   file(SHA256 "${CRUCIBLE_CC1PLUS}" CRUCIBLE_CC1PLUS_SHA256)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-      "${CMAKE_CXX_COMPILER}" "${CRUCIBLE_CC1PLUS}")
+      "${CRUCIBLE_REAL_CXX}" "${CRUCIBLE_CC1PLUS}")
   list(GET CMAKE_CXX_COMPILER_LAUNCHER 0 CRUCIBLE_CCACHE)
   set(CMAKE_CXX_COMPILER_LAUNCHER "${CRUCIBLE_CCACHE}"
       "compiler_check=string:${CRUCIBLE_DRIVER_SHA256}-${CRUCIBLE_CC1PLUS_SHA256}")

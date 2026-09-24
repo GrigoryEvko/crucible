@@ -3,9 +3,43 @@
 # Crucible needs each fix in toolchain/gcc/patches.  A version string cannot
 # show a fix, because the patched compiler and the Fedora compiler both say
 # 16.2.1.  So each fix has a probe in cmake/probes/, and the probe compiles
-# differently with and without the fix.  cmake/Toolchain-gcc16.cmake refuses a
-# compiler that fails a probe, and cmake/probes/self_test.cmake is the test of
-# the probes.
+# differently with and without the fix.  The root CMakeLists.txt refuses a
+# compiler that fails a probe after project(), so every configure is checked,
+# with or without cmake/Toolchain-gcc16.cmake.  The toolchain file makes the
+# same call before project(), so a bad compiler fails before CMake tests it.
+# cmake/probes/self_test.cmake is the test of the probes.
+
+# Set OUT_VAR to the compiler that CXX runs.  A ccache masquerade link, such as
+# /usr/lib64/ccache/c++, resolves to the ccache binary, and ccache then runs the
+# first program of the same name on PATH outside the directory of the link.
+# That program is the compiler whose cc1plus the build uses, so the probes and
+# the ccache key read it.  Any other CXX is its own compiler.
+function(crucible_real_compiler cxx out_var)
+  get_filename_component(resolved "${cxx}" REALPATH)
+  get_filename_component(resolved_name "${resolved}" NAME)
+  if(NOT resolved_name STREQUAL "ccache")
+    set(${out_var} "${cxx}" PARENT_SCOPE)
+    return()
+  endif()
+  get_filename_component(link_dir "${cxx}" DIRECTORY)
+  get_filename_component(link_dir "${link_dir}" REALPATH)
+  get_filename_component(name "${cxx}" NAME)
+  string(REPLACE ":" ";" search "$ENV{PATH}")
+  foreach(entry IN LISTS search)
+    get_filename_component(entry_real "${entry}" REALPATH)
+    if(entry STREQUAL "" OR entry_real STREQUAL link_dir OR NOT EXISTS "${entry}/${name}")
+      continue()
+    endif()
+    get_filename_component(candidate "${entry}/${name}" REALPATH)
+    get_filename_component(candidate_name "${candidate}" NAME)
+    if(NOT candidate_name STREQUAL "ccache")
+      set(${out_var} "${entry}/${name}" PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+  message(FATAL_ERROR "Crucible toolchain: '${cxx}' is a ccache link, and PATH has no '${name}' outside "
+                      "'${link_dir}' for ccache to run.  Configure with the full path of the compiler.")
+endfunction()
 
 # Compile PROBE (a file in cmake/probes/) with CXX, -fsyntax-only.  Set
 # EXIT_VAR to the exit status and OUTPUT_VAR to the diagnostics.

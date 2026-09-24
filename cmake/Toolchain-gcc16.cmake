@@ -79,7 +79,9 @@ endif()
 
 # --- 3. Refuse a compiler that does not have each fix -----------------------
 # CMake reads this file again in each try_compile project, with the same
-# compiler.  The probes run only in the top project.
+# compiler.  The probes run only in the top project.  The root CMakeLists.txt
+# makes the same call after project(), for a configure without this file.
+# This call makes a bad compiler fail before CMake tests it.
 if(NOT CMAKE_IN_TRY_COMPILE)
   include("${CMAKE_CURRENT_LIST_DIR}/PatchedGccProbe.cmake")
   crucible_patched_gcc_problem("${_crucible_cxx}" _crucible_gcc_problem)

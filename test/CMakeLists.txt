@@ -525,13 +525,16 @@ if(CRUCIBLE_UBSAN_STRICT)
   set_tests_properties(no_throw_no_rtti PROPERTIES DISABLED TRUE)
 endif()
 
-# The toolchain file refuses a compiler that does not have each fix in
+# Every configure refuses a compiler that does not have each fix in
 # toolchain/gcc/patches.  This test runs the probes on the compiler of the
 # build, which must pass, and on stub compilers, which must each get the
-# result that their behaviour calls for.
+# result that their behaviour calls for.  It resolves a ccache link to the
+# compiler that ccache runs, and it configures the tree with a compiler that
+# lacks a fix, which must stop.
 add_test(NAME patched_gcc_probe_self_test
-  COMMAND ${CMAKE_COMMAND} -DCXX=${CMAKE_CXX_COMPILER}
+  COMMAND ${CMAKE_COMMAND} -DCXX=${CRUCIBLE_REAL_CXX}
           -DWORK=${CMAKE_CURRENT_BINARY_DIR}/patched_gcc_probe_self_test
+          -DSOURCE=${CMAKE_SOURCE_DIR}
           -P ${CMAKE_SOURCE_DIR}/cmake/probes/self_test.cmake)
 set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 
