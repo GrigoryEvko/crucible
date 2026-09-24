@@ -617,6 +617,16 @@ def unification(snapshot: Snapshot, path: str, context: Context) -> tuple[bool, 
         elif not any(row.new in candidates for row in rows):
             reasons.append(f"the row of {UNIFICATION_TABLE} for {name} names a new body that no header the "
                            f"added includes pull in defines")
+    # Every arm of the new definition must answer to a removed arm, whatever
+    # the flags of the compile database select.  An arm that no removed body
+    # equals, and no row pairs with one, is a change nobody reviewed, such as
+    # an NDEBUG arm that drops the check.
+    for name in dict.fromkeys(name for name, _ in dropped):
+        old_bodies = [body for dropped_name, body in dropped if dropped_name == name]
+        for arm in sorted(bodies.get(name, set())):
+            if arm not in old_bodies and not any(context.table.admits(name, old, arm) for old in old_bodies):
+                reasons.append(f"the arm `{arm}` of {name} equals no removed arm, and no row of {UNIFICATION_TABLE} "
+                               f"admits it: {name} — COMMIT — {old_bodies[0]} — {arm} — REASON")
     if reasons:
         return False, reasons
     names = list(dict.fromkeys(name for name, _ in dropped))
@@ -847,7 +857,13 @@ def self_test() -> int:
               "#define UNI_SAME(c) ((void)(c))\n#define UNI_THREE(c) ((void)(c))\n#define UNI_FOUR(c) ((void)(c))\n"
               "#define UNI_STRONG(c) ((void)(c))\n#if 0\n#define UNI_DEAD(c) ((void)(c))\n#endif\n"
               "#ifdef UNI_NEVER\n#define UNI_ARM(c) ((void)(c))\n#else\n#define UNI_ARM(c) ((void)0)\n#endif\n"
+              "#ifdef NDEBUG\n#define UNI_CHECK(x) ((void)0)\n#else\n#define UNI_CHECK(x) check(x)\n#endif\n"
+              "#ifdef UNI_FLAG\n#define UNI_SW(c) ((void)(c))\n#else\n#define UNI_SW(c) ((void)0)\n#endif\n"
               "/*\n#define UNI_COMMENTED 1\n*/\n")
+        write(root, "include/crucible/safety/UniRelease.h", "#pragma once\n#define UNI_CHECK(x) check(x)\nint uni = 1;\n")
+        write(root, "include/crucible/safety/UniSwapArms.h",
+              "#pragma once\n#ifdef UNI_FLAG\n#define UNI_SW(c) ((void)0)\n#else\n#define UNI_SW(c) ((void)(c))\n#endif\n"
+              "int uni = 1;\n")
         write(root, "include/foundation/contracts/Other.h", "#pragma once\n#define UNI_OTHER 1\n")
         uni_base = ("#pragma once\n#include <crucible/safety/Old.h>\n#define UNI_ONE(c) ((void)0)\n"
                     "#define UNI_TWO(c) \\\n    ((void)0)\nint uni = 1;\n")
@@ -899,6 +915,10 @@ def self_test() -> int:
                   "#pragma once\n#include <foundation/contracts/Uni.h>\nint uni = 1;\n")
         write(root, "include/crucible/safety/UniSwap.h",
               "#pragma once\n#include <foundation/contracts/Other.h>\nint uni = 1;\n")
+        write(root, "include/crucible/safety/UniRelease.h",
+              "#pragma once\n#include <foundation/contracts/Uni.h>\nint uni = 1;\n")
+        write(root, "include/crucible/safety/UniSwapArms.h",
+              "#pragma once\n#include <foundation/contracts/Uni.h>\n#ifdef UNI_FLAG\n#else\n#endif\nint uni = 1;\n")
         write(root, "include/crucible/safety/UniInComment.h", "#pragma once\n/*\n*/\nint uni = 1;\n")
         write(root, "include/crucible/safety/UniInRaw.h", '#pragma once\nconst char* uni = R"x(\n)x";\n')
         write(root, "include/crucible/safety/UniIncludeInComment.h",
@@ -938,11 +958,20 @@ def self_test() -> int:
                  "a row whose new body no longer matches the foundation definition"),
                 ("UniDead", "UNI_DEAD is not defined after the change, under the flags of src/tu.cpp",
                  "a foundation definition in an arm the compiler never takes"),
-                ("UniArm", "the active body of UNI_ARM changes, and no row",
-                 "an active foundation arm weaker than the removed body")):
+                ("UniArm", "the arm `( c ) ( ( void ) 0 )` of UNI_ARM equals no removed arm",
+                 "a foundation arm weaker than the removed body"),
+                ("UniRelease", "the arm `( x ) ( ( void ) 0 )` of UNI_CHECK equals no removed arm",
+                 "an NDEBUG arm that drops the check, under flags without NDEBUG"),
+                ("UniSwapArms", "the active body of UNI_SW changes, and no row",
+                 "two arms that swap their conditions")):
             expect(f"refused: {label}", reason in refusal(report, f"include/crucible/safety/{name}.h"), True)
-        expect("exactly fourteen unification refusals", report.count("FROZEN violation:") == 14)
+        expect("exactly sixteen unification refusals", report.count("FROZEN violation:") == 16)
         expect("exactly three admitted unifications", report.count("ADMITTED macro unification:") == 3)
+        with (root / UNIFICATION_TABLE).open("a", encoding="utf-8") as table:
+            table.write(f"UNI_CHECK — {base3} — ( x ) check ( x ) — ( x ) ( ( void ) 0 ) — a reviewed release arm\n")
+        code, report = captured(root, base3)
+        expect("a row for the NDEBUG arm admits the unification",
+               "ADMITTED macro unification: include/crucible/safety/UniRelease.h" in report)
         code, report = captured(root, base3, database=root / "no-such-db.json")
         expect("no compile database refuses a unification",
                "there is no compile database" in refusal(report, "include/crucible/safety/UniPlain.h"), True)
