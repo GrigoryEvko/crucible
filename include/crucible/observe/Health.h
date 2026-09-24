@@ -4,7 +4,9 @@
 #include <crucible/topology/Health.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 
 namespace crucible::observe {
@@ -17,7 +19,8 @@ enum class HealthMetricSlot : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kTopologyHealthMetricBase = 0x48450000u;
-inline constexpr std::size_t kTopologyHealthObservationCount = 4;
+// One observation for each slot.
+inline constexpr std::size_t kTopologyHealthObservationCount = std::meta::enumerators_of(^^HealthMetricSlot).size();
 
 using TopologyHealthObservationSet = std::array<ObservationSnapshot, kTopologyHealthObservationCount>;
 using TopologyHealthObservationBatch = std::array<Observation, kTopologyHealthObservationCount>;
@@ -56,6 +59,21 @@ inline void publish_topology_health(TopologyHealthObservationSet& sinks, std::ui
 }
 
 static_assert(std::is_trivially_copyable_v<TopologyHealthObservationBatch>);
-static_assert(kTopologyHealthObservationCount == 4);
+
+// Observation i carries slot i. A slot with no observation in the batch
+// gets an empty entry with metric id 0, and publish then writes that
+// entry to the sink of the slot, so this check refuses it.
+static_assert(
+    [] {
+        TopologyHealthObservationBatch const batch = topology_health_observations(1, topology::HealthSnapshot{});
+        for (std::size_t index = 0; index < batch.size(); ++index) {
+            auto const slot = static_cast<HealthMetricSlot>(index);
+            if (batch[index].metric_id != topology_health_metric_id(1, slot)) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "topology_health_observations does not give observation i the metric id of slot i.");
 
 }  // namespace crucible::observe

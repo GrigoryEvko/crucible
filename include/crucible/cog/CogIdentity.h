@@ -66,7 +66,7 @@ enum class CogLevel : std::uint8_t {
     L7_Datacenter = 7,
 };
 
-inline constexpr std::size_t cog_level_count = 8;
+inline constexpr std::size_t cog_level_count = std::meta::enumerators_of(^^CogLevel).size();
 
 [[nodiscard]] constexpr std::string_view cog_level_name(CogLevel L) noexcept {
     switch (L) {
@@ -119,7 +119,7 @@ enum class CogKind : std::uint8_t {
     Datacenter = 20,
 };
 
-inline constexpr std::size_t cog_kind_count = 21;
+inline constexpr std::size_t cog_kind_count = std::meta::enumerators_of(^^CogKind).size();
 
 [[nodiscard]] constexpr std::string_view cog_kind_name(CogKind K) noexcept {
     switch (K) {
@@ -187,7 +187,7 @@ enum class CogFamily : std::uint8_t {
     Container = 6,
 };
 
-inline constexpr std::size_t cog_family_count = 7;
+inline constexpr std::size_t cog_family_count = std::meta::enumerators_of(^^CogFamily).size();
 
 [[nodiscard]] constexpr std::string_view cog_family_name(CogFamily F) noexcept {
     switch (F) {
@@ -391,10 +391,13 @@ static_assert(std::is_standard_layout_v<CogIdentity>,
 
 namespace detail::cog_identity_self_test {
 
-static_assert(cog_level_count == 8, "The level count no longer matches the enum. Confirm the new atom "
-                                    "is intended and pin its value below.");
-static_assert(cog_kind_count == 21, "The kind count no longer matches the enum. Confirm the new atom "
-                                    "is intended and pin its value below.");
+// Each count comes from the enum. The number here is the count that the
+// frozen-value pins below cover, so a new atom fails here until its own
+// value is pinned.
+static_assert(cog_level_count == 8, "CogLevel has an atom with no frozen-value pin. Pin its value below, "
+                                    "then set this count.");
+static_assert(cog_kind_count == 21, "CogKind has an atom with no frozen-value pin. Pin its value below, "
+                                    "then set this count.");
 
 [[nodiscard]] consteval bool every_cog_level_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogLevel));
@@ -477,8 +480,8 @@ static_assert(!IsMimicSubstrate<CogKind::Row>);
 static_assert(!IsMimicSubstrate<CogKind::Hall>);
 static_assert(!IsMimicSubstrate<CogKind::Datacenter>);
 
-static_assert(cog_family_count == 7, "The family count no longer matches the enum. Confirm the new "
-                                     "atom is intended and pin its value below.");
+static_assert(cog_family_count == 7, "CogFamily has an atom with no frozen-value pin. Pin its value "
+                                     "below, then set this count.");
 
 [[nodiscard]] consteval bool every_cog_family_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogFamily));

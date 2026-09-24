@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <meta>
 #include <span>
 #include <type_traits>
 
@@ -30,7 +31,8 @@ enum class CongestionMetricSlot : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kCongestionMetricBase = 0x43430000u;
-inline constexpr std::size_t kCongestionObservationCount = 10;
+// One observation for each slot.
+inline constexpr std::size_t kCongestionObservationCount = std::meta::enumerators_of(^^CongestionMetricSlot).size();
 
 using CongestionObservationSet = std::array<::crucible::observe::ObservationSnapshot, kCongestionObservationCount>;
 using CongestionObservationBatch = std::array<::crucible::observe::Observation, kCongestionObservationCount>;
@@ -207,7 +209,22 @@ mint_congestion_telemetry_worker(Ctx const&) noexcept {
 }
 
 static_assert(std::is_trivially_copyable_v<CongestionObservationBatch>);
-static_assert(kCongestionObservationCount == 10);
+
+// Observation i carries slot i. A slot with no observation in the batch
+// gets an empty entry with metric id 0, and publish then writes that
+// entry to the sink of the slot, so this check refuses it.
+static_assert(
+    [] {
+        CongestionObservationBatch const batch = congestion_observations(1, topology::CongestionAggregate{}, 0);
+        for (std::size_t index = 0; index < batch.size(); ++index) {
+            auto const slot = static_cast<CongestionMetricSlot>(index);
+            if (batch[index].metric_id != congestion_metric_id(1, slot)) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "congestion_observations does not give observation i the metric id of slot i.");
 static_assert(CtxFitsCongestionTelemetryStart<effects::ColdInitCtx>);
 static_assert(!CtxFitsCongestionTelemetryStart<effects::BgDrainCtx>);
 static_assert(CtxFitsCongestionTelemetryHarvest<effects::BgDrainCtx>);

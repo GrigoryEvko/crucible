@@ -36,13 +36,14 @@
 
 namespace foundation::diag {
 
-// Consumers gate on this version. The self-test at the end of the file
-// ties it to the line count, so adding a line without moving the version
-// fails the build rather than reaching a consumer.
+// Consumers gate on this version. A version is a choice, not a count: a
+// change to the block or to the JSON record that a consumer can notice
+// raises it. The JSON record carries the version, and
+// test/foundation/test_diag.cpp compares that record byte for byte.
+// test/foundation/test_row_mismatch.cpp pins the line count that goes
+// with the version, so a line added without a new version fails there.
 
 inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_VERSION = 1;
-
-inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_LINES = 7;
 
 // The same value under a name that reads correctly here. In a cache key
 // it is a stable identifier. In a message it is a display name.
@@ -190,17 +191,39 @@ inline constexpr std::string_view L6_PREFIX = "  remediation: ";
 inline constexpr std::string_view L6_SUFFIX = "\n";
 inline constexpr std::string_view L7_LINE = "  docs: see foundation/diag/Catalog.h, 28_04_2026_effects.md §7\n";
 
+// Every literal of the block, in the order that the builder appends them.
+// The length and the line count of the block come from this table, and
+// the self-test holds the builder to both.
+inline constexpr auto row_mismatch_literals =
+    std::to_array<std::string_view>({L1_PREFIX, L1_SUFFIX, L2_PREFIX, L2_SUFFIX, L3_PREFIX, L3_SUFFIX, L4_PREFIX,
+                                     L4_SUFFIX, L5_PREFIX, L5_SUFFIX, L6_PREFIX, L6_SUFFIX, L7_LINE});
+
+[[nodiscard]] consteval std::size_t format_newline_count() noexcept {
+    std::size_t count = 0;
+    for (std::string_view const literal : row_mismatch_literals) {
+        for (char const c : literal) {
+            if (c == '\n') ++count;
+        }
+    }
+    return count;
+}
+
 [[nodiscard]] consteval std::size_t format_total_length(std::string_view category, std::string_view fn_name,
                                                         std::string_view caller_name, std::string_view callee_name,
                                                         std::string_view offending,
                                                         std::string_view remediation) noexcept {
-    return L1_PREFIX.size() + category.size() + L1_SUFFIX.size() + L2_PREFIX.size() + fn_name.size() + L2_SUFFIX.size()
-         + L3_PREFIX.size() + caller_name.size() + L3_SUFFIX.size() + L4_PREFIX.size() + callee_name.size()
-         + L4_SUFFIX.size() + L5_PREFIX.size() + offending.size() + L5_SUFFIX.size() + L6_PREFIX.size()
-         + remediation.size() + L6_SUFFIX.size() + L7_LINE.size();
+    std::size_t length = category.size() + fn_name.size() + caller_name.size() + callee_name.size() + offending.size()
+                       + remediation.size();
+    for (std::string_view const literal : row_mismatch_literals) {
+        length += literal.size();
+    }
+    return length;
 }
 
 }  // namespace detail
+
+// A newline ends each line of the block, and only the literals hold one.
+inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_LINES = detail::format_newline_count();
 
 template <typename Tag, auto FnPtr, typename CallerRow, typename CalleeRow, typename OffendingDiff>
     requires is_diagnostic_class_v<Tag>
@@ -465,11 +488,11 @@ static_assert(sample_msg.length
               "build_row_mismatch_message buffer length diverged from "
               "format_total_length predicted size — fold-loop drift.");
 
-// Newline count: exactly one per line.
+// The builder ends each line with exactly one newline, and the inputs
+// add none.
 static_assert(buffer_count_char(sample_msg, '\n') == CRUCIBLE_DIAG_FORMAT_LINES,
-              "Newline count drifted from CRUCIBLE_DIAG_FORMAT_LINES; format-"
-              "version-lock-in violated.  Bump CRUCIBLE_DIAG_FORMAT_VERSION when "
-              "lines are added.");
+              "The block has a different number of lines than the literal table "
+              "row_mismatch_literals holds. The builder and the table disagree.");
 
 // Line 1 starts with "[" + Category::name + "]\n" at known position.
 static_assert(buffer_starts_with(sample_msg, "["));
@@ -507,18 +530,6 @@ static_assert(&cached_msg == &cached_msg_again);
 
 static_assert(buffer_substring_at(cached_msg, L1_PREFIX.size(), HotPathViolation::name));
 static_assert(buffer_substring_at(cached_msg2, L1_PREFIX.size(), DetSafeLeak::name));
-
-// The version and the line count move together. These two catch the
-// change that moves one without the other.
-
-static_assert(CRUCIBLE_DIAG_FORMAT_VERSION == 1, "CRUCIBLE_DIAG_FORMAT_VERSION drifted from 1 — verify "
-                                                 "CRUCIBLE_DIAG_FORMAT_LINES + literal-table sizes were updated "
-                                                 "in lockstep, AND that downstream consumers were notified.");
-
-static_assert(CRUCIBLE_DIAG_FORMAT_LINES == 7, "CRUCIBLE_DIAG_FORMAT_LINES drifted from the 7 lines of version 1 — "
-                                               "verify CRUCIBLE_DIAG_FORMAT_VERSION was bumped accordingly.");
-
-static_assert(CRUCIBLE_DIAG_FORMAT_VERSION == 1);
 
 }  // namespace detail::row_mismatch_self_test
 

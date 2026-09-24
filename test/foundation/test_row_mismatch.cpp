@@ -115,8 +115,14 @@ void test_function_display_name_non_empty() {
     EXPECT_TRUE(n2.find("sample_compute") != std::string_view::npos);
 }
 
+// Version 1 is a block of 7 lines. The header derives the line count
+// from its literal table, so a line added there fails here. A new line
+// is a new format: raise the version and set both numbers.
 void test_format_version() {
     static_assert(diag::CRUCIBLE_DIAG_FORMAT_VERSION == 1);
+    static_assert(diag::CRUCIBLE_DIAG_FORMAT_LINES == 7,
+                  "The block no longer has the 7 lines of format version 1. Raise "
+                  "CRUCIBLE_DIAG_FORMAT_VERSION, then pin the new version and its line count here.");
     EXPECT_EQ(diag::CRUCIBLE_DIAG_FORMAT_VERSION, std::size_t{1});
 }
 

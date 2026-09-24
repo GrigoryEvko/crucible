@@ -123,7 +123,6 @@ static_assert(BoundedLattice<AffinityLattice>);
 static_assert(!UnboundedLattice<AffinityLattice>);
 static_assert(!Semiring<AffinityLattice>);
 
-static_assert(AffinityMask::kWords == 4);
 static_assert(AffinityMask::kBits == 256);
 static_assert(AffinityMask::kMaxCore == 255);
 static_assert(sizeof(AffinityMask) == AffinityMask::kWords * sizeof(std::uint64_t));
