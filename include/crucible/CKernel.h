@@ -1,12 +1,16 @@
 #pragma once
 
 #include <crucible/Platform.h>
+#include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/_Post.h>
 
+#include <foundation/effects/Effect.h>
+
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -231,16 +235,11 @@ struct Mutable {};
 struct Sealed {};
 }  // namespace ckernel_state
 
-struct CKernelTable {
+// The entries, the count and the phase are private.  A public field is a
+// write that no view and no seal can refuse.
+class CKernelTable {
+public:
     using SizeCounter = ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP>;
-
-    CKernelEntry entries[CKERNEL_TABLE_CAP]{};
-    SizeCounter size{0u};
-
-    // The release store in seal() pairs with the acquire load in is_sealed():
-    // a reader that observes the sealed state also observes every entry
-    // registered before the seal.
-    std::atomic<bool> sealed_{false};
 
     CKernelTable() = default;
 
@@ -249,12 +248,17 @@ struct CKernelTable {
     CKernelTable(CKernelTable&&) = delete("table is a global registration singleton; no moves");
     CKernelTable& operator=(CKernelTable&&) = delete("table is a global registration singleton; no moves");
 
+    // Waits for a registration that is in progress, then seals.  A reader
+    // that observes the seal observes every registered entry
+    // (crucible/RegistrationSeal.h gives the ordering argument).
     void seal() noexcept {
-        sealed_.store(true, std::memory_order_release);
-        CRUCIBLE_POST(0, sealed_.load(std::memory_order_acquire));
+        seal_.seal();
+        CRUCIBLE_POST(0, seal_.is_sealed());
     }
 
-    [[nodiscard]] bool is_sealed() const noexcept { return sealed_.load(std::memory_order_acquire); }
+    // Not constexpr: the phase is an atomic, and no constant evaluation can
+    // read it.  The same holds for every function below that calls it.
+    [[nodiscard]] bool is_sealed() const noexcept { return seal_.is_sealed(); }
 
     using MutableView = crucible::fixy::wrap::ScopedView<CKernelTable, ckernel_state::Mutable>;
     using SealedView = crucible::fixy::wrap::ScopedView<CKernelTable, ckernel_state::Sealed>;
@@ -265,7 +269,7 @@ struct CKernelTable {
     // A registration writes entries that a classifying reader reads with no
     // lock once the table is sealed.  So the view is minted only before the
     // seal.  Past the seal it is empty, in every build mode.
-    [[nodiscard]] constexpr std::optional<MutableView> mint_mutable_view() const noexcept {
+    [[nodiscard]] std::optional<MutableView> mint_mutable_view() const noexcept {
         if (is_sealed()) return std::nullopt;
         return crucible::fixy::wrap::mint_view<ckernel_state::Mutable>(*this);
     }
@@ -276,12 +280,10 @@ struct CKernelTable {
     }
 
     // Found by argument-dependent lookup from mint_view.
-    [[nodiscard]] friend constexpr bool view_ok(CKernelTable const& t,
-                                                std::type_identity<ckernel_state::Mutable>) noexcept {
+    [[nodiscard]] friend bool view_ok(CKernelTable const& t, std::type_identity<ckernel_state::Mutable>) noexcept {
         return !t.is_sealed();
     }
-    [[nodiscard]] friend constexpr bool view_ok(CKernelTable const& t,
-                                                std::type_identity<ckernel_state::Sealed>) noexcept {
+    [[nodiscard]] friend bool view_ok(CKernelTable const& t, std::type_identity<ckernel_state::Sealed>) noexcept {
         return t.is_sealed();
     }
 
@@ -289,40 +291,27 @@ struct CKernelTable {
     // leave classify() answering OPAQUE for that one schema, and that only
     // shows up much later, at replay, on whichever trace happens to use it.
     //
+    // The view's type is the proof that the table was not sealed when the
+    // view was minted.  The seal can still land between the mint and the
+    // write, so the write runs inside the section of the seal.  It returns
+    // false, and writes nothing, when the table was sealed first.
+    //
     // The view names the table it proves, and a view of another table
     // proves nothing about this one, so that is checked in every build mode.
-    void register_op(MutableView const& view, SchemaHash schema_hash, CKernelId id) {
+    [[nodiscard]] bool register_op(MutableView const& view, SchemaHash schema_hash, CKernelId id) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
-        for (uint32_t i = 0; i < size.get(); i++) {
-            if (entries[i].schema_hash == schema_hash) {
-                entries[i].id = id;
-                CRUCIBLE_POST(0, classify(schema_hash) == id);
-                return;
-            }
-        }
-        if (size.get() >= CKERNEL_TABLE_CAP) [[unlikely]] {
-            std::fprintf(stderr,
-                         "crucible: CKernelTable full (%u/%u entries); bump "
-                         "CKERNEL_TABLE_CAP or audit Vessel schema registrations\n",
-                         size.get(), CKERNEL_TABLE_CAP);
-            std::abort();
-        }
-        entries[size.get()] = {.schema_hash = schema_hash, .id = id};
-        size.bump();
-        std::ranges::sort(std::span{entries, size.get()}, {}, &CKernelEntry::schema_hash);
-        CRUCIBLE_POST(0, classify(schema_hash) == id);
-        CRUCIBLE_POST(0, size.get() <= CKERNEL_TABLE_CAP);
+        return seal_.with_write_section([&] { write_op_(schema_hash, id); });
     }
 
     // gnu::pure lets the optimiser cache a result across calls. That is sound
     // only because registration finishes and the table is sealed before any
     // classifying reader runs. An interleaved registration would invalidate it.
     [[nodiscard, gnu::pure]] CKernelId classify(SchemaHash schema_hash) const noexcept {
-        uint32_t lo = 0, hi = size.get();
+        uint32_t lo = 0, hi = size_.get();
         while (lo < hi) {
             const uint32_t mid = lo + (hi - lo) / 2;
-            if (entries[mid].schema_hash == schema_hash) return entries[mid].id;
-            if (entries[mid].schema_hash < schema_hash)
+            if (entries_[mid].schema_hash == schema_hash) return entries_[mid].id;
+            if (entries_[mid].schema_hash < schema_hash)
                 lo = mid + 1;
             else
                 hi = mid;
@@ -330,17 +319,51 @@ struct CKernelTable {
         return CKernelId::OPAQUE;
     }
 
-    [[nodiscard]] uint32_t count() const noexcept { return size.get(); }
+    [[nodiscard]] uint32_t count() const noexcept { return size_.get(); }
 
+    // Empties the table and opens it again.  A sealed table that opens again
+    // takes writes, so only a test that reuses one table across cases may
+    // do this: it takes the test context, which code that ships cannot mint.
+    // The caller makes sure that no other thread uses the table.
+    //
     // Rewinding the counter is the one non-monotonic mutation the type
     // otherwise forbids, so the counter is reconstructed in place rather than
     // assigned, re-establishing its bound and its ordering from a known floor.
-    void clear() noexcept {
-        std::construct_at(&size, SizeCounter{0u});
-        sealed_.store(false, std::memory_order_release);
-        CRUCIBLE_POST(0, size.get() == 0u);
+    void clear(::foundation::effects::Test const& test) noexcept {
+        std::construct_at(&size_, SizeCounter{0u});
+        seal_.reopen(test);
+        CRUCIBLE_POST(0, size_.get() == 0u);
         CRUCIBLE_POST(0, !is_sealed());
     }
+
+private:
+    // Runs inside the write section, so no seal and no other writer runs
+    // at the same time.
+    void write_op_(SchemaHash schema_hash, CKernelId id) {
+        for (uint32_t i = 0; i < size_.get(); i++) {
+            if (entries_[i].schema_hash == schema_hash) {
+                entries_[i].id = id;
+                CRUCIBLE_POST(0, classify(schema_hash) == id);
+                return;
+            }
+        }
+        if (size_.get() >= CKERNEL_TABLE_CAP) [[unlikely]] {
+            std::fprintf(stderr,
+                         "crucible: CKernelTable full (%u/%u entries); bump "
+                         "CKERNEL_TABLE_CAP or audit Vessel schema registrations\n",
+                         size_.get(), CKERNEL_TABLE_CAP);
+            std::abort();
+        }
+        entries_[size_.get()] = {.schema_hash = schema_hash, .id = id};
+        size_.bump();
+        std::ranges::sort(std::span{entries_.data(), size_.get()}, {}, &CKernelEntry::schema_hash);
+        CRUCIBLE_POST(0, classify(schema_hash) == id);
+        CRUCIBLE_POST(0, size_.get() <= CKERNEL_TABLE_CAP);
+    }
+
+    std::array<CKernelEntry, CKERNEL_TABLE_CAP> entries_{};
+    SizeCounter size_{0u};
+    RegistrationSeal seal_;
 };
 
 static_assert(crucible::fixy::wrap::no_scoped_view_field_check<CKernelTable>());
@@ -353,15 +376,15 @@ static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
     return CKernelTableSingleton{&table};
 }
 
-// False when the table is already sealed, and then nothing is registered.
+// False when the table is sealed, before the view or before the write, and
+// then nothing is registered.
 [[nodiscard]] inline bool
 register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::tags::source::External> schema_hash,
                      CKernelId id) {
     CKernelTable* table = global_ckernel_table().value();
     const auto view = table->mint_mutable_view();
     if (!view) return false;
-    table->register_op(*view, schema_hash.value(), id);
-    return true;
+    return table->register_op(*view, schema_hash.value(), id);
 }
 
 // ---------------------------------------------------------------------

@@ -216,10 +216,12 @@ void test_schema_name_typed() {
     constexpr uint64_t hash_b = 0xB1B2B3B4B5B6B7B8ULL;
 
     if (const auto view = crucible::global_schema_table().mint_mutable_view()) {
-        crucible::register_schema_name(*view, crucible::SchemaHash{hash_a},
-                                       crucible::SchemaTable::SanitizedName{"aten::test_op_a"});
-        crucible::register_schema_name(*view, crucible::SchemaHash{hash_b},
-                                       crucible::SchemaTable::SanitizedName{"aten::test_op_b"});
+        const bool was_a_registered = crucible::register_schema_name(
+            *view, crucible::SchemaHash{hash_a}, crucible::SchemaTable::SanitizedName{"aten::test_op_a"});
+        EXPECT(was_a_registered, "an open schema table must take the first registration");
+        const bool was_b_registered = crucible::register_schema_name(
+            *view, crucible::SchemaHash{hash_b}, crucible::SchemaTable::SanitizedName{"aten::test_op_b"});
+        EXPECT(was_b_registered, "an open schema table must take the second registration");
     }
 
     auto a = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});

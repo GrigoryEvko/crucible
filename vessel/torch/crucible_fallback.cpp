@@ -168,10 +168,12 @@ struct SchemaInfo {
     }
     // PyTorch's Operator schema is trusted by source — compiled into
     // the libtorch binary.  Construct Sanitized directly.
-    // A sealed table mints no view, and the name then stays out of it.
+    // A sealed table mints no view, or refuses the write when the seal lands
+    // after the view, and the name then stays out of it.
     if (const auto schema_table_view = crucible::global_schema_table().mint_mutable_view()) {
-        crucible::register_schema_name(*schema_table_view, schema_hash,
-                                       crucible::SchemaTable::SanitizedName{full_name.c_str()});
+        [[maybe_unused]] const bool was_registered = crucible::register_schema_name(
+            *schema_table_view, schema_hash, crucible::SchemaTable::SanitizedName{full_name.c_str()});
+        CRUCIBLE_DEBUG_ASSERT(was_registered || crucible::global_schema_table().is_sealed());
     }
 
     // Authoritative mutability from schema alias annotations.
@@ -680,10 +682,10 @@ CRUCIBLE_API uint32_t crucible_dispatch_schema_count() { return crucible::global
 // Get the schema hash and name for the i-th entry.
 // Returns 0 if i >= count.  Writes hash and name pointer.
 CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name) {
-    const auto& table = crucible::global_schema_table();
-    if (i >= table.count()) return 0;
-    if (out_hash) *out_hash = table.entries[i].hash.raw();
-    if (out_name) *out_name = table.entries[i].name;
+    const auto entries = crucible::global_schema_table().entries();
+    if (i >= entries.size()) return 0;
+    if (out_hash) *out_hash = entries[i].hash.raw();
+    if (out_name) *out_name = entries[i].name;
     return 1;
 }
 

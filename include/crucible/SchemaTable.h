@@ -1,13 +1,16 @@
 #pragma once
 
 #include <crucible/Platform.h>
+#include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/_Post.h>
 
+#include <foundation/effects/Effect.h>
+
 #include <algorithm>
-#include <atomic>
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
@@ -36,17 +39,11 @@ struct Mutable {};
 struct Sealed {};
 }  // namespace schema_state
 
-struct SchemaTable {
+// The entries, the count and the phase are private.  A public field is a
+// write that no view and no seal can refuse.
+class SchemaTable {
+public:
     using SizeCounter = ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP>;
-
-    SchemaEntry entries[SCHEMA_TABLE_CAP]{};
-    SizeCounter size{0u};
-
-    // The release store here pairs with the acquire load in is_sealed(). A
-    // thread that observes the sealed state therefore also observes every
-    // entries[] write made before the seal, which is what lets a reader run
-    // concurrently with nothing but a plain load.
-    std::atomic<bool> sealed_{false};
 
     SchemaTable() = default;
 
@@ -55,14 +52,19 @@ struct SchemaTable {
     SchemaTable(SchemaTable&&) = delete("owns malloc'd name strings");
     SchemaTable& operator=(SchemaTable&&) = delete("owns malloc'd name strings");
 
-    ~SchemaTable() { clear(); }
+    ~SchemaTable() { release_names_(); }
 
+    // Waits for a registration that is in progress, then seals.  A reader
+    // that observes the seal observes every registered entry
+    // (crucible/RegistrationSeal.h gives the ordering argument).
     void seal() noexcept {
-        sealed_.store(true, std::memory_order_release);
-        CRUCIBLE_POST(0, sealed_.load(std::memory_order_acquire));
+        seal_.seal();
+        CRUCIBLE_POST(0, seal_.is_sealed());
     }
 
-    [[nodiscard]] bool is_sealed() const noexcept { return sealed_.load(std::memory_order_acquire); }
+    // Not constexpr: the phase is an atomic, and no constant evaluation can
+    // read it.  The same holds for every function below that calls it.
+    [[nodiscard]] bool is_sealed() const noexcept { return seal_.is_sealed(); }
 
     using MutableView = crucible::fixy::wrap::ScopedView<SchemaTable, schema_state::Mutable>;
     using SealedView = crucible::fixy::wrap::ScopedView<SchemaTable, schema_state::Sealed>;
@@ -70,7 +72,7 @@ struct SchemaTable {
     // A registration writes entries that the background thread reads with no
     // lock once the table is sealed.  So the view is minted only before the
     // seal.  Past the seal it is empty, in every build mode.
-    [[nodiscard]] constexpr std::optional<MutableView> mint_mutable_view() const noexcept {
+    [[nodiscard]] std::optional<MutableView> mint_mutable_view() const noexcept {
         if (is_sealed()) return std::nullopt;
         return crucible::fixy::wrap::mint_view<schema_state::Mutable>(*this);
     }
@@ -81,12 +83,10 @@ struct SchemaTable {
     }
 
     // Found by argument-dependent lookup from the view-minting template.
-    [[nodiscard]] friend constexpr bool view_ok(SchemaTable const& t,
-                                                std::type_identity<schema_state::Mutable>) noexcept {
+    [[nodiscard]] friend bool view_ok(SchemaTable const& t, std::type_identity<schema_state::Mutable>) noexcept {
         return !t.is_sealed();
     }
-    [[nodiscard]] friend constexpr bool view_ok(SchemaTable const& t,
-                                                std::type_identity<schema_state::Sealed>) noexcept {
+    [[nodiscard]] friend bool view_ok(SchemaTable const& t, std::type_identity<schema_state::Sealed>) noexcept {
         return t.is_sealed();
     }
 
@@ -98,47 +98,17 @@ struct SchemaTable {
     static_assert(std::is_trivially_copy_constructible_v<LookupName>);
 
     // The view's type is the proof that the table was not sealed when the
-    // view was minted.  The view names the table it proves, and a view of
-    // another table proves nothing about this one, so that is checked in
-    // every build mode.
-    void register_name(MutableView const& view, SchemaHash hash, SanitizedName name_tag) {
+    // view was minted.  The seal can still land between the mint and the
+    // write, so the write runs inside the section of the seal.  It returns
+    // false, and writes nothing, when the table was sealed first.  A null
+    // name is not a registration, and it returns true without a write.
+    // The view names the table it proves, and a view of another table
+    // proves nothing about this one, so that is checked in every build mode.
+    [[nodiscard]] bool register_name(MutableView const& view, SchemaHash hash, SanitizedName name_tag) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
         const char* name = name_tag.value();
-        if (!name) return;
-
-        for (uint32_t i = 0; i < size.get(); i++) {
-            if (entries[i].hash == hash) {
-                const auto dup = duplicate_name_(name);
-                std::free(std::bit_cast<char*>(entries[i].name));
-                entries[i].name = dup.name;
-                entries[i].name_len = dup.name_len;
-                CRUCIBLE_POST(0, lookup_raw_(hash) != nullptr);
-                return;
-            }
-        }
-        // Exhausting the cap aborts rather than returning quietly. A quiet
-        // return leaves every later schema unregistered, and the resulting
-        // fallback dispatch shows up far from the registration that was lost.
-        if (size.get() >= SCHEMA_TABLE_CAP) [[unlikely]] {
-            std::fprintf(stderr,
-                         "crucible: SchemaTable full (%u/%u entries); bump "
-                         "SCHEMA_TABLE_CAP or audit Vessel schema registrations\n",
-                         size.get(), SCHEMA_TABLE_CAP);
-            std::abort();
-        }
-        const auto dup = duplicate_name_(name);
-        entries[size.get()] = {
-            .hash = hash,
-            .name = dup.name,
-            .name_len = dup.name_len,
-        };
-        size.bump();
-        // The sort is what lookup's binary search depends on. Dropping it
-        // leaves the new entry findable only by luck, which is why the first
-        // postcondition below reads the entry back.
-        std::ranges::sort(std::span<SchemaEntry>{entries, size.get()}, {}, &SchemaEntry::hash);
-        CRUCIBLE_POST(0, lookup_raw_(hash) != nullptr);
-        CRUCIBLE_POST(0, size.get() <= SCHEMA_TABLE_CAP);
+        if (!name) return true;
+        return seal_.with_write_section([&] { write_name_(hash, name); });
     }
 
     // The unqualified form is safe in either phase. The overload taking a
@@ -149,17 +119,55 @@ struct SchemaTable {
     [[nodiscard]] LookupName lookup(SealedView const&, SchemaHash hash) const noexcept { return lookup(hash); }
 
 private:
+    // Runs inside the write section, so no seal and no other writer runs
+    // at the same time.
+    void write_name_(SchemaHash hash, const char* name) {
+        for (uint32_t i = 0; i < size_.get(); i++) {
+            if (entries_[i].hash == hash) {
+                const auto dup = duplicate_name_(name);
+                std::free(std::bit_cast<char*>(entries_[i].name));
+                entries_[i].name = dup.name;
+                entries_[i].name_len = dup.name_len;
+                CRUCIBLE_POST(0, lookup_raw_(hash) != nullptr);
+                return;
+            }
+        }
+        // Exhausting the cap aborts rather than returning quietly. A quiet
+        // return leaves every later schema unregistered, and the resulting
+        // fallback dispatch shows up far from the registration that was lost.
+        if (size_.get() >= SCHEMA_TABLE_CAP) [[unlikely]] {
+            std::fprintf(stderr,
+                         "crucible: SchemaTable full (%u/%u entries); bump "
+                         "SCHEMA_TABLE_CAP or audit Vessel schema registrations\n",
+                         size_.get(), SCHEMA_TABLE_CAP);
+            std::abort();
+        }
+        const auto dup = duplicate_name_(name);
+        entries_[size_.get()] = {
+            .hash = hash,
+            .name = dup.name,
+            .name_len = dup.name_len,
+        };
+        size_.bump();
+        // The sort is what lookup's binary search depends on. Dropping it
+        // leaves the new entry findable only by luck, which is why the first
+        // postcondition below reads the entry back.
+        std::ranges::sort(std::span<SchemaEntry>{entries_.data(), size_.get()}, {}, &SchemaEntry::hash);
+        CRUCIBLE_POST(0, lookup_raw_(hash) != nullptr);
+        CRUCIBLE_POST(0, size_.get() <= SCHEMA_TABLE_CAP);
+    }
+
     [[nodiscard]] const char* lookup_raw_(SchemaHash hash) const noexcept {
         const SchemaEntry* entry = lookup_entry_(hash);
         return entry ? entry->name : nullptr;
     }
 
     [[nodiscard]] const SchemaEntry* lookup_entry_(SchemaHash hash) const noexcept {
-        uint32_t lo = 0, hi = size.get();
+        uint32_t lo = 0, hi = size_.get();
         while (lo < hi) {
             const uint32_t mid = lo + (hi - lo) / 2;
-            if (entries[mid].hash == hash) return &entries[mid];
-            if (entries[mid].hash < hash)
+            if (entries_[mid].hash == hash) return &entries_[mid];
+            if (entries_[mid].hash < hash)
                 lo = mid + 1;
             else
                 hi = mid;
@@ -184,24 +192,43 @@ public:
         return full;
     }
 
-    [[nodiscard]] uint32_t count() const { return size.get(); }
+    [[nodiscard]] uint32_t count() const noexcept { return size_.get(); }
 
-    // This is the one place the size counter runs backwards, so it cannot be
-    // assigned. Constructing a fresh counter in place re-establishes the
-    // monotonicity and bound invariants from a known floor.
-    void clear() {
-        for (uint32_t i = 0; i < size.get(); i++) {
-            // The bit_cast drops const so free() accepts the pointer. The
-            // allocation is our own mutable storage.
-            std::free(std::bit_cast<char*>(entries[i].name));
-            entries[i].name = nullptr;
-            entries[i].name_len = 0;
-        }
-        std::construct_at(&size, SizeCounter{0u});
-        sealed_.store(false, std::memory_order_release);
+    // The registered entries, sorted by hash.  Before the seal, only the
+    // registering thread may read them, because a write can run at the
+    // same time on no other thread.  After the seal, any thread may read.
+    [[nodiscard]] std::span<const SchemaEntry> entries() const noexcept { return {entries_.data(), size_.get()}; }
+
+    // Empties the table and opens it again.  A sealed table that opens again
+    // takes writes, so only a test that reuses one table across cases may
+    // do this: it takes the test context, which code that ships cannot mint.
+    // The caller makes sure that no other thread uses the table.
+    void clear(::foundation::effects::Test const& test) {
+        release_names_();
+        seal_.reopen(test);
+        CRUCIBLE_POST(0, count() == 0u);
+        CRUCIBLE_POST(0, !is_sealed());
     }
 
 private:
+    // This is the one place the size counter runs backwards, so it cannot be
+    // assigned. Constructing a fresh counter in place re-establishes the
+    // monotonicity and bound invariants from a known floor.
+    void release_names_() noexcept {
+        for (uint32_t i = 0; i < size_.get(); i++) {
+            // The bit_cast drops const so free() accepts the pointer. The
+            // allocation is our own mutable storage.
+            std::free(std::bit_cast<char*>(entries_[i].name));
+            entries_[i].name = nullptr;
+            entries_[i].name_len = 0;
+        }
+        std::construct_at(&size_, SizeCounter{0u});
+    }
+
+    std::array<SchemaEntry, SCHEMA_TABLE_CAP> entries_{};
+    SizeCounter size_{0u};
+    RegistrationSeal seal_;
+
     struct DuplicatedName {
         const char* name = nullptr;
         uint32_t name_len = 0;
@@ -232,9 +259,11 @@ static_assert(crucible::fixy::wrap::no_scoped_view_field_check<SchemaTable>());
     return table;
 }
 
-inline void register_schema_name(SchemaTable::MutableView const& view, SchemaHash hash,
-                                 SchemaTable::SanitizedName name) {
-    global_schema_table().register_name(view, hash, name);
+// False when the global table was sealed after the view was minted, and
+// then nothing is registered.
+[[nodiscard]] inline bool register_schema_name(SchemaTable::MutableView const& view, SchemaHash hash,
+                                               SchemaTable::SanitizedName name) {
+    return global_schema_table().register_name(view, hash, name);
 }
 
 [[nodiscard]] inline SchemaTable::LookupName schema_name(SchemaHash hash) { return global_schema_table().lookup(hash); }

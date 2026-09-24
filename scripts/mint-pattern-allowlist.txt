@@ -134,6 +134,12 @@
 # category is how a real drift gets absorbed without anyone noticing.
 
 # ── Class-method / allocating view mints ─────────────────────────────
+# The mutable view mints of the two registration tables read the atomic
+# seal word of the table.  No constant evaluation can read an atomic, and
+# -Winvalid-constexpr refuses a constexpr function that always calls a
+# function that is not constexpr.
+include/crucible/CKernel.h:mint_mutable_view:constexpr-ok
+include/crucible/SchemaTable.h:mint_mutable_view:constexpr-ok
 
 # ── bridges/ allocating session mints ────────────────────────────────
 include/crucible/bridges/SessionPersistence.h:mint_persisted_session:constexpr-ok

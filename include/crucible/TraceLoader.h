@@ -340,9 +340,12 @@ template <class Field>
             if (std::fread(name_buf, 1, name_len, trace_file.get()) != name_len) break;
             name_buf[name_len] = '\0';
             // Bounded and terminated here, which is what lets the bytes cross
-            // from untrusted file content into the table.
-            register_schema_name(*schema_table_view, SchemaHash{schema_hash_raw},
-                                 SchemaTable::SanitizedName{static_cast<const char*>(name_buf)});
+            // from untrusted file content into the table.  A seal that lands
+            // during the load ends the table here too: the table refuses
+            // every later write.
+            if (!register_schema_name(*schema_table_view, SchemaHash{schema_hash_raw},
+                                      SchemaTable::SanitizedName{static_cast<const char*>(name_buf)}))
+                break;
         }
     }
 

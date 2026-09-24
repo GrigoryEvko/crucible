@@ -210,7 +210,7 @@ static std::vector<unsigned char> make_zero_op_header() {
 }
 
 static void test_schema_name_table_round_trip() {
-    global_schema_table().clear();
+    global_schema_table().clear(::foundation::effects::testing::test());
 
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 3);  // num_names
@@ -243,7 +243,7 @@ static void test_schema_name_table_round_trip() {
 
     assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFULL})));
 
-    global_schema_table().clear();
+    global_schema_table().clear(::foundation::effects::testing::test());
     std::printf("  test_schema_name_table_round_trip: PASSED\n");
 }
 
@@ -252,7 +252,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     // minimum, the hash would be bound to the empty string left by the
     // zero-initialized buffer, and every later lookup of that hash would
     // return it.
-    global_schema_table().clear();
+    global_schema_table().clear(::foundation::effects::testing::test());
 
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names
@@ -273,7 +273,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFCAFEBABEULL})));
     assert(global_schema_table().count() == 0);
 
-    global_schema_table().clear();
+    global_schema_table().clear(::foundation::effects::testing::test());
     std::printf("  test_schema_name_table_corrupt_zero_len: PASSED\n");
 }
 
@@ -287,7 +287,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
     // dropped bound would let the read succeed and the overrun actually
     // happen.  The bound promises to stop before reading, and that is
     // what the case checks.
-    global_schema_table().clear();
+    global_schema_table().clear(::foundation::effects::testing::test());
 
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names
@@ -309,7 +309,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
     assert(missing(global_schema_table().lookup(SchemaHash{0xFEEDFACEBAADF00DULL})));
     assert(global_schema_table().count() == 0);
 
-    global_schema_table().clear();
+    global_schema_table().clear(::foundation::effects::testing::test());
     std::printf("  test_schema_name_table_corrupt_oversize_len: PASSED\n");
 }
 
@@ -469,7 +469,7 @@ static void test_meta_bytes_break_no_claim_of_the_type() {
 
 static void test_names_on_a_sealed_table_are_skipped() {
     // The trace loads, and its names stay out of the sealed table.
-    global_schema_table().clear();
+    global_schema_table().clear(::foundation::effects::testing::test());
     global_schema_table().seal();
 
     auto buf = make_zero_op_header();
@@ -488,7 +488,7 @@ static void test_names_on_a_sealed_table_are_skipped() {
     assert(global_schema_table().count() == 0);
     assert(missing(global_schema_table().lookup(SchemaHash{0x5EA1ED0000000001ULL})));
 
-    global_schema_table().clear();
+    global_schema_table().clear(::foundation::effects::testing::test());
     std::printf("  test_names_on_sealed_table:     PASSED\n");
 }
 

@@ -32,7 +32,8 @@ int main() {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
         hit_hashes[i] = SchemaHash{h};
         const auto id = static_cast<CKernelId>(1 + (i % (static_cast<uint32_t>(CKernelId::NUM_KERNELS) - 1)));
-        table.register_op(*mutable_view, hit_hashes[i], id);
+        const bool was_registered = table.register_op(*mutable_view, hit_hashes[i], id);
+        CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 
     std::printf("=== ckernel ===\n");

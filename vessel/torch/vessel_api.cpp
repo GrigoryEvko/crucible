@@ -295,28 +295,24 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexc
 
     // Before the Vigil exists the global table still accepts writes, so
     // an early registration goes there and the trace keeps one table.
-    // After crucible_create() seals it, the global table mints no view,
-    // and the registration goes to the late table instead. It is never
+    // After crucible_create() seals it, the global table mints no view, or
+    // refuses the write when the seal lands between the view and the write.
+    // Then the registration goes to the late table instead. It is never
     // dropped: returning here is what made a whole run export zero names
     // with nothing to show for it.
-    //
-    // The seal can still land after the view is minted and before the
-    // write.  Closing that window needs an atomic test-and-acquire inside
-    // SchemaTable. It requires crucible_create() to run concurrently with
-    // a registration on another thread, which no caller does: the Python
-    // controller creates during __enter__ and registers during export.
     crucible::SchemaTable::SanitizedName const name_tag{name};
     const crucible::SchemaHash hash{schema_hash};
     auto& global_table = crucible::global_schema_table();
     if (const auto global_view = global_table.mint_mutable_view()) {
-        global_table.register_name(*global_view, hash, name_tag);
-        return;
+        if (global_table.register_name(*global_view, hash, name_tag)) return;
     }
-    // Nothing seals the late table, so its view always exists.
+    // Nothing seals the late table, so its view always exists and its write
+    // always lands.
     auto& late_table = late_schema_names();
     const auto late_view = late_table.mint_mutable_view();
     CRUCIBLE_FATAL_INVARIANT(late_view.has_value());
-    late_table.register_name(*late_view, hash, name_tag);
+    const bool was_registered_late = late_table.register_name(*late_view, hash, name_tag);
+    CRUCIBLE_FATAL_INVARIANT(was_registered_late);
 }
 
 const char* crucible_schema_name(uint64_t schema_hash) noexcept {
@@ -417,8 +413,8 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     // The count is written before the records, so it has to be the
     // post-dedup count, not the sum of the two sizes.
     uint32_t num_names = table.count();
-    for (uint32_t i = 0; i < late.count(); i++)
-        if (!is_in_global(late.entries[i].hash)) num_names++;
+    for (const crucible::SchemaEntry& entry : late.entries())
+        if (!is_in_global(entry.hash)) num_names++;
     w(&num_names, 4, 1);
 
     const auto write_entry = [&w](const crucible::SchemaEntry& entry) {
@@ -429,10 +425,10 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         w(entry.name, 1, name_len);
     };
 
-    for (uint32_t i = 0; i < table.count(); i++)
-        write_entry(table.entries[i]);
-    for (uint32_t i = 0; i < late.count(); i++)
-        if (!is_in_global(late.entries[i].hash)) write_entry(late.entries[i]);
+    for (const crucible::SchemaEntry& entry : table.entries())
+        write_entry(entry);
+    for (const crucible::SchemaEntry& entry : late.entries())
+        if (!is_in_global(entry.hash)) write_entry(entry);
 
     std::fclose(f);
     return ok ? 1 : 0;

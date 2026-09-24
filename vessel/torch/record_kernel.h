@@ -1072,12 +1072,15 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     static inline std::atomic<bool> schema_name_registered{false};
 
     [[gnu::cold, gnu::noinline]] static void register_schema_name_once() {
-        // A sealed table mints no view, and the name then stays out of it.
+        // A sealed table mints no view, or refuses the write when the seal
+        // lands after the view, and the name then stays out of it.
         if (const auto view = crucible::global_schema_table().mint_mutable_view()) {
             // PyTorch's operator names are compiled into the generated headers
             // this table was built from, so the name is trusted by source.
             const QualifiedOpName name{aten_op_table[TableIndex]};
-            crucible::register_schema_name(*view, kSchemaHash, crucible::SchemaTable::SanitizedName{name.c_str()});
+            [[maybe_unused]] const bool was_registered =
+                crucible::register_schema_name(*view, kSchemaHash, crucible::SchemaTable::SanitizedName{name.c_str()});
+            CRUCIBLE_DEBUG_ASSERT(was_registered || crucible::global_schema_table().is_sealed());
         }
         schema_name_registered.store(true, std::memory_order_relaxed);
     }

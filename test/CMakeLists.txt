@@ -1981,6 +1981,13 @@ crucible_test(test_crash_watched_psh_tsan
 crucible_test(test_crash_watched_recv_toctou_tsan
   tsan/test_crash_watched_recv_toctou_tsan.cpp)
 
+# Registration against the seal on the schema and kernel tables.  Writers
+# register through a view minted before the seal, and a reader reads the
+# sealed table with no lock.  Under the tsan preset, a write after the seal
+# races the reader and stops the test.
+crucible_test(test_registration_seal_race
+  tsan/test_registration_seal_race.cpp)
+
 # AppendOnly session event log + RecordingSessionHandle wrapper
 # (#404, SAFEINT-B15).  Promotes bit-exact-replay discipline from an
 # ad-hoc trace into a typed structure: SessionEventLog (Pinned,
@@ -11447,6 +11454,22 @@ crucible_neg_compile_multi_test(neg_schema_mutable_view_unchecked
 crucible_neg_compile_multi_test(neg_ckernel_mutable_view_unchecked
   "cannot convert .std::optional<crucible::safety::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
   "neg_ckernel_mutable_view_unchecked.cpp:12")
+
+# Lock-free readers read a sealed table, so every write goes through the
+# view and the seal phase.  The entry arrays are private, and clear(), which
+# opens a sealed table again, takes the test context.
+crucible_neg_compile_multi_test(neg_schema_table_entries_private
+  "is private within this context"
+  "crucible::SchemaTable::entries_")
+crucible_neg_compile_multi_test(neg_ckernel_table_entries_private
+  "is private within this context"
+  "crucible::CKernelTable::entries_")
+crucible_neg_compile_multi_test(neg_schema_table_clear_needs_test_context
+  "no matching function for call to"
+  "crucible::SchemaTable::clear..")
+crucible_neg_compile_multi_test(neg_ckernel_table_clear_needs_test_context
+  "no matching function for call to"
+  "crucible::CKernelTable::clear..")
 
 # FIXY-U-137 — HS14 floor for CrucibleContext::mint_compiled_view.
 # CrucibleContext has only one typed view (CompiledView; no companion
