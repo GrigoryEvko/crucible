@@ -708,6 +708,16 @@ fixy_neg_compile_test(neg_declassify_policy_planted_in_catalog
   "template constraint failure for .template<class Policy>  requires  IsDeclassificationPolicy<Policy> struct fixy::atom::declassify."
   "is_catalog_policy_.+\\[with Policy = fixy::tags::secret_policy::PlantedRelease\\]. evaluated to .false.")
 
+# The syscall atoms are closed over the catalog of fixy/atoms/Syscall.h.
+# A call id or a family that a cast makes from a number outside the
+# catalog is refused at the constraint of its atom.
+fixy_neg_compile_test(neg_syscall_per_outside_the_catalog
+  "template constraint failure for .template<fixy::atom::syscall::SyscallId Id>  requires  is_catalogued_call_\\(fixy::atom::syscall::SyscallId\\)\\(Id\\) struct fixy::atom::syscall::per."
+  "is_catalogued_call_\\(fixy::atom::syscall::SyscallId\\)\\(Id\\) \\[with Id = \\(fixy::atom::syscall::SyscallId\\)99\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_syscall_family_outside_the_chain
+  "template constraint failure for .template<fixy::atom::syscall::SyscallFamily F>  requires  is_catalogued_family_\\(fixy::atom::syscall::SyscallFamily\\)\\(F\\) struct fixy::atom::syscall::family."
+  "is_catalogued_family_\\(fixy::atom::syscall::SyscallFamily\\)\\(F\\) \\[with F = \\(fixy::atom::syscall::SyscallFamily\\)9\\]. evaluated to .false.")
+
 # ── Fixy/Refined.h ────────────────────────────────────────────────────
 
 fixy_test(test_refined)

@@ -303,7 +303,8 @@ static_assert(every_lifting_atom_needs_its_row(),
 // The lift walk is only as strong as the number of atoms that lift.
 static_assert(lifting_atoms() >= 30, "fewer than thirty rostered atoms carry a lift, so the context-fit walk "
                                      "covers much less than it did.  The SyscallSurface families of "
-                                     "fixy/atoms/Os.h are what lift, and the current count is 39.");
+                                     "fixy/atoms/Os.h and fixy/atoms/Syscall.h are most of what lifts, and "
+                                     "the current count is 102.");
 
 #pragma GCC diagnostic pop
 

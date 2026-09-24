@@ -1,12 +1,11 @@
 #pragma once
 
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/syscall/Per.h>
 #include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_Refined.h>
+#include <fixy/atoms/Syscall.h>
 
 #include <array>
 #include <cstdint>
@@ -198,27 +197,23 @@ template <class Ctx>
 concept CtxFitsSenseHubMint = ::crucible::effects::IsExecCtx<Ctx>
                            && ::crucible::effects::Subrow<sense_hub_required_row, typename Ctx::row_type>;
 
-// These grants classify the privileged syscalls the load path issues.
+// These atoms classify the privileged syscalls the load path issues.
 // They do not tighten the effect row.  The row gate above does that.
-using mint_sense_hub_syscall_grants =
-    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+using sense_hub_syscall_atoms =
+    std::tuple<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::bpf>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::perf_event_open>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mmap>>;
 
-namespace detail::v179_sense_hub_grant_check {
-namespace fsc = ::crucible::fixy::grant::syscall;
-namespace fll = ::crucible::algebra::lattices;
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::bpf>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::perf_event_open>>
-              == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
-              == fll::SyscallFamily::MemoryMapping);
-static_assert(std::tuple_size_v<mint_sense_hub_syscall_grants> == 3,
-              "mint_sense_hub_syscall_grants must list exactly 3 syscalls.  "
-              "A syscall added to SenseHub::load() needs one more "
-              "per<SyscallId::X> in the tuple, an append-only SyscallId "
-              "enumerator, and a family_tier_v check here.");
-}  // namespace detail::v179_sense_hub_grant_check
+namespace detail::sense_hub_syscall_check {
+namespace sc = ::fixy::atom::syscall;
+static_assert(sc::per<sc::SyscallId::bpf>::family == sc::SyscallFamily::Privilege);
+static_assert(sc::per<sc::SyscallId::perf_event_open>::family == sc::SyscallFamily::Privilege);
+static_assert(sc::per<sc::SyscallId::mmap>::family == sc::SyscallFamily::MemoryMapping);
+static_assert(std::tuple_size_v<sense_hub_syscall_atoms> == 3,
+              "sense_hub_syscall_atoms must list exactly 3 syscalls.  A syscall added to SenseHub::load() needs "
+              "one more per<SyscallId::X> in the tuple, an append-only SyscallId enumerator with a row in "
+              "fixy/atoms/Syscall.h, and a family check here.");
+}  // namespace detail::sense_hub_syscall_check
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubMint<Ctx>

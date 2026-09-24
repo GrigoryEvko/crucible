@@ -116,6 +116,7 @@ namespace spawn {}
 namespace stack {}
 namespace stdio {}
 namespace sync {}
+namespace syscall {}
 
 // The seal of one admitted namespace.  It carries no data: its position
 // is the whole claim, the namespace and the file that declare it.
@@ -128,6 +129,7 @@ namespace detail {
 inline constexpr std::meta::info atom_families[] = {
     ^^barrier, ^^ctrl,    ^^dispatch, ^^fp,    ^^global, ^^hw,    ^^io,    ^^fs,    ^^mmap, ^^leak,
     ^^observe, ^^regime,  ^^scope,    ^^session, ^^simd, ^^spawn, ^^stack, ^^stdio, ^^sync,
+    ^^syscall,
 };
 
 // Why a type with the shape of an atom is refused, or none.

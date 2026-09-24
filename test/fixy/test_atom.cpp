@@ -1,4 +1,4 @@
-// Sentinel TU for fixy/Atom.h and the six family headers under
+// Sentinel TU for fixy/Atom.h and the seven family headers under
 // fixy/atoms/: every family's roster walks as atoms, every atom's axis
 // is an enumerator of fixy::Axis, every OS atom lifts to an effect row,
 // the halves of the recipe on their own are not atoms, and the atoms
@@ -11,6 +11,7 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
+#include <fixy/atoms/Syscall.h>
 #include <fixy/Axis.h>
 
 #include <foundation/effects/Effect.h>
@@ -94,8 +95,12 @@ static_assert(every_atom_axis_is_an_enumerator());
 static_assert(every_atom_axis_has_a_name());
 
 // An OS atom's lift is a Row, and the three families lift to IO and
-// Block.  The core families do not lift at all.
+// Block.  A system-call atom lifts to the row of its family, and
+// fixy/atoms/Syscall.h runs the roster walks of that family.  The core
+// families do not lift at all.
 static_assert(fad::every_roster_member_lifts_<fad::os_atom_roster>());
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::futex>>, fe::Row<fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::SyscallFamily::VdsoOnly>>, fe::Row<>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::io::engine<::fixy::io::engine::IoUring>>,
                              fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::fs::mode<::fixy::fs::open_mode::ReadOnly>>,

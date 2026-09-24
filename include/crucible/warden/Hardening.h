@@ -12,8 +12,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/syscall/Per.h>
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h>
+#include <fixy/atoms/Syscall.h>
 
 #include <bit>
 #include <cerrno>
@@ -463,51 +462,40 @@ concept CtxFitsHardeningMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapabi
 // scripts/check-syscall-grant-coverage.sh derives this set from the
 // call sites in this header and fails when the two disagree, so the
 // list is checked against the code rather than against its own prose.
-using mint_hardening_syscall_grants =
-    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_setaffinity>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_setattr>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mlock>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mlock2>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::munlock>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::madvise>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::prctl>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_getaffinity>,
-               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_getattr>>;
+using hardening_syscall_atoms =
+    std::tuple<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setaffinity>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setattr>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mlock>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mlock2>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::munlock>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::madvise>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::prctl>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_getaffinity>,
+               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_getattr>>;
 
-// Each grant's declared family is checked against the classifier here,
-// so a disagreement fails while this header is parsed rather than at
-// some later call site.
-namespace detail::hardening_grant_check {
-namespace fsc = ::crucible::fixy::grant::syscall;
-namespace fll = ::crucible::algebra::lattices;
+// The family of each atom is checked against the table here, so a
+// disagreement fails while this header is parsed rather than at some
+// later call site.
+namespace detail::hardening_syscall_check {
+namespace sc = ::fixy::atom::syscall;
 
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::sched_setaffinity>>
-              == fll::SyscallFamily::ThreadSync);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::sched_setattr>>
-              == fll::SyscallFamily::ThreadSync);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mlock>>
-              == fll::SyscallFamily::MemoryMapping);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mlock2>>
-              == fll::SyscallFamily::MemoryMapping);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::munlock>>
-              == fll::SyscallFamily::MemoryMapping);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::madvise>>
-              == fll::SyscallFamily::MemoryMapping);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::prctl>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::sched_getaffinity>>
-              == fll::SyscallFamily::ThreadSync);
-static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::sched_getattr>>
-              == fll::SyscallFamily::ThreadSync);
+static_assert(sc::per<sc::SyscallId::sched_setaffinity>::family == sc::SyscallFamily::ThreadSync);
+static_assert(sc::per<sc::SyscallId::sched_setattr>::family == sc::SyscallFamily::ThreadSync);
+static_assert(sc::per<sc::SyscallId::mlock>::family == sc::SyscallFamily::MemoryMapping);
+static_assert(sc::per<sc::SyscallId::mlock2>::family == sc::SyscallFamily::MemoryMapping);
+static_assert(sc::per<sc::SyscallId::munlock>::family == sc::SyscallFamily::MemoryMapping);
+static_assert(sc::per<sc::SyscallId::madvise>::family == sc::SyscallFamily::MemoryMapping);
+static_assert(sc::per<sc::SyscallId::prctl>::family == sc::SyscallFamily::Privilege);
+static_assert(sc::per<sc::SyscallId::sched_getaffinity>::family == sc::SyscallFamily::ThreadSync);
+static_assert(sc::per<sc::SyscallId::sched_getattr>::family == sc::SyscallFamily::ThreadSync);
 
-static_assert(std::tuple_size_v<mint_hardening_syscall_grants> == 9,
-              "mint_hardening_syscall_grants no longer holds 9 entries. A syscall "
-              "added to Hardening::apply() needs an entry in the tuple and a family "
-              "check beside it. A syscall removed from the set changes the cache key "
-              "derived from it, so audit the removal first. This count agrees with "
-              "the code only because scripts/check-syscall-grant-coverage.sh derives "
-              "the set from the call sites; a hand-written count is a claim about "
-              "the code that nothing reads the code to confirm.");
-}  // namespace detail::hardening_grant_check
+static_assert(std::tuple_size_v<hardening_syscall_atoms> == 9,
+              "hardening_syscall_atoms no longer holds 9 entries.  A syscall added to Hardening::apply() needs "
+              "an entry in the tuple and a family check beside it.  A syscall removed from the set changes the "
+              "cache key derived from it, so audit the removal first.  This count agrees with the code only "
+              "because scripts/check-syscall-grant-coverage.sh derives the set from the call sites.  A "
+              "hand-written count is a claim about the code that nothing reads the code to confirm.");
+}  // namespace detail::hardening_syscall_check
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>

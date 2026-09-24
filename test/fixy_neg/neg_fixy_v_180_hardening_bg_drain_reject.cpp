@@ -4,8 +4,8 @@
 // CtxFitsHardeningMint rejects BgDrainCtx because the bg-drain row carries
 // Effect::Bg (background-drain capability) but NOT Effect::Init.
 // Hardening::apply() issues privileged Linux syscalls (sched_setattr,
-// mlock2, prctl, etc. per V-180's mint_hardening_syscall_grants
-// declaration) that are process-wide startup-only mutations.  Running
+// mlock2, prctl and the others that hardening_syscall_atoms lists)
+// that are process-wide startup-only mutations.  Running
 // them from a bg-drain thread would race the warden's own pinning
 // against other bg workers and silently corrupt the process posture.
 //

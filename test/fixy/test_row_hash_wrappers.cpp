@@ -37,6 +37,7 @@
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
+#include <fixy/atoms/Syscall.h>
 #include <fixy/Axis.h>
 #include <fixy/Bands.h>
 #include <fixy/Bits.h>
@@ -648,6 +649,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::atom::stdio, kGradeVocabulary},
     {^^::fixy::atom::stdio::streams, kGradeVocabulary},
     {^^::fixy::atom::sync, kGradeVocabulary},
+    {^^::fixy::atom::syscall, kGradeVocabulary},
     {^^::fixy::atom::spawn, kGradeVocabulary},
     {^^::fixy::io::engine, kGradeVocabulary},
     {^^::fixy::io::zerocopy, kGradeVocabulary},

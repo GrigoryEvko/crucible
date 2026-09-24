@@ -71,6 +71,7 @@
 #include <fixy/atoms/Stack.h>
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
+#include <fixy/atoms/Syscall.h>
 #include <fixy/Secret.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Modality.h>
@@ -185,7 +186,8 @@ using all_atom_roster =
                                        ::fixy::atom::detail::simd_atom_roster,
                                        ::fixy::atom::detail::stack_atom_roster,
                                        ::fixy::atom::detail::stdio_atom_roster,
-                                       ::fixy::atom::detail::sync_atom_roster>;
+                                       ::fixy::atom::detail::sync_atom_roster,
+                                       ::fixy::atom::detail::syscall_atom_roster>;
 
 namespace detail {
 

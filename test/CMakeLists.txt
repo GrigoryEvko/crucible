@@ -309,8 +309,8 @@ crucible_test(test_fixy_v_273_async_pipeline_session)   # FIXY-V-273 sessions/As
 crucible_test(test_fixy_v_274_async_pipeline)           # FIXY-V-274 fixy/AsyncPipeline.h — mint_async_pipeline derives Stages from live-set width + Bytes=Refined<equals_slot_size> from the MemoryPlan
 crucible_test(test_fixy_v_203_spawn_join_policy)        # FIXY-V-203 fixy/spawn/JoinPolicy.h — spawn-MECHANISM phantom tag tree (AutoJoin/ManualJoin/Detached/Cloned/Forked/PosixSpawn) + IsJoinMechanismTag identity allowlist (Agent 7 §fixy::spawn::; orthogonal to V-078 strictness lattice)
 crucible_test(test_fixy_v_204_spawn_grant)              # FIXY-V-204 fixy/spawn/SpawnGrant.h — 5 engagement grants (detach_with/syscall_only/subprocess/fork_parent/exec_ctx) + rationale_nonempty_v in-class static_assert + JoinPolicyGrantsCoherent V-203×V-204 bridge concept (Agent 7 §fixy::spawn::)
-crucible_test(test_fixy_v_180_hardening_syscall_grants) # FIXY-V-180 warden/Hardening.h — mint_hardening_syscall_grants 7-tuple + SyscallId universe extension (sched_setattr/mlock/mlock2/munlock/prctl at ordinals 36-40, append-only) + family_tier + V-100 Bridge row-lift pin (Agent 3 Σ4)
-crucible_test(test_fixy_v_179_perf_hubs_syscall_grants) # FIXY-V-179 perf/{SenseHub,PmuSample,LockContention,SchedSwitch,SchedTpBtf,SyscallTpBtf,SyscallLatency}.h — 7 mint_<hub>_syscall_grants 3-tuples + SyscallId universe extension (bpf/perf_event_open at ordinals 41-42, append-only Privilege-tier) + family_tier + V-100 Bridge row-lift pin (Agent 3 Σ3)
+crucible_test(test_hardening_syscall_atoms) # warden/Hardening.h: the syscall atoms of the apply path, their ordinals and the rows they lift to
+crucible_test(test_perf_syscall_atoms) # perf/*.h: the syscall atoms of the seven hub load paths and the context gate of each mint
 crucible_test(test_fixy_v_004_wrapper_for)              # FIXY-V-004 safety/DimensionTraits.h + fixy/Dim.h — WrapperKind enum (33 entries, append-only) + wrapper_kind_to_axis switch + count_wrappers_on_axis + wrapper_for<DimensionAxis>() reverse-lookup metafunction (one-to-many inverse of wrapper_dimension<W>::value, reflection-driven via template for over enumerators_of)
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
@@ -15927,7 +15927,7 @@ crucible_neg_compile_fixy_test(neg_fixy_v_180_hardening_hot_fg_reject
 # ── FIXY-V-179 — perf hub syscall-grant annotations HS14 floor ──────
 #
 # Two fixtures cover distinct Init-rejection axes across the 7 perf
-# hubs (the syscall_grants tuples + CtxFits*Mint gates are siblings):
+# hubs (the syscall_atoms tuples and the CtxFits*Mint gates are siblings):
 #   1. bg_drain_reject — Bg-cap context, mint_sense_hub call site
 #      (admits Bg+Alloc+IO+Block, no Init).  Perf hubs' bpf()/perf_event_open
 #      load is startup-only.

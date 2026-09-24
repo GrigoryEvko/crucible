@@ -6,12 +6,12 @@
 # ── WHY THIS EXISTS ──────────────────────────────────────────────────
 #
 # include/crucible/warden/Hardening.h publishes
-# mint_hardening_syscall_grants: a type-level tuple naming every
-# privileged system call the apply path issues.  That tuple is the
-# auditable claim about what this code does to the kernel.
+# hardening_syscall_atoms: a type-level tuple of fixy/atoms/Syscall.h
+# atoms naming every privileged system call the apply path issues.  That
+# tuple is the auditable claim about what this code does to the kernel.
 #
 # Beside it sit a tuple_size static_assert and
-# test/test_fixy_v_180_hardening_syscall_grants.cpp, which asserts the
+# test/test_hardening_syscall_atoms.cpp, which asserts the
 # count and each element by index.  Neither reads the call sites.  Both
 # compare the list against a second copy of the same list, written by
 # the same hand, so a syscall the code issues but the list omits leaves
@@ -75,7 +75,7 @@ USAGE
 # The header under audit, and the tuple inside it.  Kept as variables so
 # --self-test can point the same logic at a planted fixture.
 HEADER_REL="include/crucible/warden/Hardening.h"
-TUPLE_NAME="mint_hardening_syscall_grants"
+TUPLE_NAME="hardening_syscall_atoms"
 
 # ── Derive the set the code issues ───────────────────────────────────
 #
@@ -283,11 +283,12 @@ to the kernel, so a smaller tuple understates the claim and a larger one
 overstates it.
 
   issued but not granted — add per<SyscallId::<name>> to the tuple, add a
-    family_tier_v static_assert beside it, bump the tuple_size assert,
-    and extend test/test_fixy_v_180_hardening_syscall_grants.cpp.  If the
+    family static_assert beside it, raise the tuple_size assert,
+    and extend test/test_hardening_syscall_atoms.cpp.  If the
     enumerator does not exist yet, append it at the next free ordinal in
-    include/crucible/fixy/syscall/Per.h (ordinals are append-only — an
-    existing one keeps its value so federation cache keys never drift).
+    include/fixy/atoms/Syscall.h with one row in its family table
+    (ordinals are append-only — an existing one keeps its value so
+    federation cache keys never drift).
 
   granted but never issued — either the call was removed and the grant
     should go with it, or the call moved out of this header.  A grant
