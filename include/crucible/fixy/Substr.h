@@ -19,7 +19,6 @@
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedChainEdge.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/concurrent/PermissionedMetaLog.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
@@ -34,7 +33,6 @@
 #include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>
-#include <crucible/sessions/MetaLogSession.h>
 #include <crucible/sessions/MpmcChannelSession.h>
 #include <crucible/sessions/ShardedCalendarGridSession.h>
 #include <crucible/sessions/ShardedGridSession.h>
@@ -177,36 +175,6 @@ using ::crucible::safety::proto::chaselev_session::mint_chaselev_thief;
 using ::crucible::safety::proto::chaselev_session::mint_owner_session;
 using ::crucible::safety::proto::chaselev_session::mint_thief_session;
 }  // namespace chaselev
-
-namespace metalog {
-using MetaLogRecord = ::crucible::safety::proto::metalog_session::MetaLogRecord;
-
-using ProducerProto = ::crucible::safety::proto::metalog_session::ProducerProto;
-
-using ConsumerProto = ::crucible::safety::proto::metalog_session::ConsumerProto;
-
-template <typename Log>
-concept MetaLogSessionSurface = ::crucible::safety::proto::metalog_session::MetaLogSessionSurface<Log>;
-
-template <typename UserTag = void>
-using PermissionedMetaLog = ::crucible::concurrent::PermissionedMetaLog<UserTag>;
-
-using ::crucible::MetaIndex;
-
-namespace metalog_tag {
-template <typename UserTag>
-using Whole = ::crucible::concurrent::metalog_tag::Whole<UserTag>;
-template <typename UserTag>
-using Producer = ::crucible::concurrent::metalog_tag::Producer<UserTag>;
-template <typename UserTag>
-using Consumer = ::crucible::concurrent::metalog_tag::Consumer<UserTag>;
-}  // namespace metalog_tag
-
-using ::crucible::safety::proto::metalog_session::mint_metalog_producer;
-using ::crucible::safety::proto::metalog_session::mint_metalog_consumer;
-using ::crucible::safety::proto::metalog_session::mint_metalog_producer_session;
-using ::crucible::safety::proto::metalog_session::mint_metalog_consumer_session;
-}  // namespace metalog
 
 namespace chainedge {
 using Signal = ::crucible::safety::proto::chainedge_session::Signal;
@@ -512,14 +480,6 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 
 namespace crucible::fixy::substr::self_test {
 
-static_assert(std::is_same_v<::crucible::fixy::substr::metalog::MetaLogRecord,
-                             ::crucible::safety::proto::metalog_session::MetaLogRecord>,
-              "fixy::substr::metalog::MetaLogRecord must alias the substrate.");
-
-static_assert(std::is_same_v<::crucible::fixy::substr::metalog::ProducerProto,
-                             ::crucible::safety::proto::metalog_session::ProducerProto>,
-              "fixy::substr::metalog::ProducerProto must alias the substrate.");
-
 static_assert(
     std::is_same_v<::crucible::fixy::substr::chainedge::Signal, ::crucible::safety::proto::chainedge_session::Signal>,
     "fixy::substr::chainedge::Signal must alias the substrate.");
@@ -815,44 +775,6 @@ static_assert(std::is_same_v<typename GridViaFixy::value_type, int>);
 
 }  // namespace v050
 
-namespace v051 {
-
-struct V051ProbeUserTag {};
-
-using LogViaFixy = ::crucible::fixy::substr::metalog::PermissionedMetaLog<V051ProbeUserTag>;
-using LogViaConcurrent = ::crucible::concurrent::PermissionedMetaLog<V051ProbeUserTag>;
-static_assert(std::is_same_v<LogViaFixy, LogViaConcurrent>,
-              "fixy::substr::metalog::PermissionedMetaLog must alias the substrate.");
-
-static_assert(std::is_same_v<::crucible::fixy::substr::metalog::MetaIndex, ::crucible::MetaIndex>,
-              "fixy::substr::metalog::MetaIndex must alias ::crucible::MetaIndex.");
-
-static_assert(std::is_same_v<::crucible::fixy::substr::metalog::metalog_tag::Whole<V051ProbeUserTag>,
-                             ::crucible::concurrent::metalog_tag::Whole<V051ProbeUserTag>>);
-static_assert(std::is_same_v<::crucible::fixy::substr::metalog::metalog_tag::Producer<V051ProbeUserTag>,
-                             ::crucible::concurrent::metalog_tag::Producer<V051ProbeUserTag>>);
-static_assert(std::is_same_v<::crucible::fixy::substr::metalog::metalog_tag::Consumer<V051ProbeUserTag>,
-                             ::crucible::concurrent::metalog_tag::Consumer<V051ProbeUserTag>>);
-
-static_assert(std::is_same_v<typename LogViaFixy::whole_tag,
-                             ::crucible::fixy::substr::metalog::metalog_tag::Whole<V051ProbeUserTag>>);
-static_assert(std::is_same_v<typename LogViaFixy::producer_tag,
-                             ::crucible::fixy::substr::metalog::metalog_tag::Producer<V051ProbeUserTag>>);
-static_assert(std::is_same_v<typename LogViaFixy::consumer_tag,
-                             ::crucible::fixy::substr::metalog::metalog_tag::Consumer<V051ProbeUserTag>>);
-
-static_assert(::crucible::fixy::substr::metalog::MetaLogSessionSurface<LogViaFixy>);
-
-static_assert(std::is_same_v<typename LogViaFixy::value_type, ::crucible::TensorMeta>);
-static_assert(std::is_same_v<typename LogViaFixy::value_type, ::crucible::fixy::substr::metalog::MetaLogRecord>);
-
-static_assert(std::is_same_v<::crucible::fixy::substr::metalog::ProducerProto,
-                             ::crucible::safety::proto::metalog_session::ProducerProto>);
-static_assert(std::is_same_v<::crucible::fixy::substr::metalog::ConsumerProto,
-                             ::crucible::safety::proto::metalog_session::ConsumerProto>);
-
-}  // namespace v051
-
 namespace v052 {
 
 struct V052ProbeUserTag {};
@@ -918,7 +840,6 @@ static_assert(std::is_same_v<::crucible::fixy::substr::chainedge::WaiterProto,
 constexpr int substr_spsc_using = 3;
 constexpr int substr_swmr_using = 6;
 constexpr int substr_chaselev_using = 5;
-constexpr int substr_metalog_using = 5;
 constexpr int substr_chainedge_using = 5;
 constexpr int substr_mpmc_using = 5;
 constexpr int substr_calendar_grid_using = 5;
@@ -927,12 +848,12 @@ constexpr int substr_sharded_grid_using = 7;
 constexpr int substr_snapshot_using = 4;
 constexpr int substr_outer_using = 1;
 
-constexpr int substr_total_using = substr_spsc_using + substr_swmr_using + substr_chaselev_using + substr_metalog_using
+constexpr int substr_total_using = substr_spsc_using + substr_swmr_using + substr_chaselev_using
                                  + substr_chainedge_using + substr_mpmc_using + substr_calendar_grid_using
                                  + substr_sharded_calendar_grid_using + substr_sharded_grid_using
                                  + substr_snapshot_using + substr_outer_using;
 
-static_assert(substr_total_using == 51, "fixy::substr:: using-decl surface drifted from 51 — the "
+static_assert(substr_total_using == 46, "fixy::substr:: using-decl surface drifted from 46 — the "
                                         "sub-namespace re-exports and this sentinel must update in lockstep.");
 
 // A concept has no type to compare.  These checks pin the two paths

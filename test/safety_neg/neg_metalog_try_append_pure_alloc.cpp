@@ -12,10 +12,9 @@
 // IsPure<Row<Effect::Alloc>>.
 
 #include <crucible/MetaLog.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <fixy/Aliases.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::fixy;
 
 int main() {
     crucible::MetaLog log;

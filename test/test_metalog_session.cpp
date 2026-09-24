@@ -58,6 +58,19 @@ static_assert(std::is_same_v<ConsumerSession::perm_set, fp::EmptyPermSet>);
 static_assert(std::is_same_v<ProducerSession::resource_type, PermissionedLog::ProducerHandle>);
 static_assert(std::is_same_v<ConsumerSession::resource_type, PermissionedLog::ConsumerHandle>);
 
+// A handle is exactly one pointer.  The permission token it carries is
+// empty and collapses into the binding.
+static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(::crucible::MetaLog*));
+static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(::crucible::MetaLog*));
+
+// The wrapper names one MetaLog for life, so it has no copy and no move.
+static_assert(std::is_same_v<PermissionedLog::value_type, ::crucible::TensorMeta>);
+static_assert(std::is_same_v<PermissionedLog::value_type, ms::MetaLogRecord>);
+static_assert(!std::is_copy_constructible_v<PermissionedLog>);
+static_assert(!std::is_move_constructible_v<PermissionedLog>);
+static_assert(!std::is_copy_assignable_v<PermissionedLog>);
+static_assert(!std::is_move_assignable_v<PermissionedLog>);
+
 int total_passed = 0;
 int total_failed = 0;
 
@@ -135,6 +148,97 @@ void test_permissioned_bulk_drain() {
         CRUCIBLE_TEST_REQUIRE(same_meta(drained[i], records[i]));
     }
     CRUCIBLE_TEST_REQUIRE(consumer.tail_index() == records.size());
+}
+
+void test_single_append_drain() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto [producer, consumer] = mint_handles(log);
+
+    const ::crucible::TensorMeta source = make_meta(42);
+    CRUCIBLE_TEST_REQUIRE(producer.try_append_one(source));
+
+    auto drained = consumer.try_drain_one();
+    CRUCIBLE_TEST_REQUIRE(drained.has_value());
+    CRUCIBLE_TEST_REQUIRE(same_meta(*drained, source));
+
+    auto empty = consumer.try_drain_one();
+    CRUCIBLE_TEST_REQUIRE(!empty.has_value());
+}
+
+// A drain with a limit stops at the limit, and the next drain takes the
+// records that stay.
+void test_partial_drain() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto [producer, consumer] = mint_handles(log);
+
+    const std::array<::crucible::TensorMeta, 5> source{
+        make_meta(1), make_meta(2), make_meta(3), make_meta(4), make_meta(5),
+    };
+    const ::crucible::MetaIndex start = producer.try_append(source.data(), static_cast<std::uint32_t>(source.size()));
+    CRUCIBLE_TEST_REQUIRE(start.is_valid());
+    CRUCIBLE_TEST_REQUIRE(start.raw() == 0);
+
+    std::array<::crucible::TensorMeta, 3> first_three{};
+    std::size_t next = 0;
+    const std::uint32_t drained_count =
+        consumer.drain([&](const ::crucible::TensorMeta& meta) { first_three[next++] = meta; },
+                       /*max_items=*/3);
+    CRUCIBLE_TEST_REQUIRE(drained_count == 3);
+    CRUCIBLE_TEST_REQUIRE(next == 3);
+    for (std::size_t i = 0; i < first_three.size(); ++i) {
+        CRUCIBLE_TEST_REQUIRE(same_meta(first_three[i], source[i]));
+    }
+    CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 2);
+    CRUCIBLE_TEST_REQUIRE(producer.size_approx() == 2);
+
+    std::array<::crucible::TensorMeta, 2> rest{};
+    std::size_t rest_next = 0;
+    const std::uint32_t remaining =
+        consumer.drain([&](const ::crucible::TensorMeta& meta) { rest[rest_next++] = meta; });
+    CRUCIBLE_TEST_REQUIRE(remaining == 2);
+    CRUCIBLE_TEST_REQUIRE(same_meta(rest[0], source[3]));
+    CRUCIBLE_TEST_REQUIRE(same_meta(rest[1], source[4]));
+    CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 0);
+}
+
+// A bulk append returns the index of the first record it wrote, and at()
+// reads a record by that index.
+void test_metaindex_propagates() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto [producer, consumer] = mint_handles(log);
+
+    const std::array<::crucible::TensorMeta, 2> first{make_meta(10), make_meta(20)};
+    const std::array<::crucible::TensorMeta, 3> second{make_meta(30), make_meta(40), make_meta(50)};
+
+    const ::crucible::MetaIndex idx_first = producer.try_append(first.data(), static_cast<std::uint32_t>(first.size()));
+    CRUCIBLE_TEST_REQUIRE(idx_first.is_valid());
+    CRUCIBLE_TEST_REQUIRE(idx_first.raw() == 0);
+
+    const ::crucible::MetaIndex idx_second =
+        producer.try_append(second.data(), static_cast<std::uint32_t>(second.size()));
+    CRUCIBLE_TEST_REQUIRE(idx_second.is_valid());
+    CRUCIBLE_TEST_REQUIRE(idx_second.raw() == first.size());
+
+    CRUCIBLE_TEST_REQUIRE(same_meta(consumer.at(::crucible::MetaIndex{0}), first[0]));
+    CRUCIBLE_TEST_REQUIRE(same_meta(consumer.at(::crucible::MetaIndex{2}), second[0]));
+}
+
+void test_empty_drain() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto [producer, consumer] = mint_handles(log);
+    (void)producer;
+
+    std::size_t visited = 0;
+    const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta&) { ++visited; });
+    CRUCIBLE_TEST_REQUIRE(count == 0);
+    CRUCIBLE_TEST_REQUIRE(visited == 0);
+    CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 0);
+    CRUCIBLE_TEST_REQUIRE(consumer.tail_index() == 0);
+    CRUCIBLE_TEST_REQUIRE(consumer.head_index() == 0);
 }
 
 // The producer holds its session through the mint.  The consumer lends its
@@ -217,6 +321,10 @@ void test_session_gives_the_handle_back() {
 int main() {
     std::fprintf(stderr, "[test_metalog_session]\n");
     run_test("permissioned_bulk_drain", test_permissioned_bulk_drain);
+    run_test("single_append_drain", test_single_append_drain);
+    run_test("partial_drain", test_partial_drain);
+    run_test("metaindex_propagates", test_metaindex_propagates);
+    run_test("empty_drain", test_empty_drain);
     run_test("typed_session_round_trip", test_typed_session_round_trip);
     run_test("session_gives_the_handle_back", test_session_gives_the_handle_back);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);

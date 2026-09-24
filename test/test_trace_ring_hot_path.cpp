@@ -4,12 +4,10 @@
 // never tightened toward a stronger one, which is what keeps a value
 // produced off the hot path out of a hot-path consumer.
 //
-// The ring's tier is the fixy band.  The metadata log still returns the
-// band of the old substrate, so its cases read that spelling.
+// The ring and the metadata log return the same fixy band.
 
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
-#include <crucible/safety/_HotPath.h>
 #include <fixy/Bands.h>
 #include "test_assert.h"
 
@@ -81,11 +79,10 @@ static void test_drain_pinned_type_identity() {
 static void test_metalog_try_append_pinned_type_identity() {
     auto log = std::make_unique<MetaLog>();
 
-    using OldTier = ::crucible::safety::HotPathTier_v;
     using Got = decltype(log->try_append_pinned(static_cast<const TensorMeta*>(nullptr), 0u));
-    using Want = ::crucible::safety::HotPath<OldTier::Hot, MetaIndex>;
+    using Want = HotPath<HotPathTier_v::Hot, MetaIndex>;
     static_assert(std::is_same_v<Got, Want>, "MetaLog::try_append_pinned must return HotPath<Hot, MetaIndex>");
-    static_assert(Got::tier == OldTier::Hot);
+    static_assert(::fixy::band_tier_v<Got> == HotPathTier_v::Hot);
 
     TensorMeta meta{};
     meta.ndim = 1;
@@ -197,8 +194,8 @@ static void test_metalog_full_buffer_type_pin_survives_failure() {
     meta.sizes[0] = ::crucible::tensor_dim(1);
     meta.strides[0] = ::crucible::tensor_dim(1);
 
-    using NonePathT = ::crucible::safety::HotPath<::crucible::safety::HotPathTier_v::Hot, MetaIndex>;
-    NonePathT none_path{MetaIndex::none()};
+    using NonePathT = HotPath<HotPathTier_v::Hot, MetaIndex>;
+    NonePathT none_path{MetaIndex::none(), {}};
     static_assert(std::is_same_v<decltype(log->try_append_pinned(&meta, 1)), NonePathT>);
     MetaIndex idx = std::move(none_path).consume();
     assert(!idx.is_valid());

@@ -10,7 +10,6 @@ namespace fs = ::crucible::fixy::substr;
 namespace cspsc = ::crucible::safety::proto::spsc_session;
 namespace cswmr = ::crucible::safety::proto::swmr_session;
 namespace cchl = ::crucible::safety::proto::chaselev_session;
-namespace cmet = ::crucible::safety::proto::metalog_session;
 namespace cce = ::crucible::safety::proto::chainedge_session;
 namespace cmpmc = ::crucible::safety::proto::mpmc_channel_session;
 namespace ccal = ::crucible::safety::proto::calendar_grid_session;
@@ -42,10 +41,6 @@ struct ThiefTag {};
 static_assert(std::is_same_v<fs::chaselev::OwnerProto<int>, cchl::OwnerProto<int>>);
 static_assert(std::is_same_v<fs::chaselev::ThiefProto<int, test_substr_chaselev::ThiefTag>,
                              cchl::ThiefProto<int, test_substr_chaselev::ThiefTag>>);
-
-static_assert(std::is_same_v<fs::metalog::MetaLogRecord, cmet::MetaLogRecord>);
-static_assert(std::is_same_v<fs::metalog::ProducerProto, cmet::ProducerProto>);
-static_assert(std::is_same_v<fs::metalog::ConsumerProto, cmet::ConsumerProto>);
 
 static_assert(std::is_same_v<fs::chainedge::Signal, cce::Signal>);
 static_assert(std::is_same_v<fs::chainedge::SignalerProto, cce::SignalerProto>);
@@ -105,10 +100,6 @@ using fs::chaselev::mint_chaselev_owner;
 using fs::chaselev::mint_chaselev_thief;
 using fs::chaselev::mint_owner_session;
 using fs::chaselev::mint_thief_session;
-using fs::metalog::mint_metalog_producer;
-using fs::metalog::mint_metalog_consumer;
-using fs::metalog::mint_metalog_producer_session;
-using fs::metalog::mint_metalog_consumer_session;
 using fs::chainedge::mint_chainedge_signaler;
 using fs::chainedge::mint_chainedge_waiter;
 using fs::chainedge::mint_chainedge_signaler_session;

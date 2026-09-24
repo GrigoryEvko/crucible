@@ -202,7 +202,6 @@ crucible_test(test_fixy_substr_chaselev_permissioned_chase_lev_deque) # FIXY-V-0
 crucible_test(test_fixy_substr_sharded_grid_permissioned_sharded_grid) # FIXY-V-048 — fixy::substr::sharded_grid:: PermissionedShardedGrid surface
 crucible_test(test_fixy_substr_shardcal_permissioned_sharded_calendar_grid) # FIXY-V-049 — fixy::substr::sharded_calendar_grid:: PermissionedShardedCalendarGrid surface
 crucible_test(test_fixy_substr_calendar_permissioned_calendar_grid) # FIXY-V-050 — fixy::substr::calendar_grid:: PermissionedCalendarGrid surface
-crucible_test(test_fixy_substr_metalog_permissioned_metalog) # FIXY-V-051 — fixy::substr::metalog:: PermissionedMetaLog surface
 crucible_test(test_fixy_substr_chainedge_permissioned_chain_edge) # FIXY-V-052 — fixy::substr::chainedge:: PermissionedChainEdge surface
 crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
@@ -4080,43 +4079,6 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_session_wrong_hand
     "no matching function|cannot convert"
     "ThiefHandle|mint_thief_session")
 
-# fixy-HS14-08 — Substr.h re-export of MetaLog mints
-# (mint_metalog_producer / mint_metalog_consumer /
-# mint_metalog_producer_session / mint_metalog_consumer_session).
-# Four mints × two distinct mismatch classes each = 8 fixtures.
-# The pairs split:
-#   _non_surface  / _wrong_perm    — producer/consumer token mints
-#   _non_ctx      / _wrong_handle  — producer/consumer ctx-bound
-#                                    session mints
-#
-# Witnesses the using-decl preserves the per-mint requires-clause
-# AND the per-parameter binding shape independently across all
-# four MetaLog mints.
-crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_producer_non_surface
-    "constraints.*not satisfied|no matching function"
-    "MetaLogSessionSurface|mint_metalog_producer")
-crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_producer_wrong_perm
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "Permission|mint_metalog_producer")
-crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_consumer_non_surface
-    "constraints.*not satisfied|no matching function"
-    "MetaLogSessionSurface|mint_metalog_consumer")
-crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_consumer_wrong_perm
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "Permission|mint_metalog_consumer")
-crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_producer_session_non_ctx
-    "constraints.*not satisfied|no matching function"
-    "IsExecCtx|mint_metalog_producer_session")
-crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_producer_session_wrong_handle
-    "no matching function|cannot convert"
-    "ProducerHandle|mint_metalog_producer_session")
-crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_consumer_session_non_ctx
-    "constraints.*not satisfied|no matching function"
-    "IsExecCtx|mint_metalog_consumer_session")
-crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_consumer_session_wrong_handle
-    "no matching function|cannot convert"
-    "ConsumerHandle|mint_metalog_consumer_session")
-
 # fixy-HS14-09 — Substr.h re-export of ChainEdge mints
 # (mint_chainedge_signaler / mint_chainedge_waiter /
 # mint_chainedge_signaler_session / mint_chainedge_waiter_session).
@@ -7004,34 +6966,30 @@ crucible_neg_compile_test(neg_trace_graph_num_ops_assign_raw
 crucible_neg_compile_test(neg_trace_graph_num_edges_implicit_raw
   "cannot convert|invalid conversion|no viable conversion")
 
-# ─── WRAP-MetaLog-2 (#945) ValidMetaAppendCount neg-compile fixtures ──
+# ─── ValidMetaAppendCount negative-compile fixtures ──────────────────
 #
-# MetaLog::try_append's `n` count parameter gains a typed Refined gate
-# capped at MetaLog::CAPACITY (1<<20 = 1'048'576 entries, 168 MB).
-# `n > CAPACITY` is structurally non-sensical (a single append larger
-# than the entire ring can never succeed); the typed witness pins
-# the bound at the type system so any caller that constructs
-# ValidMetaAppendCount with an out-of-range count is rejected at the
-# constructor's pre-clause.
+# The count that MetaLog::try_append takes has a Refined bound at
+# MetaLog::CAPACITY (1 << 20 = 1,048,576 records, 168 MB).
+# An append of more than CAPACITY records can never succeed, because one
+# batch larger than the whole ring has no place to go.  The alias
+# ValidMetaAppendCount holds the bound in its type.  mint_refined is its
+# one checked door, and in a constant evaluation a count above the bound
+# makes the check trap.
 #
-# Two fixtures per HS14 mandate:
-#   * neg_metalog_append_count_above_max — boundary edge (CAPACITY+1)
-#     catches "bound widens to admit one more" drift.
-#   * neg_metalog_append_count_uint32_max — wide miss (UINT32_MAX)
-#     catches "drop the bound entirely" regression that would
-#     degenerate the alias into a plain uint32_t typedef.
-#
-# Without the gate, a caller passing n > CAPACITY would either spin
-# forever in try_append's overflow check (graceful failure but mute)
-# or — on any path that bypassed the runtime check — drive a memcpy
-# of n*144B beyond the ring buffer.  Defense-in-depth: the existing
-# `if (h - cached_tail + n > CAPACITY)` runtime guard plus the new
-# `pre (n <= CAPACITY)` clause plus the typed witness all fire
-# BEFORE any memcpy or head publish.
-crucible_neg_compile_test(neg_metalog_append_count_above_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_metalog_append_count_uint32_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+# Each fixture mints through the predicate and the value type of the
+# alias itself, and each regex names the value that the mint refused:
+#   * neg_metalog_append_count_above_max is the boundary edge
+#     (CAPACITY + 1).  It fails if the bound widens by one or more.
+#   * neg_metalog_append_count_uint32_max is the wide miss (UINT32_MAX).
+#     It fails if the bound is removed.
+crucible_neg_compile_multi_test(neg_metalog_append_count_above_max
+    "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<1048576>\\(\\), unsigned int>\\(\\(\\(\\(unsigned int\\)crucible::MetaLog::CAPACITY\\) \\+ 1\\)\\)."
+    "__builtin_trap\\(\\). is not a constant expression"
+    "in expansion of macro .CRUCIBLE_PRE.")
+crucible_neg_compile_multi_test(neg_metalog_append_count_uint32_max
+    "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<1048576>\\(\\), unsigned int>\\(4294967295\\)."
+    "__builtin_trap\\(\\). is not a constant expression"
+    "in expansion of macro .CRUCIBLE_PRE.")
 
 # ─── WRAP-TraceRing-3 (#1055) ValidDrainCount neg-compile fixtures ──
 #
@@ -10514,36 +10472,37 @@ crucible_neg_compile_test(neg_computation_cache_federation_non_fn
 crucible_neg_compile_test(neg_computation_cache_federation_without_local_permission
   "no matching function|candidate expects")
 
-# ─── FOUND-I17 try_append_pure row-fence ────────────────────────────
-# MetaLog::try_append_pure<CallerRow> requires IsPure<CallerRow>
-# (CallerRow ⊆ Row<>).  These two fixtures cover distinct rejection
-# legs: a caller declaring IO context and a caller declaring Bg
-# context.  Together they pin that the IsPure constraint hasn't been
-# silently widened to accept any single non-empty atom.
-crucible_neg_compile_test(neg_metalog_try_append_pure_io
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_metalog_try_append_pure_bg
-  "constraints not satisfied|template constraint failure|associated constraints")
-
-# ─── FOUND-I17-AUDIT per-axis matrix completion ─────────────────────
-# Per-axis neg-compile parity: 4 fixtures completing the {Alloc, IO,
-# Block, Bg, Init, Test} matrix (IO + Bg are above), plus 2 composite
-# fixtures pinning multi-atom + saturation-row rejection.  Together
-# these prevent silent widening of the IsPure constraint via any
-# single-atom drift OR multi-atom composition that might slip through
-# a per-axis-only audit.
-crucible_neg_compile_test(neg_metalog_try_append_pure_alloc
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_metalog_try_append_pure_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_metalog_try_append_pure_init
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_metalog_try_append_pure_test
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_metalog_try_append_pure_io_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_metalog_try_append_pure_full_row
-  "constraints not satisfied|template constraint failure|associated constraints")
+# ─── The row gate of MetaLog::try_append_pure ───────────────────────
+# MetaLog::try_append_pure<CallerRow> requires IsPure<CallerRow>, that
+# is, CallerRow is a subrow of Row<>.  There is one fixture for each of
+# the six atoms (Alloc, IO, Block, Bg, Init and Test), one for a row of
+# two atoms, and one for the full row.  If the gate widens to admit one
+# atom or one combination of atoms, the fixture for it compiles.  Each
+# regex names the row that the gate refused.
+crucible_neg_compile_multi_test(neg_metalog_try_append_pure_io
+    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::IO> >"
+    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO>.")
+crucible_neg_compile_multi_test(neg_metalog_try_append_pure_bg
+    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Bg> >"
+    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>.")
+crucible_neg_compile_multi_test(neg_metalog_try_append_pure_alloc
+    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Alloc> >"
+    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>.")
+crucible_neg_compile_multi_test(neg_metalog_try_append_pure_block
+    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Block> >"
+    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Block>.")
+crucible_neg_compile_multi_test(neg_metalog_try_append_pure_init
+    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Init> >"
+    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Init>.")
+crucible_neg_compile_multi_test(neg_metalog_try_append_pure_test
+    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Test> >"
+    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Test>.")
+crucible_neg_compile_multi_test(neg_metalog_try_append_pure_io_block
+    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >"
+    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>.")
+crucible_neg_compile_multi_test(neg_metalog_try_append_pure_full_row
+    "no matching function for call to .crucible::MetaLog::try_append_pure<fixy::AllRow>"
+    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, ")
 
 # ─── FOUND-I16 TraceRing row-fence — full per-axis matrix on both legs ─
 # TraceRing::try_append_pure<CallerRow> AND TraceRing::drain_pure<CallerRow>
@@ -12925,6 +12884,32 @@ crucible_neg_compile_multi_test(neg_metalog_session_consumer_wrong_role
     "no matching function for call to .mint_metalog_consumer_session<"
     "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_wrong_role_fixture::Tag>::ProducerHandle"
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
+crucible_neg_compile_multi_test(neg_metalog_session_producer_not_a_log
+    "no matching function for call to .mint_metalog_producer_session<int>"
+    "satisfaction of .MetaLogSessionSurface<Log>. .with Log = int."
+    "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
+crucible_neg_compile_multi_test(neg_metalog_session_consumer_not_a_context
+    "no matching function for call to .mint_metalog_consumer_session<"
+    "satisfaction of .IsExecCtx<Ctx>. .with Ctx = int."
+    "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
+crucible_neg_compile_multi_test(neg_metalog_session_consumer_lvalue_handle
+    "no matching function for call to .mint_metalog_consumer_session<"
+    "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_lvalue_fixture::Tag>::ConsumerHandle&"
+    "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
+crucible_neg_compile_multi_test(neg_metalog_session_producer_wrong_role
+    "no matching function for call to .mint_metalog_producer_session<"
+    "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_wrong_role_fixture::Tag>::ConsumerHandle"
+    "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
+
+# The accessor that makes each handle takes the Permission of its own
+# role, and that parameter type is its whole admission.  Each fixture
+# passes the Permission of the other role.
+crucible_neg_compile_multi_test(neg_metalog_producer_wrong_permission
+    "cannot convert .*Permission<crucible::metalog_tag::Consumer<producer_wrong_permission_fixture::Tag>, .* to .foundation::permissions::Permission<crucible::metalog_tag::Producer<producer_wrong_permission_fixture::Tag>, foundation::brand::DefaultBrand>&&"
+    "initializing argument 1 of .*PermissionedMetaLog<UserTag>::producer.foundation::permissions::Permission<crucible::metalog_tag::Producer<UserTag> >&&. .with UserTag = producer_wrong_permission_fixture::Tag.")
+crucible_neg_compile_multi_test(neg_metalog_consumer_wrong_permission
+    "cannot convert .*Permission<crucible::metalog_tag::Producer<consumer_wrong_permission_fixture::Tag>, .* to .foundation::permissions::Permission<crucible::metalog_tag::Consumer<consumer_wrong_permission_fixture::Tag>, foundation::brand::DefaultBrand>&&"
+    "initializing argument 1 of .*PermissionedMetaLog<UserTag>::consumer.foundation::permissions::Permission<crucible::metalog_tag::Consumer<UserTag> >&&. .with UserTag = consumer_wrong_permission_fixture::Tag.")
 
 # SingletonInitGraph.h: the gate refuses a cycle, and it refuses an edge
 # to a singleton that the registry does not hold.

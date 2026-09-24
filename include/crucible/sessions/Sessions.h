@@ -25,7 +25,6 @@
 #include <crucible/sessions/SessionSubtypeReason.h>
 #include <crucible/sessions/SessionView.h>
 #include <crucible/sessions/SpscSession.h>
-#include <crucible/sessions/MetaLogSession.h>
 #include <crucible/sessions/MpmcChannelSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/AsyncPipelineSession.h>

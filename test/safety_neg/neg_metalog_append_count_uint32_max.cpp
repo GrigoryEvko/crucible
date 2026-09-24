@@ -1,44 +1,37 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: constructing ValidMetaAppendCount with the value
-// UINT32_MAX in constexpr context — the wide-miss fixture for the
-// MetaLog::try_append count-parameter cap.
+// Violation: minting ValidMetaAppendCount with the value UINT32_MAX in a
+// constant expression.  This is the wide miss of the cap on the count
+// that MetaLog::try_append takes.
 //
-// Per WRAP-MetaLog-2 (#945), ValidMetaAppendCount is
-// safety::Refined<safety::bounded_above<MetaLog::CAPACITY>, uint32_t>
-// with MetaLog::CAPACITY == (1u << 20) == 1'048'576.  UINT32_MAX is
-// over 4'095× the cap.  Without the gate, downstream code that took
-// UINT32_MAX as a count parameter would either spin forever in
-// try_append's overflow check (graceful failure but mute) or, in any
-// caller path that bypassed the check, drive a memcpy of
-// 4'294'967'295 × 144 B ≈ 614 GB before SIGSEGV.
+// ValidMetaAppendCount is fixy::Refined<fixy::bounded_above<MetaLog::CAPACITY>,
+// uint32_t>, and MetaLog::CAPACITY is 1 << 20.  UINT32_MAX is more than
+// 4,095 times the cap.  Without the gate, a caller that took UINT32_MAX
+// as a count would get MetaIndex::none() from every retry, or, on a path
+// that skipped the runtime check, copy far past the end of the buffer.
 //
 // Companion fixture: neg_metalog_append_count_above_max.cpp
-//   * That one is the boundary edge (= MetaLog::CAPACITY + 1).
-//   * This one is the upper-bound wide miss (= UINT32_MAX).  Catches
-//     "drop the bound entirely" regression where ValidMetaAppendCount
-//     degenerates from Refined<bounded_above<CAPACITY>> into a plain
-//     uint32_t.
+//   * That one is the boundary edge (CAPACITY + 1).
+//   * This one is the wide miss (UINT32_MAX).  It catches a bound that
+//     is removed, so that ValidMetaAppendCount becomes a plain uint32_t.
 //
-// In constexpr context (constant evaluation), a contract violation
-// makes the expression non-constant per P1494R5 — using it where a
-// constant is required is ill-formed.
+// mint_refined is the only checked door of fixy::Refined.  In a constant
+// evaluation, the failed check of the predicate makes the expression not
+// constant, so the initialization of a constexpr variable is ill-formed.
 //
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
-// demonstrating a distinct mismatch class.
+// The mint reads its predicate and its value type from the alias.  If the
+// alias changes its bound, this fixture checks the new bound, not a copy
+// of the old one.
 
 #include <crucible/MetaLog.h>
 
-#include <climits>
+#include <fixy/Refined.h>
+
 #include <cstdint>
 
 int main() {
-    // Constant evaluation forces the Refined ctor's pre clause
-    // (`bounded_above<MetaLog::CAPACITY>(v)`) to be exercised at
-    // compile time.  v == UINT32_MAX → CAPACITY < UINT32_MAX →
-    // predicate(v) == false → contract violation → not a constant
-    // expression → ill-formed.
-    constexpr crucible::ValidMetaAppendCount bad{uint32_t{UINT32_MAX}};
+    using Count = crucible::ValidMetaAppendCount;
+    constexpr Count bad = ::fixy::mint_refined<Count::predicate_type{}, Count::value_type>(UINT32_MAX);
     (void)bad;
     return 0;
 }

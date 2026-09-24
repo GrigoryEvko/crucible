@@ -15,10 +15,6 @@
 // caller that cannot produce a Permission<producer_tag> cannot call
 // producer().  So there is no constraint for a negative fixture to fire,
 // and a mint_ name would claim a gate that they do not have.
-//
-// The frozen tree keeps the old spelling at
-// include/crucible/concurrent/PermissionedMetaLog.h, and no consumer outside
-// the frozen tree and its own tests names it.
 
 #include <crucible/MetaLog.h>
 

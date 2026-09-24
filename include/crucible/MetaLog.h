@@ -16,27 +16,19 @@
 #include <cstring>
 
 #include <crucible/Platform.h>
-#include <crucible/MerkleDag.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_FxAliases.h>
+#include <crucible/TensorMeta.h>
+#include <crucible/Types.h>
 #include <crucible/warden/Registry.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_HotPath.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Stale.h>
-#include <foundation/AlignedBuffer.h>
 
-namespace crucible::fixy::wrap {
-using ::crucible::safety::AtomicMonotonic;
-using ::crucible::safety::bounded_above;
-using ::crucible::safety::HotPath;
-using ::crucible::safety::HotPathTier_v;
-using ::crucible::safety::Monotonic;
-using ::crucible::safety::Refined;
-using ::crucible::safety::Stale;
-}  // namespace crucible::fixy::wrap
+#include <fixy/Aliases.h>
+#include <fixy/Bands.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/Stale.h>
+#include <foundation/AlignedBuffer.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/effects/Row.h>
 
 namespace crucible {
 
@@ -68,18 +60,18 @@ struct CRUCIBLE_OWNER MetaLog {
     // sees the entries. That also reaches a consumer that only acquires the
     // recording ring's counter, since this one is released first in program
     // order.
-    alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint32_t> head{0};
+    alignas(64) ::fixy::AtomicMonotonic<uint32_t> head = ::fixy::mint_atomic_monotonic<uint32_t>(0);
     // The producer's private view of the consumer's counter, refreshed only
     // when it claims the buffer is full. A stale value can only under-report
     // free space, so acting on it is safe. The type enforces the direction,
     // since a value that moved backwards would mean a lost acquire.
-    crucible::fixy::wrap::Monotonic<uint32_t> cached_tail_{0};
+    ::fixy::Monotonic<uint32_t> cached_tail_ = ::fixy::mint_monotonic<uint32_t>(0);
     ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes> entries_buffer_;
     // A cached projection of the buffer's base, so an indexed access on the
     // hot path stays one load with no indirection through the owner.
     TensorMeta* entries = nullptr;
 
-    alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint32_t> tail{0};
+    alignas(64) ::fixy::AtomicMonotonic<uint32_t> tail = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
     MetaLog()
         : entries_buffer_{::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes>::
@@ -153,8 +145,8 @@ struct CRUCIBLE_OWNER MetaLog {
     // counter or the slots it is about to fill, which the thread-safety
     // analysis cannot express, so it is suppressed here.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::in_range<std::uint32_t>(n, std::uint32_t{0}, CAPACITY))
-            pre(::crucible::decide::valid_span(n, metas)) {
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(n, std::uint32_t{0}, CAPACITY))
+            pre(::foundation::decide::valid_span(n, metas)) {
         if (n == 0) [[unlikely]]
             return MetaIndex::none();
 
@@ -210,21 +202,21 @@ struct CRUCIBLE_OWNER MetaLog {
     // The same body, with the tier declared in the return type so a consumer
     // that demands a hot-tier producer can be checked at compile time.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
-    CRUCIBLE_INLINE crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Hot, MetaIndex>
+    CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>
     try_append_pinned(const TensorMeta* metas, uint32_t n)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::valid_span(n, metas)) {
-        return crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Hot, MetaIndex>{try_append(metas, n)};
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::valid_span(n, metas)) {
+        return ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>{try_append(metas, n), {}};
     }
 
     // Preferred at new call sites: appending touches memory only, so the
     // caller's effect row must be empty, and a caller that allocates, blocks,
     // performs I/O, or runs at init or test time is rejected here rather than
     // discovered later.
-    template <typename CallerRow = ::crucible::effects::Row<>>
-        requires ::crucible::effects::IsPure<CallerRow>
+    template <typename CallerRow = ::foundation::effects::Row<>>
+        requires ::fixy::IsPure<CallerRow>
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_pure(const TensorMeta* metas,
                                                                                          uint32_t n)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::valid_span(n, metas)) {
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::valid_span(n, metas)) {
         return try_append(metas, n);
     }
 
@@ -263,8 +255,8 @@ struct CRUCIBLE_OWNER MetaLog {
     // The two counters are read at different instants while both threads run,
     // so the difference is a snapshot of a value that was never simultaneously
     // true. The return type says so and forces the caller to acknowledge it.
-    [[nodiscard]] crucible::fixy::wrap::Stale<uint32_t> size() const CRUCIBLE_NO_THREAD_SAFETY {
-        return crucible::fixy::wrap::Stale<uint32_t>::at_infinity(head.get() - tail.get());
+    [[nodiscard]] ::fixy::Stale<uint32_t> size() const CRUCIBLE_NO_THREAD_SAFETY {
+        return ::fixy::Stale<uint32_t>::at_infinity(head.get() - tail.get());
     }
 
     // Valid only once both threads have stopped. Every counter here moves
@@ -282,8 +274,7 @@ struct CRUCIBLE_OWNER MetaLog {
 // retry clears: no state of the consumer can ever satisfy it, so the request
 // is refused rather than looping. A caller that establishes the bound once at
 // a boundary can carry this instead of re-checking at every layer.
-using ValidMetaAppendCount =
-    ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<MetaLog::CAPACITY>, uint32_t>;
+using ValidMetaAppendCount = ::fixy::Refined<::fixy::bounded_above<MetaLog::CAPACITY>, uint32_t>;
 
 [[nodiscard, gnu::const]] inline constexpr uint32_t make_meta_append_count(ValidMetaAppendCount raw) noexcept {
     return raw.value();

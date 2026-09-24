@@ -119,11 +119,6 @@ using crucible_fixy::substr::chaselev::mint_chaselev_thief;
 using crucible_fixy::substr::chaselev::mint_owner_session;
 using crucible_fixy::substr::chaselev::mint_thief_session;
 
-using crucible_fixy::substr::metalog::mint_metalog_consumer;
-using crucible_fixy::substr::metalog::mint_metalog_consumer_session;
-using crucible_fixy::substr::metalog::mint_metalog_producer;
-using crucible_fixy::substr::metalog::mint_metalog_producer_session;
-
 using crucible_fixy::substr::mpmc::mint_mpmc_consumer_endpoint;
 using crucible_fixy::substr::mpmc::mint_mpmc_consumer_session;
 using crucible_fixy::substr::mpmc::mint_mpmc_producer_endpoint;
@@ -170,7 +165,7 @@ using crucible_fixy::wrap::mint_secret;
 
 namespace fixy_mint_inventory_witness {
 
-inline constexpr int kExpectedReachableMints = 82;
+inline constexpr int kExpectedReachableMints = 78;
 inline constexpr int kFixyNamespaceCount = 20;
 inline constexpr int kInventoryDateYYYYMMDD = 20260519;
 
@@ -178,10 +173,10 @@ inline constexpr int kInventoryDateYYYYMMDD = 20260519;
 // addition or removal moves the count by one and passes, which keeps
 // routine changes out of review thrash, while a sweep that adds or
 // deletes three at once trips the fence.
-static_assert(kExpectedReachableMints >= 80, "suspicious drop in the fixy mint inventory.  Audit the using-decl "
+static_assert(kExpectedReachableMints >= 76, "suspicious drop in the fixy mint inventory.  Audit the using-decl "
                                              "rows against substrate-side mint deletions before lowering this "
                                              "bound.");
-static_assert(kExpectedReachableMints <= 84, "the fixy mint inventory grew without the witness being bumped.  "
+static_assert(kExpectedReachableMints <= 80, "the fixy mint inventory grew without the witness being bumped.  "
                                              "Add the new using-decl rows and update kExpectedReachableMints "
                                              "together with the per-namespace constants.");
 
@@ -198,7 +193,6 @@ inline constexpr int kSubstrRootMints = 1;
 inline constexpr int kSubstrCalendarGridMints = 4;
 inline constexpr int kSubstrChainEdgeMints = 4;
 inline constexpr int kSubstrChaselevMints = 4;
-inline constexpr int kSubstrMetalogMints = 4;
 inline constexpr int kSubstrMpmcMints = 4;
 inline constexpr int kSubstrShardedCalendarGridMints = 4;
 inline constexpr int kSubstrShardedGridMints = 4;
@@ -210,7 +204,7 @@ inline constexpr int kWrapMints = 3;
 // error, so the two are pinned against each other.
 static_assert(kBridgeMints + kCapMints + kContractCipherMints + kMachMints + kPermMints + kPipeMints + kSafetyMints
                       + kSessMints + kSourceFederationMints + kSubstrRootMints + kSubstrCalendarGridMints
-                      + kSubstrChainEdgeMints + kSubstrChaselevMints + kSubstrMetalogMints + kSubstrMpmcMints
+                      + kSubstrChainEdgeMints + kSubstrChaselevMints + kSubstrMpmcMints
                       + kSubstrShardedCalendarGridMints + kSubstrShardedGridMints + kSubstrSpscMints + kSubstrSwmrMints
                       + kWrapMints
                   == kExpectedReachableMints,
@@ -234,7 +228,6 @@ static_assert(kSubstrRootMints >= 1, "crucible_fixy::substr (root) must surface 
 static_assert(kSubstrCalendarGridMints >= 1, "crucible_fixy::substr::calendar_grid must surface ≥1 mint.");
 static_assert(kSubstrChainEdgeMints >= 1, "crucible_fixy::substr::chainedge must surface ≥1 mint.");
 static_assert(kSubstrChaselevMints >= 1, "crucible_fixy::substr::chaselev must surface ≥1 mint.");
-static_assert(kSubstrMetalogMints >= 1, "crucible_fixy::substr::metalog must surface ≥1 mint.");
 static_assert(kSubstrMpmcMints >= 1, "crucible_fixy::substr::mpmc must surface ≥1 mint.");
 static_assert(kSubstrShardedCalendarGridMints >= 1, "crucible_fixy::substr::sharded_calendar_grid must surface ≥1 mint.");
 static_assert(kSubstrShardedGridMints >= 1, "crucible_fixy::substr::sharded_grid must surface ≥1 mint.");

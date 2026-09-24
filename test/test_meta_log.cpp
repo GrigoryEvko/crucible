@@ -1,8 +1,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Platform.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_FxAliases.h>
+#include <fixy/Aliases.h>
 
 #include "test_assert.h"
 
@@ -203,8 +202,8 @@ static void test_spsc_concurrent_integrity() {
 // The rejecting legs are negative-compile fixtures, because a caller
 // with an impure row fails to compile rather than failing at runtime.
 
-static void test_try_append_pure_FOUND_I17() {
-    namespace eff = crucible::effects;
+static void test_try_append_pure() {
+    namespace eff = ::fixy;
 
     {
         MetaLog log;
@@ -258,7 +257,7 @@ static void test_try_append_pure_FOUND_I17() {
     static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
     static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
 
-    std::printf("  test_try_append_pure_FOUND_I17: PASSED\n");
+    std::printf("  test_try_append_pure: PASSED\n");
 }
 
 // The interleaving check above is single-threaded, which cannot see a
@@ -266,7 +265,7 @@ static void test_try_append_pure_FOUND_I17() {
 // the concurrent scenario with the producer driven entirely through the
 // row-typed entry point; the consumer side is unchanged.
 
-static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
+static void test_try_append_pure_concurrent() {
     constexpr uint32_t N = 50000;
     MetaLog log;
 
@@ -315,7 +314,7 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
 
     producer.join();
     consumer.join();
-    std::printf("  test_try_append_pure_concurrent_FOUND_I17_AUDIT: "
+    std::printf("  test_try_append_pure_concurrent: "
                 "PASSED (N=%u, producer_spins=%u)\n",
                 N, lost_spin.load());
 }
@@ -328,8 +327,8 @@ int main() {
     test_reset_zeroes_both_pointers();
     test_try_contiguous_wrap_returns_null();
     test_spsc_concurrent_integrity();
-    test_try_append_pure_FOUND_I17();
-    test_try_append_pure_concurrent_FOUND_I17_AUDIT();
+    test_try_append_pure();
+    test_try_append_pure_concurrent();
     std::printf("test_meta_log: 9 groups, all passed\n");
     return 0;
 }

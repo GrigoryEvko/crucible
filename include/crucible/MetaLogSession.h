@@ -22,10 +22,6 @@
 // A transport of this facade tries once and reports whether it took or
 // found a record.  When the log is full, or holds nothing, the handle
 // waits through the watch of fixy/session/Watch.h and tries again.
-//
-// The frozen tree keeps the old spelling at
-// include/crucible/sessions/MetaLogSession.h, and no consumer outside the
-// frozen tree and its own tests names it.
 
 #include <crucible/MetaLog.h>
 #include <crucible/PermissionedMetaLog.h>

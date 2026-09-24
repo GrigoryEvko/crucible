@@ -20,10 +20,6 @@ void reach_chaselev() {
     using namespace fsubstr::chaselev;
     (void)0;
 }
-void reach_metalog() {
-    using namespace fsubstr::metalog;
-    (void)0;
-}
 void reach_chainedge() {
     using namespace fsubstr::chainedge;
     (void)0;
@@ -55,7 +51,6 @@ int main() {
     reach_spsc();
     reach_swmr();
     reach_chaselev();
-    reach_metalog();
     reach_chainedge();
     reach_mpmc();
     reach_mpsc();

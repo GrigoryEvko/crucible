@@ -195,7 +195,6 @@ void reach_sub_namespaces() {
     using namespace crucible_fixy::substr::spsc;
     using namespace crucible_fixy::substr::swmr;
     using namespace crucible_fixy::substr::chaselev;
-    using namespace crucible_fixy::substr::metalog;
     using namespace crucible_fixy::substr::chainedge;
     using namespace crucible_fixy::substr::mpmc;
     using namespace crucible_fixy::substr::calendar_grid;
