@@ -28,10 +28,14 @@
 #include <crucible/fixy/Handle.h>
 
 #include <algorithm>
+#include <bitset>
+#include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <system_error>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -63,38 +67,67 @@ namespace detail {
     return out;
 }
 
+// One past the largest CPU id that a list may name.  The kernel's own
+// ceiling, CONFIG_NR_CPUS, is at most 8192 on every distribution kernel.
+inline constexpr std::size_t kMaxCpuCount = 8192;
+
 // A kernel CPU list names single CPUs and inclusive ranges, separated
-// by commas, as in "0-3,5,7-9,15".
+// by commas, as in "0-3,5,7-9,15".  Spaces and tabs around an entry are
+// skipped.  Text that is not such a list gives an empty result: an entry
+// that is not a number or a range, an id at or past kMaxCpuCount, or a
+// range whose end is below its start.  Each caller treats an empty list
+// as an unknown answer, so malformed text costs a degraded answer.
+//
+// The ids are collected in a fixed set of kMaxCpuCount bits, so the result
+// is sorted, holds no duplicate, and has at most kMaxCpuCount entries
+// whatever the text repeats.
+//
+// The scan finds each separator with a loop over the characters, and not
+// with std::string_view::find.  GCC 16 in C++26 mode, with
+// -fimplicit-constexpr, folds a call whose text is a constant, and it folds
+// find(char) to a wrong position: "0,1,2,3" parsed to three ids.
 //
 // Pure: the answer reads only the bytes behind s, and it opens no file.
+// Complexity: linear in the length of s, times kMaxCpuCount / 64 per range.
 [[nodiscard, gnu::pure]] inline std::vector<int> parse_cpulist(std::string_view s) noexcept {
-    std::vector<int> out;
-    size_t i = 0;
-    while (i < s.size()) {
-        while (i < s.size() && (s[i] == ',' || s[i] == ' ' || s[i] == '\t'))
-            ++i;
-        if (i >= s.size()) break;
-        const size_t num_start = i;
-        while (i < s.size() && s[i] >= '0' && s[i] <= '9')
-            ++i;
-        if (i == num_start) {
-            ++i;
-            continue;
-        }
-        const int lo = std::atoi(s.data() + num_start);
-        int hi = lo;
-        if (i < s.size() && s[i] == '-') {
-            ++i;
-            const size_t hi_start = i;
-            while (i < s.size() && s[i] >= '0' && s[i] <= '9')
-                ++i;
-            if (i > hi_start) hi = std::atoi(s.data() + hi_start);
-        }
-        for (int c = lo; c <= hi; ++c)
-            out.push_back(c);
+    const auto parse_cpu_id = [](std::string_view digits, std::size_t& cpu) noexcept {
+        const char* const end = digits.data() + digits.size();
+        const auto [stop, error] = std::from_chars(digits.data(), end, cpu);
+        return !digits.empty() && error == std::errc{} && stop == end && cpu < kMaxCpuCount;
+    };
+    const auto is_blank = [](char c) noexcept { return c == ' ' || c == '\t'; };
+    // The index of the first c in text, or the length of text.
+    const auto index_of = [](std::string_view text, char c) noexcept {
+        std::size_t index = 0;
+        while (index < text.size() && text[index] != c) ++index;
+        return index;
+    };
+
+    std::bitset<kMaxCpuCount> named;
+    const std::bitset<kMaxCpuCount> every_id = ~std::bitset<kMaxCpuCount>{};
+    while (!s.empty()) {
+        const std::size_t comma = index_of(s, ',');
+        std::string_view entry = s.substr(0, comma);
+        s.remove_prefix(comma < s.size() ? comma + 1 : s.size());
+        while (!entry.empty() && is_blank(entry.front())) entry.remove_prefix(1);
+        while (!entry.empty() && is_blank(entry.back())) entry.remove_suffix(1);
+        if (entry.empty()) continue;
+
+        const std::size_t dash = index_of(entry, '-');
+        std::size_t first_id = 0;
+        std::size_t last_id = 0;
+        if (!parse_cpu_id(entry.substr(0, dash), first_id)) return {};
+        last_id = first_id;
+        if (dash < entry.size() && !parse_cpu_id(entry.substr(dash + 1), last_id)) return {};
+        if (last_id < first_id) return {};
+        const std::size_t width = last_id - first_id + 1;
+        named |= (every_id >> (kMaxCpuCount - width)) << first_id;
     }
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+
+    std::vector<int> out;
+    for (std::size_t cpu = 0; cpu < kMaxCpuCount; ++cpu) {
+        if (named.test(cpu)) out.push_back(static_cast<int>(cpu));
+    }
     return out;
 }
 
@@ -103,14 +136,19 @@ namespace detail {
 //
 // Pure: the caller hands in the already-read text, so this reads only
 // the bytes behind status and opens no file.
+//
+// The lines are split with a loop over the characters, for the reason that
+// parse_cpulist gives.
 [[nodiscard, gnu::pure]] inline std::vector<int> parse_cpus_allowed_list(std::string_view status) noexcept {
     constexpr std::string_view key = "Cpus_allowed_list:";
-    const auto pos = status.find(key);
-    if (pos == std::string_view::npos) return {};
-    auto rest = status.substr(pos + key.size());
-    const auto nl = rest.find('\n');
-    if (nl != std::string_view::npos) rest = rest.substr(0, nl);
-    return parse_cpulist(rest);
+    while (!status.empty()) {
+        std::size_t line_end = 0;
+        while (line_end < status.size() && status[line_end] != '\n') ++line_end;
+        const std::string_view line = status.substr(0, line_end);
+        status.remove_prefix(line_end < status.size() ? line_end + 1 : status.size());
+        if (line.starts_with(key)) return parse_cpulist(line.substr(key.size()));
+    }
+    return {};
 }
 
 }  // namespace detail

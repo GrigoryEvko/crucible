@@ -157,6 +157,7 @@ crucible_boundary_fuzzer(fountain 2000)
 crucible_boundary_fuzzer(discovery_text 4000)
 crucible_boundary_fuzzer(telemetry_text 4000)
 crucible_boundary_fuzzer(cntp_text 4000)
+crucible_boundary_fuzzer(cpu_list 4000)
 crucible_boundary_fuzzer(source_position 4000)
 crucible_boundary_fuzzer(recipe 4000)
 

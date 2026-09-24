@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #ifdef __linux__
@@ -78,6 +80,35 @@ void test_cpulist_parser() {
     CHECK(parse_cpulist("   ").empty(), "whitespace → empty");
     const auto v = parse_cpulist("3,1,2,0,3,1");
     CHECK(v == std::vector<int>({0, 1, 2, 3}), "dedupe + sort");
+    CHECK(parse_cpulist("\t0-1 , 3 ") == std::vector<int>({0, 1, 3}), "spaces and tabs around an entry");
+    CHECK(parse_cpus_allowed_list("Name:\tx\nCpus_allowed_list:\t0-2\nMems:\t0\n") == std::vector<int>({0, 1, 2}),
+          "the list is read from its line of /proc/self/status");
+}
+
+// Text that is not a CPU list gives an empty list, and no text can make
+// the list longer than the kernel ceiling.  The first four inputs are the
+// ones a fuzz campaign found: a range that expanded to millions of ids, a
+// range that wrapped the loop counter, a number past the range of int, and
+// a list that ends in a digit, which the parser read past its end.
+void test_cpulist_parser_refuses_malformed_text() {
+    using namespace crucible::warden::detail;
+
+    CHECK(parse_cpulist("0-8191911").empty(), "a range past the ceiling");
+    CHECK(parse_cpulist("0-2147483647").empty(), "a range that wraps an int");
+    CHECK(parse_cpulist("99999999999999999999").empty(), "a number past the range of int");
+    const std::vector<char> no_terminator{'1', '2'};
+    CHECK(parse_cpulist(std::string_view{no_terminator.data(), no_terminator.size()}) == std::vector<int>({12}),
+          "a list that ends in a digit, with no terminator after it");
+    CHECK(parse_cpulist("5-2").empty(), "a range whose end is below its start");
+    CHECK(parse_cpulist("0-3,x").empty(), "an entry that is not a number");
+    CHECK(parse_cpulist("-1").empty(), "a negative id");
+    CHECK(parse_cpulist("3-").empty(), "a range with no end");
+    CHECK(parse_cpulist("8192").empty(), "an id at the ceiling");
+    CHECK(parse_cpulist("8191").size() == 1, "the largest id below the ceiling");
+
+    std::string repeated;
+    for (int i = 0; i < 4096; ++i) repeated += "0-8191,";
+    CHECK(parse_cpulist(repeated).size() == kMaxCpuCount, "a repeated full range stays at the ceiling");
 }
 
 void test_core_selector() {
@@ -333,6 +364,7 @@ void test_registry_applies_on_apply() {
 int main() {
     test_topology_basic();
     test_cpulist_parser();
+    test_cpulist_parser_refuses_malformed_text();
     test_core_selector();
     test_core_selector_avoids_cpu0();
     test_core_selector_avoids_exclude();
