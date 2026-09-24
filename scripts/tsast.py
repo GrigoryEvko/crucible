@@ -34,6 +34,26 @@ POSITIONS ARE BYTE COLUMNS
     tree-sitter counts a column in bytes, not in characters.  Text comes from
     the file bytes at `line_start[row] + column`, so a non-ASCII byte earlier on
     the line cannot shift a slice.
+
+WHAT THE KIT CANNOT READ
+    Each limit below has a self-test case, so a kit change that moves a limit
+    fails the self-test until this text is corrected.
+      * A macro body is one `preproc_arg` node that holds raw text.  The kit
+        does not parse the body, so a gate that must see a construct inside a
+        `#define` reads that text itself.
+      * Every arm of an `#if` is parsed, because the kit does not preprocess.
+        A gate cannot tell a live arm from a dead one.
+      * A deep nest of qualified template-ids fails to parse when a numeric
+        template argument such as `Label<1>` sits at its bottom.  The
+        self-test holds an 18-level alias of that shape, reduced from a
+        generated session type that failed at 21 levels.  The same alias
+        parses when its names are unqualified, and it parses when the numeric
+        argument is a type.  A chain of plain template-ids parses at 48
+        levels.  So the limit comes from the shape, not from the depth alone.
+        A generator must emit an alias for each deep sub-type, so that no
+        declaration nests that deep.
+      * The files in UNPARSEABLE are not C++, or they use a macro in statement
+        position with a brace body.  Each entry names its reason.
 """
 
 from __future__ import annotations
@@ -577,6 +597,78 @@ def _self_test() -> int:
             len(tolerated) == 1 and tolerated[0].diagnostic is not None,
         )
 
+        def parse_text(name: str, text: str) -> Tree:
+            """Parse one source text without the strict policy.
+
+            Args:
+                name: The file name inside the scratch directory
+                text: The C++ source
+
+            Returns:
+                The parsed tree, with its diagnostic if the kit reports one
+            """
+            path = Path(work) / name
+            path.write_text(text, encoding="utf-8")
+            return next(parse([path], strict=False))
+
+        # The dialect: each C++26 construct this tree uses gets its own node.
+        dialect = parse_text(
+            "dialect.cpp",
+            "struct S { S(const S&) = delete(\"reason\"); int field = 0; };\n"
+            "constexpr int positive(int const x) noexcept pre(x > 0) post(r: r == x)\n"
+            "{ contract_assert(x != 0); return x; }\n"
+            "template <typename... Ts> using First = Ts...[0];\n"
+            "int sum(S const& s) { int total = 0;\n"
+            "  template for (constexpr auto m : members(^^S)) { total += s.[:m:]; }\n"
+            "  return total; }\n",
+        )
+        wanted = (
+            "delete_method_clause", "function_contract_specifier", "contract_assert_statement",
+            "pack_index_specifier", "reflect_expression", "expansion_statement", "splice_expression",
+        )
+        check(
+            "the C++26 dialect parses clean, each construct as its own node",
+            dialect.diagnostic is None and all(list(dialect.find(kind)) for kind in wanted),
+        )
+
+        # The limits that the module docstring names, one case each.  A kit
+        # change that moves a limit fails the case that pins it.
+        macro = parse_text("macro.cpp", "#define CAST(p) reinterpret_cast<int*>(p)\n")
+        check(
+            "limit: a macro body is one preproc_arg with no call inside it",
+            len(list(macro.find("preproc_arg"))) == 1
+            and not list(macro.find("call_expression", "template_function")),
+        )
+        arms = parse_text("arms.cpp", "#if 0\nint dead_arm();\n#else\nint live_arm();\n#endif\n")
+        check(
+            "limit: the kit parses both arms of an #if",
+            len(list(arms.find("function_declarator"))) == 2,
+        )
+        plain = "A<" * 48 + "int" + ">" * 48
+        check(
+            "a 48-level nest of plain template-ids parses clean",
+            parse_text("plain48.cpp", f"using T = {plain};\n").diagnostic is None,
+        )
+        qualified_row = (
+            "using G = EnRouteChoice<U, U, U, Branch<U, U, Comm<U, U, Branch<U, U, "
+            "Comm<U, U, fg::Branch<U, U, fg::Comm<U, U, fg::Branch<U, U, fg::Comm<U, U, "
+            "fg::Branch<U, U, fg::Rec<fg::Comm<U, U, U, fg::Branch<U, U, fg::Comm<U, U, "
+            "fg::Branch<U, U, fg::Comm<U, U, U, fg::Branch<Label<1>, U, U> > > > > > > > "
+            "> > > >, U > > > > >;\n"
+        )
+        check(
+            "limit: an 18-level qualified nest over a numeric argument fails",
+            parse_text("limit.cpp", qualified_row).diagnostic is not None,
+        )
+        check(
+            "the same nest with unqualified names parses clean",
+            parse_text("unqualified.cpp", qualified_row.replace("fg::", "")).diagnostic is None,
+        )
+        check(
+            "the same nest with a type argument parses clean",
+            parse_text("typed.cpp", qualified_row.replace("Label<1>", "U")).diagnostic is None,
+        )
+
     # Negative control: a rostered file is admitted, and it really does carry an
     # error, so the roster entry is not stale.
     rostered = Path("src/perf/LockContention.cpp")
@@ -590,7 +682,7 @@ def _self_test() -> int:
     if failures:
         print(f"tsast --self-test: FAILED — {len(failures)} of the checks did not hold")
         return 2
-    print("tsast --self-test: every check passes, 3 of them negative controls.")
+    print("tsast --self-test: every check passes, 5 of them negative controls.")
     return 0
 
 
