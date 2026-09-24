@@ -55,8 +55,18 @@ union.  scripts/witness-roster.txt names each type that attests to a fact
 it cannot see, and check-witness-roster.sh refuses a door that the roster
 does not name.  test_forgeable_proofs --proof-names prints each class that
 the reflection walk of that test finds to have the shape of a proof, and
-each template in its witness list.  A type alias or a typedef whose
-definition names a proof type becomes a proof name as well, in each file.
+each template in its witness list: one line each, the name that a source
+spells, a tab, and the qualified name.  The guard matches the spelled
+name, and a report gives the qualified names that the spelling can refer
+to.  A type alias or a typedef whose definition names a proof type becomes
+a proof name as well, in each file.
+
+An identifier that the template parameter list of an enclosing template
+declaration binds names that parameter, not a proof type of the same
+spelling, so it is not a proof name inside that declaration.  The scope of
+a parameter list ends at the first `;` or `}` that closes the declaration.
+A `requires { ... }` clause before the body can end it early, which fails
+closed: a name after it is matched again.
 
 Two passes
 ----------
@@ -81,8 +91,11 @@ Out of scope, stated rather than implied
   They are C for the BPF target, and no C++ header reaches them.
 - A route through a template parameter.  `static_cast<T*>(buffer)` in an
   arena or a container names T, not a proof type, and the guard cannot know
-  which argument reaches T.  test/fixy/test_forgeable_proofs.cpp pins this
-  route with its argument.
+  which argument reaches T.  A parameter spelled like a proof type is the
+  same route.  test/fixy/test_forgeable_proofs.cpp pins this route with its
+  argument.
+- A template parameter list that a lambda opens with no `template` keyword.
+  Its names stay proof names, so the guard fails closed there.
 - A pointer value copied with std::memcpy into a variable whose type is a
   pointer to a proof type.  The copy names no proof type at the call.  The
   same ledger pins it.
@@ -106,6 +119,8 @@ Usage
   check-proof-routes.py --self-test         plant each route and prove the verdicts
 """
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -127,7 +142,7 @@ BPF = re.compile(r"^include/crucible/[^/]+/bpf/|\.bpf\.c$")
 ENTRY = re.compile(r"^(?P<key>.*?)(?: x(?P<count>[1-9][0-9]*))?$")
 # Bumped when a rule reads the text differently, so an older cache entry
 # is not reused.
-SCAN_VERSION = 1
+SCAN_VERSION = 2
 
 UNION = re.compile(r"\bunion\s+(?:\[\[[^\]]*\]\]\s*)*(?:alignas\s*\([^)]*\)\s*)*([A-Za-z_]\w*)?\s*(?:final\s*)?\{")
 CAST = re.compile(r"\b(static_cast|reinterpret_cast|bit_cast)\s*<")
@@ -143,6 +158,13 @@ PARTIAL = re.compile(r"\btemplate\s*<([^;{}]*?)>\s*(?:class|struct)\s+(?:\[\[[^\
 MEMBER_POINTER = re.compile(r"&\s*(?:::)?[A-Za-z_][\w]*(?:\s*<[^;{}]*?>)?\s*::\s*[A-Za-z_~]")
 ALIAS = re.compile(r"\busing\s+([A-Za-z_]\w*)\s*=\s*([^;]+);|\btypedef\s+([^;]+?)\b([A-Za-z_]\w*)\s*;")
 IDENT = re.compile(r"[A-Za-z_]\w*")
+TEMPLATE_HEAD = re.compile(r"\btemplate\s*<")
+# The first `=` of a parameter that is not part of a comparison starts its
+# default argument.
+DEFAULT_ARGUMENT = re.compile(r"(?<![=!<>])=(?!=)")
+# Words that end a template parameter with no name, such as `class` or `int`.
+UNNAMED = frozenset({"class", "typename", "struct", "template", "auto", "const", "volatile", "unsigned", "signed",
+                     "int", "long", "short", "char", "bool", "double", "float", "void"})
 
 
 def normalized(fragment: str) -> str:
@@ -184,6 +206,71 @@ def declaration_head(code: str, start: int) -> str:
 def idents(text: str) -> list[str]:
     """The distinct identifiers of the text, sorted."""
     return sorted(set(IDENT.findall(text)))
+
+
+def template_parameter_names(head: str) -> frozenset[str]:
+    """The names that one template parameter list binds, such as T and N in `class T, int N = 4`."""
+    parameters: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in head:
+        if ch in "<([":
+            depth += 1
+        elif ch in ">)]":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parameters.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    parameters.append("".join(current))
+    names = set()
+    for parameter in parameters:
+        words = IDENT.findall(DEFAULT_ARGUMENT.split(parameter, 1)[0])
+        if words and words[-1] not in UNNAMED:
+            names.add(words[-1])
+    return frozenset(names)
+
+
+def declaration_end(code: str, start: int) -> int:
+    """The offset after the `;` or the `}` that closes the declaration that starts at the offset.
+
+    A brace inside parentheses, such as a default argument T{}, does not
+    close it.  Complexity: linear in the length of the declaration."""
+    parens = 0
+    braces = 0
+    for index in range(start, len(code)):
+        ch = code[index]
+        if ch in "([":
+            parens += 1
+        elif ch in ")]":
+            parens -= 1
+        elif ch == "{":
+            braces += 1
+        elif ch == "}":
+            braces -= 1
+            if braces <= 0 and parens <= 0:
+                return index + 1
+        elif ch == ";" and braces <= 0 and parens <= 0:
+            return index + 1
+    return len(code)
+
+
+def template_scopes(code: str) -> list[tuple[int, int, frozenset[str]]]:
+    """Each template parameter list of the code, as (start, end, names) of the declaration it opens.
+
+    Complexity: linear in the length of the code times the depth of the
+    nested templates."""
+    scopes = []
+    for m in TEMPLATE_HEAD.finditer(code):
+        found = angle_argument(code, m.end() - 1)
+        if found is None:
+            continue
+        head, after = found
+        names = template_parameter_names(head)
+        if names:
+            scopes.append((after, declaration_end(code, after), names))
+    return scopes
 
 
 # A record is [rule, key, offset, names, subject].  names is the list of
@@ -236,6 +323,15 @@ def extract(code: str) -> list[list]:
         if m.group(1).strip():
             records.append(["friend-template-specialization", normalized(m.group(0))[:160], m.start(), None,
                             m.group(2)])
+    # A name that an enclosing template parameter list binds is that
+    # parameter, so it is not a proof name at the site.
+    scopes = template_scopes(code)
+    for record in records:
+        if record[3] is None:
+            continue
+        bound = {name for start, end, names in scopes if start <= record[2] < end for name in names}
+        if bound:
+            record[3] = [name for name in record[3] if name not in bound]
     return records
 
 
@@ -297,24 +393,38 @@ def listed_files(root: Path) -> list[str]:
         return found
 
 
-def roster_names(root: Path) -> set[str]:
-    """The class name of each line of the witness roster, closed or open."""
-    names: set[str] = set()
+def roster_names(root: Path) -> dict[str, set[str]]:
+    """The class name of each line of the witness roster, closed or open, with the name the roster writes."""
+    names: dict[str, set[str]] = defaultdict(set)
     roster = root / "scripts" / "witness-roster.txt"
     if roster.is_file():
         for raw in roster.read_text().splitlines():
             line = raw.strip()
             if line and not line.startswith("#") and "|" in line:
-                names.add(line.split("|", 1)[0].strip().split("<", 1)[0].rsplit("::", 1)[-1])
+                written = line.split("|", 1)[0].strip()
+                names[written.split("<", 1)[0].rsplit("::", 1)[-1]].add(written)
     return names
 
 
-def reflected_names(binary: str | None) -> set[str]:
-    """The names that test_forgeable_proofs --proof-names prints, or none without the binary."""
+def reflected_names(binary: str | None) -> dict[str, set[str]]:
+    """The names that test_forgeable_proofs --proof-names prints, each with its qualified names.
+
+    Each line is the spelled name, a tab and the qualified name."""
+    names: dict[str, set[str]] = defaultdict(set)
     if not binary:
-        return set()
+        return names
     result = subprocess.run([binary, "--proof-names"], capture_output=True, text=True, check=True)
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    for line in result.stdout.splitlines():
+        spelled, _, qualified = line.strip().partition("\t")
+        if spelled:
+            names[spelled].add(qualified or spelled)
+    return names
+
+
+def qualified_names(key: str, qualified: dict[str, set[str]]) -> str:
+    """The qualified names of the proof names that a key spells, for a report."""
+    found = [f"{name} = {' or '.join(sorted(qualified[name]))}" for name in idents(key) if name in qualified]
+    return f"  The key names {', and '.join(found)}." if found else ""
 
 
 def friend_and_primary_names(root: Path, files: list[str]) -> tuple[frozenset[str], dict[str, set[str]]]:
@@ -413,7 +523,11 @@ def read_allowlist(path: Path) -> tuple[dict[str, tuple[int, int]], list[str]]:
 def scan(root: Path, compile_db: Path | None, binary: str | None, allowlist: Path, mode: str) -> int:
     """Scan the tree under the root and compare each site with the allowlist."""
     files = listed_files(root)
-    proofs = frozenset(roster_names(root) | reflected_names(binary))
+    qualified: dict[str, set[str]] = defaultdict(set)
+    for source in (roster_names(root), reflected_names(binary)):
+        for name, spellings in source.items():
+            qualified[name] |= spellings
+    proofs = frozenset(qualified)
     friends, primaries = friend_and_primary_names(root, files)
     lexical: dict[str, list[int]] = defaultdict(list)
     for path in files:
@@ -437,7 +551,7 @@ def scan(root: Path, compile_db: Path | None, binary: str | None, allowlist: Pat
             unreviewed += 1
             print(f"PROOF-ROUTE violation: {key} at line(s) {lines}: {count} site(s), {admitted} admitted.  "
                   f"Remove the route, or add a reviewed entry `{key}{' x' + str(count) if count > 1 else ''}` "
-                  f"to {allowlist.name}.", file=sys.stderr)
+                  f"to {allowlist.name}.{qualified_names(key.split(':', 2)[-1], qualified)}", file=sys.stderr)
         elif mode == "list":
             print(f"REVIEWED  {key}  ({count} site(s), line(s) {lines})")
     stale = 0
@@ -486,6 +600,13 @@ template <class U> class Opener<U*> {};
 const char* text = "union InString { int a; };";
 void fine(int* p) { auto* q = static_cast<long*>(static_cast<void*>(p)); (void)q; x.template get<0>(); }
 void also_fine() { auto* n = static_cast<Door*>(nullptr); auto f = static_cast<Door (*)(int)>(&make); }
+template <class Door> Door* rebind(void* raw) { return static_cast<Door*>(raw); }
+Door* after_template(void* raw) { return static_cast<Door*>(raw); }
+template <class T, class Door = T> struct Box { Door* get(void* raw) { return static_cast<Door*>(raw); } };
+template <class Door> concept Castable = requires(void* raw) { static_cast<Door*>(raw); };
+template <template <class> class Door> void* hold(void* raw) { return static_cast<Door<int>*>(raw); }
+template <class Door>
+void* grab() { return ::operator new(sizeof(Door)); }
 }
 """
 
@@ -502,7 +623,10 @@ def self_test() -> int:
         by_rule[rule].append(key)
     expected = {
         "union": ["Loose", "Held"],
-        "pointer-cast": ["static_cast<Door*>", "static_cast<Alias*>", "reinterpret_cast<const Door*>"],
+        # The fourth is the cast after the template: a parameter named Door
+        # binds only inside its own declaration.
+        "pointer-cast": ["static_cast<Door*>", "static_cast<Alias*>", "reinterpret_cast<const Door*>",
+                         "static_cast<Door*>"],
         "allocator": ["allocator<Door>"],
         "raw-allocation": ["operator new"],
         "explicit-instantiation": ["class Guarded<int>"],
@@ -538,6 +662,22 @@ def self_test() -> int:
         allow.write_text("a.cpp:union:Plain\na.cpp:union:Other\n")
         if scan(root, None, None, allow, "check") != 2:
             failures.append("an entry with no comment above it was accepted")
+        # A report names the qualified class that the dump gives for a
+        # spelled name, and the class that the roster writes.
+        (root / "b.cpp").write_text("void f(void* raw) { auto* key = static_cast<Key*>(raw); (void)key; }\n"
+                                    "void g(void* raw) { auto* door = static_cast<Door*>(raw); (void)door; }\n")
+        dump = root / "proof-names.sh"
+        dump.write_text("#!/bin/sh\nprintf 'Key\\t::forge::detail::Key\\n'\n")
+        dump.chmod(0o755)
+        allow.write_text("# plain scalars\na.cpp:union:Plain\na.cpp:union:Other\n")
+        report = io.StringIO()
+        with contextlib.redirect_stderr(report):
+            verdict = scan(root, None, str(dump), allow, "check")
+        for needle in ("b.cpp:pointer-cast:static_cast<Key*>", "The key names Key = ::forge::detail::Key.",
+                       "b.cpp:pointer-cast:static_cast<Door*>", "The key names Door = forge::Door."):
+            if verdict != 1 or needle not in report.getvalue():
+                failures.append(f"the report of a cast to a proof type lacks `{needle}`:\n{report.getvalue()}")
+        (root / "b.cpp").unlink()
         # Token pasting forms a union that the lexical pass cannot see, and
         # the preprocessed pass sees it.  A second run reads the cache.
         compiler = os.environ.get("CXX") or shutil.which("c++") or shutil.which("g++")

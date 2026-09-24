@@ -607,6 +607,27 @@ static_assert(!std::is_default_constructible_v<DerivedFromContextBase>
                   && !std::is_copy_constructible_v<DerivedFromContextBase>,
               "a class derived from the base of a context must not be buildable");
 
+// The name of a declaration with each enclosing scope, from the global
+// namespace down, so that a report of the guard names the real class.
+// Complexity: linear in the depth of the scopes.
+[[nodiscard]] consteval std::string qualified_name(std::meta::info declaration) {
+    std::string name = "::" + std::string{std::meta::identifier_of(declaration)};
+    for (std::meta::info scope = std::meta::parent_of(declaration); scope != ^^::;
+         scope = std::meta::parent_of(scope)) {
+        const std::string_view part =
+            std::meta::has_identifier(scope) ? std::meta::identifier_of(scope) : std::string_view{"(anonymous)"};
+        name = "::" + std::string{part} + name;
+    }
+    return name;
+}
+
+// One line of the dump: the name that a source spells, a tab, and the
+// qualified name.
+[[nodiscard]] consteval const char* proof_name_line(std::meta::info declaration) {
+    return std::define_static_string(std::string{std::meta::identifier_of(declaration)} + '\t'
+                                     + qualified_name(declaration));
+}
+
 // The names of the proof types, for scripts/check-proof-routes.py: each
 // class of the two namespaces that has the shape of a proof, and the
 // template of each witness.  main() prints them under --proof-names.
@@ -619,7 +640,7 @@ consteval void collect_proof_names(std::meta::info ns, std::vector<const char*>&
         }
         if (!std::meta::is_type(member) || std::meta::is_type_alias(member)) continue;
         if (std::meta::has_template_arguments(member) || !std::meta::has_identifier(member)) continue;
-        if (is_proof_shape(member)) out.push_back(std::define_static_string(std::meta::identifier_of(member)));
+        if (is_proof_shape(member)) out.push_back(proof_name_line(member));
     }
 }
 
@@ -628,8 +649,7 @@ consteval void collect_proof_names(std::meta::info ns, std::vector<const char*>&
     collect_proof_names(^^::foundation, names);
     collect_proof_names(^^::fixy, names);
     for (const std::meta::info witness : template_witnesses) {
-        const std::meta::info held = std::meta::template_of(std::meta::dealias(witness));
-        names.push_back(std::define_static_string(std::meta::identifier_of(held)));
+        names.push_back(proof_name_line(std::meta::template_of(std::meta::dealias(witness))));
     }
     return names;
 }

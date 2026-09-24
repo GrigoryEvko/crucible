@@ -148,15 +148,15 @@ namespace detail::swiss_table_buffer_self_test {
 
 // The shape of a proof: every constructor is user-provided, so the class is
 // not an implicit-lifetime type.
-class Proof {
+class ProofShape {
 public:
-    Proof(const Proof&) noexcept {}
+    ProofShape(const ProofShape&) noexcept {}
 
 private:
-    Proof() noexcept {}
+    ProofShape() noexcept {}
 };
 struct HoldsProof {
-    Proof proof;
+    ProofShape proof;
 };
 
 static_assert(!std::is_copy_constructible_v<SwissTableBuffer<void*>>);

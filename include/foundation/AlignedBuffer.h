@@ -178,15 +178,17 @@ private:
 
 namespace detail::aligned_buffer_self_test {
 
-class Proof {
+// The shape of a proof: every constructor is user-provided, so the class is
+// not an implicit-lifetime type.
+class ProofShape {
 public:
-    Proof(const Proof&) noexcept {}
+    ProofShape(const ProofShape&) noexcept {}
 
 private:
-    Proof() noexcept {}
+    ProofShape() noexcept {}
 };
 struct HoldsProof {
-    Proof proof;
+    ProofShape proof;
 };
 
 // A count that refuses a start over bytes and builds from its own default
