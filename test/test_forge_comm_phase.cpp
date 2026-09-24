@@ -1,7 +1,10 @@
+#include <crucible/Philox.h>
 #include <crucible/forge/_wip/Phases/Comm.h>
+#include <foundation/reflect/Hash.h>
 
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <span>
 #include <string_view>
@@ -12,6 +15,24 @@ namespace ir = crucible::forge::ir001;
 namespace net = crucible::forge::recipes;
 
 namespace {
+
+// The old body of the phase and the canonical call give the same value on
+// zero, all ones, the golden constant and four Philox words, in each pair.
+constexpr bool old_and_canonical_agree() {
+    std::array<std::uint64_t, 7> words{0, ~std::uint64_t{0}, 0x9e3779b97f4a7c15ULL};
+    for (std::uint64_t index = 0; index < 4; ++index) {
+        auto const lanes = crucible::Philox::generate(index, 0x51ULL);
+        words[3 + index] = (std::uint64_t{lanes[0]} << 32) | lanes[1];
+    }
+    for (std::uint64_t const left : words) {
+        if (phase::detail::fmix64(left) != ::foundation::reflect::fmix64(left)) return false;
+        for (std::uint64_t const right : words) {
+            if (phase::detail::hash_mix(left, right) != ::foundation::reflect::combine_ids(left, right)) return false;
+        }
+    }
+    return true;
+}
+static_assert(old_and_canonical_agree());
 
 using ComputeRow = crucible::effects::ConcurrentRow<crucible::effects::SmBudget<16>, crucible::effects::HbmBytes<4096>,
                                                     crucible::effects::HbmBandwidth<4096>>;
@@ -143,6 +164,9 @@ void test_send_from_epilogue_decision() {
     assert(decision->value().comm_hash.raw() != 0);
     assert(decision->value().fused_hash.raw() != 0);
     assert(decision->value().participants == 1);
+    // The fused key, recorded from the phase hash body that combine_ids
+    // replaced.
+    assert(decision->value().fused_hash.raw() == 0x87e9317e957fbb79ULL);
 
     phase::CommPhasePolicy disabled{};
     disabled.send_from_epilogue = false;

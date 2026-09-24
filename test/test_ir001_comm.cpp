@@ -1,7 +1,10 @@
+#include <crucible/Philox.h>
 #include <crucible/forge/Ir001/Comm.h>
+#include <foundation/reflect/Hash.h>
 
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
@@ -9,6 +12,49 @@
 namespace ir = crucible::forge::ir001;
 
 namespace {
+
+// The inputs of the hash checks: zero, all ones, the golden constant and
+// four words from a Philox stream with a fixed key.
+constexpr std::array<std::uint64_t, 7> hash_inputs() {
+    std::array<std::uint64_t, 7> words{0, ~std::uint64_t{0}, 0x9e3779b97f4a7c15ULL};
+    for (std::uint64_t index = 0; index < 4; ++index) {
+        auto const lanes = crucible::Philox::generate(index, 0x51ULL);
+        words[3 + index] = (std::uint64_t{lanes[0]} << 32) | lanes[1];
+    }
+    return words;
+}
+
+// The old forge body and the canonical call give the same value on every
+// pair of inputs.  Complexity: O(n^2) for n inputs.
+constexpr bool old_and_canonical_agree() {
+    constexpr auto words = hash_inputs();
+    for (std::uint64_t const left : words) {
+        if (ir::detail::fmix64(left) != ::foundation::reflect::fmix64(left)) return false;
+        for (std::uint64_t const right : words) {
+            if (ir::detail::hash_mix(left, right) != ::foundation::reflect::combine_ids(left, right)) return false;
+        }
+    }
+    return true;
+}
+static_assert(old_and_canonical_agree());
+
+// A fold of every combine value over the input pairs and of every finalized
+// input.  The fold is a weighted sum with no hash of its own, so it cannot
+// hide a change of combine_ids.  Complexity: O(n^2) for n inputs.
+constexpr std::uint64_t combine_digest() {
+    constexpr auto words = hash_inputs();
+    std::uint64_t digest = 0;
+    std::uint64_t weight = 1;
+    for (std::uint64_t const left : words) {
+        digest += weight++ * ::foundation::reflect::fmix64(left);
+        for (std::uint64_t const right : words) {
+            digest += weight++ * ::foundation::reflect::combine_ids(left, right);
+        }
+    }
+    return digest;
+}
+// The digest, recorded from the forge hash body that combine_ids replaced.
+static_assert(combine_digest() == 0xbf5ac219ada20de7ULL);
 
 crucible::TensorMeta tensor(crucible::ScalarType dtype) {
     crucible::TensorMeta meta{};
@@ -75,6 +121,9 @@ void test_collective_node_admission() {
     assert(header.flags == 1);
     assert(header.attr_words > 0);
     assert(header.content_hash != 0);
+    // The content key of this node, recorded from the forge hash body that
+    // combine_ids replaced.  A change here changes every key in a cache.
+    assert(header.content_hash == 0x90ad04a2a08f4d98ULL);
 
     bool visited = false;
     ir::visit_ir001_node(declared, [&](ir::AllReduceOp const& node) {
@@ -142,6 +191,10 @@ void test_other_attr_shapes() {
     auto telemetry_header = ir::serialize_ir001_header(declared_telemetry);
     assert(telemetry_header.kind == std::to_underlying(ir::Ir001OpKind::IntTelemetryEmit));
     assert(telemetry_header.content_hash != send_header.content_hash);
+    // The content keys of these nodes, recorded from the forge hash body that
+    // combine_ids replaced.
+    assert(send_header.content_hash == 0xb71c22794a3b58b0ULL);
+    assert(telemetry_header.content_hash == 0xbe2e6fabe114c6cfULL);
 
     std::printf("  test_other_attr_shapes: PASSED\n");
 }
