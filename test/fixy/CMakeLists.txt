@@ -3090,6 +3090,29 @@ fixy_neg_compile_test(neg_os_sched_mint_priority_test_ctx
 fixy_test(test_os_mmap)
 fixy_test(test_os_io)
 
+# ── A discard of pages takes the permission of the mapping ───────────
+#
+# advise_release_aware took Permission<RegionTag> with RegionTag free, so
+# a permission of any region admitted a discard of any mapping.  The
+# mapping takes its tag and its brand from the permission it is minted
+# with, and the gate compares each with the proof.  One fixture for each
+# clause: another tag, another brand of the same tag, and a mapping on
+# the erased brand, where an erased proof would agree.
+fixy_neg_compile_test(neg_os_mmap_release_other_tag
+  "no matching function for call to .advise_release_aware<fixy::mmap::advice::DontNeed>\\("
+  "required for the satisfaction of .ProofNamesMappingTag<Proof, Region>. .with Proof = foundation::permissions::Permission<<unnamed>::OtherRegion, "
+  "Tag = <unnamed>::MappedRegion.. evaluated to .false.")
+
+fixy_neg_compile_test(neg_os_mmap_release_other_brand
+  "no matching function for call to .advise_release_aware<fixy::mmap::advice::DontNeed>\\("
+  "required for the satisfaction of .ProofNamesMappingBrand<Proof, Region>. .with Proof = foundation::permissions::Permission<<unnamed>::MappedRegion, "
+  "required for the satisfaction of .SameBrand<Proof, Region>.")
+
+fixy_neg_compile_test(neg_os_mmap_release_erased_mapping
+  "no matching function for call to .advise_release_aware<fixy::mmap::advice::DontNeed>\\("
+  "required for the satisfaction of .MappingIsBranded<Region>. .with Region = fixy::OwnedMmap<<unnamed>::MappedRegion, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, foundation::brand::DefaultBrand>"
+  "the expression .!\\(is_same_v<B, foundation::brand::DefaultBrand>\\) .with B = foundation::brand::DefaultBrand.. evaluated to .false.")
+
 # ── A NUMA placement comes only from a successful mbind ─────────────
 #
 # The proof owns an anonymous region, and fixy::numa::mint_numa_placement

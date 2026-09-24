@@ -35,18 +35,26 @@
 //     over the atom catalog rather than a trait any translation unit
 //     could specialize.
 //
-//  5. The release_aware grant and its two predicates are dropped, and
-//     CtxFitsReleaseAwareAdvise lost the RegionTag parameter it took.
-//     The grant was dead in the old header: the concept was written
+//  5. The release_aware grant and its two predicates are dropped.  The
+//     grant was dead in the old header: the concept was written
 //     `CtxAdmitsIoBlock<Ctx> && is_dangerous_advice_v<Advice>` and named
 //     neither the grant nor RegionTag, so the tag was a parameter the
-//     gate never read.  What actually admits the dangerous advice is the
-//     Permission argument on advise_release_aware, which is still there
-//     and still tag-matched to the region.
+//     gate never read.  The Permission argument on advise_release_aware
+//     is what admits the dangerous advice.  The old header took it as
+//     Permission<RegionTag> with RegionTag free, so a permission of any
+//     region admitted a discard of any mapping.  Here the gate compares
+//     the tag and the brand of the permission with the mapping's own.
+//
+//  6. A mapping carries a brand.  mint_mmap and mint_mmap_anon read the
+//     tag and the brand of the exclusive permission the caller presents.
+//     The old mints took the tag as a template argument, and a mapping
+//     had no identity past its tag, so two mappings of one tag were one
+//     type.
 
 #include <fixy/OwnedMmap.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Lift.h>
@@ -400,22 +408,53 @@ concept CtxAdmitsAdvise =
 template <typename Ctx, typename Advice>
 concept CtxFitsSafeAdvise = CtxAdmitsAdvise<Ctx> && (advice_value_v<Advice> >= 0) && !is_dangerous_advice_v<Advice>;
 
-template <typename Ctx, typename Advice>
-concept CtxFitsReleaseAwareAdvise =
-    CtxAdmitsAdvise<Ctx> && (advice_value_v<Advice> >= 0) && is_dangerous_advice_v<Advice>;
+// A release names the mapping it acts on, by the tag and the brand of the
+// mapping.  Each clause is its own concept, so a refusal names the clause
+// that failed.
+//
+// The proof is compared as the type the caller passed.  A parameter
+// spelled Permission<Tag, Brand> would also deduce from a class derived
+// from a permission, and IsPermissionFor refuses that class, because it
+// matches the Permission template exactly.  A share, a guard, and a
+// permission of a tag derived from the mapping's tag are each refused as
+// another type.
+template <typename Proof, typename Region>
+concept ProofNamesMappingTag = ::foundation::permissions::IsPermissionFor<Proof, typename Region::tag_type>;
 
+// On the erased brand every mapping of a tag is one type, so a proof of
+// one of them would stand in for all of them.  Only a mint with a
+// permission of a fresh brand gives a branded mapping.
+template <typename Region>
+concept MappingIsBranded = ::foundation::brand::IsBranded<Region>;
+
+template <typename Proof, typename Region>
+concept ProofNamesMappingBrand = ::foundation::brand::SameBrand<Proof, Region>;
+
+template <typename Ctx, typename Advice, typename Region, typename Proof>
+concept CtxFitsReleaseAwareAdvise =
+    CtxAdmitsAdvise<Ctx> && (advice_value_v<Advice> >= 0) && is_dangerous_advice_v<Advice>
+    && ProofNamesMappingTag<Proof, Region> && MappingIsBranded<Region> && ProofNamesMappingBrand<Proof, Region>;
+
+// The mapping takes its tag and its brand from the exclusive permission
+// the caller presents.  The mint reads the permission and does not
+// consume it: the caller keeps it, can park it in a pool, and presents
+// it again to advise_release_aware.  Each mapping minted with one
+// permission has the identity of that permission, and the exclusive of
+// that identity covers each of them.
+//
 // The descriptor is a plain int rather than an owning handle type, so
 // that a descriptor from any source reaches this without a conversion.
 //
 // §XXI carve-out: cx=alloc — mapping is a kernel side effect.
-template <typename Tag, typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
+template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand>
     requires CtxFitsMmapMint<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<
-    Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>>>, std::error_code>
-mint_mmap(Ctx const&, int fd, std::size_t length, ::off_t offset = 0) noexcept {
+    Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>, std::error_code>
+mint_mmap(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/, int fd, std::size_t length,
+          ::off_t offset = 0) noexcept {
     constexpr int prot = detail::fold_prot_bits<Atoms...>();
     constexpr int flags = detail::fold_share_flags<Atoms...>();
-    using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>>;
+    using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
     // The syscall lives with the region's only constructor, in
     // fixy/OwnedMmap.h, so that no address but the kernel's can become a
     // region.  What this mint owns is the gate above: which atoms, and
@@ -428,17 +467,19 @@ mint_mmap(Ctx const&, int fd, std::size_t length, ::off_t offset = 0) noexcept {
 }
 
 // An anonymous mapping takes a descriptor of -1 and an offset of 0,
-// which is the convention mmap(2) states.
+// which is the convention mmap(2) states.  The permission is read as in
+// mint_mmap.
 //
 // §XXI carve-out: cx=alloc — mapping is a kernel side effect.
-template <typename Tag, typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
+template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand>
     requires CtxFitsAnonMmapMint<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<
-    Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>>>, std::error_code>
-mint_mmap_anon(Ctx const&, std::size_t length) noexcept {
+    Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>, std::error_code>
+mint_mmap_anon(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
+               std::size_t length) noexcept {
     constexpr int prot = detail::fold_prot_bits<Atoms...>();
     constexpr int flags = detail::fold_share_flags<Atoms...>();
-    using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>>;
+    using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
     auto region = Region::map_region(prot, flags, -1, length, 0);
     if (!region) {
         return std::unexpected{std::error_code{region.error(), std::system_category()}};
@@ -446,10 +487,11 @@ mint_mmap_anon(Ctx const&, std::size_t length) noexcept {
     return mint_linear<Region>(std::move(*region));
 }
 
-template <typename Advice, typename Tag, typename Prot, typename Share, ::foundation::effects::IsExecCtx Ctx>
+template <typename Advice, typename Tag, typename Prot, typename Share, typename Brand,
+          ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSafeAdvise<Ctx, Advice>
 [[nodiscard]] inline std::expected<void, std::error_code> advise(Ctx const&,
-                                                                 OwnedMmap<Tag, Prot, Share>& region) noexcept {
+                                                                 OwnedMmap<Tag, Prot, Share, Brand>& region) noexcept {
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
@@ -465,23 +507,38 @@ template <typename Advice, typename Tag, typename Prot, typename Share, ::founda
 // once every outstanding share of it has been deposited back, so holding
 // one witnesses that no reader is live.  The permission is move-only, so
 // the caller cannot have handed it to a reader between obtaining it and
-// arriving here, and the tag on it must match the region, so a
-// permission over some other region cannot stand in.
+// arriving here.
+//
+// The gate admits only the permission of this mapping: its tag is the
+// mapping's tag and its brand is the mapping's brand.  The mapping took
+// both from the permission it was minted with, so the proof and the
+// mapping name one identity, and a permission of another region cannot
+// stand in.  The Advice argument is the only one a caller spells.  The
+// rest are deduced, and a spelled tag that differs from the mapping's
+// tag does not bind the region.
+//
+// A brand names a mint site, not a mint call, per fact 2 of
+// foundation/Brand.h.  Two permissions minted by one statement in a loop
+// are one type, so two mappings minted with them are one type too, and
+// the gate cannot tell them apart.  A permission carries no state at run
+// time, so there is no identity here to compare at run time either.
+// Mint the two permissions at two sites when both mappings must live at
+// the same time.
 //
 // It is borrowed rather than consumed because discarding pages leaves
 // the region usable, so the caller keeps it and may hand it back out
 // afterwards.
-template <typename Advice, typename RegionTag, typename Tag, typename Prot, typename Share,
-          ::foundation::effects::IsExecCtx Ctx, typename Brand>
-    requires CtxFitsReleaseAwareAdvise<Ctx, Advice>
+template <typename Advice, typename Tag, typename Prot, typename Share, typename Brand, typename Proof,
+          ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsReleaseAwareAdvise<Ctx, Advice, OwnedMmap<Tag, Prot, Share, Brand>, Proof>
 [[nodiscard]] inline std::expected<void, std::error_code>
-advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share>& region,
-                     ::foundation::permissions::Permission<RegionTag, Brand> const& /*exclusive_proof*/) noexcept {
+advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region,
+                     Proof const& /*exclusive_proof*/) noexcept {
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
     if (::madvise(region.data(), region.size(), advice_value_v<Advice>)
-        < 0) {  // SYSCALL-CAP-OK: advise_release_aware ctx-gate (CtxFitsReleaseAwareAdvise: IO+Block + Permission<RegionTag>)
+        < 0) {  // SYSCALL-CAP-OK: advise_release_aware ctx-gate (CtxFitsReleaseAwareAdvise: IO+Block + the Permission of this mapping)
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return {};
@@ -586,9 +643,61 @@ static_assert(CtxFitsSafeAdvise<IoBlockCtx, advice::Sequential>);
 static_assert(!CtxFitsSafeAdvise<IoBlockCtx, advice::DontNeed>,
               "DontNeed zeroes the pages, so it must go through the release-aware door.");
 static_assert(!CtxFitsSafeAdvise<IoOnlyCtx, advice::HugePage>);
-static_assert(CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::DontNeed>);
-static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::HugePage>,
-              "the release-aware door is for the dangerous advice only; the rest go through advise.");
+
+// The release gate, read against one probe mapping and each proof a
+// caller could hand it.  The brands are named types, so each claim reads
+// without a mint.  The mapping spelled without a brand is on the erased
+// identity.
+struct ProbeRegion {};
+struct ProbeOtherRegion final {};
+struct ProbeDerivedRegion final : ProbeRegion {};
+struct ProbeBrand final {};
+struct ProbeOtherBrand final {};
+
+using ProbeMapping = OwnedMmap<ProbeRegion, prot::WriteCopy, share::Anonymous, ProbeBrand>;
+using ErasedMapping = OwnedMmap<ProbeRegion, prot::WriteCopy, share::Anonymous>;
+
+using OwnProof = ::foundation::permissions::Permission<ProbeRegion, ProbeBrand>;
+using OtherTagProof = ::foundation::permissions::Permission<ProbeOtherRegion, ProbeBrand>;
+using DerivedTagProof = ::foundation::permissions::Permission<ProbeDerivedRegion, ProbeBrand>;
+using OtherBrandProof = ::foundation::permissions::Permission<ProbeRegion, ProbeOtherBrand>;
+using ShareProof = ::foundation::permissions::SharedPermission<ProbeRegion, ProbeBrand>;
+// A class derived from the right permission.  It has the tag_type and
+// the brand_type of that permission, which is why the tag clause asks
+// for the Permission template exactly rather than for the two members.
+struct LookAlikeProof : OwnProof {};
+
+static_assert(CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::DontNeed, ProbeMapping, OwnProof>);
+static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::HugePage, ProbeMapping, OwnProof>,
+              "the release-aware door is for the dangerous advice only.  The rest go through advise.");
+static_assert(!CtxFitsReleaseAwareAdvise<IoOnlyCtx, advice::DontNeed, ProbeMapping, OwnProof>);
+
+static_assert(ProofNamesMappingTag<OwnProof, ProbeMapping> && MappingIsBranded<ProbeMapping>
+              && ProofNamesMappingBrand<OwnProof, ProbeMapping>);
+static_assert(!ProofNamesMappingTag<OtherTagProof, ProbeMapping>,
+              "a permission of another region must not admit a discard of this mapping.");
+static_assert(!ProofNamesMappingTag<DerivedTagProof, ProbeMapping>,
+              "a tag derived from the mapping's tag is another tag.");
+static_assert(!ProofNamesMappingTag<LookAlikeProof, ProbeMapping>, "a class derived from a permission is not one.");
+static_assert(!ProofNamesMappingTag<ShareProof, ProbeMapping>, "a share is not the exclusive.");
+static_assert(!ProofNamesMappingBrand<OtherBrandProof, ProbeMapping>,
+              "a permission of another instance of the tag must not admit a discard of this mapping.");
+static_assert(!MappingIsBranded<ErasedMapping>,
+              "on the erased brand every mapping of the tag is one type, so no proof names one of them.");
+
+// The same refusals through the function itself, where the tag and the
+// brand are deduced from the mapping.
+template <typename Mapping, typename Proof>
+concept CanRelease = requires(IoBlockCtx const& ctx, Mapping& mapping, Proof const& proof) {
+    advise_release_aware<advice::DontNeed>(ctx, mapping, proof);
+};
+static_assert(CanRelease<ProbeMapping, OwnProof>);
+static_assert(!CanRelease<ProbeMapping, OtherTagProof>);
+static_assert(!CanRelease<ProbeMapping, DerivedTagProof>);
+static_assert(!CanRelease<ProbeMapping, LookAlikeProof>);
+static_assert(!CanRelease<ProbeMapping, ShareProof>);
+static_assert(!CanRelease<ProbeMapping, OtherBrandProof>);
+static_assert(!CanRelease<ErasedMapping, OwnProof>);
 
 // A tag with no entry in a bit map has no bits, and a read of them is a
 // compile error.  These cells are the witness: an atom over a tag with
@@ -645,7 +754,7 @@ static_assert(every_tag_in_is_known_<^^::fixy::mmap::share, false>(),
 struct NotAnAdvice final {};
 static_assert(advice_value_v<NotAnAdvice> == -1);
 static_assert(!CtxFitsSafeAdvise<IoBlockCtx, NotAnAdvice>);
-static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, NotAnAdvice>);
+static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, NotAnAdvice, ProbeMapping, OwnProof>);
 
 // The shape of every class in fixy::mmap::advice — empty, final, not an
 // atom — is checked by the one walk in fixy/atoms/Os.h, which covers all

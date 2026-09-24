@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstring>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 namespace eff = foundation::effects;
@@ -32,7 +33,11 @@ namespace {
 
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block>>;
 
-struct BoundRegion final {};
+// A mapping is minted with the exclusive permission of its region, so the
+// region tag declares the row a permission needs.
+struct BoundRegion final {
+    using permission_row = eff::Row<>;
+};
 
 using WriteAnon = fixy::atom::mmap::with_prot<fixy::mmap::prot::WriteCopy>;
 using Anonymous = fixy::atom::mmap::with_share<fixy::mmap::share::Anonymous>;
@@ -44,8 +49,11 @@ inline constexpr fixy::NumaNodeId kNodeZero{0};
 
 [[nodiscard]] std::size_t page_bytes() noexcept { return static_cast<std::size_t>(::sysconf(_SC_PAGESIZE)); }
 
+// The mapping takes the tag and the brand of the permission.  The
+// permission ends here, because no case of this test discards pages.
 [[nodiscard]] auto map_two_pages(BgCtx const& ctx) noexcept {
-    return fixy::mmap::mint_mmap_anon<BoundRegion, WriteAnon, Anonymous>(ctx, 2 * page_bytes());
+    auto const owner = foundation::permissions::mint_permission_root<BoundRegion>();
+    return fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, 2 * page_bytes());
 }
 
 // True when the kernel refused a binding for a reason of the machine, not
@@ -143,7 +151,13 @@ struct AddressPolicy {
     }
 
     // A move carries the claim, and the source covers no node after it.
-    fixy::NumaPlacement<BoundRegion, fixy::mmap::prot::WriteCopy> moved{std::move(*placed)};
+    // The proof carries the brand of the mapping, so its type is read off
+    // the mint's result rather than spelled.
+    using Placement = decltype(placed)::value_type;
+    static_assert(std::is_same_v<Placement::region_type::tag_type, BoundRegion>);
+    static_assert(foundation::brand::IsBranded<Placement::region_type>,
+                  "a placement keeps the brand of the mapping it binds");
+    Placement moved{std::move(*placed)};
     if (moved.node() != kNodeZero || !moved.admits(kNodeZero)) {
         std::fprintf(stderr, "a move did not carry the binding\n");
         return 1;

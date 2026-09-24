@@ -7,10 +7,17 @@
 // in and let is_mapped report.  The stored length must be exactly the
 // length given to ::mmap, because ::munmap is called with it verbatim.
 //
-// Tag, Prot and Share are never interpreted here.  Tag gives each
+// Tag, Prot, Share and Brand are never interpreted here.  Tag gives each
 // region its own type, so two unrelated mappings cannot be swapped at
 // a call boundary.  Prot and Share are read by the layers that gate
 // the syscall and that reason about where the region lives.
+//
+// Brand names one instance of the tag.  The mints of fixy/os/Mmap.h
+// take the tag and the brand from the exclusive permission the caller
+// presents, so a mapping has the identity of that permission.  The one
+// door there that discards pages admits only a permission of that
+// identity.  A region spelled without a brand is on the erased identity
+// DefaultBrand, and foundation/Brand.h states the rules of a brand.
 //
 // The address a mapping lands at is randomized by the kernel and is
 // deliberately not reproducible.  No replay path may observe it.
@@ -54,6 +61,7 @@
 // reasoning, as fixy::detail::pin_calling_thread in fixy/os/CpuPinned.h.
 
 #include <fixy/atoms/Os.h>
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 
@@ -76,8 +84,12 @@ template <typename Prot, typename Share>
 struct owned_mmap;
 }  // namespace row_discipline
 
-template <typename Tag, typename Prot, typename Share>
+template <typename Tag, typename Prot, typename Share, typename Brand = ::foundation::brand::DefaultBrand>
 class [[nodiscard]] OwnedMmap {
+    static_assert(::foundation::brand::IsBrand<Brand>,
+                  "OwnedMmap<Tag, Prot, Share, Brand>: Brand must be an empty class type: the brand of the "
+                  "permission the mapping was minted with, or DefaultBrand.");
+
     void* addr_ = MAP_FAILED;
     std::size_t len_ = 0;
 
@@ -90,6 +102,7 @@ public:
     using tag_type = Tag;
     using prot_type = Prot;
     using share_type = Share;
+    using brand_type = Brand;
     using row_discipline = ::fixy::row_discipline::owned_mmap<Prot, Share>;
     using row_payload = ::foundation::diag::row_payloads<>;
 
@@ -195,6 +208,20 @@ static_assert(!std::is_constructible_v<SmokeOwnedMmap, void*>,
               "There is no one-argument form either: a region without its exact length cannot be unmapped.");
 static_assert(std::is_default_constructible_v<SmokeOwnedMmap>,
               "The empty region claims nothing, so it stays reachable.");
+
+// The brand is a type and costs no byte.  Two brands of one tag are two
+// types, and neither converts to the other, so a mapping of one instance
+// cannot be handed where a mapping of another is asked for.
+struct DummyBrand {};
+struct OtherDummyBrand {};
+using BrandedSmoke = OwnedMmap<DummyTag, DummyProt, DummyShare, DummyBrand>;
+using OtherBrandedSmoke = OwnedMmap<DummyTag, DummyProt, DummyShare, OtherDummyBrand>;
+static_assert(sizeof(BrandedSmoke) == sizeof(SmokeOwnedMmap), "a brand adds no byte to a mapping");
+static_assert(std::is_same_v<SmokeOwnedMmap::brand_type, ::foundation::brand::DefaultBrand>);
+static_assert(std::is_same_v<BrandedSmoke::brand_type, DummyBrand>);
+static_assert(!std::is_constructible_v<BrandedSmoke, OtherBrandedSmoke&&>,
+              "a mapping of one brand must not become a mapping of another");
+static_assert(!std::is_constructible_v<BrandedSmoke, SmokeOwnedMmap&&>, "an erased mapping must not acquire a brand");
 
 // The leak witness admits the atom and nothing else.  A tag type, a
 // pointer and an unrelated empty struct each fail the concept, which is

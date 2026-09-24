@@ -26,6 +26,8 @@
 // length of the region, but not the region itself: a mutable reference
 // to the region would let a caller move a different region into it and
 // keep the claim.  consume() gives the region back and ends the claim.
+// The proof carries the brand of the region, so the region that comes
+// back has the identity it was minted with.
 //
 // Old spelling: include/crucible/safety/NumaPlacement.h.  That header is
 // a claim, not a proof.  Its public constructors, anywhere, pinned and
@@ -38,6 +40,7 @@
 #include <fixy/OwnedMmap.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/NumaNodeLattice.h>
 #include <foundation/diag/RowHash.h>
@@ -70,13 +73,13 @@ template <typename Prot>
 struct numa_placement;
 }  // namespace row_discipline
 
-template <typename Tag, typename Prot>
+template <typename Tag, typename Prot, typename Brand = ::foundation::brand::DefaultBrand>
 class NumaPlacement;
 
 // The region a proof owns.  The share mode is fixed, because the kernel
 // keeps a binding for an anonymous private range only.
-template <typename Tag, typename Prot>
-using NumaBindableRegion = OwnedMmap<Tag, Prot, mmap::share::Anonymous>;
+template <typename Tag, typename Prot, typename Brand = ::foundation::brand::DefaultBrand>
+using NumaBindableRegion = OwnedMmap<Tag, Prot, mmap::share::Anonymous, Brand>;
 
 namespace numa {
 
@@ -91,10 +94,10 @@ concept CtxFitsNumaBind =
 // as its sole friend, and a friend must already have been declared.
 //
 // §XXI carve-out: cx=alloc — binding memory is a kernel side effect.
-template <typename Tag, typename Prot, ::foundation::effects::IsExecCtx Ctx>
+template <typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaBind<Ctx>
-[[nodiscard]] std::expected<::fixy::NumaPlacement<Tag, Prot>, std::error_code>
-mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot>>&& region,
+[[nodiscard]] std::expected<::fixy::NumaPlacement<Tag, Prot, Brand>, std::error_code>
+mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot, Brand>>&& region,
                     NumaNodeId node) noexcept;
 
 }  // namespace numa
@@ -128,10 +131,10 @@ static_assert(std::to_underlying(NumaNodeId::None) <= numa_mask_bits,
 
 }  // namespace detail
 
-template <typename Tag, typename Prot>
+template <typename Tag, typename Prot, typename Brand>
 class [[nodiscard]] NumaPlacement {
 public:
-    using region_type = NumaBindableRegion<Tag, Prot>;
+    using region_type = NumaBindableRegion<Tag, Prot, Brand>;
     using row_discipline = ::fixy::row_discipline::numa_placement<Prot>;
     using row_payload = ::foundation::diag::row_payloads<>;
 
@@ -148,12 +151,12 @@ private:
     // Keep this friend a function that MAKES AND CHECKS the call.  A friend
     // that only forwards its arguments proves nothing.  The trailing return
     // type is necessary: fixy/os/CpuPinned.h gives the parse reason.
-    template <typename FriendTag, typename FriendProt, ::foundation::effects::IsExecCtx FriendCtx>
+    template <typename FriendTag, typename FriendProt, typename FriendBrand, ::foundation::effects::IsExecCtx FriendCtx>
         requires ::fixy::numa::CtxFitsNumaBind<FriendCtx>
-    friend auto ::fixy::numa::mint_numa_placement(FriendCtx const&,
-                                                  ::fixy::Linear<::fixy::NumaBindableRegion<FriendTag, FriendProt>>&&,
-                                                  NumaNodeId) noexcept
-        -> std::expected<::fixy::NumaPlacement<FriendTag, FriendProt>, std::error_code>;
+    friend auto ::fixy::numa::mint_numa_placement(
+        FriendCtx const&, ::fixy::Linear<::fixy::NumaBindableRegion<FriendTag, FriendProt, FriendBrand>>&&,
+        NumaNodeId) noexcept
+        -> std::expected<::fixy::NumaPlacement<FriendTag, FriendProt, FriendBrand>, std::error_code>;
 
 public:
     NumaPlacement() = delete("a default-constructed NumaPlacement would claim a binding that nobody made.  Take one "
@@ -199,22 +202,22 @@ public:
 namespace numa {
 
 // §XXI carve-out: cx=alloc — binding memory is a kernel side effect.
-template <typename Tag, typename Prot, ::foundation::effects::IsExecCtx Ctx>
+template <typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaBind<Ctx>
-[[nodiscard]] std::expected<::fixy::NumaPlacement<Tag, Prot>, std::error_code>
-mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot>>&& region,
+[[nodiscard]] std::expected<::fixy::NumaPlacement<Tag, Prot, Brand>, std::error_code>
+mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot, Brand>>&& region,
                     NumaNodeId node) noexcept {
     // The region leaves the Linear first, so each exit below ends its
     // life exactly one time: a refusal unmaps it, and success moves it
     // into the proof.
-    ::fixy::NumaBindableRegion<Tag, Prot> owned = std::move(region).consume();
+    ::fixy::NumaBindableRegion<Tag, Prot, Brand> owned = std::move(region).consume();
     if (!is_concrete_numa_node(node) || !owned.is_mapped()) {
         return std::unexpected{std::make_error_code(std::errc::invalid_argument)};
     }
     if (int const error = ::fixy::detail::bind_range_to_node(owned.data(), owned.size(), node); error != 0) {
         return std::unexpected{std::error_code{error, std::system_category()}};
     }
-    return ::fixy::NumaPlacement<Tag, Prot>{std::move(owned), node};
+    return ::fixy::NumaPlacement<Tag, Prot, Brand>{std::move(owned), node};
 }
 
 }  // namespace numa
