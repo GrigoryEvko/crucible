@@ -1,19 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// CRUCIBLE_PRE claims to cost nothing under NDEBUG: it should compile to
-// the same single `[[assume]]` hint a reader would write by hand.  The two
-// probes below have identical bodies and differ only in which form states
-// the precondition, so equal section sizes mean equal machine code.
+// CRUCIBLE_PRE claims to cost nothing under the ignore semantic: it should
+// compile to the same single `[[assume]]` hint a reader would write by
+// hand.  The two probes below have identical bodies and differ only in
+// which form states the precondition, so equal section sizes mean equal
+// machine code.
 //
-// This translation unit is built with `-O3 -DNDEBUG` instead of the
-// preset's debug flags: NDEBUG selects the release expansion of the macro,
-// `-O3` folds the `if consteval` branch away, and sanitizers are off
-// because they change code generation.  Every other test keeps the debug
-// flags.
+// This translation unit is built with `-O3` and
+// CRUCIBLE_CONTRACT_IGNORE_OPTIONS instead of the preset's debug flags.
+// The define in the list selects the ignore arm of the macro, `-O3` folds
+// the `if consteval` branch away, and sanitizers are off because they
+// change code generation.  Every other test keeps the debug flags.
 //
 // The comparison is only meaningful while CRUCIBLE_CONTRACT_OBSERVABLE is
 // undefined, which makes the hardening fence expand to nothing.  This
 // translation unit does not define it.
+
+#if !defined(CRUCIBLE_CONTRACT_SEMANTIC_IGNORE)
+#error "Compile this test with CRUCIBLE_CONTRACT_IGNORE_OPTIONS.  It measures the ignore arm of CRUCIBLE_PRE."
+#endif
 
 #include <foundation/contracts/Pre.h>
 
@@ -78,12 +83,12 @@ int main() {
     if (pre_size != assume_size) {
         std::fprintf(stderr,
                      "test_pre_post_cost: CRUCIBLE_PRE NOT zero-cost under "
-                     "NDEBUG\n"
+                     "the ignore semantic\n"
                      "  CRUCIBLE_PRE  probe .text section = %td bytes\n"
                      "  bare [[assume]] probe .text section = %td bytes\n"
                      "  delta = %td bytes\n"
                      "\n"
-                     "CRUCIBLE_PRE must emit no runtime code under NDEBUG.\n"
+                     "CRUCIBLE_PRE must emit no runtime code under the ignore semantic.\n"
                      "A non-zero delta means it now emits some.\n"
                      "\n"
                      "Disassemble this binary and compare the two probe\n"

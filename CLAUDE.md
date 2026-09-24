@@ -1906,7 +1906,7 @@ definition — that is a production failure-policy decision, not a build flag.
 # CMakeLists.txt SECTION 6b — the opt-out list, one line per exempt TU
 set_source_files_properties(${CRUCIBLE_CONTRACT_IGNORE_TUS}
   DIRECTORY bench
-  PROPERTIES COMPILE_OPTIONS "-fcontract-evaluation-semantic=ignore")
+  PROPERTIES COMPILE_OPTIONS "${CRUCIBLE_CONTRACT_IGNORE_OPTIONS}")
 ```
 
 The mechanism is source-file `COMPILE_OPTIONS`, which CMake emits last on the
@@ -1918,11 +1918,20 @@ section described a per-file pragma; it never shipped, appears zero times in
 is header-only and a pragma inside a header would silence that header's cold
 callers along with its hot ones.
 
-Two families sit outside this flag's reach. `CRUCIBLE_PRE` / `CRUCIBLE_POST`
-(`safety/Pre.h`, `safety/Post.h`) key on `NDEBUG`, so Release keeps only their
-consteval trap and their `[[assume]]` hint. `CRUCIBLE_INVARIANT` and
-`CRUCIBLE_DEBUG_ASSERT` are `NDEBUG`-keyed by design and carry no check in
-Release. `CRUCIBLE_FATAL_INVARIANT` checks in every mode and is unaffected.
+`CRUCIBLE_PRE` and `CRUCIBLE_POST` (`foundation/contracts/Pre.h`, `Post.h`) obey
+the same semantic. Their runtime arm is a `contract_assert`, and a Release
+library does their check as Debug does. `NDEBUG` has no effect on them.
+
+A translation unit in the opt-out list gets `CRUCIBLE_CONTRACT_IGNORE_OPTIONS`
+from `cmake/ContractSemantic.cmake`. The list sets the flag and the define
+`CRUCIBLE_CONTRACT_SEMANTIC_IGNORE`, because GCC gives no macro for the
+semantic. With the define, the two macros keep only their consteval trap and
+their `[[assume]]` hint. The configure step rejects a target or a source file
+that has one item of the list without the other.
+
+`CRUCIBLE_INVARIANT` and `CRUCIBLE_DEBUG_ASSERT` are `NDEBUG`-keyed by design,
+and they do no check in Release. `CRUCIBLE_FATAL_INVARIANT` does its check in
+every mode, and the semantic has no effect on it.
 
 Test executables compile with `-UNDEBUG` (`test/CMakeLists.txt`), so those
 `NDEBUG`-keyed families are armed in a Release test binary and are not armed in
@@ -2010,17 +2019,16 @@ const auto& ck = *r;  // happy path
 // references `this->` members. Closes the GCC 16.1.1 consteval-
 // bypass hole that vanilla P2900 `pre()` / `post (r:...)` leave
 // for foldable-bodied functions whose predicates touch class
-// members through `this->` (silently bypassed at consteval —
-// `[[assume]]`-only in NDEBUG with no neg-compile fixture protection).
+// members through `this->` (silently bypassed at consteval).
 //
-// The quartet's "always-fire" rail. NDEBUG cost is zero — the
-// clause collapses to `[[assume(cond)]]` for the optimizer; with
-// `-fcontract-evaluation-semantic=enforce` it `std::abort()`s on
-// violation; under static_assert/consteval it triggers
-// `__builtin_trap()` which is non-constexpr and poisons the
+// The quartet's "always-fire" rail. The runtime arm is a
+// contract_assert, and it obeys the contract semantic of the
+// translation unit. Under the ignore semantic the clause becomes
+// [[assume(cond)]] for the optimizer. Under static_assert/consteval it
+// triggers __builtin_trap(), which is not constexpr and stops the
 // surrounding consteval call.
-#define CRUCIBLE_PRE(cond)         /* see safety/Pre.h */
-#define CRUCIBLE_POST(retvar, cond) /* see safety/Post.h */
+#define CRUCIBLE_PRE(cond)         /* see foundation/contracts/Pre.h */
+#define CRUCIBLE_POST(retvar, cond) /* see foundation/contracts/Post.h */
 ```
 
 **When to use which:**
@@ -2305,7 +2313,7 @@ Library types in `include/crucible/safety/` that mechanize the axioms from §II 
 | Header | Axioms it enforces | Role |
 |---|---|---|
 | `Linear.h` | MemSafe, LeakSafe, BorrowSafe | Move-only `Linear<T>`. `.consume() &&` takes ownership; `.peek() const&` borrows. Construction is `[[nodiscard]]`. |
-| `Refined.h` | InitSafe, NullSafe, TypeSafe | `Refined<Pred, T>` — predicate checked by contract at construction; function bodies treat the invariant as `[[assume]]` downstream. |
+| `Refined.h` | InitSafe, NullSafe, TypeSafe | `Refined<Pred, T>`. The mint checks the predicate with a precondition that obeys the contract semantic. Downstream bodies trust the invariant. |
 | `Secret.h` | DetSafe + information-flow discipline | Classified-by-default `Secret<T>`. Escapes only via `declassify<Policy>()` with a grep-able `secret_policy::*` tag. |
 | `Tagged.h` | TypeSafe | Phantom tags for provenance (`source::FromUser`, `source::FromDb`, `source::Internal`) and trust (`trust::Verified`, `trust::Unverified`). Mismatch at call sites = compile error. |
 | `Session.h` | BorrowSafe | Type-state protocol channels. Each `.send()` / `.recv()` returns a new type carrying the remaining protocol. Wrong order or missing step = compile error. State lives in the type; zero runtime cost. |
@@ -2356,7 +2364,7 @@ is owed.
 - `-Werror=conversion` + the wrapper types together prevent accidental unwrapping across boundaries.
 - `Linear<>`'s deleted copy constructor refuses a second copy of a linear value at compile time. GCC 16 has no `-Wuse-after-move` (it rejects `-Werror=use-after-move` as an unknown option), so the language does not see a second `std::move` of one local. The `use_after_move` ci_guard (`scripts/check-use-after-move.py`) is the enforcement: it refuses any use of a local after `std::move`, on any path, across the tree. It catches `Permission<Tag>` double-use after split/fork, and it lists what it cannot see (a use through a pointer or a reference, a move inside a callee that takes `T&`).
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
-- Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (debug, CI, boundary TUs) and under `semantic=ignore` on hot-path TUs they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
+- Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (Debug) and `semantic=observe` (Release, through a handler that aborts). Under `semantic=ignore` (CRUCIBLE_CONTRACT_IGNORE_OPTIONS) they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
 - Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `Session<>` / `Permission<Tag>` means the compiler rejects accidental duplication.
 - `permission_split`, `permission_combine`, `permission_split_n`, `permission_fork` all `static_assert` on `can_split_into_v` / `can_split_into_pack_v` — splitting into undeclared subregions is a compile error, naming the missing trait specialization in the diagnostic.
 - Contract violations abort via `std::terminate` (P1494R5), never invoke undefined behavior.

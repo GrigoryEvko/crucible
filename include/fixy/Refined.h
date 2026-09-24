@@ -451,7 +451,8 @@ private:
     // The predicate runs on the value before it moves into the
     // substrate, so a predicate written over a reference never sees a
     // moved-from object.  The macro fires at consteval as well as at
-    // runtime, and leaves the invariant behind as an assumption.
+    // runtime.  Where contracts are compiled out, it leaves the
+    // invariant behind as an assumption.
     [[nodiscard]] static constexpr T admit_(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires PredicateInvocableOn<Pred, T>
     {

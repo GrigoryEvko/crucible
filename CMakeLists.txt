@@ -520,6 +520,12 @@ target_compile_options(crucible_dialect INTERFACE
   -fcontracts
 )
 
+# CRUCIBLE_CONTRACT_IGNORE_OPTIONS: the one list that takes a translation unit
+# off contract checks.  It sets the flag for the language clauses and the
+# define for CRUCIBLE_PRE and CRUCIBLE_POST.  The check at the foot of this
+# file rejects a scope that has one of the two items without the other.
+include(cmake/ContractSemantic.cmake)
+
 # The crucible_fp_strict INTERFACE library defines THE FLOOR
 # for FP discipline across every consumer of `crucible`.  PUBLIC link
 # propagates the strict-IEEE-754 flag pack to every test / bench /
@@ -771,7 +777,7 @@ if (CRUCIBLE_HAVE_BPF)
   # safety/Mutation.h, which transitively reaches algebra/Graded.h's
   # reflection-driven display_string_of() helper.
   #
-  # `-fcontract-evaluation-semantic=ignore` below buys a clean LINK,
+  # CRUCIBLE_CONTRACT_IGNORE_OPTIONS below buys a clean LINK,
   # not speed.  This is not a hot path and it is not in SECTION 6b's
   # opt-out list; do not cite it as precedent for a performance
   # exemption.  Under an evaluating semantic, every WriteOnce::set /
@@ -799,7 +805,7 @@ if (CRUCIBLE_HAVE_BPF)
     # unreferenced handler object from libfoundation.a has been discarded.
     #
     # Two viable fixes:
-    #   (a) `-fcontract-evaluation-semantic=ignore` here — type-level
+    #   (a) CRUCIBLE_CONTRACT_IGNORE_OPTIONS here — type-level
     #       discipline (WriteOnce nodiscard/move semantics) survives;
     #       runtime handler call is elided in this TU only.
     #   (b) Force re-resolution at the binary link via `-u
@@ -808,20 +814,12 @@ if (CRUCIBLE_HAVE_BPF)
     # We use (a) because it keeps the link line unchanged across ~40
     # consumer test execs and the runtime-enforce property is already
     # exercised in the main crucible TUs.
-    -fcontract-evaluation-semantic=ignore
-  )
-  # Same link-order problem applies to CRUCIBLE_PRE / CRUCIBLE_POST
-  # body-level macros (foundation/contracts/Pre.h, safety/Post.h).  Under
-  # !NDEBUG they emit references to `foundation::detail::contract_failed`,
-  # which lives in the same libfoundation.a ContractHandler.cpp.o that
-  # gets discarded under the consumer link order.  The
-  # `-fcontract-evaluation-semantic=ignore` flag above only affects
-  # P2900 parser clauses, NOT the body-level macro family.
-  # CRUCIBLE_CONTRACT_RUNTIME_OFF is the symmetric escape hatch:
-  # consteval enforcement + [[assume]] hint preserved, runtime path
-  # elided in this TU only.
-  target_compile_definitions(crucible_perf PRIVATE
-    CRUCIBLE_CONTRACT_RUNTIME_OFF=1
+    #
+    # The runtime arm of CRUCIBLE_PRE and CRUCIBLE_POST is a language
+    # contract clause, and it references the same handler.  The define in
+    # the list selects their ignore arm.  That arm keeps the consteval
+    # check and the [[assume]] hint, and it references no function.
+    ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS}
   )
   if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
     target_compile_definitions(crucible_perf PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
@@ -1681,20 +1679,21 @@ endif()
 # and that is a deliberate decision about production failure policy,
 # not a side effect to make here.
 #
-# Three caveats this flag does NOT cover, recorded here so the next
+# The body-level CRUCIBLE_PRE / CRUCIBLE_POST family
+# (include/foundation/contracts/{Pre,Post}.h) obeys this flag too.  Its
+# runtime arm is a language contract clause, so a precondition does its
+# check in a Release library as it does in Debug.  NDEBUG has no effect
+# on that family.  A translation unit leaves it only through
+# CRUCIBLE_CONTRACT_IGNORE_OPTIONS, which sets the flag and the define
+# that the family reads.
+#
+# Two caveats this flag does NOT cover, recorded here so the next
 # reader does not mistake the scope:
 #
-#   1. The body-level CRUCIBLE_PRE / CRUCIBLE_POST family (around 217
-#      call sites, include/crucible/safety/{Pre,Post}.h) keys on NDEBUG,
-#      not on the contract semantic.  Release defines NDEBUG, so those
-#      sites keep only their consteval trap and their [[assume]] hint.
-#      Giving them a runtime arm in Release is a separate change with a
-#      separate cost argument.  Flipping this flag did not arm them, and
-#      anyone reading a "Release now enforces" summary should know that.
-#   2. CRUCIBLE_INVARIANT and CRUCIBLE_DEBUG_ASSERT are NDEBUG-keyed by
+#   1. CRUCIBLE_INVARIANT and CRUCIBLE_DEBUG_ASSERT are NDEBUG-keyed by
 #      design and stay compiled out.  CRUCIBLE_FATAL_INVARIANT (around
 #      73 call sites) checks in every mode and is unaffected either way.
-#   3. Test executables compile with `-UNDEBUG` (see test/CMakeLists.txt),
+#   2. Test executables compile with `-UNDEBUG` (see test/CMakeLists.txt),
 #      so the NDEBUG-keyed families above ARE armed in a Release test
 #      binary and are NOT armed in a Release library or vessel binary.
 #      A green Release test run is therefore weaker evidence about
@@ -1815,8 +1814,10 @@ endif()
 # claiming that a measured cost justifies giving up enforcement in
 # that file; the claim belongs in a comment beside the line.
 #
-# Mechanism: source-file COMPILE_OPTIONS.  CMake emits the compile
-# line as
+# Mechanism: source-file COMPILE_OPTIONS, set to the whole of
+# CRUCIBLE_CONTRACT_IGNORE_OPTIONS.  The list also sets the define that
+# CRUCIBLE_PRE and CRUCIBLE_POST read, because GCC gives no macro for
+# the semantic.  CMake emits the compile line as
 #
 #   CMAKE_CXX_FLAGS  CMAKE_CXX_FLAGS_<CONFIG>  <target options>  <source options>
 #
@@ -1923,5 +1924,14 @@ if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)
   set_source_files_properties(
     ${CRUCIBLE_CONTRACT_IGNORE_TUS}
     DIRECTORY bench
-    PROPERTIES COMPILE_OPTIONS "-fcontract-evaluation-semantic=ignore")
+    PROPERTIES COMPILE_OPTIONS "${CRUCIBLE_CONTRACT_IGNORE_OPTIONS}")
 endif()
+
+# The flag and the define of CRUCIBLE_CONTRACT_IGNORE_OPTIONS must go
+# together in each scope.  This call comes after the last target, so it
+# sees each one.  The self-test proves that the rule rejects each split
+# form.
+crucible_check_contract_ignore_pairs()
+add_test(NAME contract_ignore_pairs_self_test
+  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/ContractSemanticSelfTest.cmake)
+set_tests_properties(contract_ignore_pairs_self_test PROPERTIES LABELS "ci_guard")

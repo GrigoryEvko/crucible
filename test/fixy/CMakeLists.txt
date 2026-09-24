@@ -76,6 +76,14 @@ fixy_test(test_qtt)
 fixy_test(test_mutation)
 fixy_test(test_axis)
 
+# A precondition and a postcondition do their checks in a Release build.
+# This test compiles with NDEBUG and the observe semantic, as a Release
+# library does.  The two options go on the source, after the -UNDEBUG of
+# the factory, and the compiler uses the last of each.
+fixy_test(test_precondition_checks_in_release)
+set_property(SOURCE test_precondition_checks_in_release.cpp APPEND PROPERTY
+  COMPILE_OPTIONS -DNDEBUG -fcontract-evaluation-semantic=observe)
+
 # The axis table's primary is defined, so defaulted_axes is what keeps
 # it from handing a new axis a claim nobody gave it.  A value one past
 # the enum stands in for that axis.

@@ -107,9 +107,10 @@ static_assert(post_struct_field(5).v == 6, "shape 7 positive");
 static_assert(pre_and_post(10) == 30, "shape 8 positive");
 static_assert(mid_body_assert(5) == 11, "shape 9 positive");
 
-// The postcondition leaves an assumption behind that a caller can exploit.
-// Nothing here measures the generated code. The claim is only that the
-// invariant survives the call boundary.
+// Under the ignore semantic the postcondition leaves an assumption behind
+// that a caller can exploit. Under a semantic that checks, the check stops a
+// false result before the caller sees it. Nothing here measures the generated
+// code. The claim is only that the invariant survives the call boundary.
 
 [[nodiscard]] constexpr int relies_on_post(int x) noexcept {
     int const r = post_scalar(x);
@@ -181,8 +182,9 @@ static_assert(native_contract_assert_witness(7) == 7,
 }  // namespace
 
 // The assertions above cover the consteval path. This covers the other one:
-// the same macros have to emit working runtime code outside NDEBUG. Every
-// input below is known good, so reaching the end is the pass.
+// the same macros have to emit working runtime code where the contract
+// semantic does the checks. Every input below is known good, so reaching the
+// end is the pass.
 
 int main() {
     int volatile sink = 0;

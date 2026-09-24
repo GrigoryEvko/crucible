@@ -10,10 +10,15 @@
 # what turns arithmetic into a branch.  They build for x86-64-v3, the
 # widest ISA that valgrind decodes: valgrind 3.27 stops on AVX-512 with an
 # illegal opcode.  The disassembly guard covers the -march=native code
-# instead.  The tests link nothing from the tree: the code under test is
+# instead.  The tests link no library from the tree: the code under test is
 # header-only, and a sanitizer flag inherited from a library target would
 # stop valgrind.  -fno-sanitize=all removes a sanitizer flag that a preset
 # puts in CMAKE_CXX_FLAGS.
+#
+# The observe semantic keeps the checks of CRUCIBLE_PRE, as in a Release
+# library, and a check references the violation handler.  Because of this,
+# each binary compiles the handler source of foundation with its own flags,
+# and links stdc++exp for the contract runtime.
 
 find_program(CRUCIBLE_VALGRIND valgrind)
 find_path(CRUCIBLE_VALGRIND_INCLUDE valgrind/memcheck.h HINTS $ENV{HOME}/.local/include)
@@ -44,12 +49,13 @@ set_tests_properties(check_ct_disassembly check_ct_disassembly_self_test
 # depends on the host and its load.  Build it on request with
 # `cmake --build <dir> --target ct_dudect` and run it on an isolated core.
 # It builds with the Release optimization for this host.
-add_executable(ct_dudect EXCLUDE_FROM_ALL dudect.cpp)
+add_executable(ct_dudect EXCLUDE_FROM_ALL dudect.cpp ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp)
 target_include_directories(ct_dudect PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(ct_dudect PRIVATE
   -O3 -march=native -DNDEBUG -fno-sanitize=all
   -freflection -fcontracts -fcontract-evaluation-semantic=observe)
 target_link_options(ct_dudect PRIVATE -fno-sanitize=all)
+target_link_libraries(ct_dudect PRIVATE stdc++exp)
 
 if(NOT CRUCIBLE_VALGRIND OR NOT CRUCIBLE_VALGRIND_INCLUDE)
   if(CRUCIBLE_REQUIRE_CT_TAINT)
@@ -74,10 +80,11 @@ set(CRUCIBLE_CT_TAINT_FLAGS
 # leak, so a blind harness fails.
 function(ct_taint_test source opt)
   set(name ${source}_${opt})
-  add_executable(${name} ${source}.cpp)
+  add_executable(${name} ${source}.cpp ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp)
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CRUCIBLE_VALGRIND_INCLUDE})
   target_compile_options(${name} PRIVATE -${opt} ${CRUCIBLE_CT_TAINT_FLAGS})
   target_link_options(${name} PRIVATE -fno-sanitize=all)
+  target_link_libraries(${name} PRIVATE stdc++exp)
   set(_valgrind ${CRUCIBLE_VALGRIND} --tool=memcheck -q)
   add_test(NAME ${name}
     COMMAND ${_valgrind} --error-exitcode=99 $<TARGET_FILE:${name}>)

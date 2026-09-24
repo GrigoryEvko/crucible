@@ -343,13 +343,12 @@ crucible_test(test_synthetic_probe)
 
 crucible_test(test_simd)
 
-# ── CONTRACT-008: NDEBUG zero-cost sentinel for CRUCIBLE_PRE ─────
+# ── The zero-cost sentinel for CRUCIBLE_PRE under the ignore semantic ─
 #
-# Special test target: built with `-O3 -DNDEBUG` instead of the
-# preset's `-Og -g`.  The factory `crucible_test()` injects
-# `-UNDEBUG` so every other test keeps assertions live; this test
-# specifically requires NDEBUG to be DEFINED so it can verify the
-# zero-cost claim of CRUCIBLE_PRE under production flags.
+# Special test target: built with `-O3` and
+# CRUCIBLE_CONTRACT_IGNORE_OPTIONS instead of the preset's `-Og -g`.
+# Only the ignore arm of CRUCIBLE_PRE claims zero cost, and the define
+# in the list selects that arm.
 #
 # Implementation: two probe functions with identical bodies — one
 # routed through CRUCIBLE_PRE, the other through bare `[[assume]]`
@@ -369,7 +368,7 @@ target_compile_options(test_pre_post_cost PRIVATE
     # probe functions live regardless.
     -ffunction-sections
 )
-target_compile_definitions(test_pre_post_cost PRIVATE NDEBUG)
+target_compile_options(test_pre_post_cost PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
 add_test(NAME test_pre_post_cost COMMAND test_pre_post_cost)
 crucible_dump_asm(test_pre_post_cost)
 

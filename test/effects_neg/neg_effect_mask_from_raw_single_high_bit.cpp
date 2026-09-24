@@ -22,7 +22,7 @@
 // Alloc=0 .. Test=5), so the valid-bit mask is
 // `(1u << effect_count) - 1` = `0x3F`.  Any bit at position
 // ≥ effect_count is poison and must trigger __builtin_trap at
-// consteval / contract_failed at runtime.
+// consteval / the violation handler at runtime.
 //
 // This fixture: WITNESS BIT 7 ALONE.  `0x80` corresponds to no
 // Effect atom (positions 6 and 7 are both outside the enum).

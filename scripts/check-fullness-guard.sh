@@ -25,12 +25,12 @@
 #
 # The release build ships -DNDEBUG WITHOUT -D_GLIBCXX_ASSERTIONS, so
 # std::array::operator[] is unchecked there, and safety::FixedArray's
-# operator[] carries no precondition clause by design.  CRUCIBLE_PRE is
-# NDEBUG-gated off.  crucible_perf and six bench TUs compile with
-# -fcontract-evaluation-semantic=ignore, which erases every contract in
-# the headers they include.  A `pre()` is therefore not a guarantee for
-# a header those TUs pull in.  The comparison operator is the whole
-# enforcement in production.
+# operator[] carries no precondition clause by design.  crucible_perf
+# and four bench TUs compile with CRUCIBLE_CONTRACT_IGNORE_OPTIONS,
+# which erases every contract and every CRUCIBLE_PRE in the headers
+# they include.  A `pre()` is therefore not a guarantee for a header
+# those TUs pull in.  The comparison operator is the whole enforcement
+# in production.
 #
 # ── WHAT IS SCANNED ──────────────────────────────────────────────────
 #

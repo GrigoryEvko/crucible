@@ -14,25 +14,41 @@
 // The consteval arm calls `__builtin_trap()`, which is not a constant
 // expression.  Reaching it poisons the enclosing constant evaluation,
 // and that is what a static_assert reports as a failure.  At runtime
-// the `if consteval` arm is dead and is gone before codegen, so a
-// release build pays nothing for the compile-time enforcement.
+// the `if consteval` arm is dead and is gone before codegen.
 //
-// A function marked [[gnu::const]] or [[gnu::pure]] may only use these
-// macros where enforcement in release builds alone is acceptable.  The
-// release arm is pure, but the debug arm calls out to a reporting
-// function that has side effects.
+// The runtime arm obeys the contract evaluation semantic of the
+// translation unit, as a language contract clause does.  The build sets
+// that semantic in CMakeLists.txt, SECTION 6 and SECTION 6b.  Debug
+// enforces it, and Release observes it through a handler that aborts.
+// So a precondition does its check in a Release library, as it does in
+// Debug.  NDEBUG has no effect on these macros.
+//
+// A translation unit on the `ignore` semantic also gets the define
+// CRUCIBLE_CONTRACT_SEMANTIC_IGNORE, from the same list of options,
+// CRUCIBLE_CONTRACT_IGNORE_OPTIONS.  GCC gives no macro for the
+// semantic.  Without the define, a header cannot know the semantic.
+// There the runtime arm has no check, and an `[[assume]]` gives the
+// condition to the optimizer.  Only the build system sets the define.
+// The configure step rejects a target or a source file that has the
+// define without the flag, or the flag without the define.
+//
+// A function with the attribute [[gnu::const]] or [[gnu::pure]] can use
+// these macros only where the optimizer is permitted to remove the
+// check.  The runtime arm calls the violation handler, and that call has
+// side effects.
 //
 // Do not use these macros in a free function template whose parameter
 // types are deduced at the call site.  Every consumer translation unit
-// that instantiates the template then references the reporting symbol,
+// that instantiates the template then references the violation handler,
 // and a static library that does not link the handler fails at link
 // time.  A member of a class template is safe, because it instantiates
 // once per fixed class parameter.
 //
-// The reporting functions are defined in src/foundation/ContractHandler.cpp,
-// which every binary that links `foundation` carries.  The macro names keep
-// their CRUCIBLE_ prefix for the reason foundation/Platform.h gives: macros
-// have no namespace, and the layer rule is stated over namespace roots.
+// The violation handler and the reporting function of the message form
+// are in src/foundation/ContractHandler.cpp.  Every binary that links
+// `foundation` contains them.  The macro names keep their CRUCIBLE_
+// prefix for the reason foundation/Platform.h gives: macros have no
+// namespace, and the layer rule is stated over namespace roots.
 //
 // Old spelling: include/crucible/safety/Pre.h.
 
@@ -42,35 +58,19 @@
 
 namespace foundation::detail {
 
-// Prints the predicate text and the source location to stderr, adds a
-// stack trace where the standard library supplies one, offers an
-// attached debugger a breakpoint, then aborts.
-[[noreturn, gnu::cold]]
-void contract_failed(char const* expr, char const* file, int line, char const* fn) noexcept;
-
-// Adds a note line carrying the caller's message between the source
-// location and the stack trace.
+// Writes the predicate text, the source location and the message of the
+// caller to stderr.  Then it writes a stack trace if the standard library
+// supplies one, stops at a breakpoint if a debugger is attached, and
+// aborts.
 [[noreturn, gnu::cold]]
 void contract_failed_msg(char const* expr, char const* file, int line, char const* fn, char const* msg) noexcept;
 
 }  // namespace foundation::detail
 
-#if defined(NDEBUG) || defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
+#if defined(CRUCIBLE_CONTRACT_SEMANTIC_IGNORE)
 
-// The release arm keeps the consteval check rather than collapsing to
-// the hint alone, so a negative-compile fixture behaves the same in
-// release as in debug.
-//
-// CRUCIBLE_CONTRACT_RUNTIME_OFF selects the same arm without defining
-// NDEBUG.  A static library whose archive does not carry the reporting
-// function still references it through any inline header use of these
-// macros, and a left-to-right archive scan can discard the defining
-// object before it sees that reference.  Defining this macro on the
-// inner target removes the reference and closes the link gap, at the
-// cost of runtime enforcement inside that one library.
-//
-// Only the build system defines this, per target.  Defining it in a
-// header would silently disarm every consumer.
+// The ignore arm keeps the consteval check.  A negative-compile fixture
+// then has the same result in each translation unit.
 #define CRUCIBLE_PRE(cond)              \
     do {                                \
         if consteval {                  \
@@ -84,17 +84,24 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 
 #else
 
-#define CRUCIBLE_PRE(cond)                                                                                             \
-    do {                                                                                                               \
-        if (!(cond)) [[unlikely]] {                                                                                    \
-            if consteval {                                                                                             \
-                __builtin_trap();                                                                                      \
-            } else {                                                                                                   \
-                ::foundation::detail::contract_failed(#cond, __builtin_FILE(), __builtin_LINE(), __PRETTY_FUNCTION__); \
-            }                                                                                                          \
-        }                                                                                                              \
-        CRUCIBLE_CONTRACT_FENCE_();                                                                                    \
-        [[assume(cond)]];                                                                                              \
+// No `[[assume]]` follows the check.  Under the observe semantic a
+// handler can return, and an assumption of a false condition is
+// undefined behaviour.  An optimizer can also use an assumption to
+// delete the check before it.
+//
+// The handler reads the predicate text from the language clause.  GCC
+// 16.2.1 gives the wrong text when the first or the last token of the
+// predicate comes from a macro expansion.  The file, the line and the
+// function in the report stay correct.
+#define CRUCIBLE_PRE(cond)              \
+    do {                                \
+        if consteval {                  \
+            if (!(cond)) [[unlikely]] { \
+                __builtin_trap();       \
+            }                           \
+        } else {                        \
+            contract_assert(cond);      \
+        }                               \
     } while (0)
 
 #endif
@@ -104,11 +111,10 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 // Reach for it only where the cost of formatting and flushing the
 // diagnostic has been measured and found to matter.
 //
-// Under NDEBUG the two forms are the same consteval check and hint, so
-// this one is that one.  It keeps its runtime trap when only
-// CRUCIBLE_CONTRACT_RUNTIME_OFF is defined, because the trap references
-// no reporting function and so opens no link gap.
-#ifdef NDEBUG
+// The contract semantic selects if the fast form does a check, as for
+// the plain form.  The trap calls no function, and it does not cause a
+// link gap.
+#if defined(CRUCIBLE_CONTRACT_SEMANTIC_IGNORE)
 
 #define CRUCIBLE_PRE_FAST(cond) CRUCIBLE_PRE(cond)
 
@@ -119,20 +125,24 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
         if (!(cond)) [[unlikely]] { \
             __builtin_trap();       \
         }                           \
-        CRUCIBLE_CONTRACT_FENCE_(); \
-        [[assume(cond)]];           \
     } while (0)
 
 #endif
 
 // The message reaches the runtime report only.  A trap during constant
-// evaluation carries no extra text either way, so without the report
-// this is the plain form with the message evaluated and discarded.
-#if defined(NDEBUG) || defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
+// evaluation carries no extra text either way.  The message must be a
+// string literal.  The `""` before it causes a compile error for a
+// message of a different kind.
+//
+// A language contract clause has no message.  Because of this, the
+// checking arm of this form calls a reporting function of its own.  That
+// function aborts, as the handler of this project does.  A program that
+// replaces the handler does not change that function.
+#if defined(CRUCIBLE_CONTRACT_SEMANTIC_IGNORE)
 
 #define CRUCIBLE_PRE_MSG(cond, msg) \
     do {                            \
-        (void)(msg);                \
+        (void)("" msg);             \
         CRUCIBLE_PRE(cond);         \
     } while (0)
 
@@ -145,11 +155,9 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
                 __builtin_trap();                                                                    \
             } else {                                                                                 \
                 ::foundation::detail::contract_failed_msg(#cond, __builtin_FILE(), __builtin_LINE(), \
-                                                          __PRETTY_FUNCTION__, (msg));               \
+                                                          __PRETTY_FUNCTION__, "" msg);              \
             }                                                                                        \
         }                                                                                            \
-        CRUCIBLE_CONTRACT_FENCE_();                                                                  \
-        [[assume(cond)]];                                                                            \
     } while (0)
 
 #endif
@@ -158,7 +166,9 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 // delete code standing BEFORE an `[[assume(cond)]]`, on the grounds
 // that the code could not have run if the condition were false there.
 // The checkpoint is a sequence point the optimizer may not carry that
-// reasoning backward across.  It costs no machine instructions.
+// reasoning backward across.  It costs no machine instructions.  Only
+// the ignore arm has an assumption, and only that arm uses the
+// checkpoint.
 //
 // The hardening is opt-in because the compiler in use does not exploit
 // the hole today.  Enable it for translation units where the

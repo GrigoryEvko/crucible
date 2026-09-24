@@ -72,25 +72,16 @@ void handle_contract_violation(const std::contracts::contract_violation& v) noex
     std::abort();
 }
 
-// These duplicate the abort discipline of handle_contract_violation rather
-// than calling it.  A std::contracts::contract_violation cannot be built by
-// user code, because its implementation pointer is internal to the standard
-// library.  The CRUCIBLE_PRE / CRUCIBLE_POST family in
-// foundation/contracts/Pre.h and Post.h calls these two.
+// The message forms CRUCIBLE_PRE_MSG and CRUCIBLE_POST_MSG call this.  A
+// language contract clause has no message, and user code cannot make a
+// std::contracts::contract_violation, because its implementation pointer
+// is internal to the standard library.  Because of this, the function
+// copies the abort discipline of handle_contract_violation, and it does
+// not call the handler.
 namespace foundation::detail {
 
 [[noreturn, gnu::cold]]
-void contract_failed(char const* expr, char const* file, int line, char const* fn) noexcept;
-[[noreturn, gnu::cold]]
 void contract_failed_msg(char const* expr, char const* file, int line, char const* fn, char const* msg) noexcept;
-
-[[noreturn, gnu::cold]]
-void contract_failed(char const* expr, char const* file, int line, char const* fn) noexcept {
-    emit_violation_diagnostic(expr, file, static_cast<unsigned>(line), fn,
-                              /*annotation=*/nullptr);
-    ::foundation::detail::breakpoint_if_debugging();
-    std::abort();
-}
 
 [[noreturn, gnu::cold]]
 void contract_failed_msg(char const* expr, char const* file, int line, char const* fn, char const* msg) noexcept {
