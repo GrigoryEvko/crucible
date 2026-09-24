@@ -9843,35 +9843,39 @@ crucible_neg_compile_test(neg_swiss_group_width_zero
 crucible_neg_compile_test(neg_swiss_group_width_not_power_of_two
   "contract|Refined|power_of_two|not a constant|non-constant|constexpr")
 
-# WRAP-ExprPool-4 (#918) — int_cache_ access is routed through
-# IntCacheLiteral = Refined<in_range<-128, 127>, int64_t>.  Two HS14
-# fixtures pin both ends of the closed interval:
-#   * neg_expr_pool_int_cache_literal_below_low — -129 is one below
-#     the cache's lower endpoint.
-#   * neg_expr_pool_int_cache_literal_above_high — 128 is one above
-#     the cache's upper endpoint.
-crucible_neg_compile_test(neg_expr_pool_int_cache_literal_below_low
-  "contract|Refined|in_range|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_expr_pool_int_cache_literal_above_high
-  "contract|Refined|in_range|not a constant|non-constant|constexpr")
+# ExprPool reads int_cache_ through IntCacheLiteral, which is
+# Refined<in_range<-128, 127>, int64_t>.  Two fixtures pin the two ends
+# of the closed range: -129 is one below the low end, and 128 is one
+# above the high end.  The first regex says that the precondition of
+# the door failed.  The second names the door, its predicate and the
+# value, so the rejection is the one under test.
+crucible_neg_compile_multi_test(neg_expr_pool_int_cache_literal_below_low
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<InRange<-128, 127>\\(\\), long int>\\(-129\\)")
+crucible_neg_compile_multi_test(neg_expr_pool_int_cache_literal_above_high
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<InRange<-128, 127>\\(\\), long int>\\(128\\)")
 
-# WRAP-ExprPool-2 (#916) — capacity_ is a PowerOfTwo<size_t>
-# and intern_count_ is a Monotonic<size_t>.  The fixtures pin the two
-# load-bearing absences: non-pow2 capacities cannot be constructed,
-# and the monotonic intern counter cannot be overwritten with a raw
-# integer.
-crucible_neg_compile_test(neg_expr_pool_capacity_not_power_of_two
-  "contract|Refined|power_of_two|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_expr_pool_intern_count_assign_raw
-  "no match for|no known conversion")
+# ExprPool::capacity_ is a PowerOfTwo<size_t>, and intern_count_ is a
+# Monotonic<size_t>.  The fixtures pin two absences: no capacity that is
+# not a power of two, and no assignment of a raw integer to the intern
+# count.
+crucible_neg_compile_multi_test(neg_expr_pool_capacity_not_power_of_two
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsPowerOfTwo\\(\\), long unsigned int>\\(12\\)")
+crucible_neg_compile_multi_test(neg_expr_pool_intern_count_assign_raw
+  "no match for .operator=."
+  "crucible::ExprPool::InternCount.*fixy::Monotonic<long unsigned int")
 
-# WRAP-ExprPool-5 (#919) — make() returns a DetSafe<Pure,
-# Tagged<const Expr*, source::Interned>>.  Raw Expr* and same-tier
-# cross-source values must fail at the consumer boundary.
-crucible_neg_compile_test(neg_expr_pool_make_raw_expr
-  "no match|no known conversion|cannot convert|could not convert")
-crucible_neg_compile_test(neg_expr_pool_make_cross_tag
-  "no match|no known conversion|cannot convert|could not convert")
+# ExprPool::make returns DetSafe<Pure, Tagged<const Expr*,
+# source::Interned>>.  A raw Expr* and a value at the same tier with a
+# different source tag must both fail at the consumer.
+crucible_neg_compile_multi_test(neg_expr_pool_make_raw_expr
+  "could not convert"
+  "from .const crucible::Expr\\*. to .crucible::ExprPool::PureInternedExpr.")
+crucible_neg_compile_multi_test(neg_expr_pool_make_cross_tag
+  "could not convert"
+  "source::External>>. to .Graded<.*source::Interned>>")
 
 # WRAP-RecipePool-2 (#971) — capacity_ is a PowerOfTwo<uint32_t>
 # and size_ is a Monotonic<uint32_t>.  The fixtures pin the two

@@ -4,12 +4,16 @@
 #include <crucible/Expr.h>
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
-#include <crucible/_Saturate.h>
 #include <crucible/SwissTable.h>
-#include <crucible/fixy/Source.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Post.h>
+#include <fixy/Bands.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Saturate.h>
+#include <foundation/SwissTableBuffer.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
 #include <foundation/effects/Effect.h>
 
 #include <algorithm>
@@ -346,12 +350,16 @@ public:
     static constexpr int64_t kIntCacheHigh = 127;
     static constexpr size_t kIntCacheSize = static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
 
-    using IntCacheLiteral = fixy::wrap::Refined<fixy::wrap::in_range<kIntCacheLow, kIntCacheHigh>, int64_t>;
-    using IntCacheIndex = fixy::wrap::Refined<fixy::wrap::bounded_above<kIntCacheSize - 1>, size_t>;
-    using Capacity = fixy::wrap::PowerOfTwo<size_t>;
-    using InternCount = fixy::wrap::Monotonic<size_t>;
-    using InternedExpr = fixy::wrap::Tagged<const Expr*, fixy::tags::source::Interned>;
-    using PureInternedExpr = fixy::wrap::det_safe::Pure<InternedExpr>;
+    // The range of the integer cache, as the predicate its literals carry.
+    static constexpr auto kIntCacheRange = ::fixy::in_range<kIntCacheLow, kIntCacheHigh>;
+    static constexpr auto kIntCacheIndexBound = ::fixy::bounded_above<kIntCacheSize - 1>;
+
+    using IntCacheLiteral = ::fixy::Refined<kIntCacheRange, int64_t>;
+    using IntCacheIndex = ::fixy::Refined<kIntCacheIndexBound, size_t>;
+    using Capacity = ::fixy::PowerOfTwo<size_t>;
+    using InternCount = ::fixy::Monotonic<size_t>;
+    using InternedExpr = ::fixy::Tagged<const Expr*, ::fixy::tags::source::Interned>;
+    using PureInternedExpr = ::fixy::det_safe::Pure<InternedExpr>;
 
     static_assert(sizeof(IntCacheLiteral) == sizeof(int64_t));
     static_assert(sizeof(IntCacheIndex) == sizeof(size_t));
@@ -374,13 +382,17 @@ public:
 
     // The probe computes slot_mask as capacity minus one, which requires a
     // power of two.  Past 1 << 30 the single backing allocation no longer
-    // fits the address-space budget.
-    static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(kDefaultInitialCapacity, std::size_t{1} << 30),
-                  "kDefaultInitialCapacity must be a power of two ≤ 1<<30");
+    // fits the address-space budget.  The table buffer takes exactly the
+    // capacities in that band, and refuses every other one.
+    static_assert(::foundation::is_swiss_table_capacity(kDefaultInitialCapacity)
+                      && kDefaultInitialCapacity >= detail::group_width(),
+                  "kDefaultInitialCapacity must be a table capacity of at least one control group");
 
     explicit ExprPool(::foundation::effects::Alloc a, size_t initial_capacity = kDefaultInitialCapacity)
         pre(initial_capacity <= (std::size_t{1} << 30))
-        : arena_(), capacity_{rounded_capacity_(initial_capacity)}, intern_count_{0} {
+        : arena_(),
+          capacity_{::fixy::mint_refined<::fixy::power_of_two>(rounded_capacity_(initial_capacity))},
+          intern_count_{::fixy::mint_monotonic<size_t>(0)} {
         alloc_tables_(capacity_.value());
 
         // Boolean singletons
@@ -389,7 +401,7 @@ public:
 
         // Integer cache: -128..127 for O(1) access to common constants
         for (int64_t i = kIntCacheLow; i <= kIntCacheHigh; ++i) {
-            const IntCacheLiteral literal{i};
+            const IntCacheLiteral literal = ::fixy::mint_refined<kIntCacheRange>(i);
             int_cache_[raw_int_cache_index(int_cache_index(literal))] = make_integer(a, i);
         }
     }
@@ -416,7 +428,7 @@ public:
     // ---- Atom construction ----
 
     [[nodiscard]] const Expr* integer(::foundation::effects::Alloc a, int64_t val) {
-        if (val >= kIntCacheLow && val <= kIntCacheHigh) return cached_integer(IntCacheLiteral{val});
+        if (val >= kIntCacheLow && val <= kIntCacheHigh) return cached_integer(::fixy::mint_refined<kIntCacheRange>(val));
         return make_integer(a, val);
     }
 
@@ -489,7 +501,7 @@ public:
         // in every build mode, and a wrapped one is undefined behaviour that
         // only the -fno-strict-overflow flag currently tames.
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-            return integer(a, ::crucible::sat::add_sat(lhs->payload, rhs->payload));
+            return integer(a, ::foundation::sat::add_sat(lhs->payload, rhs->payload));
         if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT) return float_(a, lhs->as_float() + rhs->as_float());
         if (lhs->is_zero_int()) return rhs;
         if (rhs->is_zero_int()) return lhs;
@@ -509,7 +521,7 @@ public:
             return intern_node(a, Op::MUL, args, 2, composite_flag_bits, SymbolId{}, 0);
         }
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-            return integer(a, ::crucible::sat::mul_sat(lhs->payload, rhs->payload));
+            return integer(a, ::foundation::sat::mul_sat(lhs->payload, rhs->payload));
         if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT) return float_(a, lhs->as_float() * rhs->as_float());
         if (lhs->is_zero_int() || rhs->is_zero_int()) return integer(a, 0);
         if (lhs->is_one()) return rhs;
@@ -527,7 +539,7 @@ public:
             int64_t base_value = base->payload;
             int64_t exponent_value = exp->payload;
             for (int64_t i = 0; i < exponent_value; ++i)
-                accumulated_product = ::crucible::sat::mul_sat(accumulated_product, base_value);
+                accumulated_product = ::foundation::sat::mul_sat(accumulated_product, base_value);
             return integer(a, accumulated_product);
         }
         const Expr* args[] = {base, exp};
@@ -540,7 +552,7 @@ public:
     [[nodiscard]] const Expr* neg(::foundation::effects::Alloc a, const Expr* expr) {
         // Negating the most negative int64 has no result in the type, so the
         // subtraction saturates at the top instead.
-        if (expr->op == Op::INTEGER) return integer(a, ::crucible::sat::sub_sat(int64_t{0}, expr->payload));
+        if (expr->op == Op::INTEGER) return integer(a, ::foundation::sat::sub_sat(int64_t{0}, expr->payload));
         if (expr->op == Op::FLOAT) return float_(a, -expr->as_float());
         return mul(a, integer(a, -1), expr);
     }
@@ -727,7 +739,7 @@ public:
             // Python modulo: result has the same sign as the divisor; C truncation
             // gives the wrong sign when remainder and divisor disagree.  The
             // sum stays inside the type, because the two have opposite signs.
-            if (remainder != 0 && ((remainder ^ divisor) < 0)) remainder = ::crucible::sat::add_sat(remainder, divisor);
+            if (remainder != 0 && ((remainder ^ divisor) < 0)) remainder = ::foundation::sat::add_sat(remainder, divisor);
             return integer(a, remainder);
         }
         if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
@@ -759,7 +771,7 @@ public:
                 int64_t mod_result = quotient % modulus_value;
                 // The two have opposite signs here, so the sum stays inside
                 // the type.
-                if (mod_result < 0) mod_result = ::crucible::sat::add_sat(mod_result, modulus_value);
+                if (mod_result < 0) mod_result = ::foundation::sat::add_sat(mod_result, modulus_value);
                 return integer(a, mod_result);
             }
         }
@@ -775,7 +787,7 @@ public:
             // A saturated product is still positive, so the branch below
             // still admits it, and a coefficient can never be a multiple of a
             // saturated bound unless it is that bound.
-            int64_t mod_div_product = ::crucible::sat::mul_sat(modulus->as_int(), div->as_int());
+            int64_t mod_div_product = ::foundation::sat::mul_sat(modulus->as_int(), div->as_int());
             if (mod_div_product > 0) {
                 const Expr* kept_terms[kScratchArgs];
                 std::size_t num_kept = 0;
@@ -845,7 +857,7 @@ public:
     // footprint enough to make the hit path several times slower.  Default
     // inlining already pulls in the small binary helpers.
     [[nodiscard]] PureInternedExpr make(::foundation::effects::Alloc a, Op op, std::span<const Expr* const> args) {
-        return PureInternedExpr{InternedExpr{make_raw_(a, op, args)}};
+        return PureInternedExpr{::fixy::mint_tagged<::fixy::tags::source::Interned>(make_raw_(a, op, args)), {}};
     }
 
 private:
@@ -998,7 +1010,7 @@ private:
     // power of two only while both bounds move together.  Shifting one by an
     // odd offset breaks it and loosens the bounds on the direct-index
     // lookup.
-    static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(kIntCacheSize, std::size_t{1024}),
+    static_assert(::foundation::decide::is_power_of_two_le<std::size_t>(kIntCacheSize, std::size_t{1024}),
                   "kIntCacheSize must be a power of two ≤ 1024");
 
     // Every n-ary constructor collects its operands in a stack buffer of this
@@ -1037,7 +1049,7 @@ private:
     }
 
     [[nodiscard, gnu::const]] static constexpr IntCacheIndex int_cache_index(IntCacheLiteral literal) noexcept {
-        return IntCacheIndex{static_cast<size_t>(literal.value() - kIntCacheLow)};
+        return ::fixy::mint_refined<kIntCacheIndexBound>(static_cast<size_t>(literal.value() - kIntCacheLow));
     }
 
     [[nodiscard, gnu::const]] static constexpr size_t raw_int_cache_index(IntCacheIndex index) noexcept {
@@ -1214,14 +1226,14 @@ private:
             if (arg_expr->op == Op::ADD && num_args + arg_expr->nargs + reserved <= kScratchArgs) {
                 for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
                     if (arg_expr->args[i]->op == Op::INTEGER)
-                        int_sum = ::crucible::sat::add_sat(int_sum, arg_expr->args[i]->payload);
+                        int_sum = ::foundation::sat::add_sat(int_sum, arg_expr->args[i]->payload);
                     else {
                         CRUCIBLE_FATAL_INVARIANT(num_args < kScratchArgs);
                         term_scratch_buf[num_args++] = arg_expr->args[i];
                     }
                 }
             } else if (arg_expr->op == Op::INTEGER) {
-                int_sum = ::crucible::sat::add_sat(int_sum, arg_expr->payload);
+                int_sum = ::foundation::sat::add_sat(int_sum, arg_expr->payload);
             } else {
                 CRUCIBLE_FATAL_INVARIANT(num_args + reserved < kScratchArgs);
                 term_scratch_buf[num_args++] = arg_expr;
@@ -1265,7 +1277,7 @@ private:
                 if (num_factors == 0) {
                     // A MUL of integers only.  The flattening above should
                     // have folded it already.
-                    int_sum = ::crucible::sat::add_sat(int_sum, combined_coefficient);
+                    int_sum = ::foundation::sat::add_sat(int_sum, combined_coefficient);
                     continue;
                 } else if (num_factors == 1) {
                     base = mul_factors[0];
@@ -1295,7 +1307,7 @@ private:
             const Expr* base = decomposed_terms[i].base;
             std::size_t j = i + 1;
             while (j < num_decomposed && decomposed_terms[j].base == base) {
-                total_coeff = ::crucible::sat::add_sat(total_coeff, decomposed_terms[j].coeff);
+                total_coeff = ::foundation::sat::add_sat(total_coeff, decomposed_terms[j].coeff);
                 ++j;
             }
 
@@ -1366,14 +1378,14 @@ private:
             if (arg_expr->op == Op::MUL && num_args + arg_expr->nargs + reserved <= kScratchArgs) {
                 for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
                     if (arg_expr->args[i]->op == Op::INTEGER)
-                        int_prod = ::crucible::sat::mul_sat(int_prod, arg_expr->args[i]->payload);
+                        int_prod = ::foundation::sat::mul_sat(int_prod, arg_expr->args[i]->payload);
                     else {
                         CRUCIBLE_FATAL_INVARIANT(num_args < kScratchArgs);
                         factor_scratch_buf[num_args++] = arg_expr->args[i];
                     }
                 }
             } else if (arg_expr->op == Op::INTEGER) {
-                int_prod = ::crucible::sat::mul_sat(int_prod, arg_expr->payload);
+                int_prod = ::foundation::sat::mul_sat(int_prod, arg_expr->payload);
             } else {
                 CRUCIBLE_FATAL_INVARIANT(num_args + reserved < kScratchArgs);
                 factor_scratch_buf[num_args++] = arg_expr;
@@ -1631,9 +1643,9 @@ private:
     // a single load and no indirection through the owning buffer.
     void alloc_tables_(size_t cap) {
         const size_t slot_bytes = cap * sizeof(const Expr*);
-        backing_ = ::crucible::fixy::wrap::SwissTableBuffer<const Expr*>::allocate(cap);
-        ctrl_ = backing_.ctrl();
-        slots_ = backing_.slots();
+        backing_ = ::foundation::SwissTableBuffer<const Expr*>::allocate(cap);
+        ctrl_ = backing_.ctrl().data();
+        slots_ = backing_.slots().data();
         std::memset(ctrl_, 0x80, cap);  // 0x80 is the empty control byte.
         std::memset(slots_, 0, slot_bytes);
     }
@@ -1646,19 +1658,20 @@ private:
     // Both preconditions are load-bearing for the probe.  It masks with
     // capacity minus one, which a non-power-of-two capacity corrupts, and it
     // loads a whole control group at a time, which walks off the end of a
-    // buffer narrower than one group.
+    // buffer narrower than one group.  The table buffer admits a power of
+    // two up to 1 << 30, and a control group can be wider than the sixteen
+    // bytes the buffer requires, so each condition is stated.
     CRUCIBLE_UNSAFE_BUFFER_USAGE void grow_to_(size_t new_capacity)
-        pre(::crucible::decide::is_power_of_two_le<std::size_t>(new_capacity, std::size_t{1} << 30))
-            pre(new_capacity >= detail::group_width()) {
+        pre(::foundation::is_swiss_table_capacity(new_capacity)) pre(new_capacity >= detail::group_width()) {
         size_t old_capacity = capacity_.value();
         size_t old_count = intern_count_.get();
         // The local keeps the old buffer alive for the re-insert walk below
         // and frees it when this function returns.
         auto old_backing = std::move(backing_);
-        int8_t* old_ctrl = old_backing.ctrl();
-        const Expr** old_slots = old_backing.slots();
+        int8_t* old_ctrl = old_backing.ctrl().data();
+        const Expr** old_slots = old_backing.slots().data();
 
-        capacity_ = Capacity{new_capacity};
+        capacity_ = ::fixy::mint_refined<::fixy::power_of_two>(new_capacity);
         alloc_tables_(capacity_.value());
 
         size_t slot_mask = capacity_.value() - 1;
@@ -1695,7 +1708,7 @@ private:
     }
 
     Arena arena_;
-    ::crucible::fixy::wrap::SwissTableBuffer<const Expr*> backing_;
+    ::foundation::SwissTableBuffer<const Expr*> backing_;
     int8_t* ctrl_;  // Points into backing_ at offset 0.
     const Expr** slots_;  // Points into backing_ at offset capacity_.
     Capacity capacity_;  // Total slots, a power of two and a group multiple.

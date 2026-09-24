@@ -98,7 +98,6 @@ include/crucible/Cipher.h
 include/crucible/CostModel.h
 include/crucible/CrucibleContext.h
 include/crucible/DimHash.h
-include/crucible/ExprPool.h
 include/crucible/IterationDetector.h
 include/crucible/IterationDetectorState.h
 include/crucible/MerkleDag.h

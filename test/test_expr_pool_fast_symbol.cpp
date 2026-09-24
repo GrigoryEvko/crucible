@@ -1,17 +1,21 @@
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/Expr.h>
 #include <crucible/ExprPool.h>
+#include <fixy/Bands.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 #include <cstdio>
 #include <type_traits>
 
 using namespace crucible;
+namespace eff = ::foundation::effects;
 
 constexpr uint16_t NUM_FLAGS = ExprFlags::IS_INTEGER;
 
 static void test_unregistered_returns_nullptr() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -31,7 +35,7 @@ static void test_unregistered_returns_nullptr() {
 }
 
 static void test_matches_slow_path() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -55,7 +59,7 @@ static void test_matches_slow_path() {
 }
 
 static void test_sparse_sids() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -85,7 +89,7 @@ static void test_sparse_sids() {
 }
 
 static void test_dense_sids_stress() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -110,7 +114,7 @@ static void test_dense_sids_stress() {
 }
 
 static void test_make_returns_interned_det_safe() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -129,7 +133,7 @@ static void test_make_returns_interned_det_safe() {
 // constructors used to collect into a 64-entry stack buffer with no bound of
 // any kind, so anything past 64 operands wrote past the end of the frame.
 static void test_wide_variadic_operands() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -155,7 +159,7 @@ static void test_wide_variadic_operands() {
 // The same bound on the logical constructors, whose only guard used to be a
 // bare assert that -DNDEBUG removed.
 static void test_wide_logical_operands() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -180,7 +184,7 @@ static void test_wide_logical_operands() {
 // The result names the same value with one more level of nesting, and every
 // node in it is inside the ceiling.
 static void test_flatten_degrades_at_the_ceiling() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -208,7 +212,7 @@ static void test_flatten_degrades_at_the_ceiling() {
 // derived its slot mask from the capacity read before the rehash, so a node
 // that moved into the new upper half was missed and interned a second time.
 static void test_intern_identity_across_rehash() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     // A capacity far below the working set forces many rehashes.
     ExprPool pool{a, 16};
@@ -236,7 +240,7 @@ static void test_intern_identity_across_rehash() {
 // Constant folding saturates at the bounds of int64 rather than wrapping,
 // so the result is the same on every target and in every build mode.
 static void test_constant_folding_saturates() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -279,7 +283,7 @@ static void test_constant_folding_saturates() {
 // child cannot be named.  The constant goes one level up instead, which names
 // the same value with every node inside the ceiling.
 static void test_folded_constant_nests_at_the_ceiling() {
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -316,8 +320,9 @@ static void test_folded_constant_nests_at_the_ceiling() {
 
 int main() {
     std::printf("test_expr_pool_fast_symbol:\n");
-    static_assert(std::is_same_v<ExprPool::InternedExpr, safety::Tagged<const Expr*, safety::source::Interned>>);
-    static_assert(std::is_same_v<ExprPool::PureInternedExpr, safety::det_safe::Pure<ExprPool::InternedExpr>>);
+    static_assert(
+        std::is_same_v<ExprPool::InternedExpr, ::fixy::Tagged<const Expr*, ::fixy::tags::source::Interned>>);
+    static_assert(std::is_same_v<ExprPool::PureInternedExpr, ::fixy::det_safe::Pure<ExprPool::InternedExpr>>);
     static_assert(sizeof(ExprPool::PureInternedExpr) == sizeof(const Expr*));
 
     test_unregistered_returns_nullptr();
