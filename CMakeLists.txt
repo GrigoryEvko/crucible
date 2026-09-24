@@ -1089,7 +1089,13 @@ if(CRUCIBLE_ANALYZER)
   message(STATUS "CRUCIBLE_ANALYZER=ON — GCC -fanalyzer enabled for crucible consumers")
 endif()
 
-# ── Strict UBSan and verify builds (test presets only) ─────────────
+# ── Sanitizer and verify builds (test presets only) ────────────────
+#
+# CRUCIBLE_SANITIZE (the default preset) puts ASan on every target of a
+# Debug build, and UBSan on the test executables.  CRUCIBLE_TSAN (the tsan
+# preset) puts ThreadSanitizer on every target of a Debug build.  A shared
+# library built under ASan or ThreadSanitizer loads only after the runtime,
+# so the Python vessel loads the libraries of the release preset.
 #
 # CRUCIBLE_UBSAN_STRICT removes -fno-strict-overflow and puts the full
 # UBSan set on every target.  -fno-strict-overflow defines signed overflow
@@ -1102,10 +1108,20 @@ endif()
 # which arms CRUCIBLE_PRE, CRUCIBLE_POST and CRUCIBLE_INVARIANT.  The TUs
 # of crucible_perf keep `ignore` for their link (refer to that block).  The
 # build shows how the optimizer changes a checked program.
+option(CRUCIBLE_SANITIZE
+  "Put ASan on every target and UBSan on the tests in a Debug build" ON)
+option(CRUCIBLE_TSAN
+  "Put ThreadSanitizer on every target in a Debug build (not with CRUCIBLE_SANITIZE)" OFF)
 option(CRUCIBLE_UBSAN_STRICT
   "Put the full UBSan set on every target, with signed overflow undefined (test preset)" OFF)
 option(CRUCIBLE_VERIFY
   "Release code generation with the contract families armed (test preset)" OFF)
+if(CRUCIBLE_TSAN AND CRUCIBLE_SANITIZE)
+  message(FATAL_ERROR "CRUCIBLE_TSAN and CRUCIBLE_SANITIZE are separate presets: ThreadSanitizer cannot share a process with ASan")
+endif()
+if(CRUCIBLE_UBSAN_STRICT AND (CRUCIBLE_SANITIZE OR CRUCIBLE_TSAN))
+  message(FATAL_ERROR "CRUCIBLE_UBSAN_STRICT is its own preset: set CRUCIBLE_SANITIZE and CRUCIBLE_TSAN to OFF")
+endif()
 if(CRUCIBLE_UBSAN_STRICT AND CRUCIBLE_ANALYZER)
   message(FATAL_ERROR "CRUCIBLE_UBSAN_STRICT and CRUCIBLE_ANALYZER are separate presets")
 endif()
@@ -1665,22 +1681,37 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
   )
 endif()
 
-# ── Strict UBSan: every target, signed overflow undefined ─────────
+# ── Sanitizers on every target that links crucible_dialect ───────
 #
 # This block puts the flags on crucible_dialect.  The checks then apply to
-# the static libraries and to the tests.  The -fsanitize=undefined set of
-# GCC does not include float-cast-overflow, float-divide-by-zero and
-# bounds-strict, and the block names them.  The first report stops the
-# process.
-if(CRUCIBLE_UBSAN_STRICT)
-  set(_crucible_ubsan_strict_checks
+# the static libraries as well as to the tests.  A library that is not
+# instrumented hides its overflows from ASan and its races from
+# ThreadSanitizer.
+#
+# The default preset puts UBSan on the test executables only (the
+# crucible_test factory).  UBSan with -fno-sanitize-recover stops the proof
+# that deletes the unreachable `throw bad_alloc()` of each libstdc++
+# allocate, and the no-throw gate then reads a throw in the libraries.
+# The strict preset puts the full UBSan set on the libraries, and that one
+# preset disables the gate (test/CMakeLists.txt).  The -fsanitize=undefined
+# set of GCC does not include float-cast-overflow, float-divide-by-zero and
+# bounds-strict, and the strict preset names them.
+set(_crucible_sanitizers "")
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
+  set(_crucible_sanitizers address)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_TSAN)
+  set(_crucible_sanitizers thread)
+elseif(CRUCIBLE_UBSAN_STRICT)
+  set(_crucible_sanitizers
     undefined,float-cast-overflow,float-divide-by-zero,bounds-strict)
+endif()
+if(_crucible_sanitizers)
   target_compile_options(crucible_dialect INTERFACE
-    -fsanitize=${_crucible_ubsan_strict_checks}
-    -fno-sanitize-recover=all
+    -fsanitize=${_crucible_sanitizers}
+    $<$<NOT:$<BOOL:${CRUCIBLE_TSAN}>>:-fno-sanitize-recover=all>
     -fno-omit-frame-pointer)
   target_link_options(crucible_dialect INTERFACE
-    -fsanitize=${_crucible_ubsan_strict_checks})
+    -fsanitize=${_crucible_sanitizers})
 endif()
 
 # ═══════════════════════════════════════════════════════════════
@@ -1737,6 +1768,9 @@ endif()
 # Coverage-guided fuzzing via AFL++ QEMU-mode or libFuzzer drives the
 # same boundary harnesses (see fuzz/README.md).
 option(CRUCIBLE_FUZZ "Build property + boundary fuzz harnesses" OFF)
+if(CRUCIBLE_FUZZ AND CRUCIBLE_TSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  message(FATAL_ERROR "The fuzz harnesses build under ASan, and CRUCIBLE_TSAN puts ThreadSanitizer on every target.  Set CRUCIBLE_FUZZ to OFF in a ThreadSanitizer build.")
+endif()
 if(CRUCIBLE_FUZZ)
   add_subdirectory(fuzz)
 endif()

@@ -3,21 +3,13 @@
 # crucible INTERFACE library, plus sanitizers below.
 # ═══════════════════════════════════════════════════════════════
 
-option(CRUCIBLE_SANITIZE "Enable sanitizers in Debug test builds" ON)
-option(CRUCIBLE_TSAN "Enable ThreadSanitizer (AxRaceFree, mutually exclusive with CRUCIBLE_SANITIZE)" OFF)
-
-if(CRUCIBLE_TSAN AND CRUCIBLE_SANITIZE)
-  message(FATAL_ERROR "CRUCIBLE_TSAN and CRUCIBLE_SANITIZE are mutually exclusive (TSan cannot coexist with ASan/UBSan)")
-endif()
-# The strict UBSan preset puts its checks on every target through
-# crucible_dialect (root CMakeLists.txt).  The test factory adds no
-# sanitizer of its own.
-if(CRUCIBLE_UBSAN_STRICT AND (CRUCIBLE_SANITIZE OR CRUCIBLE_TSAN))
-  message(FATAL_ERROR "CRUCIBLE_UBSAN_STRICT is its own preset: set CRUCIBLE_SANITIZE and CRUCIBLE_TSAN to OFF")
-endif()
-
 # ═══════════════════════════════════════════════════════════════
-# SECTION 8: Sanitizers — Debug test builds only
+# SECTION 8: Sanitizers
+#
+# The root CMakeLists.txt declares CRUCIBLE_SANITIZE, CRUCIBLE_TSAN and
+# CRUCIBLE_UBSAN_STRICT, and it puts ASan, ThreadSanitizer or the strict
+# UBSan set on every target through crucible_dialect.  The factories below
+# add UBSan to the test executables of the default preset, and nothing more.
 #
 # AxMemSafe:  ASan detects buffer overflow, use-after-free,
 #             double-free, stack-use-after-scope, heap-use-after-free
@@ -103,32 +95,11 @@ endif()
 #
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
   set(CRUCIBLE_SAN_COMPILE_FLAGS
-    # AxMemSafe: ASan — buffer overflow, use-after-free, double-free
-    # AxLeakFree: LeakSan — integrated into ASan on Linux
-    -fsanitize=address
-    # UBSan — existing checks
     -fsanitize=undefined,bounds-strict
     -fno-sanitize-recover=all         # abort on first violation
-    -fno-omit-frame-pointer           # readable stack traces
   )
   set(CRUCIBLE_SAN_LINK_FLAGS
-    -fsanitize=address,undefined,bounds-strict
-  )
-endif()
-
-# ═══════════════════════════════════════════════════════════════
-# SECTION 8.5: ThreadSanitizer — AxRaceFree (opt-in)
-#
-# Detects data races at runtime. Mutually exclusive with ASan/UBSan.
-#   cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan
-# ═══════════════════════════════════════════════════════════════
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_TSAN)
-  set(CRUCIBLE_SAN_COMPILE_FLAGS
-    -fsanitize=thread
-    -fno-omit-frame-pointer
-  )
-  set(CRUCIBLE_SAN_LINK_FLAGS
-    -fsanitize=thread
+    -fsanitize=undefined,bounds-strict
   )
 endif()
 
@@ -157,7 +128,8 @@ function(crucible_test name)
   # still use the selected build type.
   target_compile_options(${name} PRIVATE -UNDEBUG)
 
-  # Sanitizers — test targets only (not the shared library).
+  # UBSan on the test executable.  ASan and ThreadSanitizer come from
+  # crucible_dialect on every target.
   if(CRUCIBLE_SAN_COMPILE_FLAGS)
     target_compile_options(${name} PRIVATE ${CRUCIBLE_SAN_COMPILE_FLAGS})
     target_link_options(${name} PRIVATE ${CRUCIBLE_SAN_LINK_FLAGS})

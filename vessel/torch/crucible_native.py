@@ -100,26 +100,101 @@ def _fnv1a(data: bytes) -> int:
 # Library locator
 # =====================================================================
 
-def _find_lib(name: str) -> str | None:
-    """Search for a Crucible .so in common build directories.
+# Python loads the libraries of the release preset.  The sanitizer presets
+# put ASan or ThreadSanitizer on every target, and a library built under one
+# of them loads only when its runtime is first in the load order.
+RELEASE_BUILD = "  cmake --preset release && cmake --build --preset release"
 
-    CRUCIBLE_BUILD_DIR names one directory to search before the usual
-    ones. It exists because several agents share one worktree and each
-    builds into its own directory, so the shared names below are not
-    where a given run's libraries are. The value is a path, absolute or
-    relative to the repository root.
+# The runtime-start symbol that an instrumented library imports, with the
+# sanitizer name and the runtime library that must be preloaded.
+_SANITIZER_START = {
+    b"__asan_init": ("AddressSanitizer", "libasan.so"),
+    b"__tsan_init": ("ThreadSanitizer", "libtsan.so"),
+}
+
+_SHT_DYNSYM = 11
+_ELF64_SECTION_HEADER = 64
+_ELF64_SYMBOL = 24
+
+
+def _find_lib(name: str) -> str | None:
+    """Return the path of one Crucible library in the release build, or None.
+
+    CRUCIBLE_BUILD_DIR names one directory to search before build-release.
+    It exists because several agents share one worktree and each builds
+    into its own directory. The value is a path, absolute or relative to
+    the repository root.
     """
     base = Path(__file__).resolve().parent.parent.parent
     searched = []
     override = os.environ.get("CRUCIBLE_BUILD_DIR")
     if override:
         searched.append(Path(override) if Path(override).is_absolute() else base / override)
-    searched += [base / d for d in ("build", "build-default", "build-gcc", "build-release")]
+    searched.append(base / "build-release")
     for d in searched:
         p = d / "lib" / name
         if p.exists():
             return str(p)
     return None
+
+
+def sanitizer_runtime(path: str) -> tuple[str, str] | None:
+    """Name the sanitizer runtime that the ELF library at PATH imports.
+
+    Returns (sanitizer, runtime library) for a library built under ASan or
+    ThreadSanitizer, and None for a library that needs neither. The read
+    walks the dynamic symbol table once, O(number of dynamic symbols).
+    A file that is not a 64-bit little-endian ELF object raises, because
+    the check cannot be made on it.
+    """
+    image = Path(path).read_bytes()
+    if image[:4] != b"\x7fELF" or image[4] != 2 or image[5] != 1:
+        raise RuntimeError(f"{path} is not a 64-bit little-endian ELF library")
+    table = int.from_bytes(image[0x28:0x30], "little")
+    count = int.from_bytes(image[0x3C:0x3E], "little")
+
+    def section(index: int) -> tuple[int, int, int, int]:
+        """Return (type, offset, size, link) of one section header."""
+        at = table + index * _ELF64_SECTION_HEADER
+        return (int.from_bytes(image[at + 4:at + 8], "little"),
+                int.from_bytes(image[at + 24:at + 32], "little"),
+                int.from_bytes(image[at + 32:at + 40], "little"),
+                int.from_bytes(image[at + 40:at + 44], "little"))
+
+    for index in range(count):
+        kind, offset, size, link = section(index)
+        if kind != _SHT_DYNSYM:
+            continue
+        _, names, _, _ = section(link)
+        for at in range(offset, offset + size, _ELF64_SYMBOL):
+            start = names + int.from_bytes(image[at:at + 4], "little")
+            symbol = image[start:image.index(b"\0", start)]
+            if symbol in _SANITIZER_START:
+                return _SANITIZER_START[symbol]
+    return None
+
+
+def checked_lib_path(name: str, lib_path: str | None, missing: str) -> str:
+    """Find one Crucible library and return its path once it is safe to load.
+
+    MISSING is the build command to name when no library is found. A
+    library built under ASan or ThreadSanitizer is refused before it is
+    loaded, because dlopen of such a library ends the process.
+    """
+    path = lib_path or _find_lib(name)
+    if path is None:
+        raise RuntimeError(f"Cannot find {name}. Build it with:\n{missing}")
+    instrumented = sanitizer_runtime(path)
+    if instrumented is not None:
+        sanitizer, runtime = instrumented
+        raise RuntimeError(
+            f"{path} is built with {sanitizer}, and its runtime must load "
+            f"before the process starts.\n"
+            f"Build the libraries that Python loads with the release preset:\n"
+            f"{RELEASE_BUILD}\n"
+            f"or preload the runtime of the same compiler:\n"
+            f"  LD_PRELOAD=$(g++-16p -print-file-name={runtime}) python ...")
+    return path
 
 
 # =====================================================================
@@ -131,11 +206,7 @@ class _VesselLib:
 
     def __init__(self, lib_path: str | None = None) -> None:
         """Load the vessel library and check its ABI stamp."""
-        path = lib_path or _find_lib("libcrucible_vessel.so")
-        if path is None:
-            raise RuntimeError(
-                "Cannot find libcrucible_vessel.so — build Crucible first:\n"
-                "  cmake --preset default && cmake --build --preset default")
+        path = checked_lib_path("libcrucible_vessel.so", lib_path, RELEASE_BUILD)
         self._lib = ctypes.CDLL(path)
         self._setup()
         self._check_abi(path)
@@ -154,7 +225,7 @@ class _VesselLib:
                 f"  observed ABI  : {observed}\n"
                 f"  expected ABI  : {EXPECTED_ABI_VERSION}\n"
                 f"Rebuild Crucible after a vessel_api.h change:\n"
-                f"  cmake --build --preset default")
+                f"  cmake --build --preset release")
 
     def _setup(self) -> None:
         """Declare the restype and argtypes of every symbol this class calls."""
@@ -255,18 +326,15 @@ class _DispatchLib:
 
     def __init__(self, lib_path: str | None = None) -> None:
         """Load the dispatch library, which activates the C++ fallback."""
-        path = lib_path or _find_lib("libcrucible_dispatch.so")
-        if path is None:
-            raise RuntimeError(
-                "Cannot find libcrucible_dispatch.so — build with:\n"
-                "  cmake -DTORCH_DIR=~/Downloads/pytorch --preset default\n"
-                "  cmake --build --preset default")
         # Ensure torch._C is loaded first (provides libc10 symbols).
         import torch._C  # noqa: F401
         # CDLL triggers the .so's global constructors, which include
         # TORCH_LIBRARY_IMPL registration — the C++ fallback is active
         # as soon as the library is loaded.
-        self._lib = ctypes.CDLL(path)
+        self._lib = ctypes.CDLL(checked_lib_path(
+            "libcrucible_dispatch.so", lib_path,
+            "  cmake -DTORCH_DIR=~/Downloads/pytorch --preset release\n"
+            "  cmake --build --preset release"))
         self._setup()
 
     def _setup(self) -> None:

@@ -29,25 +29,11 @@ Usage:
 
 import ctypes
 import struct
-from pathlib import Path
 
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
-# ─── Locate the shared library ──────────────────────────────────────
-
-def _find_vessel_lib():
-    """Search for libcrucible_vessel.so in common build directories."""
-    base = Path(__file__).resolve().parent.parent.parent
-    candidates = [
-        base / "build" / "lib" / "libcrucible_vessel.so",
-        base / "build-gcc" / "lib" / "libcrucible_vessel.so",
-        base / "build" / "vessel" / "torch" / "libcrucible_vessel.so",
-    ]
-    for p in candidates:
-        if p.exists():
-            return str(p)
-    return "libcrucible_vessel.so"
+from crucible_native import RELEASE_BUILD, checked_lib_path
 
 
 # ─── ctypes bindings ────────────────────────────────────────────────
@@ -83,8 +69,8 @@ class _VesselLib:
         ]
 
     def __init__(self, lib_path=None):
-        path = lib_path or _find_vessel_lib()
-        self._lib = ctypes.CDLL(path)
+        self._lib = ctypes.CDLL(checked_lib_path(
+            "libcrucible_vessel.so", lib_path, RELEASE_BUILD))
         self._setup_signatures()
 
     def _setup_signatures(self):

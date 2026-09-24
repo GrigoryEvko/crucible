@@ -22,6 +22,8 @@ Each frontend — PyTorch, JAX, or a native Python / C++ / Rust API — has a ~2
 
 The PyTorch Vessel is a two-library bridge. `libcrucible_dispatch.so` registers `DispatchKey::Crucible` against a small PyTorch fork patch (one dispatch key, one TLS struct with mode/context/scope fields) and feeds extracted `TensorMeta` plus packed `op_flags` into Vigil's `dispatch_op`. `libcrucible_vessel.so` exposes the C lifecycle API (`create` / `destroy` / `flush` / `export`) against standalone Crucible headers. A Python controller (`crucible_native.py`) handles `DispatchKey::Crucible` enable/disable, module-scope tracking via forward hooks, and training-phase TLS. JAX and native Python / C++ / Rust frontends follow the same adapter pattern.
 
+Python loads the two libraries from `build-release/lib`, or from the directory that `CRUCIBLE_BUILD_DIR` names. Build them with `cmake --preset release && cmake --build --preset release`. The default and tsan presets put ASan or ThreadSanitizer on every target. A library built that way loads only after its sanitizer runtime, so the controller refuses it and says how to rebuild it or preload the runtime.
+
 ## Build
 
 C++26. **GCC 16.0.1 is the only supported compiler** — Crucible's safety axioms structurally depend on contracts (P2900R14), reflection (P2996R13), erroneous behavior for uninit reads (P2795R5), and partial program correctness (P1494R5). All four are GCC 16 exclusive. Clang 22 cannot compile the codebase; no fallback is pursued.
@@ -31,7 +33,9 @@ cmake --preset default && cmake --build --preset default -j8
 ctest --preset default          # full suite, parallel
 
 cmake --preset release          # -O3 -march=native -DNDEBUG -flto=auto
-cmake --preset tsan             # ThreadSanitizer
+cmake --preset tsan             # ThreadSanitizer on every target
+cmake --preset ubsan-strict     # full UBSan on every target, signed overflow undefined
+cmake --preset verify           # Release code with every contract clause enforced
 ```
 
 Build with `-j8` maximum — heaviest TUs peak ~1GB cc1plus RSS each (template + reflection + contracts); `-j$(nproc)` on multi-core boxes hits ~35GB and starts swapping.
