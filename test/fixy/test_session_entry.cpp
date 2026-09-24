@@ -2,8 +2,10 @@
 // gives the first handle to the caller, and with_session lends the
 // Resource to a body by move and gives it back at End.
 
+#include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
 
+#include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -49,6 +51,41 @@ static_assert(!s::CtxFitsSession<BgCtx, SendsRegion, Counter>, "the empty set ho
 // is the permissioned gate at the empty set.
 static_assert(s::CtxFitsSession<BgCtx, Once, Counter> == s::CtxFitsSessionFrom<BgCtx, Once, Counter>);
 static_assert(!s::CtxFitsPermissionedSession<BgCtx, Once, Counter>, "the permissioned mint asks for one tag or more");
+
+// The row of a protocol is the union of the rows of its payloads.  The
+// background context holds Bg and Alloc, and the compile context holds
+// IO too.
+using BgIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>>;
+using IoWork = eff::Computation<eff::Row<eff::Effect::IO>, int>;
+using AllocWork = eff::Computation<eff::Row<eff::Effect::Alloc>, int>;
+
+using SendsIo = s::Send<IoWork, s::End>;
+using ReceivesIo = s::Recv<IoWork, s::End>;
+using BranchRows = s::Loop<s::Select<s::Send<AllocWork, s::Continue>, s::Recv<IoWork, s::End>>>;
+using DelegatesIo = s::Send<s::DelegatedSession<SendsIo, Counter, s::DefaultAbandonmentPolicy,
+                                                ::foundation::permissions::EmptyPermSet>,
+                            s::End>;
+using SendsAllocRegion = s::Send<s::Transferable<AllocWork, Region>, s::End>;
+
+static_assert(std::is_same_v<s::protocol_payload_row_t<Once>, eff::Row<>>, "an int carries no effect");
+static_assert(std::is_same_v<s::protocol_payload_row_t<SendsIo>, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<s::protocol_payload_row_t<ReceivesIo>, eff::Row<eff::Effect::IO>>,
+              "a received payload counts as a sent one does");
+static_assert(std::is_same_v<s::protocol_payload_row_t<BranchRows>, eff::Row<eff::Effect::Alloc, eff::Effect::IO>>,
+              "each branch counts, also the branch that ends the loop");
+static_assert(std::is_same_v<s::protocol_payload_row_t<DelegatesIo>, eff::Row<eff::Effect::IO>>,
+              "the protocol of a delegated endpoint counts");
+static_assert(std::is_same_v<s::protocol_payload_row_t<SendsAllocRegion>, eff::Row<eff::Effect::Alloc>>,
+              "a marker carries the row of its value");
+
+static_assert(!s::CtxFitsSession<BgCtx, SendsIo, Counter>, "the background context holds no IO");
+static_assert(s::CtxFitsSession<BgIoCtx, SendsIo, Counter>);
+static_assert(!s::CtxFitsSession<BgCtx, ReceivesIo, Counter>, "the background context holds no IO");
+static_assert(s::CtxFitsSession<BgIoCtx, ReceivesIo, Counter>);
+static_assert(!s::CtxFitsSession<BgCtx, BranchRows, Counter>, "the branch that ends the loop receives IO");
+static_assert(s::CtxFitsSession<BgIoCtx, BranchRows, Counter>);
+static_assert(!s::CtxFitsSession<BgCtx, DelegatesIo, Counter>, "the delegated protocol sends IO");
+static_assert(s::CtxFitsSession<BgIoCtx, DelegatesIo, Counter>);
 
 [[nodiscard]] int mint_walks_to_end() {
     const BgCtx ctx{eff::testing::bg()};

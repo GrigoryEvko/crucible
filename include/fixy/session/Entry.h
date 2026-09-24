@@ -14,10 +14,11 @@
 // execution context: no tag brings a permission row for the context to
 // admit.
 //
-// The session core has no gate on the effect row of a payload.  A
-// context that holds no Alloc capability can mint a session whose
-// messages carry an Alloc computation.  The old tree checked each payload
-// row against the row of the context; neither mint here does.
+// The gate also asks that the context holds each effect that a payload
+// of the protocol carries (CtxAdmitsProtocolRow of fixy/session/Handle.h).
+// A context with no Alloc capability cannot start a session whose
+// messages carry an Alloc computation, in either direction, or in a
+// protocol that the session delegates.
 //
 // ── A channel handle as the Resource ────────────────────────────────
 //

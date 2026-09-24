@@ -102,6 +102,7 @@
 // base destructor aborts, because the base cannot reach a Resource.
 
 #include <fixy/SelfContained.h>
+#include <fixy/concurrent/PayloadRow.h>
 #include <fixy/session/Payload.h>
 #include <fixy/session/Stepping.h>
 
@@ -122,6 +123,7 @@
 #include <new>
 #include <optional>
 #include <source_location>
+#include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -2138,18 +2140,110 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
 // each tag (foundation/permissions/Permission.h).  The tags are distinct.
 // The protocol is runnable, the Resource is a SessionResource, and the
 // permission flow of the whole protocol closes from the set of the
-// tokens, on every branch.  This mint asks for one tag or more.
-// mint_session of fixy/session/Entry.h reads the same concept with no tag.
+// tokens, on every branch.  The context holds each effect that a payload
+// of the protocol carries (CtxAdmitsProtocolRow).  This mint asks for one
+// tag or more.  mint_session of fixy/session/Entry.h reads the same
+// concept with no tag.
 //
 // The tokens are the last parameters, so the mint cannot take a
 // source_location after them.  The session records the site of the mint.
 // Complexity: linear in the size of the protocol, at compile time.
 
+// ── The effect row of a protocol ────────────────────────────────────
+//
+// A context that starts a session must hold each effect that a message
+// of the session carries.  The row of a protocol is the union of the
+// rows of its payloads, over each Send and each Recv, on each branch, and
+// in each protocol that a DelegatedSession carries.  A received payload
+// counts as a sent one does, because the receiver then holds what the
+// payload carries.  The old tree checked the two directions the same way.
+//
+// The walk is the payload walk of fixy/concurrent/PayloadRow.h, with the
+// rules of this layer for the families that its rosters do not name:
+//
+//   - a marker, DeclassifyOnSend and CTPayload carry their value,
+//     argument 0.  The token or the loan of a marker is no payload.
+//   - PeerMsg and Labelled carry their payload, the last argument.  The
+//     peer and the label are names.
+//   - a DelegatedSession carries the protocol of its endpoint, argument
+//     0.  Its Resource, its policy and its permission set are not
+//     messages of that protocol.
+//   - a SharedReader, a crash record and a bare Permission carry no row.
+//   - each combinator of the registry of fixy/session/Protocol.h carries
+//     each of its type arguments, and the note of a choice carries none,
+//     because its role is a name.
+//
+// A payload that the walk cannot classify stops the build, and the text
+// names it.  The walk stands here and not in fixy/session/Payload.h, so
+// a header that reads only the payload rules does not include the payload
+// walk.  Complexity: linear in the distinct types that the protocol and
+// its payloads reach.
+
+namespace detail {
+
+[[nodiscard]] consteval std::vector<::fixy::concurrent::payload_family_rule> session_payload_rules() {
+    using Rule = ::fixy::concurrent::payload_family_rule;
+    constexpr std::uint64_t carries_first = std::uint64_t{1};
+    constexpr std::uint64_t carries_nothing = std::uint64_t{0};
+    constexpr std::uint64_t carries_every = ~std::uint64_t{0};
+    std::vector<Rule> rules{
+        Rule{^^Transferable, carries_first},
+        Rule{^^Returned, carries_first},
+        Rule{^^Borrowed, carries_first},
+        Rule{^^Released, carries_first},
+        Rule{^^DeclassifyOnSend, carries_first},
+        Rule{^^CTPayload, carries_first},
+        Rule{^^PeerMsg, std::uint64_t{1} << 2},
+        Rule{^^Labelled, std::uint64_t{1} << 1},
+        Rule{^^DelegatedSession, carries_first},
+        Rule{^^SharedReader, carries_nothing},
+        Rule{^^Crash, carries_nothing},
+        Rule{^^::foundation::permissions::Permission, carries_nothing},
+    };
+    const auto has_rule = [&rules](std::meta::info family) consteval {
+        for (const Rule& rule : rules) {
+            if (rule.family == family) return true;
+        }
+        return false;
+    };
+    for (const std::meta::info member : std::meta::members_of(protocol_registry, std::meta::access_context::current())) {
+        if (!std::meta::is_variable(member)) continue;
+        if (std::meta::remove_cvref(std::meta::type_of(member)) != ^^::foundation::algebra::transition::combinator)
+            continue;
+        const auto entry = std::meta::extract<::foundation::algebra::transition::combinator>(member);
+        if (std::meta::is_class_template(entry.shape) && !has_rule(entry.shape)) {
+            rules.push_back(Rule{entry.shape, carries_every});
+        }
+        if (entry.annotation != std::meta::info{} && !has_rule(entry.annotation)) {
+            rules.push_back(Rule{entry.annotation, carries_nothing});
+        }
+    }
+    return rules;
+}
+
+}  // namespace detail
+
+// The rules of this layer for the payload walk.
+inline constexpr std::span<const ::fixy::concurrent::payload_family_rule> session_payload_families =
+    std::define_static_array(detail::session_payload_rules());
+
+// The union of the effect rows of the payloads of Proto.
+template <class Proto>
+using protocol_payload_row_t = ::fixy::concurrent::payload_row_under_t<Proto, session_payload_families>;
+
+// The effect row of Proto is a subrow of the row of the context.  A
+// payload that the walk cannot classify stops the build.
+template <typename Ctx, typename Proto>
+concept CtxAdmitsProtocolRow =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::is_subrow_v<protocol_payload_row_t<Proto>, typename Ctx::row_type>;
+
 template <typename Ctx, typename Proto, typename Resource, typename... Tags>
 concept CtxFitsSessionFrom =
     ::foundation::effects::IsExecCtx<Ctx> && ::foundation::permissions::detail::perm_tags_unique_v<Tags...>
     && (::foundation::permissions::CtxAdmitsPermission<Tags, Ctx> && ...) && WellFormedRunnableProtocol<Proto>
-    && SessionResource<Resource> && PermissionFlowCloses<Proto, ::foundation::permissions::PermSet<Tags...>>;
+    && SessionResource<Resource> && PermissionFlowCloses<Proto, ::foundation::permissions::PermSet<Tags...>>
+    && CtxAdmitsProtocolRow<Ctx, Proto>;
 
 template <typename Ctx, typename Proto, typename Resource, typename... Tags>
 concept CtxFitsPermissionedSession = sizeof...(Tags) != 0 && CtxFitsSessionFrom<Ctx, Proto, Resource, Tags...>;

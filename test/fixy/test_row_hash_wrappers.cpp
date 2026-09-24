@@ -1058,6 +1058,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::vigil_mode::ModeCell, kDescriptor},
 
     {^^::fixy::concurrent::payload_row, kMetafunction},
+    {^^::fixy::concurrent::payload_row_under, kMetafunction},
+    {^^::fixy::concurrent::payload_family_rule,
+     "a rule that a layer gives the payload row walk at compile time: it names a family and the arguments that "
+     "the walk reads, and it is never a value in a signature"},
     {^^::fixy::concurrent::StageArity, kMetafunction},
     {^^::fixy::concurrent::Topology, "a measured description of the host, read by the scheduler and never a "
                                      "template argument of a kernel signature"},

@@ -1877,6 +1877,23 @@ fixy_neg_compile_test(neg_sess_mint_session_pointer_resource
   "no matching function for call to .mint_session<pointer_resource_fixture::Proto>"
   "satisfaction of .SessionResource<Resource>. .with Resource = pointer_resource_fixture::Channel\\*."
   "satisfaction of .CtxFitsSession<Ctx, Proto, Resource>.")
+# The context must hold each effect that a payload of the session carries:
+# a sent payload, a received payload, and a payload of a protocol that
+# the session delegates.  A payload that the walk cannot classify stops
+# the build.
+fixy_neg_compile_test(neg_sess_mint_session_send_row_outside_ctx
+  "no matching function for call to .mint_session<send_row_fixture::Proto>"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*. Proto = fixy::session::Send<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>, fixy::session::End>.")
+fixy_neg_compile_test(neg_sess_mint_session_recv_row_outside_ctx
+  "no matching function for call to .mint_session<recv_row_fixture::Proto>"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*. Proto = fixy::session::Recv<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>, fixy::session::End>.")
+fixy_neg_compile_test(neg_sess_mint_session_delegated_row_outside_ctx
+  "no matching function for call to .mint_session<delegated_row_fixture::Proto>"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*. Proto = fixy::session::Send<int, fixy::session::Send<fixy::session::DelegatedSession<fixy::session::Send<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>")
+fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
+  "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
+  "The refused type: unclassified_fixture::Envelope<int>"
+  "In instantiation of .struct fixy::concurrent::payload_row_under<fixy::session::Send<unclassified_fixture::Envelope<int>, fixy::session::End>, fixy::session::session_payload_families>.")
 # The context-bound with_session lends its Resource for the body only.
 # A body that returns before End, keeps the handle, or returns the End
 # handle of another session fails the body gate, and a Resource passed as
