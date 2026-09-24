@@ -199,7 +199,7 @@ constexpr uint64_t fmix64(uint64_t k) {
 // A second copy of this body under any other name is a drift surface:
 // changing the salt, the mix or the finalizer would leave that copy stale
 // and change the shared key while every assertion against it still passed.
-// scripts/check-no-combine-ids-duplicate.sh is the gate on that.
+// scripts/check-no-combine-ids-duplicate.py is the gate on that.
 //
 // It lives here rather than in safety/diag/StableName.h, where it was
 // written, because MerkleDag.h, Graph.h and ExprPool.h fold with it and

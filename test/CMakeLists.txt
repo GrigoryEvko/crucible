@@ -1161,19 +1161,18 @@ set_tests_properties(mint_inventory_self_test
                      mint_inventory_check_floor PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# FIXY-FOUND-050 — single combine_ids source of truth.  This guard
-# existed but was registered NOWHERE: not in ctest, not in CI.  It had
-# therefore never run, and its own header rotted (it cited
-# StableName.h:166 for a definition that now sits at :73) without
-# anything noticing.  Wired here and in .github/workflows/ci.yml.
+# One combine_ids body.  scripts/check-no-combine-ids-duplicate.py reads
+# the parse tree and fails on a second definition named combine_ids, on a
+# name with combine_ids and an affix, and on a body with the shape of
+# combine_ids under any name.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME no_combine_ids_duplicate_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.sh
-          --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.py --self-test)
 add_test(NAME no_combine_ids_duplicate
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.py)
 set_tests_properties(no_combine_ids_duplicate
                      no_combine_ids_duplicate_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # ci_guard label-coverage gate.  `ctest -L ci_guard` is the LOCAL
 # pre-merge check; a guard registered without the label is silently
 # skipped by it, so the gate reports a pass having never run that
