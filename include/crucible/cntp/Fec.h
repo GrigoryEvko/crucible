@@ -219,14 +219,16 @@ namespace fah = ::fixy::atom::hw;
 
 #if defined(__AVX2__)
 using ActiveSimdIsa = fas::avx2;
-inline constexpr std::size_t kKernelStrideBytes = 32;  // the AVX2 kernels step 32 bytes per iteration
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
 using ActiveSimdIsa = fas::neon;
-inline constexpr std::size_t kKernelStrideBytes = 16;  // the NEON kernels step 16 bytes per iteration
 #else
 using ActiveSimdIsa = fas::scalar;
-inline constexpr std::size_t kKernelStrideBytes = 1;  // the scalar kernels step one byte per iteration
 #endif
+
+// A vector kernel steps one register of the active ISA per iteration, and
+// the scalar kernel steps one byte.  The register width is in bits.
+inline constexpr std::size_t kKernelStrideBytes =
+    fas::register_bits_v<ActiveSimdIsa::isa> == 0 ? 1U : fas::register_bits_v<ActiveSimdIsa::isa> / 8U;
 
 // The two vector arms issue SIMD intrinsics.  The portable arm is scalar.
 using InstructionTier = std::conditional_t<fas::is_trunk_pinned(ActiveSimdIsa::isa), fah::vectorizable, fah::scalar>;
@@ -236,10 +238,13 @@ static_assert(::fixy::atom::IsAtom<ActiveSimdIsa> && ActiveSimdIsa::axis == ::fi
 static_assert(::fixy::atom::IsAtom<InstructionTier> && InstructionTier::axis == ::fixy::Axis::HwInstruction,
               "the kernels' instruction class is a shipped atom of the HwInstruction axis");
 
-// A vector kernel steps one register per iteration.
-static_assert(fas::register_bits_v<ActiveSimdIsa::isa> == 0
-                  || kKernelStrideBytes * 8U == fas::register_bits_v<ActiveSimdIsa::isa>,
-              "a vector kernel must stride exactly one register of the active ISA");
+// The stride comes from the atom table, and the loads use the intrinsic
+// register type.  These assertions hold the two widths equal.
+#if defined(__AVX2__)
+static_assert(kKernelStrideBytes == sizeof(__m256i), "an AVX2 kernel must stride one __m256i per iteration");
+#elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
+static_assert(kKernelStrideBytes == sizeof(uint8x16_t), "a NEON kernel must stride one uint8x16_t per iteration");
+#endif
 
 }  // namespace fec_hw
 
@@ -249,8 +254,9 @@ static_assert(fas::register_bits_v<ActiveSimdIsa::isa> == 0
 // GF(2^8) nibble-table lookup needs.
 CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     namespace lifetime = ::foundation::lifetime;
+    constexpr std::size_t stride_bytes = fec_hw::kKernelStrideBytes;
     std::size_t i = 0;
-    for (; i + 32 <= len; i += 32) {
+    for (; i + stride_bytes <= len; i += stride_bytes) {
         auto const a = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(dst + i, 1).data());
         auto const b = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(src + i, 1).data());
         _mm256_storeu_si256(lifetime::start_as_array<__m256i>(dst + i, 1).data(), _mm256_xor_si256(a, b));
@@ -275,8 +281,9 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
     const auto hi_table = _mm256_load_si256(lifetime::start_as_array<const __m256i>(tables.hi.data(), 1).data());
     const auto mask = _mm256_set1_epi8(0x0f);
 
+    constexpr std::size_t stride_bytes = fec_hw::kKernelStrideBytes;
     std::size_t i = 0;
-    for (; i + 32 <= len; i += 32) {
+    for (; i + stride_bytes <= len; i += stride_bytes) {
         const auto bytes = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(src + i, 1).data());
         const auto lo = _mm256_and_si256(bytes, mask);
         const auto hi = _mm256_and_si256(_mm256_srli_epi16(bytes, 4), mask);
@@ -291,11 +298,12 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
 CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     namespace lifetime = ::foundation::lifetime;
+    constexpr std::size_t stride_bytes = fec_hw::kKernelStrideBytes;
     std::size_t i = 0;
-    for (; i + 16 <= len; i += 16) {
-        auto const a = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, 16).data());
-        auto const b = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, 16).data());
-        vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, 16).data(), veorq_u8(a, b));
+    for (; i + stride_bytes <= len; i += stride_bytes) {
+        auto const a = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, stride_bytes).data());
+        auto const b = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, stride_bytes).data());
+        vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, stride_bytes).data(), veorq_u8(a, b));
     }
     for (; i < len; ++i) {
         dst[i] ^= src[i];
@@ -317,14 +325,15 @@ CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_
     const auto hi_table = vld1q_u8(tables.hi.data());
     const auto mask = vdupq_n_u8(0x0f);
 
+    constexpr std::size_t stride_bytes = fec_hw::kKernelStrideBytes;
     std::size_t i = 0;
-    for (; i + 16 <= len; i += 16) {
-        const auto bytes = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, 16).data());
+    for (; i + stride_bytes <= len; i += stride_bytes) {
+        const auto bytes = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, stride_bytes).data());
         const auto lo = vandq_u8(bytes, mask);
         const auto hi = vandq_u8(vshrq_n_u8(bytes, 4), mask);
         const auto prod = veorq_u8(vqtbl1q_u8(lo_table, lo), vqtbl1q_u8(hi_table, hi));
-        const auto old = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, 16).data());
-        vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, 16).data(), veorq_u8(old, prod));
+        const auto old = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, stride_bytes).data());
+        vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, stride_bytes).data(), veorq_u8(old, prod));
     }
     for (; i < len; ++i) {
         dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));

@@ -25,15 +25,17 @@ namespace fah = ::fixy::atom::hw;
 static_assert(::fixy::atom::IsAtom<fh::ActiveSimdIsa> && fh::ActiveSimdIsa::axis == ::fixy::Axis::SimdIsa);
 static_assert(::fixy::atom::IsAtom<fh::InstructionTier> && fh::InstructionTier::axis == ::fixy::Axis::HwInstruction);
 
-// The kernel strides are in bytes and the register width is in bits.
+// The header derives the kernel stride from the register width of the
+// atom.  These cells pin the stride in bytes, so a change to the atom
+// table cannot move the stride without a failure here.
 #if defined(__AVX2__)
 static_assert(std::is_same_v<fh::ActiveSimdIsa, fas::avx2>);
 static_assert(std::is_same_v<fh::InstructionTier, fah::vectorizable>);
-static_assert(fh::kKernelStrideBytes * 8U == fas::register_bits_v<fas::SimdIsa::Avx2>);
+static_assert(fh::kKernelStrideBytes == 32, "the AVX2 FEC kernels step 32 bytes per iteration.");
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
 static_assert(std::is_same_v<fh::ActiveSimdIsa, fas::neon>);
 static_assert(std::is_same_v<fh::InstructionTier, fah::vectorizable>);
-static_assert(fh::kKernelStrideBytes * 8U == fas::register_bits_v<fas::SimdIsa::Neon>);
+static_assert(fh::kKernelStrideBytes == 16, "the NEON FEC kernels step 16 bytes per iteration.");
 #else
 static_assert(std::is_same_v<fh::ActiveSimdIsa, fas::scalar>, "the portable FEC arm declares the scalar ISA.");
 static_assert(std::is_same_v<fh::InstructionTier, fah::scalar>, "the portable FEC arm is the scalar tier.");
