@@ -2014,23 +2014,26 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
 // other holder has, and each region has one owner (Actris per-message
 // resources).
 //
-// The gate is one concept.  The context is an execution context, and it
-// admits the permission row of each tag (foundation/permissions/
-// Permission.h).  The tags are distinct, and there is one tag or more.
+// The gate is one concept, CtxFitsSessionFrom, for every set of tags.  The
+// context is an execution context, and it admits the permission row of
+// each tag (foundation/permissions/Permission.h).  The tags are distinct.
 // The protocol is runnable, the Resource is a SessionResource, and the
 // permission flow of the whole protocol closes from the set of the
-// tokens, on every branch.
+// tokens, on every branch.  This mint asks for one tag or more.
+// mint_session of fixy/session/Entry.h reads the same concept with no tag.
 //
 // The tokens are the last parameters, so the mint cannot take a
 // source_location after them.  The session records the site of the mint.
 // Complexity: linear in the size of the protocol, at compile time.
 
 template <typename Ctx, typename Proto, typename Resource, typename... Tags>
-concept CtxFitsPermissionedSession =
-    ::foundation::effects::IsExecCtx<Ctx> && sizeof...(Tags) != 0
-    && ::foundation::permissions::detail::perm_tags_unique_v<Tags...>
+concept CtxFitsSessionFrom =
+    ::foundation::effects::IsExecCtx<Ctx> && ::foundation::permissions::detail::perm_tags_unique_v<Tags...>
     && (::foundation::permissions::CtxAdmitsPermission<Tags, Ctx> && ...) && WellFormedRunnableProtocol<Proto>
     && SessionResource<Resource> && PermissionFlowCloses<Proto, ::foundation::permissions::PermSet<Tags...>>;
+
+template <typename Ctx, typename Proto, typename Resource, typename... Tags>
+concept CtxFitsPermissionedSession = sizeof...(Tags) != 0 && CtxFitsSessionFrom<Ctx, Proto, Resource, Tags...>;
 
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
           typename... Tags, typename... Brands>

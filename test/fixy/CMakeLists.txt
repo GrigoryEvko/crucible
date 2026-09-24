@@ -1288,6 +1288,10 @@ fixy_test(test_session_protocol)
 # one abandonment banner on stderr from that child.
 fixy_test(test_session_handle)
 
+# Entry.h holds the context-bound entry points with the empty permission
+# set: mint_session, and with_session, which lends the Resource by move.
+fixy_test(test_session_entry)
+
 # The label word of a keyed branch is one value in every translation
 # unit.  The two files include the headers in different orders and each
 # registers a combinator of its own, and main compares their words.
@@ -1749,6 +1753,40 @@ fixy_neg_compile_test(neg_sess_permissioned_session_token_kept
   "use of deleted function .foundation::permissions::Permission<Tag, Brand>::Permission\\(const foundation::permissions::Permission<Tag, Brand>&\\) .with Tag = token_kept_fixture::Region"
   "duplicating creates two simultaneous owners of the same region"
   "initializing argument 3 of .constexpr auto fixy::session::mint_permissioned_session")
+# HS14 for mint_session of Entry.h.  Its gate is CtxFitsSessionFrom with no
+# tag, and each fixture fails one clause: the context, the permission flow
+# from the empty set, and the Resource.
+fixy_neg_compile_test(neg_sess_mint_session_not_a_context
+  "no matching function for call to .mint_session<not_a_context_fixture::Proto>"
+  "satisfaction of .IsExecCtx<Ctx>. .with Ctx = int."
+  "satisfaction of .CtxFitsSession<Ctx, Proto, Resource>.")
+fixy_neg_compile_test(neg_sess_mint_session_flow_open
+  "no matching function for call to .mint_session<flow_open_fixture::SendsRegion>"
+  "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Send<fixy::session::Transferable<int, flow_open_fixture::Region>, fixy::session::End>. Tags = \\{\\}"
+  "permission_flow_<Proto, PS, void>::closes")
+fixy_neg_compile_test(neg_sess_mint_session_pointer_resource
+  "no matching function for call to .mint_session<pointer_resource_fixture::Proto>"
+  "satisfaction of .SessionResource<Resource>. .with Resource = pointer_resource_fixture::Channel\\*."
+  "satisfaction of .CtxFitsSession<Ctx, Proto, Resource>.")
+# The context-bound with_session lends its Resource for the body only.
+# A body that returns before End, keeps the handle, or returns the End
+# handle of another session fails the body gate, and a Resource passed as
+# an lvalue fails at its copy.
+fixy_neg_compile_test(neg_sess_ctx_with_session_returns_open_handle
+  "no matching function for call to .with_session<returns_open_fixture::Stream>"
+  "satisfaction of .CtxFitsSessionBody<Ctx, Proto, Resource, Policy, Body>."
+  "the required expression .std::move\\(handle\\).close\\(\\). is invalid")
+fixy_neg_compile_test(neg_sess_ctx_with_session_keeps_handle
+  "no matching function for call to .with_session<keeps_handle_fixture::Stream>"
+  "satisfaction of .CtxFitsSessionBody<Ctx, Proto, Resource, Policy, Body>."
+  "the required type .typename H::loop_ctx. is invalid")
+fixy_neg_compile_test(neg_sess_ctx_with_session_foreign_end
+  "no matching function for call to .with_session<foreign_end_fixture::Stream>"
+  "satisfaction of .CtxFitsSessionBody<Ctx, Proto, Resource, Policy, Body>."
+  "the expression .is_same_v<typename fixy::session::detail::session_brand_of<typename H::loop_ctx>::type, Brand>")
+fixy_neg_compile_test(neg_sess_ctx_with_session_copies_resource
+  "use of deleted function .copies_resource_fixture::Channel::Channel\\(const copies_resource_fixture::Channel&\\)."
+  "initializing argument 2 of .constexpr Resource fixy::session::with_session\\(const Ctx&, Resource, Body, std::source_location\\)")
 
 # ── The machine and Vigil-mode session bridges ────────────────────────
 fixy_test(test_session_bridges)
