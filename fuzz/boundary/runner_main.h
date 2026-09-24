@@ -51,6 +51,8 @@
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #pragma GCC diagnostic ignored "-Wuseless-cast"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma GCC diagnostic ignored "-Wextra-semi"
+#pragma GCC diagnostic ignored "-Wpedantic"
 __AFL_FUZZ_INIT();
 #pragma GCC diagnostic pop
 #endif
@@ -206,6 +208,7 @@ int main(int argc, char** argv) {
 #pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #pragma GCC diagnostic ignored "-Wuseless-cast"
+#pragma GCC diagnostic ignored "-Wpedantic"
         __AFL_INIT();
         unsigned char* buf = __AFL_FUZZ_TESTCASE_BUF;
         while (__AFL_LOOP(10000)) {
