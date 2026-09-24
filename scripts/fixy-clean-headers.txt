@@ -34,11 +34,12 @@
 #     PermissionedSpscChannel, the CrucibleContext field refactors, Vigil
 #     mode_session->mint_vigil_mode_bridge) remains; Vigil also keeps one
 #     documented substrate-mint call (safety::mint_atomic_session).
-#   - MerkleDag.h / PoolAllocator.h / CKernel.h / ... — code-clean but
+#   - MerkleDag.h / PoolAllocator.h / ... — code-clean but
 #     still carry doc-comment prose mentioning `safety::*`; they join
 #     the registry once that residue is reworded to fixy:: spellings.
 #
 include/crucible/BackgroundThread.h
+include/crucible/CKernel.h
 include/crucible/Cipher.h
 include/crucible/CostModel.h
 include/crucible/DimHash.h
@@ -46,6 +47,8 @@ include/crucible/ExprPool.h
 include/crucible/Graph.h
 include/crucible/NumericalRecipe.h
 include/crucible/Philox.h
+include/crucible/RecipePool.h
+include/crucible/RecipeRegistry.h
 include/crucible/ReplayEngine.h
 include/crucible/Serialize.h
 include/crucible/SymbolTable.h
