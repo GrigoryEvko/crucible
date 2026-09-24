@@ -838,6 +838,10 @@ fixy_neg_compile_test(neg_tagged_bit_cast_earned_tag
   "no matching function for call to .bit_cast<fixy::Tagged<int, fixy::tags::source::Sanitized> >"
   "is_trivially_copyable_v<_To>")
 
+fixy_neg_compile_test(neg_tagged_start_as_array_earned_tag
+  "no matching function for call to .start_as_array<Sanitized>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::Tagged<int, fixy::tags::source::Sanitized>\\]")
+
 # declassify<Policy>() is the one way out of a Secret: std::bit_cast
 # cannot read the value out, because a Secret is not trivially copyable.
 fixy_neg_compile_test(neg_secret_bit_cast_out
@@ -850,6 +854,10 @@ fixy_neg_compile_test(neg_secret_bit_cast_out
 fixy_neg_compile_test(neg_refined_bit_cast
   "no matching function for call to .bit_cast<fixy::Refined<"
   "is_trivially_copyable_v<_To>")
+
+fixy_neg_compile_test(neg_refined_start_as_array
+  "no matching function for call to .start_as_array<Positive>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::Refinement<fixy::IsPositive\\{\\}, int, false>\\]")
 
 fixy_neg_compile_test(neg_refined_function_pointer_predicate
   "static assertion failed"
@@ -2590,6 +2598,10 @@ fixy_neg_compile_test(neg_os_cpu_pinned_bit_cast
   "no matching function for call to .bit_cast"
   "is_trivially_copyable_v<_To>")
 
+fixy_neg_compile_test(neg_os_cpu_pinned_start_as_array
+  "no matching function for call to .start_as_array<Pin>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::CpuPinned<")
+
 # ── A clock reading comes only from a read of that clock ────────────
 #
 # The value constructor, the in_place constructor, the free mint and
@@ -2603,6 +2615,10 @@ fixy_neg_compile_test(neg_os_clock_source_value_ctor
 fixy_neg_compile_test(neg_os_clock_source_bit_cast
   "no matching function for call to .bit_cast"
   "is_trivially_copyable_v<_To>")
+
+fixy_neg_compile_test(neg_os_clock_source_start_as_array
+  "no matching function for call to .start_as_array<Reading>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::ClockSource<")
 
 fixy_neg_compile_test(neg_os_clock_source_peek_mut
   "has no member named .peek_mut"
@@ -2627,6 +2643,10 @@ fixy_neg_compile_test(neg_os_thread_named_moved
 fixy_neg_compile_test(neg_os_thread_named_bit_cast
   "use of deleted function"
   "a thread-name witness is bound to the thread that minted it")
+
+fixy_neg_compile_test(neg_os_thread_named_start_as_array
+  "no matching function for call to .start_as_array<Witness>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::ThreadNamed<")
 
 # ── The TSC reader recognises a pin by reflection ────────────────────
 #

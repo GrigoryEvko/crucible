@@ -8765,6 +8765,9 @@ crucible_neg_compile_multi_test(neg_cpu_pinned_forged_value
 crucible_neg_compile_multi_test(neg_cpu_pinned_bit_cast
   "no matching function for call to .bit_cast<Pin>.int.."
   "is_trivially_copyable_v<_To>")
+crucible_neg_compile_multi_test(neg_cpu_pinned_start_as_array
+  "no matching function for call to .start_as_array<Pin>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = crucible::safety::CpuPinned<")
 
 # ─── FIXY-V-188 SuspendBehavior HS14 negative-compile fixtures ─────
 #   - neg_suspend_behavior_pauses_at_watchdog  (satisfies gate: Pauses ⋤ KeepsTicking)
@@ -8786,6 +8789,9 @@ crucible_neg_compile_test(neg_thread_name_wrong_ctx
 crucible_neg_compile_multi_test(neg_thread_name_forged_witness
   "is private within this context"
   "crucible::safety::ThreadNamed<Name>::ThreadNamed\\(\\)")
+crucible_neg_compile_multi_test(neg_thread_name_start_as_array
+  "no matching function for call to .start_as_array<Witness>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = crucible::safety::ThreadNamed<")
 
 # ─── FIXY-V-268 + FIXY-FOUND-062 CollisionCatalog V401/V402 neg-compiles ──
 #
