@@ -174,6 +174,17 @@ static_assert(carrier_of<std::function<void()>> == DelegationCarrier::TypeErasur
 static_assert(carrier_of<std::any> == DelegationCarrier::TypeErasure);
 static_assert(carrier_of<void*> == DelegationCarrier::OpaquePointer);
 static_assert(carrier_of<const void*> == DelegationCarrier::OpaquePointer);
+// A function names code that the recipient runs.  Its target can step an
+// endpoint that the sender left in state that the target reaches, and
+// the query cannot read the target.
+struct Stepper {
+    void step() noexcept {}
+};
+static_assert(carrier_of<void (*)() noexcept> == DelegationCarrier::FunctionPointer);
+static_assert(carrier_of<int (&)(int)> == DelegationCarrier::FunctionPointer);
+static_assert(carrier_of<void (Stepper::*)() noexcept> == DelegationCarrier::FunctionPointer);
+static_assert(carrier_of<std::pair<int, void (*)()>> == DelegationCarrier::FunctionPointer);
+static_assert(carrier_of<Stepper> == DelegationCarrier::None);
 
 // A local class reaches the query as any class does.
 [[nodiscard]] consteval bool local_endpoint_is_seen() {
@@ -239,11 +250,6 @@ constexpr delegation_gap delegation_gaps[] = {
      "pointer to the endpoint, and an index into a table of endpoints needs no cast at all.  C++ has no provenance "
      "on an integer, so no type can refuse it",
      s::payload_conveys_delegation_v<std::uintptr_t>},
-    {"a function pointer whose target steps an endpoint",
-     "a function pointer names code and holds no state.  Its target reaches the endpoint only through global "
-     "state, and each function of the recipient reaches that state without the pointer.  The pointer conveys no "
-     "authority that the recipient did not hold, and the global state is outside the discipline",
-     s::payload_conveys_delegation_v<void (*)() noexcept>},
     {"a copy of the Resource of a live session",
      "a Resource of raw pointers is a channel held as plain data, and no type marks it.  A copy lets the recipient "
      "write outside the protocol.  A move-only Resource would close the copy through resource(), but not a "

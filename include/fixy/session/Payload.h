@@ -124,14 +124,17 @@
 // [Payload_Delegation_Unreadable].  A value would say different things in
 // a unit that defines the class and in a unit that only declares it.
 //
+// A pointer or a reference to a function, and a pointer to a member
+// function, delegate too.  The recipient runs the target, and the target
+// can step an endpoint that the sender put in state the target reaches.
+// The query cannot read the target, so it refuses the pointer.
+//
 // What the query cannot see:
 //
 //   * an integer that holds the address of an endpoint, or an index
 //     into a table of endpoints.  An integer has no type provenance, and
-//     the query reads types;
-//   * a function pointer.  It names code and no state.  Its target
-//     reaches an endpoint only through global state, and each function
-//     of the recipient reaches that state without the pointer;
+//     the query reads types.  std::uintptr_t is also the type of each
+//     plain 64-bit count, so no type can name the address form;
 //   * a copy of the Resource of a live session.  A Resource of raw
 //     pointers is a channel held as plain data, and no type marks it.
 //
@@ -359,6 +362,7 @@ enum class DelegationCarrier : std::uint8_t {
     TypeErasure,
     UnreadableState,
     OpaquePointer,
+    FunctionPointer,
 };
 
 namespace detail {
@@ -850,6 +854,12 @@ enum class PayloadSet : std::uint8_t {
     if (std::meta::is_pointer_type(type)
         && std::meta::is_void_type(std::meta::remove_cv(std::meta::remove_pointer(type)))) {
         return DelegationCarrier::OpaquePointer;
+    }
+    // The walk reaches the function type through a pointer or a reference
+    // to it.  A pointer to a member function has no component below it,
+    // so the query reads it here.
+    if (std::meta::is_function_type(type) || std::meta::is_member_function_pointer_type(type)) {
+        return DelegationCarrier::FunctionPointer;
     }
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return DelegationCarrier::None;
     if (!node.may_read_members) return std::nullopt;
