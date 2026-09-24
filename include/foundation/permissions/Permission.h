@@ -248,6 +248,14 @@ template <typename Tag>
     static_assert(!(by_edge && by_member), "permission_row: a tag declares its row twice, as an edge in "
                                            "foundation::permissions::permission_rows and as a permission_row "
                                            "member.  One row has one source; remove one of them.");
+    // A derived tag has its parent's row and no row of its own.  The
+    // relation is open, so an edge or a member for a shard would replace
+    // the row of its parent with a lighter one, and a region whose touches
+    // do IO would mint its shards under a context that admits none.
+    static_assert(!(DerivedTag<Tag> && (by_edge || by_member)),
+                  "permission_row: a derived tag declares a row of its own.  A tag with a parent_type has the row "
+                  "of its parent; remove its edge in foundation::permissions::permission_rows or its "
+                  "permission_row member.");
     if constexpr (by_edge) {
         return ::foundation::fail_closed::unique_target<^^permission_rows, Tag>();
     } else if constexpr (by_member) {

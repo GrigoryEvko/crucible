@@ -361,6 +361,16 @@ foundation_neg_compile_test(neg_fail_closed_foreign_edge_type
   "constraints not satisfied"
   "admits<Ns, From, To>.*\\[with Ns = \\^\\^ namespace .*ingest.*From = .*Raw; To = .*Checked\\].*evaluated to .false.")
 
+# A derived permission tag has the row of its parent.  An edge in
+# permission_rows, or a permission_row member, that gives a shard a row of
+# its own is refused, so a shard of an IO region cannot claim the empty row.
+foundation_neg_compile_test(neg_permission_row_edge_for_a_derived_tag
+  "static assertion failed: permission_row: a derived tag declares a row of its own"
+  "required from .struct foundation::permissions::detail::permission_row_lookup<user_code::shard>.")
+foundation_neg_compile_test(neg_permission_row_member_for_a_derived_tag
+  "static assertion failed: permission_row: a derived tag declares a row of its own"
+  "required from .struct foundation::permissions::detail::permission_row_lookup<user_code::shard>.")
+
 # The permission tests keep the file names of the tests they are ported
 # from and carry a suffix, because test/CMakeLists.txt still registers
 # the plain names and a CMake target name is global.
