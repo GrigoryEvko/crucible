@@ -339,9 +339,9 @@ apply to the row.
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 8 |
-| `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 8 |
-| `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 8 |
+| `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
+| `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
+| `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_borrowed_ref` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |

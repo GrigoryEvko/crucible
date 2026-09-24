@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <meta>
 #include <span>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -220,12 +221,55 @@ int check_every_accessor() {
     return 0;
 }
 
+// A span passed as an rvalue is a borrowed range: its elements outlive
+// it.  The mint takes it through its own overload, and the borrow it
+// returns reads the array the span viewed.
+int check_mint_of_a_span_rvalue() {
+    int arr[3] = {4, 5, 6};
+    auto borrow = ::fixy::mint_borrowed<OwnerA>(std::span<int>{arr});
+    static_assert(::foundation::brand::IsBranded<decltype(borrow)>);
+    if (borrow.size() != 3 || borrow[1] != 5 || borrow.data() != arr) return 60;
+    return 0;
+}
+
+// A type that is not a range but converts to a span.
+struct ConvertsToSpan {
+    int* first = nullptr;
+    std::size_t count = 0;
+    operator std::span<int>() const noexcept { return std::span<int>{first, count}; }
+};
+
+// The deleted rvalue-range twin of the span constructor refuses only a
+// temporary range that owns its elements.  Each construction below is
+// one the twin must leave to the constructors it stands beside: a named
+// range, a branded borrow that erases, a type that converts to a span
+// but is not a range, and a temporary range that does not own its
+// elements.  A twin that took any of them would refuse it.
+int check_span_constructor_keeps_its_callers() {
+    std::vector<int> named{7, 8, 9};
+    B_A of_named{named};
+    if (of_named.size() != 3 || of_named[0] != 7) return 70;
+
+    int arr[3] = {1, 2, 3};
+    B_A erased{::fixy::mint_borrowed<OwnerA>(arr)};
+    if (erased.size() != 3 || erased.data() != arr) return 71;
+
+    B_A converted{ConvertsToSpan{arr, 2}};
+    if (converted.size() != 2 || converted[1] != 2) return 72;
+
+    Borrowed<char const, OwnerA> of_view{std::string_view{"abc"}};
+    if (of_view.size() != 3 || of_view[2] != 'c') return 73;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (int rc = check_every_accessor(); rc != 0) return rc;
     if (int rc = check_views_over_a_vector(); rc != 0) return rc;
     if (int rc = check_weak_ref_null_aborts(); rc != 0) return rc;
+    if (int rc = check_mint_of_a_span_rvalue(); rc != 0) return rc;
+    if (int rc = check_span_constructor_keeps_its_callers(); rc != 0) return rc;
 
     return 0;
 }

@@ -1029,6 +1029,54 @@ fixy_neg_compile_test(neg_borrowed_from_a_temporary
   "fixy::Borrowed<T, Source, Brand>::Borrowed\\(R&&\\) \\[with R = std::vector<int>.*\\]"
   "Borrowed of a temporary range dangles")
 
+# A braced list reaches the span constructor through span's own
+# initializer_list constructor, and deduces no range for the twin, so
+# the deleted initializer_list constructor is what refuses it.
+fixy_neg_compile_test(neg_borrowed_of_a_braced_list
+  "use of deleted function .fixy::Borrowed<T, Source, Brand>::Borrowed\\(std::initializer_list<"
+  "Borrowed of a braced list dangles")
+
+# A brand has no data member.  The IsBrand check in each class body
+# refuses one that does.
+fixy_neg_compile_test(neg_borrowed_ref_brand_not_empty
+  "static assertion failed"
+  "BorrowedRef<T, Brand>: Brand must be an empty class type")
+fixy_neg_compile_test(neg_borrowed_brand_not_empty
+  "static assertion failed"
+  "Borrowed<T, Source, Brand>: Brand must be an empty class type")
+
+# The doors that take an address are erased, because an address names no
+# identity a brand could claim, and a branded borrow never rebrands.
+fixy_neg_compile_test(neg_borrowed_ref_branded_from_an_address
+  "no matching function for call to .fixy::BorrowedRef<int, .anonymous.::ClaimedBrand>::from_raw_nonnull\\(int\\*\\)."
+  "the expression .is_same_v<Brand, foundation::brand::DefaultBrand> \\[with Brand = <unnamed>::ClaimedBrand\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_borrowed_branded_from_pointer_and_count
+  "no matching function for call to .fixy::Borrowed<int, .anonymous.::Owner, .anonymous.::ClaimedBrand>::Borrowed"
+  "required by the constraints of .template<class T, class Source, class Brand> constexpr fixy::Borrowed<T, Source, Brand>::Borrowed\\(T\\*, std::size_t\\) requires +is_same_v<Brand, foundation::brand::DefaultBrand>.")
+fixy_neg_compile_test(neg_borrowed_rebrand
+  "no matching function for call to .fixy::Borrowed<int, .anonymous.::Owner, fixy::<lambda\\(\\)> >::Borrowed"
+  "the expression .is_same_v<Brand, foundation::brand::DefaultBrand> \\[with Brand = fixy::")
+
+# A WeakRef over a reference type has no pointer to form.
+fixy_neg_compile_test(neg_weak_ref_of_a_reference
+  "template constraint failure for .template<class T> +requires +is_object_v<T> class fixy::WeakRef."
+  "the expression .is_object_v<T> \\[with T = int&\\]. evaluated to .false.")
+
+# The four extractors read a member of one wrapper, and each refuses a
+# type that has the member but is not that wrapper.
+fixy_neg_compile_test(neg_borrowed_value_of_a_span
+  "template constraint failure for .template<class T> +requires +IsBorrowed<T> using fixy::borrowed_value_t"
+  "required for the satisfaction of .IsBorrowed<T>. \\[with T = std::span<int")
+fixy_neg_compile_test(neg_borrowed_source_of_a_look_alike
+  "template constraint failure for .template<class T> +requires +IsBorrowed<T> using fixy::borrowed_source_t"
+  "required for the satisfaction of .IsBorrowed<T>. \\[with T = <unnamed>::LookalikeBorrow\\]")
+fixy_neg_compile_test(neg_borrowed_ref_value_of_a_span
+  "template constraint failure for .template<class T> +requires +IsBorrowedRef<T> using fixy::borrowed_ref_value_t"
+  "required for the satisfaction of .IsBorrowedRef<T>. \\[with T = std::span<int")
+fixy_neg_compile_test(neg_weak_ref_value_of_a_span
+  "template constraint failure for .template<class T> +requires +IsWeakRef<T> using fixy::weak_ref_value_t"
+  "required for the satisfaction of .IsWeakRef<T>. \\[with T = std::span<int")
+
 # weaken towards a fresher grade in a constant expression reaches the
 # CRUCIBLE_PRE trap inside Stale::weaken.
 fixy_neg_compile_test(neg_stale_weakened_downwards
