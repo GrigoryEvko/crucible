@@ -856,6 +856,17 @@ add_test(NAME detail_namespace
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-detail-namespace.py)
 set_tests_properties(detail_namespace detail_namespace_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
+# A class of the namespace foundation::effects::host is a door to a context
+# key, because its first definition in any translation unit is legal C++.
+# scripts/check-host-owners.py refuses a definition of one outside the file
+# that scripts/host-owner-roster.txt names.  Exit 3 (the pinned tree-sitter
+# kit is absent) is a skip.
+add_test(NAME host_owners_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-host-owners.py --self-test)
+add_test(NAME host_owners
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-host-owners.py)
+set_tests_properties(host_owners host_owners_self_test PROPERTIES
+    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # A write past the end of a C array member lands in the next member of the
 # same object, where the address sanitizer sees valid memory, and no build
 # checks the subscript.  scripts/check-no-raw-array-member.py refuses a C

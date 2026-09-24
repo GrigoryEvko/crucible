@@ -256,6 +256,11 @@ jobs:
           python3 scripts/check-detail-namespace.py --self-test
           python3 scripts/check-detail-namespace.py
 
+      - name: each context owner defined in its one reviewed file (self-test + scan)
+        run: |
+          python3 scripts/check-host-owners.py --self-test
+          python3 scripts/check-host-owners.py
+
       - name: single combine_ids source of truth (self-test + scan)
         run: |
           bash scripts/check-no-combine-ids-duplicate.sh --self-test

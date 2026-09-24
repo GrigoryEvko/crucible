@@ -1,0 +1,13 @@
+# host-owner-roster — the one file that defines each class of the namespace
+# foundation::effects::host, read by scripts/check-host-owners.py.
+#
+# A row is OWNER — PATH — REASON.  A class that the host namespace declares
+# is a door to a context key: the first definition in any translation unit
+# is legal C++, and its members then build the key.  So each class is
+# defined in the file that its row names, and a definition anywhere else
+# fails the guard.  A row whose file does not define the class fails too.
+
+BackgroundOwner — include/foundation/effects/Effect.h — the owner of the background key, defined empty beside its declaration
+InitOwner — include/foundation/effects/Effect.h — the owner of the init key, defined empty beside its declaration
+ForegroundOwner — include/foundation/effects/Ctx.h — the builder of the foreground key, whose only friends are the producer claims
+ProducerClaim — include/foundation/effects/Ctx.h — the producer claim that brands the foreground context, so a specialization elsewhere forges one
