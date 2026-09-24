@@ -54,6 +54,8 @@ apply to the row.
 | `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 4 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 3 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 8 |
+| `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
+| `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_vigil_mode_bridge` | `include/crucible/Vigil.h` | Y | Y | Y | · | token | · | `include/crucible/fixy/Bridge.h:55` | HS14: 4 |
 
 ## include/crucible/bridges/
@@ -280,9 +282,9 @@ apply to the row.
 | `mint_coord` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:17` | HS14: 3 |
 | `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/SessFederation.h:20` | HS14: 13 |
 | `mint_metalog_consumer` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:206` | HS14: 2 |
-| `mint_metalog_consumer_session` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:208` | HS14: 2 |
+| `mint_metalog_consumer_session` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:208` | HS14: 4 |
 | `mint_metalog_producer` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:205` | HS14: 2 |
-| `mint_metalog_producer_session` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:207` | HS14: 2 |
+| `mint_metalog_producer_session` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:207` | HS14: 4 |
 | `mint_mpmc_consumer_endpoint` | `include/crucible/sessions/MpmcChannelSession.h` | Y | - | Y | Y | token | · | `include/crucible/fixy/Substr.h:265` | HS14: 2 |
 | `mint_mpmc_consumer_session` | `include/crucible/sessions/MpmcChannelSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:267` | HS14: 4 |
 | `mint_mpmc_producer_endpoint` | `include/crucible/sessions/MpmcChannelSession.h` | Y | - | Y | Y | token | · | `include/crucible/fixy/Substr.h:264` | HS14: 2 |
@@ -479,5 +481,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 211 | 105 | 98 | 8 | 0 | 72 | 41 |
+| old (`include/crucible/`) | 213 | 107 | 98 | 8 | 0 | 74 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 93 | 38 | 54 | 1 | 0 | · | 30 |
