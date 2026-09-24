@@ -14,6 +14,9 @@ lets something go wrong.  The oracles:
              coqc checks with a certificate for each pair
   mpstk.py   mpstk-crash-stop (CONCUR 2022), a model check of each
              crash-stop typing context
+  keskin.py  the liveness theorem of Keskin, Yoshida and van Glabbeek
+             (ITP 2026), which coqc applies with a certificate for each
+             projected context
 
 Modes:
 
@@ -22,6 +25,9 @@ Modes:
               write test/session_oracle/golden.csv and the emitted
               tests.  Needs the toolchains that scripts/session-oracle.sh
               names and the project compiler.
+  derive      Compute the liveness rows again from the multiparty rows of
+              the golden file, and write the golden file.  Needs the
+              toolchain of keskin.py only.
   emit        Write the emitted tests from the golden file only.  Use it
               after a note in the golden file changes.
   check       Emit into memory and compare with the committed tests.  No
@@ -59,6 +65,8 @@ The relations under test:
   runtime types    the projection, the liveness claim and association of
                    the runtime types that a send reaches (the section
                    "En-route global types")
+  liveness         is_live_by_construction_v against a coqc-checked proof
+                   of liveCtx for fixy's projected context (keskin.py)
 
 The corpora are listed in emit.CORPORA, and the families in emit.FAMILIES.
 """
@@ -1175,6 +1183,76 @@ def evaluate_ekici(cases: list[Case], sync_rows: list[Row]) -> dict[str, list[Ro
     return out
 
 
+def keskin_systems(rows: list[Row]) -> list[tuple[Row, Global, dict[int, Local]]]:
+    """Return fixy's projected context of each multiparty case that has a fixy.live row.
+
+    The context comes from the fixy.projection rows of the case: the oracle's
+    answer when fixy's spelling equals it, and the parsed spelling otherwise.
+    """
+    from model import read_global, read_local
+    from probe import read_fixy_projection
+    by_case: dict[str, list[Row]] = {}
+    for r in rows:
+        if r.family == "fixy.projection":
+            by_case.setdefault(r.case, []).append(r)
+    out = []
+    for live in (r for r in rows if r.family == "fixy.live"):
+        system: dict[int, Local] = {}
+        for r in by_case.get(live.case, []):
+            local = read_local(r.oracle) if r.ours == "=" else read_fixy_projection(r.ours, int(r.role))
+            if local is None or isinstance(local, str):
+                raise RuntimeError(f"keskin: case {live.case} has a fixy.live row, and role {r.role} has "
+                                   f"no projected type ({r.ours})")
+            system[int(r.role)] = local
+        out.append((live, read_global(live.global_text), system))
+    return out
+
+
+def evaluate_keskin(rows: list[Row]) -> list[Row]:
+    """Check fixy's projected contexts against the liveness theorem of the ITP 2026 development.
+
+    ``rows`` are the rows of the multiparty families.  A context whose
+    premises hold gets a certificate that coqc checks (keskin.py).
+    O(cases × states²).
+    """
+    import keskin
+    from keskin import Premise
+    fam = "keskin.live"
+    out: list[Row] = []
+    work: list[tuple[Row, object]] = []
+    for live, g, system in keskin_systems(rows):
+        try:
+            work.append((live, keskin.analyse(g, system)))
+        except Premise as exc:
+            claim = (".  fixy claims liveness here, and the fixy.live row decides with a run"
+                     if live.ours == "true" else "")
+            out.append(Row(fam, live.case, "-", live.global_text,f"no verdict: {exc}", live.ours, "gap",
+                           exc.name, f"the premise {exc.name} of the liveness theorem of Keskin, Yoshida and "
+                                     f"van Glabbeek (ITP 2026, STLive/lemma/liveness.v) does not hold, so the "
+                                     f"theorem gives no verdict{claim}"))
+    verdicts = keskin.decide([inst for _, inst in work]) if work else []  # type: ignore[misc]
+    for (live, _), (proved, reason) in zip(work, verdicts, strict=True):
+        if not proved:
+            out.append(Row(fam, live.case, "-", live.global_text,"refused", live.ours, "divergence",
+                           "certificate-refused",
+                           f"harness defect: every premise holds by the generator's computation, and coqc "
+                           f"refused the certificate: {reason}"))
+        elif live.oracle not in ("safe", "safe-within-bound"):
+            out.append(Row(fam, live.case, "-", live.global_text,"liveCtx proved", live.ours, "divergence",
+                           "run-contradicts-proof",
+                           f"harness defect: coqc checks liveCtx of fixy's context, and the run of the same "
+                           f"context is {live.oracle}; the run or the certificate generator is wrong"))
+        elif live.ours == "true":
+            out.append(Row(fam, live.case, "-", live.global_text,"liveCtx proved", live.ours, "agree", "", ""))
+        else:
+            out.append(Row(fam, live.case, "-", live.global_text,"liveCtx proved", live.ours, "divergence",
+                           "incomplete",
+                           "ours incomplete, not unsound: coqc checks liveCtx of fixy's projected context by the "
+                           "liveness theorem of the ITP 2026 development (wfgC, projectableA, tctx_wf and assoc "
+                           "hold), and is_live_by_construction_v is false"))
+    return out
+
+
 # ── The wire, end to end ─────────────────────────────────────────────
 #
 # fixy.wire runs a keyed pair (T, U) over the session handle: the handle of
@@ -2139,6 +2217,7 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
             cases = {("old", c.ident): c for c in old} | {("fixy", c.ident): c for c in fixy}
             minimal = minimal_corpus(rows, cases, Evaluator(env), shrinkable)
         rows += minimal
+    rows += evaluate_keskin(rows)
     import ekici
     import mpstk
     import sr
@@ -2148,6 +2227,7 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
         f"# oracle: github.com/{sr.SUBJECT_REDUCTION.repo} at {sr.SUBJECT_REDUCTION.commit}",
         f"# oracle: github.com/{ekici.REPO} at {ekici.COMMIT}",
         f"# oracle: github.com/{mpstk.REPO} at {mpstk.COMMIT}",
+        *_keskin_meta(),
         f"# toolchain: {rocq.coq_version()}; for {ekici.REPO}: {ekici.coq_version()}",
         f"# relations measured at commit {measured}",
         f"# fixy corpora: fr seed {FIXY_SEED}, {FIXY_COUNT} types, depth {FIXY_DEPTH}; "
@@ -2170,6 +2250,31 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
 def _write_tests(rows: list[Row]) -> None:
     for name, text in emit_all(rows).items():
         (TEST_DIR / name).write_text(text, encoding="utf-8")
+
+
+def _keskin_meta() -> list[str]:
+    """Return the metadata lines of the liveness family: the pinned commit and the toolchain."""
+    import keskin
+    return [f"# oracle: github.com/{keskin.REPO} at {keskin.COMMIT}",
+            f"# toolchain for {keskin.REPO}: {keskin.coq_version()}"]
+
+
+def derive() -> int:
+    """Recompute the rows that the golden file derives from its own rows, and write it again.
+
+    The liveness family (keskin.live) reads only the multiparty rows, so a
+    change to its checker needs no compiler and no other oracle.
+    """
+    import keskin
+    meta, rows = read_golden(GOLDEN)
+    base = [r for r in rows if r.family != "keskin.live"]
+    ours = (f"# oracle: github.com/{keskin.REPO} ", f"# toolchain for {keskin.REPO}:")
+    kept = [line for line in meta if not line.startswith(ours)]
+    last_oracle = max(i for i, line in enumerate(kept) if line.startswith("# oracle: "))
+    meta = kept[:last_oracle + 1] + _keskin_meta() + kept[last_oracle + 1:]
+    write_golden(GOLDEN, meta, base + evaluate_keskin(base))
+    _write_tests(read_golden(GOLDEN)[1])
+    return check()
 
 
 # ── Check and self-test ──────────────────────────────────────────────
@@ -2331,7 +2436,7 @@ def _self_test(cxx: str, include: Path) -> int:
 def main(argv: list[str]) -> int:
     """Parse the command line and run one mode."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("mode", choices=("regenerate", "emit", "check", "self-test"))
+    parser.add_argument("mode", choices=("regenerate", "derive", "emit", "check", "self-test"))
     parser.add_argument("--cxx", help="the project compiler (regenerate, self-test)")
     parser.add_argument("--jobs", type=int, default=32, help="parallel probe compiles")
     parser.add_argument("--no-shrink", action="store_true",
@@ -2346,6 +2451,8 @@ def main(argv: list[str]) -> int:
     if args.mode == "regenerate":
         regenerate(args.cxx, args.jobs, do_shrink=not args.no_shrink, at=args.at)
         return check()
+    if args.mode == "derive":
+        return derive()
     if args.mode == "emit":
         _write_tests(read_golden(GOLDEN)[1])
         return check()

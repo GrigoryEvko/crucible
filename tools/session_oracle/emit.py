@@ -103,9 +103,12 @@ WIRE_SEEDS = (0, 1)
 # Families that no C++ test can assert: the execution verdict of the
 # frozen tree's projection, the run of the oracle's own projection, the
 # run of the subject-reduction development's projection, mpstk's model
-# check of fixy's crash-stop context, and the coqc-checked verdict of the
-# ITP 2025 subtyping relation on each synchronous subtyping pair.
-RECORD_FAMILIES = ("old.execution", "oracle.safety", "sr.safety", "mpstk.crash", "ekici.subtype")
+# check of fixy's crash-stop context, the coqc-checked verdict of the
+# ITP 2025 subtyping relation on each synchronous subtyping pair, and the
+# coqc-checked liveness of fixy's projected context by the ITP 2026
+# liveness theorem.
+RECORD_FAMILIES = ("old.execution", "oracle.safety", "sr.safety", "mpstk.crash", "ekici.subtype",
+                   "keskin.live")
 FAMILIES = (FIXY_FAMILIES + MULTI_FAMILIES + SUBTYPE_FAMILIES + KEYED_SUBTYPE_FAMILIES + KEYED_MULTI_FAMILIES
             + CRASH_FAMILIES + ENROUTE_FAMILIES + WIRE_FAMILIES + OLD_FAMILIES + RECORD_FAMILIES)
 # The roles that a multiparty case is projected onto: every role it names,
