@@ -57,7 +57,7 @@
 #     (OwnedMmap::map_region, OwnedFd::open_path);
 #   - it befriends a named function that is not an operator or swap —
 #     a door the mint_ naming missed (open_dirfd, transition_to,
-#     retag, permission_fork_);
+#     retag);
 #   - it befriends a class other than itself, which is the door of a
 #     handle its owner hands out (SharedPermissionPool lends a Guard,
 #     PermissionedMpscChannel hands out its Producer and Consumer

@@ -6,9 +6,10 @@
 // and carries no constraint on T.  It mints a Permission for whatever
 // tag it is given.  The only thing standing between a caller and a
 // Permission for a tag it does not own is the private default
-// constructor of ForkRebuildKey, whose sole friend is permission_fork_
-// — a function that takes the parent Permission by rvalue and consumes
-// it at the split.
+// constructor of ForkRebuildKey, whose sole friend is
+// PermissionForkRunner.  Its one builder of the key is the fork body,
+// which takes the parent Permission by rvalue, consumes it at the split,
+// and is reachable from the two fork mints alone.
 //
 // This fixture is the witness that the access check is real.  It is the
 // companion of neg_permission_fork_rebuild_no_nullary_door.cpp: that one

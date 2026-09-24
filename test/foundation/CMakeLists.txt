@@ -472,6 +472,42 @@ foundation_neg_compile_test(neg_permission_fork_without_bg
   "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
   "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
 
+# Each conjunct of the inline arm's fit, refused at the door.  Without
+# the conjunct the call passes the door and fails later, inside the body,
+# with a message that names no fork, so each note below tells the two
+# apart.
+foundation_neg_compile_test(neg_permission_fork_parent_row_not_admitted
+  "constraints not satisfied"
+  "satisfaction of .CtxAdmitsPermission<Parent, Ctx>.")
+foundation_neg_compile_test(neg_permission_fork_child_row_not_admitted
+  "constraints not satisfied"
+  "\\(CtxAdmitsPermission<Children, Ctx> && \\.\\.\\.\\)")
+foundation_neg_compile_test(neg_permission_fork_split_witness_missing
+  "constraints not satisfied"
+  "has_split_pack_authoring_witness_v<Parent, Children \\.\\.\\.>.*evaluated to .false.")
+foundation_neg_compile_test(neg_permission_fork_body_may_throw
+  "constraints not satisfied"
+  "can_each_body_take_its_child_v<Ctx, std::tuple<[A-Za-z_]+ \\.\\.\\.>, std::tuple<Callables \\.\\.\\.> >.*evaluated to .false.")
+
+# A manifest that lists one child twice passes the door, and the fork's
+# own check refuses it with a message that names the arm.
+foundation_neg_compile_test(neg_permission_fork_duplicate_child_names_the_fork
+  "static assertion failed"
+  "mint_permission_fork_inline: Child region tags must be PAIRWISE DISTINCT")
+
+# The fork body is a private member of PermissionForkRunner, and the two
+# fork mints are its only friends: no other scope calls it, derives from
+# the runner to reach it, or takes its address.
+foundation_neg_compile_test(neg_permission_fork_runner_body_is_private
+  "is private within this context"
+  "PermissionForkRunner::run_")
+foundation_neg_compile_test(neg_permission_fork_runner_derived_look_alike
+  "cannot derive from .final. base"
+  "PermissionForkRunner")
+foundation_neg_compile_test(neg_permission_fork_runner_body_address
+  "is private within this context"
+  "PermissionForkRunner::run_")
+
 # ── The lift from a marker to its effect row ─────────────────────────
 foundation_test(test_lift)
 

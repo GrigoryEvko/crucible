@@ -901,6 +901,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^fp::has_split_authoring_witness, kMetafunction},
     {^^fp::has_split_pack_authoring_witness, kMetafunction},
     {^^fp::perm_mint_key, kPasskey},
+    {^^fp::PermissionForkRunner,
+     "the holder of the fork body: it has static members only, no object of it exists, and it is never a value"},
     {^^fp::perm_set_insert, kMetafunction},
     {^^fp::perm_set_remove, kMetafunction},
     {^^fp::perm_set_union, kMetafunction},

@@ -101,20 +101,18 @@ class SharedPermissionGuard;
 template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SharedPermissionPool;
 
+// A friend declaration of a constrained function template must repeat
+// the constraint exactly, so the public fork mints cannot be friended
+// here without dragging their whole requires-clauses, and every type
+// those clauses name, into this header.  The class that runs a fork is
+// what this header names instead.  It is defined in PermissionFork.h, its
+// body is a private member whose only callers are the two fork mints,
+// and it is the only holder of the rebuild key.
+class PermissionForkRunner;
+
 namespace detail {
 class ForkRebuildKey;
 struct ForkRebuildAccess;
-
-// A friend declaration of a constrained function template must repeat
-// the constraint exactly, so the public mints cannot be friended here
-// without dragging their whole requires-clauses, and every type those
-// clauses name, into this header.  permission_fork_ is the body those
-// mints delegate to and carries no constraint of its own, so it is the
-// one join primitive this header can name.  It is defined in
-// PermissionFork.h and is the only holder of the rebuild key.
-template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-constexpr Permission<Parent, Brand> permission_fork_(Ctx const& ctx, Permission<Parent, Brand>&& parent,
-                                                     Callables&&... callables) noexcept;
 }  // namespace detail
 
 // The declarative manifest of valid splits.  C++ has no orphan rule, so
@@ -856,10 +854,11 @@ public:
 
 private:
 
-    // permission_fork_ is the sole friend, and that friendship is the
-    // whole gate.  It is reached only through mint_permission_fork or
-    // its inline sibling, each of which takes the parent Permission by
-    // rvalue and consumes it at the split.  A caller holding the key has
+    // PermissionForkRunner is the sole friend, and that friendship is the
+    // whole gate.  The runner builds the key in one private member, the
+    // fork body, which only mint_permission_fork and its inline sibling
+    // can call, and each of them takes the parent Permission by rvalue
+    // and consumes it at the split.  A caller holding the key has
     // therefore already surrendered the very permission the rebuild
     // hands back.
     //
@@ -870,26 +869,28 @@ private:
     // any translation unit could call:
     // `detail::rebuild_parent_after_fork_<AnyTag>()` minted a Permission
     // for a tag the caller did not own, with no manifest, no context and
-    // no token.  Keep this friend a function that CONSUMES a
-    // Permission<Parent>.  A friend that takes nothing proves nothing.
-    template <bool USpawn, typename... UChildren, typename UCtx, typename UParent, typename UBrand,
-              typename... UCallables>
-    friend constexpr Permission<UParent, UBrand> permission_fork_(UCtx const&, Permission<UParent, UBrand>&&,
-                                                                  UCallables&&...) noexcept;
+    // no token.  The shape after it was a free function that consumed the
+    // parent, but any translation unit could call it too, without the
+    // mints' constraints.  Keep the key's friend a class whose only
+    // builder of the key CONSUMES a Permission<Parent> and is reachable
+    // from the two mints alone.  A friend that takes nothing proves
+    // nothing, and a friend anyone can call gates nothing.
+    friend class ::foundation::permissions::PermissionForkRunner;
 };
 
 struct ForkRebuildAccess {
     // rebuild carries no constraint on T because the proof lives in the
-    // key rather than here.  The only holder of a key is
-    // permission_fork_, which reached this point by consuming a
+    // key rather than here.  The only holder of a key is the fork body
+    // of PermissionForkRunner, which reached this point by consuming a
     // Permission<Parent> at the split.  Constraining T here would
     // restate that proof at a point which cannot see the children the
     // parent was split into.  The brand is the consumed parent's, so
     // the reissued token is the same identity that went in.
     //
-    // That sentence holds only while the key's friend list names one
-    // function that consumes a parent permission.  It was false in an
-    // earlier shape, when the friend took no argument at all.
+    // That sentence holds only while the key's friend is a class whose
+    // one builder of the key consumes a parent permission and is reached
+    // through the two fork mints only.  It was false in an earlier
+    // shape, when the friend took no argument at all.
     template <typename T, typename Brand>
     [[nodiscard]] static constexpr Permission<T, Brand> rebuild(ForkRebuildKey) noexcept {
         return Permission<T, Brand>{perm_mint_key{}};
@@ -908,7 +909,7 @@ struct ForkRebuildAccess {
 // a Permission for an arbitrary tag.  It had no assertion at all until
 // this one.
 static_assert(!std::is_default_constructible_v<detail::ForkRebuildKey>,
-              "The default constructor of ForkRebuildKey must not be public.  Only permission_fork_ "
+              "The default constructor of ForkRebuildKey must not be public.  Only PermissionForkRunner "
               "is friended to build one, and that friendship is the whole gate on "
               "ForkRebuildAccess::rebuild.");
 static_assert(std::is_empty_v<detail::ForkRebuildKey>, "ForkRebuildKey must stay empty, so that passing it "

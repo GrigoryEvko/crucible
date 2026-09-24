@@ -22,7 +22,8 @@
 // The two arms share one body and one set of checks; the arm is a bool
 // parameter of both, and the checks' diagnostics name the arm they
 // fire for.  The old header repeated the four static_asserts and the
-// split-pack-run-rebuild sequence once per arm.
+// split-pack-run-rebuild sequence once per arm.  The body is a private
+// member of PermissionForkRunner, whose only friends are the two mints.
 //
 // One thread per child, spawned and joined inside the call.  That suits
 // a few children with long bodies.  It is the wrong shape for many short
@@ -104,7 +105,9 @@ struct fork_diagnostic {
 
 // The four checks both arms make.  The split this delegates to asserts
 // the pairwise-distinct one again; asserting it here makes the
-// diagnostic name the fork.
+// diagnostic name the fork.  The constraint on the runner's body refuses
+// a count mismatch and a body that cannot take its child first, so of
+// the four only the pairwise-distinct check can fire.
 template <bool Spawn, typename Ctx, typename ChildrenTuple, typename CallablesTuple>
 consteval void permission_fork_check_() noexcept {
     []<typename... Children, typename... Callables>(std::tuple<Children...>*, std::tuple<Callables...>*) {
@@ -124,71 +127,125 @@ consteval void permission_fork_check_() noexcept {
     }(static_cast<ChildrenTuple*>(nullptr), static_cast<CallablesTuple*>(nullptr));
 }
 
-template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
-void permission_fork_spawn_(Ctx const& ctx, Children&& children, Callables&& callables,
-                            std::index_sequence<Is...>) noexcept {
-    // A jthread constructor is not noexcept, because the thread creation
-    // under it can fail on resource exhaustion.  Without the catch, that
-    // failure reaches this function's noexcept boundary and terminates
-    // when the build has exceptions on, but aborts when it does not.  The
-    // catch makes both builds abort, which is what a resource failure does
-    // everywhere else here.
-#if defined(__cpp_exceptions)
-    try {
-#endif
-        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
-            [child_perm = std::move(std::get<Is>(std::forward<Children>(children))),
-             callable = std::move(std::get<Is>(std::forward<Callables>(callables))),
-             child_ctx = ctx](std::stop_token) mutable noexcept { callable(std::move(child_perm), child_ctx); }}...};
-#if defined(__cpp_exceptions)
-    } catch (...) {
-        // The catch is deliberately untyped.  The contract is that any
-        // failure to construct a thread aborts, and the exception type a
-        // given standard library reports it with is not fixed.
-        std::abort();
-    }
-#endif
-}
-
-template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
-constexpr void permission_fork_inline_(Ctx const& ctx, Children&& children, Callables&& callables,
-                                       std::index_sequence<Is...>) noexcept {
-    (std::get<Is>(std::forward<Callables>(callables))(std::move(std::get<Is>(std::forward<Children>(children))), ctx),
-     ...);
-}
-
-// The one body: split the parent, pack the callables, run them on the
-// arm the caller chose, and rebuild the parent once every body has
-// finished.  The children carry the parent's brand into the bodies, and
-// the rebuilt parent carries it back out, so the region that returns
-// is the one that went in.
-template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-constexpr Permission<Parent, Brand> permission_fork_(Ctx const& ctx, Permission<Parent, Brand>&& parent,
-                                                     Callables&&... callables) noexcept {
-    permission_fork_check_<Spawn, Ctx, std::tuple<Children...>, std::tuple<Callables...>>();
-
-    auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
-
-    auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
-
-    if constexpr (Spawn) {
-        permission_fork_spawn_(ctx, std::move(child_perms), std::move(callable_pack),
-                               std::index_sequence_for<Children...>{});
-    } else {
-        permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
-                                std::index_sequence_for<Children...>{});
-    }
-
-    // This scope is the sole friend of ForkRebuildKey, so this is the
-    // only place the key can be built.  The proof that the reissue is
-    // legitimate is that `parent` was taken by rvalue and consumed at
-    // the split above.  Do not factor this call out into a helper that
-    // does not consume a Permission<Parent> — that is exactly the shape
-    // which once made the parent forgeable from any translation unit.
-    return ForkRebuildAccess::rebuild<Parent, Brand>(ForkRebuildKey{});
-}
+// The fit of one arm: the spawning arm needs the background effect, the
+// inline arm does not.  The runner below states it again on its own body,
+// so the check stands where the threads start and not only at the doors.
+template <bool Spawn, typename Ctx, typename Parent, typename... Children>
+concept CtxFitsPermissionForkArm = (Spawn && CtxFitsPermissionFork<Ctx, Parent, Children...>)
+                                || (!Spawn && CtxFitsPermissionForkInline<Ctx, Parent, Children...>);
 
 }  // namespace detail
+
+// The two mints, declared before the runner so that its friend
+// declarations name them and nothing else.
+template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
+    requires CtxFitsPermissionFork<Ctx, Parent, Children...>
+          && detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
+[[nodiscard]] Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
+                                                             Callables&&... callables) noexcept;
+
+template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
+    requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
+          && detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
+[[nodiscard]] constexpr Permission<Parent, Brand>
+mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept;
+
+// The body of a fork: split the parent, start or run one body per child,
+// and rebuild the parent once every body has finished.  It does the work
+// of the two mints, so only the two mints may reach it.  Every member is
+// private and static, the two mints are the only friends, and the class
+// is final and cannot be built, so no other scope can call a member,
+// derive to reach one, or take one's address.
+//
+// A free function template in a detail namespace once held this body.
+// Any translation unit could call it, and it carried no constraint, so a
+// caller under the foreground context started threads the spawning mint
+// would have refused for want of the background effect.
+//
+// The friend declarations repeat each mint's constraint exactly, because
+// the language requires it.  The class sits in this namespace, not in
+// detail, for the reason Permission.h gives for perm_mint_key: a friend
+// declaration in a nested namespace would declare a new function there
+// and befriend that one instead.
+class PermissionForkRunner final {
+    PermissionForkRunner() = delete("the fork runner holds static members only; no object of it exists");
+
+    template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
+        requires CtxFitsPermissionFork<Ctx, Parent, Children...>
+              && detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
+    friend Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
+                                                          Callables&&... callables) noexcept;
+
+    template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
+        requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
+              && detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
+    friend constexpr Permission<Parent, Brand> mint_permission_fork_inline(Ctx const& ctx,
+                                                                           Permission<Parent, Brand>&& parent,
+                                                                           Callables&&... callables) noexcept;
+
+    template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
+    static void spawn_(Ctx const& ctx, Children&& children, Callables&& callables,
+                       std::index_sequence<Is...>) noexcept {
+        // A jthread constructor is not noexcept, because the thread creation
+        // under it can fail on resource exhaustion.  Without the catch, that
+        // failure reaches this function's noexcept boundary and terminates
+        // when the build has exceptions on, but aborts when it does not.  The
+        // catch makes both builds abort, which is what a resource failure does
+        // everywhere else here.
+#if defined(__cpp_exceptions)
+        try {
+#endif
+            [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
+                [child_perm = std::move(std::get<Is>(std::forward<Children>(children))),
+                 callable = std::move(std::get<Is>(std::forward<Callables>(callables))),
+                 child_ctx = ctx](std::stop_token) mutable noexcept { callable(std::move(child_perm), child_ctx); }}...};
+#if defined(__cpp_exceptions)
+        } catch (...) {
+            // The catch is deliberately untyped.  The contract is that any
+            // failure to construct a thread aborts, and the exception type a
+            // given standard library reports it with is not fixed.
+            std::abort();
+        }
+#endif
+    }
+
+    template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
+    static constexpr void run_inline_(Ctx const& ctx, Children&& children, Callables&& callables,
+                                      std::index_sequence<Is...>) noexcept {
+        (std::get<Is>(std::forward<Callables>(callables))(std::move(std::get<Is>(std::forward<Children>(children))),
+                                                          ctx),
+         ...);
+    }
+
+    // The children carry the parent's brand into the bodies, and the
+    // rebuilt parent carries it back out, so the region that returns is
+    // the one that went in.
+    template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
+        requires detail::CtxFitsPermissionForkArm<Spawn, Ctx, Parent, Children...>
+              && detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
+    static constexpr Permission<Parent, Brand> run_(Ctx const& ctx, Permission<Parent, Brand>&& parent,
+                                                    Callables&&... callables) noexcept {
+        detail::permission_fork_check_<Spawn, Ctx, std::tuple<Children...>, std::tuple<Callables...>>();
+
+        auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
+
+        auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
+
+        if constexpr (Spawn) {
+            spawn_(ctx, std::move(child_perms), std::move(callable_pack), std::index_sequence_for<Children...>{});
+        } else {
+            run_inline_(ctx, std::move(child_perms), std::move(callable_pack), std::index_sequence_for<Children...>{});
+        }
+
+        // This class is the sole friend of ForkRebuildKey, so this is the
+        // only place the key can be built.  The proof that the reissue is
+        // legitimate is that `parent` was taken by rvalue and consumed at
+        // the split above.  Do not factor this call out into a member that
+        // does not consume a Permission<Parent>: that is exactly the shape
+        // which once made the parent forgeable from any translation unit.
+        return detail::ForkRebuildAccess::rebuild<Parent, Brand>(detail::ForkRebuildKey{});
+    }
+};
 
 // The clause names two gates, and folding them behind one name to read as
 // a single concept was measured and reverted.  The children half then
@@ -202,7 +259,7 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
           && detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
 [[nodiscard]] Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
                                                              Callables&&... callables) noexcept {
-    return detail::permission_fork_<true, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
+    return PermissionForkRunner::run_<true, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 
 // The bodies run one after another on the calling thread, in child
@@ -216,7 +273,8 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
           && detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
 [[nodiscard]] constexpr Permission<Parent, Brand>
 mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept {
-    return detail::permission_fork_<false, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
+    return PermissionForkRunner::run_<false, Children...>(ctx, std::move(parent),
+                                                          std::forward<Callables>(callables)...);
 }
 
 }  // namespace foundation::permissions

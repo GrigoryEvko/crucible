@@ -16,8 +16,9 @@
 // callable.  It proved a rename, not a closure.  Hence this fixture
 // names the symbol that actually shipped.
 //
-// The rebuild now belongs to permission_fork_, which consumes the parent
-// Permission at the split, so the surrendered token IS the proof.
+// The rebuild now belongs to the fork body of PermissionForkRunner, which
+// consumes the parent Permission at the split, so the surrendered token
+// IS the proof.
 // Callers who want a parent without a fork go through
 // mint_permission_combine_n and present the children.
 //
