@@ -1,6 +1,6 @@
 # unchecked-access-allowlist — the files that may call
-# std::meta::access_context::unchecked(), read by
-# scripts/check-no-unchecked-access.py.
+# std::meta::access_context::unchecked() or splice a member of an object
+# (.[: ->[: &[:), read by scripts/check-no-unchecked-access.py.
 #
 # A splice of a nonstatic data member has no access check, so a reflection of
 # a private member writes a proof's private state.  Each row names one file

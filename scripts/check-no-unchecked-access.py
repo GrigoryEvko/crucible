@@ -23,6 +23,11 @@ WHAT COUNTS AS THE DOOR
       3. A reflection of access_context, of std::meta or of std.  A walk of
          the members of one of them reaches unchecked by reflection, with no
          name to read.
+      4. A splice that names a member of an object: `.[:`, `->[:` and the
+         member pointer `&[:`.  This is the write itself, so it closes every
+         route to the reflection, such as a walk of
+         ^^decltype(access_context::current()) that finds unchecked by a
+         string compare.
 
 REVIEW RULE FOR THE ALLOWED FILES
     An allowed file may not return or publish a reflection of a nonstatic
@@ -64,9 +69,9 @@ SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "fuzz", "exa
 SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inl", ".ipp", ".tpp"})
 PUNCTUATION = re.compile(r"\^\^|::|->|\S")
 STATEMENT_END = frozenset({";", "{", "}"})
-# Every door names unchecked or access_context, or reflects std.  A backslash
-# line splice can split a word, so a text with a splice is always read.
-DOOR_WORDS = re.compile(r"unchecked|access_context|\^\^|\\\r?\n")
+# Every door names unchecked or access_context, reflects std, or splices.  A
+# backslash line splice can split a word, so a text with one is always read.
+DOOR_WORDS = re.compile(r"unchecked|access_context|\^\^|\[\s*:|\\\r?\n")
 
 
 class Refused(Exception):
@@ -129,6 +134,9 @@ def doors(text: str) -> list[tuple[int, str]]:
         before = toks[i - 1][0] if i > 0 else ""
         if token == "unchecked" and before in ("::", ".", "->"):
             found.append((line, "a use of unchecked"))
+        after = [t for t, _ in toks[i + 1:i + 3]]
+        if token in (".", "->", "&") and after == ["[", ":"]:
+            found.append((line, "a splice that names a member of an object"))
         if token == "^^":
             name = []
             k = i + 1
@@ -245,6 +253,15 @@ def self_test() -> int:
             "src/ReflectClass.cpp": "constexpr auto r = ^^std::meta::access_context;\n",
             "src/ReflectNamespace.cpp": "constexpr auto r = ^^std::meta;\n",
             "src/Macro.cpp": "#define DOOR std::meta::access_context::unchecked()\n",
+            "src/DecltypeWalk.cpp": "auto m = std::meta::members_of(^^decltype(std::meta::access_context::current()),"
+                                    " std::meta::access_context::current());\nsealed.[:field:] = 42;\n",
+            "src/TypeOfWalk.cpp": "constexpr auto ctx = std::meta::access_context::current();\n"
+                                  "auto t = std::meta::type_of(^^ctx);\nsealed->[:field:] = 42;\n",
+            "src/TemplateWalk.cpp": "template <class C> consteval auto f() { return std::meta::members_of(^^C, c); }\n"
+                                    "auto g = f<decltype(std::meta::access_context::current())>();\nsealed.[:g:] = 1;\n",
+            "src/ParameterWalk.cpp": "consteval auto f(auto c) { return std::meta::members_of(^^decltype(c), c); }\n"
+                                     "void w(S& s) { s.[: f(1)[0] :] = 1; }\n",
+            "src/MemberPointer.cpp": "constexpr auto m = &[:field:];\nvoid w(S& s) { s.*m = 42; }\n",
         }
         for rel, text in forgeries.items():
             write(root, rel, text)
