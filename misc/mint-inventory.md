@@ -353,8 +353,8 @@ apply to the row.
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
 | `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_owned_region(::foundation::effects::Alloc,Allocator&,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 12 |
-| `mint_owned_region(T*,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |
+| `mint_owned_region(::foundation::effects::Alloc,Allocator&,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 16 |
+| `mint_owned_region(T*,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 16 |
 | `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
@@ -394,7 +394,7 @@ apply to the row.
 | `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_parallel_for` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
+| `mint_parallel_for` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_sched_class` | `include/fixy/os/SchedClass.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
@@ -464,7 +464,7 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 122 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 126 |
 | `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 15 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |
@@ -475,4 +475,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 206 | 101 | 96 | 9 | 0 | 84 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 93 | 37 | 55 | 1 | 0 | · | 24 |
+| new (`include/foundation/`, `include/fixy/`) | 93 | 37 | 55 | 1 | 0 | · | 23 |

@@ -3596,6 +3596,26 @@ fixy_neg_compile_test(neg_spawn_parallel_for_runner_derived_look_alike
   "cannot derive from .final. base"
   "ParallelForRunner")
 
+# The fan-out runner checks the background capability again, so a
+# fixture with more than one shard is refused even without the check on
+# the door.  With one shard the runner is never reached, and the door is
+# the only check.
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_one_shard_ctx_lacks_bg
+  "no matching function for call to .mint_parallel_for<1>"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
+# Without each check below, the call passes the door and fails later,
+# inside the split or the fan-out.  Each fixture names the door and the
+# conjunct that fails, so it tells the two apart.
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_zero_shards
+  "no matching function for call to .mint_parallel_for<0>"
+  "the expression .N > 0 \\[with N = 0\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_refuses_row
+  "no matching function for call to .mint_parallel_for<2>"
+  "required for the satisfaction of .CtxAdmitsPermission<Whole, Ctx>. \\[with Whole = <unnamed>::IoRegion")
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_not_copyable
+  "no matching function for call to .mint_parallel_for<2>\\(.*MoveOnlyBody\\)"
+  "required for the satisfaction of .CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>. \\[with N = 2")
+
 # ── The two Qtt discipline recognisers, armed ─────────────────────────
 #
 # The port carried both gates of fixy/Qtt.h and neither table's arms, so
