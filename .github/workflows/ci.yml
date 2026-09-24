@@ -304,8 +304,8 @@ jobs:
 
       - name: flip list of old-substrate consumers (self-test + scan)
         run: |
-          bash scripts/check-flip-list.sh --self-test
-          bash scripts/check-flip-list.sh
+          python3 scripts/check-flip-list.py --self-test
+          python3 scripts/check-flip-list.py
 
   # ---------------------------------------------------------------------------
   # Full compile + run + negative-compile + golden-binary suite. Matrix over

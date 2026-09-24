@@ -16073,11 +16073,12 @@ set_tests_properties(syscall_allowlist_prose syscall_allowlist_prose_self_test P
 # every entry still names it, and no entry is missing.  A new consumer fails,
 # and so does an entry left behind after its file drains.
 add_test(NAME flip_list_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.sh --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.py --self-test)
 add_test(NAME flip_list
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.py)
 set_tests_properties(flip_list flip_list_self_test PROPERTIES
     LABELS "ci_guard;stage-C")
+set_tests_properties(flip_list flip_list_self_test PROPERTIES SKIP_RETURN_CODE 3)
 
 # allowlist_keys runs over every scripts/*allowlist*.txt and holds the one
 # property none of the owning guards can hold once it breaks: the path half

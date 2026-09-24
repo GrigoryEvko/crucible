@@ -1,13 +1,13 @@
 # scripts/flip-list.txt — every file that still names the old substrate.
 #
-# Read by scripts/check-flip-list.sh.  One repository-relative path per
+# Read by scripts/check-flip-list.py.  One repository-relative path per
 # line, sorted in byte order.  The list only shrinks: remove an entry in
 # the commit that drains its file, and never add one.  A new consumer
 # writes include/foundation or include/fixy instead.
 #
 # The old substrate is the prefix list of scripts/frozen-paths.txt.
 # The scan roots are include/crucible, src, vessel, bench, tools, examples
-# and fuzz.  check-flip-list.sh --scan prints the consumers it finds.
+# and fuzz.  check-flip-list.py --scan prints the consumers it finds.
 #
 # Flip order.  Each group names the old substrate only after the groups
 # before it are drained, so flip a group only when the group before it is
