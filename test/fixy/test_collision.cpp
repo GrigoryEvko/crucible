@@ -184,13 +184,31 @@ static_assert(live_rules<at::regime::hot, at::refined_with<hot_invariant>>::H002
 static_assert(live_rules<at::refined_with<hot_invariant>>::H002_ok);
 static_assert(live_rules<at::regime::warm>::H002_ok);
 
-// H003 hot x an Alloc or IO row x unbounded cost.  Three premises, so
-// dropping any one admits the binding.
+// H003 hot x Alloc or IO in the row of the binding.  The cost is not a
+// premise: a bounded allocation on the hot path is refused as an
+// unbounded one is.  The cost and refinement atoms silence H001 and
+// H002, so each pack below trips H003 alone.
+template <class... Extra>
+using hot_bounded = live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, Extra...>;
+static_assert(hot_bounded<at::with<Eff::Alloc>>::failing_codes() == "H003");
+static_assert(hot_bounded<at::with<Eff::IO>>::failing_codes() == "H003");
+static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::getpid>>::failing_codes() == "H003",
+              "a read of process state lifts IO, although it cannot block");
+static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::write>>::failing_codes() == "H003, W001",
+              "a file write lifts IO and Block, so H003 and W001 each refuse it");
 static_assert(!live_rules<at::regime::hot, at::with<Eff::Alloc>, at::cost_unbounded>::H003_ok);
 static_assert(!live_rules<at::regime::hot, at::with<Eff::IO>, at::cost_unbounded>::H003_ok);
-static_assert(live_rules<at::regime::hot, at::with<Eff::Alloc>, at::cost_constant>::H003_ok);
 static_assert(live_rules<at::regime::hot, at::cost_unbounded>::H003_ok, "no Alloc or IO row, so H001 not H003");
 static_assert(live_rules<at::with<Eff::Alloc>, at::cost_unbounded>::H003_ok, "not hot, so no contradiction");
+// A read of the clock through the vDSO lifts the empty row, and a spin
+// lifts the empty row too, so H003 admits both on the hot path.
+static_assert(hot_bounded<at::syscall::per<at::syscall::SyscallId::clock_gettime>>::valid);
+static_assert(hot_bounded<at::sync::spin_pause>::valid);
+// The positive controls: a warm or a cold binding with the same rows.
+static_assert(live_rules<at::regime::warm, at::cost_constant, at::with<Eff::Alloc>>::valid);
+static_assert(live_rules<at::regime::warm, at::cost_constant, at::with<Eff::IO>>::valid);
+static_assert(live_rules<at::regime::warm, at::syscall::per<at::syscall::SyscallId::getpid>>::valid);
+static_assert(live_rules<at::regime::cold, at::with<Eff::Alloc, Eff::IO>>::valid);
 // Block is deliberately outside H003: a blocking hot path is W001's
 // theorem, which cites the futex cost rather than the allocator's.  The
 // cell is here so the boundary is a decision on the record.
@@ -882,6 +900,16 @@ static_assert(!::fixy::IsAccepted<int, at::regime::hot, at::cost_constant, at::r
                                   at::with<Eff::Block>>);
 static_assert(::fixy::IsAccepted<int, at::regime::cold, at::syscall::per<at::syscall::SyscallId::futex>>);
 static_assert(::fixy::IsAccepted<int, at::regime::warm, at::with<Eff::Block>>);
+
+// H003 reaches the gate with a bounded cost.  The gate admits a warm
+// binding with the same row.
+static_assert(!::fixy::IsAccepted<int, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
+                                  at::with<Eff::Alloc>>);
+static_assert(!::fixy::IsAccepted<int, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
+                                  at::syscall::per<at::syscall::SyscallId::getpid>, at::as_public>);
+static_assert(::fixy::IsAccepted<int, at::regime::warm, at::cost_constant, at::with<Eff::Alloc>>);
+static_assert(::fixy::IsAccepted<int, at::regime::warm, at::syscall::per<at::syscall::SyscallId::getpid>,
+                                 at::as_public>);
 
 // The constant-time family and the failure family reach the same gate.
 // The failure rules read the payload, which only the bound view carries,

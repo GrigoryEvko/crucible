@@ -393,7 +393,7 @@ inline constexpr corpus_entry rule_corpus[] = {
     // fixy/atoms/Regime.h.
     {"H001", Disposition::Live, "hot x unstated or unbounded cost"},
     {"H002", Disposition::Live, "hot x no refinement witness"},
-    {"H003", Disposition::Live, "hot x an Alloc or IO row x unbounded cost"},
+    {"H003", Disposition::Live, "hot x Alloc or IO in the row of the binding"},
     {"H010", Disposition::Live, "hot x Row<Bg>"},
     {"R001", Disposition::Live, "coroutine x hot"},
     {"S001", Disposition::Live, "stdio x hot"},
@@ -1505,8 +1505,9 @@ struct rules_of {
     // the bench's answer.  These six rules are the part that needs no
     // bench, because each is a contradiction between the declared tier
     // and something else the same binding declares.  A body cannot be
-    // budgeted in nanoseconds and also admit an unbounded cost, a
-    // background row, buffered stdio, or a coroutine suspension.
+    // budgeted in nanoseconds and also admit an unbounded cost, an
+    // allocation or an I/O call, a background row, buffered stdio, or a
+    // coroutine suspension.
     static constexpr bool hot = std::is_same_v<typename G::template on<Axis::Regime>, ::fixy::atom::regime::hot>;
 
     // The one premise read from the payload rather than the pack: the
@@ -1515,8 +1516,8 @@ struct rules_of {
     // old catalog left it.  False under the pack-only view.
     static constexpr bool replay_deterministic = detail::is_replay_deterministic_<Payload>::value;
     static constexpr bool row_alloc_or_io =
-        ::foundation::effects::row_contains_v<effect_row, ::foundation::effects::Effect::Alloc>
-        || ::foundation::effects::row_contains_v<effect_row, ::foundation::effects::Effect::IO>;
+        ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Alloc>
+        || ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::IO>;
 
     // "Unstated" is the strict pole on Complexity, so an unstated cost
     // is the absence of a grade rather than a grade of its own.  H001
@@ -1532,7 +1533,15 @@ struct rules_of {
     static constexpr bool no_witness_floor = !G::template mentions<Axis::Refinement>;
     static constexpr bool H002_ok = !(hot && no_witness_floor);
 
-    static constexpr bool H003_ok = !(hot && row_alloc_or_io && unbounded_cost);
+    // H003 reads Alloc and IO in the row of the binding, and not the
+    // cost.  The allocator and the kernel bound neither in nanoseconds,
+    // and CLAUDE.md VIII bans an allocation and a system call on the hot
+    // path, with a bounded cost or not.  A system call that lifts IO trips
+    // the rule although it cannot block, and getpid is one.  A read of the
+    // clock through the vDSO lifts the empty row, so the rule admits it.
+    // Block is W001's premise, which cites the futex cost and not the cost
+    // of the allocator.
+    static constexpr bool H003_ok = !(hot && row_alloc_or_io);
 
     // H010 is not covered by H001 or H003: a HotPath x Bg binding with
     // cost::Constant and no Alloc or IO row passes both of those and is
@@ -1955,9 +1964,10 @@ struct rules_of {
         static_assert(H002_ok, "H002: hot x no refinement witness. A hot body buys its nanoseconds by assuming an "
                                "invariant instead of checking it, so something upstream must have proved it. Attach "
                                "a Refined input that carries the proof.");
-        static_assert(H003_ok, "H003: hot x an Alloc or IO row x unbounded cost. Move the allocation or the I/O "
-                               "outside the hot path, or give it an Init or Bg context that owns the unbounded "
-                               "surface.");
+        static_assert(H003_ok, "H003: hot x Alloc or IO in the row of the binding. The allocator and the kernel bound "
+                               "neither in nanoseconds, whatever cost the binding states, and a system call that "
+                               "lifts IO counts as a stated IO does. Move the allocation or the I/O off the hot path, "
+                               "into an Init or a Bg context.");
         static_assert(H010_ok, "H010: hot x Row<Bg>. A function cannot be both on the foreground hot path and in "
                                "background context: the two name different threads. H001 and H003 both admit a hot "
                                "Bg binding with a constant cost and no Alloc or IO, which is still this "

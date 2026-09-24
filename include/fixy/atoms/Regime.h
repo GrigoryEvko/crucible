@@ -16,10 +16,11 @@
 // what confirms it.  That is still worth a grade, because a large class
 // of hot-path mistakes is decidable from the intent alone without
 // measuring anything: a body that declares itself hot and also declares
-// unbounded cost, or a Bg row, or buffered stdio, or a coroutine frame,
-// is refused by fixy/Collision.h's H and R and S families before a
-// bench ever runs.  The measurement settles the cases that survive the
-// contradictions, not the contradictions themselves.
+// unbounded cost, or an allocation or an I/O call, or a Bg row, or
+// buffered stdio, or a coroutine frame, is refused by fixy/Collision.h's
+// H and R and S families before a bench ever runs.  The measurement
+// settles the cases that survive the contradictions, not the
+// contradictions themselves.
 //
 // This is the same division the project draws everywhere else: the type
 // system refuses what is impossible, and measurement chooses among what
