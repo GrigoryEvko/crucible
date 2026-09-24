@@ -1596,7 +1596,7 @@ Crucible encodes **Concurrent Separation Logic** (O'Hearn 2007) as a family of z
 | Frame rule | Linearity (move-only `Permission<Tag>`) | `safety/Permission.h` | Every exclusive ownership claim |
 | Parallel composition rule | `permission_fork<Children...>(parent, callables...)` | `safety/PermissionFork.h` | Spawning N threads with disjoint sub-permissions |
 | Fractional permissions `e ↦_p v` | `SharedPermission<Tag>` + `SharedPermissionPool` (atomic refcount) | `safety/Permission.h` | Multi-reader / single-writer with mode upgrade |
-| Lifetime-bound borrow | `ReadView<Tag>` (CRUCIBLE_LIFETIMEBOUND) | `safety/Permission.h` | Scoped read borrow (function-call lifetime) |
+| Lifetime-bound borrow | `with_read_view(source, body)` gives the body a `ReadView<Tag> const&`; `mint_read_loan` parks the token while a `ReadLoan` travels | `foundation/permissions/ReadView.h` | Scoped read borrow: the view exists only for the body's call |
 | Resource invariants (Brookes) | DEFERRED — needs `LockedResource<T, Inv>` | (future) | Mutex-protected shared state |
 | Logical atomicity (TaDA) | Implicit — every consume-and-return cycle | (free) | All Permission-typed operations |
 
@@ -1637,7 +1637,9 @@ Need exclusive single-thread ownership?
     → Permission<Tag>                       (linear, move-only, sizeof = 1)
 
 Need shared-read scoped to a function call (lifetime fits inside the caller's stack)?
-    → ReadView<Tag>                         (lifetime-bound, copyable, sizeof = sizeof(void*))
+    → with_read_view(std::move(source), body)  (the body gets a ReadView<Tag> const&; the view
+                                             cannot be copied, moved or stored, and the source
+                                             comes back after the body; foundation/permissions/ReadView.h)
 
 Need shared-read across threads (lifetime escapes)?
     → SharedPermission<Tag> via SharedPermissionPool::lend()
@@ -2352,7 +2354,7 @@ is owed.
 ### Compiler enforcement
 
 - `-Werror=conversion` + the wrapper types together prevent accidental unwrapping across boundaries.
-- `-Werror=use-after-move` + `Linear<>`'s deleted copy constructor catches double-consume at compile time. Same mechanism catches `Permission<Tag>` double-use after split/fork.
+- `Linear<>`'s deleted copy constructor refuses a second copy of a linear value at compile time. GCC 16 has no `-Wuse-after-move` (it rejects `-Werror=use-after-move` as an unknown option), so the language does not see a second `std::move` of one local. The `use_after_move` ci_guard (`scripts/check-use-after-move.py`) is the enforcement: it refuses any use of a local after `std::move`, on any path, across the tree. It catches `Permission<Tag>` double-use after split/fork, and it lists what it cannot see (a use through a pointer or a reference, a move inside a callee that takes `T&`).
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
 - Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (debug, CI, boundary TUs) and under `semantic=ignore` on hot-path TUs they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
 - Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `Session<>` / `Permission<Tag>` means the compiler rejects accidental duplication.
