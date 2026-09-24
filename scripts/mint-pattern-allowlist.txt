@@ -1,0 +1,257 @@
+# scripts/mint-pattern-allowlist.txt — §XXI scanner grandfather list.
+#
+# Two interchangeable entry grammars are honoured:
+#
+#   NAME-KEYED  path:mint_name[:check-ok]   (PREFERRED — drift-proof)
+#   LINE-KEYED  path:line[:check-ok]        (legacy — fragile)
+#
+# where <check> ∈ {nodiscard, noexcept, constexpr, requires, ctxfit}.
+# Lines beginning with '#' are comments.  A bare key (no `:check-ok`
+# suffix) exempts every check for that key.
+#
+# ── Why name-keyed is the default ────────────────────────────────────
+#
+# A LINE-KEYED entry pins an exemption to a source LINE NUMBER.  Any
+# edit above the mint — a concurrent edit inserting a member, a new
+# `#include`, a reflowed comment — shifts the line and silently
+# invalidates the entry: the real mint reads as an un-suppressed
+# violation AND the now-dangling entry trips the stale-entry gate.  That
+# is the exact failure mode this file kept hitting (one line-collapse
+# sweep stranded 7 entries; later sweeps stranded more).
+#
+# A NAME-KEYED entry pins the exemption to the mint's IDENTIFIER (the
+# `mint_<noun>` token on the candidate line).  The identifier is stable
+# across line shifts, so a name-keyed exemption keeps tracking the same
+# factory no matter how the file above it churns.  This is the content
+# key of the reserve guard, applied to the mint guard: it eliminates the
+# line number as the drift vector.  Every entry below is name-keyed.
+#
+# Name-keyed semantics: `path` must match the candidate's file exactly;
+# the name segment matches the `mint_<noun>` identifier.  An overload
+# SET sharing one name in one file collapses to a single entry — that is
+# intentional: an overload set is one §XXI factory with one carve-out
+# rationale (e.g. `mint_persisted_session` has three live overloads, all
+# allocating, one `:constexpr-ok` entry covers them).
+#
+# ── Trim discipline ──────────────────────────────────────────────────
+#
+# Every entry is either a STRUCTURAL exemption (allocating / syscall /
+# token / passkey ctor) OR a tracked migration TODO.  When a site migrates
+# to canonical §XXI shape (or the scanner learns to recognize a new
+# structural false-positive), the entry MUST be removed; the stale-entry
+# gate fails CI if a dead entry lingers.  The goal is for this file to
+# trend toward the structural-exempt minimum.
+#
+# The scanner learning something is worth as much trimming as a source
+# fix, and on 2026-09-21 it was worth more: teaching it to read a
+# concept-constrained template parameter retired 50 entries in one change,
+# against the 9 that a day of source edits retired.  An entry that
+# describes a scanner limitation was never an exemption, and
+# "concept-constrained-param" is gone from the list above for that reason.
+# Before adding an entry, ask which of the two it is.
+#
+# ── Carve-out categories ─────────────────────────────────────────────
+#
+#   `constexpr-ok` — allocating / syscall / resource-synthesizing mint
+#     (or a class-method mint reading runtime state).  §XXI rule (3)
+#     explicitly permits dropping `constexpr` "in favour of plain
+#     [[nodiscard]] noexcept" for genuinely-allocating mints.  Examples:
+#     fixy/Mmap.h `mmap(2)`, fixy/Io.h `io_uring_setup(2)`, the eBPF /
+#     perf-event `perf/*` mints, the `canopy/*` gossip-state mints, the
+#     class-method view mints (`mint_open_view`, `mint_compiled_view`).
+#
+#   `requires-ok` — a templated mint that carries no type-level constraint
+#     at all.  This category used to be much larger, and 50 of its
+#     entries were not exemptions: they named a mint whose gate is a
+#     concept-CONSTRAINED template parameter (`template <SomeConcept T>`),
+#     which the scanner could not see because it read only the literal
+#     `requires` keyword.  The two spellings mean one thing to the
+#     compiler, the scanner now reads both, and those 50 entries are gone.
+#     A non-type parameter (`template <std::size_t N>`) parses exactly
+#     like a constrained one, so the scanner settles the difference
+#     against the tree's own roster of `concept` declarations rather than
+#     against the node shape.
+#
+#   `ctxfit-ok` — a CTX-BOUND mint that takes a context no constraint
+#     gates, so it accepts every context in the tree.  This is the
+#     question §XXI actually asks of a ctx-bound mint, and it was
+#     previously invisible: `requires-ok` conflated "carries no
+#     constraint" with "carries no gate on its CONTEXT", and a mint that
+#     constrained some other parameter satisfied the axis while admitting
+#     any context at all.  Note that `IsExecCtx Ctx` does NOT gate the
+#     context — it states that the parameter IS one.  A token mint has no
+#     entry in this category, because §XXI derives its authority from a
+#     parent token rather than from a context.
+#
+#   `noexcept-ok` — §XXI admits NO noexcept exemption: "Every mint MUST
+#     be [[nodiscard]] constexpr noexcept", and only the constexpr half
+#     has an escape for allocating factories.  So an entry in this
+#     category is a DEFECT, not an exemption.  The category is empty, and
+#     a new entry in it belongs under DEFECTS below with its remediation.
+#
+#   `nodiscard-ok` — a mint whose return value can legitimately be
+#     discarded.  A passkey constructor is NOT in this category: the
+#     guard skips `= default` declarations outright, because a
+#     constructor cannot carry [[nodiscard]] and an entry describing a
+#     rule the site is structurally unable to obey is not an exemption.
+#
+# ── DEFECTS, not exemptions ──────────────────────────────────────────
+#
+# An entry that reads like a category and is actually an open defect is
+# the failure this whole file exists to prevent, so the open ones are
+# named here rather than buried in the list.
+#
+# No `noexcept-ok` entry remains.  The one that stood here named
+# mint_af_xdp_socket, and 2b65b669 put the keyword on the signature and
+# deleted the entry.  §XXI admits no noexcept exemption, so this category
+# is expected to stay empty.
+#
+# No `ctxfit-ok` entry remains.  The 26 endpoint session mints that
+# stood here each state the gate of mint_permissioned_session in their
+# own clause, so a caller can probe it and a refusal names the mint.
+# test_session_endpoint_ctx_gate asks each of them whether a context
+# fits.  A new entry in this category is a defect, not an exemption.
+#
+# An earlier revision of this file attributed the `mint_pipeline` entry,
+# and a further
+# eleven entries under canopy/ and cntp/, to those trees being
+# "edit-banned".  No such ban is declared in CLAUDE.md, in AGENTS.md, in
+# any guard script, or in any commit message — this file was the only
+# document asserting it, and the only document relying on it.  A
+# justification that cites nothing but itself is not a justification, so
+# the claim is withdrawn.  The canopy/ and cntp/ entries stand or fall
+# on their own category, like every other entry here; the section
+# headers below no longer label either tree as banned.
+#
+# ── Known over-breadth in `constexpr-ok` ─────────────────────────────
+#
+# §XXI's constexpr escape is conditioned on the factory "genuinely
+# allocating".  Several `constexpr-ok` entries name a mint that builds a
+# fixed-capacity aggregate in place and allocates nothing — the canopy/
+# gossip-state mints are the clearest cases.  Those entries are carrying
+# a rationale that does not apply to them.  Nothing here fails on it
+# today, which is precisely why it is written down: an over-broad
+# category is how a real drift gets absorbed without anyone noticing.
+
+# ── Class-method / allocating view mints ─────────────────────────────
+
+# ── bridges/ allocating session mints ────────────────────────────────
+include/crucible/bridges/SessionPersistence.h:mint_persisted_session:constexpr-ok
+
+# ── canopy/ gossip-state mints ───────────────────────────────────────
+include/crucible/canopy/Hlc.h:mint_hlc:constexpr-ok
+include/crucible/canopy/HyParView.h:mint_hyparview:constexpr-ok
+include/crucible/canopy/Lifeguard.h:mint_lifeguard_swim:constexpr-ok
+include/crucible/canopy/Plumtree.h:mint_plumtree:constexpr-ok
+include/crucible/canopy/Scuttlebutt.h:mint_scuttlebutt:constexpr-ok
+include/crucible/canopy/Swim.h:mint_swim_membership:constexpr-ok
+include/crucible/canopy/VectorClock.h:mint_vector_clock:constexpr-ok
+
+# ── cntp/ transport mints ────────────────────────────────────────────
+include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok
+# DEFECT — see the DEFECTS block in the header.  Not an exemption.
+include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
+
+# ── fixy/ syscall / resource mints ───────────────────────────────────
+include/crucible/fixy/Sched.h:mint_affinity:constexpr-ok
+include/crucible/fixy/Sched.h:mint_priority:constexpr-ok
+include/crucible/fixy/Sched.h:mint_scheduler_policy:constexpr-ok
+
+# ── fixy/os/Sched.h — the ported copies of the three entries above.
+# The carve-out is the same one and for the same reason: each body
+# issues a scheduling syscall, so the factory cannot be constexpr.
+# Both sets stand until the old tree is deleted.
+include/fixy/os/Sched.h:mint_affinity:constexpr-ok
+include/fixy/os/Sched.h:mint_priority:constexpr-ok
+include/fixy/os/Sched.h:mint_scheduler_policy:constexpr-ok
+
+# ── fixy/os/{Mmap,Io}.h — the ported copies of the mmap and io entries
+# above.  The carve-out is the same one and for the same reason: each
+# body issues mmap, madvise, io_uring_setup, sendfile or
+# copy_file_range, so the factory cannot be constexpr.
+include/fixy/os/Mmap.h:mint_mmap:constexpr-ok
+include/fixy/os/Mmap.h:mint_mmap_anon:constexpr-ok
+include/fixy/os/Io.h:mint_io_uring_ring:constexpr-ok
+include/fixy/os/Io.h:mint_zerocopy_transfer:constexpr-ok
+
+# ── fixy/os/{Fs,CipherDurable}.h — the ported copies of the fs and
+# durable entries above.  Each body opens a file, so the factory cannot
+# be constexpr.  The two durable mints carried a `requires-ok` entry in
+# the old tree because they had no requires-clause of their own; they
+# have one now, so only the constexpr carve-out remains.
+include/fixy/os/Fs.h:mint_file:constexpr-ok
+include/fixy/os/Fs.h:mint_durable_append_file:constexpr-ok
+include/fixy/os/Fs.h:mint_durable_truncate_file:constexpr-ok
+include/fixy/os/CipherDurable.h:mint_warm_writer:constexpr-ok
+include/fixy/os/CipherDurable.h:mint_cold_writer:constexpr-ok
+include/fixy/os/CipherDurable.h:mint_head_advancer:constexpr-ok
+
+# A mint declared before the class that befriends it and defined after
+# that class is one function.  The guard reads a forward declaration and
+# its definition as one site, keyed at the definition, so one entry at
+# the defining header covers it: mint_io_uring_ring, the three
+# CipherDurable writers, and mint_affinity (declared in
+# fixy/os/CpuPinned.h, defined in fixy/os/Sched.h).
+# The ported pair, §XXI carve-out cx=thread.  Neither can be constexpr and
+# mean it: mint_spawn starts one jthread per child, and mint_parallel_for
+# does the same for every shard but the single-shard case.  A constexpr on
+# either would claim a compile-time cost for a call that schedules threads.
+include/fixy/os/Spawn.h:mint_parallel_for:constexpr-ok
+include/fixy/os/Spawn.h:mint_spawn:constexpr-ok
+# fixy/session/CrashTransport.h: the reporter mint claims its cell with an
+# atomic exchange, and a second mint for one cell ends the process.  It
+# reads and writes runtime state, so it cannot be constexpr.  The class
+# names the mint as the friend of its only constructor, so the guard sees
+# the signature two times, and one entry covers the two sites.
+include/fixy/session/CrashTransport.h:mint_crash_reporter:constexpr-ok
+
+# ── observe/ + perf/ eBPF / perf-event allocating mints ──────────────
+include/crucible/observe/Metrics.h:mint_canopy_metrics_reader:constexpr-ok
+include/crucible/observe/Metrics.h:mint_keeper_metrics_reader:constexpr-ok
+include/crucible/observe/Metrics.h:mint_metrics_writer:constexpr-ok
+include/crucible/observe/SdcDetect.h:mint_sdc_detector:constexpr-ok
+include/crucible/observe/SyntheticProbe.h:mint_synthetic_probes:constexpr-ok
+
+# ── permissions/ token + structured-concurrency mints ────────────────
+include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:requires-ok
+
+# ── foundation/permissions/ — the ported copies of the entries above ──
+# Each permission mint is one template whose argument shape (leading
+# contexts, trailing tokens) is its concept gate, so the six requires-ok
+# entries the old overload pairs needed are gone.  The spawning fork arm
+# starts threads, so it is not constexpr; the inline arm is.
+include/foundation/permissions/PermissionFork.h:mint_permission_fork:constexpr-ok
+
+# ── safety/ concept-constrained view + syscall mints ─────────────────
+include/crucible/safety/ThreadName.h:mint_thread_name:constexpr-ok
+
+# ── fixy/os/ThreadName.h — the ported copy of the mint above.  The
+# carve-out is the same one and for the same reason: the body calls
+# pthread_setname_np, so the factory cannot be constexpr.  Both entries
+# stand until the old tree is deleted.
+include/fixy/os/ThreadName.h:mint_thread_name:constexpr-ok
+
+# ── sessions/ allocating endpoint mints ──────────────────────────────
+# The forty-two `requires-ok` entries that stood here are gone.  Each one
+# named a mint whose gate is `template <SomeSessionSurface S, ...>`, and
+# the scanner now reads a constrained parameter as the constraint it is.
+include/crucible/sessions/ChaseLevDequeSession.h:mint_chaselev_thief:constexpr-ok
+include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_consumer_endpoint:constexpr-ok
+include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_producer_endpoint:constexpr-ok
+include/crucible/sessions/SnapshotSession.h:mint_snapshot_reader:constexpr-ok
+include/crucible/sessions/SwmrSession.h:mint_swmr_reader:constexpr-ok
+include/crucible/sessions/FederationProtocol.h:mint_federation_pool:requires-ok
+
+# ── topology/ + warden/ allocating mints ─────────────────────────────
+include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok
+include/crucible/topology/Ptp.h:mint_ptp_handle:constexpr-ok
+include/crucible/warden/Hardening.h:mint_hardening:constexpr-ok
+
+# The AST guard sees a template the bash window could not: the template
+# parameter list sits at line 288 and the signature at line 305,
+# seventeen lines apart against a fifteen-line window,
+# so the old guard found no template, skipped the requires axis and passed a
+# templated mint that carries no clause.  The site is under a frozen path and
+# the federation permission surface has no port yet, so the clause cannot be
+# added here.  The port carries it.
+include/crucible/permissions/FederationPermission.h:mint_federation_admittance:requires-ok

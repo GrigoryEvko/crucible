@@ -1,0 +1,77 @@
+# detail-namespace-allowlist — the test files that may use a detail namespace
+# of foundation or fixy, read by scripts/check-detail-namespace.py.
+#
+# A row is PATH NAMESPACE xN — REASON.  NAMESPACE is the detail namespace,
+# N the number of uses in the file.  Only a file under test/ may take a row.
+# A file with more uses than its row admits fails, and a row that admits
+# more uses than the file has is stale, so the list only shrinks.  A test
+# that can reach the same fact through the public door of the layer must use
+# the door and leave the list.
+
+# Rosters and relations: a test that compares a derived roster or a sealed
+# relation with the detail predicates that it names.
+test/fixy/rejections_generated.cpp ::fixy::atom::detail x1 — reads the atom roster that the generated rejections cover
+test/fixy/rejections_generated.cpp ::fixy::detail x2 — reads the refusal tier of each generated rejection
+test/fixy/test_armed_roster.cpp ::fixy::atom::spawn::detail x3 — names each armed predicate of the spawn atoms
+test/fixy/test_armed_roster.cpp ::fixy::collision::detail x50 — names each armed predicate of the collision rules
+test/fixy/test_armed_roster.cpp ::fixy::concurrent::detail x26 — names each armed predicate of the stages and the stage fakes
+test/fixy/test_armed_roster.cpp ::fixy::corpus::detail x17 — names each armed predicate of the corpus
+test/fixy/test_armed_roster.cpp ::fixy::detail x2 — names each armed predicate of the fixy root
+test/fixy/test_armed_roster.cpp ::fixy::mach::detail x6 — names each armed predicate of the machine transitions
+test/fixy/test_armed_roster.cpp ::fixy::session::detail x43 — names each armed predicate of the session core and the crash walk
+test/fixy/test_armed_roster.cpp ::fixy::session::global::detail x24 — names each armed predicate of the global types, the live en-route walk too
+test/fixy/test_armed_roster.cpp ::fixy::spawn::detail x6 — names each armed predicate of the spawn fit
+test/fixy/test_armed_roster.cpp ::foundation::effects::detail x5 — names each armed predicate of the effects layer
+test/fixy/test_armed_roster.cpp ::foundation::permissions::detail x17 — names each armed predicate of the permissions layer
+test/fixy/test_armed_roster.cpp ::foundation::reflect::detail x1 — names the armed predicate of the reflection layer
+test/fixy/test_payload_row.cpp ::fixy::concurrent::detail x3 — pins the list of payload families that carry a row
+test/fixy/test_refined.cpp ::fixy::detail x1 — runs the edge self-test of the sealed implication relation
+test/fixy/test_tagged.cpp ::fixy::detail x4 — uses the retag policy probes of the sealed retag relation
+
+# Proof and context audits: a test that walks the proof types, the mint keys
+# and the context witnesses, or attacks them.
+test/fixy/test_contexts.cpp ::foundation::effects::detail x5 — pins each context witness to the context it stands for
+test/fixy/test_forgeable_proofs.cpp ::foundation::effects::detail x26 — walks the context base and the mint keys for a forgeable proof
+test/fixy/test_forgeable_proofs.cpp ::foundation::permissions::detail x9 — lists the open permission templates of the proof walk
+test/foundation/test_capability.cpp ::foundation::effects::detail x2 — builds a context from a context witness
+test/foundation/test_ctx.cpp ::foundation::effects::detail x5 — builds a context from a context witness
+test/foundation/test_host_owner_attacks.cpp ::foundation::effects::detail x4 — pins that no mint key has a default constructor or a trivial copy
+
+# Session tests: a test that reads a helper of the session core, or builds a
+# background context from its witness to drive a session.
+test/fixy/test_session_async_channel.cpp ::foundation::effects::detail x1 — builds a background context from its witness
+test/fixy/test_session_crash_stop.cpp ::fixy::session::detail x11 — walks the crash projection helpers
+test/fixy/test_session_endpoint_transfer.cpp ::fixy::session::detail x8 — reads the endpoint records of the session core
+test/fixy/test_session_entry.cpp ::foundation::effects::detail x1 — builds a background context from its witness
+test/fixy/test_session_global_attack.cpp ::fixy::session::detail x1 — reads the projection check of each role
+test/fixy/test_session_handle.cpp ::fixy::session::detail x18 — pins the loop frames of the session handle
+test/fixy/test_session_handle.cpp ::fixy::session::watch::detail x2 — reads the owner of a watched endpoint record
+test/fixy/test_session_handle.cpp ::foundation::effects::detail x5 — builds a background context from its witness
+test/fixy/test_session_handle_attacks.cpp ::fixy::session::detail x3 — builds the forked head type that the attack uses
+test/fixy/test_session_handle_attacks.cpp ::foundation::effects::detail x1 — builds a background context from its witness
+test/fixy/test_session_ownership_attacks.cpp ::fixy::session::detail x2 — reads the payload refusal of the ownership check
+test/fixy/test_session_rollback.cpp ::fixy::session::detail x2 — pins the checkpoint erasure of a protocol
+test/fixy/test_session_subtype.cpp ::fixy::session::detail x1 — pins the bound of the async subtype search
+
+# Self-test namespaces and helpers: a test that runs a self-test namespace of
+# a layer header, or checks one helper that no public door exposes.
+test/fixy/test_atom.cpp ::fixy::atom::detail x66 — tests the roster and lift helpers of the atoms
+test/fixy/test_collision.cpp ::fixy::collision::detail x16 — tests each collision predicate on its own
+test/fixy/test_fp_polynomial.cpp ::fixy::fp::detail x1 — runs the polynomial self-test namespace
+test/fixy/test_os_numa_placement.cpp ::fixy::detail x3 — sizes a probe mask with the node-mask constants of the layer
+test/fixy/test_owned_mmap.cpp ::fixy::atom::detail x1 — uses the sample leak rationale as a leak atom
+test/fixy/test_row_hash_wrappers.cpp ::fixy::concurrent::detail x11 — hashes the row of the stage fakes
+test/fixy/test_row_hash_wrappers.cpp ::fixy::corpus::detail x3 — hashes the row of a secret carrier
+test/fixy/test_row_hash_wrappers.cpp ::fixy::detail x8 — hashes the row of the pinned-core invariants
+test/foundation/test_algebra_core.cpp ::foundation::algebra::detail x7 — runs the lattice self-test namespace
+test/foundation/test_computation.cpp ::foundation::effects::detail x30 — pins the graded capabilities of the computation carrier
+test/foundation/test_diag.cpp ::foundation::diag::detail x3 — pins the counts of the diagnostic self-test
+test/foundation/test_effects_core.cpp ::foundation::effects::detail x14 — runs the effect-row self-test namespaces
+test/foundation/test_lattices_bands.cpp ::foundation::algebra::lattices::detail x18 — runs the band lattice self-test namespaces
+test/foundation/test_lattices_core.cpp ::foundation::algebra::lattices::detail x8 — runs the core lattice self-test namespaces
+test/foundation/test_lattices_core.cpp ::foundation::sat::detail x1 — runs the saturation self-test namespace
+test/foundation/test_permissions_compile.cpp ::foundation::permissions::detail x1 — runs the permission-set smoke namespace
+test/foundation/test_reflect.cpp ::foundation::reflect::detail x2 — runs the reflection self-test namespace
+test/foundation/test_row_hash.cpp ::foundation::diag::detail x16 — tests the sort helper of the row hash
+test/foundation/test_row_mismatch.cpp ::foundation::diag::detail x3 — reads the text of a row mismatch diagnostic
+test/test_safety.cpp ::foundation::detail x2 — asks the layer whether a debugger is attached

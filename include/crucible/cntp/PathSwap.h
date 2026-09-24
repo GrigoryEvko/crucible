@@ -1,0 +1,330 @@
+#pragma once
+
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
+#include <crucible/safety/_Pinned.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_Tagged.h>
+#include <crucible/sessions/Session.h>
+
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <limits>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+
+namespace crucible::cntp {
+
+enum class SwapState : std::uint8_t {
+    Stable = 0,
+    Draining = 1,
+    BidirReceive = 2,
+    NewPathFlushing = 3,
+    Complete = 4,
+    Failed = 5,
+};
+
+// Complete accepts Draining so one swapper can serve a second swap.  Failed
+// is fully terminal: recovery means discarding the swapper and minting a
+// fresh one.
+[[nodiscard]] constexpr bool is_valid_path_swap_transition(SwapState from, SwapState to) noexcept {
+    switch (from) {
+        case SwapState::Stable:
+            return to == SwapState::Draining;
+        case SwapState::Complete:
+            return to == SwapState::Draining;
+        case SwapState::Draining:
+            return to == SwapState::BidirReceive || to == SwapState::Failed;
+        case SwapState::BidirReceive:
+            return to == SwapState::NewPathFlushing || to == SwapState::Complete || to == SwapState::Failed;
+        case SwapState::NewPathFlushing:
+            return to == SwapState::Complete || to == SwapState::Failed;
+        case SwapState::Failed:
+            return false;
+        default:
+            // Unreachable for a valid SwapState.  The arm exists because
+            // switch-default is required, and a value cast in from untrusted
+            // bytes lands here and is refused.
+            return false;
+    }
+}
+
+enum class SwapError : std::uint8_t {
+    InvalidPathId,
+    SamePath,
+    DeadlineOverflow,
+    Timeout,
+    InvalidTransition,
+};
+
+[[nodiscard]] std::string_view swap_state_name(SwapState state) noexcept;
+[[nodiscard]] std::string_view swap_error_name(SwapError error) noexcept;
+
+using PositivePathId = safety::Positive<std::uint64_t>;
+using PositiveNanoseconds = safety::Positive<std::uint64_t>;
+
+struct PathSwapPlan {
+    PositivePathId flow_id{1};
+    PositivePathId old_path{1};
+    PositivePathId new_path{2};
+    PositiveNanoseconds timeout_ns{10000000000ull};
+};
+
+using DeclaredPathSwapPlan = safety::Tagged<PathSwapPlan, safety::source::PathSwap>;
+
+struct PathSwapEvent {
+    std::uint64_t flow_id = 0;
+    std::uint64_t old_path = 0;
+    std::uint64_t new_path = 0;
+    SwapState from = SwapState::Stable;
+    SwapState to = SwapState::Stable;
+    std::uint64_t at_ns = 0;
+    std::uint64_t sequence = 0;
+};
+
+static_assert(sizeof(PositivePathId) == sizeof(std::uint64_t));
+static_assert(sizeof(PositiveNanoseconds) == sizeof(std::uint64_t));
+static_assert(sizeof(DeclaredPathSwapPlan) == sizeof(PathSwapPlan));
+static_assert(std::is_trivially_copyable_v<PathSwapPlan>);
+static_assert(std::is_trivially_copyable_v<PathSwapEvent>);
+
+template <class Ctx>
+concept CtxFitsPathSwapMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+
+template <class Ctx>
+concept CtxFitsPathSwapTransition = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+
+template <class Resource>
+concept PathSwapSessionResource = safety::proto::SessionResource<Resource>;
+
+[[nodiscard]] constexpr std::expected<PositivePathId, SwapError> admit_path_id(std::uint64_t id) noexcept {
+    if (id == 0) {
+        return std::unexpected(SwapError::InvalidPathId);
+    }
+    return PositivePathId{id, typename PositivePathId::Trusted{}};
+}
+
+[[nodiscard]] constexpr std::expected<PositiveNanoseconds, SwapError> admit_swap_timeout_ns(std::uint64_t ns) noexcept {
+    if (ns == 0) {
+        return std::unexpected(SwapError::Timeout);
+    }
+    return PositiveNanoseconds{ns, typename PositiveNanoseconds::Trusted{}};
+}
+
+[[nodiscard]] constexpr std::expected<DeclaredPathSwapPlan, SwapError>
+mint_path_swap_plan(PositivePathId flow_id, PositivePathId old_path, PositivePathId new_path,
+                    PositiveNanoseconds timeout_ns) noexcept {
+    if (old_path.value() == new_path.value()) {
+        return std::unexpected(SwapError::SamePath);
+    }
+    return DeclaredPathSwapPlan{PathSwapPlan{
+        .flow_id = flow_id,
+        .old_path = old_path,
+        .new_path = new_path,
+        .timeout_ns = timeout_ns,
+    }};
+}
+
+template <std::size_t MaxEvents = 16>
+class PathSwapper : public safety::Pinned<PathSwapper<MaxEvents>> {
+    static_assert(MaxEvents > 0, "PathSwapper requires an audit-event ring");
+    static_assert(std::atomic<SwapState>::is_always_lock_free,
+                  "PathSwapper observers need a lock-free state load. The target ISA does not provide one");
+
+public:
+    // False: commit_sender moves the protocol position to a new resource but
+    // migrates no in-flight data.
+    static constexpr bool data_migration_implemented = false;
+
+private:
+    // One writer in a background context, many concurrent readers through
+    // state().  The Pinned base advertises address-stable cross-thread
+    // sharing, so this field has to be atomic to back that promise.
+    std::atomic<SwapState> state_{SwapState::Stable};
+    PathSwapPlan plan_{};
+    std::array<PathSwapEvent, MaxEvents> events_{};
+    std::size_t next_event_ = 0;
+    std::size_t event_count_ = 0;
+    std::uint64_t deadline_ns_ = 0;
+    std::uint64_t sequence_ = 0;
+
+    constexpr void append_event(SwapState from, SwapState to, std::uint64_t at_ns) noexcept {
+        ++sequence_;
+        events_[next_event_] = PathSwapEvent{
+            .flow_id = plan_.flow_id.value(),
+            .old_path = plan_.old_path.value(),
+            .new_path = plan_.new_path.value(),
+            .from = from,
+            .to = to,
+            .at_ns = at_ns,
+            .sequence = sequence_,
+        };
+        next_event_ = (next_event_ + 1u) % MaxEvents;
+        if (event_count_ < MaxEvents) {
+            ++event_count_;
+        }
+    }
+
+    // Validity is re-checked inside the loop, on the value the failed
+    // compare_exchange loaded.  That is what makes exactly one thread observe
+    // a given (prev, next) edge, so append_event records the real predecessor
+    // rather than a stale load two threads both won.
+    //
+    // Returns false when another thread reached a state that is not a valid
+    // predecessor of next.  The public methods turn that into
+    // SwapError::InvalidTransition.  check_live ignores it, because losing
+    // the race there means someone else already left the live path.
+    //
+    // A consumed-by-value typestate token would put this DAG in the type
+    // system, but state(), expired() and event_at() all read the state
+    // concurrently with transitions, and a token consumed on transition
+    // cannot be shared with readers.
+    [[nodiscard]] bool transition_to(SwapState next, std::uint64_t at_ns) noexcept {
+        SwapState prev = state_.load(std::memory_order_acquire);
+        do {
+            if (!is_valid_path_swap_transition(prev, next)) {
+                return false;
+            }
+        } while (!state_.compare_exchange_weak(prev, next, std::memory_order_acq_rel, std::memory_order_acquire));
+        append_event(prev, next, at_ns);
+        return true;
+    }
+
+    [[nodiscard]] bool expired(std::uint64_t now_ns) const noexcept {
+        const SwapState cur = state_.load(std::memory_order_acquire);
+        return cur != SwapState::Stable && cur != SwapState::Complete && cur != SwapState::Failed
+            && now_ns > deadline_ns_;
+    }
+
+    [[nodiscard]] std::expected<void, SwapError> check_live(std::uint64_t now_ns) noexcept {
+        if (expired(now_ns)) {
+            // Losing this transition is benign.  It means another thread
+            // already left the live path, so the deadline is moot either way
+            // and Timeout still unwinds the current call.
+            (void)transition_to(SwapState::Failed, now_ns);
+            return std::unexpected(SwapError::Timeout);
+        }
+        return {};
+    }
+
+public:
+    constexpr PathSwapper() noexcept = default;
+
+    [[nodiscard]] SwapState state() const noexcept { return state_.load(std::memory_order_acquire); }
+    [[nodiscard]] constexpr PathSwapPlan plan() const noexcept { return plan_; }
+    [[nodiscard]] constexpr std::uint64_t deadline_ns() const noexcept { return deadline_ns_; }
+    [[nodiscard]] constexpr std::uint64_t sequence() const noexcept { return sequence_; }
+    [[nodiscard]] constexpr std::size_t event_count() const noexcept { return event_count_; }
+
+    [[nodiscard]] constexpr PathSwapEvent event_at(std::size_t index) const noexcept {
+        return events_[index % MaxEvents];
+    }
+
+    template <class Ctx>
+        requires CtxFitsPathSwapTransition<Ctx>
+    [[nodiscard]] std::expected<void, SwapError> begin_swap(Ctx const&, DeclaredPathSwapPlan plan,
+                                                            std::uint64_t now_ns) noexcept {
+        const SwapState cur = state_.load(std::memory_order_acquire);
+        if (cur != SwapState::Stable && cur != SwapState::Complete) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        auto const& raw = plan.value();
+        if (raw.timeout_ns.value() > std::numeric_limits<std::uint64_t>::max() - now_ns) {
+            return std::unexpected(SwapError::DeadlineOverflow);
+        }
+        plan_ = raw;
+        deadline_ns_ = now_ns + raw.timeout_ns.value();
+        if (!transition_to(SwapState::Draining, now_ns)) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        return {};
+    }
+
+    template <class Ctx>
+        requires CtxFitsPathSwapTransition<Ctx>
+    [[nodiscard]] std::expected<void, SwapError> receiver_accepts_bidir(Ctx const&, std::uint64_t now_ns) noexcept {
+        if (auto live = check_live(now_ns); !live.has_value()) {
+            return live;
+        }
+        if (state_.load(std::memory_order_acquire) != SwapState::Draining) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        if (!transition_to(SwapState::BidirReceive, now_ns)) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        return {};
+    }
+
+    template <class Ctx>
+        requires CtxFitsPathSwapTransition<Ctx>
+    [[nodiscard]] std::expected<void, SwapError> sender_observed_drain_ack(Ctx const&, std::uint64_t now_ns) noexcept {
+        if (auto live = check_live(now_ns); !live.has_value()) {
+            return live;
+        }
+        if (state_.load(std::memory_order_acquire) != SwapState::BidirReceive) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        if (!transition_to(SwapState::NewPathFlushing, now_ns)) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        return {};
+    }
+
+    // Detaching `current` drops whatever is still buffered on the old path:
+    // the kernel TX queue, the NIC ring, in-flight datagrams, the application
+    // send window.  Nothing is replayed, resent or handed over.  A receiver
+    // must tolerate that loss or sit behind its own idempotency layer.
+    template <class Ctx, typename Proto, typename OldResource, typename LoopCtx, typename NewResource>
+        requires CtxFitsPathSwapTransition<Ctx> && PathSwapSessionResource<NewResource>
+    [[nodiscard]] auto commit_sender(Ctx const&, safety::proto::SessionHandle<Proto, OldResource, LoopCtx>&& current,
+                                     NewResource&& new_resource, std::uint64_t now_ns) noexcept
+        -> std::expected<safety::proto::SessionHandle<Proto, NewResource, LoopCtx>, SwapError> {
+        if (auto live = check_live(now_ns); !live.has_value()) {
+            return std::unexpected(live.error());
+        }
+        if (state_.load(std::memory_order_acquire) != SwapState::NewPathFlushing) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        // The transition has to land before the detach.  A thread that loses
+        // the race must not consume `current`, or the resource leaks and the
+        // audit log gains an event for a transition that never happened.
+        if (!transition_to(SwapState::Complete, now_ns)) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        std::move(current).detach(safety::proto::detach_reason::TransportClosedOutOfBand{});
+        return safety::proto::mint_session_handle<Proto, NewResource>(std::forward<NewResource>(new_resource));
+    }
+
+    template <class Ctx>
+        requires CtxFitsPathSwapTransition<Ctx>
+    [[nodiscard]] std::expected<void, SwapError> complete_receiver(Ctx const&, std::uint64_t now_ns) noexcept {
+        if (auto live = check_live(now_ns); !live.has_value()) {
+            return live;
+        }
+        // No pre-check on the current state is needed here.  Complete is not a
+        // valid predecessor of Complete, so a second caller loses the CAS,
+        // re-validates against the new state and is refused.
+        if (!transition_to(SwapState::Complete, now_ns)) {
+            return std::unexpected(SwapError::InvalidTransition);
+        }
+        return {};
+    }
+};
+
+template <std::size_t MaxEvents = 16, class Ctx>
+    requires CtxFitsPathSwapMint<Ctx>
+[[nodiscard]] constexpr PathSwapper<MaxEvents> mint_path_swapper(Ctx const&) noexcept {
+    return {};
+}
+
+static_assert(CtxFitsPathSwapMint<effects::ColdInitCtx>);
+static_assert(!CtxFitsPathSwapMint<effects::BgDrainCtx>);
+static_assert(CtxFitsPathSwapTransition<effects::BgDrainCtx>);
+static_assert(!CtxFitsPathSwapTransition<effects::HotFgCtx>);
+
+}  // namespace crucible::cntp

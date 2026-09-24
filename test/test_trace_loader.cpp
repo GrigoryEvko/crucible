@@ -1,0 +1,516 @@
+// A malformed trace file must be rejected with a null result rather than
+// crash the loader.
+
+#include <crucible/TraceLoader.h>
+#include <crucible/SchemaTable.h>
+
+#include "test_assert.h"
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <sys/resource.h>
+#include <unistd.h>
+#include <utility>
+#include <vector>
+
+using namespace crucible;
+
+static const char* C(SchemaTable::LookupName name) { return name.value().data(); }
+
+static bool missing(SchemaTable::LookupName name) { return name.value().data() == nullptr; }
+
+// The caller removes the file when done.  The path is built from the
+// process id and a counter because tmpnam is deprecated and its
+// replacement signature warns on an unused result.
+static std::string write_tmp(const void* data, size_t n) {
+    static int ctr = 0;
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "/tmp/crtrace-%d-%d.bin", ::getpid(), ++ctr);
+    std::FILE* f = std::fopen(buf, "wb");
+    assert(f);
+    std::fwrite(data, 1, n, f);
+    std::fclose(f);
+    return buf;
+}
+
+static void test_missing_file() {
+    auto t = load_trace("/definitely/does/not/exist.crtrace");
+    assert(!t);
+    std::printf("  test_missing_file:              PASSED\n");
+}
+
+static void test_empty_file() {
+    std::string path = write_tmp("", 0);
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_empty_file:                PASSED\n");
+}
+
+static void test_bad_magic() {
+    // Only the magic is wrong.  The counts look valid.
+    struct {
+        char magic[4];
+        uint32_t version;
+        uint32_t n_ops;
+        uint32_t n_metas;
+    } hdr{.magic = {'X', 'X', 'X', 'X'}, .version = 1, .n_ops = 0, .n_metas = 0};
+    std::string path = write_tmp(&hdr, sizeof(hdr));
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_bad_magic:                 PASSED\n");
+}
+
+static void test_wrong_version() {
+    struct {
+        char magic[4];
+        uint32_t version;
+        uint32_t n_ops;
+        uint32_t n_metas;
+    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 99, .n_ops = 0, .n_metas = 0};
+    std::string path = write_tmp(&hdr, sizeof(hdr));
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_wrong_version:             PASSED\n");
+}
+
+static void test_truncated_header() {
+    // Eight bytes, so the two count fields are missing.
+    char buf[8] = {'C', 'R', 'T', 'R', 1, 0, 0, 0};
+    std::string path = write_tmp(buf, sizeof(buf));
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_truncated_header:          PASSED\n");
+}
+
+static void test_truncated_op_records() {
+    // The header claims five ops, and the file holds forty bytes after
+    // it, which is half of one eighty-byte op record.
+    struct {
+        char magic[4];
+        uint32_t version;
+        uint32_t n_ops;
+        uint32_t n_metas;
+    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 5, .n_metas = 0};
+    char buf[16 + 40] = {};
+    std::memcpy(buf, &hdr, sizeof(hdr));
+    std::string path = write_tmp(buf, sizeof(buf));
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_truncated_ops:             PASSED\n");
+}
+
+static void test_happy_path_zero_ops() {
+    // The smallest valid file is the header alone, with both counts at
+    // zero.
+    struct {
+        char magic[4];
+        uint32_t version;
+        uint32_t n_ops;
+        uint32_t n_metas;
+    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 0, .n_metas = 0};
+    std::string path = write_tmp(&hdr, sizeof(hdr));
+    auto t = load_trace(path.c_str());
+    assert(t);
+    assert(t->num_ops == 0);
+    assert(t->num_metas == 0);
+    assert(t->entries.empty());
+    std::remove(path.c_str());
+    std::printf("  test_happy_path_empty:          PASSED\n");
+}
+
+static void test_adversarial_num_ops_rejected() {
+    // A count this large must be rejected before the loader tries to
+    // allocate hundreds of gigabytes of op records.
+    struct {
+        char magic[4];
+        uint32_t version;
+        uint32_t n_ops;
+        uint32_t n_metas;
+    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 0xFFFFFFFFu, .n_metas = 0};
+    std::string path = write_tmp(&hdr, sizeof(hdr));
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_adversarial_counts:        PASSED\n");
+}
+
+static void test_round_trip_single_op() {
+    // Header, one eighty-byte op record, no metas.
+    char buf[16 + 80] = {};
+    const char magic[4] = {'C', 'R', 'T', 'R'};
+    const uint32_t version = 1, n_ops = 1, n_metas = 0;
+    std::memcpy(buf + 0, magic, 4);
+    std::memcpy(buf + 4, &version, 4);
+    std::memcpy(buf + 8, &n_ops, 4);
+    std::memcpy(buf + 12, &n_metas, 4);
+
+    const uint64_t schema = 0xAABBCCDDEEFF0011ULL;
+    const uint64_t shape = 0x1122334455667788ULL;
+    const uint64_t scope = 0xDEADBEEFCAFEBABEULL;
+    const uint64_t callsite = 0xFEEDFACE000000ADULL;
+    std::memcpy(buf + 16 + 0, &schema, 8);
+    std::memcpy(buf + 16 + 8, &shape, 8);
+    std::memcpy(buf + 16 + 16, &scope, 8);
+    std::memcpy(buf + 16 + 24, &callsite, 8);
+    // The rest of the record is the scalar values, the tensor and
+    // scalar counts and the flag bytes, all left zero.
+
+    std::string path = write_tmp(buf, sizeof(buf));
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+    assert(t);
+    assert(t->num_ops == 1);
+    assert(t->entries[0].schema_hash.raw() == schema);
+    assert(t->entries[0].shape_hash.raw() == shape);
+    assert(t->scope_hashes[0].raw() == scope);
+    assert(t->callsite_hashes[0].raw() == callsite);
+    std::printf("  test_round_trip_single_op:      PASSED\n");
+}
+
+// The trailing schema-name section of the file carries a length field
+// gated by a refinement over one to 256 bytes.
+//
+// Each case clears the global table first, which also unseals it so a
+// mutable view can be minted.
+//
+// The runtime guard and the refinement are a pair.  The guard means the
+// refinement's constructor never sees an out-of-range value, and the
+// refinement covers a reader that bypasses this loader.
+
+// The scalar is appended in little-endian byte order.
+template <typename T>
+static void append_le(std::vector<unsigned char>& buf, T v) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    const auto* p = reinterpret_cast<const unsigned char*>(&v);
+    buf.insert(buf.end(), p, p + sizeof(T));
+}
+
+// A sixteen-byte header with both counts at zero, ready for a name-table
+// append.
+static std::vector<unsigned char> make_zero_op_header() {
+    std::vector<unsigned char> buf;
+    buf.reserve(16);
+    const char magic[4] = {'C', 'R', 'T', 'R'};
+    buf.insert(buf.end(), reinterpret_cast<const unsigned char*>(magic),
+               reinterpret_cast<const unsigned char*>(magic) + 4);
+    append_le<uint32_t>(buf, 1);  // version
+    append_le<uint32_t>(buf, 0);  // n_ops
+    append_le<uint32_t>(buf, 0);  // n_metas
+    return buf;
+}
+
+static void test_schema_name_table_round_trip() {
+    global_schema_table().clear();
+
+    auto buf = make_zero_op_header();
+    append_le<uint32_t>(buf, 3);  // num_names
+
+    auto append_entry = [&](uint64_t hash, const char* name) {
+        const uint16_t len = static_cast<uint16_t>(std::strlen(name));
+        append_le<uint64_t>(buf, hash);
+        append_le<uint16_t>(buf, len);
+        buf.insert(buf.end(), reinterpret_cast<const unsigned char*>(name),
+                   reinterpret_cast<const unsigned char*>(name) + len);
+    };
+    append_entry(0xAAAA111122223333ULL, "aten::add");
+    append_entry(0xBBBB444455556666ULL, "aten::mul");
+    append_entry(0xCCCC777788889999ULL, "aten::matmul");
+
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+
+    assert(t);
+    assert(t->num_ops == 0);
+    assert(t->num_metas == 0);
+
+    const char* n1 = C(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}));
+    const char* n2 = C(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}));
+    const char* n3 = C(global_schema_table().lookup(SchemaHash{0xCCCC777788889999ULL}));
+    assert(n1 && std::strcmp(n1, "aten::add") == 0);
+    assert(n2 && std::strcmp(n2, "aten::mul") == 0);
+    assert(n3 && std::strcmp(n3, "aten::matmul") == 0);
+
+    assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFULL})));
+
+    global_schema_table().clear();
+    std::printf("  test_schema_name_table_round_trip: PASSED\n");
+}
+
+static void test_schema_name_table_corrupt_zero_len() {
+    // A length of zero is the lower-bound corruption.  Without the
+    // minimum, the hash would be bound to the empty string left by the
+    // zero-initialized buffer, and every later lookup of that hash would
+    // return it.
+    global_schema_table().clear();
+
+    auto buf = make_zero_op_header();
+    append_le<uint32_t>(buf, 1);  // num_names
+    append_le<uint64_t>(buf, 0xDEADBEEFCAFEBABEULL);  // schema_hash
+    append_le<uint16_t>(buf, 0);  // CORRUPT name_len
+
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+
+    // The header and ops parsed cleanly, so the loader still returns a
+    // trace.  A failure in the name table breaks that loop only.
+    assert(t);
+    assert(t->num_ops == 0);
+
+    // The guard fired before the registration, so the hash never
+    // reached the table.
+    assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFCAFEBABEULL})));
+    assert(global_schema_table().count() == 0);
+
+    global_schema_table().clear();
+    std::printf("  test_schema_name_table_corrupt_zero_len: PASSED\n");
+}
+
+static void test_schema_name_table_corrupt_oversize_len() {
+    // A length of 300 exceeds the 256-byte maximum.  Without the upper
+    // bound the read would pull 300 bytes into a 257-byte buffer and the
+    // trailing terminator would land past its end.  The guard must fire
+    // before both the refinement and the read.
+    //
+    // The file carries 300 bytes of plausible name data, so that a
+    // dropped bound would let the read succeed and the overrun actually
+    // happen.  The bound promises to stop before reading, and that is
+    // what the case checks.
+    global_schema_table().clear();
+
+    auto buf = make_zero_op_header();
+    append_le<uint32_t>(buf, 1);  // num_names
+    append_le<uint64_t>(buf, 0xFEEDFACEBAADF00DULL);  // schema_hash
+    append_le<uint16_t>(buf, 300);  // CORRUPT name_len
+    // A recognizable byte, so it stands out in a buffer that should
+    // never hold it.
+    buf.insert(buf.end(), 300, static_cast<unsigned char>(0x5A));
+
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+
+    assert(t);
+    assert(t->num_ops == 0);
+
+    // The guard fired before the length was refined, which under
+    // enforced contracts would otherwise abort.
+    assert(missing(global_schema_table().lookup(SchemaHash{0xFEEDFACEBAADF00DULL})));
+    assert(global_schema_table().count() == 0);
+
+    global_schema_table().clear();
+    std::printf("  test_schema_name_table_corrupt_oversize_len: PASSED\n");
+}
+
+// The loader builds each op's meta start from a running cursor over its
+// tensor counts, and every consumer indexes the metas from that start.
+// A cursor that runs past the meta count turns those reads into an
+// out-of-bounds read driven by an untrusted file.  The loader must reject
+// such a file, so that the trace it returns is always self-consistent.
+
+// Build a 1-op .crtrace with the given num_metas and op tensor counts.
+// The metas region is zero-filled (ndim=0, valid).  Returns the temp path.
+static std::string write_one_op_trace(uint32_t n_metas, uint16_t num_inputs, uint16_t num_outputs) {
+    std::vector<uint8_t> buf(16 + 80 + static_cast<size_t>(n_metas) * 168, 0);
+    const char magic[4] = {'C', 'R', 'T', 'R'};
+    const uint32_t version = 1, n_ops = 1;
+    std::memcpy(buf.data() + 0, magic, 4);
+    std::memcpy(buf.data() + 4, &version, 4);
+    std::memcpy(buf.data() + 8, &n_ops, 4);
+    std::memcpy(buf.data() + 12, &n_metas, 4);
+    // The op record begins at offset 16.  The two tensor counts sit at
+    // +72 and +74 inside it.
+    std::memcpy(buf.data() + 16 + 72, &num_inputs, 2);
+    std::memcpy(buf.data() + 16 + 74, &num_outputs, 2);
+    return write_tmp(buf.data(), buf.size());
+}
+
+static void test_meta_overrun_rejected() {
+    // Op claims 5 tensors (3 in + 2 out) but only 2 metas exist — the
+    // running meta cursor would overrun the metas vector.  Reject.
+    std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/3, /*out=*/2);
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_meta_overrun_rejected:     PASSED\n");
+}
+
+static void test_meta_exact_count_loads() {
+    // Op claims exactly 5 tensors and 5 metas exist — in bounds, loads.
+    std::string path = write_one_op_trace(/*n_metas=*/5, /*in=*/3, /*out=*/2);
+    auto t = load_trace(path.c_str());
+    assert(t);
+    assert(t->num_ops == 1);
+    assert(t->num_metas == 5);
+    assert(t->entries[0].num_inputs == 3);
+    assert(t->entries[0].num_outputs == 2);
+    assert(t->meta_starts[0].raw() == 0);  // sole op starts at metas[0]
+    std::remove(path.c_str());
+    std::printf("  test_meta_exact_count_loads:    PASSED\n");
+}
+
+static void test_meta_count_uint16_overflow_rejected() {
+    // The two counts sum to 65536, which wraps to zero in 16 bits.  Summed
+    // in 32 bits it is a real claim of 65536 tensors, and the file holds
+    // two metas.
+    std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/65535, /*out=*/1);
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_meta_uint16_overflow:      PASSED\n");
+}
+
+// The peak resident size of this process, in kilobytes.  It only grows,
+// so the case that reads it runs first.
+static long peak_resident_kb() {
+    rusage usage{};
+    getrusage(RUSAGE_SELF, &usage);
+    return usage.ru_maxrss;
+}
+
+static void test_counts_past_the_file_allocate_nothing() {
+    // Each count is under its cap, and the file holds the header alone.
+    // A loader that sizes its vectors from the counts before it compares
+    // them with the file touches hundreds of megabytes here.
+    const long peak_before_kb = peak_resident_kb();
+    for (const auto& [claimed_ops, claimed_metas] : {std::pair<uint32_t, uint32_t>{MAX_OPS, 0u},
+                                                    std::pair<uint32_t, uint32_t>{0u, 1u << 20}}) {
+        auto buf = make_zero_op_header();
+        std::memcpy(buf.data() + 8, &claimed_ops, 4);
+        std::memcpy(buf.data() + 12, &claimed_metas, 4);
+        std::string path = write_tmp(buf.data(), buf.size());
+        auto t = load_trace(path.c_str());
+        std::remove(path.c_str());
+        assert(!t);
+    }
+    const long growth_kb = peak_resident_kb() - peak_before_kb;
+    assert(growth_kb < 64 * 1024);
+    std::printf("  test_counts_past_the_file:      PASSED\n");
+}
+
+// One metadata record as the file carries it.  A record of zeros is a
+// valid descriptor of rank zero.
+using MetaRecord = std::array<uint8_t, sizeof(TensorMeta)>;
+
+template <class Field>
+static void set_meta_field(MetaRecord& record, std::size_t field_offset, Field value) {
+    std::memcpy(record.data() + field_offset, &value, sizeof(Field));
+}
+
+// Loads a trace of one op with one tensor, whose metadata is the record.
+static bool loads_with_meta(const MetaRecord& record) {
+    std::vector<uint8_t> buf(16 + 80 + sizeof(TensorMeta), 0);
+    const char magic[4] = {'C', 'R', 'T', 'R'};
+    const uint32_t version = 1, n_ops = 1, n_metas = 1;
+    const uint16_t num_inputs = 1;
+    std::memcpy(buf.data() + 0, magic, 4);
+    std::memcpy(buf.data() + 4, &version, 4);
+    std::memcpy(buf.data() + 8, &n_ops, 4);
+    std::memcpy(buf.data() + 12, &n_metas, 4);
+    std::memcpy(buf.data() + 16 + 72, &num_inputs, 2);
+    std::memcpy(buf.data() + 16 + 80, record.data(), record.size());
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+    return t != nullptr;
+}
+
+template <class Field>
+static bool loads_with_meta_field(std::size_t field_offset, Field value) {
+    MetaRecord record{};
+    set_meta_field(record, field_offset, value);
+    return loads_with_meta(record);
+}
+
+static void test_meta_bytes_break_no_claim_of_the_type() {
+    assert(loads_with_meta(MetaRecord{}));
+
+    // A bool that holds any byte but zero or one is undefined to read.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, requires_grad), uint8_t{2}));
+    assert(loads_with_meta_field(offsetof(TensorMeta, requires_grad), uint8_t{1}));
+
+    // A size lane inside the rank must fit the extent bound.
+    {
+        MetaRecord rank_one{};
+        set_meta_field(rank_one, offsetof(TensorMeta, ndim), uint8_t{1});
+        set_meta_field(rank_one, offsetof(TensorMeta, sizes), kMaxTensorDimExtent);
+        assert(loads_with_meta(rank_one));
+        set_meta_field(rank_one, offsetof(TensorMeta, sizes), std::numeric_limits<int64_t>::max());
+        assert(!loads_with_meta(rank_one));
+    }
+
+    // A lane past the rank holds zero, so equal descriptors write equal
+    // bytes.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, sizes) + sizeof(int64_t) * 3, int64_t{5}));
+    assert(!loads_with_meta_field(offsetof(TensorMeta, strides) + sizeof(int64_t) * 7, int64_t{1}));
+
+    // A flag bit that no meta_flags constant names is reserved.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, flags), uint8_t{0x40}));
+    assert(loads_with_meta_field(offsetof(TensorMeta, flags), meta_flags::IS_CONJ));
+
+    // A device index below the host is not a device.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, device_idx), int8_t{-2}));
+
+    // A rank past the bound is refused before a lane is read.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, ndim), uint8_t{9}));
+    std::printf("  test_meta_bytes_checked:        PASSED\n");
+}
+
+static void test_names_on_a_sealed_table_are_skipped() {
+    // The trace loads, and its names stay out of the sealed table.
+    global_schema_table().clear();
+    global_schema_table().seal();
+
+    auto buf = make_zero_op_header();
+    append_le<uint32_t>(buf, 1);  // num_names
+    append_le<uint64_t>(buf, 0x5EA1ED0000000001ULL);
+    const char name[] = "aten::sealed";
+    append_le<uint16_t>(buf, static_cast<uint16_t>(sizeof(name) - 1));
+    buf.insert(buf.end(), name, name + sizeof(name) - 1);
+
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+
+    assert(t);
+    assert(global_schema_table().is_sealed());
+    assert(global_schema_table().count() == 0);
+    assert(missing(global_schema_table().lookup(SchemaHash{0x5EA1ED0000000001ULL})));
+
+    global_schema_table().clear();
+    std::printf("  test_names_on_sealed_table:     PASSED\n");
+}
+
+int main() {
+    test_counts_past_the_file_allocate_nothing();
+    test_missing_file();
+    test_empty_file();
+    test_bad_magic();
+    test_wrong_version();
+    test_truncated_header();
+    test_truncated_op_records();
+    test_happy_path_zero_ops();
+    test_adversarial_num_ops_rejected();
+    test_round_trip_single_op();
+    test_schema_name_table_round_trip();
+    test_schema_name_table_corrupt_zero_len();
+    test_schema_name_table_corrupt_oversize_len();
+    test_meta_overrun_rejected();
+    test_meta_exact_count_loads();
+    test_meta_count_uint16_overflow_rejected();
+    test_meta_bytes_break_no_claim_of_the_type();
+    test_names_on_a_sealed_table_are_skipped();
+    std::printf("test_trace_loader: 18 groups, all passed\n");
+    return 0;
+}

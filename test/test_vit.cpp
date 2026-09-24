@@ -1,0 +1,411 @@
+// The op table below encodes one transformer layer:
+//   input → conv(patch_embed) → reshape → add(pos_embed) →
+//   layer_norm → mm(Q) → mm(K) → mm(V) → sdpa → mm(out_proj) →
+//   add(residual) → layer_norm → mm(mlp_fc1) → gelu → mm(mlp_fc2) →
+//   add(residual) → layer_norm → index(CLS) → mm(head) → cross_entropy,
+// then eleven backward ops.
+
+#include <crucible/Vigil.h>
+#include "test_harness.h"
+#include "test_assert.h"
+#include <bit>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+
+using namespace crucible;
+
+static constexpr SchemaHash CONV{0xD001}, RESHAPE{0xD002}, ADD{0xD003}, LN{0xD004}, MM{0xD005}, SDPA{0xD006},
+    GELU{0xD007}, INDEX{0xD008}, XENT{0xD009}, LOSS_BWD{0xD00A}, MM_BWD{0xD00B}, SCATTER{0xD00C}, LN_BWD{0xD00D},
+    GELU_BWD{0xD00E}, SDPA_BWD{0xD00F};
+
+// The high bit of a tensor reference marks it as a parameter rather than
+// an activation.
+static constexpr uint8_t P = 0x80;
+
+struct TSpec {
+    uint8_t ref, ndim;
+    int64_t d[4];
+};
+
+static constexpr TSpec pr(uint8_t id, uint8_t n, int64_t a = 0, int64_t b = 0, int64_t c = 0, int64_t e = 0) {
+    return {.ref = uint8_t(P | id), .ndim = n, .d = {a, b, c, e}};
+}
+static constexpr TSpec ac(uint8_t id, uint8_t n, int64_t a = 0, int64_t b = 0, int64_t c = 0, int64_t e = 0) {
+    return {.ref = id, .ndim = n, .d = {a, b, c, e}};
+}
+
+struct OpDef {
+    SchemaHash schema;
+    ShapeHash shape;
+    uint8_t n_in, n_out;
+    TSpec t[6];  // max: sdpa_bwd has 4 inputs + 1 output = 5
+};
+
+// Batch, patch count, hidden width, mlp width, class count.
+static constexpr int64_t B = 2, SEQ = 4, D = 16, MLP = 32, CL = 10;
+
+// Parameters (16):
+//   P0=input[2,3,8,8]  P1=patch_w[16,3,4,4]  P2=pos_embed[1,4,16]
+//   P3=ln1_w[16]  P4=ln1_b[16]  P5=wq[16,16]  P6=wk[16,16]  P7=wv[16,16]
+//   P8=wo[16,16]  P9=ln2_w[16]  P10=ln2_b[16]  P11=mlp_w1[16,32]
+//   P12=mlp_w2[32,16]  P13=ln_f_w[16]  P14=ln_f_b[16]  P15=head_w[10,16]
+//
+// Activations (30): A0-A18 (forward), A19-A29 (backward)
+//   Key lifetimes: A4(Q), A5(K), A6(V) live from op 4-6 until op 28 (sdpa_bwd)
+
+static const OpDef OPS[] = {
+    //   Patch embedding
+    /*  0 */ {.schema = CONV,
+              .shape = ShapeHash{0xD101},
+              .n_in = 2,
+              .n_out = 1,
+              .t = {pr(0, 4, B, 3, 8, 8), pr(1, 4, D, 3, 4, 4), ac(0, 4, B, D, 2, 2)}},
+    /*  1 */
+    {.schema = RESHAPE,
+     .shape = ShapeHash{0xD102},
+     .n_in = 1,
+     .n_out = 1,
+     .t = {ac(0, 4, B, D, 2, 2), ac(1, 3, B, SEQ, D)}},
+    /*  2 */
+    {.schema = ADD,
+     .shape = ShapeHash{0xD103},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(1, 3, B, SEQ, D), pr(2, 3, 1, SEQ, D), ac(2, 3, B, SEQ, D)}},
+
+    //   Transformer layer: self-attention
+    /*  3 */
+    {.schema = LN,
+     .shape = ShapeHash{0xD104},
+     .n_in = 3,
+     .n_out = 1,
+     .t = {ac(2, 3, B, SEQ, D), pr(3, 1, D), pr(4, 1, D), ac(3, 3, B, SEQ, D)}},
+    /*  4 */
+    {.schema = MM,
+     .shape = ShapeHash{0xD105},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(3, 3, B, SEQ, D), pr(5, 2, D, D), ac(4, 3, B, SEQ, D)}},  // Q
+    /*  5 */
+    {.schema = MM,
+     .shape = ShapeHash{0xD106},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(3, 3, B, SEQ, D), pr(6, 2, D, D), ac(5, 3, B, SEQ, D)}},  // K
+    /*  6 */
+    {.schema = MM,
+     .shape = ShapeHash{0xD107},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(3, 3, B, SEQ, D), pr(7, 2, D, D), ac(6, 3, B, SEQ, D)}},  // V
+    /*  7 */
+    {.schema = SDPA,
+     .shape = ShapeHash{0xD108},
+     .n_in = 3,
+     .n_out = 1,
+     .t = {ac(4, 3, B, SEQ, D), ac(5, 3, B, SEQ, D), ac(6, 3, B, SEQ, D), ac(7, 3, B, SEQ, D)}},
+    /*  8 */
+    {.schema = MM,
+     .shape = ShapeHash{0xD109},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(7, 3, B, SEQ, D), pr(8, 2, D, D), ac(8, 3, B, SEQ, D)}},  // out proj
+    /*  9 */
+    {.schema = ADD,
+     .shape = ShapeHash{0xD10A},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(8, 3, B, SEQ, D), ac(2, 3, B, SEQ, D), ac(9, 3, B, SEQ, D)}},  // residual 1
+
+    //   Transformer layer: MLP
+    /* 10 */
+    {.schema = LN,
+     .shape = ShapeHash{0xD10B},
+     .n_in = 3,
+     .n_out = 1,
+     .t = {ac(9, 3, B, SEQ, D), pr(9, 1, D), pr(10, 1, D), ac(10, 3, B, SEQ, D)}},
+    /* 11 */
+    {.schema = MM,
+     .shape = ShapeHash{0xD10C},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(10, 3, B, SEQ, D), pr(11, 2, D, MLP), ac(11, 3, B, SEQ, MLP)}},  // expand
+    /* 12 */
+    {.schema = GELU,
+     .shape = ShapeHash{0xD10D},
+     .n_in = 1,
+     .n_out = 1,
+     .t = {ac(11, 3, B, SEQ, MLP), ac(12, 3, B, SEQ, MLP)}},
+    /* 13 */
+    {.schema = MM,
+     .shape = ShapeHash{0xD10E},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(12, 3, B, SEQ, MLP), pr(12, 2, MLP, D), ac(13, 3, B, SEQ, D)}},  // contract
+    /* 14 */
+    {.schema = ADD,
+     .shape = ShapeHash{0xD10F},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(13, 3, B, SEQ, D), ac(9, 3, B, SEQ, D), ac(14, 3, B, SEQ, D)}},  // residual 2
+
+    //   Classification head
+    /* 15 */
+    {.schema = LN,
+     .shape = ShapeHash{0xD110},
+     .n_in = 3,
+     .n_out = 1,
+     .t = {ac(14, 3, B, SEQ, D), pr(13, 1, D), pr(14, 1, D), ac(15, 3, B, SEQ, D)}},
+    /* 16 */
+    {.schema = INDEX, .shape = ShapeHash{0xD111}, .n_in = 1, .n_out = 1, .t = {ac(15, 3, B, SEQ, D), ac(16, 2, B, D)}},
+    /* 17 */
+    {.schema = MM,
+     .shape = ShapeHash{0xD112},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(16, 2, B, D), pr(15, 2, CL, D), ac(17, 2, B, CL)}},
+    /* 18 */
+    {.schema = XENT, .shape = ShapeHash{0xD113}, .n_in = 1, .n_out = 1, .t = {ac(17, 2, B, CL), ac(18, 2, B, CL)}},
+
+    //   Backward
+    /* 19 */
+    {.schema = LOSS_BWD, .shape = ShapeHash{0xD114}, .n_in = 1, .n_out = 1, .t = {ac(18, 2, B, CL), ac(19, 2, B, CL)}},
+    /* 20 */
+    {.schema = MM_BWD,
+     .shape = ShapeHash{0xD115},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(19, 2, B, CL), pr(15, 2, CL, D), ac(20, 2, B, D)}},
+    /* 21 */
+    {.schema = SCATTER,
+     .shape = ShapeHash{0xD116},
+     .n_in = 1,
+     .n_out = 1,
+     .t = {ac(20, 2, B, D), ac(21, 3, B, SEQ, D)}},
+    /* 22 */
+    {.schema = LN_BWD,
+     .shape = ShapeHash{0xD117},
+     .n_in = 1,
+     .n_out = 1,
+     .t = {ac(21, 3, B, SEQ, D), ac(22, 3, B, SEQ, D)}},
+    /* 23 */
+    {.schema = MM_BWD,
+     .shape = ShapeHash{0xD118},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(22, 3, B, SEQ, D), pr(12, 2, MLP, D), ac(23, 3, B, SEQ, MLP)}},
+    /* 24 */
+    {.schema = GELU_BWD,
+     .shape = ShapeHash{0xD119},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(23, 3, B, SEQ, MLP), ac(11, 3, B, SEQ, MLP), ac(24, 3, B, SEQ, MLP)}},
+    /* 25 */
+    {.schema = MM_BWD,
+     .shape = ShapeHash{0xD11A},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(24, 3, B, SEQ, MLP), pr(11, 2, D, MLP), ac(25, 3, B, SEQ, D)}},
+    /* 26 */
+    {.schema = LN_BWD,
+     .shape = ShapeHash{0xD11B},
+     .n_in = 1,
+     .n_out = 1,
+     .t = {ac(25, 3, B, SEQ, D), ac(26, 3, B, SEQ, D)}},
+    /* 27 */
+    {.schema = MM_BWD,
+     .shape = ShapeHash{0xD11C},
+     .n_in = 2,
+     .n_out = 1,
+     .t = {ac(26, 3, B, SEQ, D), pr(8, 2, D, D), ac(27, 3, B, SEQ, D)}},
+    /* 28 */
+    {.schema = SDPA_BWD,
+     .shape = ShapeHash{0xD11D},
+     .n_in = 4,
+     .n_out = 1,
+     .t = {ac(27, 3, B, SEQ, D), ac(4, 3, B, SEQ, D), ac(5, 3, B, SEQ, D), ac(6, 3, B, SEQ, D), ac(28, 3, B, SEQ, D)}},
+    /* 29 */
+    {.schema = LN_BWD,
+     .shape = ShapeHash{0xD11E},
+     .n_in = 1,
+     .n_out = 1,
+     .t = {ac(28, 3, B, SEQ, D), ac(29, 3, B, SEQ, D)}},
+};
+
+static constexpr uint32_t NUM_OPS = sizeof(OPS) / sizeof(OPS[0]);
+static_assert(NUM_OPS == 30, "ViT: 19 forward + 11 backward");
+
+static void* param_ptr(uint8_t idx) { return std::bit_cast<void*>(static_cast<std::uintptr_t>((idx + 1) * 0x10000)); }
+
+static void* act_ptr(uint32_t iter, uint8_t idx) {
+    return std::bit_cast<void*>((static_cast<std::uintptr_t>(iter) + 1) * 0x1000000ULL
+                                + (static_cast<std::uintptr_t>(idx) + 1) * 0x10000);
+}
+
+static TensorMeta make_meta(const TSpec& s, uint32_t iter) {
+    TensorMeta m{};
+    m.data_ptr = external_data_ptr((s.ref & P) ? param_ptr(s.ref & 0x7F) : act_ptr(iter, s.ref));
+    m.dtype = ScalarType::Float;
+    m.device_type = DeviceType::CPU;
+    m.ndim = s.ndim;
+    for (uint8_t i = 0; i < s.ndim; i++)
+        m.sizes[i] = ::crucible::tensor_dim(s.d[i]);
+    if (s.ndim > 0) {
+        const std::size_t ndim = static_cast<std::size_t>(s.ndim);
+        m.strides[ndim - 1] = ::crucible::tensor_dim(1);
+        for (std::size_t i = ndim - 1; i-- > 0;)
+            m.strides[i] = ::crucible::tensor_dim(::crucible::raw_tensor_dim(m.strides[i + 1])
+                                                  * ::crucible::raw_tensor_dim(m.sizes[i + 1]));
+    }
+    return m;
+}
+
+struct OpPacket {
+    TraceRing::Entry entry{};
+    TensorMeta metas[6]{};
+    uint16_t n_metas = 0;
+};
+
+static OpPacket build_op(uint32_t op_idx, uint32_t iter) {
+    OpPacket pkt;
+    const auto& op = OPS[op_idx];
+    pkt.entry.schema_hash = op.schema;
+    pkt.entry.shape_hash = op.shape;
+    pkt.entry.num_inputs = op.n_in;
+    pkt.entry.num_outputs = op.n_out;
+    pkt.n_metas = static_cast<uint16_t>(op.n_in + op.n_out);
+    for (uint8_t i = 0; i < pkt.n_metas; i++)
+        pkt.metas[i] = make_meta(op.t[i], iter);
+    return pkt;
+}
+
+static void feed_iteration(Vigil& v, uint32_t iter) {
+    for (uint32_t i = 0; i < NUM_OPS; i++) {
+        auto p = build_op(i, iter);
+        assert(v.record_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas));
+    }
+}
+
+static void feed_trigger(Vigil& v, uint32_t iter) {
+    for (uint32_t i = 0; i < IterationDetector::K; i++) {
+        auto p = build_op(i, iter);
+        assert(v.record_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas));
+    }
+}
+
+using test::flush_and_wait_region_published;
+
+int main() {
+    std::printf("═══ ViT Training Simulation ═══\n\n");
+    std::printf("Mini-ViT: patch_embed → 1 transformer layer → cls_head\n");
+    std::printf("  batch=%lld  seq=%lld  hidden=%lld  mlp=%lld  classes=%lld\n", static_cast<long long>(B),
+                static_cast<long long>(SEQ), static_cast<long long>(D), static_cast<long long>(MLP),
+                static_cast<long long>(CL));
+    std::printf("Ops/iteration: %u (19 fwd + 11 bwd)\n\n", NUM_OPS);
+
+    Vigil vigil;
+
+    feed_iteration(vigil, 0);
+    feed_iteration(vigil, 1);
+    feed_trigger(vigil, 2);
+    flush_and_wait_region_published(vigil);
+
+    const auto* region = vigil.active_region();
+    assert(region && region->plan);
+    const auto* plan = region->plan;
+
+    std::printf("── Region ──\n");
+    std::printf("   %u ops | pool %llu bytes\n", region->num_ops, static_cast<unsigned long long>(plan->pool_bytes));
+    std::printf("   %u slots: %u external + %u internal\n", plan->num_slots, plan->num_external,
+                plan->num_slots - plan->num_external);
+
+    std::printf("\n   Key lifetimes (saved for backward):\n");
+    for (uint32_t s = 0; s < plan->num_slots; s++) {
+        const auto& sl = plan->slots[s];
+        // A span of more than ten ops separates an activation held for
+        // the backward pass from an ordinary short-lived intermediate.
+        if (!sl.is_external && sl.death_op.raw() - sl.birth_op.raw() > 10)
+            std::printf("     slot %u: birth=op%u death=op%u (%llu bytes)\n", s, sl.birth_op.raw(), sl.death_op.raw(),
+                        static_cast<unsigned long long>(sl.nbytes));
+    }
+
+    // The context turns compiled only once K ops line up with the
+    // recorded region, so the first AK dispatches still record.
+    static constexpr uint32_t AK = Vigil::ALIGNMENT_K;
+    for (uint32_t i = 0; i < AK; i++) {
+        auto ap = build_op(i, 3);
+        auto ar = vigil.dispatch_op(crucible::test::certify_synthetic_entry(ap.entry), ap.metas, ap.n_metas);
+        assert(ar.action == DispatchResult::Action::RECORD);
+    }
+    assert(vigil.context().is_compiled());
+    // Complete partial iteration.
+    for (uint32_t i = AK; i < NUM_OPS; i++) {
+        auto ap = build_op(i, 3);
+        auto ar = vigil.dispatch_op(crucible::test::certify_synthetic_entry(ap.entry), ap.metas, ap.n_metas);
+        assert(ar.action == DispatchResult::Action::COMPILED);
+    }
+    std::printf("\n   CrucibleContext: COMPILED (aligned after %u ops)\n\n", AK);
+
+    std::printf("── 1000 compiled iterations ──\n");
+
+    auto t0 = std::chrono::steady_clock::now();
+
+    for (uint32_t iter = 4; iter < 1004; iter++) {
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            auto p = build_op(i, iter);
+            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
+            assert(r.action == DispatchResult::Action::COMPILED);
+        }
+    }
+
+    auto t1 = std::chrono::steady_clock::now();
+    auto us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+    uint64_t total_ops = 1000ULL * NUM_OPS;
+    double ns_op = double(us) * 1000.0 / double(total_ops);
+
+    std::printf("   %llu dispatches in %lld μs (%.1f ns/op)\n", static_cast<unsigned long long>(total_ops),
+                static_cast<long long>(us), ns_op);
+    std::printf("   compiled_iterations=%u  diverged=%u\n", vigil.compiled_iterations(), vigil.diverged_count());
+
+    std::printf("\n── Data flow: sdpa(op7) → out_proj(op8) ──\n");
+
+    for (uint32_t i = 0; i < 7; i++) {
+        auto p = build_op(i, 9999);
+        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
+        assert(r.action == DispatchResult::Action::COMPILED);
+    }
+    // A recognizable byte pattern goes into the attention output.  If the
+    // next op reads the same buffer back, the two slots are one.
+    auto p7 = build_op(7, 9999);
+    auto r7 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p7.entry), p7.metas, p7.n_metas);
+    assert(r7.action == DispatchResult::Action::COMPILED);
+    std::memset(vigil.output_ptr(vigil.mint_producer_context(),0), 0xCD, 64);
+
+    auto p8 = build_op(8, 9999);
+    auto r8 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p8.entry), p8.metas, p8.n_metas);
+    assert(r8.action == DispatchResult::Action::COMPILED);
+
+    auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(),0));
+    bool ok = true;
+    for (uint32_t i = 0; i < 64; i++)
+        if (in_data[i] != 0xCD) {
+            ok = false;
+            break;
+        }
+
+    // Complete the iteration
+    for (uint32_t i = 9; i < NUM_OPS; i++) {
+        auto p = build_op(i, 9999);
+        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
+    }
+
+    std::printf("   %s\n", ok ? "VERIFIED" : "FAILED");
+    assert(ok);
+
+    std::printf("\n═══ Summary ═══\n");
+    std::printf("Pool: %llu bytes | Compiled: %u iters | %.1f ns/op\n",
+                static_cast<unsigned long long>(plan->pool_bytes), vigil.compiled_iterations(), ns_op);
+    std::printf("\ntest_vit: PASSED\n");
+    return 0;
+}

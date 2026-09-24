@@ -1,0 +1,246 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Grigory Evko <grigory@evko.io>
+Date: Thu, 24 Sep 2026 14:02:49 +0200
+Subject: [PATCH 2/2] c++: constexpr memchr, strchr, strrchr, strstr from an
+ offset pointer
+
+cxx_eval_builtin_function_call can replace the first argument of memchr,
+strchr, strrchr and strstr with the address of the STRING_CST that is its
+value.  The result of the fold then points into that STRING_CST, so the
+function puts the original argument back as the base of the result.  It
+did so also when it had not replaced the argument.  In that case the
+folder gets the evaluated argument, for example "0,1,2,3" + 2, and
+fold_build_pointer_plus_hwi merges the offset of the argument into the
+offset of the result: ("0,1,2,3" + 2) + 1 becomes "0,1,2,3" + 3.  With the
+original argument put back as the base, the result is the argument + 3,
+and the offset 2 is counted twice.  The defect is present since
+r10-5927 (PR c++/80265).
+
+In C++26 the cast from void * is a constant expression (P2738), so
+char_traits<char>::find, std::find on bytes and std::ranges::find reach
+__builtin_memchr when the front end folds a call with constant arguments
+outside a manifest constant evaluation.  The defect then makes
+std::string_view::find give a wrong value at run time at -O1 and above.
+
+Put the original argument back only when it was replaced.
+
+gcc/cp/ChangeLog:
+
+	* constexpr.cc (cxx_eval_builtin_function_call): Rebase the result
+	of memchr, strchr, strrchr and strstr on the original first argument
+	only when that argument was replaced with the address of a
+	STRING_CST.
+
+gcc/testsuite/ChangeLog:
+
+	* g++.dg/ext/constexpr-builtin2.C: New test.
+	* g++.dg/ext/constexpr-builtin3.C: New test.
+---
+ gcc/cp/constexpr.cc                           | 19 ++++-
+ gcc/testsuite/g++.dg/ext/constexpr-builtin2.C | 63 +++++++++++++++
+ gcc/testsuite/g++.dg/ext/constexpr-builtin3.C | 80 +++++++++++++++++++
+ 3 files changed, 158 insertions(+), 4 deletions(-)
+ create mode 100644 gcc/testsuite/g++.dg/ext/constexpr-builtin2.C
+ create mode 100644 gcc/testsuite/g++.dg/ext/constexpr-builtin3.C
+
+diff --git a/gcc/cp/constexpr.cc b/gcc/cp/constexpr.cc
+index 699d8b94584..a038eda72b4 100644
+--- a/gcc/cp/constexpr.cc
++++ b/gcc/cp/constexpr.cc
+@@ -2608,6 +2608,9 @@ cxx_eval_builtin_function_call (const constexpr_ctx *ctx, tree t, tree fun,
+ 
+   int strops = 0;
+   int strret = 0;
++  /* The original argument STRRET-1, if it is replaced below with the
++     address of a STRING_CST.  */
++  tree strret_arg = NULL_TREE;
+   if (fndecl_built_in_p (fun, BUILT_IN_NORMAL))
+     switch (DECL_FUNCTION_CODE (fun))
+       {
+@@ -2700,7 +2703,11 @@ cxx_eval_builtin_function_call (const constexpr_ctx *ctx, tree t, tree fun,
+ 	  if (TREE_CODE (arg) == CONSTRUCTOR)
+ 	    arg = braced_lists_to_strings (TREE_TYPE (arg), arg);
+ 	  if (TREE_CODE (arg) == STRING_CST)
+-	    arg = build_address (arg);
++	    {
++	      arg = build_address (arg);
++	      if (i == strret - 1)
++		strret_arg = oarg;
++	    }
+ 	  else
+ 	    arg = oarg;
+ 	}
+@@ -2780,11 +2787,15 @@ cxx_eval_builtin_function_call (const constexpr_ctx *ctx, tree t, tree fun,
+       return t;
+     }
+ 
+-  if (strret)
++  if (strret_arg)
+     {
+       /* memchr returns a pointer into the first argument, but we replaced the
+-	 argument above with a STRING_CST; put it back it now.  */
+-      tree op = CALL_EXPR_ARG (t, strret-1);
++	 argument above with a STRING_CST; put it back now.  Do this only
++	 when the argument was replaced.  Otherwise NEW_CALL is relative to
++	 the evaluated argument, and fold may have merged an offset in that
++	 argument into the offset of NEW_CALL, so rebasing NEW_CALL on the
++	 original argument would count that offset twice.  */
++      tree op = strret_arg;
+       STRIP_NOPS (new_call);
+       if (TREE_CODE (new_call) == POINTER_PLUS_EXPR)
+ 	TREE_OPERAND (new_call, 0) = op;
+diff --git a/gcc/testsuite/g++.dg/ext/constexpr-builtin2.C b/gcc/testsuite/g++.dg/ext/constexpr-builtin2.C
+new file mode 100644
+index 00000000000..16f91ddb3c3
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/ext/constexpr-builtin2.C
+@@ -0,0 +1,63 @@
++// Constant evaluation of a string built-in that returns a pointer into its
++// first argument must not count an offset in that argument twice.
++// { dg-do compile { target c++11 } }
++
++typedef decltype (sizeof (0)) size_t;
++
++constexpr const void *fmemchr (const char *p, int c, size_t n) { return __builtin_memchr (p, c, n); }
++constexpr const char *fstrchr (const char *p, int c) { return __builtin_strchr (p, c); }
++constexpr const char *fstrrchr (const char *p, int c) { return __builtin_strrchr (p, c); }
++constexpr const char *fstrstr (const char *p, const char *q) { return __builtin_strstr (p, q); }
++constexpr const char *findex (const char *p, int c) { return __builtin_index (p, c); }
++constexpr const char *frindex (const char *p, int c) { return __builtin_rindex (p, c); }
++constexpr const char *fstrpbrk (const char *p, const char *q) { return __builtin_strpbrk (p, q); }
++constexpr long strchr_offset (const char *p) { return __builtin_strchr (p, ',') - p; }
++constexpr long strrchr_offset (const char *p) { return __builtin_strrchr (p, ',') - p; }
++constexpr long strstr_offset (const char *p) { return __builtin_strstr (p, ",2") - p; }
++
++constexpr const char a[] = "0,1,2,3";
++
++// A pointer into a constexpr array.
++static_assert (fmemchr (a + 2, ',', 5) == a + 3, "");
++static_assert (fstrchr (a + 2, ',') == a + 3, "");
++static_assert (fstrrchr (a + 2, ',') == a + 5, "");
++static_assert (fstrstr (a + 2, ",2") == a + 3, "");
++static_assert (findex (a + 2, ',') == a + 3, "");
++static_assert (frindex (a + 2, ',') == a + 5, "");
++static_assert (fstrpbrk (a + 2, ",") == a + 3, "");
++static_assert (fmemchr (&a[2], ',', 5) == a + 3, "");
++static_assert (fstrchr (&a[2], ',') == a + 3, "");
++static_assert (fstrrchr (&a[2], ',') == a + 5, "");
++static_assert (fstrstr (&a[2], ",2") == a + 3, "");
++static_assert (strchr_offset (a + 2) == 1, "");
++static_assert (strrchr_offset (a + 2) == 3, "");
++static_assert (strstr_offset (a + 2) == 1, "");
++
++// The built-ins called directly.
++static_assert (__builtin_memchr (a + 2, ',', 5) == a + 3, "");
++static_assert (__builtin_strchr (a + 2, ',') == a + 3, "");
++static_assert (__builtin_strrchr (a + 2, ',') == a + 5, "");
++static_assert (__builtin_strstr (a + 2, ",2") == a + 3, "");
++
++// A match at the offset pointer itself, and no match.
++static_assert (fmemchr (a + 2, '1', 5) == a + 2, "");
++static_assert (fstrchr (a + 2, '1') == a + 2, "");
++static_assert (fstrstr (a + 2, "") == a + 2, "");
++static_assert (fmemchr (a + 2, ',', 1) == nullptr, "");
++static_assert (fstrchr (a + 2, '0') == nullptr, "");
++
++// No offset: the argument is replaced with the STRING_CST of the array.
++static_assert (fmemchr (a, ',', 7) == a + 1, "");
++static_assert (fstrchr (a, ',') == a + 1, "");
++static_assert (fstrrchr (a, ',') == a + 5, "");
++static_assert (fstrstr (a, ",2") == a + 3, "");
++
++// A pointer into a string literal.
++static_assert (strchr_offset ("0,1,2,3" + 2) == 1, "");
++static_assert (strrchr_offset ("0,1,2,3" + 2) == 3, "");
++static_assert (strstr_offset ("0,1,2,3" + 2) == 1, "");
++static_assert (fstrchr ("0,1,2,3" + 2, ',')[1] == '2', "");
++static_assert (fstrrchr ("0,1,2,3" + 2, ',')[1] == '3', "");
++static_assert (fstrstr ("0,1,2,3" + 2, ",2")[1] == '2', "");
++static_assert (__builtin_strchr ("0,1,2,3" + 2, ',')[1] == '2', "");
++static_assert (__builtin_strchr (&"0,1,2,3"[2], ',')[1] == '2', "");
+diff --git a/gcc/testsuite/g++.dg/ext/constexpr-builtin3.C b/gcc/testsuite/g++.dg/ext/constexpr-builtin3.C
+new file mode 100644
+index 00000000000..dea8f584e31
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/ext/constexpr-builtin3.C
+@@ -0,0 +1,80 @@
++// Constant evaluation of __builtin_memchr must not count an offset in its
++// first argument twice.  In C++26 the cast from void * is a constant
++// expression, so the result can be used.  The front end also tries to fold a
++// call with constant arguments outside a manifest constant evaluation, where
++// __builtin_is_constant_evaluated is false, so the library search functions
++// reach __builtin_memchr in a fold at -O2.
++// { dg-do run { target c++26 } }
++// { dg-options "-O2" }
++
++#include <algorithm>
++#include <string_view>
++
++typedef decltype (sizeof (0)) size_t;
++
++constexpr long
++memchr_offset (const char *p, size_t n)
++{
++  const void *q = __builtin_memchr (p, ',', n);
++  return q ? static_cast<const char *> (q) - p : -1;
++}
++
++constexpr const char a[] = "0,1,2,3";
++
++static_assert (memchr_offset ("0,1,2,3" + 2, 5) == 1);
++static_assert (memchr_offset (a + 2, 5) == 1);
++static_assert (memchr_offset (&a[2], 5) == 1);
++static_assert (memchr_offset (a, 7) == 1);
++static_assert (static_cast<const char *> (__builtin_memchr ("0,1,2,3" + 2, ',', 5))[1] == '2');
++static_assert (static_cast<const char *> (__builtin_memchr (a + 2, ',', 5)) == a + 3);
++static_assert (std::string_view ("0,1,2,3").find (',', 2) == 3);
++static_assert (std::string_view ("0,1,2,3").substr (2).find (',') == 1);
++
++// Outside a manifest constant evaluation this takes the __builtin_memchr
++// branch.
++constexpr const char *
++find_comma (const char *p, size_t n)
++{
++  if (__builtin_is_constant_evaluated ())
++    {
++      for (; n; ++p, --n)
++	if (*p == ',')
++	  return p;
++      return nullptr;
++    }
++  return static_cast<const char *> (__builtin_memchr (p, ',', n));
++}
++
++constexpr long
++find_comma_offset (const char *p)
++{
++  const char *q = find_comma (p, 5);
++  return q ? q - p : -1;
++}
++
++constexpr size_t
++view_find (std::string_view s, size_t pos)
++{
++  return s.find (',', pos);
++}
++
++constexpr size_t
++std_find (const char *p)
++{
++  return std::find (p, p + 5, ',') - p;
++}
++
++int
++main ()
++{
++  if (find_comma_offset ("0,1,2,3" + 2) != 1)
++    __builtin_abort ();
++  if (view_find ("0,1,2,3", 2) != 3)
++    __builtin_abort ();
++  if (view_find (std::string_view ("0,1,2,3").substr (2), 0) != 1)
++    __builtin_abort ();
++  if (std::string_view ("0,1,2,3").find (',', 2) != 3)
++    __builtin_abort ();
++  if (std_find ("0,1,2,3" + 2) != 1)
++    __builtin_abort ();
++}

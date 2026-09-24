@@ -1,0 +1,19 @@
+[
+  { "_comment": "Medians of ten interleaved runs on the bench host (2x EPYC 9655, core 90 of the",
+    "_comment2": "isolcpus 88-95 set, governor powersave/amd-pstate-epp) at load average 88-118.",
+    "_comment3": "p50 is the gated statistic: it held a 0.0-11% run-to-run spread. p99 is recorded",
+    "_comment4": "for eyeballing only; it ranged up to 1.75x its own median on the same runs.",
+    "name": "", "p50_ns": 0, "p99_ns": 0, "gate": 0 },
+
+  {"name":"record leaf [2 appends, no drainer]",
+   "p50_ns":11.14, "p99_ns":22.28, "gate":1},
+
+  {"name":"dispatch_op [COMPILED leaf, cyclic]",
+   "p50_ns":4.56, "p99_ns":4.64, "gate":1},
+
+  {"name":"record_op [2 metas, ring has room]",
+   "p50_ns":50.12, "p99_ns":75.50, "gate":0},
+
+  {"name":"dispatch_op [RECORD leaf, ring has room]",
+   "p50_ns":54.45, "p99_ns":107.05, "gate":0}
+]

@@ -1,0 +1,171 @@
+% ═══════════════════════════════════════════════════════════════════
+% §5  Tensor Metadata
+% ═══════════════════════════════════════════════════════════════════
+
+\section{Tensor Metadata}
+\label{sec:tensormeta}
+
+\subsection{TensorMeta Structure}
+
+\begin{definition}[TensorMeta]
+\label{def:tensormeta}
+A compact metadata record for one tensor, capturing shape, strides,
+dtype, device, and data pointer without any actual tensor data.
+Exactly $\bytes{144}$.
+\end{definition}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{r r l l l}
+\toprule
+\textbf{Offset} & \textbf{Size} & \textbf{Field} & \textbf{Type} & \textbf{Default} \\
+\midrule
+  0 & 64B & \field{sizes[8]}      & \code{int64\_t[8]}  & $\{0\}$ \\
+ 64 & 64B & \field{strides[8]}    & \code{int64\_t[8]}  & $\{0\}$ \\
+128 &  8B & \field{data\_ptr}     & \code{void*}        & \code{nullptr} \\
+136 &  1B & \field{ndim}          & \code{uint8\_t}     & $0$ \\
+137 &  1B & \field{dtype}         & \struct{ScalarType}  & \code{Undefined} \\
+138 &  1B & \field{device\_type}   & \struct{DeviceType} & \code{CPU} \\
+139 &  1B & \field{device\_idx}   & \code{int8\_t}      & $-1$ \\
+140 &  1B & \field{layout}        & \struct{Layout}     & \code{Strided} \\
+141 &  3B & \field{pad[3]}        & \code{uint8\_t[3]}  & $\{0\}$ \\
+\midrule
+    & 144B & \multicolumn{3}{l}{\textit{Total (verified by \code{static\_assert})}} \\
+\bottomrule
+\end{tabular}
+\caption{TensorMeta layout.  The \field{sizes} and \field{strides} arrays
+support up to 8 dimensions, covering 99.9\% of real tensors.}
+\end{table}
+
+\begin{invariant}[Dimension bound]
+$0 \le \field{ndim} \le 8$.  Tensors with more than 8 dimensions
+require indirection at a higher level (not inside this struct).
+\end{invariant}
+
+\subsection{Storage Size Computation}
+\label{sec:storage-nbytes}
+
+\begin{definition}[\code{compute\_storage\_nbytes}]
+\label{def:storage-nbytes}
+Given a \struct{TensorMeta} $m$, the storage size in bytes is:
+\[
+  \operatorname{nbytes}(m) = \bigl(\max\_\text{off} - \min\_\text{off} + 1\bigr)
+    \times \operatorname{element\_size}(m.\field{dtype})
+\]
+where the offset extremes are computed as:
+\begin{align*}
+  \max\_\text{off} &= \sum_{d=0}^{m.\field{ndim}-1}
+    \max\!\bigl(0,\; (m.\field{sizes}[d] - 1) \times m.\field{strides}[d]\bigr) \\[4pt]
+  \min\_\text{off} &= \sum_{d=0}^{m.\field{ndim}-1}
+    \min\!\bigl(0,\; (m.\field{sizes}[d] - 1) \times m.\field{strides}[d]\bigr)
+\end{align*}
+\end{definition}
+
+\begin{algorithm_spec}[\code{compute\_storage\_nbytes}]
+\label{alg:storage-nbytes}
+\begin{enumerate}
+  \item If $\field{ndim} = 0$: return $\operatorname{element\_size}(\field{dtype})$ (scalar tensor).
+  \item Initialize $\max\_\text{off} \leftarrow 0$, $\min\_\text{off} \leftarrow 0$.
+  \item For each dimension $d \in [0, \field{ndim})$:
+    \begin{enumerate}
+      \item If $\field{sizes}[d] = 0$: return $0$ (zero-size tensor).
+      \item $\text{extent} \leftarrow (\field{sizes}[d] - 1) \times \field{strides}[d]$.
+      \item If $\text{extent} > 0$: $\max\_\text{off} \mathrel{+}= \text{extent}$.
+      \item Else: $\min\_\text{off} \mathrel{+}= \text{extent}$.
+    \end{enumerate}
+  \item Return $(\max\_\text{off} - \min\_\text{off} + 1) \times
+    \operatorname{element\_size}(\field{dtype})$.
+\end{enumerate}
+\end{algorithm_spec}
+
+\begin{remark}[Negative strides]
+Negative strides arise from \code{torch.flip} and \code{as\_strided}.
+For example, a reversed vector of length $n$ with stride $-1$ has
+$\min\_\text{off} = -(n-1)$, $\max\_\text{off} = 0$, giving
+$\operatorname{nbytes} = n \times \operatorname{element\_size}$.
+The tracking of both extremes is essential for correctness.
+\end{remark}
+
+\begin{property}[Consistency with PyTorch]
+For contiguous tensors: $\operatorname{nbytes}(m)
+= \bigl(\prod_{d} m.\field{sizes}[d]\bigr) \times \operatorname{element\_size}(m.\field{dtype})$.
+The general formula handles non-contiguous layouts
+where $\text{stride} \neq \text{size product of trailing dimensions}$.
+\end{property}
+
+\subsection{View and Alias Semantics}
+
+\begin{definition}[View tensor]
+A view tensor shares the same \field{data\_ptr} as its base tensor
+but has different \field{sizes} and/or \field{strides}.
+Two \struct{TensorMeta} entries are \emph{aliases} if and only if
+their \field{data\_ptr} fields are equal and at least one of
+\field{sizes} or \field{strides} differs.
+\end{definition}
+
+Alias detection is performed by the PtrMap during graph construction (\S\ref{sec:graph-construction}).
+Same \field{data\_ptr} from different ops $\to$ an \code{ALIAS} edge.
+
+\subsection{External Tensor Classification}
+
+\begin{definition}[External tensor]
+\label{def:external-tensor}
+A tensor whose storage is not produced by any recorded op in the
+current iteration: model parameters, data loader outputs, and
+tensors created before recording began.  Identified by
+$\field{op\_index} = \text{OpIndex::none()} = 2^{32}-1$ in the PtrMap.
+\end{definition}
+
+External tensors are excluded from the memory pool
+(they keep their existing allocations) and marked with
+$\field{is\_external} = \text{true}$ in their \struct{TensorSlot}.
+
+\subsection{TensorSlot Structure}
+\label{sec:tensorslot}
+
+\begin{definition}[TensorSlot]
+\label{def:tensorslot}
+One unique storage in a recorded iteration, tracking its live range
+and assigned memory pool offset.  Exactly $\bytes{40}$.
+\end{definition}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{r r l l l}
+\toprule
+\textbf{Offset} & \textbf{Size} & \textbf{Field} & \textbf{Type} & \textbf{Default} \\
+\midrule
+ 0 &  8B & \field{offset\_bytes}  & \code{uint64\_t}    & $0$ \\
+\midrule
+\multicolumn{5}{l}{\textit{--- Bulk-copyable region (24B, matches SlotInfo) ---}} \\
+ 8 &  8B & \field{nbytes}        & \code{uint64\_t}    & $0$ \\
+16 &  4B & \field{birth\_op}     & \struct{OpIndex}    & none \\
+20 &  4B & \field{death\_op}     & \struct{OpIndex}    & none \\
+24 &  1B & \field{dtype}         & \struct{ScalarType}  & \code{Undefined} \\
+25 &  1B & \field{device\_type}   & \struct{DeviceType} & \code{CPU} \\
+26 &  1B & \field{device\_idx}   & \code{int8\_t}      & $-1$ \\
+27 &  1B & \field{layout}        & \struct{Layout}     & \code{Strided} \\
+28 &  1B & \field{is\_external}  & \code{bool}         & \code{false} \\
+29 &  3B & \field{pad[3]}        &                     & $\{0\}$ \\
+\midrule
+32 &  4B & \field{slot\_id}      & \struct{SlotId}     & none \\
+36 &  4B & \field{pad2[4]}       &                     & $\{0\}$ \\
+\midrule
+   & 40B & \multicolumn{3}{l}{\textit{Total (verified by \code{static\_assert})}} \\
+\bottomrule
+\end{tabular}
+\caption{TensorSlot layout.  The bulk-copyable region at bytes 8--31
+matches the \struct{SlotInfo} scratch buffer layout, enabling a single
+$\bytes{24}$ \code{memcpy} during graph construction.}
+\end{table}
+
+\begin{definition}[Lifetime interval]
+\label{def:lifetime}
+A tensor slot $s$ is \emph{alive} at op $i$ when:
+\[
+  s.\field{birth\_op}.\text{raw()} \le i \le s.\field{death\_op}.\text{raw()}
+\]
+The birth is the producing op index; the death is the last consuming op index.
+External tensors have $\field{birth\_op} = \text{none}$ (alive for the
+entire iteration).
+\end{definition}

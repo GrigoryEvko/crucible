@@ -1,0 +1,220 @@
+#pragma once
+
+// An SPSC ring behind one linear Permission per endpoint.  The handle
+// types carry the role, so pushing from the consumer side or popping
+// from the producer side does not compile, and the move-only Permission
+// keeps a channel to one producer and one consumer at a time.
+//
+// Each channel needs a UserTag of its own.  Two channels sharing a tag
+// share Permission types, and their endpoints become interchangeable.
+// Mint each whole tag's root once per program: nothing checks that at
+// runtime.
+//
+// The endpoint accessors are members named producer and consumer rather
+// than mint_ free functions.  Their whole admission is the parameter
+// type — a caller that cannot produce a Permission<producer_tag> cannot
+// call producer() — so there is no requires-clause for a negative
+// fixture to fire, and naming them mint_ would claim a gate they do not
+// have.
+//
+// Old spelling: include/crucible/concurrent/PermissionedSpscChannel.h.
+
+#include <fixy/concurrent/SpscRing.h>
+#include <fixy/concurrent/WorkingSet.h>
+
+#include <foundation/ChannelBinding.h>
+#include <foundation/Pinned.h>
+#include <foundation/Platform.h>
+#include <foundation/permissions/Permission.h>
+
+#include <cstddef>
+#include <optional>
+#include <type_traits>
+#include <utility>
+
+// The claims the carriers in this header make that no lattice grades.
+// foundation/diag/RowHash.h folds each identity, so every carrier here
+// takes a cache slot of its own rather than the zero a bare payload has.
+namespace fixy::row_discipline {
+struct spsc_channel;
+struct spsc_producer;
+struct spsc_consumer;
+}  // namespace fixy::row_discipline
+
+namespace fixy::concurrent {
+
+// The triple is specialized for splitting at the foot of this file, so
+// a user tag takes no per-tag boilerplate.
+
+// A ring is memory the process already owns, so touching it through
+// either endpoint incurs no effect: the three tags declare the empty
+// row.  They are templates, so the row is a member rather than an edge.
+
+namespace spsc_tag {
+
+template <typename UserTag>
+struct Whole {
+    using permission_row = ::foundation::effects::Row<>;
+};
+template <typename UserTag>
+struct Producer {
+    using permission_row = ::foundation::effects::Row<>;
+};
+template <typename UserTag>
+struct Consumer {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+}  // namespace spsc_tag
+
+template <RingValue T, std::size_t Capacity, typename UserTag = void>
+class PermissionedSpscChannel : public ::foundation::Pinned<PermissionedSpscChannel<T, Capacity, UserTag>> {
+public:
+    using value_type = T;
+    using user_tag = UserTag;
+    using whole_tag = spsc_tag::Whole<UserTag>;
+    using producer_tag = spsc_tag::Producer<UserTag>;
+    using consumer_tag = spsc_tag::Consumer<UserTag>;
+
+    static constexpr std::size_t channel_capacity = Capacity;
+    using row_discipline = ::fixy::row_discipline::spsc_channel;
+    using row_payload = T;
+
+    // The channel's identity is its address, since the ring's atomics
+    // depend on a stable one.
+
+    PermissionedSpscChannel() noexcept = default;
+
+    class ProducerHandle {
+        // The move clears the binding, so a moved-from handle cannot
+        // push: a defaulted move of an empty Permission is a no-op, and
+        // a reference or a plain pointer would let the source and the
+        // target both go on using the one linear token.
+        ::foundation::ChannelBinding<PermissionedSpscChannel> ch_;
+        [[no_unique_address]] ::foundation::permissions::Permission<producer_tag> perm_;
+
+        constexpr ProducerHandle(PermissionedSpscChannel& channel,
+                                 ::foundation::permissions::Permission<producer_tag>&& perm) noexcept
+            : ch_{channel}, perm_{std::move(perm)} {}
+        friend class PermissionedSpscChannel;
+
+    public:
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
+        using row_discipline = ::fixy::row_discipline::spsc_producer;
+        using row_payload = T;
+
+        ProducerHandle(const ProducerHandle&) =
+            delete("ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
+        ProducerHandle& operator=(const ProducerHandle&) =
+            delete("ProducerHandle owns the Producer Permission — assignment would overwrite the linear token");
+        constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
+        ProducerHandle& operator=(ProducerHandle&&) = delete(
+            "ProducerHandle binds to ONE channel for life — rebinding would orphan the original Permission "
+            "and silently allow a second producer to coexist");
+
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return ch_->ring_.try_push(item); }
+
+        // Snapshots.  Sound for telemetry and for deciding whether to
+        // keep retrying, never for a correctness invariant.
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+    };
+
+    class ConsumerHandle {
+        // A binding that the move clears, for the same reason as in
+        // ProducerHandle.
+        ::foundation::ChannelBinding<PermissionedSpscChannel> ch_;
+        [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag> perm_;
+
+        constexpr ConsumerHandle(PermissionedSpscChannel& channel,
+                                 ::foundation::permissions::Permission<consumer_tag>&& perm) noexcept
+            : ch_{channel}, perm_{std::move(perm)} {}
+        friend class PermissionedSpscChannel;
+
+    public:
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
+        using row_discipline = ::fixy::row_discipline::spsc_consumer;
+        using row_payload = T;
+
+        ConsumerHandle(const ConsumerHandle&) =
+            delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
+        ConsumerHandle& operator=(const ConsumerHandle&) =
+            delete("ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
+        constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
+        ConsumerHandle& operator=(ConsumerHandle&&) = delete(
+            "ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission "
+            "and silently allow a second consumer to coexist");
+
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
+
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+    };
+
+    [[nodiscard]] ProducerHandle producer(::foundation::permissions::Permission<producer_tag>&& perm) noexcept {
+        return ProducerHandle{*this, std::move(perm)};
+    }
+
+    [[nodiscard]] ConsumerHandle consumer(::foundation::permissions::Permission<consumer_tag>&& perm) noexcept {
+        return ConsumerHandle{*this, std::move(perm)};
+    }
+
+    // Scoped exclusive access to the ring.  Both endpoints here hold
+    // linear tokens and there is no refcount to drain, so surrendering
+    // the recombined whole permission is itself the proof that no
+    // handle is alive.  The pool-backed channels instead drain their
+    // atomic state and take no permission.  The whole permission comes
+    // back so the caller can split it again for the next session, and
+    // the whole exchange is type-level with no atomic operation.
+    template <typename Body>
+        requires std::is_invocable_v<Body>
+    [[nodiscard]] ::foundation::permissions::Permission<whole_tag>
+    with_recombined_access(::foundation::permissions::Permission<whole_tag>&& whole,
+                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
+        std::forward<Body>(body)();
+        return std::move(whole);
+    }
+
+    [[nodiscard]] bool empty_approx() const noexcept { return ring_.empty_approx(); }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return ring_.size_approx(); }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+
+    // Always false, and present only so this channel matches the shape
+    // of the pool-backed ones.  There is no exclusivity flag to read:
+    // the linear permissions are what prove single ownership.
+    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
+
+private:
+    SpscRing<T, Capacity> ring_;
+};
+
+}  // namespace fixy::concurrent
+
+// Both the binary and the variadic split forms are specialized, so a
+// caller can reach for either one.  The authoring witnesses are
+// deliberately redundant: a forged can_split_into alone is caught by the
+// missing witness beside it.
+
+namespace foundation::permissions {
+
+template <typename UserTag>
+struct can_split_into<::fixy::concurrent::spsc_tag::Whole<UserTag>, ::fixy::concurrent::spsc_tag::Producer<UserTag>,
+                   ::fixy::concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
+
+template <typename UserTag>
+struct can_split_into_pack<::fixy::concurrent::spsc_tag::Whole<UserTag>, ::fixy::concurrent::spsc_tag::Producer<UserTag>,
+                        ::fixy::concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
+
+template <typename UserTag>
+struct has_split_authoring_witness<::fixy::concurrent::spsc_tag::Whole<UserTag>,
+                                     ::fixy::concurrent::spsc_tag::Producer<UserTag>,
+                                     ::fixy::concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
+
+template <typename UserTag>
+struct has_split_pack_authoring_witness<::fixy::concurrent::spsc_tag::Whole<UserTag>,
+                                          ::fixy::concurrent::spsc_tag::Producer<UserTag>,
+                                          ::fixy::concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
+
+}  // namespace foundation::permissions

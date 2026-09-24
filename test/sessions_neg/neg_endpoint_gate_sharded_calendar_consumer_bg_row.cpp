@@ -1,0 +1,30 @@
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// mint_consumer_session over a sharded calendar grid whose job carries the
+// background row refuses the foreground context.  The receive side of the
+// protocol brings the row into the receiver, which the context does not admit.
+
+#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
+#include <crucible/effects/_Computation.h>
+#include <crucible/sessions/ShardedCalendarGridSession.h>
+
+#include <cstdint>
+
+namespace eff = ::crucible::effects;
+namespace ses = ::crucible::safety::proto::sharded_calendar_grid_session;
+
+namespace {
+struct Tag {};
+using BgInt = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
+struct Key {
+    static std::uint64_t key(BgInt const&) noexcept { return 0; }
+};
+using Grid = ::crucible::concurrent::PermissionedShardedCalendarGrid<BgInt, 2, 8, 16, Key, 1000000ULL, Tag>;
+}  // namespace
+
+inline void mint_under_foreground(Grid::ConsumerHandle<0>& handle) {
+    auto session = ses::mint_consumer_session<Grid, 0>(eff::HotFgCtx{}, handle);
+    (void)session;
+}
+
+int main() { return 0; }

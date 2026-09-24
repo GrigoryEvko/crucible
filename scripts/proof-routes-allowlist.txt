@@ -1,0 +1,56 @@
+# proof-routes-allowlist.txt: the reviewed sites that scripts/check-proof-routes.py admits.
+#
+# Format: path:rule:key, or path:rule:key xN for N sites.  The key is the
+# one the guard prints.  Each paragraph starts with a comment that gives
+# the reason.  An entry above the count that the tree has is stale, and
+# the guard refuses it, so the list only shrinks.
+
+# Unions of scalars.  The permission-tag tests need a union type to prove
+# that a union is not a permission tag, and the self-contained walk needs
+# two to prove that it reads a union member.  No member is a proof type.
+include/fixy/SelfContained.h:union:EitherPointer
+include/fixy/SelfContained.h:union:EitherValue
+test/foundation/test_permissions_compile.cpp:union:UnionTag
+test/test_permissions_compile.cpp:union:UnionTag
+test/test_is_permission.cpp:union:test_union_tag
+
+# Unions of scalars in the stable-id tests.  GCC prints a union value
+# without its active member, so the stable id refuses a union value.  These
+# unions prove that refusal.  No member is a proof type.
+include/foundation/reflect/Hash.h:union:Either
+test/foundation/test_identity_attacks.cpp:union:Either
+
+# Probe unions of the checked lifetime start.  Each one is local to a
+# consteval self-test and proves that the walk refuses a union member, and
+# no object of it is built at run time.
+include/foundation/Lifetime.h:union:MarkedOrByte
+include/foundation/Lifetime.h:union:ProofOrByte
+
+# Probe unions of the attack and ledger tests.  Each one holds a proof
+# type on purpose: the tests prove that the discipline refuses the union,
+# or pin the route that a union opens.
+test/fixy/test_forgeable_proofs.cpp:union:HoldsNestedProof
+test/fixy/test_forgeable_proofs.cpp:union:Inner
+test/fixy/test_forgeable_proofs.cpp:union:Plain
+test/fixy/test_forgeable_proofs.cpp:union:PlainValues
+test/fixy/test_forgeable_proofs.cpp:union:ProofOrByte
+test/fixy/test_scoped_view.cpp:union:Storage
+test/fixy/test_session_crash_attack.cpp:union:HoldsEndpointInUnion
+test/fixy/test_session_ownership_attacks.cpp:union:RawUnion
+test/test_effects_ctx_forge_attacks.cpp:union:BgDrainOrByte
+
+# Explicit instantiations over integer arguments.  They name no proof type
+# and no member pointer, so the access check they turn off reaches no
+# private name.
+src/observe/HdrHistogram.cpp:explicit-instantiation:class ConcurrentHdrHistogram<3,3600000000000ull,4>
+src/observe/HdrHistogram.cpp:explicit-instantiation:class HdrHistogram<3,3600000000000ull>
+src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<2>
+src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<4>
+
+# The frozen session layer specializes its own handle in the headers that
+# carry each protocol shape.  The freeze admits no new site, and the old
+# tree ends by deletion.
+include/crucible/sessions/SessionCheckpoint.h:friend-template-specialization:template<typename ProtoBase,typename ProtoRollback,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle<
+include/crucible/sessions/SessionCrash.h:friend-template-specialization:template<CrashClass C,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle<
+include/crucible/sessions/SessionDelegate.h:friend-template-specialization:template<typename T,typename K,std::uint64_t MinEpoch,std::uint64_t MinGeneration,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
+include/crucible/sessions/SessionDelegate.h:friend-template-specialization:template<typename T,typename K,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2

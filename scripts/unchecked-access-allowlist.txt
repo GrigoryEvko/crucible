@@ -1,0 +1,58 @@
+# unchecked-access-allowlist — the files that may call
+# std::meta::access_context::unchecked() or splice a member of an object
+# (.[: ->[: &[:), read by scripts/check-no-unchecked-access.py.
+#
+# A splice of a nonstatic data member has no access check, so a reflection of
+# a private member writes a proof's private state.  Each row names one file
+# and the reason it needs the unchecked context.  A row is PATH — REASON.  A
+# file here may not return or publish a reflection of a nonstatic data member
+# to its caller: the reviewer of each row checks that rule.  A row whose file
+# no longer opens the door fails the guard, so the list only shrinks.
+
+# Closed rosters: a walk of the members of a namespace or a registry class,
+# which a verdict reads to prove that a set is closed.  No walk here reflects
+# a data member of a proof type.
+include/fixy/Atom.h — walks the atom namespaces and an owner's members to derive the atom roster
+include/fixy/Bands.h — walks the band namespace to derive the band roster
+include/fixy/Collision.h — walks the members of rules_of<void> to derive the collision rule set
+include/fixy/Corpus.h — walks the secret-policy namespace to derive the corpus of policies
+include/fixy/Secret.h — walks the admitted declassification policies to seal the policy relation
+include/fixy/Tagged.h — walks the admitted retags to seal the retag relation
+include/fixy/atoms/Os.h — walks the OS atom namespaces to derive their rosters
+include/fixy/os/Fs.h — walks the file-flag namespace to derive its closed flag set
+include/fixy/os/Io.h — walks the ring-flag namespace to derive its closed flag set
+include/fixy/os/Mmap.h — walks the mapping and advice namespaces to derive their closed sets
+include/foundation/algebra/Transition.h — walks a transition registry to derive its edges
+include/foundation/contracts/Armed.h — walks a scope to derive the armed-predicate roster
+include/foundation/diag/Catalog.h — walks the diagnostic namespace to derive the catalog
+include/foundation/diag/FailClosed.h — walks a fail-closed relation's namespace to count and seal its edges
+include/foundation/permissions/Permission.h — walks the permission tag namespace to derive the tag roster
+
+# Structure walks: a verdict over every base and data member of a type, which
+# must see the private ones to be sound.  Each returns a bool, a hash or a row,
+# never the reflection of a member.
+include/fixy/Refined.h — reads the bases of a predicate and walks the admitted implications to seal the relation
+include/fixy/ScopedView.h — finds a view stored in a private member, so a class cannot hide an escape
+include/fixy/SelfContained.h — walks every base and member to prove that a type holds no pointer out of itself
+include/fixy/concurrent/PayloadRow.h — walks every member of a payload to fold its effect row
+include/fixy/session/Payload.h — walks every member of a session payload to find a delegated handle or a permission
+include/foundation/Lifetime.h — walks every base and member to prove that a type is an implicit-lifetime type
+include/foundation/effects/Computation.h — walks every member of a carried value to fold its effect row
+include/foundation/permissions/ReadView.h — walks every member of a borrowed value to find a nested permission
+include/foundation/reflect/Hash.h — walks every member of a type to fold its stable hash
+include/foundation/reflect/TypeComponents.h — walks every base and member to list the component types of a type
+
+# The frozen old tree.  It is deleted, not edited, and each row goes with its file.
+include/crucible/Reflect.h — frozen: the old member walk of reflect_hash and reflect_print
+include/crucible/safety/_ScopedView.h — frozen: the old escape audit through private members
+include/crucible/safety/_Secret.h — frozen: the old member walk of the Secret layout check
+
+# Tests: a roster or structure walk that a test compares with the production
+# walk, and the ledger reproducer that proves the splice still writes.
+test/fixy/test_armed_roster.cpp — compares the armed-predicate roster with its own namespace walk
+test/fixy/test_cheat_probe.cpp — walks the algebra namespace to prove that no cheat is admitted
+test/fixy/test_forgeable_proofs.cpp — walks proof types and namespaces to prove that no proof builds from bytes
+test/fixy/test_refined.cpp — walks the admitted implications to check the sealed relation
+test/fixy/test_secret.cpp — walks the secret-policy namespace to check the policy roster
+test/fixy/test_splice_access_attacks.cpp — the ledger reproducer: a splice of a private member still writes it
+test/fixy/test_tagged.cpp — walks the admitted retags to check the sealed relation

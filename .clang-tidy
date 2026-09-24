@@ -1,0 +1,107 @@
+# ═══════════════════════════════════════════════════════════════
+# Crucible — clang-tidy configuration
+#
+# Seven safety axioms enforced at build time:
+#
+#   AxMemSafe  (Critical) — memory corruption = RCE
+#     clang-analyzer-cplusplus.{NewDelete,NewDeleteLeaks,ArrayDelete,PlacementNew}
+#     clang-analyzer-unix.{Malloc,MallocSizeof,MismatchedDeallocator}
+#     clang-analyzer-core.StackAddressEscape
+#     bugprone-{use-after-move,dangling-handle,undefined-memory-manipulation}
+#
+#   AxTypeSafe (High)     — type confusion = potential RCE
+#     modernize-use-designated-initializers (prevents TensorSlot-class bugs)
+#     cppcoreguidelines-{narrowing-conversions,slicing}
+#     bugprone-{narrowing-conversions,misplaced-widening-cast,casting-through-void}
+#     performance-no-int-to-ptr
+#
+#   AxRaceFree (High)     — races = unpredictable behavior
+#     concurrency-{mt-unsafe,thread-canceltype-asynchronous}
+#     clang-analyzer-unix.BlockInCriticalSection
+#     -Wthread-safety (compiler, needs CRUCIBLE_GUARDED_BY annotations)
+#     TSan: cmake --preset tsan (runtime, mutually exclusive with ASan)
+#
+#   AxNullSafe (Medium)   — null deref = crash
+#     clang-analyzer-core.{NullDereference,NonNullParamChecker,NullPointerArithm}
+#     bugprone-stringview-nullptr
+#
+#   AxInitSafe (Medium)   — uninit = info leak or crash
+#     cppcoreguidelines-pro-type-member-init
+#     clang-analyzer-optin.cplusplus.UninitializedObject
+#     clang-analyzer-core.uninitialized.*
+#
+#   AxLeakFree (Low)      — leaks = DoS over time
+#     clang-analyzer-unix.{Malloc,Stream}
+#     bugprone-unused-raii
+#     ASan+LeakSan: cmake --preset default (debug builds)
+#
+#   AxDetDrop  (Low)      — non-determinism = subtle bugs
+#     bugprone-nondeterministic-pointer-iteration-order
+#     clang-analyzer-cplusplus.Move
+#
+# Run:  cmake --preset tidy && cmake --build --preset tidy
+# Or:   $HOME/.local/llvm/bin/clang-tidy -p build <file>
+# ═══════════════════════════════════════════════════════════════
+
+# Only analyze our headers, not system/third-party.
+HeaderFilterRegex: 'include/crucible/.*'
+
+Checks: >
+  -*,
+
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-implicit-widening-of-multiplication-result,
+
+  clang-analyzer-core.*,
+  clang-analyzer-cplusplus.*,
+  clang-analyzer-deadcode.*,
+  clang-analyzer-optin.cplusplus.UninitializedObject,
+  clang-analyzer-unix.BlockInCriticalSection,
+  clang-analyzer-unix.Malloc,
+  clang-analyzer-unix.MallocSizeof,
+  clang-analyzer-unix.MismatchedDeallocator,
+  clang-analyzer-unix.Stream,
+
+  concurrency-*,
+
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+
+  misc-redundant-expression,
+  misc-unused-using-decls,
+
+  modernize-use-designated-initializers,
+
+  performance-*,
+
+  readability-container-size-empty,
+  readability-make-member-function-const,
+
+CheckOptions:
+  # InitSafe: prefer NSDMI over constructor init-lists.
+  - key: cppcoreguidelines-pro-type-member-init.UseAssignment
+    value: 'false'
+
+  # TypeSafe: don't flag single-element aggregates like SchemaHash{0x100}.
+  - key: modernize-use-designated-initializers.IgnoreSingleElementAggregates
+    value: 'true'
+
+  # RaceFree: flag all thread-unsafe libc functions.
+  - key: concurrency-mt-unsafe.FunctionSet
+    value: 'posix'
+
+# Hard errors — Critical and High risk axiom violations.
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  bugprone-dangling-handle,
+  bugprone-undefined-memory-manipulation,
+  clang-analyzer-core.NullDereference,
+  clang-analyzer-core.StackAddressEscape,
+  clang-analyzer-cplusplus.NewDelete,
+  clang-analyzer-cplusplus.NewDeleteLeaks,
+  clang-analyzer-cplusplus.ArrayDelete,
+  clang-analyzer-unix.MismatchedDeallocator,
+  clang-analyzer-optin.cplusplus.UninitializedObject,

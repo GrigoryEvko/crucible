@@ -1,0 +1,12 @@
+# Generated artifacts — excluded from authored-source metrics, diffs, and
+# GitHub-linguist language stats (fix-22).
+#
+# vmlinux.h is a 168K-line BTF dump emitted by `bpftool btf dump file
+# /sys/kernel/btf/vmlinux format c` — by far the largest file in the tree and
+# entirely machine-generated.  Without these attributes it inflates the C/
+# header LOC breakdown by ~38% over the hand-written headers and dumps the
+# whole blob into every `git diff` / `git blame` that touches it.
+#   linguist-generated  → drop from language stats AND collapse in PR diffs
+#   linguist-vendored   → also exclude from "your code" surfaces
+#   -diff               → never emit a textual diff for it
+include/crucible/perf/bpf/vmlinux.h linguist-generated=true linguist-vendored=true -diff

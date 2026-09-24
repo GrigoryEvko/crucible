@@ -1,0 +1,58 @@
+# scripts/no-reinterpret-allowlist.txt — grandfathered reinterpret_cast sites.
+#
+# Format: `path:text` (one per line, relative to project root).  `text`
+# is the EXACT trimmed source of the violating call line (leading and
+# trailing whitespace stripped) — a content key, NOT a line number.
+# Comments start with '#'.  Blank lines ignored.
+#
+# The content key replaces the legacy `path:line` form.  A line
+# number drifts the instant ANY edit lands above the call (a concurrent
+# edit inserting a member, a new `#include`, a reflowed comment),
+# silently staling the entry: the real reinterpret_cast reads as
+# un-suppressed AND the dangling line-keyed entry trips the stale gate.
+# The call line's TEXT is stable across line shifts.  Mirror of the
+# name-keyed mint-pattern guard (mint-pattern-allowlist.txt).
+#
+# Every entry is a site that waits for its migration.  When the site
+# converts, delete the line — the guard then catches any future drift.
+# Stale entries (no matching call text in the file) red CI at exit 2 so
+# the allowlist drains in lockstep with substrate fixes.
+#
+# Inline suppression (preferred for new code): `// NO-REINTERPRET-OK:
+# <reason>` on the call line exempts that single line directly.
+#
+# The include/ tree carries no grandfathered sites — the cntp/Fec +
+# AfXdp + Integrity + GpuDirect cluster was drained and it has stayed
+# drained.
+#
+# The vessel/ tree carries none either.  It held five when the guard's
+# scan set first reached it, and all five were converted to
+# std::bit_cast:
+#
+#   - three pointer-to-integer reads, two of them inside a debug
+#     plausibility assert and one an index into the schema cache.  The
+#     integer never turns back into a pointer at any of the three.
+#
+#   - the CrucibleMeta and crucible::TensorMeta view change in
+#     as_meta_typed and its inverse in metas_from_typed.  This file
+#     used to record that those two were not bit_cast-able, on the
+#     grounds that bit_cast needs same-size values rather than a
+#     pointer view change.  That was wrong twice over: the two are
+#     object pointers of one width, so bit_cast is well-formed, and
+#     what makes the read sound was never the spelling of the cast but
+#     the offsetof and sizeof block above them.  std::start_lifetime_as
+#     is the alternative and does not apply, because TensorMeta carries
+#     member initializers and is therefore not an implicit-lifetime
+#     type.
+#
+# So the list below is empty, and every reinterpret_cast that lands in
+# either tree from here is a new one.
+#
+# One rule of vessel_api.cpp is worth keeping here, because it reads
+# like a self-granted waiver and is the opposite of one. That file
+# permits no cast between the C ABI structs in its own body: every ABI
+# crossing routes through as_vigil_typed and as_meta_typed, so the cast
+# and the layout proof that makes it sound stay in one place. The file
+# honours the rule, its only match is the comment stating it, and the
+# guard's comment filter drops that. Adding an entry for the file would
+# trip the stale-entry gate at exit 2.

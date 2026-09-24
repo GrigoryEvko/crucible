@@ -1,0 +1,21 @@
+# Configuration of ast-grep for this repository.
+#
+# WHY THIS FILE EXISTS. ast-grep does not read a `.h` file as C++. It gives that extension to C. This
+# repository keeps 728 headers and 108 source files, so ast-grep saw about 87 percent of the code as
+# the wrong language and reported no match in it. A scan for `requires_clause` over `include` gave 0
+# before this file and gives 1,509 after it.
+#
+# `--lang cpp` does NOT repair this. Measured on 2026-09-20: `ast-grep run --lang cpp` over a header
+# still gave 0 matches. Only this map works.
+languageGlobs:
+  # A negation pattern does NOT work here. Measured on 2026-09-20: `!**/vmlinux.h` in this list left
+  # the file in the scan. So the list holds one pattern, and a rule excludes a file for itself.
+  cpp: ["*.h"]
+
+# `include/crucible/perf/bpf/vmlinux.h` is generated BPF C and never C++. This map gives it to the C++
+# parser, which reads it as a broken translation unit. Each rule that scans headers must name it:
+#
+#   ignores: ["**/perf/bpf/vmlinux.h"]
+#
+# A rule with that line reports 0 match in the file and keeps every other header. Measured.
+ruleDirs: []

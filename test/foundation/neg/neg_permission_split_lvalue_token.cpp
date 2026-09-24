@@ -1,0 +1,33 @@
+// Every mint consumes the tokens it is given, so a permission passed as
+// an lvalue is not a split argument: the argument-shape concept on the
+// one split template is not satisfied, and the note shows the shape
+// check answering false for the lvalue.
+
+#include <foundation/permissions/Permission.h>
+
+#include <type_traits>
+
+namespace {
+struct Whole {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct Left {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct Right {
+    using permission_row = ::foundation::effects::Row<>;
+};
+}  // namespace
+
+namespace foundation::permissions {
+template <>
+struct can_split_into<Whole, Left, Right> : std::true_type {};
+template <>
+struct has_split_authoring_witness<Whole, Left, Right> : std::true_type {};
+}  // namespace foundation::permissions
+
+int main() {
+    auto whole = ::foundation::permissions::mint_permission_root<Whole>();
+    [[maybe_unused]] auto halves = ::foundation::permissions::mint_permission_split<Left, Right>(whole);
+    return 0;
+}

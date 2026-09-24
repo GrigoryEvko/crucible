@@ -1,0 +1,191 @@
+% ═══════════════════════════════════════════════════════════════════
+% §1  Notation and Conventions
+% ═══════════════════════════════════════════════════════════════════
+
+\section{Notation and Conventions}
+
+This section establishes the notation, conventions, and formal language
+used throughout the remainder of this specification.
+
+\subsection{Byte Ordering and Alignment}
+
+All multi-byte quantities are stored in \textbf{little-endian} byte order,
+matching the native representation on x86-64 and AArch64 (little-endian mode).
+A 64-bit value $v$ stored at address $a$ satisfies:
+\[
+  \text{mem}[a + i] = \bigl\lfloor v / 2^{8i} \bigr\rfloor \bmod 256,
+  \quad i \in \{0,\dots,7\}.
+\]
+
+\begin{definition}[Alignment]
+\label{def:alignment}
+An address $a$ is \emph{$k$-aligned} when $a \bmod k = 0$.
+The alignment formula used throughout Crucible is:
+\[
+  \operatorname{align}(a, k) \;=\; (a + k - 1) \;\mathbin{\&}\; {\sim}(k-1),
+  \quad k = 2^m,\; m \ge 0.
+\]
+The result is the smallest $k$-aligned address $\ge a$.
+\end{definition}
+
+Struct fields are naturally aligned: a field of type $T$ at offset
+$o$ satisfies $o \bmod \operatorname{alignof}(T) = 0$.
+Padding bytes are zero-initialized (InitSafe, Definition~\ref{def:initsafe}).
+
+\subsection{Bitvectors}
+
+We write $\bv{n}$ for the set of $n$-bit unsigned bitvectors,
+i.e.\ $\bv{n} = \{0, 1, \dots, 2^n - 1\}$.
+Arithmetic on $\bv{n}$ is modular: $a +_n b = (a + b) \bmod 2^n$.
+Bitwise operations:
+\begin{itemize}
+  \item $a \mathbin{\&} b$ --- bitwise AND
+  \item $a \mathbin{|} b$ --- bitwise OR
+  \item $a \oplus b$ --- bitwise XOR
+  \item ${\sim}a$ --- bitwise NOT (one's complement)
+  \item $a \gg k$, $a \ll k$ --- logical right/left shift by $k$
+\end{itemize}
+The 128-bit product of two 64-bit values is written
+$a \times_{128} b \in \bv{128}$, with the low and high halves
+$(a \times_{128} b)_{\text{lo}}$ and $(a \times_{128} b)_{\text{hi}}$.
+
+\subsection{Semantic Interpretation}
+
+$\sem{x}$ denotes the semantic interpretation of syntactic object $x$.
+For a strong ID type wrapping a raw integer:
+$\sem{\text{OpIndex}(k)} = k \in \bv{32}$.
+For a hash type: $\sem{\text{SchemaHash}(h)} = h \in \bv{64}$.
+For a \struct{TensorMeta}: $\sem{m}$ is the tuple
+$(m.\field{sizes}, m.\field{strides}, m.\field{dtype}, m.\field{device\_type})$.
+
+\subsection{Proof Obligations}
+\label{sec:proofobligation-format}
+
+Safety properties are stated as formal predicates and annotated with
+the verification layer responsible for discharge:
+
+\begin{itemize}
+  \item \textbf{Z3} --- SMT solver (bitvector arithmetic, alignment, hash properties).
+    Properties encodable in QF\_BV or QF\_LIA.
+  \item \textbf{consteval} --- C++ compile-time evaluation (\code{static\_assert},
+    \code{constexpr} functions). Properties checked by the compiler.
+  \item \textbf{Lean} --- Lean~4 theorem prover (structural induction,
+    protocol correctness, algorithm bounds). Properties in the
+    \code{lean/Crucible/} formalization.
+\end{itemize}
+
+\begin{proofobligation}[Format]
+Each proof obligation is stated as:
+\[
+  \forall \vec{x} \in D.\; P(\vec{x}) \implies Q(\vec{x})
+  \quad \bigl[\textit{Layer}\bigr]
+\]
+where $D$ is the domain, $P$ the precondition, $Q$ the postcondition,
+and $[\textit{Layer}]$ names the verification layer.
+\end{proofobligation}
+
+\subsection{Complexity Notation}
+
+Standard asymptotic notation: $O(f)$, $\Theta(f)$, $\Omega(f)$.
+All complexity bounds are worst-case unless stated otherwise.
+$V$ and $E$ denote vertex and edge count in a graph.
+$n$ denotes the number of ops in an iteration unless qualified.
+
+Timing bounds assume modern x86-64 or AArch64:
+L1d latency ${\approx}\,1$--$4\;\text{ns}$,
+L2 latency ${\approx}\,5$--$12\;\text{ns}$,
+L3 latency ${\approx}\,20$--$40\;\text{ns}$,
+DRAM latency ${\approx}\,60$--$100\;\text{ns}$.
+
+\subsection{The Eight Safety Axioms}
+\label{sec:safety-axioms}
+
+Every data structure and algorithm in Crucible must satisfy all eight
+axioms.  Four are compile-enforced; four are discipline-enforced.
+
+\subsubsection{Compile-Enforced Axioms}
+
+\begin{definition}[InitSafe]
+\label{def:initsafe}
+\[
+  \forall v.\; \operatorname{read}(v) \implies \operatorname{initialized}(v)
+  \quad [\textit{consteval}]
+\]
+Every struct field has a non-static data member initializer (NSDMI).
+Padding bytes are zero-initialized: \code{uint8\_t pad[N]\{\}}.
+Stack aggregates use value-initialization: \code{T x\{\}}.
+\end{definition}
+
+\begin{definition}[TypeSafe]
+\label{def:typesafe}
+\[
+  (\vdash e : T) \implies \operatorname{eval}(e) : T
+  \quad [\textit{consteval}]
+\]
+Every semantic value is a strong type with \code{explicit} constructor,
+\code{.raw()} accessor, and no implicit conversions or arithmetic.
+Identifiers (\S\ref{sec:strongid}): \struct{OpIndex}, \struct{SlotId}, \struct{NodeId},
+\struct{SymbolId}, \struct{MetaIndex} ($\bv{32}$ wrappers).
+Hashes (\S\ref{sec:stronghash}): \struct{SchemaHash}, \struct{ShapeHash},
+\struct{ScopeHash}, \struct{CallsiteHash}, \struct{ContentHash},
+\struct{MerkleHash} ($\bv{64}$ wrappers).
+\end{definition}
+
+\begin{definition}[NullSafe]
+\label{def:nullsafe}
+\[
+  \operatorname{deref}(v) \implies v \neq \mathtt{null}
+  \quad [\textit{consteval}]
+\]
+Every query function is \code{[[nodiscard]]}.
+Pointer+count pairs have \code{std::span} accessors.
+\code{alloc\_array<T>(0)} returns \code{nullptr} with count zero.
+\code{std::span(nullptr, 0)} is the canonical empty span.
+\end{definition}
+
+\begin{definition}[MemSafe]
+\label{def:memsafe}
+\[
+  \operatorname{free}(v) \implies \neg\,\operatorname{live}(v)
+  \quad [\textit{consteval}]
+\]
+All DAG/graph memory is arena-allocated (no individual deallocation).
+Non-value types have \code{= delete("reason")} for copy and move.
+Layout-critical structs carry \code{static\_assert(sizeof(T) == N)}.
+Size arithmetic uses saturation: \code{std::mul\_sat}, \code{std::add\_sat}.
+\end{definition}
+
+\subsubsection{Discipline-Enforced Axioms}
+
+\begin{definition}[BorrowSafe]
+\label{def:borrowsafe}
+No aliased mutation.  The SPSC protocol has exactly one writer and one
+reader.  Ownership is documented at every pointer.
+\end{definition}
+
+\begin{definition}[ThreadSafe]
+\label{def:threadsafe}
+The foreground thread owns the ring head and MetaLog head.
+The background thread owns the ring tail and MetaLog tail.
+Cross-thread communication uses \code{acquire}/\code{release} atomics only.
+No mutexes, no condition variables, no OS-mediated waits on the hot path.
+\end{definition}
+
+\begin{definition}[LeakSafe]
+\label{def:leaksafe}
+Arena bulk-frees all graph memory on destruction.
+\code{std::unique\_ptr} owns ring and MetaLog buffers.
+The background thread member is declared last in its owning struct
+(destroyed first $\to$ \code{join()} before other members destruct).
+\end{definition}
+
+\begin{definition}[DetSafe]
+\label{def:detsafe}
+\[
+  \operatorname{same}(\text{inputs}) \implies \operatorname{same}(\text{outputs})
+  \quad [\textit{Lean}]
+\]
+The DAG fixes execution order.  The memory plan fixes addresses.
+Philox4x32 fixes RNG state (counter-based, platform-independent).
+The KernelCache is content-addressed.  Bit-identical runs across hardware.
+\end{definition}

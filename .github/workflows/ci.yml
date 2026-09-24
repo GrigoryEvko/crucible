@@ -1,0 +1,828 @@
+# Crucible CI — GitHub-hosted, full-coverage, no compromises.
+#
+# Single workflow: on every push (and PR / manual dispatch) it builds and tests
+# the tip commit on free GitHub-hosted Linux runners (x86_64 + aarch64). No
+# self-hosted runners (security). Runs are NEVER cancelled (no `concurrency`
+# block), so history stays observable and bisectable.
+#
+# Tiers:
+#   * guards  — bash/ripgrep discipline suite. ubuntu-latest, no compiler.
+#   * patched-gcc — builds the patched GCC for each arch with
+#               toolchain/gcc/build.sh, and caches the install
+#               (.github/workflows/patched-gcc.yml).
+#   * build   — matrix(arch × preset) full compile + ctest, in a fedora:44
+#               container with the patched GCC 16.2.1
+#               (CRUCIBLE_CXX=/opt/crucible-gcc/usr/bin/g++-16p).
+#               BPF substrate ENABLED. aarch64 regenerates vmlinux.h from the
+#               runner kernel's BTF. Presets carry the sanitizer choice.
+#   * bench   — release+bench preset, COMPILE gate only.
+#   * fuzz    — default+CRUCIBLE_FUZZ, build + run the Philox-seeded smoke.
+#
+# The toolchain: each job that compiles Crucible uses the patched GCC from the
+# patched-gcc job, which is the upstream commit in toolchain/gcc/BASE plus the
+# patches in toolchain/gcc/patches.  Local development builds the same compiler
+# with the same script.  cmake/Toolchain-gcc16.cmake refuses a compiler without
+# each fix, so no job can compile with the stock g++ of the container.
+#
+# Caching (public repo, free cache): ccache wraps the compiler — objects restored
+# per (arch,preset) across runs, split restore/save so even a failed run banks
+# partial compile progress.
+#
+# ============================================================================
+# BILLING — THIS PIPELINE COSTS $0. KEEP IT THAT WAY. DO NOT CHANGE.
+# ============================================================================
+# Per GitHub Actions billing: standard GitHub-hosted runners are FREE, with NO
+# minute cap, for PUBLIC repositories. The monthly free-minute quota
+# (2,000/mo on Free) applies to PRIVATE repos only — it does not apply here.
+# These invariants keep every run permanently free. Violating any one bills:
+#
+#   1. Repo stays PUBLIC. Flipping to private turns on the per-minute quota +
+#      overage billing (Linux $0.006/min, arm64 $0.005/min, Windows $0.010/min).
+#
+#   2. Standard runners ONLY. Use exactly the labels below — `ubuntu-latest`,
+#      `ubuntu-24.04` (x64), `ubuntu-24.04-arm` (arm64, GA + free for public).
+#      NEVER add a "larger runner" (runner group, `*-4-core`/`*-8-core`/`xl`,
+#      GPU, or extra-RAM/storage SKU): larger runners are ALWAYS billed, even on
+#      public repos. The fedora:44 container is free — billing is by the host
+#      runner, not the container.
+#
+#   3. NEVER raise the repo's Actions cache limit above the default 10 GB. Our
+#      per-(arch,preset) ccache caches can total >10 GB; that is fine — GitHub
+#      auto-evicts LRU caches to stay under 10 GB (free, costs only a cache
+#      miss). You are billed for cache ONLY if you manually raise the limit and
+#      exceed it ($0.07/GiB-month). Also: do NOT add upload-artifact.
+# ============================================================================
+
+name: ci
+
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Node 20 JS-action runtime is deprecated (forced to Node 24 on 2026-06-16,
+# removed 2026-09-16). checkout is @v5 (Node-24-native); actions/cache has no
+# Node-24 major yet, so this workflow-level opt-in forces every JS action onto
+# Node 24 now. Drop once actions/cache ships a Node-24 release.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Toolchain-FREE discipline guards. Stock ubuntu-latest, no compiler, no
+  # CMake configure — pure source-tree scans.
+  # ---------------------------------------------------------------------------
+  guards:
+    name: discipline guards (toolchain-free)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install ripgrep, fd and clang-format
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep fd-find clang-format
+
+      # The AST guards parse C++ rather than scan text, and they parse it with
+      # the pinned fork of the tree-sitter C++ grammar.  The upstream grammar
+      # reports an error on roughly one construct in three of this tree, and the
+      # fork's grammar declares ABI 1019, which no upstream runtime loads.  So
+      # the kit carries both halves, and the installer is the only way onto it.
+      #
+      # The installer verifies the release tarball against a SHA256 hardcoded in
+      # the script, checks the grammar and runtime lineage in the kit manifest,
+      # and parses a fixture that only the fork parses.  A failure installs
+      # nothing.  The kit lands in .tools/, which is gitignored, and the
+      # installer appends its bin directory to GITHUB_PATH.
+      #
+      # This step stays FREE: the download is one 43 MB release asset from
+      # GitHub, and no runner label changes.
+      - name: Install the pinned tree-sitter C++ kit (self-test + install)
+        run: |
+          bash scripts/install-tree-sitter.sh --self-test
+          bash scripts/install-tree-sitter.sh
+
+      # Non-blocking for now, matching the aarch64, bench and vessel-dispatch
+      # convention: flip `continue-on-error` off once a run confirms the
+      # runner's clang-format agrees with this tree.
+      #
+      # The repo .clang-format was verified byte-for-byte against 22.1.8 and
+      # 23.1.0, and this runner installs whatever Ubuntu ships — likely an
+      # older major.  clang-format's handling of `template for`, `^^T` and
+      # contract clauses has moved between releases, so a disagreement would
+      # be the formatter's, not the tree's.  The version is echoed so the
+      # first run answers that question instead of guessing at it, and the
+      # guard itself prints a NOTE when the major is one it has not been
+      # verified against.
+      #
+      # fd-find installs the binary as `fdfind`; the guard resolves either.
+      - name: clang-format (self-test + scan)
+        continue-on-error: true
+        run: |
+          clang-format --version
+          bash scripts/check-clang-format.sh --self-test
+          bash scripts/check-clang-format.sh
+
+      # parse_clean owns the question every AST gate depends on: does the file
+      # parse. A file that does not parse is a silent hole in all of them at
+      # once, so this runs before any gate that reads an AST.
+      - name: AST parse coverage (self-test + scan)
+        run: |
+          python3 scripts/tsast.py --self-test
+          python3 scripts/check-parse-clean.py --self-test
+          python3 scripts/check-parse-clean.py
+
+      - name: trait injection guard (self-test + scan)
+        run: |
+          bash scripts/check-trait-injection.sh --self-test
+          bash scripts/check-trait-injection.sh
+
+      - name: contract cite regression (self-test + pre-callsite count vs baseline)
+        run: |
+          bash scripts/audit-pre-callsite-count.sh --self-test
+          bash scripts/audit-pre-callsite-count.sh --check scripts/contracts-baseline.json
+
+      - name: contract decide-cite ratio (self-test + scan)
+        run: |
+          bash scripts/audit-decide-cite-ratio.sh --self-test
+          bash scripts/audit-decide-cite-ratio.sh
+
+      - name: refined/pre subsumption (self-test + scan)
+        run: |
+          bash scripts/check-refined-pre-subsumption.sh --self-test
+          bash scripts/check-refined-pre-subsumption.sh
+
+      - name: fixy discipline (self-test + scan)
+        run: |
+          bash scripts/check-fixy-discipline.sh --self-test
+          bash scripts/check-fixy-discipline.sh
+
+      - name: mint pattern (self-test + scan)
+        run: |
+          python3 scripts/check-mint-pattern.py --self-test
+          python3 scripts/check-mint-pattern.py
+
+      - name: permission storage antipattern (self-test + scan)
+        run: |
+          bash scripts/check-permission-storage.sh --self-test
+          bash scripts/check-permission-storage.sh
+
+      - name: no reinterpret_cast, no vector::reserve, no band-3 file stream (self-test + scan)
+        run: |
+          python3 scripts/check-banned-calls.py --self-test
+          python3 scripts/check-banned-calls.py
+
+      - name: fixy hardware discipline (self-test + scan)
+        run: |
+          bash scripts/check-fixy-hw-discipline.sh --self-test
+          bash scripts/check-fixy-hw-discipline.sh
+
+      - name: hardening grant coverage (self-test + scan)
+        run: |
+          bash scripts/check-syscall-grant-coverage.sh --self-test
+          bash scripts/check-syscall-grant-coverage.sh
+
+      - name: no -ffast-math (self-test + scan)
+        run: |
+          bash scripts/check-no-ffast-math.sh --self-test
+          bash scripts/check-no-ffast-math.sh
+
+      - name: fixy clean headers (self-test + scan)
+        run: |
+          bash scripts/check-fixy-clean-headers.sh --self-test
+          bash scripts/check-fixy-clean-headers.sh
+
+      - name: fixy dimension prose (self-test + scan)
+        run: |
+          bash scripts/check-fixy-dim-prose.sh --self-test
+          bash scripts/check-fixy-dim-prose.sh
+
+      - name: syscall capability admission (self-test + scan)
+        run: |
+          python3 scripts/check-syscall-capability.py --self-test
+          python3 scripts/check-syscall-capability.py
+
+      - name: spawn discipline (self-test + scan)
+        run: |
+          bash scripts/check-fixy-spawn-discipline.sh --self-test
+          bash scripts/check-fixy-spawn-discipline.sh
+
+      - name: row-contains discipline (self-test + scan)
+        run: |
+          bash scripts/check-row-contains-discipline.sh --self-test
+          bash scripts/check-row-contains-discipline.sh
+
+      - name: fixy::is alias parity (self-test + scan)
+        run: |
+          bash scripts/check-isx-parity.sh --self-test
+          bash scripts/check-isx-parity.sh
+
+      - name: stub-vs-live discipline (self-test + scan)
+        run: |
+          bash scripts/check-stub-discipline.sh --self-test
+          bash scripts/check-stub-discipline.sh
+
+      - name: lock-free sibling-assert discipline (self-test + scan)
+        run: |
+          bash scripts/check-lock-free-asserts.sh --self-test
+          bash scripts/check-lock-free-asserts.sh
+
+      - name: mint inventory (self-test + drift check + HS14 floor)
+        run: |
+          python3 scripts/gen-mint-inventory.py --self-test
+          python3 scripts/gen-mint-inventory.py --check
+          python3 scripts/gen-mint-inventory.py --check-floor
+
+      - name: fixy::grant namespace purity (self-test + scan)
+        run: |
+          bash scripts/check-fixy-grant-namespace-purity.sh --self-test
+          bash scripts/check-fixy-grant-namespace-purity.sh
+
+      - name: split trait orphan specializations (self-test + scan)
+        run: |
+          python3 scripts/check-splits-orphan.py --self-test
+          python3 scripts/check-splits-orphan.py
+
+      - name: unchecked access context only in reviewed walks (self-test + scan)
+        run: |
+          python3 scripts/check-no-unchecked-access.py --self-test
+          python3 scripts/check-no-unchecked-access.py
+
+      - name: detail namespaces of foundation and fixy only inside the layers (self-test + scan)
+        run: |
+          python3 scripts/check-detail-namespace.py --self-test
+          python3 scripts/check-detail-namespace.py
+
+      - name: each context owner defined in its one reviewed file (self-test + scan)
+        run: |
+          python3 scripts/check-host-owners.py --self-test
+          python3 scripts/check-host-owners.py
+
+      - name: single combine_ids source of truth (self-test + scan)
+        run: |
+          bash scripts/check-no-combine-ids-duplicate.sh --self-test
+          bash scripts/check-no-combine-ids-duplicate.sh
+
+      - name: no task, stage or tracker references (self-test + scan)
+        run: |
+          bash scripts/check-no-coordination-refs.sh --self-test
+          bash scripts/check-no-coordination-refs.sh
+
+      - name: session oracle drift (check)
+        run: bash scripts/session-oracle.sh --check
+
+      - name: ci_guard label coverage (self-test + scan)
+        run: |
+          bash scripts/check-ci-guard-labels.sh --self-test
+          bash scripts/check-ci-guard-labels.sh
+
+  # ---------------------------------------------------------------------------
+  # The sibling-substrate guards (Stage A1). Same free runner, no compiler.
+  # The frozen-tree scan preprocesses each unified frozen header on the flags
+  # of a compile database, so it runs in the build legs through ctest.  Only
+  # its self-test runs here, on the system c++ of the runner.
+  # ---------------------------------------------------------------------------
+  layers:
+    name: layer boundary, frozen tree, derived pins (toolchain-free)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+
+      # The frozen-tree guard reads macro definitions and includes with the
+      # parser, so this job needs the pinned kit too.
+      - name: Install the pinned tree-sitter C++ kit
+        run: bash scripts/install-tree-sitter.sh
+
+      - name: layer boundary (self-test + scan)
+        run: |
+          bash scripts/check-layer-boundary.sh --self-test
+          bash scripts/check-layer-boundary.sh
+
+      - name: frozen old substrate (self-test)
+        run: python3 scripts/check-frozen-tree.py --self-test
+
+      - name: derived cardinality pins (self-test + scan)
+        run: |
+          bash scripts/check-derived-pins.sh --self-test
+          bash scripts/check-derived-pins.sh
+
+      - name: syscall allowlist prose (self-test + scan)
+        run: |
+          bash scripts/check-syscall-allowlist-prose.sh --self-test
+          bash scripts/check-syscall-allowlist-prose.sh
+
+      - name: flip list of old-substrate consumers (self-test + scan)
+        run: |
+          python3 scripts/check-flip-list.py --self-test
+          python3 scripts/check-flip-list.py
+
+  # ---------------------------------------------------------------------------
+  # The patched GCC, built once for each arch and cached.  The jobs below
+  # restore it with the key that this job gives.
+  # ---------------------------------------------------------------------------
+  patched-gcc:
+    uses: ./.github/workflows/patched-gcc.yml
+
+  # ---------------------------------------------------------------------------
+  # Full compile + run + negative-compile + golden-binary suite. Matrix over
+  # (arch × preset) in a fedora:44 container with the patched GCC 16.2.1. BPF
+  # substrate ENABLED — the perf/network BPF programs + crucible_vessel all
+  # compile. fail-fast:false: an aarch64-specific issue (e.g. BTF availability)
+  # never cancels the x86_64 legs.
+  # ---------------------------------------------------------------------------
+  build:
+    name: build+test ${{ matrix.arch }} / ${{ matrix.preset }}
+    needs: [guards, layers, patched-gcc]
+    runs-on: ${{ matrix.runner }}
+    container: fedora:44
+    # aarch64 is non-blocking while the arm legs prove out. Both prior
+    # blockers are now fixed: (1) safety/Simd.h on libstdc++'s
+    # __SSE2__-gated <simd> — the crucible::simd facade now lowers through
+    # [[gnu::vector_size]] builtins, portable to arm; (2) canopy/Hlc.h's
+    # lock-free 128-bit atomic requirement — GCC 16 only provides
+    # one with FEAT_LSE128 (armv9.4-a) hardware the free runners lack, so
+    # Hlc.h now carries a spinlock-guarded fallback for that case (build
+    # succeeds; now() takes the locked path on non-LSE128 arm). Left
+    # non-blocking until CI confirms the arm legs are reliably green, then
+    # flip to blocking. x86_64 remains the enforced full-coverage gate.
+    continue-on-error: ${{ matrix.arch == 'aarch64' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # BILLING: `runner` MUST stay a standard free label (ubuntu-24.04 /
+          # ubuntu-24.04-arm). NEVER swap in a larger runner — see the billing
+          # block above. Larger runners are always billed.
+          # x86_64 — committed vmlinux.h is x86_64, no regen needed.
+          - { arch: x86_64,  runner: ubuntu-24.04,     preset: default,  jobs: 3, regen_btf: false, run_tests: true  }
+          - { arch: x86_64,  runner: ubuntu-24.04,     preset: tsan,     jobs: 3, regen_btf: false, run_tests: true  }
+          - { arch: x86_64,  runner: ubuntu-24.04,     preset: release,  jobs: 2, regen_btf: false, run_tests: true  }
+          - { arch: x86_64,  runner: ubuntu-24.04,     preset: analyzer, jobs: 2, regen_btf: false, run_tests: false }
+          # ubsan-strict puts the full UBSan set on every target, with signed
+          # overflow undefined.  It is the only leg that reports a wrapping
+          # signed add.  verify builds Release code with the contracts armed.
+          - { arch: x86_64,  runner: ubuntu-24.04,     preset: ubsan-strict, jobs: 3, regen_btf: false, run_tests: true }
+          - { arch: x86_64,  runner: ubuntu-24.04,     preset: verify,   jobs: 2, regen_btf: false, run_tests: true  }
+          # aarch64 — regenerate vmlinux.h from the runner kernel's BTF.
+          - { arch: aarch64, runner: ubuntu-24.04-arm, preset: default,  jobs: 3, regen_btf: true,  run_tests: true  }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, preset: tsan,     jobs: 3, regen_btf: true,  run_tests: true  }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, preset: release,  jobs: 2, regen_btf: true,  run_tests: true  }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, preset: ubsan-strict, jobs: 3, regen_btf: true, run_tests: true }
+    env:
+      CRUCIBLE_CXX: /opt/crucible-gcc/usr/bin/g++-16p
+      # ccache lives at an absolute path (survives the checkout wipe) and is
+      # cached as a whole directory per arch+preset.
+      CCACHE_DIR: /ccache
+      # ~14 GB runner disk shared with the container + dnf cache + build tree;
+      # 2 G keeps the cache-save post-step from wedging and stays under the
+      # 10 GB/repo Actions cache quota.
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_COMPRESS: "true"
+    steps:
+      # Minimal tooling actions/cache needs to pack/unpack inside the container.
+      - name: Bootstrap cache tooling
+        run: dnf install -y --setopt=install_weak_deps=False tar zstd
+
+      - name: Restore dnf package cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/libdnf5
+            /var/cache/dnf
+          key: dnf-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: dnf-${{ matrix.arch }}-
+
+      # Full toolchain + BPF stack. clang+xxd+bpftool flip
+      # CRUCIBLE_HAVE_BPF=ON (cmake/CrucibleBpf.cmake); libbpf-devel provides
+      # bpf_helpers.h. gcc-c++ supplies binutils, the glibc files and the GMP,
+      # MPFR and MPC libraries that the patched GCC runs on, and isl is the
+      # last library it needs.  The patched GCC carries its own sanitizer
+      # runtimes and libstdc++.
+      # curl, tar and coreutils serve scripts/install-tree-sitter.sh: it
+      # downloads one release asset, checks its SHA256 and unpacks it. The
+      # fedora:44 base carries none of the three reliably, and weak deps are off.
+      - name: Install toolchain + BPF stack + ccache
+        run: >
+          dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
+          gcc-c++ isl cmake ninja-build git ripgrep ccache diffutils
+          clang llvm xxd bpftool libbpf-devel
+          curl tar coreutils
+
+      # The patched GCC that the patched-gcc job built.  CRUCIBLE_CXX names it.
+      - name: Restore the patched GCC
+        uses: actions/cache/restore@v4
+        with:
+          path: /opt/crucible-gcc
+          key: ${{ needs.patched-gcc.outputs.key }}-${{ matrix.arch }}
+          fail-on-cache-miss: true
+
+      # valgrind runs the constant-time taint tests in test/ct.  The tests
+      # target x86-64-v3, so only the x86_64 legs install it.
+      - name: Install valgrind (x86_64)
+        if: ${{ matrix.arch == 'x86_64' }}
+        run: >
+          dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
+          valgrind valgrind-devel
+
+      # Split restore/save: the combined actions/cache@v4 only saves in its
+      # post-step on JOB SUCCESS, so a failing preset never persists its
+      # ccache and restarts cold every run (perpetual 0% hits). restore@v4
+      # here + save@v4 with if:always() below banks partial compile progress
+      # from failed runs too. Unique ${run_id} in the key means save never
+      # collides; restore-keys prefix-fallback picks up the latest prior cache.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /ccache
+          key: ccache-${{ matrix.arch }}-${{ matrix.preset }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ matrix.arch }}-${{ matrix.preset }}-${{ github.ref_name }}-
+            ccache-${{ matrix.arch }}-${{ matrix.preset }}-main-
+            ccache-${{ matrix.arch }}-${{ matrix.preset }}-
+
+      # Full history: the frozen_tree test compares the tree with the freeze
+      # base, and a depth-1 checkout lacks the base, so the test would skip.
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # ctest runs the script-backed guards under the ci_guard label, and the
+      # AST guards among them parse C++ with the pinned kit.  Install it before
+      # the compile rather than before the test step, so a kit failure costs one
+      # download instead of a full build.  The pin covers both matrix arches.
+      - name: Install the pinned tree-sitter C++ kit
+        run: bash scripts/install-tree-sitter.sh
+
+      # The committed vmlinux.h is an x86_64 BTF dump; on aarch64 the BPF
+      # programs need the matching arm64 layout. Regenerate it from the runner
+      # kernel's BTF (CO-RE: compile-time types, load-time relocation). Fails
+      # loudly if BTF is absent so the cause is unambiguous.
+      - name: Regenerate vmlinux.h from runner BTF (aarch64)
+        if: ${{ matrix.regen_btf }}
+        run: |
+          test -r /sys/kernel/btf/vmlinux || { echo "::error::/sys/kernel/btf/vmlinux not readable in container"; exit 1; }
+          bpftool btf dump file /sys/kernel/btf/vmlinux format c > include/crucible/perf/bpf/vmlinux.h
+          echo "regenerated $(wc -l < include/crucible/perf/bpf/vmlinux.h) lines for ${{ matrix.arch }}"
+
+      # The one ci_guard that needs a compiler (traces #include edges via g++ -H).
+      - name: session-persistence include audit (needs gcc-16; self-test + scan)
+        run: |
+          bash scripts/check-session-persistence-include-audit.sh --self-test
+          bash scripts/check-session-persistence-include-audit.sh
+
+      # Presets carry the sanitizer/build-type choice; no -DCRUCIBLE_* overrides
+      # except the ccache launchers (which compose with cmake/Toolchain-gcc16.cmake).
+      # The x86_64 default leg also sets CRUCIBLE_REQUIRE_CT_TAINT.  The
+      # configure step then fails when valgrind is missing, and the taint tests
+      # cannot become disabled in silence.
+      - name: Configure (${{ matrix.preset }}, patched gcc-16, BPF on, ccache)
+        run: >
+          cmake --preset ${{ matrix.preset }}
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ${{ matrix.arch == 'x86_64' && matrix.preset == 'default' && '-DCRUCIBLE_REQUIRE_CT_TAINT=ON' || '' }}
+
+      - name: Reset ccache stats
+        run: ccache -z
+
+      # -jN overrides the preset's jobs:192. 4 vCPU / 16 GB runners; sanitizer
+      # and -fanalyzer TUs are memory-heavy, so jobs is tuned per preset. The
+      # analyzer preset is restricted to the `crucible` library target —
+      # -fanalyzer over the full ~1000-TU test tree would blow the wall-clock
+      # budget, and the static-analysis findings that matter live in the
+      # compiled library surface.
+      - name: Build
+        run: >
+          cmake --build --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
+          ${{ matrix.preset == 'analyzer' && '--target crucible' || '' }}
+
+      - name: ccache stats
+        run: ccache -s
+
+      # Skipped for the analyzer preset (build-time -fanalyzer findings are its coverage).
+      - name: Test
+        if: ${{ matrix.run_tests }}
+        run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
+
+      # Persist ccache even when Build/Test FAILED or the run was CANCELLED.
+      # `if: always()` is load-bearing: it runs in the cancellation grace
+      # window too, so a killed/unfinished run still banks the objects it DID
+      # compile, and the next run resumes warm (restore-keys prefix-fallback
+      # picks up the newest prior cache). Cache thus accumulates monotonically
+      # across runs. Do NOT weaken to success()/failure() — that silently drops
+      # the carry-forward from unfinished runs.
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-${{ matrix.arch }}-${{ matrix.preset }}-${{ github.ref_name }}-${{ github.run_id }}
+
+  # ---------------------------------------------------------------------------
+  # Vessel native-dispatch COMPILE gate. x86_64 only.
+  #
+  # crucible_dispatch is the PyTorch-facing half of the Vessel, and no preset
+  # builds it: vessel/torch/CMakeLists.txt adds the target only when TORCH_DIR
+  # points at a tree with torch/include, and nothing set TORCH_DIR. The target
+  # was therefore skipped in silence for four months while the Crucible-side
+  # APIs it calls moved underneath it, and the breakage surfaced only when
+  # somebody built it by hand. This job exists so that cannot recur.
+  #
+  # It is a COMPILE gate, not a link gate. crucible_fallback.cpp calls
+  # c10::CrucibleState::get_tls_state(), which lives in the CrucibleState.cpp
+  # the patch adds to c10 -- a stock PyTorch wheel cannot resolve it, and
+  # rebuilding PyTorch does not fit a free runner. So the job builds the object
+  # file, which is where every defect this job is meant to catch lives.
+  # ---------------------------------------------------------------------------
+  vessel-dispatch:
+    name: vessel native dispatch (compile gate, x86_64)
+    needs: [guards, patched-gcc]
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    # Non-blocking while this leg proves out, matching the aarch64 and bench
+    # legs above. Flip to blocking once it has been green for a few runs. The
+    # step-level `::error::` annotations below fire either way, so a failure is
+    # visible in the run summary rather than only in the log.
+    continue-on-error: true
+    env:
+      CRUCIBLE_CXX: /opt/crucible-gcc/usr/bin/g++-16p
+      CCACHE_DIR: /ccache
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_COMPRESS: "true"
+    steps:
+      - name: Bootstrap cache tooling
+        run: dnf install -y --setopt=install_weak_deps=False tar zstd
+
+      - name: Install toolchain + BPF stack + ccache + pip
+        run: >
+          dnf install -y --setopt=install_weak_deps=False
+          gcc-c++ isl cmake ninja-build git ripgrep ccache diffutils patch
+          clang llvm xxd bpftool libbpf-devel
+          python3 python3-pip
+
+      - name: Restore the patched GCC
+        uses: actions/cache/restore@v4
+        with:
+          path: /opt/crucible-gcc
+          key: ${{ needs.patched-gcc.outputs.key }}-x86_64
+          fail-on-cache-miss: true
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-vessel-dispatch-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-x86_64-vessel-dispatch-${{ github.ref_name }}-
+            ccache-x86_64-vessel-dispatch-main-
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # CPU wheel only: the CUDA wheels are several GB and the runner shares
+      # ~14 GB with the container. The wheel ships the full C++ header tree at
+      # site-packages/torch/include, which is all a compile gate needs.
+      - name: Install PyTorch CPU wheel (headers only are used)
+        run: |
+          python3 -m pip install --no-cache-dir --break-system-packages \
+            --index-url https://download.pytorch.org/whl/cpu torch
+          python3 -c "import torch; print('torch', torch.__version__)"
+
+      # TORCH_DIR is the directory CONTAINING torch/, i.e. site-packages.
+      - name: Locate the wheel and apply the Crucible patch to its headers
+        run: |
+          TORCH_DIR=$(python3 -c "import torch, os; print(os.path.dirname(os.path.dirname(torch.__file__)))")
+          echo "TORCH_DIR=$TORCH_DIR" >> "$GITHUB_ENV"
+          test -d "$TORCH_DIR/torch/include" || {
+            echo "::error::no torch/include under $TORCH_DIR"; exit 1; }
+          # The patch targets a PyTorch source tree; the wheel's header copy is
+          # the same files, so -p1 from torch/include lands DispatchKey.h and
+          # drops in the new CrucibleState.h. Hunks for .cpp files are not
+          # present in a header tree and are expected to be skipped -- only
+          # DispatchKey.h and CrucibleState.h decide this step.
+          cd "$TORCH_DIR/torch/include"
+          patch -p1 -N -t --no-backup-if-mismatch \
+            < "$GITHUB_WORKSPACE/patches/pytorch-crucible-integration.patch" || true
+          test -f c10/core/CrucibleState.h || {
+            echo "::error::patch did not produce c10/core/CrucibleState.h -- patches/pytorch-crucible-integration.patch no longer applies to this PyTorch"; exit 1; }
+          grep -q '^  Crucible,' c10/core/DispatchKey.h || {
+            echo "::error::patch did not add DispatchKey::Crucible -- the enum hunk no longer applies to this PyTorch"; exit 1; }
+          if grep -q '^  DeferredInit,' c10/core/DispatchKey.h; then
+            echo "::error::DeferredInit survived the patch -- the removal hunk did not apply, so Crucible widened the key budget instead of reusing the dead torchdistx slot"; exit 1
+          fi
+          # Crucible must be the LAST functionality key: the dispatcher gives
+          # the highest priority to the highest ordinal, so anything appended
+          # after Crucible demotes the recorder below it -- silently, because
+          # the build still succeeds and the fallback still fires, just later.
+          last_key=$(sed -n '1,/^  EndOfFunctionalityKeys,/p' c10/core/DispatchKey.h \
+                     | grep -oE '^  [A-Za-z_][A-Za-z0-9_]*,' \
+                     | grep -v 'EndOfFunctionalityKeys' \
+                     | tail -1 | tr -d ' ,')
+          [ "$last_key" = Crucible ] || {
+            echo "::error::the last functionality key is '$last_key', not Crucible -- upstream appended a key after it and Crucible is no longer top dispatch priority"; exit 1; }
+          rm -f c10/core/CrucibleState.cpp c10/core/*.rej c10/core/*.orig
+
+          # The two assertions below read the patch FILE, not the tree the
+          # patch was just applied to, because neither hunk can land in a
+          # wheel's header copy:
+          #   - the DEF_ONE hunk edits torch/csrc/utils/python_dispatch.cpp,
+          #     and a header tree ships no .cpp;
+          #   - the ThreadLocalState hunk is spelled aten/src/ATen/... in a
+          #     source tree, and the wheel keeps that header at ATen/..., so
+          #     -p1 finds no file and skips it.
+          # They are drift gates on the patch: a regenerated patch that loses
+          # either hunk reddens here instead of at the next rebuild of the
+          # fork, where the symptom is a missing Python enum name or a silent
+          # INACTIVE mode on the autograd engine's worker threads.
+          PATCH="$GITHUB_WORKSPACE/patches/pytorch-crucible-integration.patch"
+          grep -q '^+      DEF_ONE(Crucible)' "$PATCH" || {
+            echo "::error::the patch no longer adds DEF_ONE(Crucible) to the pybind DispatchKey enum -- torch._C.DispatchKey.Crucible would not exist and _parse_dispatch_key would print DispatchKey.???"; exit 1; }
+          grep -q '^+  c10::CrucibleState crucible_tls_;' "$PATCH" || {
+            echo "::error::the patch no longer adds the c10::CrucibleState member to at::ThreadLocalState -- the mode and the context stop travelling to the autograd engine's per-device workers, and the backward window of an accelerator model drops out of the trace"; exit 1; }
+
+      - name: Configure with TORCH_DIR
+        run: >
+          cmake --preset default
+          -DTORCH_DIR="$TORCH_DIR"
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      # The whole point of this job. vessel/torch/CMakeLists.txt SKIPS the
+      # target when it cannot find the headers, and a skipped target is what
+      # let this rot unnoticed. A skip here is a failure, not a pass.
+      - name: Assert the dispatch target was actually generated
+        run: |
+          cmake --build build --target help 2>/dev/null | grep -qw crucible_dispatch \
+            || ninja -C build -t targets all | grep -q crucible_dispatch \
+            || { echo "::error::crucible_dispatch was not generated -- TORCH_DIR was not honoured, so this job would have passed without compiling anything"; exit 1; }
+
+      - name: Reset ccache stats
+        run: ccache -z
+
+      # Object, not library: see the link note in the job header.
+      - name: Compile crucible_fallback.cpp
+        run: >
+          cmake --build build -j 3
+          --target vessel/torch/CMakeFiles/crucible_dispatch.dir/crucible_fallback.cpp.o
+
+      - name: ccache stats
+        run: ccache -s
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-vessel-dispatch-${{ github.ref_name }}-${{ github.run_id }}
+
+  # ---------------------------------------------------------------------------
+  # Benchmark COMPILE gate. Shared-runner perf numbers are meaningless (noisy /
+  # throttled), so this builds the bench tree to catch compile regressions and
+  # does NOT run perf-gated assertions. x86_64 only.
+  # ---------------------------------------------------------------------------
+  bench:
+    name: bench (compile gate, x86_64)
+    needs: [guards, patched-gcc]
+    # Non-blocking until the bench/ tree is modernized against current production
+    # APIs. The bench preset was never CI-built, so ~13 bench TUs drifted across
+    # safety-wrapper migrations: TensorDimArray::Slot now takes TensorDim (not int),
+    # RecipeFlags is safety::Bits, plus bench_fusion trips an -O3-only consteval
+    # self-test in safety/Fusion.h. Same posture as the aarch64 legs — the job still
+    # runs and reports for observability, but its red doesn't gate the run while the
+    # modernization is in flight. Flip back to blocking once all bench TUs compile.
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    env:
+      CRUCIBLE_CXX: /opt/crucible-gcc/usr/bin/g++-16p
+      CCACHE_DIR: /ccache
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_COMPRESS: "true"
+    steps:
+      - name: Bootstrap cache tooling
+        run: dnf install -y --setopt=install_weak_deps=False tar zstd
+      - name: Restore dnf package cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/libdnf5
+            /var/cache/dnf
+          key: dnf-x86_64-${{ github.run_id }}
+          restore-keys: dnf-x86_64-
+      - name: Install toolchain + BPF stack + ccache
+        run: >
+          dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
+          gcc-c++ isl cmake ninja-build git ripgrep ccache diffutils
+          clang llvm xxd bpftool libbpf-devel
+      - name: Restore the patched GCC
+        uses: actions/cache/restore@v4
+        with:
+          path: /opt/crucible-gcc
+          key: ${{ needs.patched-gcc.outputs.key }}-x86_64
+          fail-on-cache-miss: true
+      # Split restore/save so a failed compile still banks ccache (see build job).
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-bench-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-x86_64-bench-${{ github.ref_name }}-
+            ccache-x86_64-bench-main-
+            ccache-x86_64-bench-
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Configure (bench, ccache)
+        run: >
+          cmake --preset bench
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build benches
+        run: cmake --build --preset bench -j 3
+      - name: ccache stats
+        run: ccache -s
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-bench-${{ github.ref_name }}-${{ github.run_id }}
+
+  # ---------------------------------------------------------------------------
+  # Fuzz smoke. Property fuzzers are plain GCC + ASan/UBSan with Philox-seeded
+  # input (deterministic, not flaky). Build + run the short --iters=1000 smoke.
+  # x86_64 only.
+  # ---------------------------------------------------------------------------
+  fuzz:
+    name: fuzz (property smoke, x86_64)
+    needs: [guards, patched-gcc]
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    env:
+      CRUCIBLE_CXX: /opt/crucible-gcc/usr/bin/g++-16p
+      CCACHE_DIR: /ccache
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_COMPRESS: "true"
+    steps:
+      - name: Bootstrap cache tooling
+        run: dnf install -y --setopt=install_weak_deps=False tar zstd
+      - name: Restore dnf package cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/libdnf5
+            /var/cache/dnf
+          key: dnf-x86_64-${{ github.run_id }}
+          restore-keys: dnf-x86_64-
+      # The patched GCC carries its own sanitizer runtimes.
+      - name: Install toolchain + BPF stack + ccache
+        run: >
+          dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
+          gcc-c++ isl cmake ninja-build git ripgrep ccache diffutils
+          clang llvm xxd bpftool libbpf-devel
+      - name: Restore the patched GCC
+        uses: actions/cache/restore@v4
+        with:
+          path: /opt/crucible-gcc
+          key: ${{ needs.patched-gcc.outputs.key }}-x86_64
+          fail-on-cache-miss: true
+      # Split restore/save so a failed compile still banks ccache (see build job).
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-fuzz-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-x86_64-fuzz-${{ github.ref_name }}-
+            ccache-x86_64-fuzz-main-
+            ccache-x86_64-fuzz-
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Configure (default + CRUCIBLE_FUZZ, ccache)
+        run: >
+          cmake --preset default
+          -DCRUCIBLE_FUZZ=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build fuzzers
+        run: cmake --build --preset default -j 3
+      - name: ccache stats
+        run: ccache -s
+      - name: Run property-fuzz smoke
+        run: ctest --preset default -j 3 -L fuzz_property
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-fuzz-${{ github.ref_name }}-${{ github.run_id }}

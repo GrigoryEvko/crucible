@@ -1,0 +1,125 @@
+# use-after-move-allowlist: the reviewed uses after std::move that
+# scripts/check-use-after-move.py admits.
+#
+# Format: path:function:key, or path:function:key xN for N findings.  The
+# key is the spent name or member path, as the guard prints it.  The guard
+# reports the first use after each move, so N counts moves, not reads.
+# Each paragraph starts with a comment that names the probe that its
+# entries make.  The guard refuses an entry that admits more findings
+# than it finds, so the list shrinks when the code changes.
+#
+# Only a test that probes a moved-from object on purpose is on this list,
+# and a macro of the frozen old tree that forwards.  Each probe entry reads
+# the object after the move to prove the state that the move leaves, or uses
+# it to prove that the use aborts.
+
+# Probe: a moved-from channel binding is unbound.
+test/fixy/test_channel_moved_from.cpp:binding_moves_its_pointer:first
+
+# Probe: a use of a moved-from channel handle or binding aborts.  Each
+# death test reaches the handle through an opaque call.
+test/fixy/test_channel_moved_from.cpp:binding_after_move:first
+test/fixy/test_channel_moved_from.cpp:mpsc_consumer:consumer
+test/fixy/test_channel_moved_from.cpp:spsc_consumer:consumer
+test/fixy/test_channel_moved_from.cpp:spsc_producer:producer
+test/test_permissioned_moved_from_handles.cpp:calendar_consumer:consumer
+test/test_permissioned_moved_from_handles.cpp:calendar_producer:producer
+test/test_permissioned_moved_from_handles.cpp:deque_owner:owner
+test/test_permissioned_moved_from_handles.cpp:edge_signaler:signaler
+test/test_permissioned_moved_from_handles.cpp:edge_waiter:waiter
+test/test_permissioned_moved_from_handles.cpp:grid_consumer:consumer
+test/test_permissioned_moved_from_handles.cpp:grid_producer:producer
+test/test_permissioned_moved_from_handles.cpp:log_consumer:consumer
+test/test_permissioned_moved_from_handles.cpp:log_producer:producer
+test/test_permissioned_moved_from_handles.cpp:mpsc_consumer:consumer
+test/test_permissioned_moved_from_handles.cpp:queue_mpsc_consumer:consumer
+test/test_permissioned_moved_from_handles.cpp:queue_spsc_producer:producer
+test/test_permissioned_moved_from_handles.cpp:sharded_calendar_consumer:consumer
+test/test_permissioned_moved_from_handles.cpp:sharded_calendar_producer:producer
+test/test_permissioned_moved_from_handles.cpp:snapshot_writer:writer
+test/test_permissioned_moved_from_handles.cpp:snapshot_writer_after_release:writer
+test/test_permissioned_moved_from_handles.cpp:spsc_consumer:consumer
+test/test_permissioned_moved_from_handles.cpp:spsc_producer:producer
+test/fixy/test_channel_moved_from.cpp:mpsc_producer:*producer
+test/fixy/test_channel_moved_from.cpp:mpsc_producer_in_drained_window:*producer
+test/test_permissioned_moved_from_handles.cpp:mpsc_producer:*producer
+test/test_permissioned_moved_from_handles.cpp:mpsc_producer_in_drained_window:*producer
+test/test_permissioned_moved_from_handles.cpp:mpmc_producer:*producer
+test/test_permissioned_moved_from_handles.cpp:mpmc_consumer:*consumer
+test/test_permissioned_moved_from_handles.cpp:mpmc_producer_after_close:*producer
+test/test_permissioned_moved_from_handles.cpp:mpmc_consumer_after_close:*consumer
+test/test_permissioned_moved_from_handles.cpp:snapshot_reader:*reader
+test/test_permissioned_moved_from_handles.cpp:deque_thief:*thief
+
+# Probe: a moved-from or released mapping is unmapped, so the pages are
+# unmapped one time.
+test/fixy/test_os_mmap.cpp:the_leak_door_hands_back_the_mapping:region
+test/fixy/test_owned_mmap.cpp:check_live_mapping:r
+test/fixy/test_owned_mmap.cpp:check_move_assign_unmaps_the_replaced_region:b
+test/fixy/test_owned_mmap.cpp:check_release_hands_the_region_back:r
+
+# Probe: a moved-from file handle is closed, so the descriptor has one
+# owner and closes one time.
+test/fixy/test_owned_file.cpp:check_move_transfers_ownership:dst
+test/fixy/test_owned_file.cpp:check_move_transfers_ownership:src
+test/test_fixy_handle.cpp:main:a
+test/test_safety.cpp:test_file_handle:a
+
+# Probe: a tracked linear or affine value aborts on a second consume, on a
+# read after a consume, and on a consume of a swapped-in spent state.
+test/fixy/test_qtt_tracked.cpp:main:discarded
+test/fixy/test_qtt_tracked.cpp:main:live
+test/fixy/test_qtt_tracked.cpp:main:source
+test/fixy/test_qtt_tracked.cpp:main:spent x2
+test/fixy/test_qtt_tracked.cpp:main:twice x2
+
+# Probe: a session handle whose endpoint left it is dead.  The first entry
+# reads its liveness.  The others use it and expect an abort.
+test/fixy/test_session_endpoint_transfer.cpp:take_from_a_consumed_handle:handle
+test/fixy/test_session_endpoint_transfer.cpp:transfer_keeps_the_record_live:handle
+test/fixy/test_session_handle.cpp:liveness_and_cancel_run:handle
+test/fixy/test_session_handle_attacks.cpp:close_twice:at_end
+test/fixy/test_session_handle_attacks.cpp:off_policy_use_after_move:handle
+test/fixy/test_session_handle_attacks.cpp:read_resource_after_move:handle
+test/fixy/test_session_handle_attacks.cpp:use_after_move:handle
+test/fixy/test_session_handle_attacks.cpp:view_a_moved_from_handle:handle
+test/fixy/test_session_hold_consumed_aborts.cpp:take_twice:hold
+
+# Probe: a moved-from versioned or budgeted value drops its claim to
+# genesis or to unbounded, and a trivially copyable one keeps a true claim.
+test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_budget:source
+test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_budget:taken
+test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_version:copied_source
+test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_version:newer
+test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_version:source
+test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_version:taken
+
+# Probe: a moved-from Senses reports no attachments after a move and after
+# a move assignment.
+test/test_perf_senses_smoke.cpp:main:reloaded
+test/test_perf_senses_smoke.cpp:main:s
+
+# Probe: a moved-from warden guard is disarmed and reports each observer
+# as not applied.
+test/test_warden_policy.cpp:test_revert_clears_observers:rhs
+
+# Probe: a share guard moved out of an optional holds no share, and
+# with_read_view must abort when it is lent.
+test/foundation/test_read_view_lend_needs_a_share.cpp:lend_a_guard_that_gave_its_share_away:*lent
+
+# Probe: a moved-from buffer is empty and owns no storage, and a move
+# assignment hands the storage on to its target.
+test/foundation/test_aligned_buffer.cpp:move_hands_the_storage_on:first
+test/foundation/test_aligned_buffer.cpp:move_hands_the_storage_on:second
+test/foundation/test_swiss_table_buffer.cpp:move_hands_the_block_on:first
+test/foundation/test_swiss_table_buffer.cpp:move_hands_the_block_on:second
+
+# Probe: a budget stamp moved into a second value claims nothing the second
+# time, so one grant grades one value.
+test/fixy/test_versioned_budgeted_attacks.cpp:attack_one_grant_on_two_values:stamp
+
+# Frozen, not a probe: a macro of the old tree forwards its pack into a
+# constructor.  The guard refuses a move inside a macro, because each use of
+# the macro hides the move.  The old tree is deleted, not edited, so the
+# entry goes with the file.
+include/crucible/safety/FpMode.h:CRUCIBLE_FP_AXIS_MINT:forward

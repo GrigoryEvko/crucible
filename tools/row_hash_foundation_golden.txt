@@ -1,0 +1,59 @@
+# foundation row_hash cross-build witness
+# format-version:  1
+# matrix-size:     51
+# fold-seed:       0xf0117a11eda11a5e
+# fold-anchor:     0xd9890c7a0bd36692
+# toolchain-tag:   0x531f2bb4b45652c8
+# (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
+# (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
+G01_Linear               0x1d459776daf5970d
+G02_Affine               0xd157e337354fe86e
+G03_TaggedVerified       0xda909da3bd58d721
+G04_TaggedUnverified     0x1190638994f0134f
+G05_Secret               0x8f5cca9d55d191e3
+G06_Stale                0xea17b720e30d1981
+G07_Monotonic            0x68684f50bf7b7f9b
+G08_RefinedPositive      0xa278d8b9dee7c49c
+G09_RefinedNonNegative   0x59c95914267c77b4
+N01_StaleOfTagged        0x1f1e8ea13d936f27
+N02_TaggedOfStale        0xfdb28e9bfea3654c
+R01_RowEmpty             0xefd01f60ba992926
+R02_RowBg                0x008a519814c8fc81
+R03_RowIo                0x6fbfd0f707b63bec
+R04_RowBgIo              0x3a57703490bfba7f
+R05_RowIoBg              0x3a57703490bfba7f
+C01_CompEmpty            0x49a55be1cfc23fb0
+C02_CompBg               0x3ace35615f0f9243
+C03_CompNested           0x44ae5b8b654b243f
+B01_FnStrictPole         0x50cf5f8eb1021e2a
+B02_FnClassified         0x50cf5f8eb1021e2a
+B03_FnSecret             0x681cc6f6ac42ce5a
+B04_FnInternal           0x273e71893171a1af
+B05_FnPublic             0x7ce7afc684f6c933
+B06_FnUnverified         0x4eb0efe0aa437e53
+B07_FnDoublePayload      0x50cf5f8eb1021e2a
+S01_PureLinear           0x50cf5f8eb1021e2a
+S02_PureCopy             0x681be1f418caea7c
+S03_IoFunction           0xc2a733647dd4efeb
+S04_BgWorker             0xe381c6d98dab4734
+S05_CtCrypto             0x2a38de8fea98bf21
+G10_EpochVersioned       0xe3543c60534b7736
+G11_Budgeted             0xdefcdb2e9f0ea002
+K02_OnDualGeneration     0x9e071212337c3790
+K03_OnPeakBytes          0x1efd403d7caa48e3
+K04_OnBitsBudget         0x5d25bcd8a9645a63
+K05_OnDualEpoch          0x3bc2ce4347181e0b
+H01_ClockOfFour          0xaa19a122d6e2ef4c
+H02_ClockOfFourTagged    0xaea5fe292e998b0d
+H03_ClockOfEight         0xeab69bb82089eec4
+P01_PermissionPure       0xe9592725c224e6b2
+P02_PermissionIo         0xda89dec3dcfa7d6f
+P03_SharePure            0x77a817c3794bb2da
+P04_ShareIo              0x4e1829a88162533d
+P05_GuardIo              0xb29fcfc679f3df57
+P06_PoolIo               0xa8856cffab822da3
+P07_ReadViewIo           0x38684fc2b90e4632
+P08_PermSetPair          0x712c12ba2cab812c
+X01_ContextBg            0x39e18e2f9a82bd7a
+X02_ExecCtxBg            0xd33fb5bec9128501
+X03_CapabilityAllocBg    0xfcad65b6f8868d9b

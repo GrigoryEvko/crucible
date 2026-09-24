@@ -1,0 +1,481 @@
+#pragma once
+
+// A classified value cannot silently duplicate, so copy is deleted and
+// a move is the only transfer.  Deriving a new value keeps the
+// classification, and the single exit is a named declassification
+// whose policy tag is the audit trail.
+//
+// The one door is mint_secret<T>(args...).  Classification is
+// deliberately open to enter and audited to leave: declassification is
+// the only way to get the value back out, deriving keeps the
+// classification, and zeroizing destroys it.  That asymmetry, not the
+// factory, is the actual guarantee; the factory exists so a named site
+// can be searched for.
+//
+// Old spelling: include/crucible/safety/Secret.h and the detection
+// surface of include/crucible/safety/IsSecret.h.  The policy tags live
+// in fixy/Tags.h; the roster and its completeness check of the old
+// header are the fail-closed namespace below and the assertions
+// derived from it.
+
+#include <fixy/GradedFacade.h>
+#include <fixy/Tags.h>
+#include <foundation/Platform.h>
+#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/lattices/ConfLattice.h>
+#include <foundation/diag/FailClosed.h>
+#include <foundation/reflect/Instance.h>
+
+#include <array>
+#include <compare>
+#include <concepts>
+#include <cstddef>
+#include <cstdlib>
+#include <memory>
+#include <meta>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+
+// Searching for a declassification by its policy tag only enumerates
+// every escape from classification if the policy universe is closed.
+// The marker base in fixy/Tags.h closes the set of tags; the namespace
+// below closes the set of tags a value can leave through.  A tag that
+// derives from the base and has no edge here is declared and not
+// admitted, and declassify<Tag>() rejects it.
+//
+// Every edge starts at `classified`, the lattice position a Secret
+// occupies (Secret<T>::lattice_type, pinned in the class body).  The
+// From end is the wrapper's own grade rather than an ad-hoc marker so
+// that the edge reads as "out of the Secret tier, through this
+// channel", and a wrapper at another confidentiality tier cannot
+// borrow these edges.
+namespace fixy::tags::secret_policy::admitted_policies {
+
+using classified = ::foundation::algebra::lattices::conf::SecretTier;
+
+inline constexpr ::foundation::fail_closed::edge<classified, AuditedLogging> audited_logging{};
+inline constexpr ::foundation::fail_closed::edge<classified, WireSerialize> wire_serialize{};
+inline constexpr ::foundation::fail_closed::edge<classified, HashForCompare> hash_for_compare{};
+inline constexpr ::foundation::fail_closed::edge<classified, LengthOnly> length_only{};
+inline constexpr ::foundation::fail_closed::edge<classified, UserDisplay> user_display{};
+inline constexpr ::foundation::fail_closed::edge<classified, AuthorizedReplay> authorized_replay{};
+
+// Every read counts the members against this seal, so a member that
+// another file adds stops the build rather than admitting a new exit
+// from the Secret tier.  The count is the six edges and `classified`.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 7};
+
+}  // namespace fixy::tags::secret_policy::admitted_policies
+
+namespace fixy {
+
+// This is what makes the audit trail structural rather than a
+// convention: an ad-hoc struct is rejected, so every declassification
+// must name a tag from the closed set in fixy/Tags.h.
+template <typename Policy>
+concept DeclassificationPolicy =
+    std::is_class_v<Policy> && std::derived_from<Policy, tags::secret_policy::secret_policy_base>;
+
+// A policy leaves classification only along its edge.
+template <typename Policy>
+concept AdmittedDeclassification =
+    DeclassificationPolicy<Policy>
+    && ::foundation::fail_closed::Admitted<^^tags::secret_policy::admitted_policies,
+                                           tags::secret_policy::admitted_policies::classified, Policy>;
+
+// The three rules transform() places on its callable.  Each is its
+// own concept, so a refusal names the rule that was broken instead of
+// the bare fact that constraints were not satisfied.
+//
+// A reference return would alias the payload.  The storage is moved
+// from by the time the caller reads the alias, and the alias carries
+// no policy tag, which is the one thing declassify<Policy>() exists to
+// require.  A void return has nothing to rewrap.  The likely intent is
+// an observation of the payload, and an observation also belongs
+// behind a policy.
+template <typename F, typename T>
+concept TransformReturnsByValue = !std::is_reference_v<std::invoke_result_t<F, T&&>>;
+
+template <typename F, typename T>
+concept TransformReturnsNonVoid = !std::is_void_v<std::invoke_result_t<F, T&&>>;
+
+template <typename F, typename T>
+concept SecretTransformer =
+    std::invocable<F, T&&> && TransformReturnsByValue<F, T> && TransformReturnsNonVoid<F, T>;
+
+template <typename T>
+class Secret;
+
+// The constructors are private, so this is the door.
+template <typename T, typename... Args>
+    requires std::is_constructible_v<T, Args...>
+[[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>);
+
+template <typename T>
+class [[nodiscard]] Secret
+    : public graded_facade<
+          ::foundation::algebra::ModalityKind::Comonad,
+          ::foundation::algebra::lattices::ConfLattice::At<::foundation::algebra::lattices::Conf::Secret>, T> {
+public:
+    // value_type, modality and the two name forwarders arrive from
+    // graded_facade.  The base is dependent, so the two names this
+    // class body uses unqualified are re-declared here rather than
+    // found by lookup.
+    using facade_ =
+        graded_facade<::foundation::algebra::ModalityKind::Comonad,
+                      ::foundation::algebra::lattices::ConfLattice::At<::foundation::algebra::lattices::Conf::Secret>,
+                      T>;
+    using typename facade_::graded_type;
+    using typename facade_::lattice_type;
+
+    static_assert(std::is_same_v<lattice_type, tags::secret_policy::admitted_policies::classified>,
+                  "The From end of every admitted_policies edge must be the lattice position "
+                  "Secret<T> occupies, or declassify<Policy>() consults edges out of a tier "
+                  "this wrapper does not sit at.");
+
+private:
+    graded_type impl_;
+
+    constexpr explicit Secret(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
+        : impl_{std::move(v), typename lattice_type::element_type{}} {}
+
+    template <typename... Args>
+        requires std::is_constructible_v<T, Args...>
+    constexpr explicit Secret(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                        && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
+
+    template <typename U, typename... Args>
+        requires std::is_constructible_v<U, Args...>
+    friend constexpr Secret<U> mint_secret(Args&&... args) noexcept(std::is_nothrow_constructible_v<U, Args...>);
+
+    // transform() derives a Secret<R> from a Secret<T>, so each
+    // specialization constructs its siblings.
+    template <typename U>
+    friend class Secret;
+
+public:
+    Secret(const Secret&) = delete("Secret<T> cannot be silently duplicated");
+    Secret& operator=(const Secret&) = delete("Secret<T> cannot be silently duplicated");
+    Secret(Secret&&) = default;
+    // User-provided, so the class is not trivially copyable.  A trivially
+    // copyable Secret<int> let std::bit_cast<int>(secret) read the value
+    // out with no declassify<Policy>() and no audit entry, and let memcpy
+    // do the same.  bit_cast refuses the class now, and -Wclass-memaccess
+    // refuses the memcpy.  The move constructor stays trivial, so a
+    // Secret still passes in a register.
+    constexpr Secret& operator=(Secret&& other) noexcept(std::is_nothrow_move_assignable_v<T>) {
+        impl_ = std::move(other.impl_);
+        return *this;
+    }
+    ~Secret() = default;
+
+    // A classified value cannot steer a branch, an address or an order.
+    // Each of these turns the value into timing or into a memory access
+    // pattern, which is the leak that fixy::ct exists to prevent.  The
+    // operators are deleted, not absent, so a refusal gives its reason
+    // and a requires-expression reads false.
+    //
+    // operator bool takes the branch condition and the copy to bool.  The
+    // integral template takes an index, an offset added to a pointer and
+    // any other integer use: a subscript or a pointer sum converts its
+    // operand to std::ptrdiff_t or std::size_t, and the template matches
+    // that type exactly.  The comparison operators are hidden friends over
+    // any second operand, so `secret == x`, `x == secret`, `secret < x`
+    // and the rewritten forms all select them.
+    //
+    // Compare classified data with a fixy::ct primitive inside
+    // transform().  The mask it returns stays classified until
+    // declassify<HashForCompare>() releases it.
+    operator bool() const = delete("[Secret_BranchCondition] a classified value cannot be a branch condition. "
+                                   "Select with fixy::ct::select inside transform(), or release the value "
+                                   "with declassify<Policy>() first.");
+
+    template <std::integral I>
+        requires(!std::same_as<I, bool>)
+    operator I() const = delete("[Secret_IndexOrArithmetic] a classified value cannot become an integer, "
+                                "an index or a pointer offset, because the address then depends on the "
+                                "secret.  Derive with fixy::ct inside transform(), or release the value "
+                                "with declassify<Policy>() first.");
+
+    template <typename U>
+    friend constexpr bool operator==(Secret const&, U const&) =
+        delete("[Secret_Compare] a classified value cannot be compared with ==, because the compare "
+               "exits early.  Compare with fixy::ct::eq inside transform(), and release the mask "
+               "with declassify<HashForCompare>().");
+
+    template <typename U>
+    friend constexpr std::strong_ordering operator<=>(Secret const&, U const&) =
+        delete("[Secret_Order] a classified value cannot be ordered with <, <=, >, >= or <=>.  "
+               "Order with fixy::ct::less inside transform(), and release the mask with "
+               "declassify<HashForCompare>().");
+
+    // This is not a way out of classification: it derives a different
+    // classified value from the original.  The callable is trusted for
+    // the duration of the call, so the intended use is a stateless
+    // transformation such as a decode or a hash fold.
+    //
+    // The rules on the callable are constraints, not assertions in the
+    // body.  A callable that breaks one never reaches the trailing
+    // return type, so Secret<T&> is never named, and a caller's
+    // requires-expression reads false instead of stopping the build.
+    // The two assertions below restate the rules for a reader of this
+    // body, as declassify() does, and cannot fire.
+    template <typename F>
+        requires SecretTransformer<F, T>
+    [[nodiscard]] constexpr auto transform(F&& f) && noexcept(std::is_nothrow_invocable_v<F, T&&>)
+        -> Secret<std::invoke_result_t<F, T&&>> {
+        using R = std::invoke_result_t<F, T&&>;
+        static_assert(!std::is_reference_v<R>, "[Capture_Leak_Reference_Return] Secret::transform(f): f"
+                                               " must return by value.  A reference return aliases either"
+                                               " the moved-from secret storage (UAF) or a member of f's"
+                                               " closure (silent declassification bypassing"
+                                               " declassify<Policy>).  Change f's return type to a value,"
+                                               " or — if the intent is to observe classified data — call"
+                                               " declassify<Policy>() first to leave an audit trail.");
+        static_assert(!std::is_void_v<R>, "[Capture_Leak_Void_Return] Secret::transform(f): f must"
+                                          " return a value.  void → Secret<void> is meaningless; the"
+                                          " likely intent is a side-effecting observation on the"
+                                          " classified payload — that belongs in declassify<Policy>(),"
+                                          " not transform().");
+        return Secret<R>{std::forward<F>(f)(std::move(impl_).consume())};
+    }
+
+    [[nodiscard]] constexpr auto size() const noexcept
+        requires requires(const T& t) { t.size(); }
+    {
+        return impl_.peek().size();
+    }
+
+    // The requires-clause gates the call, and the assertion below
+    // restates the rule in words on purpose: a constraint failure
+    // reports only that constraints were not satisfied, which says
+    // nothing about what to do instead.  The named diagnostic is what
+    // a reader of this body finds.
+    template <AdmittedDeclassification Policy>
+    [[nodiscard]] constexpr T declassify() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        static_assert(std::derived_from<Policy, tags::secret_policy::secret_policy_base>,
+                      "fixy::diagnostic [SecretPolicy_NotInBase]: "
+                      "Secret::declassify<Policy>() requires Policy to derive "
+                      "from fixy::tags::secret_policy::secret_policy_base and to "
+                      "have an edge in fixy::tags::secret_policy::admitted_policies. "
+                      "Define new policies as `struct MyPolicy final : "
+                      "secret_policy_base {};` inside the secret_policy:: "
+                      "namespace of fixy/Tags.h and admit each with one edge in "
+                      "fixy/Secret.h, so `grep \"declassify<secret_policy::\"` "
+                      "enumerates every escape from classification.  Ad-hoc "
+                      "policy structs anywhere else in the codebase would "
+                      "silently bypass the audit trail.");
+        return std::move(impl_).extract();
+    }
+
+    // Opt-in: overwrites the storage before destruction.  Reaching the
+    // mutable storage is admitted here because the substrate's
+    // mutation gate also accepts an empty grade, which this
+    // confidentiality lattice has, and the access stays internal.
+    void zeroize() noexcept
+        requires std::is_trivially_copyable_v<T>
+    {
+        // The writes are volatile so the optimizer cannot drop a clear
+        // whose result is never read.  The cast chain adds the volatile
+        // qualifier by implicit conversion and then narrows through a
+        // volatile void pointer, which keeps the qualifier all the way
+        // down without reinterpreting or casting away a qualifier.
+        volatile T* vp = std::addressof(impl_.peek_mut());
+        volatile auto* p = static_cast<volatile unsigned char*>(static_cast<volatile void*>(vp));
+        for (std::size_t i = 0; i < sizeof(T); ++i)
+            p[i] = 0;
+    }
+};
+
+template <typename T, typename... Args>
+    requires std::is_constructible_v<T, Args...>
+[[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
+    return Secret<T>{std::in_place, std::forward<Args>(args)...};
+}
+
+static_assert(sizeof(Secret<int>) == sizeof(int));
+static_assert(sizeof(Secret<unsigned long long>) == sizeof(unsigned long long));
+static_assert(!std::is_trivially_copyable_v<Secret<int>> && !std::is_trivially_copyable_v<Secret<unsigned long long>>,
+              "std::bit_cast must not read a classified value out with no declassify<Policy>()");
+static_assert(std::is_trivially_move_constructible_v<Secret<int>> && std::is_trivially_destructible_v<Secret<int>>,
+              "the move constructor stays trivial, so a Secret still passes in a register");
+
+// The deleted operators refuse each flow of a classified value into a
+// branch, an address or an order.  A requires-expression over each flow
+// reads false, so an operator that a later edit defines stops the build.
+namespace detail::secret_flow_lock {
+
+template <typename S>
+concept BranchesOn = requires(S const& s) { s ? 1 : 0; };
+template <typename S>
+concept IndexesWith = requires(S const& s, int (&table)[4]) { table[s]; };
+template <typename S>
+concept OffsetsPointerBy = requires(S const& s, int* p) { p + s; };
+template <typename S>
+concept IndexesContainerWith = requires(S const& s, std::array<int, 4>& table) { table[s]; };
+
+static_assert(!BranchesOn<Secret<int>> && !BranchesOn<Secret<bool>>);
+static_assert(!std::is_convertible_v<Secret<int>, bool> && !std::is_constructible_v<bool, Secret<int> const&>);
+static_assert(!IndexesWith<Secret<std::size_t>> && !IndexesWith<Secret<int>>);
+static_assert(!OffsetsPointerBy<Secret<std::size_t>> && !OffsetsPointerBy<Secret<int>>);
+static_assert(!IndexesContainerWith<Secret<std::size_t>>);
+static_assert(!std::is_convertible_v<Secret<std::size_t>, std::size_t>);
+static_assert(!std::equality_comparable<Secret<int>> && !std::equality_comparable_with<Secret<int>, int>);
+static_assert(!std::three_way_comparable<Secret<int>> && !std::totally_ordered<Secret<int>>);
+static_assert(!std::totally_ordered_with<Secret<int>, int>);
+
+}  // namespace detail::secret_flow_lock
+
+// The detection surface of the old IsSecret.h.  One reflection query
+// answers it, and the value type is read off the wrapper's own typedef,
+// so there is no primary-plus-specialization ladder to keep in step
+// with the class.  The concept is the question; the value spelling is
+// derived from it and read by nothing that gates, because a variable
+// template can be explicitly specialized from any translation unit and
+// a concept cannot.
+
+template <typename T>
+concept IsSecret = ::foundation::reflect::IsInstanceOf<T, ^^Secret>;
+
+template <typename T>
+inline constexpr bool is_secret_v = IsSecret<T>;
+
+template <typename T>
+    requires IsSecret<T>
+using secret_value_t = typename std::remove_cvref_t<T>::value_type;
+
+namespace detail::secret_self_test {
+
+struct payload {};
+struct LookalikeSecret {
+    using value_type = int;
+    int payload;
+};
+
+using S_int = Secret<int>;
+using S_payload = Secret<payload>;
+
+static_assert(is_secret_v<S_int>);
+static_assert(is_secret_v<S_payload>);
+static_assert(is_secret_v<S_int&>);
+static_assert(is_secret_v<S_int&&>);
+static_assert(is_secret_v<S_int const>);
+static_assert(is_secret_v<S_int const&>);
+static_assert(is_secret_v<S_int volatile>);
+static_assert(!is_secret_v<int>);
+static_assert(!is_secret_v<int*>);
+static_assert(!is_secret_v<S_int*>);
+static_assert(!is_secret_v<void>);
+static_assert(!is_secret_v<LookalikeSecret>);
+static_assert(IsSecret<S_int>);
+static_assert(IsSecret<S_payload const&>);
+static_assert(!IsSecret<int>);
+static_assert(std::is_same_v<secret_value_t<S_int>, int>);
+static_assert(std::is_same_v<secret_value_t<S_payload const&>, payload>);
+
+}  // namespace detail::secret_self_test
+
+// The policy relation's discipline, derived from the namespace.  The
+// seal is the one place a new policy must be acknowledged by hand.
+// Adding a tag takes three steps: declare `struct NewTag final :
+// secret_policy_base {}` in the secret_policy namespace of
+// fixy/Tags.h, admit it with one edge above, and move the seal and this
+// pin.  A downstream consumer that pins its own cardinality against
+// admitted_policy_count moves in the same change.
+static_assert(::foundation::fail_closed::Sealed<^^tags::secret_policy::admitted_policies>);
+inline constexpr std::size_t admitted_policy_count =
+    ::foundation::fail_closed::edge_count<^^tags::secret_policy::admitted_policies>();
+
+static_assert(admitted_policy_count == 6, "fixy::tags::secret_policy::admitted_policies holds a different "
+                                          "number of edges than this pin.  A policy was added or removed: "
+                                          "review it as the audit-trail change it is, then move the pin.");
+static_assert(::foundation::fail_closed::every_edge_is_admitted<^^tags::secret_policy::admitted_policies>(),
+              "every edge declared in fixy::tags::secret_policy::admitted_policies must be admitted by "
+              "the fail-closed check that reads the same namespace");
+
+// The count above cannot catch a tag that was declared but never
+// admitted: it counts the edges against themselves.  Enumerating the
+// tag namespace and asking for an edge per class closes that path.
+static_assert(::foundation::fail_closed::every_class_in_has_edge<
+                  ^^tags::secret_policy::admitted_policies, ^^tags::secret_policy,
+                  ::foundation::fail_closed::EdgeEnd::To, tags::secret_policy::secret_policy_base>(),
+              "The secret_policy namespace of fixy/Tags.h declares a policy tag that has no edge in "
+              "fixy::tags::secret_policy::admitted_policies.  A declared tag that is not admitted "
+              "leaves a gap in the audit trail: declassify<Tag>() rejects it, and nothing says why.  "
+              "Admit it with one `inline constexpr edge<classified, Tag>` in fixy/Secret.h, or "
+              "remove the declaration.");
+
+namespace detail::secret_policy_relation {
+
+// The converse of the completeness check: every edge starts at the
+// Secret tier and ends at a final tag derived from the marker base, so
+// the relation admits nothing that DeclassificationPolicy rejects.
+[[nodiscard]] consteval bool every_edge_is_a_policy_exit() noexcept {
+    for (const auto m :
+         std::meta::members_of(^^tags::secret_policy::admitted_policies, std::meta::access_context::unchecked())) {
+        if (!::foundation::fail_closed::is_edge(m)) continue;
+        const auto ends = ::foundation::fail_closed::ends_of(m);
+        if (ends.from != std::meta::dealias(^^tags::secret_policy::admitted_policies::classified)) return false;
+        if (!std::meta::is_base_of_type(^^tags::secret_policy::secret_policy_base, ends.to)) return false;
+        if (ends.to == ^^tags::secret_policy::secret_policy_base) return false;
+        if (!std::meta::is_final(ends.to)) return false;
+    }
+    return true;
+}
+
+static_assert(every_edge_is_a_policy_exit(), "Every edge in fixy::tags::secret_policy::admitted_policies must "
+                                             "run from `classified` to a final class derived from "
+                                             "secret_policy_base.  Any other edge is inert for "
+                                             "declassify<Policy>() and misleads a reader of the catalog.");
+
+}  // namespace detail::secret_policy_relation
+
+// A public method handing back a mutable reference would let a caller
+// read the classified payload through ordinary aliasing, which is
+// exactly what the audited exit exists to prevent.  The substrate does
+// admit such an accessor for an empty grade, and this wrapper uses
+// that internally to overwrite bytes before destruction, but it must
+// never appear on the public face.  The sentinels below turn "there is
+// no such accessor today" into an invariant that reds if one is added.
+namespace detail::secret_api_lock {
+
+template <typename S>
+concept ExposesPeekMut = requires(S& s) { s.peek_mut(); };
+template <typename S>
+concept ExposesValueMut = requires(S& s) { s.value_mut(); };
+template <typename S>
+concept ExposesMutableRef = requires(S& s) { s.mutable_ref(); };
+template <typename S>
+concept ExposesDataMut = requires(S& s) { s.data_mut(); };
+template <typename S>
+concept ExposesGetMut = requires(S& s) { s.get_mut(); };
+
+}  // namespace detail::secret_api_lock
+
+static_assert(!detail::secret_api_lock::ExposesPeekMut<Secret<int>>,
+              "Secret<T>::peek_mut() must NOT exist publicly. The only escape "
+              "from a classified value is declassify<Policy>(), and a public "
+              "mutable accessor bypasses that audit trail. Write-only access "
+              "for a secure-overwrite path stays internal, as zeroize() does.");
+static_assert(!detail::secret_api_lock::ExposesValueMut<Secret<int>>,
+              "Secret<T>::value_mut() must NOT exist. A provenance wrapper once "
+              "carried that name because mutating content preserves provenance; "
+              "on a classified value it leaks the payload. Derive a new Secret "
+              "with transform(), or declassify and re-wrap, or use the internal "
+              "zeroize() path.");
+static_assert(!detail::secret_api_lock::ExposesMutableRef<Secret<int>>,
+              "Secret<T>::mutable_ref() must NOT exist. Any public method "
+              "returning a reference or pointer to the classified payload "
+              "bypasses declassify<Policy>().");
+static_assert(!detail::secret_api_lock::ExposesDataMut<Secret<int>>,
+              "Secret<T>::data_mut() must NOT exist. A container-style raw "
+              "pointer accessor leaks the classified payload through "
+              "pointer-iterator idioms with no policy tag to discharge it.");
+static_assert(!detail::secret_api_lock::ExposesGetMut<Secret<int>>,
+              "Secret<T>::get_mut() must NOT exist. An optional-style mutable "
+              "extractor is ergonomic, and on a classified value it bypasses "
+              "declassify<Policy>().");
+
+}  // namespace fixy

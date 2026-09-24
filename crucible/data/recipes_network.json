@@ -1,0 +1,44 @@
+{
+  "network_recipe_constraints_version": 1,
+  "tiers": [
+    {
+      "determinism": "UNORDERED",
+      "equivalence": "ApproximateRelative",
+      "sharp_requires_associative": true,
+      "sharp_requires_commutative": true,
+      "requires_sorted_participants": false,
+      "lossy_compression_allowed": true,
+      "quantization_allowed": true,
+      "fec_allowed": true
+    },
+    {
+      "determinism": "ORDERED",
+      "equivalence": "OrderedTolerance",
+      "sharp_requires_associative": true,
+      "sharp_requires_commutative": true,
+      "requires_sorted_participants": false,
+      "lossy_compression_allowed": true,
+      "quantization_allowed": true,
+      "fec_allowed": true
+    },
+    {
+      "determinism": "BITEXACT_TC",
+      "equivalence": "TensorCoreUlp",
+      "sharp_requires_associative": true,
+      "sharp_requires_commutative": true,
+      "requires_sorted_participants": false,
+      "lossy_compression_allowed": false,
+      "quantization_allowed": false,
+      "fec_allowed": true
+    },
+    {
+      "determinism": "BITEXACT_STRICT",
+      "equivalence": "ByteIdentical",
+      "sharp_eligible": false,
+      "requires_sorted_participants": true,
+      "lossy_compression_allowed": false,
+      "quantization_allowed": false,
+      "fec_allowed": true
+    }
+  ]
+}

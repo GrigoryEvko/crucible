@@ -1,0 +1,56 @@
+% 02-design-principles.tex
+
+\section{Design Principles}\label{sec:principles}
+
+\subsection{Content-Addressed Computation}
+
+Every compilable sub-graph is identified by a content hash computed from its semantics: operation identities, shapes, data types, scalar parameters.
+Two sub-graphs performing identical computation produce identical hashes regardless of origin.
+The hash function uses wyhash-style 128-bit multiply mixing (wymix) over schema hashes, per-tensor dimension/stride products, packed dtype/device metadata, and scalar arguments---approximately 6 cycles per tensor on x86-64.
+
+Three consequences.
+First, the KernelCache maps \code{(ContentHash, device\_capability)} to compiled artifacts; a kernel compiled for one model serves any future model containing the same sub-computation on the same hardware class.
+Second, structural comparison reduces to hash comparison: shared Merkle hashes imply identical sub-trees, enabling $O(\log N)$ diff analogous to Git.
+Third, content addressing provides a natural cache key at every level: compiled kernels, memory plans, calibration data, proof certificates.
+
+\subsection{Observe Before Optimizing}
+
+Crucible records one complete iteration of what the model actually does, then optimizes from observations.
+No shape inference, no symbolic tracing, no compiler-level analysis of Python control flow.
+The recording captures concrete execution: actual shapes, actual data flow (tracked via pointer identity in an open-addressing PtrMap), actual iteration boundaries (detected via $K{=}5$ schema hash signature matching with two-match confirmation).
+
+When behavior changes---dynamic shapes, data-dependent control flow, architecture mutations---guard hashes detect the mismatch.
+The system falls back to eager execution, records the new behavior, and recompiles.
+The observe-compile-execute cycle is continuous and self-correcting.
+
+\subsection{Formal Verification Where Tractable}
+
+Crucible proves properties that are (a) expressible in a decidable theory, (b) critical for correctness, and (c) insufficiently covered by testing.
+
+Memory plan non-overlap: bitvector satisfiability over tensor lifetimes.
+SPSC protocol safety: finite-state exhaustive exploration.
+Kernel access bounds: bitvector constraints over thread and block indices.
+Hash function quality: universal bitvector queries (no fixed points in $2^{64}$ inputs, avalanche $\geq$ 20 bits per input bit flip).
+All proved at build time.
+
+Properties depending on hardware timing (memory ordering), continuous quantities (floating-point stability), or unbounded state spaces (general correctness) fall outside static verification scope.
+For these: ThreadSanitizer at runtime, empirical calibration, and architectural mitigation (deterministic execution order).
+The boundary is documented: which properties are proved, which are tested, which are mitigated.
+
+\subsection{Hardware-Agnostic Representation, Hardware-Specific Execution}
+
+The Merkle DAG captures \emph{what} to compute.
+The KernelCache contains \emph{how} on specific hardware.
+A single DAG may have compiled kernels for H100 (sm\_90), MI300X (gfx942, 64-wide wavefronts), A100 (sm\_80), and consumer 3090 (sm\_86), each keyed by \code{(ContentHash, device\_capability)}.
+Migration to new hardware regenerates only kernel cache entries; the DAG is unchanged.
+
+\code{CostModel.h} encodes hardware profiles (\code{HardwareProfile} struct: SM count, warp size, register file, shared memory, four-level bandwidth hierarchy, peak throughput per dtype) with presets for B200, H100, MI300X, and A100.
+Heterogeneous clusters are natural: different Relays execute different compiled kernels for the same logical computation.
+
+\subsection{No Training/Inference Distinction}
+
+The compiled Merkle DAG is both training and serving artifact.
+No export step, no format conversion, no operator coverage gap.
+Training and inference differ only in which sub-DAG executes (forward+backward+optimizer vs forward only).
+Both use the same compiled kernels, memory plans, and dispatch mechanism.
+Deploying a model means copying the Cipher to a serving Relay.

@@ -1,0 +1,1712 @@
+#pragma once
+
+// There is deliberately no implicit conversion to T. A refined value
+// must not pass silently into a function that takes the bare type.
+//
+// Where contracts are compiled out, the mint's precondition becomes an
+// unconditional assumption handed to the optimizer rather than a
+// check. A Refined therefore carries its invariant as a promise to the
+// optimizer, not as a guard. That is correct and free for a value the
+// surrounding code structurally guarantees. It is unsound for a value
+// taken straight from an untrusted source: a malformed value satisfies
+// the assumption vacuously and propagates downstream as a false
+// invariant, feeding, say, an unreachable default arm.
+//
+// So at a trust boundary the value gets a real branch of its own,
+// outside the contract system, before the Refined is minted. The mint
+// then stands as typed defence in depth: its precondition holds by
+// construction and never fires, while the type keeps carrying the
+// invariant for the optimizer and for every later reader.
+//
+// The wrapper has one door. Every constructor that takes a bare T is
+// private, and the two friend mints are the only callers:
+// mint_refined runs the predicate, mint_refined_trusted does not. A
+// search for the trusted spelling therefore finds every site that
+// asks the type system to take an invariant on faith.
+//
+// Old spelling: include/crucible/safety/Refined.h,
+// include/crucible/safety/RefinedAlgebra.h and
+// include/crucible/safety/SealedRefined.h, which this header joins.
+// The implication relation those headers stated as an open trait is a
+// closed namespace here, so the three had to become one.
+
+#include <fixy/GradedFacade.h>
+#include <fixy/Qtt.h>
+#include <foundation/Lifetime.h>
+#include <foundation/Platform.h>
+#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/GradedTrait.h>
+#include <foundation/algebra/lattices/BoolLattice.h>
+#include <foundation/contracts/Pre.h>
+#include <foundation/diag/FailClosed.h>
+#include <foundation/reflect/Instance.h>
+
+#include <array>
+#include <bit>
+#include <compare>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <meta>
+#include <span>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+namespace fixy {
+
+// Every predicate is stateless, so that it can serve as a template
+// argument.
+//
+// Every predicate is also a named class type, never a closure.  The
+// predicate's type is a template argument of the refinement's lattice,
+// and the lattice's printed name keys the row hash.  GCC prints a
+// generic closure with a counter that runs across the translation unit,
+// so a closure predicate gave one refinement a different hash in each
+// translation unit.  foundation/reflect/Hash.h now refuses such a type
+// in every id, so a closure predicate fails to hash rather than hashing
+// wrong.  Each predicate therefore ships as a class and a value, and
+// call sites name the value as before.
+
+// Each call operator states the expression its body evaluates as a
+// constraint, so a predicate that cannot evaluate a type fails
+// PredicateInvocableOn at the mint instead of failing inside the body.
+struct IsPositive {
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x > decltype(x){0}; }
+    {
+        return x > decltype(x){0};
+    }
+};
+
+inline constexpr IsPositive positive{};
+
+struct IsNonNegative {
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x >= decltype(x){0}; }
+    {
+        return x >= decltype(x){0};
+    }
+};
+
+inline constexpr IsNonNegative non_negative{};
+
+// For an unsigned type this coincides with positive. The two are kept
+// apart because they state different intents: non_zero reserves a
+// sentinel, positive claims a sign class.
+//
+// The zero is value-initialised rather than written as a literal, so
+// that the zero value of a pointer type is spelled as the null pointer
+// it is.  For an arithmetic type the two spellings are the same value.
+struct IsNonZero {
+    constexpr bool operator()(const auto& x) const noexcept
+        requires requires { x.raw() != 0; } || requires { x != std::remove_cvref_t<decltype(x)>{}; }
+    {
+        if constexpr (requires { x.raw(); })
+            return x.raw() != 0;
+        else
+            return x != std::remove_cvref_t<decltype(x)>{};
+    }
+};
+
+inline constexpr IsNonZero non_zero{};
+
+// The dual of non_zero. It holds where a wire or disk format reserves
+// zero as the only valid payload for a field, so that the must-be-zero
+// invariant lives in the type instead of being discovered by reading a
+// write routine and noticing the zero literal.
+struct IsZero {
+    constexpr bool operator()(const auto& x) const noexcept
+        requires requires { x.raw() == 0; } || requires { x == std::remove_cvref_t<decltype(x)>{}; }
+    {
+        if constexpr (requires { x.raw(); })
+            return x.raw() == 0;
+        else
+            return x == std::remove_cvref_t<decltype(x)>{};
+    }
+};
+
+inline constexpr IsZero is_zero{};
+
+struct IsNonNull {
+    constexpr bool operator()(auto* p) const noexcept { return p != nullptr; }
+};
+
+inline constexpr IsNonNull non_null{};
+
+struct IsPowerOfTwo {
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x != decltype(x){0} && (x & (x - decltype(x){1})) == decltype(x){0}; }
+    {
+        using U = decltype(x);
+        return x != U{0} && (x & (x - U{1})) == U{0};
+    }
+};
+
+inline constexpr IsPowerOfTwo power_of_two{};
+
+struct IsNonEmpty {
+    constexpr bool operator()(const auto& c) const noexcept
+        requires requires { !c.empty(); }
+    {
+        return !c.empty();
+    }
+};
+
+inline constexpr IsNonEmpty non_empty{};
+
+// Each parameterised predicate is a named struct template rather than
+// a variable template of lambdas. A lambda produces a distinct
+// unnamed closure type per parameter, and the compiler cannot
+// pattern-match that back to the parameter, so the implication rules
+// at the foot of this file could not deduce against it. Callers are
+// unaffected, since the paired variable template still reads as a
+// call.
+//
+// Each predicate therefore ships in two pieces: the struct template is
+// the type that the implication rules deduce against, and the variable
+// template is the value that call sites pass.
+
+template <std::size_t Alignment>
+struct Aligned {
+    constexpr bool operator()(auto* p) const noexcept {
+        return (std::bit_cast<std::uintptr_t>(p) & (Alignment - 1)) == 0;
+    }
+};
+
+template <std::size_t Alignment>
+inline constexpr Aligned<Alignment> aligned{};
+
+template <auto Lo, auto Hi>
+struct InRange {
+    constexpr bool operator()(auto x) const noexcept { return x >= decltype(x)(Lo) && x <= decltype(x)(Hi); }
+};
+
+template <auto Lo, auto Hi>
+inline constexpr InRange<Lo, Hi> in_range{};
+
+template <auto Max>
+struct BoundedAbove {
+    constexpr bool operator()(auto x) const noexcept { return x <= decltype(x)(Max); }
+};
+
+template <auto Max>
+inline constexpr BoundedAbove<Max> bounded_above{};
+
+template <std::size_t N>
+struct LengthGe {
+    constexpr bool operator()(const auto& c) const noexcept { return c.size() >= N; }
+};
+
+template <std::size_t N>
+inline constexpr LengthGe<N> length_ge{};
+
+template <std::size_t N>
+struct ExactSize {
+    constexpr bool operator()(auto const& c) const noexcept { return c.size() == N; }
+};
+
+template <std::size_t N>
+inline constexpr ExactSize<N> exact_size{};
+
+template <auto Min>
+struct BoundedBelow {
+    constexpr bool operator()(auto x) const noexcept { return x >= decltype(x)(Min); }
+};
+
+template <auto Min>
+inline constexpr BoundedBelow<Min> bounded_below{};
+
+// This is divisibility of a count, distinct from the byte-alignment of
+// an address that `aligned` tests.
+template <auto Divisor>
+struct DivisibleBy {
+    static_assert(Divisor != decltype(Divisor){0}, "DivisibleBy<0> is undefined (modulo by zero).  Pick a non-"
+                                                   "zero divisor or omit the predicate.");
+    constexpr bool operator()(auto x) const noexcept { return (x % decltype(x)(Divisor)) == decltype(x){0}; }
+};
+
+template <auto Divisor>
+inline constexpr DivisibleBy<Divisor> divisible_by{};
+
+// A conjunction of two predicates can already be spelled two other
+// ways: as two nested refinement wrappers, or as a hand-rolled struct
+// combining them. Both lose. Nesting produces a type the implication
+// relation cannot see through, so every subsumption chain stops at
+// the outer wrapper, and both forms grow at each call site. A
+// combinator is one predicate type instead, which composes with any
+// other and still collapses inside the wrapper.
+//
+// Each combinator is itself a predicate, so they nest freely.
+
+namespace refined_algebra {
+
+template <auto... Preds>
+struct AllOf {
+    constexpr bool operator()(auto const& v) const noexcept {
+        if constexpr (sizeof...(Preds) == 0)
+            return true;
+        else
+            return (... && Preds(v));
+    }
+};
+
+template <auto... Preds>
+inline constexpr AllOf<Preds...> all_of{};
+
+template <auto... Preds>
+struct AnyOf {
+    constexpr bool operator()(auto const& v) const noexcept {
+        if constexpr (sizeof...(Preds) == 0)
+            return false;
+        else
+            return (... || Preds(v));
+    }
+};
+
+template <auto... Preds>
+inline constexpr AnyOf<Preds...> any_of{};
+
+template <auto Pred>
+struct Negate {
+    constexpr bool operator()(auto const& v) const noexcept { return !Pred(v); }
+};
+
+template <auto Pred>
+inline constexpr Negate<Pred> negate{};
+
+template <auto Pre, auto Post>
+struct Implies {
+    constexpr bool operator()(auto const& v) const noexcept { return !Pre(v) || Post(v); }
+};
+
+template <auto Pre, auto Post>
+inline constexpr Implies<Pre, Post> implies{};
+
+}  // namespace refined_algebra
+
+// The atomic predicates already live one namespace out, so the
+// combinators are re-exported beside them and the whole vocabulary
+// reads the same at a call site.
+using refined_algebra::AllOf;
+using refined_algebra::AnyOf;
+using refined_algebra::Negate;
+using refined_algebra::Implies;
+using refined_algebra::all_of;
+using refined_algebra::any_of;
+using refined_algebra::negate;
+using refined_algebra::implies;
+
+namespace refined {
+
+// The type of a predicate value, stripped of const.  An inline
+// constexpr predicate variable is const at file scope while the
+// template argument that binds it is not, so every place that reasons
+// about a predicate by type goes through this one alias.
+template <auto Pred>
+using predicate_t = std::remove_cv_t<decltype(Pred)>;
+
+// The claim a sealed refinement makes that its lattice does not see.
+// Both refinements grade on BoolLattice over the predicate, so without
+// this identity a sealed value and an open one over the same predicate
+// take one cache slot, although only one of them can be mutated in
+// place.  The open form publishes nothing, which leaves its hash where
+// it was.
+namespace row_discipline {
+struct sealed_refinement;
+}  // namespace row_discipline
+
+namespace detail {
+
+template <bool Sealed>
+struct sealed_row_discipline {};
+
+template <>
+struct sealed_row_discipline<true> {
+    using row_discipline = ::fixy::refined::row_discipline::sealed_refinement;
+};
+
+}  // namespace detail
+
+}  // namespace refined
+
+// This gates the mints, never the class template itself.  The subsort
+// machinery reasons over a Refined type without ever constructing one,
+// so a requires-clause on the class template would make those types
+// unnameable and break that discipline.  The checked mint is also the
+// only place the predicate is actually evaluated, and gating it turns
+// what would be a SFINAE cascade inside the contract clause into one
+// concept-violation message at the call site.
+template <auto Pred, typename T>
+concept PredicateInvocableOn = requires(T const& v) {
+    { Pred(v) } -> std::convertible_to<bool>;
+};
+
+// One template carries both refinements.  They differed in exactly one
+// place — the sealed one has no extractor — and everything else was the
+// same text written twice.  The Sealed argument is that one difference.
+//
+// The two names stay distinct types, because Refinement<Pred, T, false>
+// and Refinement<Pred, T, true> are distinct types.  Nothing that held
+// a Refined can be handed a SealedRefined, and the hidden-friend
+// comparisons still refuse to compare across the two.
+template <auto Pred, typename T, bool Sealed>
+class Refinement;
+
+template <auto Pred, typename T>
+using Refined = Refinement<Pred, T, false>;
+
+// A refinement with no way to extract the value back out.  Every
+// change to a sealed value therefore goes through a fresh mint, which
+// re-runs the predicate.  That closes the pattern of extracting a
+// value, mutating it behind the predicate's back and quietly
+// re-wrapping it.
+//
+// Reach for it when the predicate is an invariant downstream code
+// relies on continuously rather than only at construction, and
+// especially when the wrapped type has a mutation surface of its own.
+//
+// A const-qualified ordinary refinement is not the same discipline.
+// Const on a parameter does not propagate to the caller's own value,
+// and the extractor is rvalue-qualified, so any caller can still move
+// from it and pull the value out.  Removing the extractor from the
+// type is what makes the discipline unavoidable.
+template <auto Pred, typename T>
+using SealedRefined = Refinement<Pred, T, true>;
+
+// Every factory that mints an authoritative value is named mint_, so
+// that one search finds every authorization point.  The constructors
+// are private, so these four are the only doors, and the trusted pair
+// is the grep target for every site that skips the predicate.
+
+template <auto Pred, typename T>
+    requires PredicateInvocableOn<Pred, T>
+[[nodiscard]] constexpr Refined<Pred, T> mint_refined(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
+
+// No invocability requirement here: this path bypasses the predicate
+// entirely, so even a predicate that cannot be called on T is
+// admissible and the caller owns the invariant.
+template <auto Pred, typename T>
+    requires std::move_constructible<T>
+[[nodiscard]] constexpr Refined<Pred, T>
+mint_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
+
+template <auto Pred, typename T>
+    requires PredicateInvocableOn<Pred, T>
+[[nodiscard]] constexpr SealedRefined<Pred, T>
+mint_sealed_refined(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
+
+template <auto Pred, typename T>
+    requires std::move_constructible<T>
+[[nodiscard]] constexpr SealedRefined<Pred, T>
+mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
+
+// The annotation refuses the checked lifetime start over bytes, and the
+// user-provided assignments below keep the class from being trivially
+// copyable, so std::bit_cast<Refined<positive, int>>(-1) does not build a
+// positive int that holds -1.  The constructors stay trivial, so a refined
+// value still passes in a register.
+template <auto Pred, typename T, bool Sealed>
+class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] Refinement
+    : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                           ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>, T>,
+      public refined::detail::sealed_row_discipline<Sealed> {
+public:
+    using predicate_type = decltype(Pred);
+
+    // The lattice is keyed by the predicate's type, so the type must be the
+    // whole predicate: a stateless class.  A function pointer or a class
+    // with state gives two predicates one type, and so one row hash.
+    static_assert(std::is_class_v<refined::predicate_t<Pred>> && std::is_empty_v<refined::predicate_t<Pred>>,
+                  "fixy::Refined: the predicate must be a stateless class, such as fixy::positive or "
+                  "fixy::in_range<0, 9>.  A function pointer or a class with state gives two predicates one "
+                  "type, so two different refinements would share one row hash.");
+
+    // value_type, modality and the two name forwarders arrive from
+    // graded_facade.  The base is dependent, so the two names this
+    // class body uses unqualified are re-declared here rather than
+    // found by lookup.  The lattice takes the predicate's type, and the
+    // const strip matters: an inline constexpr predicate variable is
+    // const at file scope while the template argument that binds it is
+    // not.
+    using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute,
+                                  ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>, T>;
+    using typename facade_::graded_type;
+    using typename facade_::lattice_type;
+
+    // The one difference between the two refinements, readable off the
+    // type.  refined_is_sealed_v is a view of this.
+    static constexpr bool is_sealed = Sealed;
+
+private:
+    graded_type impl_;
+
+    // The two doors.  Each is reachable only through the friend mints
+    // that name it.
+    struct checked_door_ {};
+    struct trusted_door_ {};
+
+    // The predicate runs on the value before it moves into the
+    // substrate, so a predicate written over a reference never sees a
+    // moved-from object.  The macro fires at consteval as well as at
+    // runtime, and leaves the invariant behind as an assumption.
+    [[nodiscard]] static constexpr T admit_(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires PredicateInvocableOn<Pred, T>
+    {
+        CRUCIBLE_PRE(Pred(v));
+        return v;
+    }
+
+    constexpr Refinement(checked_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires PredicateInvocableOn<Pred, T>
+        : impl_{admit_(std::move(v)), typename lattice_type::element_type{}} {}
+
+    constexpr Refinement(trusted_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
+        : impl_{std::move(v), typename lattice_type::element_type{}} {}
+
+    template <auto P, typename U>
+        requires PredicateInvocableOn<P, U>
+    friend constexpr Refined<P, U> mint_refined(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
+
+    template <auto P, typename U>
+        requires std::move_constructible<U>
+    friend constexpr Refined<P, U> mint_refined_trusted(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
+
+    template <auto P, typename U>
+        requires PredicateInvocableOn<P, U>
+    friend constexpr SealedRefined<P, U> mint_sealed_refined(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
+
+    template <auto P, typename U>
+        requires std::move_constructible<U>
+    friend constexpr SealedRefined<P, U>
+    mint_sealed_refined_trusted(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
+
+public:
+    // Sealing an ordinary refinement needs no check: the source's own
+    // invariant is the proof, so this is a transfer between two doors
+    // and not a door of its own.
+    constexpr explicit Refinement(Refinement<Pred, T, false>&& r) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires Sealed
+        : impl_{std::move(r).into(), typename lattice_type::element_type{}} {}
+
+    // The refinement is a property of the value, so copying or moving
+    // preserves it and neither needs to re-check.  What a sealed
+    // refinement forbids is extraction, not movement.
+    //
+    // These four are load-bearing and cannot be dropped as implicit.
+    // The sealing constructor above takes Refinement<Pred, T, false>&&,
+    // which for the unsealed instantiation is Refinement&& — a
+    // user-declared move constructor, even though a requires-clause
+    // makes it unusable there.  Declaring one deletes the implicit copy
+    // constructor, and removing this block leaves Refined<Pred, T>
+    // uncopyable.  Measured: without it, mint_linear over a Refined
+    // fails on a deleted copy constructor.
+    //
+    // The two assignments are user-provided, so the class is not
+    // trivially copyable and no byte route builds a refined value.  The
+    // constructors stay trivial.
+    Refinement(const Refinement&) = default;
+    Refinement(Refinement&&) = default;
+    constexpr Refinement& operator=(const Refinement& other) noexcept(std::is_nothrow_copy_assignable_v<T>) {
+        impl_ = other.impl_;
+        return *this;
+    }
+    constexpr Refinement& operator=(Refinement&& other) noexcept(std::is_nothrow_move_assignable_v<T>) {
+        impl_ = std::move(other.impl_);
+        return *this;
+    }
+
+    // For a sealed refinement this is the only way to observe the
+    // value.  There is deliberately no mutable accessor on either.
+    [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
+
+    [[nodiscard]] constexpr T into() && noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires(!Sealed)
+    {
+        return std::move(impl_).consume();
+    }
+
+    friend constexpr bool operator==(const Refinement& a,
+                                     const Refinement& b) noexcept(noexcept(a.impl_.peek() == b.impl_.peek())) {
+        return a.impl_.peek() == b.impl_.peek();
+    }
+
+    friend constexpr auto operator<=>(const Refinement& a,
+                                      const Refinement& b) noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
+        requires std::three_way_comparable<T>
+    {
+        return a.impl_.peek() <=> b.impl_.peek();
+    }
+};
+
+template <auto Pred, typename T>
+    requires PredicateInvocableOn<Pred, T>
+[[nodiscard]] constexpr Refined<Pred, T> mint_refined(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    return Refined<Pred, T>{typename Refined<Pred, T>::checked_door_{}, std::move(value)};
+}
+
+template <auto Pred, typename T>
+    requires std::move_constructible<T>
+[[nodiscard]] constexpr Refined<Pred, T>
+mint_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    return Refined<Pred, T>{typename Refined<Pred, T>::trusted_door_{}, std::move(value)};
+}
+
+template <auto Pred, typename T>
+    requires PredicateInvocableOn<Pred, T>
+[[nodiscard]] constexpr SealedRefined<Pred, T>
+mint_sealed_refined(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    return SealedRefined<Pred, T>{typename SealedRefined<Pred, T>::checked_door_{}, std::move(value)};
+}
+
+template <auto Pred, typename T>
+    requires std::move_constructible<T>
+[[nodiscard]] constexpr SealedRefined<Pred, T>
+mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    return SealedRefined<Pred, T>{typename SealedRefined<Pred, T>::trusted_door_{}, std::move(value)};
+}
+
+// No byte route builds a refined value, and the constructors stay trivial
+// so that a refined value still passes in a register.
+static_assert(!std::is_trivially_copyable_v<Refined<positive, int>>
+                  && !std::is_trivially_copyable_v<SealedRefined<positive, int>>,
+              "std::bit_cast must not build a refined value from bytes that the predicate never saw");
+static_assert(std::is_trivially_copy_constructible_v<Refined<positive, int>>
+                  && std::is_trivially_move_constructible_v<Refined<positive, int>>
+                  && std::is_trivially_destructible_v<Refined<positive, int>> && sizeof(Refined<positive, int>) == sizeof(int),
+              "a refined int keeps the layout and the register passing of an int");
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Refined<positive, int>>,
+              "the checked lifetime start refuses a refined value over bytes");
+
+// Every load-bearing predicate gets a named alias, so that it takes
+// part in review rather than drifting into an anonymous refinement at
+// each call site.  Naming each shape also keeps two spellings of the
+// same refinement from drifting apart across call sites.
+
+template <typename T>
+using NonNull = Refined<non_null, T>;
+template <typename T>
+using Positive = Refined<positive, T>;
+template <typename T>
+using NonNegative = Refined<non_negative, T>;
+template <typename T>
+using PowerOfTwo = Refined<power_of_two, T>;
+template <typename T>
+using NonZero = Refined<non_zero, T>;
+template <typename T>
+using NonEmpty = Refined<non_empty, T>;
+
+// This uses length_ge<1> rather than non_empty because length_ge
+// participates in the implication relation below, so a non-empty span
+// strengthens to a longer-minimum one without being re-validated.
+// non_empty stays useful for a container whose size is not cheap to
+// compute, which a span's is.
+template <typename T>
+using NonEmptySpan = Refined<length_ge<std::size_t{1}>, std::span<T>>;
+
+// N of zero is permitted here as a degenerate any-length alias,
+// because the underlying predicate is vacuous at zero. The implication
+// relation below correctly refuses to bridge that case to non_empty.
+template <std::size_t N, typename T>
+using MinLength = Refined<length_ge<N>, T>;
+template <auto Max, typename T>
+using MaxBounded = Refined<bounded_above<Max>, T>;
+
+// Two traps neither alias rejects. An N that is not a power of two
+// still compiles and turns the alignment test into an arbitrary
+// low-bit mask. An inverted bound with Lo above Hi also still
+// compiles, and the predicate becomes vacuously false, so the failure
+// surfaces at the mint rather than at compile time.  Bounded below is
+// the alias that closes the second trap.
+template <std::size_t N, typename T>
+using AlignedTo = Refined<aligned<N>, T>;
+template <auto Lo, auto Hi, typename T>
+using WithinRange = Refined<in_range<Lo, Hi>, T>;
+
+template <std::size_t N, class S>
+using Sized = Refined<exact_size<N>, S>;
+
+// An inverted range is empty and can never be satisfied, so it is
+// always a mistake. The trampoline below exists to catch it once at
+// alias instantiation instead of at every value's construction.
+namespace detail {
+template <auto Lo, auto Hi, class T>
+struct bounded_alias {
+    static_assert(Lo <= Hi, "Bounded<Lo, Hi, T>: range is empty (Lo > Hi).  No value "
+                            "of T can satisfy this refinement.  Swap the arguments "
+                            "or use Capped<Hi, T> / Floored<Lo, T> for single-sided "
+                            "bounds.");
+    using type = Refined<in_range<Lo, Hi>, T>;
+};
+}  // namespace detail
+
+template <auto Lo, auto Hi, class T>
+using Bounded = typename detail::bounded_alias<Lo, Hi, T>::type;
+
+template <auto Max, class T>
+using Capped = Refined<bounded_above<Max>, T>;
+
+template <auto Min, class T>
+using Floored = Refined<bounded_below<Min>, T>;
+
+template <std::size_t N, class S>
+using MinSize = Refined<length_ge<N>, S>;
+
+template <auto N, class T>
+using DivisibleByN = Refined<divisible_by<N>, T>;
+
+template <class T>
+using CacheLineAligned = AlignedTo<64, T*>;
+
+template <class T>
+using HugePageAligned = AlignedTo<2 * 1024 * 1024, T*>;
+
+// The two nesting orders mean different things, so the aliases exist
+// to keep the choice deliberate rather than reorderable.
+//
+// In LinearRefined the value is refined and the wrapper is linear: the
+// predicate is about the underlying T and ownership is
+// single-consumer. This is the common case, because most resources
+// are a handle to a value satisfying an invariant.
+//
+// In RefinedLinear the wrapper is refined and the inner value is
+// linear: the predicate is about the ownership state itself, not about
+// T. This is rare.
+
+template <auto Pred, typename T>
+using LinearRefined = Linear<Refined<Pred, T>>;
+
+template <auto Pred, typename T>
+using RefinedLinear = Refined<Pred, Linear<T>>;
+
+// The traits that other layers use to take a refinement apart without
+// naming the wrapper.  Both refinements are one template now, so one
+// reflection query in foundation/reflect/Instance.h answers for both,
+// and the cv-ref strip is that query's.  Refined and SealedRefined are
+// alias templates, which a reflection query cannot name: the query
+// dealiases to the class template either way, so ^^Refinement is the
+// only spelling that works and the only one needed.
+
+// The concept is the question; the value spelling is derived from it
+// and read by nothing that gates.
+template <typename T>
+concept IsRefined = ::foundation::reflect::IsInstanceOf<T, ^^Refinement>;
+
+template <typename T>
+inline constexpr bool is_refined_v = IsRefined<T>;
+
+template <typename T>
+    requires IsRefined<T>
+using refined_value_t = typename std::remove_cvref_t<T>::value_type;
+
+template <typename T>
+    requires IsRefined<T>
+using refined_predicate_type_t = typename std::remove_cvref_t<T>::predicate_type;
+
+// The sealed-ness is a template argument now rather than a separate
+// class template, so this reads the member the class publishes instead
+// of asking reflection which of two templates the type came from.  The
+// other traits beside it already read members this way.
+template <typename T>
+    requires IsRefined<T>
+inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
+
+// implies_v<P, Q> reads: every value satisfying P also satisfies Q.
+// P is therefore at least as strong as Q, and P's truth set is
+// contained in Q's. Reversing the reading inverts every axiom below.
+//
+// The relation is closed.  Its members are the variables declared in
+// the namespace admitted_implications and nothing else: an edge for
+// each pair of atomic predicates, and a rule for each parameterised
+// family.  There is no primary template to specialise, so a pair the
+// namespace does not admit stays refused wherever the check runs.
+// Declare every member before the first check against the relation,
+// which the self-test at the foot of this file performs.
+//
+// The relation is transitive. implies_types computes the closure of
+// the admitted steps at compile time. A conclusion that two admitted
+// steps reach then needs no member of its own. A path uses admitted steps
+// only: an edge or a family that the namespace does not declare does
+// not exist for the closure either.
+//
+// Each step must be sound on every value type on which its two
+// predicates are defined. A chain of such steps is sound on a value
+// type only when each inner predicate of the chain is defined there
+// too. Most steps keep or widen the domain, and they can stand
+// anywhere in a chain. A narrowing edge is a step whose conclusion is
+// defined on fewer value types than its premise. The closure takes a
+// narrowing edge only as the last step of a chain, because no
+// predicate after it can be defined where it is not.
+//
+// Two distinct predicates that imply each other through steps that do
+// not narrow are one predicate under two names. The closure refuses
+// that cycle where it meets it, and the self-test below walks every
+// edge for it. non_null and non_zero imply each other, but only
+// through the narrowing edge non_zero ⇒ non_null, and they differ on
+// every value type that is not a pointer.
+//
+// A family that brings a predicate to a different family names the
+// strongest predicate it reaches. A successor declaration, next_(P*)
+// -> S*, names that predicate, and holds_ still decides the step. A
+// family that only weakens the parameters of one predicate needs no
+// successor: the last step of a chain covers it. The closure reaches at
+// most closure_node_limit predicates from one premise, and a larger
+// search answers false.
+//
+// Reflexivity is deliberately absent. The subsort machinery already
+// supplies it from a same-type fall-through, and stating it twice
+// invites the two to drift apart. For the same reason, the closure
+// answers a query of a predicate against itself with the one-step
+// relation alone.
+
+namespace refined {
+
+// A parameterised family of implications.  Deriving rule_family<Self>
+// inside admitted_implications is the whole opt-in, and
+// Family::admits<P, Q>() decides each pair.  The families deduce
+// against the predicate struct templates through overload resolution on
+// a null pointer of each type, which is what keeps a family closed: an
+// overload set cannot be extended from outside its class.
+//
+// Each family used to declare a marker variable beside itself, which
+// the walk below looked for.  A family written without its variable was
+// silently inert: it compiled, it read as admitted, and it decided
+// nothing.  The base class is the opt-in now, so a family cannot be
+// declared and left out.
+template <class Family, class P, class Q>
+concept RuleDecides = requires {
+    { Family::template admits<P, Q>() } -> std::same_as<bool>;
+};
+
+// True when T is a class with a base class.  Template argument
+// deduction converts a pointer to a derived class into a pointer to its
+// base.  A predicate that derives from BoundedAbove<9> then deduces
+// against a holds_ written for BoundedAbove<N>, and its own call
+// operator plays no part.
+template <class T>
+[[nodiscard]] consteval bool has_base_class() noexcept {
+    if constexpr (std::is_class_v<T>) {
+        return !std::meta::bases_of(^^T, std::meta::access_context::unchecked()).empty();
+    } else {
+        return false;
+    }
+}
+
+// Each type is read once, and every family reads the stored answer.
+template <class T>
+inline constexpr bool has_base_class_v = has_base_class<T>();
+
+// What every family shares.  A family states one holds_ overload whose
+// parameters are pointers to the predicate shapes it relates, and
+// leaves the rest here: a pair that deduces against that overload is
+// decided by its body, and a pair that does not is refused.  A pair
+// where either predicate has a base class is refused before the
+// overload is tried, because the deduction reads the base and not the
+// predicate.
+template <class Family>
+struct rule_family {
+    template <class P, class Q>
+    static consteval bool admits() noexcept {
+        if constexpr (has_base_class_v<P> || has_base_class_v<Q>) {
+            return false;
+        } else if constexpr (requires { Family::holds_(static_cast<P*>(nullptr), static_cast<Q*>(nullptr)); }) {
+            return Family::holds_(static_cast<P*>(nullptr), static_cast<Q*>(nullptr));
+        } else {
+            return false;
+        }
+    }
+};
+
+// An admitted step whose conclusion is defined on fewer value types
+// than its premise.  The header declares it in admitted_implications
+// like an edge, and the closure takes it only as the last step of a
+// chain.
+template <class From, class To>
+struct narrowing_edge {};
+
+// A ≤ B for two template parameters of a predicate.  The function
+// compares two integers by value through std::cmp_less_equal.  An
+// unsigned bound and a negative bound then never meet through a
+// conversion that changes a sign: 9u ≤ -1 is false, as it is for the
+// values.
+template <auto A, auto B>
+[[nodiscard]] consteval bool bound_less_equal() noexcept {
+    using AType = decltype(A);
+    using BType = decltype(B);
+    if constexpr (std::is_integral_v<AType> && std::is_integral_v<BType> && !std::is_same_v<AType, bool>
+                  && !std::is_same_v<BType, bool>) {
+        return std::cmp_less_equal(A, B);
+    } else {
+        return A <= B;
+    }
+}
+
+// The relation over predicate types, closed under chains.  Declared
+// here because the conjunction family below reaches a conclusion
+// through what its conjuncts imply, and defined once the namespace is
+// complete.
+template <class PType, class QType>
+[[nodiscard]] consteval bool implies_types() noexcept;
+
+// The number of predicates the closure reaches from one premise before
+// it stops.  A chain of the families below reaches at most six.
+inline constexpr std::size_t closure_node_limit = 64;
+
+namespace admitted_implications {
+
+// positive ⇒ non_negative, because x > 0 gives x ≥ 0.
+// positive ⇒ non_zero, because x > 0 gives x ≠ 0.
+// power_of_two ⇒ non_zero, because the definition excludes zero.
+
+inline constexpr ::foundation::fail_closed::edge<predicate_t<positive>, predicate_t<non_negative>>
+    positive_implies_non_negative{};
+
+inline constexpr ::foundation::fail_closed::edge<predicate_t<positive>, predicate_t<non_zero>>
+    positive_implies_non_zero{};
+
+inline constexpr ::foundation::fail_closed::edge<predicate_t<power_of_two>, predicate_t<non_zero>>
+    power_of_two_implies_non_zero{};
+
+// non_null and non_zero imply each other. For a pointer, the zero
+// value of the pointer type is the null pointer, so the two predicates
+// evaluate identically. The pair is safe to state in both directions
+// because non_null only accepts a pointer argument, so for any
+// non-pointer type the opposite direction names a type that cannot be
+// formed at all.
+//
+// non_zero ⇒ non_null narrows the domain from every value type to the
+// pointers. It is a narrowing edge. A chain ends there and never passes
+// through non_null to a third predicate.
+
+inline constexpr ::foundation::fail_closed::edge<predicate_t<non_null>, predicate_t<non_zero>>
+    non_null_implies_non_zero{};
+
+inline constexpr narrowing_edge<predicate_t<non_zero>, predicate_t<non_null>> non_zero_implies_non_null{};
+
+// Aligned<N> ⇒ Aligned<M> when N ≥ M and M divides N, so a
+// cache-line-aligned pointer is also word-aligned.
+struct aligned_weakens : rule_family<aligned_weakens> {
+    template <std::size_t N, std::size_t M>
+    static consteval bool holds_(Aligned<N>*, Aligned<M>*) noexcept {
+        return N >= M && M > 0 && (N % M == 0);
+    }
+};
+
+// A smaller ceiling implies a larger one.
+struct bounded_above_weakens : rule_family<bounded_above_weakens> {
+    template <auto N, auto M>
+    static consteval bool holds_(BoundedAbove<N>*, BoundedAbove<M>*) noexcept {
+        return bound_less_equal<N, M>();
+    }
+};
+
+// A tighter range implies a looser one.
+struct in_range_weakens : rule_family<in_range_weakens> {
+    template <auto L1, auto H1, auto L2, auto H2>
+    static consteval bool holds_(InRange<L1, H1>*, InRange<L2, H2>*) noexcept {
+        return bound_less_equal<L2, L1>() && bound_less_equal<H1, H2>();
+    }
+};
+
+// A range ceiling is an upper bound. The successor names the ceiling
+// itself, the strongest upper bound the range gives. A chain from a
+// range then reaches every looser ceiling through bounded_above_weakens.
+struct in_range_is_bounded_above : rule_family<in_range_is_bounded_above> {
+    template <auto L, auto H>
+    static consteval bool holds_(InRange<L, H>*, BoundedAbove<H>*) noexcept {
+        return true;
+    }
+    template <auto L, auto H>
+    static consteval auto next_(InRange<L, H>*) noexcept -> BoundedAbove<H>* {
+        return nullptr;
+    }
+};
+
+// A longer minimum implies a shorter one.
+struct length_ge_weakens : rule_family<length_ge_weakens> {
+    template <std::size_t N, std::size_t M>
+    static consteval bool holds_(LengthGe<N>*, LengthGe<M>*) noexcept {
+        return N >= M;
+    }
+};
+
+// A container's emptiness test equals a size of zero, so a minimum
+// length of one or more implies non-emptiness. The clause excluding
+// zero is load-bearing: a size is unsigned, so a minimum of zero is
+// vacuously true and an empty container satisfies it.
+struct length_ge_is_non_empty : rule_family<length_ge_is_non_empty> {
+    template <std::size_t N>
+    static consteval bool holds_(LengthGe<N>*, predicate_t<non_empty>*) noexcept {
+        return N >= 1;
+    }
+    template <std::size_t N>
+    static consteval auto next_(LengthGe<N>*) noexcept -> predicate_t<non_empty>* {
+        return nullptr;
+    }
+};
+
+// non_zero is a union of two half-lines rather than one. A range whose
+// ceiling is minus one or less keeps zero out from below, and this
+// family admits it. A range whose floor is one or more keeps zero out
+// from above, and the chain through bounded_below and positive admits
+// that one.
+//
+// A bound strictly between minus one and zero is conservatively
+// excluded, which under-asserts rather than risking a truncation.
+struct in_range_is_non_zero : rule_family<in_range_is_non_zero> {
+    template <auto L, auto H>
+    static consteval bool holds_(InRange<L, H>*, predicate_t<non_zero>*) noexcept {
+        return bound_less_equal<H, -1>();
+    }
+    template <auto L, auto H>
+    static consteval auto next_(InRange<L, H>*) noexcept -> predicate_t<non_zero>* {
+        return nullptr;
+    }
+};
+
+// A conjunction implies each of its conjuncts, and each disjunct
+// implies the disjunction.  Wiring both through the relation lets a
+// composed refinement subsume exactly as its parts do.
+//
+// The conjunction also reaches a conclusion through what its atomic
+// parts already imply, rather than only through a literal match.  That
+// is what lets a composed predicate weaken to a predicate none of its
+// conjuncts spells.
+struct all_of_implies_conjunct : rule_family<all_of_implies_conjunct> {
+    template <auto... Preds, class Q>
+    static consteval bool holds_(AllOf<Preds...>*, Q*) noexcept {
+        return ((std::is_same_v<predicate_t<Preds>, Q> || implies_types<predicate_t<Preds>, Q>()) || ...);
+    }
+};
+
+struct disjunct_implies_any_of : rule_family<disjunct_implies_any_of> {
+    template <class P, auto... Preds>
+    static consteval bool holds_(P*, AnyOf<Preds...>*) noexcept {
+        return (std::is_same_v<predicate_t<Preds>, P> || ...);
+    }
+};
+
+// The lower-bound axioms mirror the upper-bound ones but with the
+// inequality flipped: a tighter floor is a larger N, whereas a tighter
+// ceiling is a smaller one. A range's floor is itself a lower bound.
+// The bridges out to the unparameterised predicates are gated: a
+// negative floor still admits negative values, and a floor of zero
+// still admits zero, so neither reaches non_negative or positive
+// respectively. A floor strictly between zero and one is
+// conservatively excluded too.
+struct bounded_below_weakens : rule_family<bounded_below_weakens> {
+    template <auto N, auto M>
+    static consteval bool holds_(BoundedBelow<N>*, BoundedBelow<M>*) noexcept {
+        return bound_less_equal<M, N>();
+    }
+};
+
+// A range floor is a lower bound. The successor names the floor
+// itself. A chain from a range then reaches non_negative, positive and
+// non_zero through the floor.
+struct in_range_is_bounded_below : rule_family<in_range_is_bounded_below> {
+    template <auto L, auto H>
+    static consteval bool holds_(InRange<L, H>*, BoundedBelow<L>*) noexcept {
+        return true;
+    }
+    template <auto L, auto H>
+    static consteval auto next_(InRange<L, H>*) noexcept -> BoundedBelow<L>* {
+        return nullptr;
+    }
+};
+
+struct bounded_below_is_non_negative : rule_family<bounded_below_is_non_negative> {
+    template <auto N>
+    static consteval bool holds_(BoundedBelow<N>*, predicate_t<non_negative>*) noexcept {
+        return bound_less_equal<0, N>();
+    }
+    template <auto N>
+    static consteval auto next_(BoundedBelow<N>*) noexcept -> predicate_t<non_negative>* {
+        return nullptr;
+    }
+};
+
+// A floor of one or more gives positive, and positive gives non_zero
+// through its edge. The floor is sound for both categories the
+// predicate accepts: for a number the value is at least one, and for a
+// pointer the address is. Neither can be the zero value of its type.
+struct bounded_below_is_positive : rule_family<bounded_below_is_positive> {
+    template <auto N>
+    static consteval bool holds_(BoundedBelow<N>*, predicate_t<positive>*) noexcept {
+        return bound_less_equal<1, N>();
+    }
+    template <auto N>
+    static consteval auto next_(BoundedBelow<N>*) noexcept -> predicate_t<positive>* {
+        return nullptr;
+    }
+};
+
+// The same shape on the size axis. An exact size of N satisfies any
+// minimum up to N. The successor names the minimum N. A chain then
+// reaches non-emptiness through length_ge_is_non_empty once N is at
+// least one. A size of zero stops that chain, since it means the
+// container is empty, the very opposite of the conclusion.
+struct exact_size_is_length_ge : rule_family<exact_size_is_length_ge> {
+    template <std::size_t N, std::size_t M>
+    static consteval bool holds_(ExactSize<N>*, LengthGe<M>*) noexcept {
+        return N >= M;
+    }
+    template <std::size_t N>
+    static consteval auto next_(ExactSize<N>*) noexcept -> LengthGe<N>* {
+        return nullptr;
+    }
+};
+
+// The same relation as pointer alignment, on the modulo axis. If x is
+// a multiple of N and N is a multiple of M, then x is a multiple of M.
+// The clause excluding a zero M matches the predicate's own assertion,
+// keeping modulo by zero out before it can be evaluated. The clause
+// requiring N at least M already follows from N being a multiple of a
+// positive M, and is stated anyway so the clause reads in one pass.
+// The family compares the two bounds by value first.  Once 1 ≤ M ≤ N
+// holds, both are positive.  The family then takes the remainder on one
+// unsigned type, and no conversion changes a sign.
+struct divisible_by_weakens : rule_family<divisible_by_weakens> {
+    template <auto N, auto M>
+    static consteval bool holds_(DivisibleBy<N>*, DivisibleBy<M>*) noexcept {
+        if (!bound_less_equal<1, M>() || !bound_less_equal<M, N>()) return false;
+        return static_cast<std::uintmax_t>(N) % static_cast<std::uintmax_t>(M) == 0;
+    }
+};
+
+// Every read counts the members against this seal: the edges, the
+// narrowing edges and the rule families.  A member that another file
+// adds stops the build rather than widening the relation.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 20};
+}  // namespace admitted_implications
+
+// True when m reflects a variable of type narrowing_edge<From, To> for
+// some From and To.  The kind is settled before the type is read.
+[[nodiscard]] consteval bool is_narrowing_edge(std::meta::info m) noexcept {
+    if (!std::meta::is_variable(m)) return false;
+    const auto type = std::meta::remove_cvref(std::meta::type_of(m));
+    return std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^narrowing_edge;
+}
+
+// The two ends of a narrowing edge variable, each read through its
+// aliases, in the shape fail_closed::ends_of gives for an edge.
+[[nodiscard]] consteval ::foundation::fail_closed::edge_ends narrowing_ends_of(std::meta::info variable) noexcept {
+    const auto args = std::meta::template_arguments_of(std::meta::remove_cvref(std::meta::type_of(variable)));
+    return ::foundation::fail_closed::edge_ends{std::meta::dealias(args[0]), std::meta::dealias(args[1])};
+}
+
+// One admitted step: an edge, a narrowing edge, or a rule family that
+// decides the pair.  The closure below is built from this relation
+// alone.  It reads the namespace in one walk.  A variable counts when
+// its type is the step itself, and a class counts when it derives
+// rule_family<itself>, which is the same shape
+// fail_closed::every_class_in_has_edge walks for.  Every other member
+// is skipped.  Complexity: O(members of admitted_implications).
+template <class PType, class QType>
+[[nodiscard]] consteval bool implies_directly() noexcept {
+    static constexpr auto members = std::define_static_array(
+        std::meta::members_of(^^admitted_implications, std::meta::access_context::unchecked()));
+    // -Wshadow fires on the expansion-statement induction variable.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto m : members) {
+        if constexpr (std::meta::is_variable(m)) {
+            constexpr auto type = std::meta::remove_cvref(std::meta::type_of(m));
+            if constexpr (type == ^^::foundation::fail_closed::edge<PType, QType>
+                          || type == ^^narrowing_edge<PType, QType>) {
+                return true;
+            }
+        } else if constexpr (std::meta::is_type(m) && !std::meta::is_type_alias(m) && std::meta::is_class_type(m)) {
+            using Family = [:m:];
+            if constexpr (std::is_base_of_v<rule_family<Family>, Family>) {
+                static_assert(RuleDecides<Family, PType, QType>, "a rule family in admitted_implications must "
+                                                                 "expose Family::admits<P, Q>() returning bool.");
+                if (Family::template admits<PType, QType>()) {
+                    return true;
+                }
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return false;
+}
+
+template <class PType, class QType>
+inline constexpr bool implies_directly_v = implies_directly<PType, QType>();
+
+// The strongest predicate that Family reaches from PType, or the null
+// reflection when Family names no successor for PType or does not admit
+// the step to it.  The family's own holds_ decides the step.  A
+// successor declaration can propose a predicate but never admit one.
+template <class Family, class PType>
+[[nodiscard]] consteval std::meta::info successor_of() noexcept {
+    if constexpr (requires { Family::next_(static_cast<PType*>(nullptr)); }) {
+        using Next = std::remove_pointer_t<decltype(Family::next_(static_cast<PType*>(nullptr)))>;
+        if constexpr (Family::template admits<PType, Next>()) {
+            return std::meta::dealias(^^Next);
+        } else {
+            return std::meta::info{};
+        }
+    } else {
+        return std::meta::info{};
+    }
+}
+
+// The successors of one predicate, in a structural shape.  A search
+// reads them back from a reflection of the variable below, and only a
+// structural type can be read back that way.
+// Capacity is the most successors one predicate can have. A range has
+// three, and a fourth family that names one more still fits.
+struct successor_list {
+    static constexpr std::size_t capacity = 8;
+    std::array<std::meta::info, capacity> items{};
+    std::size_t count = 0;
+};
+
+// More successors than successor_list holds.  This function has no
+// constant definition.  A call to it stops the constant evaluation, and
+// the diagnostic names it.
+void implication_successor_list_is_full() noexcept;
+
+// The predicates one step past PType that the closure can stand on:
+// the far end of each edge that starts at PType, and the successor each
+// family names for it.  A narrowing edge is not among them.  The list
+// is a variable template.  Each predicate type pays for it once in a
+// translation unit, and every query that reaches the type reads the one
+// list.  Complexity: O(members of admitted_implications) at the first
+// use.
+template <class PType>
+[[nodiscard]] consteval successor_list successors_of() noexcept {
+    static constexpr auto members = std::define_static_array(
+        std::meta::members_of(^^admitted_implications, std::meta::access_context::unchecked()));
+    successor_list found{};
+    // -Wshadow fires on the expansion-statement induction variable.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto m : members) {
+        std::meta::info next{};
+        if constexpr (::foundation::fail_closed::is_edge(m)) {
+            constexpr auto ends = ::foundation::fail_closed::ends_of(m);
+            if constexpr (ends.from == std::meta::dealias(^^PType)) next = ends.to;
+        } else if constexpr (std::meta::is_type(m) && !std::meta::is_type_alias(m) && std::meta::is_class_type(m)) {
+            next = successor_of<typename[:m:], PType>();
+        }
+        if (next != std::meta::info{}) {
+            if (found.count == successor_list::capacity) implication_successor_list_is_full();
+            found.items[found.count] = next;
+            ++found.count;
+        }
+    }
+#pragma GCC diagnostic pop
+    return found;
+}
+
+template <class PType>
+inline constexpr successor_list successors_v = successors_of<PType>();
+
+// A cycle of steps that do not narrow, back to the premise, means two
+// distinct predicates with one meaning.  This function has no constant
+// definition.  A call to it stops the constant evaluation, and the
+// diagnostic names it.
+void implication_cycle_between_two_names_for_one_predicate() noexcept;
+
+// The closure of the one-step relation from premise to conclusion.  A
+// search from the premise follows the successors, and it answers true
+// when a reached predicate implies the conclusion in one step, a
+// narrowing edge included.  The reached set holds at most
+// closure_node_limit predicates, and a larger search answers false.
+// Complexity: O(V²) comparisons and 2·V instantiations for V reached
+// predicates.
+[[nodiscard]] consteval bool implies_closed(std::meta::info premise, std::meta::info conclusion) {
+    std::vector<std::meta::info> reached{premise};
+    for (std::size_t cursor = 0; cursor < reached.size(); ++cursor) {
+        const std::meta::info node = reached[cursor];
+        if (std::meta::extract<bool>(std::meta::substitute(^^implies_directly_v, {node, conclusion}))) {
+            return true;
+        }
+        const successor_list successors =
+            std::meta::extract<successor_list>(std::meta::substitute(^^successors_v, {node}));
+        for (std::size_t index = 0; index < successors.count; ++index) {
+            const std::meta::info next = successors.items[index];
+            if (next == node) continue;
+            if (next == premise) implication_cycle_between_two_names_for_one_predicate();
+            bool is_reached = false;
+            for (const std::meta::info seen : reached) is_reached = is_reached || seen == next;
+            if (is_reached) continue;
+            if (reached.size() == closure_node_limit) return false;
+            reached.push_back(next);
+        }
+    }
+    return false;
+}
+
+// The walks above read the namespace where each query first stands, and a
+// member that another file adds would change the answer of a later
+// query.  Each query reads the seal after its walk, so a planted cycle is
+// named as a cycle, and every other planted member stops the build at
+// the seal.  A late member stops the build at the first pair that no
+// earlier line asked.  A pair that an earlier line asked keeps the answer
+// it got from the sealed members, so a late member never changes an
+// answer.
+template <class PType, class QType>
+[[nodiscard]] consteval bool implies_types() noexcept {
+    bool is_implied = false;
+    if constexpr (std::is_same_v<PType, QType>) {
+        is_implied = implies_directly<PType, QType>();
+    } else {
+        is_implied = implies_closed(std::meta::dealias(^^PType), std::meta::dealias(^^QType));
+    }
+    ::foundation::fail_closed::require_seal_holds(^^admitted_implications);
+    return is_implied;
+}
+
+}  // namespace refined
+
+template <auto P, auto Q>
+inline constexpr bool implies_v = refined::implies_types<refined::predicate_t<P>, refined::predicate_t<Q>>();
+
+// Each axiom above is witnessed here, positively and at the boundary
+// where its soundness clause bites.  Several conclusions below hold
+// only through a chain, and they witness the closure.  A refusal
+// cannot be enumerated from the namespace, which is why these stay
+// written by hand.
+
+static_assert(implies_v<non_null, non_zero>, "non_null ⇒ non_zero: a non-null pointer is a non-zero pointer.");
+static_assert(implies_v<non_zero, non_null>, "non_zero ⇒ non_null: the implication is bidirectional for a pointer.");
+static_assert(implies_v<positive, non_null>, "positive ⇒ non_zero ⇒ non_null: a chain can end on a narrowing edge.");
+static_assert(!implies_v<non_null, positive>, "non_null reaches non_zero and nothing past it.");
+static_assert(!implies_v<non_zero, non_zero>, "the closure adds no reflexive answer through the non_null cycle.");
+
+static_assert(implies_v<in_range<5, 9>, bounded_above<20>>,
+              "in_range<5, 9> ⇒ bounded_above<9> ⇒ bounded_above<20>: the ceiling family chains into its weakening.");
+static_assert(!implies_v<bounded_above<20>, in_range<5, 9>>, "a chain runs one way: a ceiling gives no range.");
+static_assert(!implies_v<in_range<5, 9>, bounded_above<8>>, "the chain keeps the ceiling: nine is above eight.");
+static_assert(implies_v<in_range<5, 9>, bounded_below<1>>,
+              "in_range<5, 9> ⇒ bounded_below<5> ⇒ bounded_below<1>: the floor family chains too.");
+static_assert(implies_v<all_of<in_range<5, 9>, non_negative>, bounded_above<20>>,
+              "a conjunct reaches its conclusion through the closure.");
+static_assert(implies_v<length_ge<1>, non_empty>, "length_ge<1> ⇒ non_empty: a size of at least one is not empty.");
+static_assert(implies_v<length_ge<8>, non_empty>, "length_ge<N> ⇒ non_empty for every N of at least one.");
+static_assert(!implies_v<length_ge<0>, non_empty>, "length_ge<0> is vacuous and must NOT imply non_empty: an empty "
+                                                   "container satisfies it.");
+
+static_assert(implies_v<length_ge<8>, length_ge<1>>, "length_ge<8> ⇒ length_ge<1>: the longer minimum is stronger.");
+
+static_assert(implies_v<in_range<0, 100>, non_negative>, "in_range<0, 100> ⇒ non_negative: the lower bound is zero.");
+static_assert(implies_v<in_range<5, 100>, non_negative>,
+              "in_range<5, 100> ⇒ non_negative: the lower bound is positive.");
+static_assert(implies_v<in_range<0u, 255u>, non_negative>, "An unsigned bound carries non_negative trivially.");
+static_assert(!implies_v<in_range<-5, 100>, non_negative>,
+              "in_range<-5, 100> admits negative values and must NOT imply "
+              "non_negative: the lower-bound clause is load-bearing.");
+
+static_assert(implies_v<in_range<5, 100>, in_range<0, 200>>,
+              "in_range<5, 100> ⇒ in_range<0, 200>: a tighter range implies a looser one.");
+
+static_assert(implies_v<in_range<1, 100>, positive>, "in_range<1, 100> ⇒ positive at the boundary lower bound.");
+static_assert(implies_v<in_range<5, 100>, positive>, "in_range<5, 100> ⇒ positive at an interior lower bound.");
+static_assert(!implies_v<in_range<0, 100>, positive>, "in_range<0, 100> must NOT imply positive: it admits zero, "
+                                                      "which is why the lower-bound clause is load-bearing.");
+static_assert(!implies_v<in_range<-5, 100>, positive>, "in_range<-5, 100> must NOT imply positive: it admits negative "
+                                                       "values.");
+
+static_assert(implies_v<in_range<1, 100>, non_zero>, "in_range<1, 100> ⇒ non_zero at the boundary lower bound.");
+static_assert(implies_v<in_range<5, 100>, non_zero>, "in_range<5, 100> ⇒ non_zero at an interior lower bound.");
+
+static_assert(implies_v<in_range<-100, -1>, non_zero>, "in_range<-100, -1> ⇒ non_zero at the boundary upper bound.");
+static_assert(implies_v<in_range<-100, -5>, non_zero>, "in_range<-100, -5> ⇒ non_zero at an interior upper bound.");
+
+static_assert(!implies_v<in_range<0, 100>, non_zero>, "in_range<0, 100> must NOT imply non_zero: it admits zero, and "
+                                                      "neither branch of the disjunctive clause holds.");
+static_assert(!implies_v<in_range<-5, 5>, non_zero>, "in_range<-5, 5> must NOT imply non_zero: the range straddles "
+                                                     "zero.");
+static_assert(!implies_v<in_range<-100, 0>, non_zero>,
+              "in_range<-100, 0> must NOT imply non_zero: it admits zero at the "
+              "upper bound.");
+
+static_assert(implies_v<bounded_below<10>, bounded_below<5>>,
+              "bounded_below<10> ⇒ bounded_below<5>: a tighter floor implies a looser one.");
+static_assert(implies_v<bounded_below<5>, bounded_below<5>>, "bounded_below<N> ⇒ bounded_below<N>.");
+static_assert(!implies_v<bounded_below<5>, bounded_below<10>>,
+              "bounded_below<5> must NOT imply bounded_below<10>: a looser floor "
+              "does not imply a tighter one.");
+static_assert(implies_v<in_range<5, 100>, bounded_below<5>>,
+              "in_range<5, 100> ⇒ bounded_below<5>: a range floor is a lower bound.");
+static_assert(implies_v<in_range<0, 200>, bounded_below<0>>, "in_range<0, 200> ⇒ bounded_below<0> at a zero floor.");
+static_assert(implies_v<bounded_below<0>, non_negative>,
+              "bounded_below<0> ⇒ non_negative: the two predicates coincide at a zero floor.");
+static_assert(implies_v<bounded_below<5>, non_negative>, "bounded_below<5> ⇒ non_negative: the floor is positive.");
+static_assert(!implies_v<bounded_below<-5>, non_negative>,
+              "bounded_below<-5> must NOT imply non_negative: it admits negative "
+              "values, which is why the floor clause is load-bearing.");
+static_assert(implies_v<bounded_below<1>, positive>, "bounded_below<1> ⇒ positive at the boundary floor.");
+static_assert(implies_v<bounded_below<10>, positive>, "bounded_below<10> ⇒ positive at a tighter floor.");
+static_assert(!implies_v<bounded_below<0>, positive>, "bounded_below<0> must NOT imply positive: it admits zero, "
+                                                      "which is why the floor clause is load-bearing.");
+
+static_assert(implies_v<bounded_below<1>, non_zero>, "bounded_below<1> ⇒ non_zero at the boundary floor.");
+static_assert(implies_v<bounded_below<10>, non_zero>, "bounded_below<10> ⇒ non_zero at a tighter floor.");
+static_assert(!implies_v<bounded_below<0>, non_zero>, "bounded_below<0> must NOT imply non_zero: it admits zero.");
+
+static_assert(implies_v<exact_size<8>, length_ge<8>>, "exact_size<8> ⇒ length_ge<8>: an exact size satisfies its own "
+                                                      "minimum.");
+static_assert(implies_v<exact_size<8>, length_ge<4>>, "exact_size<8> ⇒ length_ge<4>: the exact size exceeds a looser "
+                                                      "minimum.");
+static_assert(implies_v<exact_size<1>, length_ge<0>>, "exact_size<1> ⇒ length_ge<0>: a size is never below zero.");
+static_assert(!implies_v<exact_size<4>, length_ge<8>>, "exact_size<4> must NOT imply length_ge<8>: a size of four is "
+                                                       "not at least eight.");
+
+static_assert(implies_v<exact_size<1>, non_empty>, "exact_size<1> ⇒ non_empty at the boundary size.");
+static_assert(implies_v<exact_size<8>, non_empty>, "exact_size<8> ⇒ non_empty at a larger size.");
+static_assert(!implies_v<exact_size<0>, non_empty>, "exact_size<0> must NOT imply non_empty: a size of zero means the "
+                                                    "container is empty.");
+
+static_assert(implies_v<divisible_by<4>, divisible_by<4>>, "divisible_by<N> ⇒ divisible_by<N>.");
+static_assert(implies_v<divisible_by<8>, divisible_by<4>>,
+              "divisible_by<8> ⇒ divisible_by<4>: a multiple of eight is a "
+              "multiple of four.");
+static_assert(implies_v<divisible_by<16>, divisible_by<4>>,
+              "divisible_by<16> ⇒ divisible_by<4>: a wider lane count implies a "
+              "narrower one.");
+static_assert(implies_v<divisible_by<16>, divisible_by<8>>,
+              "divisible_by<16> ⇒ divisible_by<8>: a wider lane count implies a "
+              "narrower one.");
+
+static_assert(!implies_v<divisible_by<6>, divisible_by<4>>,
+              "divisible_by<6> must NOT imply divisible_by<4>: six is not a "
+              "multiple of four, and six itself is a counterexample.");
+static_assert(!implies_v<divisible_by<4>, divisible_by<8>>,
+              "divisible_by<4> must NOT imply divisible_by<8>: a looser divisor "
+              "does not imply a tighter one, and four itself is a "
+              "counterexample.");
+
+namespace detail::refined_self_test {
+
+// The atomic edges are folded over by reflection rather than listed:
+// every edge variable in the admitted namespace is read back, checked
+// against the relation it belongs to, and then checked against the
+// predicates it names on a roster of sample values.  An edge that
+// admits a value its target rejects fails here, and so does a
+// reflexive edge, which the relation deliberately never states.
+
+inline constexpr std::array<int, 9> signed_samples{-3, -1, 0, 1, 2, 3, 8, 42, 1024};
+inline constexpr std::array<unsigned, 7> unsigned_samples{0u, 1u, 2u, 3u, 8u, 1024u, 4294967295u};
+
+// Every value that P admits, Q admits too.
+template <class P, class Q, class Sample>
+[[nodiscard]] consteval bool edge_sound_on(Sample const& samples) noexcept {
+    for (auto const& v : samples) {
+        if (P{}(v) && !Q{}(v)) return false;
+    }
+    return true;
+}
+
+// A pair that both accept an integer is sampled on the two arithmetic
+// rosters.  Any other pair names a pointer predicate, and is sampled
+// on a null and a non-null pointer instead: an arithmetic predicate
+// given a pointer would order it against null, which is no constant
+// expression, so the two rosters never mix.
+template <class P, class Q>
+[[nodiscard]] consteval bool edge_sound() noexcept {
+    if constexpr (requires(int v) {
+                      P{}(v);
+                      Q{}(v);
+                  }) {
+        return edge_sound_on<P, Q>(signed_samples) && edge_sound_on<P, Q>(unsigned_samples);
+    } else {
+        int const some_object = 7;
+        std::array<int const*, 2> const pointer_samples{nullptr, &some_object};
+        return edge_sound_on<P, Q>(pointer_samples);
+    }
+}
+
+// A conclusion no premise implies.  A query against it runs the whole
+// closure search from its premise, and a cycle on that search stops the
+// build.
+struct unreachable_conclusion {};
+
+// The checks every atomic step shares, an edge or a narrowing edge
+// alike.  The last check runs the closure search from each end, which
+// is where a cycle between two names for one predicate is refused.
+template <class From, class To>
+[[nodiscard]] consteval bool atomic_step_holds() noexcept {
+    static_assert(refined::implies_types<From, To>(), "a step declared in admitted_implications must be admitted "
+                                                      "by the relation");
+    static_assert(!std::is_same_v<From, To>, "a reflexive edge is never stated, because the subsort machinery "
+                                             "supplies reflexivity");
+    static_assert(std::is_empty_v<From> && std::is_empty_v<To>, "an edge names two stateless predicates");
+    static_assert(edge_sound<From, To>(), "an admitted edge is unsound on the sample roster: a value "
+                                          "satisfies the source predicate and fails the target");
+    static_assert(!refined::implies_types<From, unreachable_conclusion>()
+                  && !refined::implies_types<To, unreachable_conclusion>());
+    return true;
+}
+
+// Walks admitted_implications once.  is_edge and ends_of are the
+// relation's own readers, so an edge is whatever the relation calls
+// one.  A member that is neither an edge, a narrowing edge nor a rule
+// is refused, because a stray variable there is a member the relation
+// ignores.
+[[nodiscard]] consteval bool every_edge_holds() noexcept {
+    static constexpr auto members = std::define_static_array(
+        std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked()));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto m : members) {
+        if constexpr (::foundation::fail_closed::is_edge(m)) {
+            constexpr auto ends = ::foundation::fail_closed::ends_of(m);
+            static_assert(atomic_step_holds<typename[:ends.from:], typename[:ends.to:]>());
+        } else if constexpr (refined::is_narrowing_edge(m)) {
+            constexpr auto ends = refined::narrowing_ends_of(m);
+            static_assert(atomic_step_holds<typename[:ends.from:], typename[:ends.to:]>());
+        } else if constexpr (std::meta::is_type(m) && !std::meta::is_type_alias(m) && std::meta::is_class_type(m)) {
+            using Family = [:m:];
+            static_assert(std::is_base_of_v<refined::rule_family<Family>, Family>,
+                          "a class declared in admitted_implications is a rule family, which it says by "
+                          "deriving rule_family<itself>");
+        } else if constexpr (std::meta::is_variable(m) && !::foundation::fail_closed::is_seal(m)) {
+            static_assert(::foundation::fail_closed::is_edge(m), "a variable declared in admitted_implications "
+                                                                 "is an edge");
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+static_assert(every_edge_holds());
+
+// The namespace gives the counts, and a new edge is a two-place edit
+// that a reviewer sees.
+static_assert(::foundation::fail_closed::edge_count<^^refined::admitted_implications>() == 4,
+              "the four edges that keep or widen the domain: positive ⇒ non_negative, positive ⇒ non_zero, "
+              "power_of_two ⇒ non_zero, and non_null ⇒ non_zero");
+
+// The number of narrowing edges in the namespace.
+[[nodiscard]] consteval std::size_t narrowing_edge_count() noexcept {
+    std::size_t count = 0;
+    for (const std::meta::info m :
+         std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked())) {
+        if (refined::is_narrowing_edge(m)) ++count;
+    }
+    return count;
+}
+static_assert(narrowing_edge_count() == 1, "the one narrowing edge: non_zero ⇒ non_null");
+
+// The layout witnesses are one fold over a roster of wrapper types
+// rather than one line per type.  The roster is the only hand list.
+template <class... Ws>
+[[nodiscard]] consteval bool all_collapse_to_value() noexcept {
+    return ((sizeof(Ws) == sizeof(typename Ws::value_type)) && ...);
+}
+
+template <class... Ws>
+[[nodiscard]] consteval bool all_graded_wrappers() noexcept {
+    return (::foundation::algebra::GradedWrapper<Ws> && ...);
+}
+
+// One representative shape per alias: a scalar, a container that has
+// both an emptiness test and a size, a parameterised length bound over
+// that container, and the parameterised predicates, which are empty
+// classes and so collapse inside the wrapper too.
+static_assert(all_collapse_to_value<
+              Refined<positive, int>, Refined<non_null, void*>, Refined<power_of_two, std::size_t>,
+              Refined<aligned<64>, void*>, Refined<bounded_above<1024u>, int>, Refined<in_range<0, 100>, int>,
+              Refined<length_ge<1>, void*>, NonZero<int>, NonEmpty<std::span<int>>, NonEmptySpan<int>,
+              SealedRefined<positive, int>, SealedRefined<non_null, void*>,
+              Refined<all_of<positive, bounded_above<1024>>, int>, Refined<any_of<positive, non_zero>, int>,
+              Refined<negate<positive>, int>, Refined<implies<positive, non_zero>, int>, AlignedTo<64, void*>,
+              Sized<8, std::array<int, 8>>, Bounded<0, 100, int>, Capped<255, std::uint32_t>, Floored<1, int>,
+              MinSize<8, std::array<int, 16>>, DivisibleByN<4, std::size_t>, CacheLineAligned<int>,
+              HugePageAligned<std::byte>>());
+
+// Both wrappers are regime 1, so the composition is the payload.  The
+// claim is the untracked build's: with fixy/Qtt.h's consume tracker on,
+// Linear carries one byte of state on purpose and this collapse is the
+// thing that build gives up.
+static_assert(::fixy::qtt_consume_tracked || sizeof(LinearRefined<non_null, void*>) == sizeof(void*),
+              "LinearRefined must collapse to sizeof(T)");
+
+// The atomic and the composed refinements alike satisfy the wrapper
+// concept, so that a future revision of a combinator that disturbs the
+// substrate's lattice, value or modality contract fires here.
+static_assert(
+    all_graded_wrappers<
+        Refined<positive, int>, Refined<non_null, void*>, SealedRefined<positive, int>, Refined<all_of<positive>, int>,
+        Refined<all_of<positive, bounded_above<100>>, int>, Refined<any_of<positive, non_zero>, int>,
+        Refined<negate<positive>, int>, Refined<implies<positive, non_zero>, int>,
+        Refined<all_of<all_of<positive>, bounded_above<1024>>, int>, AlignedTo<64, void*>, Bounded<0, 100, int>,
+        Capped<255, std::uint32_t>, Floored<1, int>, DivisibleByN<4, std::size_t>>(),
+    "every Refined and SealedRefined shape must satisfy GradedWrapper, nested combinators included");
+
+// The layout of the bare value, pinned over the arithmetic and pointer
+// shapes, with one difference on purpose: a refined value is not
+// trivially copyable, so no byte pattern becomes one.  The shared layout
+// invariant asserts that parity, so the three other properties are stated
+// here one by one, and the fourth inverted.
+template <typename Refinedness, typename T>
+inline constexpr bool keeps_the_value_layout =
+    sizeof(Refinedness) == sizeof(T) && alignof(Refinedness) == alignof(T)
+    && std::is_trivially_destructible_v<Refinedness> == std::is_trivially_destructible_v<T>
+    && !std::is_trivially_copyable_v<Refinedness>;
+
+template <typename T>
+using SealedPositive = SealedRefined<positive, T>;
+static_assert(keeps_the_value_layout<Positive<int>, int> && keeps_the_value_layout<Positive<double>, double>
+              && keeps_the_value_layout<NonNull<void*>, void*> && keeps_the_value_layout<SealedPositive<int>, int>
+              && keeps_the_value_layout<SealedPositive<double>, double>);
+
+// One door: no public constructor takes a bare value.
+static_assert(!std::is_constructible_v<Refined<positive, int>, int>);
+static_assert(!std::is_default_constructible_v<Refined<positive, int>>);
+static_assert(!std::is_constructible_v<SealedRefined<positive, int>, int>);
+static_assert(!std::is_default_constructible_v<SealedRefined<positive, int>>);
+static_assert(std::is_constructible_v<SealedRefined<positive, int>, Refined<positive, int>&&>);
+
+// The mints run in a constant expression, and the checked one runs the
+// predicate there.
+static_assert(mint_refined<positive>(42).value() == 42);
+static_assert(mint_refined_trusted<positive>(-1).value() == -1);
+static_assert(mint_sealed_refined<positive>(42).value() == 42);
+static_assert(mint_sealed_refined_trusted<positive>(-1).value() == -1);
+
+static_assert(std::is_same_v<typename AlignedTo<64, void*>::predicate_type, std::remove_cv_t<decltype(aligned<64>)>>);
+static_assert(
+    std::is_same_v<typename Bounded<0, 100, int>::predicate_type, std::remove_cv_t<decltype(in_range<0, 100>)>>);
+static_assert(std::is_same_v<typename Capped<255, std::uint32_t>::predicate_type,
+                             std::remove_cv_t<decltype(bounded_above<255>)>>);
+
+// The extraction traits see through cv and reference, reject a
+// lookalike with the same member aliases, and tell the two wrappers
+// apart.
+struct LookalikeRefined {
+    using value_type = int;
+    using predicate_type = decltype(positive);
+};
+
+static_assert(is_refined_v<Refined<positive, int>>);
+static_assert(is_refined_v<Refined<non_negative, int>>);
+static_assert(is_refined_v<SealedRefined<positive, int>>);
+static_assert(is_refined_v<Refined<positive, int>&>);
+static_assert(is_refined_v<Refined<positive, int>&&>);
+static_assert(is_refined_v<Refined<positive, int> const>);
+static_assert(is_refined_v<Refined<positive, int> const&>);
+static_assert(is_refined_v<Refined<positive, int> volatile>);
+static_assert(!is_refined_v<int>);
+static_assert(!is_refined_v<int*>);
+static_assert(!is_refined_v<Refined<positive, int>*>);
+static_assert(!is_refined_v<void>);
+static_assert(!is_refined_v<LookalikeRefined>);
+static_assert(IsRefined<Refined<positive, int>>);
+static_assert(IsRefined<SealedRefined<positive, int> const&>);
+static_assert(!IsRefined<int>);
+static_assert(std::is_same_v<refined_value_t<Refined<positive, int>>, int>);
+static_assert(std::is_same_v<refined_value_t<SealedRefined<positive, int> const&>, int>);
+static_assert(std::is_same_v<refined_predicate_type_t<Refined<positive, int>>, refined::predicate_t<positive>>);
+static_assert(!refined_is_sealed_v<Refined<positive, int>>);
+static_assert(refined_is_sealed_v<SealedRefined<positive, int>>);
+
+}  // namespace detail::refined_self_test
+
+namespace detail::refined_algebra_self_test {
+
+constexpr auto pos_capped = all_of<positive, bounded_above<100>>;
+static_assert(pos_capped(50));
+static_assert(!pos_capped(0));
+static_assert(!pos_capped(101));
+
+constexpr auto trivially_true = all_of<>;
+static_assert(trivially_true(42));
+static_assert(trivially_true(-1));
+static_assert(trivially_true(0));
+
+constexpr auto just_positive = all_of<positive>;
+static_assert(just_positive(1));
+static_assert(!just_positive(0));
+
+constexpr auto zero_or_huge =
+    any_of<[](int x) constexpr noexcept { return x == 0; }, [](int x) constexpr noexcept { return x >= 1024; }>;
+static_assert(zero_or_huge(0));
+static_assert(zero_or_huge(2048));
+static_assert(!zero_or_huge(50));
+
+constexpr auto trivially_false = any_of<>;
+static_assert(!trivially_false(42));
+
+constexpr auto neg_pos = negate<positive>;
+static_assert(neg_pos(0));
+static_assert(neg_pos(-1));
+static_assert(!neg_pos(1));
+
+constexpr auto neg_neg_pos = negate<negate<positive>>;
+static_assert(neg_neg_pos(1));
+static_assert(!neg_neg_pos(0));
+
+constexpr auto pos_implies_nonzero = implies<positive, non_zero>;
+static_assert(pos_implies_nonzero(5));
+static_assert(pos_implies_nonzero(0));
+static_assert(pos_implies_nonzero(-1));
+
+// At zero the antecedent holds and the consequent fails, which is the
+// one input the implication rejects.
+constexpr auto false_implies_anything = implies<negate<positive>, positive>;
+static_assert(false_implies_anything(1));
+static_assert(!false_implies_anything(0));
+
+constexpr std::array<int, 8> a8{};
+constexpr std::array<int, 7> a7{};
+static_assert(exact_size<8>(a8));
+static_assert(!exact_size<7>(a8));
+static_assert(exact_size<7>(a7));
+
+static_assert(bounded_below<10>(15));
+static_assert(bounded_below<10>(10));
+static_assert(!bounded_below<10>(9));
+
+static_assert(divisible_by<4>(0));
+static_assert(divisible_by<4>(16));
+static_assert(!divisible_by<4>(13));
+static_assert(divisible_by<8>(2097152));
+
+// Minting through the trusted door keeps this a test of whether the
+// composed-predicate type is constructible, without also depending on
+// the predicate being evaluated at compile time.
+using PositiveCapped = Refined<all_of<positive, bounded_above<100>>, int>;
+using AlignedNonNullPtr = Refined<all_of<non_null, aligned<64>>, void*>;
+
+[[maybe_unused]] constexpr auto pc1_witness = mint_refined_trusted<all_of<positive, bounded_above<100>>, int>(42);
+[[maybe_unused]] constexpr auto pc2_witness = mint_refined_trusted<all_of<positive, bounded_above<100>>, int>(1);
+
+static_assert(implies_v<all_of<positive, bounded_above<100>>, positive>);
+static_assert(implies_v<all_of<positive, bounded_above<100>>, bounded_above<100>>);
+static_assert(implies_v<all_of<non_null, aligned<64>>, non_null>);
+static_assert(implies_v<all_of<non_null, aligned<64>>, aligned<64>>);
+
+static_assert(implies_v<positive, any_of<positive, non_zero>>);
+static_assert(implies_v<non_zero, any_of<positive, non_zero>>);
+
+static_assert(!implies_v<all_of<positive, bounded_above<100>>, non_empty>);
+// positive reaches non_null through non_zero, and the chain ends on the
+// narrowing edge.  The conjunction reaches non_null too.
+static_assert(implies_v<all_of<positive, bounded_above<100>>, non_null>);
+
+// The conclusions below hold through a conjunct's own implications,
+// not through a literal match against a conjunct.
+static_assert(implies_v<all_of<positive, bounded_above<100>>, non_negative>);
+static_assert(implies_v<all_of<positive>, non_zero>);
+static_assert(implies_v<all_of<power_of_two, bounded_above<1024u>>, non_zero>);
+// A disjunction entails none of its branches.
+static_assert(!implies_v<any_of<positive, non_zero>, positive>);
+
+static_assert(divisible_by<1>(0));
+static_assert(divisible_by<8>(64));
+
+// The checked mint in a constant expression runs the predicate there,
+// and the alias trampoline admits the boundary where Lo equals Hi.
+[[maybe_unused]] constexpr Bounded<0, 100, int> b_normal_witness = mint_refined<in_range<0, 100>, int>(50);
+[[maybe_unused]] constexpr Bounded<5, 5, int> b_equal_witness = mint_refined<in_range<5, 5>, int>(5);
+
+}  // namespace detail::refined_algebra_self_test
+
+}  // namespace fixy

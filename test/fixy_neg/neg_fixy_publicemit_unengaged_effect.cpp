@@ -1,0 +1,48 @@
+// fixy_neg: PublicEmit-shape with Effect axis unengaged.
+//
+// HS14 floor for FIXY-AUDIT-B3 (PublicEmit).  PublicEmit engages Effect
+// via `with_io`; removing the IO engagement without replacement leaves
+// Effect unengaged.  Reject.h's per-axis engagement check fires
+// `FixyNotEngaged_Effect`.
+//
+// Expected diagnostic: "FixyNotEngaged_Effect".
+
+#include <crucible/fixy/Fn.h>
+#include <crucible/safety/_Secret.h>
+
+namespace crucible_fixy = crucible::fixy;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
+
+template <D Axis>
+using strict = gr::accept_default_strict_for<Axis>;
+
+namespace pe_neg_policies {
+// fixy-M-09 tightened gr::declassify<Policy> to require
+// DeclassificationPolicy<Policy> — i.e. Policy must derive from
+// secret_policy::secret_policy_base.  Without the base the
+// substitution into gr::declassify fails BEFORE reaching the
+// IsAcceptedActive engagement gate this fixture wants to exercise
+// (FixyNotEngaged_Effect on the Effect axis); the engagement
+// diagnostic never fires and the fixture's expected-stderr regex
+// doesn't match.  Deriving from the substrate base puts the policy
+// past the type-system gate so the per-axis engagement check is
+// reached.
+struct EmitPolicy final : ::crucible::safety::secret_policy::secret_policy_base {};
+}  // namespace pe_neg_policies
+
+int main() {
+    // Hand-rolled "broken PublicEmit" — same engagements as
+    // stance::PublicEmit MINUS the Effect engagement.  IsAccepted
+    // rejects via the engagement gate.
+    auto bad =
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+                      /* gr::with_io removed — Effect unengaged */
+                      gr::declassify<pe_neg_policies::EmitPolicy>, strict<D::Protocol>, strict<D::Lifetime>,
+                      strict<D::Provenance>, strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+                      strict<D::Complexity>, strict<D::Precision>, strict<D::Space>, strict<D::Overflow>,
+                      strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
+                      strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>(42);
+    (void)bad;
+    return 0;
+}
