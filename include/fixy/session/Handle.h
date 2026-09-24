@@ -126,6 +126,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace fixy::session {
 
@@ -1764,6 +1765,30 @@ concept ChannelEndsShareAPriority = session_priority_v<ResourceA> == session_pri
 // Downstream concepts that ask whether a handle can be minted need that
 // answer, so the checks live in the signature.
 
+namespace detail {
+
+// The number of distinct roles that a local type names as peers.  The
+// walk is named_peers_of of fixy/session/Payload.h.  Complexity:
+// quadratic in the number of peer names that the walk finds.
+[[nodiscard]] consteval std::size_t distinct_peer_count(std::meta::info protocol) {
+    std::vector<std::meta::info> distinct;
+    for (const std::meta::info peer : named_peers_of(protocol)) {
+        if (!holds_type(distinct, peer)) distinct.push_back(peer);
+    }
+    return distinct.size();
+}
+
+}  // namespace detail
+
+// A local type that names two peers or more is the projection of a
+// multiparty protocol onto one role.  Whether it runs safely depends on
+// the global type and on the network model of the carrier
+// (fixy/session/Network.h).  A mint of this header sees neither, so it
+// refuses such a local type.  A multiparty binding asks CarrierImplements
+// of fixy/session/Network.h with the global type first.
+template <typename Proto>
+concept NamesAtMostOnePeer = detail::distinct_peer_count(^^Proto) <= 1;
+
 // An empty choice is not well-formed either.  The empty-choice clause
 // comes first so that the refusal of such a protocol names that fault
 // and not the general one.  A protocol that hands an endpoint of a
@@ -1771,7 +1796,7 @@ concept ChannelEndsShareAPriority = session_priority_v<ResourceA> == session_pri
 // (DelegatesToNoOwnPeer in fixy/session/Payload.h).
 template <typename Proto>
 concept WellFormedRunnableProtocol =
-    !is_empty_choice_v<Proto> && is_well_formed_v<Proto> && DelegatesToNoOwnPeer<Proto>;
+    !is_empty_choice_v<Proto> && is_well_formed_v<Proto> && DelegatesToNoOwnPeer<Proto> && NamesAtMostOnePeer<Proto>;
 
 namespace detail {
 

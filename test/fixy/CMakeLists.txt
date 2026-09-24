@@ -2339,6 +2339,39 @@ fixy_neg_compile_test(neg_sess_strip_peers_two_peers
   "fixy::session::strip_peers_t"
   "local_peers_t<Local>::size\\) <= 1")
 
+# The network model of a carrier (fixy/session/Network.h).  A mailbox
+# refuses a receiver with two senders, a bag refuses a choice, and a
+# carrier that states no network, or states it with another type, is
+# refused.  A session mint refuses a local type that names two peers.
+fixy_test(test_session_network)
+fixy_neg_compile_test(neg_sess_network_mailbox_two_senders
+  "fixy::session::diagnostic \\[Network_Mailbox_Receiver_Has_Two_Senders\\]"
+  "the senders of one receiver share one FIFO queue")
+fixy_neg_compile_test(neg_sess_network_mailbox_head_blocks
+  "fixy::session::diagnostic \\[Network_Mailbox_Receiver_Has_Two_Senders\\]"
+  "can reach the head while the receiver waits for the other sender")
+fixy_neg_compile_test(neg_sess_network_mailbox_loop
+  "fixy::session::diagnostic \\[Network_Mailbox_Receiver_Has_Two_Senders\\]"
+  "Give each receiver one sender, or bind to a per-pair FIFO carrier")
+fixy_neg_compile_test(neg_sess_network_bag_choice
+  "fixy::session::diagnostic \\[Network_Bag_Choice\\]"
+  "a later label of a choice can overtake an earlier one")
+fixy_neg_compile_test(neg_sess_network_carrier_undeclared
+  "fixy::session::diagnostic \\[Carrier_Network_Undeclared\\]"
+  "the carrier states no network model")
+fixy_neg_compile_test(neg_sess_network_carrier_wrong_type
+  "fixy::session::diagnostic \\[Session_Network_Type\\]"
+  "declares session_network with a type other than fixy::session::Network")
+fixy_neg_compile_test(neg_sess_network_crash_stop_on_mailbox
+  "fixy::session::diagnostic \\[Network_Crash_Stop_Needs_Per_Pair_Fifo\\]"
+  "a crash-stop protocol binds only to a per-pair FIFO carrier")
+fixy_neg_compile_test(neg_sess_mint_local_names_two_peers
+  "no matching function for call to .mint_session_handle"
+  "satisfaction of .NamesAtMostOnePeer<Proto>.")
+fixy_neg_compile_test(neg_sess_with_session_local_names_two_peers
+  "no matching function for call to .with_session"
+  "satisfaction of .NamesAtMostOnePeer<Proto>.")
+
 fixy_neg_compile_test(neg_sess_strip_peers_not_a_local_type
   "invalid use of incomplete type .struct fixy::session::detail::proj::peer_walk<"
   "fixy::session::strip_peers_t")

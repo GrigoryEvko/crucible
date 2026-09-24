@@ -420,6 +420,7 @@ apply to the row.
 | `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | · | HS14: 6 |
 | `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | Y | Y | Y | token | · | · | HS14: 21 |
+| `mint_delegated_session` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_forked_channel` | `include/fixy/session/Handle.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
@@ -427,7 +428,7 @@ apply to the row.
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 35 |
+| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 40 |
 | `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 
@@ -456,7 +457,7 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
 | `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
-| `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | · | member | · | · | HS14: 2 |
+| `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | member | · | · | HS14: 2 |
 | `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
@@ -482,4 +483,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 213 | 107 | 98 | 8 | 0 | 74 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 93 | 38 | 54 | 1 | 0 | · | 30 |
+| new (`include/foundation/`, `include/fixy/`) | 94 | 38 | 55 | 1 | 0 | · | 30 |
