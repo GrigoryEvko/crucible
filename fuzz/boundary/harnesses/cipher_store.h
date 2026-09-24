@@ -105,7 +105,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 // the first event record, so a regression seed can hold a record that no
 // session step wrote.
 [[nodiscard]] inline std::vector<std::uint8_t> cipher_store_seed(std::size_t patch_offset, std::uint8_t patch_byte,
-                                                                std::uint64_t object_name_xor = 0) {
+                                                                std::uint64_t object_name_xor = 0,
+                                                                std::string_view log_tail = {}) {
     Arena arena;
     const RegionNode* region = build_seed_region(arena, true);
     const auto image = region_image(region);
@@ -114,7 +115,7 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     char hex[17];
     std::snprintf(hex, sizeof(hex), "%016" PRIx64, hash);
     const std::string head = std::string(hex, 16) + "\n";
-    const std::string log = "1," + std::string(hex, 16) + ",0\n";
+    const std::string log = "1," + std::string(hex, 16) + ",0\n" + std::string(log_tail);
 
     std::vector<std::uint8_t> seed;
     const auto chunk = [&seed](std::span<const std::uint8_t> bytes) {
@@ -156,6 +157,9 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
         // Regression: a sound region stored under the name of another
         // hash.  The loader returned it for a lookup of that other hash.
         cipher_store_seed(kRecordOpOffset, kCloseOp, 0x1),
+        // Regression: a head log whose steps go back.  The log append
+        // aborted on its order contract when the store opened.
+        cipher_store_seed(kRecordOpOffset, kCloseOp, 0, "0,1,0\n"),
     };
 }
 

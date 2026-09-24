@@ -1224,6 +1224,10 @@ private:
             if (!parse_u64(begin, begin + p1, 10, step_id)) continue;
             if (!parse_u64(begin + p1 + 1, begin + p2, 16, raw_hash)) continue;
             if (!parse_u64(begin + p2 + 1, begin + line.size(), 10, ts_ns)) continue;
+            // The log only grows in step order, and its append checks that
+            // order with a contract that aborts.  A line out of order is a
+            // corrupt line, so it is skipped like the others.
+            if (!log_.empty() && step_id < log_.back().step_id.value) continue;
 
             log_.emplace(LogEntry::cipher_store_committed(crucible::fixy::sess::eventlog::StepId{step_id},
                                                           ContentHash{raw_hash}, ts_ns));
