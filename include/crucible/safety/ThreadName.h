@@ -50,6 +50,9 @@ concept CtxIsInitPhase =
     std::same_as<std::remove_cvref_t<Ctx>, ::crucible::effects::Init>
     || ::crucible::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>, ::crucible::effects::Effect::Init>;
 
+// Declared here and defined below the class, because the class names it
+// as its sole friend.
+// §XXI carve-out: cx=alloc — naming a thread is a kernel side effect.
 template <ThreadNameLiteral Name, typename Ctx>
     requires CtxIsInitPhase<Ctx>
 [[nodiscard]] inline ThreadNamed<Name> mint_thread_name(Ctx const&) noexcept;
