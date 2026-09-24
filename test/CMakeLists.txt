@@ -820,6 +820,13 @@ add_test(NAME use_after_move
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-use-after-move.py)
 set_tests_properties(use_after_move use_after_move_self_test PROPERTIES
     LABELS "ci_guard")
+# The uses after move that the guard does not read, one function each, on
+# a shrink-only ledger.  A shape the guard learns turns this test red, and
+# the tree-wide guard red with it, until the row leaves the ledger.
+add_test(NAME use_after_move_attacks
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/test/guard_attacks/test_use_after_move_attacks.py ${CMAKE_SOURCE_DIR})
+set_tests_properties(use_after_move_attacks PROPERTIES
+    LABELS "ci_guard")
 # A write past the end of a C array member lands in the next member of the
 # same object, where the address sanitizer sees valid memory, and no build
 # checks the subscript.  scripts/check-no-raw-array-member.py refuses a C
