@@ -318,6 +318,59 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         region->plan = nullptr;  // restore.
     }
 
+    // A writer sets every pad byte of a slot to zero, so one non-zero byte
+    // in a pad refuses the whole image.  The last slot carries a slot id
+    // that occurs once in the image, which locates its pads: the 3-byte
+    // pad ends at the slot id, and the 4-byte pad2 starts after it.
+    {
+        constexpr uint32_t kMarkerSlotId = 0x5A5A5A5Au;
+        crucible::MemoryPlan pad_plan{};
+        pad_plan.num_slots = 21;
+        pad_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 21);
+        std::uninitialized_value_construct_n(pad_plan.slots, 21);
+        pad_plan.slots[20].slot_id = crucible::SlotId{kMarkerSlotId};
+        region->plan = &pad_plan;
+
+        std::vector<uint8_t> image(65536);
+        const size_t image_bytes = crucible::serialize_region(region, nullptr, std::span<uint8_t>{image});
+        assert(image_bytes > 0 && "pad-probe serialize failed");
+        image.resize(image_bytes);
+
+        uint8_t marker[sizeof(kMarkerSlotId)];
+        std::memcpy(marker, &kMarkerSlotId, sizeof(marker));
+        size_t marker_at = image_bytes;
+        size_t marker_count = 0;
+        for (size_t at = 0; at + sizeof(marker) <= image_bytes; ++at) {
+            if (std::memcmp(image.data() + at, marker, sizeof(marker)) == 0) {
+                marker_at = at;
+                ++marker_count;
+            }
+        }
+        assert(marker_count == 1 && "the marker slot id must occur once in the image");
+        const size_t pad_at = marker_at - 3;
+        const size_t pad2_at = marker_at + sizeof(marker);
+
+        crucible::Arena clean_arena(1 << 16);
+        auto clean = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{image}, clean_arena);
+        assert(clean.value() != nullptr && "the unmodified pad-probe image must load");
+
+        const auto refuses_with_byte_set_at = [&](size_t at) {
+            std::vector<uint8_t> corrupt = image;
+            corrupt[at] = 1;
+            crucible::Arena corrupt_arena(1 << 16);
+            return crucible::deserialize_region(test.alloc, std::span<const uint8_t>{corrupt}, corrupt_arena).value()
+                   == nullptr;
+        };
+        for (size_t byte = 0; byte < 4; ++byte) {
+            assert(refuses_with_byte_set_at(pad2_at + byte) && "a non-zero byte in pad2 must refuse the image");
+        }
+        for (size_t byte = 0; byte < 3; ++byte) {
+            assert(refuses_with_byte_set_at(pad_at + byte) && "a non-zero byte in the slot pad must refuse the image");
+        }
+
+        region->plan = nullptr;
+    }
+
     std::printf("test_serialize: all tests passed\n");
     return 0;
 }

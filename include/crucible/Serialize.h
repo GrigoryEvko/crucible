@@ -18,6 +18,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <cstdint>
@@ -170,10 +171,19 @@ struct Reader {
     }
 
     // Pad bytes carry no value.  A writer sets them to zero, so a non-zero
-    // byte means the image is not one that a writer produced.
+    // byte means the image is not one that a writer produced.  The pad is
+    // set to zero whatever the bytes hold, because zero is the only value
+    // that a pad holds, and the parse of a refused image is discarded.  The
+    // bytes are read in one piece and judged apart from the store.  A loop
+    // that stores each pad byte from the result of a read lets GCC unroll
+    // it into copies that it cannot bound, and at -O3 it then reports a
+    // store past the end of the enclosing object.
     template <size_t N>
     void read_zero_pad(uint8_t (&pad)[N]) {
-        for (uint8_t& byte : pad) byte = read_gated<uint8_t>([](uint8_t b) noexcept { return b == 0; });
+        std::array<uint8_t, N> wire{};
+        read_bytes(wire.data(), N);
+        if (!std::ranges::all_of(wire, [](uint8_t byte) noexcept { return byte == 0; })) [[unlikely]] ok = false;
+        std::ranges::fill(pad, uint8_t{0});
     }
 
     template <typename E>
