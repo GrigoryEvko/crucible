@@ -16148,6 +16148,15 @@ add_test(NAME mintmodel_self_test
 set_tests_properties(parse_clean parse_clean_self_test tsast_self_test mintmodel_self_test PROPERTIES
     LABELS "ci_guard;ast")
 set_tests_properties(parse_clean tsast_self_test mintmodel_self_test PROPERTIES SKIP_RETURN_CODE 3)
+# The mutation tool weakens one gate of a header at a time and asks whether a
+# test notices.  Its self-test plants a header with three gates: a negative
+# fixture witnesses two of them and nothing witnesses the third.  The tool
+# must report two kills and one survivor, which proves that it tells a
+# witnessed gate from a bare one.  Exit 3 (no tree-sitter kit) is a skip.
+add_test(NAME mutation_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/tools/mutation/run.py selftest
+          --compiler ${CMAKE_CXX_COMPILER})
+set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 
 add_subdirectory(foundation)
 add_subdirectory(fixy)
