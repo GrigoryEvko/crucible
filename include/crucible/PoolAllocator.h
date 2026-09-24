@@ -74,6 +74,17 @@ struct CRUCIBLE_OWNER PoolAllocator {
     static constexpr uint32_t kMaxNumSlots = 1u << 20;
     static constexpr uint64_t kMaxPoolBytes = uint64_t{256} << 30;
 
+    // True when a pool of pool_bytes can serve the slot.  An external slot
+    // lives outside the pool.  A pooled slot must start on the alignment and
+    // end inside the pool, with no wrap in the sum.  init aborts on a slot
+    // that fails this, and a loader of a plan refuses one with it.
+    [[nodiscard]] static constexpr bool can_serve_slot(const TensorSlot& slot, uint64_t pool_bytes) noexcept {
+        if (slot.is_external) return true;
+        uint64_t end_offset = 0;
+        if (__builtin_add_overflow(slot.offset_bytes, slot.nbytes, &end_offset)) return false;
+        return end_offset <= pool_bytes && slot.offset_bytes % ALIGNMENT == 0;
+    }
+
     // Failure to allocate aborts. A runtime that preallocates everything up
     // front has nowhere to retreat to when the up-front allocation fails.
     // Externally owned slots start null and are registered before replay.
@@ -125,35 +136,22 @@ struct CRUCIBLE_OWNER PoolAllocator {
             auto* base = static_cast<char*>(pool_);
             for (uint32_t s = 0; s < num_slots_; ++s) {
                 const auto& slot = plan->slots[s];
-                if (!slot.is_external) {
-                    uint64_t end_offset;
-                    if (__builtin_add_overflow(slot.offset_bytes, slot.nbytes, &end_offset)) [[unlikely]] {
-                        std::fprintf(stderr,
-                                     "PoolAllocator: slot %u offset_bytes+nbytes overflow "
-                                     "(offset=%llu nbytes=%llu)\n",
-                                     s, static_cast<unsigned long long>(slot.offset_bytes),
-                                     static_cast<unsigned long long>(slot.nbytes));
-                        std::abort();
-                    }
-                    // Both checks stay armed in a release build. The next
-                    // statement publishes a pointer that later becomes a
-                    // memcpy destination, so a slot reaching past the pool
-                    // corrupts the heap silently instead of trapping.
-                    //
-                    // A contract clause could not carry either one anyway:
-                    // they read a slot of a plan this loop is walking, which
-                    // no precondition on init can name. This form is also
-                    // independent of the contract evaluation semantic, which
-                    // is a per-target build option that already differs
-                    // across targets in this tree. Once per plan on a cold
-                    // path, so the cost is nil.
-                    CRUCIBLE_FATAL_INVARIANT(end_offset <= pool_bytes_);
-                    // An offset off the alignment means the sweep-line
-                    // planner produced a slot the hot path then reads with
-                    // aligned loads.
-                    CRUCIBLE_FATAL_INVARIANT(slot.offset_bytes % ALIGNMENT == 0);
-                    ptr_table_[s] = base + slot.offset_bytes;
+                // The check stays armed in a release build.  The next
+                // statement publishes a pointer that later becomes a memcpy
+                // destination, so a slot reaching past the pool would corrupt
+                // the heap silently instead of trapping.  A slot off the
+                // alignment means the planner produced a slot that the hot
+                // path then reads with aligned loads.
+                //
+                // A contract clause could not carry the check: it reads a
+                // slot of the plan this loop walks, which no precondition on
+                // init can name.  This form is also independent of the
+                // contract evaluation semantic, which differs across targets
+                // in this tree.  Once per plan on a cold path.
+                if (!can_serve_slot(slot, pool_bytes_)) [[unlikely]] {
+                    report_unservable_slot_(s, slot, pool_bytes_);
                 }
+                if (!slot.is_external) ptr_table_[s] = base + slot.offset_bytes;
             }
         }
         // A contract predicate that reads a member through `this` is skipped
@@ -303,6 +301,17 @@ struct CRUCIBLE_OWNER PoolAllocator {
     }
 
 private:
+    [[noreturn, gnu::cold, gnu::noinline]] static void report_unservable_slot_(uint32_t slot_index, const TensorSlot& slot,
+                                                                            uint64_t pool_bytes) noexcept {
+        std::fprintf(stderr,
+                     "PoolAllocator: slot %u does not fit the pool: offset=%llu nbytes=%llu pool_bytes=%llu "
+                     "alignment=%u\n",
+                     slot_index, static_cast<unsigned long long>(slot.offset_bytes),
+                     static_cast<unsigned long long>(slot.nbytes), static_cast<unsigned long long>(pool_bytes),
+                     ALIGNMENT);
+        std::abort();
+    }
+
     void* pool_ = nullptr;
     void** ptr_table_ = nullptr;
     uint64_t pool_bytes_ = 0;

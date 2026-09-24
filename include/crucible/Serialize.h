@@ -15,12 +15,16 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
+#include <foundation/reflect/EnumName.h>
 
+#include <array>
 #include <concepts>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -144,6 +148,44 @@ struct Reader {
         return v;
     }
 
+    // A bool takes one byte, and only 0 and 1 are values of it.  Copying any
+    // other byte into a bool makes a value that the program cannot read, so
+    // the byte is judged as an integer first.
+    [[nodiscard]] bool read_bool() {
+        return read_gated<uint8_t>([](uint8_t byte) noexcept { return byte <= 1; }) != 0;
+    }
+
+    // An enumerator of E.  The set of valid bytes comes from the enumeration
+    // by reflection, so a new enumerator needs no edit here.  A byte that
+    // names no enumerator is refused, and none reaches a switch.
+    template <typename E>
+        requires std::is_scoped_enum_v<E>
+    [[nodiscard]] E read_enumerator() {
+        using Raw = std::underlying_type_t<E>;
+        const auto names_enumerator = [](Raw raw) noexcept {
+            return !::foundation::reflect::enumerator_name(static_cast<E>(raw)).empty();
+        };
+        return static_cast<E>(read_gated<Raw>(names_enumerator, first_enumerator_raw<E>));
+    }
+
+    // Pad bytes carry no value.  A writer sets them to zero, so a non-zero
+    // byte means the image is not one that a writer produced.
+    template <size_t N>
+    void read_zero_pad(uint8_t (&pad)[N]) {
+        for (uint8_t& byte : pad) byte = read_gated<uint8_t>([](uint8_t b) noexcept { return b == 0; });
+    }
+
+    template <typename E>
+    static constexpr std::underlying_type_t<E> first_enumerator_raw = [] {
+        std::underlying_type_t<E> raw{};
+        bool is_found = false;
+        ::foundation::reflect::for_each_enumerator<E>([&](E value, std::string_view) noexcept {
+            if (!is_found) raw = std::to_underlying(value);
+            is_found = true;
+        });
+        return raw;
+    }();
+
     [[nodiscard]] size_t remaining() const noexcept { return (pos <= len) ? (len - pos) : 0; }
 
     // Ask before growing the arena for n elements. A header can claim a count
@@ -190,11 +232,13 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
 // older or corrupt image cannot resurrect an address from another process.
 inline TensorMeta read_meta(Reader& r) {
     TensorMeta m{};
+    // A dimension past the extent bound is refused here.  tensor_dim states
+    // the bound as a contract, which aborts on a byte from outside.
     for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
-        m.sizes[d] = tensor_dim(r.r<int64_t>());
+        m.sizes[d] = tensor_dim(r.read_gated<int64_t>(::fixy::bounded_above<kMaxTensorDimExtent>));
     }
     for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
-        m.strides[d] = tensor_dim(r.r<int64_t>());
+        m.strides[d] = tensor_dim(r.read_gated<int64_t>(::fixy::bounded_above<kMaxTensorDimExtent>));
     }
     (void)r.r<uint64_t>();  // the persisted data pointer, deliberately dropped
     m.data_ptr = external_data_ptr(nullptr);
@@ -211,7 +255,7 @@ inline TensorMeta read_meta(Reader& r) {
     m.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
     m.device_idx = r.r<int8_t>();
     m.layout = make_layout(::fixy::mint_refined<valid_layout>(r.read_gated<int8_t>(valid_layout)));
-    m.requires_grad = r.r<bool>();
+    m.requires_grad = r.read_bool();
     m.flags = r.r<uint8_t>();
     m.output_nr = r.r<uint8_t>();
     m.storage_offset = r.r<int64_t>();
@@ -221,6 +265,73 @@ inline TensorMeta read_meta(Reader& r) {
     m.grad_fn_hash = grad_fn_hash(0);
     return m;
 }
+
+// A plan slot, field by field in declaration order.  The 40 bytes on the
+// wire are the bytes of the struct, which has no implicit padding, and the
+// pad fields go out as zero.
+inline void write_slot(Writer& w, const TensorSlot& slot) {
+    w.w(slot.offset_bytes);
+    w.w(slot.nbytes);
+    w.w(slot.birth_op.raw());
+    w.w(slot.death_op.raw());
+    w.w(slot.dtype);
+    w.w(slot.device_type);
+    w.w(slot.device_idx);
+    w.w(slot.layout);
+    w.w(static_cast<uint8_t>(slot.is_external ? 1 : 0));
+    const uint8_t pad3[3] = {};
+    w.write_bytes(pad3, sizeof(pad3));
+    w.w(slot.slot_id.raw());
+    const uint8_t pad4[4] = {};
+    w.write_bytes(pad4, sizeof(pad4));
+}
+
+// The reader of write_slot.  Each enum, the bool and each pad byte is judged
+// before it becomes a field, so a slot holds only values of its field types.
+inline TensorSlot read_slot(Reader& r) {
+    TensorSlot slot{};
+    slot.offset_bytes = r.r<uint64_t>();
+    slot.nbytes = r.r<uint64_t>();
+    slot.birth_op = OpIndex{r.r<uint32_t>()};
+    slot.death_op = OpIndex{r.r<uint32_t>()};
+    slot.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(r.read_gated<int8_t>(valid_scalar_type)));
+    slot.device_type =
+        make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
+    slot.device_idx = r.r<int8_t>();
+    slot.layout = make_layout(::fixy::mint_refined<valid_layout>(r.read_gated<int8_t>(valid_layout)));
+    slot.is_external = r.read_bool();
+    r.read_zero_pad(slot.pad);
+    slot.slot_id = SlotId{r.r<uint32_t>()};
+    r.read_zero_pad(slot.pad2);
+    return slot;
+}
+
+inline void write_guard(Writer& w, const Guard& guard) {
+    w.w(guard.kind);
+    const uint8_t pad3[3] = {};
+    w.write_bytes(pad3, sizeof(pad3));
+    w.w(guard.op_index.raw());
+    w.w(guard.arg_index);
+    w.w(guard.dim_index);
+}
+
+// A guard kind outside the enumeration would reach the replay switch on the
+// kind, so the kind is read as an enumerator.
+inline Guard read_guard(Reader& r) {
+    Guard guard{};
+    guard.kind = r.read_enumerator<Guard::Kind>();
+    r.read_zero_pad(guard.pad);
+    guard.op_index = OpIndex{r.r<uint32_t>()};
+    guard.arg_index = r.r<uint16_t>();
+    guard.dim_index = r.r<uint16_t>();
+    return guard;
+}
+
+static_assert(sizeof(Guard) == 12, "write_guard and read_guard move every field of Guard.  A new field needs a line in each.");
+
+inline constexpr size_t kTensorSlotWireBytes = 40;
+static_assert(sizeof(TensorSlot) == kTensorSlotWireBytes,
+              "write_slot and read_slot move every field of TensorSlot.  A new field needs a line in each.");
 
 inline void write_header(Writer& w, TraceNodeKind kind, MerkleHash merkle_hash, ContentHash content_hash) {
     w.w(CDAG_MAGIC);
@@ -247,7 +358,7 @@ inline Header read_header(Reader& r) {
     h.kind = make_trace_node_kind(ValidTraceNodeKindRaw{
         r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>)});
     uint8_t pad7[7]{};
-    r.read_bytes(pad7, 7);
+    r.read_zero_pad(pad7);
     h.merkle_hash = MerkleHash{r.r<uint64_t>()};
     h.content_hash = ContentHash{r.r<uint64_t>()};
     return h;
@@ -278,13 +389,13 @@ inline Header read_header(Reader& r) {
         w.w(plan->num_external);
         w.w(plan->device_type);
         w.w(plan->device_idx);
-        w.write_bytes(plan->pad0, sizeof(plan->pad0));
+        const uint8_t pad0[sizeof(plan->pad0)] = {};
+        w.write_bytes(pad0, sizeof(pad0));
         w.w(plan->device_capability);
         w.w(plan->rank);
         w.w(plan->world_size);
-        // A slot holds no pointers, so it goes to disk verbatim.
         for (uint32_t s = 0; s < plan->num_slots; s++) {
-            w.write_bytes(&plan->slots[s], sizeof(TensorSlot));
+            write_slot(w, plan->slots[s]);
         }
     }
 
@@ -351,11 +462,14 @@ inline Header read_header(Reader& r) {
     const uint32_t num_ops = r.r<uint32_t>();
     if (num_ops > CDAG_MAX_OPS) return LoadedRegionNode{nullptr};
     const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
-    const float measured_ms = r.r<float>();
+    // RegionNode::set_measured_ms keeps the time finite and not negative.
+    // The comparison also refuses a NaN.
+    const float measured_ms = r.read_gated<float>(
+        [](float ms) noexcept { return ms >= 0.0f && ms <= std::numeric_limits<float>::max(); }, 0.0f);
     const uint32_t variant_id = r.r<uint32_t>();
 
     MemoryPlan* plan = nullptr;
-    const bool has_plan = r.r<bool>();
+    const bool has_plan = r.read_bool();
     if (has_plan) {
         plan = arena.alloc_obj<MemoryPlan>(a);
         plan->pool_bytes = r.r<uint64_t>();
@@ -379,18 +493,22 @@ inline Header read_header(Reader& r) {
         plan->device_type =
             make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
         plan->device_idx = r.r<int8_t>();
-        r.read_bytes(plan->pad0, sizeof(plan->pad0));
+        r.read_zero_pad(plan->pad0);
         plan->device_capability = r.r<uint64_t>();
         plan->rank = r.r<int32_t>();
         plan->world_size = r.r<int32_t>();
         if (plan->num_slots > 0) {
-            // The product cannot overflow: the count is already bounded by the
-            // slot ceiling and the element size is a small constant.
-            const uint64_t slot_bytes = static_cast<uint64_t>(plan->num_slots) * sizeof(TensorSlot);
-            if (r.pos + slot_bytes > r.len) return LoadedRegionNode{nullptr};
+            if (!r.has_remaining<std::array<uint8_t, kTensorSlotWireBytes>>(plan->num_slots)) {
+                return LoadedRegionNode{nullptr};
+            }
             plan->slots = arena.alloc_array<TensorSlot>(a, plan->num_slots);
             for (uint32_t s = 0; s < plan->num_slots; s++) {
-                r.read_bytes(&plan->slots[s], sizeof(TensorSlot));
+                plan->slots[s] = read_slot(r);
+                // The pool allocator aborts on a slot it cannot serve, so a
+                // loaded plan holds only slots that it can serve.
+                if (!::crucible::PoolAllocator::can_serve_slot(plan->slots[s], plan->pool_bytes)) [[unlikely]] {
+                    return LoadedRegionNode{nullptr};
+                }
             }
         } else {
             plan->slots = nullptr;
@@ -418,9 +536,13 @@ inline Header read_header(Reader& r) {
         if (te.num_inputs > CDAG_MAX_INPUTS) return LoadedRegionNode{nullptr};
         if (te.num_outputs > CDAG_MAX_OUTPUTS) return LoadedRegionNode{nullptr};
         if (te.num_scalar_args > CDAG_MAX_SCALAR_ARGS) return LoadedRegionNode{nullptr};
-        te.grad_enabled = r.r<bool>();
+        te.grad_enabled = r.read_bool();
         {
-            const uint8_t flags = r.r<uint8_t>();
+            // The writer sets only these bits, so a byte with another bit
+            // set is not an image that the writer produced.
+            constexpr uint8_t kWrittenFlags =
+                op_flag::INFERENCE_MODE | op_flag::IS_MUTABLE | op_flag::PHASE_MASK | op_flag::TORCH_FUNCTION;
+            const uint8_t flags = r.read_gated<uint8_t>([](uint8_t byte) noexcept { return (byte & ~kWrittenFlags) == 0; });
             te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
             te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
             te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
@@ -487,6 +609,25 @@ inline Header read_header(Reader& r) {
 
     if (!r.ok) return LoadedRegionNode{nullptr};
 
+    // The content hash is the region's identity and the key of its kernels
+    // in the cache.  The header states it, and the header comes from outside,
+    // so the loader folds the operations again and refuses a region whose
+    // stated hash is not the hash of its operations.  A peer that could state
+    // any hash could make this region take the kernels of another one.
+    //
+    // The fold is the one make_region uses with no recipe.  A region hashed
+    // under a recipe is refused here, because the image does not carry the
+    // recipe and the loader cannot fold it.
+    const std::span<const TraceEntry> loaded_ops{ops, num_ops};
+    if (compute_content_hash(loaded_ops) != hdr.content_hash) [[unlikely]] {
+        return LoadedRegionNode{nullptr};
+    }
+    // make_region sets the first schema from the operations, so the field is
+    // not free to disagree with them.
+    if (first_op_schema != (num_ops > 0 ? ops[0].schema_hash : SchemaHash{})) [[unlikely]] {
+        return LoadedRegionNode{nullptr};
+    }
+
     // Placement new rather than a plain cast: the node holds an atomic field.
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
@@ -515,8 +656,7 @@ inline Header read_header(Reader& r) {
     const MerkleHash cont_hash = branch->next ? branch->next->merkle_hash : MerkleHash{};
     write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash, ContentHash{cont_hash.raw()});
 
-    // The guard holds no pointers, so it goes to disk verbatim.
-    w.write_bytes(&branch->guard, sizeof(Guard));
+    write_guard(w, branch->guard);
 
     w.w(branch->num_arms);
     for (uint32_t i = 0; i < branch->num_arms; i++) {
@@ -544,8 +684,7 @@ template <typename Resolve>
     }
     // The header's content-hash field holds the continuation's merkle hash.
 
-    Guard guard{};
-    r.read_bytes(&guard, sizeof(Guard));
+    const Guard guard = read_guard(r);
 
     const uint32_t num_arms = r.r<uint32_t>();
     if (num_arms > CDAG_MAX_BRANCH_ARMS) return nullptr;
@@ -579,7 +718,10 @@ template <typename Resolve>
         node->arms = nullptr;
     }
 
-    return r.ok ? node : nullptr;
+    // Replay finds an arm by binary search on the value, so an image with
+    // unsorted arms would route a guard outcome to the wrong target.
+    if (!r.ok || !node->are_arms_sorted_by_value()) return nullptr;
+    return node;
 }
 
 [[nodiscard]] inline BranchNode* deserialize_branch(effects::Alloc a, std::span<const uint8_t> buf,

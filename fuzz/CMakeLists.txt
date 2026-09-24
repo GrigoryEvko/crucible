@@ -145,6 +145,8 @@ function(crucible_boundary_fuzzer name mutations)
   set(CRUCIBLE_FUZZ_HARNESS_LIST "${CRUCIBLE_FUZZ_HARNESS_LIST}CRUCIBLE_FUZZ_HARNESS(${name})\n" PARENT_SCOPE)
 endfunction()
 
+crucible_boundary_fuzzer(region 2000)
+crucible_boundary_fuzzer(branch 2000)
 crucible_boundary_fuzzer(federation 4000)
 crucible_boundary_fuzzer(ledger 2000)
 crucible_boundary_fuzzer(trace_file 500)
