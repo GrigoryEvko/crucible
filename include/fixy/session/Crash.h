@@ -251,14 +251,14 @@ struct is_reliable_set<ReliableSet<Roles...>> : std::true_type {};
 namespace detail::crash {
 
 template <typename Reliable, typename Role>
-struct reliable_contains;
+struct is_in_reliable_set;
 template <typename... Roles, typename Role>
-struct reliable_contains<ReliableSet<Roles...>, Role> : std::bool_constant<(std::is_same_v<Roles, Role> || ...)> {};
+struct is_in_reliable_set<ReliableSet<Roles...>, Role> : std::bool_constant<(std::is_same_v<Roles, Role> || ...)> {};
 
 }  // namespace detail::crash
 
 template <typename Reliable, typename Role>
-inline constexpr bool reliable_set_contains_v = detail::crash::reliable_contains<Reliable, Role>::value;
+inline constexpr bool reliable_set_contains_v = detail::crash::is_in_reliable_set<Reliable, Role>::value;
 
 // The queue into a crashed recipient (⊘ in LMCS 2025 Fig. 2).  A send
 // into it is dropped rather than delivered (rule r-send-↯).  The type
@@ -295,12 +295,12 @@ template <typename B>
 using branch_crash_peer_t = typename branch_crash_peer<B>::type;
 
 template <typename P>
-struct structure : std::false_type {};
+struct is_crash_well_structured : std::false_type {};
 
 template <typename B>
-struct branch_structure : structure<B> {};
+struct is_branch_well_structured : is_crash_well_structured<B> {};
 template <typename Peer, typename K>
-struct branch_structure<Recv<Crash<Peer>, K>> : structure<K> {};
+struct is_branch_well_structured<Recv<Crash<Peer>, K>> : is_crash_well_structured<K> {};
 
 // Rule 6: no message branch follows a crash branch.
 template <typename... Bs>
@@ -327,41 +327,41 @@ inline constexpr bool crash_peers_distinct_v =
     ((!is_crash_branch_v<Bs> || crash_branches_for_v<branch_crash_peer_t<Bs>, Bs...> == 1) && ...);
 
 template <typename... Bs>
-struct offer_structure
-    : std::bool_constant<(branch_structure<Bs>::value && ...) && !every_branch_is_crash_v<Bs...>
+struct is_offer_well_structured
+    : std::bool_constant<(is_branch_well_structured<Bs>::value && ...) && !every_branch_is_crash_v<Bs...>
                          && crash_branches_trail<Bs...>() && crash_peers_distinct_v<Bs...>> {};
 
 template <>
-struct structure<End> : std::true_type {};
+struct is_crash_well_structured<End> : std::true_type {};
 template <>
-struct structure<Continue> : std::true_type {};
+struct is_crash_well_structured<Continue> : std::true_type {};
 template <typename T, typename K>
-struct structure<Send<T, K>> : std::bool_constant<!is_crash_payload_v<T> && structure<K>::value> {};
+struct is_crash_well_structured<Send<T, K>> : std::bool_constant<!is_crash_payload_v<T> && is_crash_well_structured<K>::value> {};
 // Rule 4: a bare reception of the crash label is refused.
 template <typename T, typename K>
-struct structure<Recv<T, K>> : std::bool_constant<!is_crash_payload_v<T> && structure<K>::value> {};
+struct is_crash_well_structured<Recv<T, K>> : std::bool_constant<!is_crash_payload_v<T> && is_crash_well_structured<K>::value> {};
 template <typename... Bs>
-struct structure<Select<Bs...>> : std::bool_constant<(structure<Bs>::value && ...)> {};
+struct is_crash_well_structured<Select<Bs...>> : std::bool_constant<(is_crash_well_structured<Bs>::value && ...)> {};
 template <typename... Bs>
-struct structure<Offer<Bs...>> : offer_structure<Bs...> {};
+struct is_crash_well_structured<Offer<Bs...>> : is_offer_well_structured<Bs...> {};
 template <typename Role, typename... Bs>
-struct structure<Offer<Sender<Role>, Bs...>> : offer_structure<Bs...> {};
+struct is_crash_well_structured<Offer<Sender<Role>, Bs...>> : is_offer_well_structured<Bs...> {};
 // A Sender note on a Select names the role that picks, which is the
 // endpoint itself.  The note is not a branch, so each walk in this
 // header reads a noted Select as the Select of its branches.
 template <typename Role, typename... Bs>
-struct structure<Select<Sender<Role>, Bs...>> : structure<Select<Bs...>> {};
+struct is_crash_well_structured<Select<Sender<Role>, Bs...>> : is_crash_well_structured<Select<Bs...>> {};
 template <typename B>
-struct structure<Loop<B>> : structure<B> {};
+struct is_crash_well_structured<Loop<B>> : is_crash_well_structured<B> {};
 template <VendorBackend V, typename P>
-struct structure<VendorPinned<V, P>> : structure<P> {};
+struct is_crash_well_structured<VendorPinned<V, P>> : is_crash_well_structured<P> {};
 
 }  // namespace detail::crash
 
 // True when P is well-formed and obeys rules 1, 2, 4, 6 and 7.  Rules 3
 // and 5 need the reliable roles, which is_crash_covered reads.
 template <typename P>
-struct is_crash_well_formed : std::bool_constant<is_well_formed_v<P> && detail::crash::structure<P>::value> {};
+struct is_crash_well_formed : std::bool_constant<is_well_formed_v<P> && detail::crash::is_crash_well_structured<P>::value> {};
 
 template <typename P>
 inline constexpr bool is_crash_well_formed_v = is_crash_well_formed<P>::value;
@@ -384,27 +384,27 @@ namespace detail::crash {
 // The primary refuses, so a combinator this walk does not know is not
 // admitted.
 template <typename P>
-struct delegation_free : std::false_type {};
+struct is_delegation_free : std::false_type {};
 template <>
-struct delegation_free<End> : std::true_type {};
+struct is_delegation_free<End> : std::true_type {};
 template <>
-struct delegation_free<Continue> : std::true_type {};
+struct is_delegation_free<Continue> : std::true_type {};
 template <typename T, typename K>
-struct delegation_free<Send<T, K>> : std::bool_constant<!payload_conveys_delegation_v<T> && delegation_free<K>::value> {};
+struct is_delegation_free<Send<T, K>> : std::bool_constant<!payload_conveys_delegation_v<T> && is_delegation_free<K>::value> {};
 template <typename T, typename K>
-struct delegation_free<Recv<T, K>> : std::bool_constant<!payload_conveys_delegation_v<T> && delegation_free<K>::value> {};
+struct is_delegation_free<Recv<T, K>> : std::bool_constant<!payload_conveys_delegation_v<T> && is_delegation_free<K>::value> {};
 template <typename... Bs>
-struct delegation_free<Select<Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
+struct is_delegation_free<Select<Bs...>> : std::bool_constant<(is_delegation_free<Bs>::value && ...)> {};
 template <typename... Bs>
-struct delegation_free<Offer<Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
+struct is_delegation_free<Offer<Bs...>> : std::bool_constant<(is_delegation_free<Bs>::value && ...)> {};
 template <typename Role, typename... Bs>
-struct delegation_free<Offer<Sender<Role>, Bs...>> : std::bool_constant<(delegation_free<Bs>::value && ...)> {};
+struct is_delegation_free<Offer<Sender<Role>, Bs...>> : std::bool_constant<(is_delegation_free<Bs>::value && ...)> {};
 template <typename Role, typename... Bs>
-struct delegation_free<Select<Sender<Role>, Bs...>> : delegation_free<Select<Bs...>> {};
+struct is_delegation_free<Select<Sender<Role>, Bs...>> : is_delegation_free<Select<Bs...>> {};
 template <typename B>
-struct delegation_free<Loop<B>> : delegation_free<B> {};
+struct is_delegation_free<Loop<B>> : is_delegation_free<B> {};
 template <VendorBackend V, typename P>
-struct delegation_free<VendorPinned<V, P>> : delegation_free<P> {};
+struct is_delegation_free<VendorPinned<V, P>> : is_delegation_free<P> {};
 
 }  // namespace detail::crash
 
@@ -422,7 +422,7 @@ inline constexpr bool offers_crash_branch_for_v = (std::is_same_v<branch_crash_p
 // Rule 5, per branch: a crash branch names an unreliable role.
 template <typename Reliable, typename... Bs>
 inline constexpr bool no_crash_branch_for_reliable_v =
-    ((!is_crash_branch_v<Bs> || !reliable_contains<Reliable, branch_crash_peer_t<Bs>>::value) && ...);
+    ((!is_crash_branch_v<Bs> || !is_in_reliable_set<Reliable, branch_crash_peer_t<Bs>>::value) && ...);
 
 // Rule 3, per branch: a crash branch names the sender of its Offer.
 template <typename OfferSender, typename... Bs>
@@ -430,44 +430,44 @@ inline constexpr bool crash_branches_name_sender_v =
     ((!is_crash_branch_v<Bs> || std::is_same_v<branch_crash_peer_t<Bs>, OfferSender>) && ...);
 
 template <typename P, typename Peer, typename Reliable>
-struct coverage : std::false_type {};
+struct is_crash_covered : std::false_type {};
 
 // A message branch whose head is a reception is one message with the
 // label, so the Offer's crash branch covers the head.
 template <typename B, typename Peer, typename Reliable>
-struct branch_coverage : coverage<B, Peer, Reliable> {};
+struct is_branch_crash_covered : is_crash_covered<B, Peer, Reliable> {};
 template <typename T, typename K, typename Peer, typename Reliable>
-struct branch_coverage<Recv<T, K>, Peer, Reliable> : coverage<K, Peer, Reliable> {};
+struct is_branch_crash_covered<Recv<T, K>, Peer, Reliable> : is_crash_covered<K, Peer, Reliable> {};
 
 template <typename OfferSender, typename Peer, typename Reliable, typename... Bs>
-struct offer_coverage
-    : std::bool_constant<(reliable_contains<Reliable, OfferSender>::value || offers_crash_branch_for_v<OfferSender, Bs...>)
+struct is_offer_crash_covered
+    : std::bool_constant<(is_in_reliable_set<Reliable, OfferSender>::value || offers_crash_branch_for_v<OfferSender, Bs...>)
                          && crash_branches_name_sender_v<OfferSender, Bs...>
                          && no_crash_branch_for_reliable_v<Reliable, Bs...>
-                         && (branch_coverage<Bs, Peer, Reliable>::value && ...)> {};
+                         && (is_branch_crash_covered<Bs, Peer, Reliable>::value && ...)> {};
 
 template <typename Peer, typename Reliable>
-struct coverage<End, Peer, Reliable> : std::true_type {};
+struct is_crash_covered<End, Peer, Reliable> : std::true_type {};
 template <typename Peer, typename Reliable>
-struct coverage<Continue, Peer, Reliable> : std::true_type {};
+struct is_crash_covered<Continue, Peer, Reliable> : std::true_type {};
 template <typename T, typename K, typename Peer, typename Reliable>
-struct coverage<Send<T, K>, Peer, Reliable> : coverage<K, Peer, Reliable> {};
+struct is_crash_covered<Send<T, K>, Peer, Reliable> : is_crash_covered<K, Peer, Reliable> {};
 // Rule 3: a bare reception needs a reliable sender.
 template <typename T, typename K, typename Peer, typename Reliable>
-struct coverage<Recv<T, K>, Peer, Reliable>
-    : std::bool_constant<reliable_contains<Reliable, Peer>::value && coverage<K, Peer, Reliable>::value> {};
+struct is_crash_covered<Recv<T, K>, Peer, Reliable>
+    : std::bool_constant<is_in_reliable_set<Reliable, Peer>::value && is_crash_covered<K, Peer, Reliable>::value> {};
 template <typename... Bs, typename Peer, typename Reliable>
-struct coverage<Select<Bs...>, Peer, Reliable> : std::bool_constant<(coverage<Bs, Peer, Reliable>::value && ...)> {};
+struct is_crash_covered<Select<Bs...>, Peer, Reliable> : std::bool_constant<(is_crash_covered<Bs, Peer, Reliable>::value && ...)> {};
 template <typename... Bs, typename Peer, typename Reliable>
-struct coverage<Offer<Bs...>, Peer, Reliable> : offer_coverage<Peer, Peer, Reliable, Bs...> {};
+struct is_crash_covered<Offer<Bs...>, Peer, Reliable> : is_offer_crash_covered<Peer, Peer, Reliable, Bs...> {};
 template <typename Role, typename... Bs, typename Peer, typename Reliable>
-struct coverage<Offer<Sender<Role>, Bs...>, Peer, Reliable> : offer_coverage<Role, Peer, Reliable, Bs...> {};
+struct is_crash_covered<Offer<Sender<Role>, Bs...>, Peer, Reliable> : is_offer_crash_covered<Role, Peer, Reliable, Bs...> {};
 template <typename Role, typename... Bs, typename Peer, typename Reliable>
-struct coverage<Select<Sender<Role>, Bs...>, Peer, Reliable> : coverage<Select<Bs...>, Peer, Reliable> {};
+struct is_crash_covered<Select<Sender<Role>, Bs...>, Peer, Reliable> : is_crash_covered<Select<Bs...>, Peer, Reliable> {};
 template <typename B, typename Peer, typename Reliable>
-struct coverage<Loop<B>, Peer, Reliable> : coverage<B, Peer, Reliable> {};
+struct is_crash_covered<Loop<B>, Peer, Reliable> : is_crash_covered<B, Peer, Reliable> {};
 template <VendorBackend V, typename P, typename Peer, typename Reliable>
-struct coverage<VendorPinned<V, P>, Peer, Reliable> : coverage<P, Peer, Reliable> {};
+struct is_crash_covered<VendorPinned<V, P>, Peer, Reliable> : is_crash_covered<P, Peer, Reliable> {};
 
 }  // namespace detail::crash
 
@@ -482,7 +482,7 @@ template <typename Q>
 struct is_crash_covered : std::false_type {};
 template <typename Proto, typename Peer, typename... Roles>
 struct is_crash_covered<CrashCoverage<Proto, Peer, ReliableSet<Roles...>>>
-    : std::bool_constant<detail::crash::coverage<Proto, Peer, ReliableSet<Roles...>>::value> {};
+    : std::bool_constant<detail::crash::is_crash_covered<Proto, Peer, ReliableSet<Roles...>>::value> {};
 
 template <typename Proto, typename Peer, typename Reliable>
 inline constexpr bool every_reception_handles_crash_v = is_crash_covered<CrashCoverage<Proto, Peer, Reliable>>::value;
@@ -651,22 +651,22 @@ template <typename Role, typename... Bs>
 struct offer_crash_peers<Offer<Sender<Role>, Bs...>> : offer_crash_peers<Offer<Bs...>> {};
 
 template <typename Peer, typename Tuple>
-struct tuple_holds;
+struct is_in_tuple;
 template <typename Peer, typename... Ts>
-struct tuple_holds<Peer, std::tuple<Ts...>> : std::bool_constant<(std::is_same_v<Peer, Ts> || ...)> {};
+struct is_in_tuple<Peer, std::tuple<Ts...>> : std::bool_constant<(std::is_same_v<Peer, Ts> || ...)> {};
 
 template <typename SubPeers, typename SuperPeers>
-struct crash_peers_included;
+struct is_crash_peer_set_included;
 template <typename... SubPs, typename SuperPeers>
-struct crash_peers_included<std::tuple<SubPs...>, SuperPeers>
-    : std::bool_constant<(tuple_holds<SubPs, SuperPeers>::value && ...)> {};
+struct is_crash_peer_set_included<std::tuple<SubPs...>, SuperPeers>
+    : std::bool_constant<(is_in_tuple<SubPs, SuperPeers>::value && ...)> {};
 
 template <typename P>
-struct pure_crash_offer : std::false_type {};
+struct is_pure_crash_offer : std::false_type {};
 template <typename... Bs>
-struct pure_crash_offer<Offer<Bs...>> : std::bool_constant<every_branch_is_crash_v<Bs...>> {};
+struct is_pure_crash_offer<Offer<Bs...>> : std::bool_constant<every_branch_is_crash_v<Bs...>> {};
 template <typename Role, typename... Bs>
-struct pure_crash_offer<Offer<Sender<Role>, Bs...>> : std::bool_constant<every_branch_is_crash_v<Bs...>> {};
+struct is_pure_crash_offer<Offer<Sender<Role>, Bs...>> : std::bool_constant<every_branch_is_crash_v<Bs...>> {};
 
 template <typename Sub, typename Super>
 consteval bool refinement_side_conditions_hold() {
@@ -675,9 +675,9 @@ consteval bool refinement_side_conditions_hold() {
     if constexpr (is_stop_v<SubInner> || is_stop_v<SuperInner>) {
         return is_stop_v<SubInner> && is_stop_v<SuperInner>;
     } else if constexpr (is_offer_v<SubInner> && is_offer_v<SuperInner>) {
-        return crash_peers_included<typename offer_crash_peers<SubInner>::type,
+        return is_crash_peer_set_included<typename offer_crash_peers<SubInner>::type,
                                     typename offer_crash_peers<SuperInner>::type>::value
-            && !pure_crash_offer<SuperInner>::value;
+            && !is_pure_crash_offer<SuperInner>::value;
     } else {
         return true;
     }

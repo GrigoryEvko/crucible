@@ -1748,22 +1748,22 @@ fixy_neg_compile_test(neg_sess_crash_branch_index_missing
 # empty set, so a token it never received cannot be sent.
 fixy_neg_compile_test(neg_sess_crash_hidden_in_delegation
   "no matching function for call to .mint_crash_session"
-  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::DelegatedSession")
+  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::DelegatedSession")
 fixy_neg_compile_test(neg_sess_crash_delegation_in_a_member
   "no matching function for call to .mint_crash_session"
-  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
+  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
 # A handle, a pointer to one, and a pointer to void delegate as the
 # hand-off marker does.  Each compiled while the rule looked for the
 # marker alone.
 fixy_neg_compile_test(neg_sess_crash_delegation_by_handle
   "no matching function for call to .mint_crash_session"
-  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::SessionHandle<")
+  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::SessionHandle<")
 fixy_neg_compile_test(neg_sess_crash_delegation_behind_pointer
   "no matching function for call to .mint_crash_session"
-  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
+  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
 fixy_neg_compile_test(neg_sess_crash_delegation_opaque_pointer
   "no matching function for call to .mint_crash_session"
-  "detail::crash::delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<void\\*, fixy::session::End>")
+  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<void\\*, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_crash_token_not_held
   "no matching function for call to .mint_crash_session"
   "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::Transferable<")
@@ -1793,7 +1793,7 @@ fixy_neg_compile_test(neg_sess_crash_recorded_send_transport_result
   "required from .constexpr auto fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_delegation_undefined_template
   "fixy::session::diagnostic \\[Payload_Delegation_Unreadable\\]: the payload reaches .anonymous.::OpaqueChannel<int>,"
-  "required from .struct fixy::session::detail::crash::delegation_free<")
+  "required from .struct fixy::session::detail::crash::is_delegation_free<")
 fixy_neg_compile_test(neg_sess_crash_delegation_declared_class
   "fixy::session::diagnostic \\[Payload_Delegation_Unreadable\\]: the payload reaches .anonymous.::OpaqueChannel,"
   "required from .constexpr const bool fixy::session::payload_conveys_delegation_v<.anonymous.::Frame>.")

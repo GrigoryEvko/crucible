@@ -115,15 +115,15 @@ using NotedSelectSendsCrash = s::Select<s::Sender<P>, s::Send<s::Crash<Q>, s::En
 using NotedSelectThenBare = s::Select<s::Sender<P>, s::Send<int, Bare>>;
 using NotedSelectDelegates =
     s::Select<s::Sender<P>, s::Send<s::DelegatedSession<Bare, ::foundation::permissions::EmptyPermSet>, s::End>>;
-static_assert(walk::structure<NotedSelect>::value);
-static_assert(!walk::structure<NotedSelectSendsCrash>::value);
-static_assert(walk::delegation_free<NotedSelect>::value);
-static_assert(!walk::delegation_free<NotedSelectDelegates>::value);
-static_assert(walk::coverage<NotedSelect, Q, s::ReliableSet<>>::value);
-static_assert(!walk::coverage<NotedSelectThenBare, Q, s::ReliableSet<>>::value);
+static_assert(walk::is_crash_well_structured<NotedSelect>::value);
+static_assert(!walk::is_crash_well_structured<NotedSelectSendsCrash>::value);
+static_assert(walk::is_delegation_free<NotedSelect>::value);
+static_assert(!walk::is_delegation_free<NotedSelectDelegates>::value);
+static_assert(walk::is_crash_covered<NotedSelect, Q, s::ReliableSet<>>::value);
+static_assert(!walk::is_crash_covered<NotedSelectThenBare, Q, s::ReliableSet<>>::value);
 static_assert(std::is_same_v<walk::erase_t<NotedSelect>, s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Recv<int, s::End>>>>>);
-static_assert(transport_walk::senders_watched<NotedSelect, Q, s::ReliableSet<>>::value);
-static_assert(!transport_walk::senders_watched<s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Sender<R>, s::Recv<int, s::End>,
+static_assert(transport_walk::is_every_sender_watched<NotedSelect, Q, s::ReliableSet<>>::value);
+static_assert(!transport_walk::is_every_sender_watched<s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Sender<R>, s::Recv<int, s::End>,
                                                                                         s::Recv<s::Crash<R>, s::End>>>>,
                                                Q, s::ReliableSet<>>::value);
 

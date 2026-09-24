@@ -266,36 +266,36 @@ struct LocalCrashStop : tag_base {};
 namespace detail::crash_transport {
 
 template <typename P, typename Peer, typename Reliable>
-struct senders_watched : std::false_type {};
+struct is_every_sender_watched : std::false_type {};
 
 template <typename OfferSender, typename Peer, typename Reliable, typename... Bs>
 inline constexpr bool offer_watched_v =
     (std::is_same_v<OfferSender, Peer> || reliable_set_contains_v<Reliable, OfferSender>)
-    && (senders_watched<Bs, Peer, Reliable>::value && ...);
+    && (is_every_sender_watched<Bs, Peer, Reliable>::value && ...);
 
 template <typename Peer, typename Reliable>
-struct senders_watched<End, Peer, Reliable> : std::true_type {};
+struct is_every_sender_watched<End, Peer, Reliable> : std::true_type {};
 template <typename Peer, typename Reliable>
-struct senders_watched<Continue, Peer, Reliable> : std::true_type {};
+struct is_every_sender_watched<Continue, Peer, Reliable> : std::true_type {};
 template <typename T, typename K, typename Peer, typename Reliable>
-struct senders_watched<Send<T, K>, Peer, Reliable> : senders_watched<K, Peer, Reliable> {};
+struct is_every_sender_watched<Send<T, K>, Peer, Reliable> : is_every_sender_watched<K, Peer, Reliable> {};
 template <typename T, typename K, typename Peer, typename Reliable>
-struct senders_watched<Recv<T, K>, Peer, Reliable> : senders_watched<K, Peer, Reliable> {};
+struct is_every_sender_watched<Recv<T, K>, Peer, Reliable> : is_every_sender_watched<K, Peer, Reliable> {};
 template <typename... Bs, typename Peer, typename Reliable>
-struct senders_watched<Select<Bs...>, Peer, Reliable>
-    : std::bool_constant<(senders_watched<Bs, Peer, Reliable>::value && ...)> {};
+struct is_every_sender_watched<Select<Bs...>, Peer, Reliable>
+    : std::bool_constant<(is_every_sender_watched<Bs, Peer, Reliable>::value && ...)> {};
 template <typename... Bs, typename Peer, typename Reliable>
-struct senders_watched<Offer<Bs...>, Peer, Reliable> : std::bool_constant<offer_watched_v<Peer, Peer, Reliable, Bs...>> {
+struct is_every_sender_watched<Offer<Bs...>, Peer, Reliable> : std::bool_constant<offer_watched_v<Peer, Peer, Reliable, Bs...>> {
 };
 template <typename Role, typename... Bs, typename Peer, typename Reliable>
-struct senders_watched<Offer<Sender<Role>, Bs...>, Peer, Reliable>
+struct is_every_sender_watched<Offer<Sender<Role>, Bs...>, Peer, Reliable>
     : std::bool_constant<offer_watched_v<Role, Peer, Reliable, Bs...>> {};
 // The note of a Select names the endpoint itself, which sends and is not
 // watched, so the walk reads the branches alone.
 template <typename Role, typename... Bs, typename Peer, typename Reliable>
-struct senders_watched<Select<Sender<Role>, Bs...>, Peer, Reliable> : senders_watched<Select<Bs...>, Peer, Reliable> {};
+struct is_every_sender_watched<Select<Sender<Role>, Bs...>, Peer, Reliable> : is_every_sender_watched<Select<Bs...>, Peer, Reliable> {};
 template <typename B, typename Peer, typename Reliable>
-struct senders_watched<Loop<B>, Peer, Reliable> : senders_watched<B, Peer, Reliable> {};
+struct is_every_sender_watched<Loop<B>, Peer, Reliable> : is_every_sender_watched<B, Peer, Reliable> {};
 
 // The number of message branches of an Offer.  Rule 6 puts the crash
 // branches last, so this is also the index of the first crash branch.
@@ -450,8 +450,8 @@ concept CrashSessionAdmissible = is_reliable_set<Reliable>::value && !std::is_sa
                               && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
                               && is_crash_well_formed_v<Proto>
                               && every_reception_handles_crash_v<Proto, Peer, Reliable>
-                              && detail::crash_transport::senders_watched<Proto, Peer, Reliable>::value
-                              && detail::crash::delegation_free<Proto>::value;
+                              && detail::crash_transport::is_every_sender_watched<Proto, Peer, Reliable>::value
+                              && detail::crash::is_delegation_free<Proto>::value;
 
 // The same question as a one-argument trait, so that it can hold an
 // armed cell.
