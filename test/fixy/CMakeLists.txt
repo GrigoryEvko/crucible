@@ -1934,6 +1934,16 @@ fixy_neg_compile_test(neg_sess_crash_cell_temporary
   "use of deleted function .void fixy::session::mint_crash_session"
   "Crash_Cell_Temporary")
 
+# The door of the crash mint puts a handle under crash-stop semantics.
+# Its member is private, and the class is final.  Only the mint calls the
+# member, and no class can use the door as a base to get access to it.
+fixy_neg_compile_test(neg_sess_crash_door_called_outside
+  "is private within this context"
+  "fixy::session::CrashSessionDoor::open_")
+fixy_neg_compile_test(neg_sess_crash_door_derived_look_alike
+  "cannot derive from .final. base"
+  "CrashSessionDoor")
+
 # Rules 1 and 2, and Stop as runtime syntax, hold in every session, so
 # the plain handle factory refuses them.
 fixy_neg_compile_test(neg_sess_crash_label_sent

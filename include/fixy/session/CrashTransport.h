@@ -490,13 +490,8 @@ struct [[nodiscard]] CrashSend {
     std::optional<T> undelivered;
 };
 
-namespace detail::crash_transport {
-
-template <typename Self, typename Peer, typename Reliable, typename Handle>
-[[nodiscard]] constexpr auto make_crash_watched(Handle inner, const PeerCrashCell& cell) noexcept
-    -> CrashWatched<Handle, Self, Peer, Reliable>;
-
-}  // namespace detail::crash_transport
+// The door of the crash mint, which stands after the mint.
+class CrashSessionDoor;
 
 template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position>
 class [[nodiscard]] CrashWatched {
@@ -511,9 +506,8 @@ class [[nodiscard]] CrashWatched {
     template <typename, typename, typename, typename, typename>
     friend class CrashWatched;
 
-    template <typename FSelf, typename FPeer, typename FReliable, typename FHandle>
-    friend constexpr auto detail::crash_transport::make_crash_watched(FHandle, const PeerCrashCell&) noexcept
-        -> CrashWatched<FHandle, FSelf, FPeer, FReliable>;
+    // The first decorator of a session comes only from this door.
+    friend class CrashSessionDoor;
 
     constexpr CrashWatched(Handle inner, const PeerCrashCell& cell,
                            detail::crash_transport::message_counts counts = {}) noexcept
@@ -856,16 +850,6 @@ public:
     [[nodiscard]] constexpr const resource_type& resource() const& noexcept { return inner_.resource(); }
 };
 
-namespace detail::crash_transport {
-
-template <typename Self, typename Peer, typename Reliable, typename Handle>
-[[nodiscard]] constexpr auto make_crash_watched(Handle inner, const PeerCrashCell& cell) noexcept
-    -> CrashWatched<Handle, Self, Peer, Reliable> {
-    return CrashWatched<Handle, Self, Peer, Reliable>{std::move(inner), cell};
-}
-
-}  // namespace detail::crash_transport
-
 // ── The mint ─────────────────────────────────────────────────────────
 
 template <typename Proto, typename Self, typename Peer, typename Reliable = NoReliableRoles,
@@ -873,8 +857,8 @@ template <typename Proto, typename Self, typename Peer, typename Reliable = NoRe
     requires CrashSessionAdmissible<Proto, Self, Peer, Reliable> && SessionResource<Resource>
 [[nodiscard]] constexpr auto mint_crash_session(Resource resource, const PeerCrashCell& peer_cell,
                                                 std::source_location loc = std::source_location::current()) noexcept {
-    return detail::crash_transport::make_crash_watched<Self, Peer, Reliable>(
-        mint_session_handle<Proto, Resource, Policy>(std::forward<Resource>(resource), loc), peer_cell);
+    return detail::late_door_t<CrashSessionDoor, Proto>::template open_<Proto, Self, Peer, Reliable, Policy>(
+        std::forward<Resource>(resource), peer_cell, loc);
 }
 
 // The decorator keeps the cell's address, so a temporary cell would
@@ -884,6 +868,48 @@ template <typename Proto, typename Self, typename Peer, typename Reliable = NoRe
 void mint_crash_session(Resource, const PeerCrashCell&&, std::source_location = std::source_location::current()) =
     delete("[Crash_Cell_Temporary] mint_crash_session: the detector cell is a temporary.  The decorator keeps its "
            "address, so the cell must outlive every handle of the session.");
+
+// ── The door of the crash mint ───────────────────────────────────────
+//
+// mint_crash_session gets the decorator through this class.  The member
+// of the class is private and static.  The one friend of the class is
+// the mint, which does the admission check of a crash session before it
+// calls the member.  The member does that check again, opens the plain
+// handle with mint_session_handle, and puts the decorator around it.  No
+// other scope can put a handle under crash-stop semantics.  The class is
+// final, and no object of it exists.
+//
+// A friend declaration of a constrained function template must give the
+// same constraint, and it cannot have a default argument.  For this
+// reason, the class is after the mint.  The mint names the class through
+// detail::late_door_t.
+class CrashSessionDoor final {
+    CrashSessionDoor() = delete("the crash door holds static members only, and no object of it exists");
+    CrashSessionDoor(const CrashSessionDoor&) = delete("the crash door holds static members only");
+    CrashSessionDoor& operator=(const CrashSessionDoor&) = delete("the crash door holds static members only");
+    CrashSessionDoor(CrashSessionDoor&&) = delete("the crash door holds static members only");
+    CrashSessionDoor& operator=(CrashSessionDoor&&) = delete("the crash door holds static members only");
+    constexpr ~CrashSessionDoor() noexcept {}
+
+    template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy,
+              typename Resource>
+        requires CrashSessionAdmissible<Proto, Self, Peer, Reliable> && SessionResource<Resource>
+    friend constexpr auto mint_crash_session(Resource resource, const PeerCrashCell& peer_cell,
+                                             std::source_location loc) noexcept;
+
+    // Opens the plain handle of Proto, and puts around it the decorator
+    // that reads the cell of the watched peer.
+    template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy,
+              typename Resource>
+    [[nodiscard]] static constexpr auto open_(Resource resource, const PeerCrashCell& peer_cell,
+                                              std::source_location loc) noexcept {
+        static_assert(CrashSessionAdmissible<Proto, Self, Peer, Reliable>,
+                      "fixy::session::diagnostic [Crash_Session_Refused]: the crash door accepts only a session "
+                      "that mint_crash_session accepts.");
+        auto inner = mint_session_handle<Proto, Resource, Policy>(std::forward<Resource>(resource), loc);
+        return CrashWatched<decltype(inner), Self, Peer, Reliable>{std::move(inner), peer_cell};
+    }
+};
 
 }  // namespace fixy::session
 
