@@ -1,7 +1,7 @@
 // Sentinel TU: compiles the registry header under the project warning flags so
 // its in-file proof and self-tests run.
 
-#include <crucible/safety/SingletonInitGraph.h>
+#include <crucible/safety/_SingletonInitGraph.h>
 
 #include <array>
 #include <type_traits>

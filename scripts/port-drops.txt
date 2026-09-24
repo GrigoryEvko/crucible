@@ -289,6 +289,17 @@ crucible/safety/_RefinedAlgebra.h:predicate_implies  — The algebra's own speci
 crucible/safety/_ScopedFence.h:mint_scoped_fence  — No band in fixy/Bands.h carries a mint door. The substrate's two-argument constructor ScopedFence{value, {}} is the door, because the grade is a pinned singleton whose whole witness is the braces, so a factory would restate the constructor and nothing else.
 crucible/safety/_Secret.h:All  — The policy roster tuple became the namespace admitted_policies of fail-closed edges in fixy/Secret.h:51.
 crucible/safety/_Secret.h:kCount  — A hand-written cardinality pin; the roster it pinned is now a namespace the guard enumerates, and such pins were deleted throughout the port.
+crucible/safety/_SingletonInitGraph.h:BpfLogCbSingleton  — include/crucible/SingletonInitGraph.h carries it by name on the global singleton atom, in the runtime layer, because the registry lists runtime singletons.
+crucible/safety/_SingletonInitGraph.h:BpfLogCbTag  — include/crucible/SingletonInitGraph.h carries it by name, in the runtime layer, because the registry lists runtime singletons.
+crucible/safety/_SingletonInitGraph.h:CKernelTableSingleton  — include/crucible/SingletonInitGraph.h carries it by name on the global singleton atom, in the runtime layer, because the registry lists runtime singletons.
+crucible/safety/_SingletonInitGraph.h:CKernelTableTag  — include/crucible/SingletonInitGraph.h carries it by name, in the runtime layer, because the registry lists runtime singletons.
+crucible/safety/_SingletonInitGraph.h:HotRegionRegistrySingleton  — include/crucible/SingletonInitGraph.h carries it by name on the global singleton atom, in the runtime layer, because the registry lists runtime singletons.
+crucible/safety/_SingletonInitGraph.h:HotRegionRegistryTag  — include/crucible/SingletonInitGraph.h carries it by name, in the runtime layer, because the registry lists runtime singletons.
+crucible/safety/_SingletonInitGraph.h:kBpfLogCb  — An edge of include/crucible/SingletonInitGraph.h names two singleton atoms and not two indices, and the port has no index.
+crucible/safety/_SingletonInitGraph.h:kCKernelTable  — An edge of include/crucible/SingletonInitGraph.h names two singleton atoms and not two indices, and the port has no index.
+crucible/safety/_SingletonInitGraph.h:kHotRegionRegistry  — An edge of include/crucible/SingletonInitGraph.h names two singleton atoms and not two indices, and the port has no index.
+crucible/safety/_SingletonInitGraph.h:kInitEdges  — include/crucible/SingletonInitGraph.h carries the edges as the tuple init_edges of init_edge types.
+crucible/safety/_SingletonInitGraph.h:kSingletonCount  — include/crucible/SingletonInitGraph.h reads the count off the tuple registry, and no hand-written count remains.
 crucible/safety/_Tagged.h:kAdmittedForwardEdgeCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kCatalogRosterMatchesCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog tuple became the namespace admitted_retags of fail-closed edges in fixy/Tagged.h.

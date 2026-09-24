@@ -15,7 +15,7 @@
 // hold the singletons, and one of them is hot and widely included.  Here
 // the graph stays in one cold header, and all of it is visible at once.
 //
-// Old spelling: include/crucible/safety/SingletonInitGraph.h.  The old
+// Old spelling: include/crucible/safety/_SingletonInitGraph.h.  The old
 // detector took pairs of indices, and it ignored an edge whose index was
 // past the end of the registry.  Here an edge names two singleton atoms,
 // and an edge that names a singleton outside the registry fails the gate.

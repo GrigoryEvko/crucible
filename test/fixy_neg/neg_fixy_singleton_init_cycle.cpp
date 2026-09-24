@@ -4,7 +4,7 @@
 // bearing.  This fixture builds a singleton init-dependency graph that
 // CONTAINS a cycle (singleton 0's lazy init touches 1, and 1's touches 0)
 // and feeds it to the SAME S004 detector the production registry
-// (safety/SingletonInitGraph.h) uses.  The acyclicity `static_assert`
+// (safety/_SingletonInitGraph.h) uses.  The acyclicity `static_assert`
 // MUST fail to compile — proving that a real static-initialization-order
 // fiasco among Meyers singletons would redden the build, not slip through.
 //
