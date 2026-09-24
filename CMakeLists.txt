@@ -4,11 +4,13 @@ cmake_minimum_required(VERSION 3.25)
 #
 # Set BEFORE project() so the compiler-probe pass also runs through
 # ccache.  The reflection-and-contracts build pulls cc1plus per heavy
-# TU through 800 MB - 1 GB and several CPU-seconds; ccache's cache
-# survives compiler updates (compiler_check=content), works across
-# build directories (hash_dir=false), and uses a tuned sloppiness set
-# documented in /root/.config/ccache/ccache.conf.  Hit rate on the
+# TU through 800 MB - 1 GB and several CPU-seconds.  ccache works
+# across build directories (hash_dir=false) and uses a tuned
+# sloppiness set in ~/.config/ccache/ccache.conf.  Hit rate on the
 # dev box: 78%+ over 648K calls at this commit.
+#
+# The compiler identity that ccache hashes is set after project(), in
+# the block that follows it.
 #
 # Honours pre-set CMAKE_CXX_COMPILER_LAUNCHER from env / -D; a user
 # can disable by passing -DCRUCIBLE_USE_CCACHE=OFF at configure.
@@ -27,7 +29,36 @@ endif()
 project(crucible LANGUAGES CXX)
 
 if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
-  message(STATUS "ccache: ${CMAKE_CXX_COMPILER_LAUNCHER} (compiler launcher enabled)")
+  # ccache with compiler_check=content hashes the driver binary only.
+  # A compiler fix that changes cc1plus and not the driver, as the
+  # fixes in toolchain/gcc do, then returns objects that the unfixed
+  # cc1plus made.  So the launcher passes ccache a compiler identity:
+  # the SHA-256 of the driver and of the cc1plus that it runs.  The
+  # two binaries are configure dependencies.  A reinstall of the
+  # compiler makes the next build configure again, and the new
+  # identity makes every object compile again.
+  execute_process(
+      COMMAND "${CMAKE_CXX_COMPILER}" -print-prog-name=cc1plus
+      OUTPUT_VARIABLE CRUCIBLE_CC1PLUS
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE CRUCIBLE_CC1PLUS_STATUS)
+  if(NOT CRUCIBLE_CC1PLUS_STATUS EQUAL 0 OR NOT IS_ABSOLUTE "${CRUCIBLE_CC1PLUS}"
+     OR NOT EXISTS "${CRUCIBLE_CC1PLUS}")
+    message(FATAL_ERROR
+        "ccache: '${CMAKE_CXX_COMPILER} -print-prog-name=cc1plus' did not "
+        "name an existing file (it gave '${CRUCIBLE_CC1PLUS}').  Without "
+        "that file ccache cannot tell one compiler build from another.  "
+        "Fix the compiler installation, or configure with "
+        "-DCRUCIBLE_USE_CCACHE=OFF.")
+  endif()
+  file(SHA256 "${CMAKE_CXX_COMPILER}" CRUCIBLE_DRIVER_SHA256)
+  file(SHA256 "${CRUCIBLE_CC1PLUS}" CRUCIBLE_CC1PLUS_SHA256)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+      "${CMAKE_CXX_COMPILER}" "${CRUCIBLE_CC1PLUS}")
+  list(GET CMAKE_CXX_COMPILER_LAUNCHER 0 CRUCIBLE_CCACHE)
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CRUCIBLE_CCACHE}"
+      "compiler_check=string:${CRUCIBLE_DRIVER_SHA256}-${CRUCIBLE_CC1PLUS_SHA256}")
+  message(STATUS "ccache: ${CRUCIBLE_CCACHE} (compiler launcher enabled, cc1plus ${CRUCIBLE_CC1PLUS})")
 elseif(CRUCIBLE_USE_CCACHE)
   message(STATUS "ccache: not found on PATH — proceeding without launcher")
 endif()

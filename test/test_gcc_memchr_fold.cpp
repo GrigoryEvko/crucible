@@ -1,28 +1,26 @@
-// A pin on a defect of GCC 16.2.1: the constant evaluator gives a wrong
-// answer for __builtin_memchr and __builtin_strchr on a pointer that is not
-// at the start of a string literal.
+// A regression test for a defect of the GCC constant evaluator, which the
+// patch series in toolchain/gcc/patches fixes.
 //
-// The evaluator adds the position of the match, measured from the start of
-// the literal, to the pointer that the caller gave.  "0,1,2,3" + 2 has its
-// first ',' at offset 1, and the evaluator gives 3.  The code is conforming,
-// and at run time the answer is 1.  C++26 makes the fold reachable: the cast
-// from const void* back to const char* is a constant expression only since
-// P2738.
+// For __builtin_memchr, strchr, strrchr and strstr, an unpatched GCC 10.1
+// through 16.2 rebases the folded result on the original first argument
+// also when it did not replace that argument with its string literal.  The
+// offset of an argument such as "0,1,2,3" + 2 then counts two times:
+// memchr gives offset 3 where the correct offset is 1.  In C++26 the cast
+// from const void* is a constant expression (P2738), so
+// std::char_traits<char>::find, std::string_view::find, std::find and
+// std::ranges::find reach __builtin_memchr when the front end folds a call
+// with constant arguments at -O1 and above.  Code at run time then gets the
+// wrong offset.
 //
-// The tree reaches the defect through std::string_view::find and
-// std::char_traits<char>::find.  Outside a manifest constant evaluation,
-// is_constant_evaluated() is false, and libstdc++ then calls
-// __builtin_memchr.  At -O1 and above the front end tries to fold a call
-// with constant arguments, so a constexpr function, or with
-// -fimplicit-constexpr an inline one, that searches a literal with find
-// gets a wrong constant.  A parser in the tree must search characters with
-// a loop, not with find, strchr or memchr.
-//
-// This test passes while GCC gives the wrong answer.  It fails when a GCC
-// update changes the answer, and the message then says what to re-check.
+// The static_asserts check the manifest constant evaluation, so an
+// unpatched compiler cannot compile this file.  main() checks the same
+// searches through the library routes, against run-time answers that no
+// fold can reach.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <string_view>
 
 namespace {
 
@@ -38,48 +36,65 @@ constexpr long strchr_offset(const char* text) noexcept {
     return hit ? hit - text : -1;
 }
 
-// Manifest constant evaluations from a pointer two bytes into the literal.
-constexpr std::size_t kMemchrConstant = memchr_offset("0,1,2,3" + 2, 5);
-constexpr long kStrchrConstant = strchr_offset("0,1,2,3" + 2);
+// The offset of the last ',' in the NUL-terminated text, or -1.
+constexpr long strrchr_offset(const char* text) noexcept {
+    const char* hit = __builtin_strrchr(text, ',');
+    return hit ? hit - text : -1;
+}
 
-// The offset that GCC 16.2.1 gives, and the offset that is correct.
-constexpr std::size_t kKnownWrong = 3;
-constexpr std::size_t kCorrect = 1;
+// The offset of the first ",2" in the NUL-terminated text, or -1.
+constexpr long strstr_offset(const char* text) noexcept {
+    const char* hit = __builtin_strstr(text, ",2");
+    return hit ? hit - text : -1;
+}
 
-// Compares one constant with the run-time answer and says which state the
-// compiler is in.  Returns true while the known defect is still present.
-bool defect_still_present(const char* builtin, long constant, long runtime) {
-    if (runtime != static_cast<long>(kCorrect)) {
-        std::fprintf(stderr, "%s: the run-time answer is %ld, not %zu, and the test itself is wrong\n",
-                     builtin, runtime, kCorrect);
-        return false;
-    }
-    if (constant == static_cast<long>(kKnownWrong)) return true;
-    if (constant == static_cast<long>(kCorrect)) {
-        std::fprintf(stderr,
-                     "%s: GCC now evaluates the offset pointer correctly (constant %ld).  "
-                     "Re-check the rule that a parser searches with a character loop, "
-                     "then delete this pin.\n",
-                     builtin, constant);
-        return false;
-    }
-    std::fprintf(stderr, "%s: GCC gives a new wrong constant %ld (was %zu, correct %zu)\n", builtin,
-                 constant, kKnownWrong, kCorrect);
+// The same searches through the library routes that call __builtin_memchr.
+constexpr std::size_t string_view_find(std::string_view text, std::size_t start) noexcept {
+    return text.find(',', start);
+}
+
+constexpr std::size_t std_find_offset(const char* text, std::size_t count) noexcept {
+    return static_cast<std::size_t>(std::find(text, text + count, ',') - text);
+}
+
+constexpr std::size_t ranges_find_offset(const char* text, std::size_t count) noexcept {
+    return static_cast<std::size_t>(std::ranges::find(text, text + count, ',') - text);
+}
+
+// "0,1,2,3" + 2 is "1,2,3": the first ',' is at 1, the last at 3, ",2" at 1.
+static_assert(memchr_offset("0,1,2,3" + 2, 5) == 1);
+static_assert(strchr_offset("0,1,2,3" + 2) == 1);
+static_assert(strrchr_offset("0,1,2,3" + 2) == 3);
+static_assert(strstr_offset("0,1,2,3" + 2) == 1);
+static_assert(string_view_find("0,1,2,3", 2) == 3);
+static_assert(std_find_offset("0,1,2,3" + 2, 5) == 1);
+static_assert(ranges_find_offset("0,1,2,3" + 2, 5) == 1);
+
+// Compares one answer with the run-time answer.  Returns true when they agree.
+bool agrees(const char* route, std::size_t folded, std::size_t runtime) {
+    if (folded == runtime) return true;
+    std::fprintf(stderr, "%s: the folded answer is %zu, and the run-time answer is %zu\n", route, folded,
+                 runtime);
     return false;
 }
 
 }  // namespace
 
 int main() {
-    // A volatile pointer keeps the run-time calls out of every fold.
+    // A volatile pointer keeps the run-time calls out of every fold.  The
+    // calls with literal arguments are the ones that the front end folds at
+    // -O1 and above.
     const char* volatile runtime_text = "0,1,2,3";
-    const long memchr_runtime = static_cast<long>(memchr_offset(runtime_text + 2, 5));
-    const long strchr_runtime = strchr_offset(runtime_text + 2);
+    const char* const text = runtime_text;
 
-    const bool memchr_pinned =
-        defect_still_present("__builtin_memchr", static_cast<long>(kMemchrConstant), memchr_runtime);
-    const bool strchr_pinned = defect_still_present("__builtin_strchr", kStrchrConstant, strchr_runtime);
-    if (!memchr_pinned || !strchr_pinned) return 1;
-    std::printf("test_gcc_memchr_fold: the known defect is present in both builtins\n");
+    bool all_agree = true;
+    all_agree &= agrees("__builtin_memchr", memchr_offset("0,1,2,3" + 2, 5), memchr_offset(text + 2, 5));
+    all_agree &= agrees("std::string_view::find", string_view_find("0,1,2,3", 2),
+                        string_view_find(std::string_view{text, 7}, 2));
+    all_agree &= agrees("std::find", std_find_offset("0,1,2,3" + 2, 5), std_find_offset(text + 2, 5));
+    all_agree &= agrees("std::ranges::find", ranges_find_offset("0,1,2,3" + 2, 5),
+                        ranges_find_offset(text + 2, 5));
+    if (!all_agree) return 1;
+    std::printf("test_gcc_memchr_fold: every route gives the correct offset\n");
     return 0;
 }
