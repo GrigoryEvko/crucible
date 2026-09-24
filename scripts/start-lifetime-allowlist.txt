@@ -44,6 +44,7 @@ test/effects_neg/neg_effects_capability_forged_by_start_lifetime_as.cpp:start_li
 test/effects_neg/neg_effects_epoch_ctx_over_bg_forged_by_start_lifetime_as.cpp:start_lifetime_as<proto::EpochExecCtx<1,1,eff::BgDrainCtx>>
 test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp:start_lifetime_as<s::SessionEvent>
 test/fixy/neg/neg_sess_crash_reporter_by_start_lifetime_as.cpp:start_lifetime_as<s::CrashReporter>
+test/fixy/neg/neg_sess_delegated_session_forged_by_start_lifetime_as.cpp:start_lifetime_as<t::Carried>
 test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Bg>
 test/foundation/neg/neg_bg_exec_ctx_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::ExecCtx<fe::Bg,fe::Row<fe::Effect::Bg,fe::Effect::Block>>>
 test/foundation/neg/neg_bg_key_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::detail::ctx_mint::bg_key>
