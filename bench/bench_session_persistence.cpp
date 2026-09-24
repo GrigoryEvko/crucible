@@ -11,6 +11,11 @@
 #include <string>
 #include <unistd.h>
 
+// The open view of the store needs a context whose row admits IO and Block.
+[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
+    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+}
+
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
@@ -58,7 +63,7 @@ int main() {
     std::printf("=== session persistence ===\n  tmpdir: %s\n\n", dir.c_str());
 
     auto cipher = crucible::Cipher::open(CipherRoot{dir.string()});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     eff::TestRunnerCtx ctx{eff::testing::test()};
 
     proto::SessionPersistencePolicy no_midrun_flush{

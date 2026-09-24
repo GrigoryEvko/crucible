@@ -11,6 +11,11 @@
 #include <string>
 #include <type_traits>
 
+// The open view of the store needs a context whose row admits IO and Block.
+[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
+    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+}
+
 static auto g_test = crucible::effects::testing::test();
 
 // The root path crosses a trust boundary, and every call site here has
@@ -88,7 +93,7 @@ int main() {
 
     {
         auto cipher = crucible::Cipher::open(CipherRoot{dir});
-        auto ov = cipher.mint_open_view();
+        auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash stored_hash =
             cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
         assert(stored_hash == expected_hash);
@@ -107,7 +112,7 @@ int main() {
         // A fresh arena receives the loaded region, so nothing it holds
         // can be a pointer back into the arena that produced it.
         auto cipher = crucible::Cipher::open(CipherRoot{dir});
-        auto ov = cipher.mint_open_view();
+        auto ov = cipher.mint_open_view(store_ctx());
         crucible::Arena arena2(1 << 16);
         auto loaded_ca = cipher.load_content_addressed(ov, g_test.alloc, expected_hash, arena2);
         auto* loaded = loaded_ca.get();
@@ -118,7 +123,7 @@ int main() {
 
     {
         auto cipher = crucible::Cipher::open(CipherRoot{dir});
-        auto ov = cipher.mint_open_view();
+        auto ov = cipher.mint_open_view(store_ctx());
         (void)cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
 
         cipher.advance_head(ov, expected_hash, 10);
@@ -146,7 +151,7 @@ int main() {
         // below run against the parsed file and not against state left
         // in memory by the block above.
         auto cipher = crucible::Cipher::open(CipherRoot{dir});
-        auto ov = cipher.mint_open_view();
+        auto ov = cipher.mint_open_view(store_ctx());
 
         const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
 
@@ -163,7 +168,7 @@ int main() {
 
     {
         auto cipher = crucible::Cipher::open(CipherRoot{dir});
-        auto ov = cipher.mint_open_view();
+        auto ov = cipher.mint_open_view(store_ctx());
         crucible::Arena arena3(1 << 16);
         assert(
             cipher.load_content_addressed(ov, g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3).get()
@@ -180,7 +185,7 @@ int main() {
         const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
 
         auto cipher = crucible::Cipher::open(CipherRoot{dir_ca});
-        auto ov = cipher.mint_open_view();
+        auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash hash = cipher.store(ov, ca_payload, nullptr);
         assert(hash == ca_region->content_hash);
 
@@ -230,8 +235,8 @@ int main() {
 
         auto sender = crucible::Cipher::open(CipherRoot{sender_dir});
         auto receiver = crucible::Cipher::open(CipherRoot{receiver_dir});
-        auto sender_ov = sender.mint_open_view();
-        auto receiver_ov = receiver.mint_open_view();
+        auto sender_ov = sender.mint_open_view(store_ctx());
+        auto receiver_ov = receiver.mint_open_view(store_ctx());
         const crucible::ContentHash sender_hash = sender.store(sender_ov, ca_payload, nullptr);
         const crucible::ContentHash receiver_hash = receiver.store(receiver_ov, ca_payload, nullptr);
         assert(sender_hash == receiver_hash);
@@ -261,7 +266,7 @@ int main() {
         assert(cipher.is_open());
         // Minting the view is itself the check.  Every call below takes
         // it as proof and repeats no check of its own.
-        auto ov = cipher.mint_open_view();
+        auto ov = cipher.mint_open_view(store_ctx());
         auto* region2 = make_test_region(arena);
         const auto hash = cipher.store(ov, crucible::Cipher::content_addressed(region2), nullptr);
         assert(static_cast<bool>(hash));
@@ -299,7 +304,7 @@ int main() {
         }
 
         auto cipher = crucible::Cipher::open(CipherRoot{dir2});
-        auto ov = cipher.mint_open_view();
+        auto ov = cipher.mint_open_view(store_ctx());
         assert(cipher.hash_at_step(ov, 10) == crucible::ContentHash{0xdeadbeef00000001ULL});
         assert(cipher.hash_at_step(ov, 40) == crucible::ContentHash{0xdeadbeef00000004ULL});
         // Step 30 falls where a skipped line claimed a commit.  It must

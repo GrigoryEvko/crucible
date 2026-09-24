@@ -66,7 +66,7 @@ using crucible::safety::Lifetime_v;
 int main() {
     Cipher c;  // Closed Cipher — commit_per_fleet's requires-clause
     // rejects before the OpenView precondition could run.
-    auto view = c.mint_open_view();
+    auto view = c.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
     Arena arena;
     MetaLog log;
     auto* region = arena.alloc_obj<RegionNode>();

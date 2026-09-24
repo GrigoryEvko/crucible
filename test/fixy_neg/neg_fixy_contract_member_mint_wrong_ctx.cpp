@@ -10,11 +10,11 @@
 //
 //     member_mint_required_ctx<Cipher, open_view>::admits<Ctx>()
 //
-// returns true.  The Cipher::mint_open_view specialization admits
-// only `IsBgCtx<Ctx>` (the OpenView mediates writes from
-// BackgroundThread::run / ::flush; calling from the FG dispatch hot
-// path would race the FG-owned MetaLog tail).  Passing HotFgCtx
-// here MUST red the concept at the static_assert.
+// returns true.  The Cipher::mint_open_view specialization asks the
+// gate of the member function.  That gate admits a context whose row
+// admits IO and Block, because each write through the view reaches
+// storage.  The row of HotFgCtx is empty, so passing HotFgCtx here
+// MUST red the concept at the static_assert.
 //
 // Distinct from fixture #2 (unregistered-pair rejection):
 //   * Fixture #1 — REGISTERED pair, WRONG ctx.  The spec exists; its
@@ -41,15 +41,15 @@
 //
 // Expected diagnostic: static assertion failed mentioning
 // MemberMintCtxRequired / Cipher / open_view (the concept is
-// unsatisfied because IsBgCtx<HotFgCtx> = false).
+// unsatisfied because the gate of mint_open_view refuses HotFgCtx).
 
 #include <crucible/fixy/Contract.h>
 
 int main() {
     // HotFgCtx is the canonical Fg hot-path ctx (Fg cap, L1 resident,
-    // Terminating).  Cipher::mint_open_view requires IsBgCtx — the
-    // OpenView writes must come from BackgroundThread, not FG.  The
-    // concept evaluates `member_mint_required_ctx<Cipher,
+    // Terminating).  Cipher::mint_open_view needs a row that admits
+    // IO and Block, and the row of HotFgCtx is empty.  The concept
+    // evaluates `member_mint_required_ctx<Cipher,
     // open_view>::admits<HotFgCtx>() == false`, the requires-clause
     // fails, the concept rejects, the static_assert fires.  If the
     // concept ever drifted to admit FG ctxs (e.g. via a stale
@@ -59,7 +59,7 @@ int main() {
     static_assert(
         ::crucible::fixy::contract::MemberMintCtxRequired<
             ::crucible::Cipher, ::crucible::fixy::contract::mint_name::open_view, ::crucible::effects::HotFgCtx>,
-        "FIXY-V-220 fixture #1: Cipher::mint_open_view requires IsBgCtx — "
-        "MemberMintCtxRequired must reject HotFgCtx via admits<Ctx> = false.");
+        "fixture #1: the gate of Cipher::mint_open_view refuses HotFgCtx, so "
+        "MemberMintCtxRequired must reject it through admits<Ctx> = false.");
     return 0;
 }

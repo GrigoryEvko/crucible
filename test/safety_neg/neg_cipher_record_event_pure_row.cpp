@@ -30,6 +30,6 @@ namespace eff = ::crucible::effects;
 int main() {
     // Hot/Pure context — empty row.  {IO, Block} ⊄ {} → fence fires.
     auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_record_event"});
-    cipher.record_event<eff::Row<>>(cipher.mint_open_view(), ::crucible::ContentHash{1u}, std::uint64_t{1u});
+    cipher.record_event<eff::Row<>>(cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()}), ::crucible::ContentHash{1u}, std::uint64_t{1u});
     return 0;
 }

@@ -16,7 +16,7 @@ struct Resource {};
 
 int main() {
     auto cipher = crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_persist_hot"});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
     crucible::effects::HotFgCtx ctx{};
 
     [[maybe_unused]] auto h = proto::mint_persisted_session<proto::Send<int, proto::End>>(

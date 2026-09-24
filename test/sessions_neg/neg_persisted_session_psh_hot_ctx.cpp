@@ -29,7 +29,7 @@ struct Resource {};
 
 int main() {
     auto cipher = crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_persist_psh_hot"});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
     eff::HotFgCtx ctx{};
 
     // First mint a valid PSH (this uses the same HotFgCtx but PSH

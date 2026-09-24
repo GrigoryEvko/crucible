@@ -3524,7 +3524,7 @@ crucible_neg_compile_fixy_test(neg_fixy_effect_row_engagement_empty_row
 # fixtures pin the concept's two distinct rejection axes:
 #   (1) wrong_ctx     — REGISTERED (Class, MintName) pair, WRONG ctx;
 #       admits<HotFgCtx>() returns false for Cipher::mint_open_view
-#       (which admits only IsBgCtx).  Tests WRONG-CTX axis.
+#       (whose gate needs IO and Block).  Tests WRONG-CTX axis.
 #   (2) unregistered  — UNREGISTERED pair (`int` as Class); primary
 #       template `member_mint_required_ctx<int, open_view>` is
 #       INCOMPLETE; the requires-clause SFINAE-rejects.  Tests the
@@ -10606,6 +10606,16 @@ crucible_neg_compile_test(neg_cipher_record_event_alloc_only
   "constraints not satisfied|template constraint failure|associated constraints")
 crucible_neg_compile_test(neg_cipher_record_event_bg_only
   "constraints not satisfied|template constraint failure|associated constraints")
+
+# An open view of the store needs a context whose row admits IO and Block.
+# The row of the hot foreground context is empty, and the row of the
+# startup context admits IO but not Block, so the gate refuses both.
+crucible_neg_compile_multi_test(neg_cipher_open_view_hot_fg_ctx
+  "no matching function for call to .crucible::Cipher::mint_open_view.crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg, "
+  "required for the satisfaction of .CtxAdmits<Ctx, crucible::effects::Row<crucible::effects::Effect::IO, crucible::effects::Effect::Block> >")
+crucible_neg_compile_multi_test(neg_cipher_open_view_init_ctx
+  "no matching function for call to .crucible::Cipher::mint_open_view.crucible::effects::ColdInitCtx."
+  "required for the satisfaction of .CtxAdmits<Ctx, crucible::effects::Row<crucible::effects::Effect::IO, crucible::effects::Effect::Block> >")
 
 # ─── FOUND-F12-AUDIT federation-bridge concept-fence parity ─────────
 # F12's federation primitives carry the SAME `IsCacheableFunction<FnPtr>

@@ -19,6 +19,11 @@
 #include <type_traits>
 #include <utility>
 
+// The open view of the store needs a context whose row admits IO and Block.
+[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
+    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+}
+
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 using crucible::Cipher;
@@ -66,7 +71,7 @@ static void test_publish_warm_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     // The second write of the same region takes the already-exists
@@ -83,7 +88,7 @@ static void test_publish_warm_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using Got = decltype(cipher.publish_warm(view, payload, nullptr));
@@ -99,7 +104,7 @@ static void test_publish_hot_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 3);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using Got = decltype(cipher.publish_hot(view, payload, nullptr));
@@ -117,7 +122,7 @@ static void test_publish_cold_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 4);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using Got = decltype(cipher.publish_cold(view, payload, nullptr));
@@ -136,7 +141,7 @@ static void test_view_and_payload_route(const char* dir) {
     auto* region = make_test_region(arena, 5);
     auto cipher = Cipher::open(CipherRoot{dir});
 
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using WarmGot = decltype(cipher.publish_warm(view, payload, nullptr));
@@ -182,7 +187,7 @@ static void test_relax_to_weaker_tiers(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 9);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     // Relaxing twice in succession, to show the weakening composes and
@@ -217,7 +222,7 @@ static void test_e2e_hot_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 11);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     auto pinned = cipher.publish_hot(view, payload, nullptr);
@@ -237,7 +242,7 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 12);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     auto warm_val = cipher.publish_warm(view, payload, nullptr);
@@ -254,7 +259,7 @@ static void test_phase5_stub_semantics(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 13);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     static_assert(noexcept(cipher.publish_hot(view, payload, nullptr)));
@@ -287,7 +292,7 @@ static void test_runtime_tier_reader_pattern(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 14);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     auto warm_v = cipher.publish_warm(view, payload, nullptr);
@@ -316,7 +321,7 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 15);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     auto cold = cipher.publish_cold(view, payload, nullptr);
@@ -339,7 +344,7 @@ static void test_sequential_three_tier_publish(const char* dir) {
     auto* region = make_test_region(arena, 16);
     auto cipher = Cipher::open(CipherRoot{dir});
 
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     // Publication runs from the fastest tier to the most durable, so
@@ -395,7 +400,7 @@ static void test_content_addressed_publish_overloads(const char* dir) {
     auto* region = make_test_region(arena, 18);
     const auto payload = Cipher::content_addressed(region);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
 
     using Payload = decltype(payload);
     static_assert(crucible::safety::proto::is_content_addressed_v<typename Payload::payload_type>);

@@ -455,14 +455,17 @@ public:
     }
 
     // Serializes the active region to the store and advances its head.
-    // A no-op when no store path was configured.
-    [[nodiscard, gnu::cold]] bool persist() {
+    // A no-op when no store path was configured.  The store writes and
+    // flushes files, so the caller's context must admit IO and Block.
+    template <class Ctx>
+        requires effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
+    [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
         if (!cipher_.has_value()) return false;
         const RegionNode* region = active_region();
         if (!region) return false;
         // The store is only ever emplaced from open(), so holding a value
         // already proves it is open.  One mint serves both calls below.
-        auto open_view = cipher_->mint_open_view();
+        auto open_view = cipher_->mint_open_view(ctx);
         const ContentHash hash = cipher_->store(open_view, Cipher::content_addressed(region), meta_log_.get());
         if (!hash) return false;
         cipher_->advance_head(open_view, hash, step_.get());
@@ -471,9 +474,11 @@ public:
 
     // Loads the most recent stored region and makes it active, activating
     // replay too when that region carries a memory plan.
-    [[nodiscard, gnu::cold]] bool load(effects::Alloc a) {
+    template <class Ctx>
+        requires effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
+    [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, effects::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
-        auto open_view = cipher_->mint_open_view();
+        auto open_view = cipher_->mint_open_view(ctx);
         RegionNode* region = cipher_->load_content_addressed(open_view, a, cipher_->head(), load_arena_).get();
         if (!region) return false;
         bg_.active_region.store(region, std::memory_order_release);

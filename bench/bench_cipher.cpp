@@ -24,6 +24,11 @@
 
 #include "bench_harness.h"
 
+// The open view of the store needs a context whose row admits IO and Block.
+[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
+    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+}
+
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
@@ -85,7 +90,7 @@ int main() {
         // three benches for this num_ops.  Distinct 'salt' per size
         // avoids collisions in the dedup hash space.
         auto cipher = Cipher::open(CipherRoot{dir});
-        auto open_view = cipher.mint_open_view();
+        auto open_view = cipher.mint_open_view(store_ctx());
 
         Arena warm_arena{1 << 18};
         auto* warm_region = synth_region(warm_arena, num_ops, 0xC0FFEE + num_ops);

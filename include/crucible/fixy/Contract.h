@@ -164,7 +164,7 @@ using ::crucible::cipher::federation::serialize_computation_cache_federation_ent
 //
 //   static_assert(MemberMintCtxRequired<Cipher, mint_name::open_view,
 //                                       decltype(ctx)>);
-//   auto view = cipher.mint_open_view();
+//   auto view = cipher.mint_open_view(ctx);
 
 namespace mint_name {
 struct open_view {};
@@ -182,15 +182,19 @@ struct active_view {};
 template <class Class, class MintName>
 struct member_mint_required_ctx;
 
+// The member function gates its own context, so this row asks the gate and
+// states no second rule that can disagree with it.
 template <>
 struct member_mint_required_ctx<::crucible::Cipher, mint_name::open_view> {
     template <class Ctx>
     static consteval bool admits() noexcept {
-        return ::crucible::effects::IsBgCtx<std::remove_cvref_t<Ctx>>;
+        return requires(::crucible::Cipher const& cipher, std::remove_cvref_t<Ctx> const& ctx) {
+            cipher.mint_open_view(ctx);
+        };
     }
     static consteval const char* name() noexcept { return "Cipher::mint_open_view"; }
     static consteval const char* required_ctx_description() noexcept {
-        return "IsBgCtx — Cipher::OpenView writes are drain-side";
+        return "CtxAdmits<Ctx, Cipher::open_view_required_row> — each write through the view reaches storage";
     }
 };
 
@@ -482,8 +486,12 @@ namespace v220 {
 
 namespace eff = ::crucible::effects;
 
-static_assert(member_mint_required_ctx<::crucible::Cipher, mint_name::open_view>::admits<eff::BgDrainCtx>(),
-              "Cipher::mint_open_view must admit BgDrainCtx.");
+static_assert(member_mint_required_ctx<::crucible::Cipher, mint_name::open_view>::admits<eff::TestRunnerCtx>(),
+              "Cipher::mint_open_view must admit TestRunnerCtx.");
+static_assert(!member_mint_required_ctx<::crucible::Cipher, mint_name::open_view>::admits<eff::BgDrainCtx>(),
+              "Cipher::mint_open_view must REJECT BgDrainCtx (no IO, no Block).");
+static_assert(!member_mint_required_ctx<::crucible::Cipher, mint_name::open_view>::admits<eff::ColdInitCtx>(),
+              "Cipher::mint_open_view must REJECT ColdInitCtx (no Block).");
 
 static_assert(member_mint_required_ctx<::crucible::CKernelTable, mint_name::mutable_view>::admits<eff::ColdInitCtx>(),
               "CKernelTable::mint_mutable_view must admit ColdInitCtx.");
@@ -524,13 +532,13 @@ static_assert(
 static_assert(!member_mint_required_ctx<::crucible::ReplayEngine, mint_name::active_view>::admits<eff::ColdInitCtx>(),
               "ReplayEngine::mint_active_view must REJECT ColdInitCtx (Fg only).");
 
-static_assert(MemberMintCtxRequired<::crucible::Cipher, mint_name::open_view, eff::BgDrainCtx>,
-              "MemberMintCtxRequired must satisfy for (Cipher, open_view, BgDrainCtx).");
+static_assert(MemberMintCtxRequired<::crucible::Cipher, mint_name::open_view, eff::TestRunnerCtx>,
+              "MemberMintCtxRequired must satisfy for (Cipher, open_view, TestRunnerCtx).");
 
 static_assert(!MemberMintCtxRequired<::crucible::Cipher, mint_name::open_view, eff::HotFgCtx>,
               "MemberMintCtxRequired must reject for (Cipher, open_view, HotFgCtx).");
 
-static_assert(MemberMintCtxRequired<::crucible::Cipher, mint_name::open_view, eff::BgDrainCtx const&>,
+static_assert(MemberMintCtxRequired<::crucible::Cipher, mint_name::open_view, eff::TestRunnerCtx const&>,
               "MemberMintCtxRequired must satisfy for a cvref-qualified Ctx.");
 
 inline constexpr std::size_t v220_member_mint_cardinality = 8;

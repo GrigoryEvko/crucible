@@ -28,7 +28,7 @@ int main() {
     // Caller declares Row<Alloc> — wrong axis entirely.
     //   {IO, Block} ⊄ {Alloc} → Subrow false → constraint fails.
     auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_record_event_alloc_only"});
-    cipher.record_event<eff::Row<eff::Effect::Alloc>>(cipher.mint_open_view(), ::crucible::ContentHash{1u},
+    cipher.record_event<eff::Row<eff::Effect::Alloc>>(cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()}), ::crucible::ContentHash{1u},
                                                       std::uint64_t{1u});
     return 0;
 }

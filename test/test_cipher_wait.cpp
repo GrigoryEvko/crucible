@@ -15,6 +15,11 @@
 #include <type_traits>
 #include <utility>
 
+// The open view of the store needs a context whose row admits IO and Block.
+[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
+    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+}
+
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 using crucible::Cipher;
@@ -60,7 +65,7 @@ static void test_store_pinned_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     ContentHash raw = cipher.store(view, payload, nullptr);
@@ -73,7 +78,7 @@ static void test_store_pinned_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using Got = decltype(cipher.store_pinned(view, payload, nullptr));
@@ -91,7 +96,7 @@ static void test_store_pinned_payload_route(const char* dir) {
     auto* region = make_test_region(arena, 3);
     auto cipher = Cipher::open(CipherRoot{dir});
 
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
     using Got = decltype(cipher.store_pinned(view, payload, nullptr));
     using Want = Wait<WaitStrategy_v::Block, ContentHash>;
@@ -128,7 +133,7 @@ static void test_e2e_block_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 4);
     auto cipher = Cipher::open(CipherRoot{dir});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     auto pinned = cipher.store_pinned(view, payload, nullptr);

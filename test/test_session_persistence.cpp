@@ -16,6 +16,11 @@
 #include <unistd.h>
 #include <utility>
 
+// The open view of the store needs a context whose row admits IO and Block.
+[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
+    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+}
+
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 namespace proto = crucible::safety::proto;
@@ -74,7 +79,7 @@ static_assert(noexcept(proto::mint_persisted_session(std::declval<eff::TestRunne
 
 template <proto::SessionTagId Session>
 void drive_5000_events(crucible::Cipher& cipher) {
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
     proto::SessionPersistencePolicy policy{
         .count_threshold = 1000,
         .time_threshold = std::chrono::steady_clock::duration::zero(),
@@ -106,7 +111,7 @@ int test_two_sessions_replay_after_reopen(const std::string& dir) {
 
     auto reopened = crucible::Cipher::open(CipherRoot{dir});
     assert(reopened.is_open());
-    auto view = reopened.mint_open_view();
+    auto view = reopened.mint_open_view(store_ctx());
 
     const auto events_a = reopened.load_session_events(view, proto::SessionTagId{9001});
     const auto events_b = reopened.load_session_events(view, proto::SessionTagId{9002});
@@ -144,7 +149,7 @@ int test_two_sessions_replay_after_reopen(const std::string& dir) {
 int test_manual_flush_and_existing_handle_overload(const std::string& dir) {
     auto cipher = crucible::Cipher::open(CipherRoot{dir});
     assert(cipher.is_open());
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(store_ctx());
 
     proto::SessionPersistencePolicy no_auto_flush{
         .count_threshold = 0,
@@ -170,7 +175,7 @@ int test_manual_flush_and_existing_handle_overload(const std::string& dir) {
 
     auto reopened = crucible::Cipher::open(CipherRoot{dir});
     assert(reopened.is_open());
-    auto reopened_view = reopened.mint_open_view();
+    auto reopened_view = reopened.mint_open_view(store_ctx());
     const auto events = reopened.load_session_events(reopened_view, proto::SessionTagId{9100});
     assert(events.size() == 4);
     assert(events[0].op == proto::SessionOp::Select);
@@ -199,7 +204,7 @@ int test_fixy_a2_007_stored_view_discipline(const std::string& dir) {
     eff::TestRunnerCtx ctx{::crucible::effects::testing::test()};
 
     auto handle = [&]() {
-        auto local_view = cipher.mint_open_view();
+        auto local_view = cipher.mint_open_view(store_ctx());
         auto bare = proto::mint_session_handle<PersistProto>(CounterResource{});
         return proto::mint_persisted_session(ctx, std::move(bare), cipher, local_view, proto::SessionTagId{9300},
                                              kClient, kServer, manual_only);
@@ -228,7 +233,7 @@ int test_fixy_a2_007_stored_view_discipline(const std::string& dir) {
     // Three selects, two sends and one close make the six events.
     auto reopened = crucible::Cipher::open(CipherRoot{dir});
     assert(reopened.is_open());
-    auto rv = reopened.mint_open_view();
+    auto rv = reopened.mint_open_view(store_ctx());
     const auto events = reopened.load_session_events(rv, proto::SessionTagId{9300});
     assert(events.size() == 6);
     assert(events[0].op == proto::SessionOp::Select);
@@ -262,7 +267,7 @@ int test_fixy_a2_013_destructor_flushes_pending_events(const std::string& dir) {
     constexpr int kEvents = 5;
 
     {
-        auto view = cipher.mint_open_view();
+        auto view = cipher.mint_open_view(store_ctx());
         // A zero count threshold disables count gating and an hour-scale
         // time threshold outlives the test, so the destructor is the only
         // flush path left.
@@ -287,7 +292,7 @@ int test_fixy_a2_013_destructor_flushes_pending_events(const std::string& dir) {
 
     auto reopened = crucible::Cipher::open(CipherRoot{dir});
     assert(reopened.is_open());
-    auto view = reopened.mint_open_view();
+    auto view = reopened.mint_open_view(store_ctx());
     const auto events = reopened.load_session_events(view, kSession);
     assert(events.size() == kEvents);
     for (std::size_t i = 0; i < events.size(); ++i) {

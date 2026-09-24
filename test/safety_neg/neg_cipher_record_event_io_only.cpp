@@ -29,7 +29,7 @@ int main() {
     // Caller declares Row<IO> — has IO, missing Block.
     //   {IO, Block} ⊄ {IO} → Subrow false → constraint fails.
     auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_record_event_io_only"});
-    cipher.record_event<eff::Row<eff::Effect::IO>>(cipher.mint_open_view(), ::crucible::ContentHash{1u},
+    cipher.record_event<eff::Row<eff::Effect::IO>>(cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()}), ::crucible::ContentHash{1u},
                                                    std::uint64_t{1u});
     return 0;
 }

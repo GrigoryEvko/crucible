@@ -17,6 +17,7 @@
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Diag.h>
 #include <crucible/fixy/Handle.h>
 #include <crucible/fixy/Is.h>
@@ -200,7 +201,14 @@ public:
 
     using OpenView = ::crucible::CipherOpenView;
 
-    [[nodiscard]] OpenView mint_open_view() const noexcept {
+    // Every write through an open view writes object files and flushes them
+    // to storage, so the view needs a context whose row admits IO and Block.
+    // A hot foreground context holds neither and gets no view.
+    using open_view_required_row = ::crucible::CipherSessionEventPersistenceRow;
+
+    template <class Ctx>
+        requires ::crucible::effects::CtxAdmits<Ctx, open_view_required_row>
+    [[nodiscard]] OpenView mint_open_view(Ctx const&) const noexcept {
         // CRUCIBLE_PRE rather than a pre() clause: on this toolchain a pre()
         // predicate that reads a member through `this` is silently skipped
         // at consteval.  Every in-body precondition in this file has the

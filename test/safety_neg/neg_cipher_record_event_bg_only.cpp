@@ -32,7 +32,7 @@ int main() {
     // Caller declares Row<Bg> alone — Bg context tag without
     // IO/Block caps.  {IO, Block} ⊄ {Bg} → Subrow false.
     auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_record_event_bg_only"});
-    cipher.record_event<eff::Row<eff::Effect::Bg>>(cipher.mint_open_view(), ::crucible::ContentHash{1u},
+    cipher.record_event<eff::Row<eff::Effect::Bg>>(cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()}), ::crucible::ContentHash{1u},
                                                    std::uint64_t{1u});
     return 0;
 }

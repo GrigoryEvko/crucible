@@ -25,7 +25,7 @@ struct Resource {};
 
 int main() {
     auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_fixy_persist_no_ctx"});
-    auto view = cipher.mint_open_view();
+    auto view = cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
 
     // Should FAIL: deleted overload — no Ctx parameter at all.
     [[maybe_unused]] auto h = fcipher::mint_persisted_session<proto::Send<int, proto::End>>(

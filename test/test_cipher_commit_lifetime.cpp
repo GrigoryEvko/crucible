@@ -31,6 +31,11 @@
 #include <type_traits>
 #include <utility>
 
+// The open view of the store needs a context whose row admits IO and Block.
+[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
+    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+}
+
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 using crucible::Arena;
@@ -77,13 +82,13 @@ static void test_commit_per_fleet_type_identity() {
 
     OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*> wrapped{region};
 
-    using Got = decltype(c.commit_per_fleet(c.mint_open_view(), std::move(wrapped), &log));
+    using Got = decltype(c.commit_per_fleet(c.mint_open_view(store_ctx()), std::move(wrapped), &log));
     using Want = Cold<ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "commit_per_fleet must return CipherTier<Cold, ContentHash>");
     static_assert(Got::tier == CipherTierTag_v::Cold);
 
     auto pinned =
-        c.commit_per_fleet(c.mint_open_view(), OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>{region}, &log);
+        c.commit_per_fleet(c.mint_open_view(store_ctx()), OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>{region}, &log);
     (void)std::move(pinned).consume();
     std::filesystem::remove_all(tmp);
 }
@@ -97,12 +102,12 @@ static void test_commit_per_program_type_identity() {
 
     OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*> wrapped{region};
 
-    using Got = decltype(c.commit_per_program(c.mint_open_view(), std::move(wrapped), &log));
+    using Got = decltype(c.commit_per_program(c.mint_open_view(store_ctx()), std::move(wrapped), &log));
     using Want = Warm<ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "commit_per_program must return CipherTier<Warm, ContentHash>");
     static_assert(Got::tier == CipherTierTag_v::Warm);
 
-    auto pinned = c.commit_per_program(c.mint_open_view(),
+    auto pinned = c.commit_per_program(c.mint_open_view(store_ctx()),
                                        OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>{region}, &log);
     ContentHash hash = std::move(pinned).consume();
     // Warm is the tier with a real store behind it, so a hash comes back.
@@ -119,7 +124,7 @@ static void test_commit_per_request_type_identity() {
 
     OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*> wrapped{region};
 
-    using Got = decltype(c.commit_per_request(c.mint_open_view(), std::move(wrapped), &log));
+    using Got = decltype(c.commit_per_request(c.mint_open_view(store_ctx()), std::move(wrapped), &log));
     using Want = Hot<ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "commit_per_request must return CipherTier<Hot, ContentHash>");
     static_assert(Got::tier == CipherTierTag_v::Hot);
@@ -135,7 +140,7 @@ static void test_fleet_satisfies_request() {
 
     OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*> fleet_wrapped{region};
 
-    auto pinned = c.commit_per_request(c.mint_open_view(), std::move(fleet_wrapped), &log);
+    auto pinned = c.commit_per_request(c.mint_open_view(store_ctx()), std::move(fleet_wrapped), &log);
     using Got = decltype(pinned);
     static_assert(std::is_same_v<Got, Hot<ContentHash>>,
                   "commit_per_request always returns Hot, regardless of input scope");
@@ -152,7 +157,7 @@ static void test_fleet_satisfies_program() {
 
     OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*> fleet_wrapped{region};
 
-    auto pinned = c.commit_per_program(c.mint_open_view(), std::move(fleet_wrapped), &log);
+    auto pinned = c.commit_per_program(c.mint_open_view(store_ctx()), std::move(fleet_wrapped), &log);
     static_assert(std::is_same_v<decltype(pinned), Warm<ContentHash>>);
     ContentHash hash = std::move(pinned).consume();
     assert(static_cast<bool>(hash));
@@ -168,7 +173,7 @@ static void test_program_satisfies_request() {
 
     OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*> program_wrapped{region};
 
-    auto pinned = c.commit_per_request(c.mint_open_view(), std::move(program_wrapped), &log);
+    auto pinned = c.commit_per_request(c.mint_open_view(store_ctx()), std::move(program_wrapped), &log);
     static_assert(std::is_same_v<decltype(pinned), Hot<ContentHash>>);
     (void)std::move(pinned).consume();
     std::filesystem::remove_all(tmp);
@@ -182,7 +187,7 @@ static void test_program_self_match() {
     auto* region = mint_region(arena, 7);
 
     OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*> wrapped{region};
-    auto pinned = c.commit_per_program(c.mint_open_view(), std::move(wrapped), &log);
+    auto pinned = c.commit_per_program(c.mint_open_view(store_ctx()), std::move(wrapped), &log);
     static_assert(std::is_same_v<decltype(pinned), Warm<ContentHash>>);
     ContentHash hash = std::move(pinned).consume();
     assert(static_cast<bool>(hash));
@@ -192,7 +197,7 @@ static void test_program_self_match() {
 static void test_single_open_view_type_identity() {
     auto tmp = tmp_root_for("t08");
     Cipher c = Cipher::open(CipherRoot{tmp.string()});
-    auto view = c.mint_open_view();
+    auto view = c.mint_open_view(store_ctx());
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 8);
@@ -214,7 +219,7 @@ static void test_round_trip_via_program_commit() {
     MetaLog log;
     auto* region = mint_region(arena, 9);
     ContentHash original_hash = region->content_hash;
-    auto view = c.mint_open_view();
+    auto view = c.mint_open_view(store_ctx());
 
     OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*> wrapped{region};
     auto pinned = c.commit_per_program(view, std::move(wrapped), &log);
@@ -238,7 +243,7 @@ static void test_null_region_pass_through() {
     MetaLog log;
 
     OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*> wrapped{nullptr};
-    auto pinned = c.commit_per_program(c.mint_open_view(), std::move(wrapped), &log);
+    auto pinned = c.commit_per_program(c.mint_open_view(store_ctx()), std::move(wrapped), &log);
     ContentHash result = std::move(pinned).consume();
     assert(!static_cast<bool>(result));
     std::filesystem::remove_all(tmp);
@@ -301,7 +306,7 @@ static void test_relax_down_then_commit_per_request() {
 
     static_assert(std::is_same_v<decltype(request), OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>>);
 
-    auto pinned = c.commit_per_request(c.mint_open_view(), std::move(request), &log);
+    auto pinned = c.commit_per_request(c.mint_open_view(store_ctx()), std::move(request), &log);
     static_assert(std::is_same_v<decltype(pinned), Hot<ContentHash>>);
     (void)std::move(pinned).consume();
     std::filesystem::remove_all(tmp);
@@ -339,11 +344,11 @@ static void test_idempotent_commit_per_program() {
     MetaLog log;
     auto* region = mint_region(arena, 18);
 
-    auto first = c.commit_per_program(c.mint_open_view(),
+    auto first = c.commit_per_program(c.mint_open_view(store_ctx()),
                                       OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>{region}, &log);
     ContentHash first_hash = std::move(first).consume();
 
-    auto second = c.commit_per_program(c.mint_open_view(),
+    auto second = c.commit_per_program(c.mint_open_view(store_ctx()),
                                        OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>{region}, &log);
     ContentHash second_hash = std::move(second).consume();
 
@@ -379,7 +384,7 @@ static void test_api_completeness_matrix() {
     using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>;
     using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>;
     using PF = OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>;
-    auto view = c.mint_open_view();
+    auto view = c.mint_open_view(store_ctx());
 
     static_assert(std::is_same_v<decltype(c.commit_per_request(view, std::declval<PR&&>(), &log)), Hot<ContentHash>>);
     static_assert(std::is_same_v<decltype(c.commit_per_program(view, std::declval<PP&&>(), &log)), Warm<ContentHash>>);
@@ -400,7 +405,7 @@ static void test_content_hash_equality_across_overlay() {
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 0xCAFEBABEULL);
-    auto view = c.mint_open_view();
+    auto view = c.mint_open_view(store_ctx());
     ContentHash bare_hash = c.store(view, Cipher::content_addressed(region), &log);
 
     // A second Cipher in a different directory, to show the hash does
@@ -410,7 +415,7 @@ static void test_content_hash_equality_across_overlay() {
     Cipher c2 = Cipher::open(CipherRoot{tmp2.string()});
 
     OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*> wrapped{region};
-    auto pinned = c2.commit_per_program(c2.mint_open_view(), std::move(wrapped), &log);
+    auto pinned = c2.commit_per_program(c2.mint_open_view(store_ctx()), std::move(wrapped), &log);
     ContentHash via_overlay = std::move(pinned).consume();
 
     assert(bare_hash == via_overlay);
