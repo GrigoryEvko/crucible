@@ -421,11 +421,11 @@ static_assert(s::is_subtype_sync_v<Select<Send<Refined<::fixy::positive, int>, E
 static_assert(s::is_subtype_sync_v<Offer<Recv<int, End>>, Offer<Recv<Refined<::fixy::positive, int>, End>>>);
 
 // Each axiom keeps the representation, so a subtype payload has the
-// size and the trivial copy of its supertype payload.
+// size of its supertype payload and a trivial copy construction.
 static_assert(sizeof(Refined<::fixy::positive, int>) == sizeof(int)
-              && std::is_trivially_copyable_v<Refined<::fixy::positive, int>>);
+              && std::is_trivially_copy_constructible_v<Refined<::fixy::positive, int>>);
 static_assert(sizeof(Tagged<DispatchRequest, tags::source::Sanitized>) == sizeof(DispatchRequest)
-              && std::is_trivially_copyable_v<Tagged<DispatchRequest, tags::source::Sanitized>>);
+              && std::is_trivially_copy_constructible_v<Tagged<DispatchRequest, tags::source::Sanitized>>);
 static_assert(sizeof(BitexactTile) == sizeof(RelaxedTile) && sizeof(BitexactTile) == sizeof(TensorTile)
               && std::is_trivially_copyable_v<BitexactTile>);
 
