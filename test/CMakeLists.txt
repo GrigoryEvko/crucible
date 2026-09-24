@@ -1125,23 +1125,20 @@ add_test(NAME stub_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.sh)
 set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
     LABELS "ci_guard")
-# FIXY-U-086 cross-thread atomic sibling-assert discipline (CLAUDE.md §IX
-# + fixy-A5-029).  scripts/check-lock-free-asserts.sh flags any
-# `std::atomic<T>` declaration in canopy/cntp/topology/warden that lacks
-# a sibling `static_assert(std::atomic<T>::is_always_lock_free)` in the
-# same header — guards against the libatomic-silently-locks-on-prod-ARM
-# class.  Self-test mode plants four axes: covered (must not flag),
-# missing (must flag), inline LOCK-FREE-OK suppression (must not flag),
-# allowlist entry (must not flag).  Allowlist currently empty — the
-# source-level sweep is complete, this guard exists to prevent future
-# regression.
+# The lock-free discipline of the cross-thread atomics (CLAUDE.md §IX).
+# scripts/check-lock-free-asserts.py reads each std::atomic, atomic_ref and
+# standard atomic alias of canopy, cntp, topology and warden from the parse
+# tree, and fails when the file has no sibling
+# static_assert(std::atomic<T>::is_always_lock_free) for its type.  Without
+# the assert, libatomic can put a mutex behind the atomic on another target
+# with no warning.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME lock_free_asserts_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.sh
-          --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.py --self-test)
 add_test(NAME lock_free_asserts
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.py)
 set_tests_properties(lock_free_asserts lock_free_asserts_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # The mint inventory: its self-test, the drift gate that fails when
 # misc/mint-inventory.md was not regenerated after a mint changed, and the
 # HS14 floor gate.  scripts/gen-mint-inventory.py holds the floor value.
