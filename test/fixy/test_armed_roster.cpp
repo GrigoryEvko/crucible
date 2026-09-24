@@ -104,6 +104,22 @@ struct RightBody {
     void operator()(fp::Permission<SpawnRight>, BgCtx const&) const noexcept {}
 };
 
+// Roles, labels and global types for the global-type walks.
+struct RoleP {};
+struct RoleQ {};
+struct RoleR {};
+struct LabelA {};
+struct LabelB {};
+namespace gl = ::fixy::session::global;
+using OneMsg = gl::Msg<RoleP, RoleQ, LabelA, int, gl::End>;
+using LoopPQ = gl::Rec<gl::Msg<RoleP, RoleQ, LabelA, int, gl::Var>>;
+using FreeVar = gl::Msg<RoleP, RoleQ, LabelA, int, gl::Var>;
+using EnRoutePQ = gl::EnRoute<RoleP, RoleQ, LabelA, int, gl::End>;
+using EnRouteAfterMsg = gl::Msg<RoleQ, RoleR, LabelB, int, EnRoutePQ>;
+// R is in the loop body on one branch only, so the loop starves R.
+using StarvesR = gl::Rec<gl::Comm<RoleP, RoleQ, gl::Branch<LabelA, int, gl::Var>,
+                                  gl::Branch<LabelB, int, gl::Msg<RoleP, RoleR, LabelA, int, gl::End>>>>;
+
 // A stage type that claims to run inline, and one that makes no claim.
 struct InlineClaimed {};
 struct InlineUnclaimed {};
@@ -653,6 +669,69 @@ template <>
 struct foundation::contracts::armed_cell<::fixy::detail::role::is_accepted_fn> {
     using accepts = witnesses<::fixy::fn<int>, ::fixy::fn<int, at::copy>>;
     using refuses = witnesses<int, ::fixy::fn<int, at::copy, at::affine>, ::fixy::fn<void, at::copy>>;
+};
+
+// ── fixy: the global-type walks ─────────────────────────────────────
+
+namespace gd = ::fixy::session::global::detail;
+
+template <>
+struct foundation::contracts::armed_instances<^^gd::is_role_in> {
+    using accepts = witnesses<gd::is_role_in<w::RoleP, w::gl::Roles<w::RoleP, w::RoleQ>>,
+                              gd::is_role_in<w::RoleQ, w::gl::Roles<w::RoleP, w::RoleQ>>>;
+    using refuses =
+        witnesses<gd::is_role_in<w::RoleR, w::gl::Roles<w::RoleP, w::RoleQ>>, gd::is_role_in<w::RoleP, w::gl::Roles<>>>;
+};
+
+// A Var is free unless a Rec above it binds it.
+template <>
+struct foundation::contracts::armed_cell<gd::has_free_var> {
+    using accepts = witnesses<w::gl::Var, w::FreeVar>;
+    using refuses = witnesses<w::gl::End, w::OneMsg, w::LoopPQ>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<gd::has_en_route> {
+    using accepts = witnesses<w::EnRoutePQ, w::EnRouteAfterMsg>;
+    using refuses = witnesses<w::gl::End, w::OneMsg, w::LoopPQ>;
+};
+
+// A Rec body is guarded when its first node is a communication.
+template <>
+struct foundation::contracts::armed_cell<gd::is_rec_guarded> {
+    using accepts = witnesses<w::OneMsg, w::FreeVar, w::gl::Rec<w::OneMsg>>;
+    using refuses = witnesses<w::gl::Var, w::gl::Rec<w::gl::Var>>;
+};
+
+// Every path from the body back to its Rec meets the role.
+template <>
+struct foundation::contracts::armed_instances<^^gd::is_met_on_every_path> {
+    using accepts = witnesses<gd::is_met_on_every_path<w::RoleP, w::FreeVar>,
+                              gd::is_met_on_every_path<w::RoleR, w::gl::End>>;
+    using refuses = witnesses<gd::is_met_on_every_path<w::RoleR, w::FreeVar>,
+                              gd::is_met_on_every_path<w::RoleP, w::gl::Var>>;
+};
+
+template <>
+struct foundation::contracts::armed_instances<^^gd::is_loop_met_by_each> {
+    using accepts = witnesses<gd::is_loop_met_by_each<w::FreeVar, w::gl::Roles<w::RoleP, w::RoleQ>>>;
+    using refuses = witnesses<gd::is_loop_met_by_each<w::FreeVar, w::gl::Roles<w::RoleP, w::RoleR>>>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<gd::is_each_loop_balanced> {
+    using accepts = witnesses<w::gl::End, w::OneMsg, w::LoopPQ>;
+    using refuses = witnesses<w::StarvesR, w::gl::Msg<w::RoleQ, w::RoleR, w::LabelB, int, w::StarvesR>>;
+};
+
+// The en-route pair is the sender and the receiver of an en-route
+// message, in that order.
+template <>
+struct foundation::contracts::armed_instances<^^gd::has_en_route_pair> {
+    using accepts = witnesses<gd::has_en_route_pair<w::RoleP, w::RoleQ, w::EnRoutePQ>,
+                              gd::has_en_route_pair<w::RoleP, w::RoleQ, w::EnRouteAfterMsg>>;
+    using refuses = witnesses<gd::has_en_route_pair<w::RoleQ, w::RoleP, w::EnRoutePQ>,
+                              gd::has_en_route_pair<w::RoleP, w::RoleQ, w::OneMsg>>;
 };
 
 // A stage runs inline only when its author claims it.

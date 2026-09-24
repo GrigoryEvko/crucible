@@ -165,9 +165,9 @@ template <typename...>
 inline constexpr bool dependent_false_v = false;
 
 template <typename R, typename RL>
-struct role_in;
+struct is_role_in;
 template <typename R, typename... Rs>
-struct role_in<R, Roles<Rs...>> : std::bool_constant<(std::is_same_v<R, Rs> || ...)> {};
+struct is_role_in<R, Roles<Rs...>> : std::bool_constant<(std::is_same_v<R, Rs> || ...)> {};
 
 template <typename RL, typename R>
 struct role_insert;
@@ -199,7 +199,7 @@ template <typename RL, typename Remove>
 struct role_difference;
 template <typename... Rs, typename Remove>
 struct role_difference<Roles<Rs...>, Remove> {
-    using type = typename role_union_all<std::conditional_t<role_in<Rs, Remove>::value, Roles<>, Roles<Rs>>...>::type;
+    using type = typename role_union_all<std::conditional_t<is_role_in<Rs, Remove>::value, Roles<>, Roles<Rs>>...>::type;
 };
 
 template <typename R>
@@ -247,7 +247,7 @@ struct payload_of<L, First, Rest...> {
 }  // namespace detail
 
 template <typename R, typename RL>
-inline constexpr bool role_in_v = detail::role_in<R, RL>::value;
+inline constexpr bool role_in_v = detail::is_role_in<R, RL>::value;
 
 template <typename RL1, typename RL2>
 inline constexpr bool roles_equal_as_sets_v =
@@ -443,40 +443,40 @@ struct plain_role_walk<EnRouteChoice<Crashed<From>, To, Chosen, Branch<Ls, Ps, C
 
 // True when G holds a Var that no Rec inside G binds.
 template <typename G>
-struct free_var_walk;
+struct has_free_var;
 template <>
-struct free_var_walk<End> : std::false_type {};
+struct has_free_var<End> : std::false_type {};
 template <>
-struct free_var_walk<Var> : std::true_type {};
+struct has_free_var<Var> : std::true_type {};
 template <typename Body>
-struct free_var_walk<Rec<Body>> : std::false_type {};
+struct has_free_var<Rec<Body>> : std::false_type {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
     requires(!detail::is_crashed_v<To>)
-struct free_var_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(free_var_walk<Cs>::value || ...)> {};
+struct has_free_var<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(has_free_var<Cs>::value || ...)> {};
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
-struct free_var_walk<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<(free_var_walk<Cs>::value || ...)> {};
+struct has_free_var<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(has_free_var<Cs>::value || ...)> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
-struct free_var_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<(free_var_walk<Cs>::value || ...)> {};
+struct has_free_var<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(has_free_var<Cs>::value || ...)> {};
 
 // True when G holds an en-route node anywhere.
 template <typename G>
-struct en_route_walk;
+struct has_en_route;
 template <>
-struct en_route_walk<End> : std::false_type {};
+struct has_en_route<End> : std::false_type {};
 template <>
-struct en_route_walk<Var> : std::false_type {};
+struct has_en_route<Var> : std::false_type {};
 template <typename Body>
-struct en_route_walk<Rec<Body>> : en_route_walk<Body> {};
+struct has_en_route<Rec<Body>> : has_en_route<Body> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
     requires(!detail::is_crashed_v<To>)
-struct en_route_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(en_route_walk<Cs>::value || ...)> {};
+struct has_en_route<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(has_en_route<Cs>::value || ...)> {};
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
-struct en_route_walk<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>> : std::true_type {};
+struct has_en_route<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>> : std::true_type {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
-struct en_route_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<(en_route_walk<Cs>::value || ...)> {};
+struct has_en_route<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(has_en_route<Cs>::value || ...)> {};
 
 }  // namespace detail
 
@@ -490,10 +490,10 @@ template <typename G>
 using sending_roles_t = typename detail::sending_role_walk<G>::type;
 
 template <typename G>
-inline constexpr bool holds_free_var_v = detail::free_var_walk<G>::value;
+inline constexpr bool holds_free_var_v = detail::has_free_var<G>::value;
 
 template <typename G>
-inline constexpr bool holds_en_route_v = detail::en_route_walk<G>::value;
+inline constexpr bool holds_en_route_v = detail::has_en_route<G>::value;
 
 template <typename G>
 using crashed_roles_t = typename detail::crashed_role_walk<G>::type;
@@ -529,11 +529,11 @@ inline constexpr bool label_set_distinct_v = ((label_occurrences_v<Ls, Ls...> ==
 // A Rec body is guarded when its first node is a communication.  A
 // nested Rec passes the question to its own body.
 template <typename Body>
-struct rec_guard : std::true_type {};
+struct is_rec_guarded : std::true_type {};
 template <>
-struct rec_guard<Var> : std::false_type {};
+struct is_rec_guarded<Var> : std::false_type {};
 template <typename Inner>
-struct rec_guard<Rec<Inner>> : rec_guard<Inner> {};
+struct is_rec_guarded<Rec<Inner>> : is_rec_guarded<Inner> {};
 
 consteval GlobalFault first_fault(std::initializer_list<GlobalFault> faults) noexcept {
     for (const GlobalFault fault : faults) {
@@ -585,7 +585,7 @@ struct fault_walk<Var, Bound>
     : std::integral_constant<GlobalFault, Bound ? GlobalFault::None : GlobalFault::UnboundVariable> {};
 template <typename Body, bool Bound>
 struct fault_walk<Rec<Body>, Bound>
-    : std::integral_constant<GlobalFault, rec_guard<Body>::value ? fault_walk<Body, true>::value
+    : std::integral_constant<GlobalFault, is_rec_guarded<Body>::value ? fault_walk<Body, true>::value
                                                                  : GlobalFault::UnguardedRecursion> {};
 template <typename From, typename To, bool Bound>
 struct fault_walk<Comm<From, To>, Bound> : std::integral_constant<GlobalFault, GlobalFault::EmptyChoice> {};
@@ -635,63 +635,63 @@ namespace detail {
 // can never come back to the outer Var, because Var binds to the
 // nearest Rec, so it passes too.  The nested Rec is examined on its own.
 template <typename R, typename G>
-struct path_meets;
+struct is_met_on_every_path;
 template <typename R>
-struct path_meets<R, End> : std::true_type {};
+struct is_met_on_every_path<R, End> : std::true_type {};
 template <typename R>
-struct path_meets<R, Var> : std::false_type {};
+struct is_met_on_every_path<R, Var> : std::false_type {};
 template <typename R, typename Body>
-struct path_meets<R, Rec<Body>> : std::true_type {};
+struct is_met_on_every_path<R, Rec<Body>> : std::true_type {};
 template <typename R, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
     requires(!detail::is_crashed_v<To>)
-struct path_meets<R, Comm<From, To, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<std::is_same_v<R, From> || std::is_same_v<R, To> || (path_meets<R, Cs>::value && ...)> {};
+struct is_met_on_every_path<R, Comm<From, To, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<std::is_same_v<R, From> || std::is_same_v<R, To> || (is_met_on_every_path<R, Cs>::value && ...)> {};
 // The receipt of an en-route message is an action of the receiver, and
 // so is the detection of a crash.
 template <typename R, typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
-struct path_meets<R, EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<std::is_same_v<R, To> || (path_meets<R, Cs>::value && ...)> {};
+struct is_met_on_every_path<R, EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<std::is_same_v<R, To> || (is_met_on_every_path<R, Cs>::value && ...)> {};
 // The crashed receiver does not act.
 template <typename R, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
-struct path_meets<R, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<std::is_same_v<R, From> || (path_meets<R, Cs>::value && ...)> {};
+struct is_met_on_every_path<R, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<std::is_same_v<R, From> || (is_met_on_every_path<R, Cs>::value && ...)> {};
 
 template <typename Body, typename RL>
-struct loop_meets_each;
+struct is_loop_met_by_each;
 template <typename Body, typename... Rs>
-struct loop_meets_each<Body, Roles<Rs...>> : std::bool_constant<(path_meets<Rs, Body>::value && ...)> {};
+struct is_loop_met_by_each<Body, Roles<Rs...>> : std::bool_constant<(is_met_on_every_path<Rs, Body>::value && ...)> {};
 
-// True when each Rec in G passes loop_meets_each for each role in its
+// True when each Rec in G passes is_loop_met_by_each for each role in its
 // body that has not crashed.  A crashed role cannot starve.
 // Complexity: O(|G| * |roles|) walks of O(|G|) each.
 template <typename G>
-struct balance_walk;
+struct is_each_loop_balanced;
 template <>
-struct balance_walk<End> : std::true_type {};
+struct is_each_loop_balanced<End> : std::true_type {};
 template <>
-struct balance_walk<Var> : std::true_type {};
+struct is_each_loop_balanced<Var> : std::true_type {};
 template <typename Body>
-struct balance_walk<Rec<Body>>
+struct is_each_loop_balanced<Rec<Body>>
     : std::bool_constant<
-          loop_meets_each<Body, typename role_difference<typename role_walk<Body>::type,
+          is_loop_met_by_each<Body, typename role_difference<typename role_walk<Body>::type,
                                                          typename crashed_role_walk<Body>::type>::type>::value
-          && balance_walk<Body>::value> {};
+          && is_each_loop_balanced<Body>::value> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
     requires(!detail::is_crashed_v<To>)
-struct balance_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(balance_walk<Cs>::value && ...)> {};
+struct is_each_loop_balanced<Comm<From, To, Branch<Ls, Ps, Cs>...>> : std::bool_constant<(is_each_loop_balanced<Cs>::value && ...)> {};
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
-struct balance_walk<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<(balance_walk<Cs>::value && ...)> {};
+struct is_each_loop_balanced<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(is_each_loop_balanced<Cs>::value && ...)> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
-struct balance_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<(balance_walk<Cs>::value && ...)> {};
+struct is_each_loop_balanced<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(is_each_loop_balanced<Cs>::value && ...)> {};
 
 }  // namespace detail
 
 template <typename G>
 struct is_balanced : std::bool_constant<[] {
     if constexpr (is_global_well_formed_v<G>) {
-        return detail::balance_walk<G>::value;
+        return detail::is_each_loop_balanced<G>::value;
     } else {
         return false;
     }
@@ -711,26 +711,26 @@ inline constexpr std::int64_t count_undefined = -1;
 // True when G holds an en-route message from P to Q (the pair is in
 // mRoles(G), Definition 15).
 template <typename P, typename Q, typename G>
-struct en_route_pair_walk;
+struct has_en_route_pair;
 template <typename P, typename Q>
-struct en_route_pair_walk<P, Q, End> : std::false_type {};
+struct has_en_route_pair<P, Q, End> : std::false_type {};
 template <typename P, typename Q>
-struct en_route_pair_walk<P, Q, Var> : std::false_type {};
+struct has_en_route_pair<P, Q, Var> : std::false_type {};
 template <typename P, typename Q, typename Body>
-struct en_route_pair_walk<P, Q, Rec<Body>> : en_route_pair_walk<P, Q, Body> {};
+struct has_en_route_pair<P, Q, Rec<Body>> : has_en_route_pair<P, Q, Body> {};
 template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
     requires(!detail::is_crashed_v<To>)
-struct en_route_pair_walk<P, Q, Comm<From, To, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<(en_route_pair_walk<P, Q, Cs>::value || ...)> {};
+struct has_en_route_pair<P, Q, Comm<From, To, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(has_en_route_pair<P, Q, Cs>::value || ...)> {};
 template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
-struct en_route_pair_walk<P, Q, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
-    : std::bool_constant<(en_route_pair_walk<P, Q, Cs>::value || ...)> {};
+struct has_en_route_pair<P, Q, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(has_en_route_pair<P, Q, Cs>::value || ...)> {};
 // The crash pseudo-message is not in a queue.
 template <typename P, typename Q, typename From, typename To, typename Chosen, typename... Ls, typename... Pls,
           typename... Cs>
-struct en_route_pair_walk<P, Q, EnRouteChoice<From, To, Chosen, Branch<Ls, Pls, Cs>...>>
+struct has_en_route_pair<P, Q, EnRouteChoice<From, To, Chosen, Branch<Ls, Pls, Cs>...>>
     : std::bool_constant<(std::is_same_v<P, bare_role_t<From>> && std::is_same_v<Q, To> && !is_crash_label_v<Chosen>)
-                         || (en_route_pair_walk<P, Q, Cs>::value || ...)> {};
+                         || (has_en_route_pair<P, Q, Cs>::value || ...)> {};
 
 consteval std::int64_t agreed_count(std::initializer_list<std::int64_t> counts) noexcept {
     std::int64_t agreed = count_undefined;
@@ -756,19 +756,19 @@ struct en_route_count<P, Q, Var> : std::integral_constant<std::int64_t, 0> {};
 template <typename P, typename Q, typename Body>
 struct en_route_count<P, Q, Rec<Body>>
     : std::integral_constant<std::int64_t,
-                             (!free_var_walk<Body>::value || en_route_count<P, Q, Body>::value == 0)
+                             (!has_free_var<Body>::value || en_route_count<P, Q, Body>::value == 0)
                                  ? en_route_count<P, Q, Body>::value
                                  : count_undefined> {};
 template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
     requires(!detail::is_crashed_v<To>)
 struct en_route_count<P, Q, Comm<From, To, Branch<Ls, Ps, Cs>...>>
     : std::integral_constant<std::int64_t, (std::is_same_v<P, From> && std::is_same_v<Q, To>)
-                                               ? ((en_route_pair_walk<P, Q, Cs>::value || ...) ? count_undefined : 0)
+                                               ? ((has_en_route_pair<P, Q, Cs>::value || ...) ? count_undefined : 0)
                                                : agreed_count({en_route_count<P, Q, Cs>::value...})> {};
 template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
 struct en_route_count<P, Q, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
     : std::integral_constant<std::int64_t, (std::is_same_v<P, From> && std::is_same_v<Q, To>)
-                                               ? ((en_route_pair_walk<P, Q, Cs>::value || ...) ? count_undefined : 0)
+                                               ? ((has_en_route_pair<P, Q, Cs>::value || ...) ? count_undefined : 0)
                                                : agreed_count({en_route_count<P, Q, Cs>::value...})> {};
 // The count below an en-route node agrees across its branches, and the
 // node adds its own message unless it is the crash pseudo-message.
