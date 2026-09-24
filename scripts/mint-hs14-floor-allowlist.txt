@@ -90,9 +90,6 @@ mint_nic_telemetry_snapshot|include/crucible/topology/Telemetry.h
 # mints below read as covered by the old tree's fixtures of their
 # namesakes.  Their own tree has fewer than two.
 
-# The old tree, a top-level header the old scan did not reach.
-mint_ffi_entry|include/crucible/TraceRing.h
-
 # include/fixy
 mint_carries_the_value|include/fixy/Fn.h
 mint_fn|include/fixy/Fn.h

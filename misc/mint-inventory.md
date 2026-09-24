@@ -53,7 +53,7 @@ apply to the row.
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | · | Y | · | member | · | · | HS14: 2 |
 | `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 4 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 3 |
-| `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 8 |
 | `mint_vigil_mode_bridge` | `include/crucible/Vigil.h` | Y | Y | Y | · | token | · | `include/crucible/fixy/Bridge.h:55` | HS14: 4 |
 
 ## include/crucible/bridges/
@@ -349,7 +349,7 @@ apply to the row.
 | `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 8 |
 | `mint_borrowed_ref` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
+| `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_carries_the_value` | `include/fixy/Fn.h` | Y | Y | Y | · | token | · | · | HS14: 0 ⚠ |
 | `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
@@ -421,6 +421,7 @@ apply to the row.
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_forked_channel` | `include/fixy/session/Handle.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
+| `mint_permissioned_session` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 6 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 35 |
@@ -466,7 +467,7 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 64 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 68 |
 | `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
@@ -476,5 +477,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 211 | 105 | 98 | 8 | 0 | 72 | 42 |
-| new (`include/foundation/`, `include/fixy/`) | 90 | 36 | 54 | 0 | 0 | · | 31 |
+| old (`include/crucible/`) | 211 | 105 | 98 | 8 | 0 | 72 | 41 |
+| new (`include/foundation/`, `include/fixy/`) | 91 | 37 | 54 | 0 | 0 | · | 31 |
