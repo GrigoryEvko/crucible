@@ -23,6 +23,13 @@
 // union included, and it refuses a reference member, which no lifetime
 // start binds.
 //
+// A class can also refuse a lifetime start while it stays implicit-lifetime.
+// A value that must come only from its own doors, such as a count or a
+// version, keeps a trivial copy constructor so that the ABI passes it in a
+// register, and that trivial constructor makes it implicit-lifetime.  Such a
+// class carries the annotation no_start_over_bytes, and the walk refuses it
+// wherever it sits: alone, in an array, as a base or as a member.
+//
 // scripts/check-start-lifetime.sh refuses a direct use of the two library
 // functions outside a reviewed list.  New code uses start_as_array.
 
@@ -34,6 +41,10 @@
 #include <type_traits>
 
 namespace foundation::lifetime {
+
+// The annotation of a class whose lifetime must never start over bytes.
+// Spell it on the class: struct [[=::foundation::lifetime::no_start_over_bytes{}]] X.
+struct no_start_over_bytes {};
 
 namespace detail {
 
@@ -52,6 +63,7 @@ inline constexpr int max_subobject_depth = 64;
     }
     const bool is_class_or_union = std::meta::is_class_type(type) || std::meta::is_union_type(type);
     if (is_class_or_union && !std::meta::is_complete_type(type)) return false;
+    if (is_class_or_union && !std::meta::annotations_of_with_type(type, ^^no_start_over_bytes).empty()) return false;
     if (!std::meta::extract<bool>(std::meta::substitute(^^std::is_implicit_lifetime_v, {type}))) return false;
     if (!is_class_or_union) return true;
     for (const std::meta::info base : std::meta::bases_of(type, std::meta::access_context::unchecked())) {
@@ -141,6 +153,30 @@ static_assert(!ImplicitLifetimeThroughout<DerivesProof>, "a base class is a subo
 }
 static_assert(refuses_a_union_member(), "a union member is a subobject");
 static_assert(!ImplicitLifetimeThroughout<HoldsReference>, "no lifetime start binds a reference member");
+
+// A marked class is implicit-lifetime, so the marker alone refuses it, and
+// the walk carries the refusal through a member, an array, a base and a
+// union member.
+struct [[=::foundation::lifetime::no_start_over_bytes{}]] MarkedCount {
+    unsigned long long count = 0;
+};
+struct HoldsMarked {
+    MarkedCount count;
+};
+struct DerivesMarked : MarkedCount {};
+static_assert(std::is_implicit_lifetime_v<MarkedCount> && !ImplicitLifetimeThroughout<MarkedCount>,
+              "the marker refuses a class that is implicit-lifetime");
+static_assert(!ImplicitLifetimeThroughout<HoldsMarked> && !ImplicitLifetimeThroughout<MarkedCount[2]>
+                  && !ImplicitLifetimeThroughout<DerivesMarked>,
+              "the marker refuses the class as a member, as an array element and as a base");
+[[nodiscard]] consteval bool refuses_a_marked_union_member() {
+    union MarkedOrByte {
+        unsigned char byte;
+        MarkedCount count;
+    };
+    return !ImplicitLifetimeThroughout<MarkedOrByte>;
+}
+static_assert(refuses_a_marked_union_member(), "the marker refuses the class as a union member");
 
 // The element of the span is const when the storage or T is const, and
 // volatile storage is refused.
