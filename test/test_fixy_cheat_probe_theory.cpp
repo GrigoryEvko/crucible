@@ -9,7 +9,7 @@
 
 #include <crucible/fixy/Fn.h>
 #include <crucible/fixy/Reject.h>
-#include <crucible/fixy/Theory.h>
+#include <crucible/fixy/_Theory.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

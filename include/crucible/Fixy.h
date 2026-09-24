@@ -7,7 +7,7 @@
 
 #define CRUCIBLE_FIXY 1
 
-#include <crucible/fixy/Default.h>
+#include <crucible/fixy/_Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/_Grant.h>
 // Reject.h precedes Profile.h rather than following it alphabetically,

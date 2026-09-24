@@ -3,7 +3,7 @@
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Dim.h>
-#include <crucible/fixy/Default.h>
+#include <crucible/fixy/_Default.h>
 
 #include <tuple>
 #include <type_traits>

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <crucible/fixy/Default.h>
+#include <crucible/fixy/_Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/_Grant.h>
-#include <crucible/fixy/Theory.h>
+#include <crucible/fixy/_Theory.h>
 #include <crucible/safety/_Diagnostic.h>
 
 #include <charconv>

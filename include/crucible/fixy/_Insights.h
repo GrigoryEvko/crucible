@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/fixy/Reject.h>
-#include <crucible/fixy/Theory.h>
+#include <crucible/fixy/_Theory.h>
 #include <crucible/safety/diag/_Insights.h>
 
 CRUCIBLE_DEFINE_INSIGHTS_QV(::crucible::fixy::diag::FixyNotEngaged_Type, ::crucible::safety::diag::Severity::Error,

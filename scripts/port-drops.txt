@@ -212,6 +212,18 @@ crucible/fixy/_Io.h:which_dim  — The axis registration of the io_uring family.
 crucible/fixy/_Mmap.h:which_dim  — The axis registration of the mmap family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
 crucible/fixy/grant/_Ctrl.h:which_dim  — The axis registration of the control-flow family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
 crucible/fixy/_Grant.h:which_dim_v  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Default.h:strict_default_for  → include/fixy/Axis.h  — The table of strict defaults became axis_traits at fixy/Axis.h:333, and its strict member names the pole that the old type or value named.
+crucible/fixy/_Default.h:HasStrictDefault  → include/fixy/Axis.h  — The query is HasStrictPole at fixy/Axis.h:531, over the strict member of axis_traits.
+crucible/fixy/_Default.h:HasDerivedDefault  → include/fixy/Axis.h  — The query is HasDerivedPole at fixy/Axis.h:534, over the derived_from member of axis_traits.
+crucible/fixy/_Theory.h:is_in_unsoundness_corpus  → include/fixy/Corpus.h  — The query is is_in_corpus at fixy/Corpus.h:529, which walks the entry tuple by reflection.
+crucible/fixy/_Theory.h:IsInUnsoundnessCorpus_v  → include/fixy/Corpus.h  — The variable is is_in_corpus_v at fixy/Corpus.h:534.
+crucible/fixy/_Theory.h:NotInTheoryCorpus  → include/fixy/Reject.h  — The gate is NotInCorpus at fixy/Reject.h:170, the negation of is_in_corpus_v.
+crucible/fixy/_Theory.h:corpus_size_v  → include/fixy/Corpus.h  — A hand-written count of the entries. fixy/Corpus.h:500 reads corpus_size off the entry tuple, so no literal remains.
+crucible/fixy/_Theory.h:corpus_cite_for_v  → include/fixy/Corpus.h  — The cite of the matched entry reaches the message inside corpus_full_diagnostic_v at fixy/Corpus.h:570, so no separate accessor remains.
+crucible/fixy/_Theory.h:external_to_verified_without_attest  — One of four entries of the old corpus that the port deleted. fixy/Corpus.h:14 records why: no test referenced them, and each waited on a discharge that no shipped policy gives.
+crucible/fixy/_Theory.h:secret_catastrophic_staleness  — One of four entries of the old corpus that the port deleted. fixy/Corpus.h:14 records why: no test referenced them, and each waited on a discharge that no shipped policy gives.
+crucible/fixy/_Theory.h:secret_payload_without_security_claim  — One of four entries of the old corpus that the port deleted. fixy/Corpus.h:14 records why: no test referenced them, and each waited on a discharge that no shipped policy gives.
+crucible/fixy/_Theory.h:secret_unbounded_termination_channel  — One of four entries of the old corpus that the port deleted. fixy/Corpus.h:14 records why: no test referenced them, and each waited on a discharge that no shipped policy gives.
 
 # ── permissions ─────────────────────────────────────────────────────────
 

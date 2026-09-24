@@ -4,7 +4,7 @@
 // rejection would name one entry while its diagnostic described another.
 // Every assertion in this file is one half of that claim.
 
-#include <crucible/fixy/Theory.h>
+#include <crucible/fixy/_Theory.h>
 #include <crucible/fixy/_Grant.h>
 
 #include <string_view>

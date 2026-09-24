@@ -3,7 +3,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_Capability.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/fixy/Default.h>
+#include <crucible/fixy/_Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/Hw.h>

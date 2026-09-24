@@ -6,7 +6,7 @@
 // warning fires once per instantiation that reaches this header rather
 // than once per binding the retired entry concerns.
 
-#include <crucible/fixy/Default.h>
+#include <crucible/fixy/_Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/_Grant.h>
 #include <crucible/safety/Fn.h>

@@ -5,7 +5,7 @@
 
 #include <crucible/fixy/_Insights.h>
 #include <crucible/fixy/Reject.h>
-#include <crucible/fixy/Theory.h>
+#include <crucible/fixy/_Theory.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/diag/_Insights.h>
 
