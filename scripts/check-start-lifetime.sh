@@ -80,13 +80,15 @@
 # not a use.  For each file and key, the count is the larger count of
 # the two passes, so an arm that this host does not compile still counts.
 #
-# The preprocessed pass keeps its results in start-lifetime-cache/ beside
-# the compile database.  An entry is valid while the command, the
-# compiler binary and the content of each file under the root that the
-# translation unit read stay the same.  A preprocessor failure refuses
-# the run, because a translation unit the guard cannot read can hold a
-# use.  START_LIFETIME_JOBS sets the number of parallel preprocessor
-# runs, and the default is the number of processors, at most 16.
+# The preprocessed pass reads the shared store of scripts/preprocessed.py
+# in preprocessed-cache/ beside the compile database, so this guard and
+# check-proof-routes.py preprocess each translation unit one time between
+# them.  A unit in the store is valid while the command, the compiler
+# binary and the content of each file under the root that the unit read
+# stay the same.  A preprocessor failure refuses the run, because a
+# translation unit the guard cannot read can hold a use.
+# START_LIFETIME_JOBS sets the number of parallel preprocessor runs, and
+# the default is the number of processors, at most 16.
 #
 # What this guard does not see, stated rather than implied
 # --------------------------------------------------------
@@ -132,17 +134,13 @@ usage() {
 
 run_scan() {
     python3 - "$1" "$scan_root" "$allowlist" "$compile_db" "$(dirname "${BASH_SOURCE[0]}")" <<'PY'
-import hashlib
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
-import tempfile
 import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 mode = sys.argv[1]
@@ -151,6 +149,7 @@ allowlist_path = Path(sys.argv[3])
 compile_db = Path(sys.argv[4]).resolve() if sys.argv[4] else None
 sys.path.insert(0, sys.argv[5])
 from cxx_lex import blank, line_of, splice  # noqa: E402
+from preprocessed import Store  # noqa: E402
 
 NAMES = frozenset({"start_lifetime_as", "start_lifetime_as_array"})
 SOURCE_SUFFIXES = frozenset({".c", ".C", ".h", ".H", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".c++", ".h++",
@@ -167,14 +166,7 @@ INCLUDE = re.compile(r'^[ \t]*(?:#|%:)[ \t]*include[ \t]*([<"])([^>"\n]+)[>"]', 
 CHECKED_START = "include/foundation/Lifetime.h"
 # A negative-compile fixture: a file under a test directory named neg or *_neg.
 FIXTURE = re.compile(r"^test/(?:[^/]+/)*(?:neg|[^/]+_neg)/[^/]+$")
-# Bumped when the preprocessed pass reads its output differently, so an
-# older cache entry is not reused.
-SCAN_VERSION = 1
-
 ENTRY = re.compile(r"^(?P<key>.*?)(?: x(?P<count>[1-9][0-9]*))?$")
-# A line marker of preprocessed output: # line "file" flags.
-MARKER = re.compile(rb'# ([0-9]+) "((?:[^"\\]|\\.)*)"[^\n]*')
-NAME_BYTES = b"start_lifetime_as"
 
 
 def is_source(path: Path) -> bool:
@@ -322,185 +314,52 @@ def lexical_scan(uses: dict[str, list[int]]) -> None:
                 pending.append(target)
 
 
-def preprocess_argv(argv: list[str]) -> list[str]:
-    """The compile command with -E, and without the output and dependency-file flags."""
-    out: list[str] = []
-    index = 0
-    while index < len(argv):
-        flag = argv[index]
-        if flag in ("-c", "-MD", "-MMD", "-MP"):
-            index += 1
-        elif flag in ("-o", "-MF", "-MT", "-MQ"):
-            index += 2
-        elif flag.startswith(("-o", "-MF", "-MT", "-MQ")):
-            index += 1
-        else:
-            out.append(flag)
-            index += 1
-    return out + ["-E"]
+def chunk_hits(text: str) -> list[tuple[int, int, str]]:
+    """The uses in the text of one chunk, as (line offset in the chunk, ordinal on the line, key).
 
-
-class ContentHashes:
-    """The SHA-256 of each file under the root, computed once per run."""
-
-    def __init__(self) -> None:
-        self.known: dict[str, str | None] = {}
-
-    def of(self, relative: str) -> str | None:
-        """The hash of the file, or None when it no longer exists."""
-        if relative not in self.known:
-            path = root / relative
-            self.known[relative] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
-        return self.known[relative]
-
-
-def under_root(name: bytes, directory: str, memo: dict) -> str | None:
-    """The root-relative path of a line-marker file name, or None outside the root."""
-    cached = memo.get((name, directory))
-    if cached is not None or (name, directory) in memo:
-        return cached
-    text = name.decode(errors="replace").replace('\\"', '"').replace("\\\\", "\\")
-    result = None
-    if not text.startswith("<"):
-        absolute = os.path.normpath(os.path.join(directory, text))
-        prefix = str(root) + os.sep
-        if absolute.startswith(prefix):
-            result = absolute[len(prefix):]
-    memo[(name, directory)] = result
-    return result
-
-
-def marker_before(data: bytes, offset: int):
-    """The last line marker of the preprocessed output that starts before the offset."""
-    search = offset
-    while search > 0:
-        newline = data.rfind(b"\n# ", 0, search)
-        start = newline + 1 if newline >= 0 else 0
-        marker = MARKER.match(data, start)
-        if marker is not None:
-            return marker
-        if newline < 0:
-            return None
-        search = newline
-    return None
-
-
-def is_identifier_byte(byte: bytes) -> bool:
-    """True when the byte can continue an identifier."""
-    return byte.isalnum() or byte == b"_"
-
-
-def read_preprocessed(data: bytes, directory: str) -> list[list]:
-    """The uses in the preprocessed output that fall in files under the root.
-
-    Each use is [path, line, ordinal on the line, key].  The search runs in
-    the byte-string routines of the interpreter, and a line marker is read
-    only for a hit.  Complexity: linear in the length of the output."""
-    memo: dict = {}
-    hits: list[list] = []
-    ordinals: dict[tuple[str, int], int] = defaultdict(int)
+    A hit counts only when the lexer finds the name as an identifier outside
+    a literal on its line.  Complexity: linear in the length of the text."""
+    found: list[tuple[int, int, str]] = []
+    ordinals: dict[int, int] = defaultdict(int)
     position = 0
-    while (start := data.find(NAME_BYTES, position)) >= 0:
-        end = start + len(NAME_BYTES)
-        if data.startswith(b"_array", end):
-            end += len(b"_array")
-        position = end
-        if is_identifier_byte(data[start - 1:start]) or is_identifier_byte(data[end:end + 1]):
-            continue
-        marker = marker_before(data, start)
-        if marker is None:
-            continue
-        path = under_root(marker.group(2), directory, memo)
-        if path is None:
-            continue
-        line = int(marker.group(1)) + data.count(b"\n", marker.end() + 1, start)
-        line_start = data.rfind(b"\n", 0, start) + 1
-        window = data[line_start:line_start + 4096].decode(errors="replace")
-        column = len(data[line_start:start].decode(errors="replace"))
-        blanked, idents = blank(window, NAMES)
+    while (start := text.find("start_lifetime_as", position)) >= 0:
+        position = start + len("start_lifetime_as")
+        line_start = text.rfind("\n", 0, start) + 1
+        column = start - line_start
+        blanked, idents = blank(text[line_start:line_start + 4096], NAMES)
         if column not in idents:
             continue
-        ordinal = ordinals[(path, line)]
-        ordinals[(path, line)] += 1
-        hits.append([path, line, ordinal, key_at(blanked, column)])
-    return hits
-
-
-def read_dependencies(text: str, directory: str) -> set[str]:
-    """The files under the root that a make-style dependency file names."""
-    memo: dict = {}
-    body = text.replace("\\\n", " ").split(":", 1)[-1]
-    found: set[str] = set()
-    for name in re.split(r"(?<!\\)\s+", body):
-        if name and (path := under_root(name.replace("\\ ", " ").encode(), directory, memo)) is not None:
-            found.add(path)
+        offset = text.count("\n", 0, line_start)
+        found.append((offset, ordinals[offset], key_at(blanked, column)))
+        ordinals[offset] += 1
     return found
 
 
-def compiler_identity(argv: list[str], directory: str) -> list:
-    """The size and modification time of the compiler binary, when it can be found."""
-    binary = argv[0] if os.path.isabs(argv[0]) else (
-        os.path.join(directory, argv[0]) if os.sep in argv[0] else next(
-            (os.path.join(d, argv[0]) for d in os.environ.get("PATH", "").split(os.pathsep)
-             if os.path.isfile(os.path.join(d, argv[0]))), argv[0]))
-    try:
-        info = os.stat(os.path.realpath(binary))
-        return [os.path.realpath(binary), info.st_size, info.st_mtime_ns]
-    except OSError:
-        return [binary]
-
-
 def preprocessed_scan(uses: dict[str, set[tuple[int, int]]], failures: list[str]) -> tuple[int, int, float]:
-    """Run each database entry through the preprocessor, or read its valid cache entry.
+    """Read each database entry from the shared store of scripts/preprocessed.py.
 
-    Complexity: linear in the total size of the preprocessed output; the
-    runs are parallel."""
-    entries = database_entries()
-    cache_dir = compile_db.parent / "start-lifetime-cache"
-    cache_dir.mkdir(exist_ok=True)
-    hashes = ContentHashes()
-    jobs = int(os.environ.get("START_LIFETIME_JOBS", "0") or 0) or min(16, os.cpu_count() or 1)
-
-    def one(entry: dict) -> tuple[list[list], str | None, bool]:
-        argv = entry["arguments"] if "arguments" in entry else shlex.split(entry["command"])
-        directory = entry["directory"]
-        run_argv = preprocess_argv(argv)
-        identity = json.dumps([SCAN_VERSION, run_argv, directory, compiler_identity(argv, directory)])
-        cache_file = cache_dir / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
-        if cache_file.is_file():
-            try:
-                cached = json.loads(cache_file.read_text())
-                if all(hashes.of(path) == digest for path, digest in cached["dependencies"].items()):
-                    return cached["hits"], None, True
-            except (OSError, ValueError, KeyError):
-                pass
-        descriptor, depfile = tempfile.mkstemp(prefix="start-lifetime-", suffix=".d")
-        os.close(descriptor)
-        try:
-            result = subprocess.run(run_argv + ["-MD", "-MF", depfile], cwd=directory, capture_output=True)
-            dependencies = read_dependencies(Path(depfile).read_text(errors="replace"), directory)
-        finally:
-            os.unlink(depfile)
-        if result.returncode != 0:
-            first = result.stderr.decode(errors="replace").strip().splitlines()[:1]
-            return [], f"{entry['file']}: {first[0] if first else 'exit ' + str(result.returncode)}", False
-        hits = read_preprocessed(result.stdout, directory)
-        record = {"hits": hits, "dependencies": {path: hashes.of(path) for path in sorted(dependencies)}}
-        staging = cache_file.with_suffix(f".{os.getpid()}.{id(entry)}.tmp")
-        staging.write_text(json.dumps(record))
-        os.replace(staging, cache_file)
-        return hits, None, False
-
+    The store preprocesses a unit one time for this guard and
+    check-proof-routes.py together.  The hits of a chunk are computed one
+    time for each run, however many units hold the chunk.  Complexity:
+    linear in the number of units times the chunks each holds, plus one
+    scan of each distinct chunk."""
+    store = Store(compile_db, root, int(os.environ.get("START_LIFETIME_JOBS", "0") or 0))
+    of_chunk: dict[str, list[tuple[int, int, str]]] = {}
     begin = time.monotonic()
-    cached = 0
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
-        for hits, failure, from_cache in pool.map(one, entries):
-            cached += from_cache
-            if failure is not None:
-                failures.append(failure)
-            for path, line, ordinal, key in hits:
-                uses[f"{path}:{key}"].add((line, ordinal))
-    return len(entries), cached, time.monotonic() - begin
+    units = cached = 0
+    for unit in store.units():
+        units += 1
+        cached += unit.from_cache
+        if unit.failure is not None:
+            failures.append(unit.failure)
+            continue
+        for chunk in unit.chunks:
+            if chunk.digest not in of_chunk:
+                text = store.text(chunk.digest)
+                of_chunk[chunk.digest] = chunk_hits(text) if "start_lifetime_as" in text else []
+            for offset, ordinal, key in of_chunk[chunk.digest]:
+                uses[f"{chunk.path}:{key}"].add((chunk.line + offset, ordinal))
+    return units, cached, time.monotonic() - begin
 
 
 def main() -> int:

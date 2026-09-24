@@ -65,11 +65,13 @@ each untracked file that .gitignore does not exclude, after
 scripts/cxx_lex.py blanks the comments and the literals.  The preprocessed
 pass runs with --compile-db: it runs each entry of the compile database
 through the preprocessor with the flags of the build, so a shape that a
-macro or token pasting forms is seen too.  Its results stay in
-proof-routes-cache/ beside the compile database, and an entry is valid
-while the command, the compiler binary and each file under the root that
-the translation unit read stay the same.  For each key the count is the
-larger count of the two passes.  A preprocessor failure refuses the run.
+macro or token pasting forms is seen too.  The output comes from the shared
+store of scripts/preprocessed.py, so this guard and check-start-lifetime.sh
+preprocess each translation unit one time between them.  The records of a
+file stay in proof-routes-cache/ beside the compile database, under the key
+of the file's chunk list, so a header that many units expand the same way
+is read one time.  For each key the count is the larger count of the two
+passes.  A preprocessor failure refuses the run.
 
 Out of scope, stated rather than implied
 ----------------------------------------
@@ -104,28 +106,25 @@ Usage
   check-proof-routes.py --self-test         plant each route and prove the verdicts
 """
 
-import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cxx_lex import blank, line_of, splice  # noqa: E402
+from preprocessed import Store, files_of, joined  # noqa: E402
 
 SOURCE_SUFFIXES = frozenset({".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".inl", ".ipp", ".tpp",
                              ".tcc", ".inc", ".ixx", ".cppm"})
 FIXTURE = re.compile(r"^test/(?:[^/]+/)*(?:neg|[^/]+_neg)/[^/]+$")
 BPF = re.compile(r"^include/crucible/[^/]+/bpf/|\.bpf\.c$")
 ENTRY = re.compile(r"^(?P<key>.*?)(?: x(?P<count>[1-9][0-9]*))?$")
-MARKER = re.compile(r'^# ([0-9]+) "((?:[^"\\]|\\.)*)"[^\n]*$', re.M)
 # Bumped when a rule reads the text differently, so an older cache entry
 # is not reused.
 SCAN_VERSION = 1
@@ -332,116 +331,52 @@ def friend_and_primary_names(root: Path, files: list[str]) -> tuple[frozenset[st
     return frozenset(friends), primaries
 
 
-def preprocess_argv(argv: list[str]) -> list[str]:
-    """The compile command with -E, and without the output and dependency-file flags."""
-    out: list[str] = []
-    index = 0
-    while index < len(argv):
-        flag = argv[index]
-        if flag in ("-c", "-MD", "-MMD", "-MP"):
-            index += 1
-        elif flag in ("-o", "-MF", "-MT", "-MQ"):
-            index += 2
-        elif flag.startswith(("-o", "-MF", "-MT", "-MQ")):
-            index += 1
-        else:
-            out.append(flag)
-            index += 1
-    return out + ["-E"]
-
-
-def compiler_identity(binary: str) -> list:
-    """The resolved path, size and modification time of the compiler binary."""
-    found = binary if os.path.isabs(binary) else next(
-        (os.path.join(d, binary) for d in os.environ.get("PATH", "").split(os.pathsep)
-         if os.path.isfile(os.path.join(d, binary))), binary)
-    try:
-        info = os.stat(os.path.realpath(found))
-        return [os.path.realpath(found), info.st_size, info.st_mtime_ns]
-    except OSError:
-        return [found]
-
-
-def segments_by_file(output: str, directory: str, root: Path) -> dict[str, str]:
-    """The preprocessed text of each file under the root, its pieces joined in order."""
-    pieces: dict[str, list[str]] = defaultdict(list)
-    current: str | None = None
-    last = 0
-    for marker in MARKER.finditer(output):
-        if current is not None:
-            pieces[current].append(output[last:marker.start()])
-        name = marker.group(2).replace('\\"', '"').replace("\\\\", "\\")
-        absolute = Path(os.path.normpath(os.path.join(directory, name)))
-        current = str(absolute.relative_to(root)) if absolute.is_relative_to(root) else None
-        last = marker.end()
-    if current is not None:
-        pieces[current].append(output[last:])
-    return {path: "\n".join(parts) for path, parts in pieces.items()}
-
-
 def preprocessed_counts(root: Path, compile_db: Path, proofs, friends, primaries, failures: list[str],
                         tracked: frozenset[str]):
     """The count of each key over the preprocessed output of each database entry, the largest over the entries.
 
     Only a file that the lexical pass also reads counts, so a file that the
     build generates under the root has no key that depends on the name of
-    the build directory."""
-    entries = json.loads(compile_db.read_text())
+    the build directory.  The records of a file name no proof type, so a
+    change to the list of proof names does not invalidate their cache.
+
+    Complexity: linear in the number of units times the files each reads,
+    plus one extraction for each distinct expansion of a file."""
+    store = Store(compile_db, root, int(os.environ.get("PROOF_ROUTES_JOBS", "0") or 0))
     cache_dir = compile_db.parent / "proof-routes-cache"
     cache_dir.mkdir(exist_ok=True)
-    hashes: dict[str, str | None] = {}
+    records_of: dict[str, list[list]] = {}
 
-    def content_hash(path: str) -> str | None:
-        if path not in hashes:
-            file = root / path
-            hashes[path] = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else None
-        return hashes[path]
-
-    # The cache holds the records of each file, which name no proof type,
-    # so a change to the list of proof names does not invalidate it.
-    def one(entry: dict) -> dict[str, list[list]]:
-        argv = entry["arguments"] if "arguments" in entry else shlex.split(entry["command"])
-        directory = entry["directory"]
-        run_argv = preprocess_argv(argv)
-        identity = json.dumps([SCAN_VERSION, run_argv, directory, compiler_identity(argv[0])])
-        cache_file = cache_dir / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
-        if cache_file.is_file():
-            try:
-                cached = json.loads(cache_file.read_text())
-                if all(content_hash(p) == d for p, d in cached["dependencies"].items()):
-                    return cached["records"]
-            except (OSError, ValueError, KeyError):
-                pass
-        result = subprocess.run(run_argv, cwd=directory, capture_output=True, text=True, errors="replace")
-        if result.returncode != 0:
-            first = result.stderr.strip().splitlines()[:1]
-            failures.append(f"{entry['file']}: {first[0] if first else 'exit ' + str(result.returncode)}")
-            return {}
-        records: dict[str, list[list]] = {}
-        segments = segments_by_file(result.stdout, directory, root)
-        for path, text in segments.items():
-            code, _ = blank(text, blank_literals=True)
+    def records(file_key: str, chunks) -> list[list]:
+        """The records of one expansion of a file, from memory, the cache or the text."""
+        if file_key in records_of:
+            return records_of[file_key]
+        cache_file = cache_dir / f"{SCAN_VERSION}-{file_key}.json"
+        try:
+            found = json.loads(cache_file.read_text())
+        except (OSError, ValueError):
+            code, _ = blank(joined(store, chunks), blank_literals=True)
             found = extract(code)
-            if found:
-                records[path] = found
-        record = {"records": records, "dependencies": {p: content_hash(p) for p in sorted(segments)}}
-        staging = cache_file.with_suffix(f".{os.getpid()}.{id(entry)}.tmp")
-        staging.write_text(json.dumps(record))
-        os.replace(staging, cache_file)
-        return records
+            staging = cache_file.with_suffix(f".{os.getpid()}.tmp")
+            staging.write_text(json.dumps(found))
+            os.replace(staging, cache_file)
+        records_of[file_key] = found
+        return found
 
     merged: dict[str, int] = defaultdict(int)
-    jobs = int(os.environ.get("PROOF_ROUTES_JOBS", "0") or 0) or min(16, os.cpu_count() or 1)
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
-        for records in pool.map(one, entries):
-            for path, found in records.items():
-                if path not in tracked or not in_scope(path):
-                    continue
-                counts: dict[str, int] = defaultdict(int)
-                for rule, key, _ in judge(found, proofs, friends, frozenset(primaries_for(path, primaries))):
-                    counts[f"{path}:{rule}:{key}"] += 1
-                for key, count in counts.items():
-                    merged[key] = max(merged[key], count)
+    for unit in store.units():
+        if unit.failure is not None:
+            failures.append(unit.failure)
+            continue
+        for path, (file_key, chunks) in files_of(unit).items():
+            if path not in tracked or not in_scope(path):
+                continue
+            counts: dict[str, int] = defaultdict(int)
+            for rule, key, _ in judge(records(file_key, chunks), proofs, friends,
+                                      frozenset(primaries_for(path, primaries))):
+                counts[f"{path}:{rule}:{key}"] += 1
+            for key, count in counts.items():
+                merged[key] = max(merged[key], count)
     return merged
 
 
@@ -621,6 +556,8 @@ def self_test() -> int:
                     failures.append(f"the {attempt} preprocessed pass missed a union formed by token pasting")
             if not any((root / "proof-routes-cache").glob("*.json")):
                 failures.append("the preprocessed pass wrote no cache entry")
+            if not any((root / "preprocessed-cache" / "units").glob("*.json")):
+                failures.append("the preprocessed pass did not use the shared store")
     for failure in failures:
         print(f"check-proof-routes: SELF-TEST FAILED: {failure}", file=sys.stderr)
     if failures:

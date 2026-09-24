@@ -789,6 +789,14 @@ add_test(NAME proof_routes
           --proof-names-binary $<TARGET_FILE:test_forgeable_proofs>)
 set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
     LABELS "ci_guard")
+# scripts/preprocessed.py preprocesses each unit of the compile database
+# one time for check-start-lifetime.sh and check-proof-routes.py together.
+# The self-test proves that a warm run reads the store, that a changed
+# header makes its units stale, and that two runs at one time share work.
+add_test(NAME preprocessed_store_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/preprocessed.py --self-test)
+set_tests_properties(preprocessed_store_self_test PROPERTIES
+    LABELS "ci_guard")
 # A linear token is an empty class, so a moved-from token looks live, and
 # a second std::move of one Permission gives two owners of one region.
 # sizeof(Permission) stays 1, so no byte records the move.
