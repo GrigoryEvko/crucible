@@ -416,12 +416,12 @@ foundation_test(test_permission_shared_foundation test_permission_shared.cpp)
 foundation_test(test_permission_shared_xor_exclusive_foundation test_permission_shared_xor_exclusive.cpp)
 foundation_test(test_read_view_foundation test_read_view.cpp)
 
-# A token split into subregions that no splits_into manifest declares.
+# A token split into subregions that no can_split_into manifest declares.
 # The location regex proves the rejection came from the split's own
 # static_assert in Permission.h.
 foundation_neg_compile_test(neg_permission_split_undeclared_subregion
   "static assertion failed"
-  "foundation/permissions/Permission\\.h:[0-9]+:[0-9]+: error: static assertion failed: mint_permission_split<L, R>\\(Permission<In>&&\\) requires splits_into<In, L, R>::value")
+  "foundation/permissions/Permission\\.h:[0-9]+:[0-9]+: error: static assertion failed: mint_permission_split<L, R>\\(Permission<In>&&\\) requires can_split_into<In, L, R>::value")
 
 # A fork whose child pack is not a declared partition of the parent.
 # The satisfaction notes name the fork's fit concept and the pack trait
@@ -429,7 +429,7 @@ foundation_neg_compile_test(neg_permission_split_undeclared_subregion
 foundation_neg_compile_test(neg_permission_fork_pack_does_not_partition
   "constraints not satisfied"
   "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
-  "splits_into_pack_v<Parent, Children \\.\\.\\.>.*evaluated to .false.")
+  "can_split_into_pack_v<Parent, Children \\.\\.\\.>.*evaluated to .false.")
 
 # The spawning arm in a context whose row has no Bg effect.  The
 # partition is declared, so the only atom that fails is the capability.

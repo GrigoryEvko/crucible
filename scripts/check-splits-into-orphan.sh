@@ -4,6 +4,12 @@
 # splits_into_authoring_witness / splits_into_pack_authoring_witness
 # orphan-specialization guard.
 #
+# The old tree spells the four traits as above.  The new tree
+# (foundation/permissions/Permission.h) spells them can_split_into,
+# can_split_into_pack, has_split_authoring_witness and
+# has_split_pack_authoring_witness.  The guard scans the two spellings,
+# qualified or not.
+#
 # `splits_into<Parent, L, R>` and `splits_into_pack<Parent, Children...>`
 # are the declarative manifests that gate `mint_permission_split` /
 # `mint_permission_combine` / `mint_permission_fork`.  Beside them sit
@@ -140,6 +146,14 @@ struct splits_into<planted::Parent, planted::Left, planted::Right> {
 };
 // struct splits_into_pack<planted::Parent, planted::Left> — doc-comment only.
 }  // namespace crucible
+template <>
+struct foundation::permissions::can_split_into_pack<crucible::planted::Parent, crucible::planted::Left> {
+    static constexpr bool value = true;
+};
+template <>
+struct ::foundation::permissions::has_split_authoring_witness<crucible::planted::Parent, crucible::planted::Left, crucible::planted::Right> {
+    static constexpr bool value = true;
+};
 PLANTED
 
         cat >"$tmp_root/$exempt_rel" <<'EXEMPT'
@@ -166,7 +180,7 @@ struct ChanRight {};
 }  // namespace fixy::planted
 namespace foundation::permissions {
 template <>
-struct splits_into<::fixy::planted::ChanParent, ::fixy::planted::ChanLeft, ::fixy::planted::ChanRight> {
+struct can_split_into<::fixy::planted::ChanParent, ::fixy::planted::ChanLeft, ::fixy::planted::ChanRight> {
     static constexpr bool value = true;
 };
 }  // namespace foundation::permissions
@@ -194,6 +208,14 @@ FIXY_EXEMPT
         if grep -qF "$planted_rel:12" "$scanner_stderr"; then
             self_test_fail 'pure-comment line leaked through the filter.'
         fi
+        # The new-tree spelling, qualified at the specialization, sits on
+        # line 15.  The same with a leading :: sits on line 19.
+        if ! grep -qF "$planted_rel:15" "$scanner_stderr"; then
+            self_test_fail "qualified can_split_into_pack at $planted_rel:15 not caught."
+        fi
+        if ! grep -qF "$planted_rel:19" "$scanner_stderr"; then
+            self_test_fail "qualified has_split_authoring_witness at $planted_rel:19 not caught."
+        fi
         # The concurrent/ copy must be exempt by authoring location.
         if grep -qF "$exempt_rel" "$scanner_stderr"; then
             self_test_fail 'authoring-location exemption leaked.'
@@ -216,12 +238,15 @@ esac
 
 # ── Scan-root override for --self-test recursion ─────────────────────
 scan_root="${CRUCIBLE_SPLITS_INTO_ORPHAN_TEST_ROOT:-$root}"
-# Matches the four orphan-rejected traits:
-#   splits_into< ...                        — binary splits manifest
-#   splits_into_pack< ...                   — N-ary splits manifest
-#   splits_into_authoring_witness< ...      — binary authoring witness
-#   splits_into_pack_authoring_witness< ... — N-ary authoring witness
-pattern='(struct|class)\s+splits_into(_pack)?(_authoring_witness)?\s*<'
+# Matches the four orphan-rejected traits in the two spellings, with or
+# without a namespace qualifier before the name:
+#   splits_into< / can_split_into<                         — binary manifest
+#   splits_into_pack< / can_split_into_pack<               — N-ary manifest
+#   splits_into_authoring_witness< /
+#   has_split_authoring_witness<                           — binary witness
+#   splits_into_pack_authoring_witness< /
+#   has_split_pack_authoring_witness<                      — N-ary witness
+pattern='(struct|class)\s+(::\s*)?(\w+\s*::\s*)*(splits_into(_pack)?(_authoring_witness)?|can_split_into(_pack)?|has_split(_pack)?_authoring_witness)\s*<'
 status=0
 
 while IFS=: read -r file line text; do

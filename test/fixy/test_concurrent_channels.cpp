@@ -66,18 +66,18 @@ static_assert(!std::is_same_v<Spsc::producer_tag, Mpsc::producer_tag>);
 // The split relation admits exactly the channel's own triple, in that
 // order, and both the binary and the variadic form carry an authoring
 // witness beside them so a forged half is caught.
-static_assert(perm::splits_into_v<Spsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
-static_assert(perm::splits_into_authoring_witness_v<Spsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
-static_assert(perm::splits_into_pack_v<Spsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
-static_assert(perm::splits_into_pack_authoring_witness_v<Spsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
-static_assert(perm::splits_into_v<Mpsc::whole_tag, Mpsc::producer_tag, Mpsc::consumer_tag>);
+static_assert(perm::can_split_into_v<Spsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
+static_assert(perm::has_split_authoring_witness_v<Spsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
+static_assert(perm::can_split_into_pack_v<Spsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
+static_assert(perm::has_split_pack_authoring_witness_v<Spsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
+static_assert(perm::can_split_into_v<Mpsc::whole_tag, Mpsc::producer_tag, Mpsc::consumer_tag>);
 
 // Nothing else splits.  Mixing two channels' tags, or reversing the
 // halves, is not a relation edge.
-static_assert(!perm::splits_into_v<Spsc::whole_tag, Spsc::consumer_tag, Spsc::producer_tag>);
-static_assert(!perm::splits_into_v<Spsc::whole_tag, OtherSpsc::producer_tag, Spsc::consumer_tag>);
-static_assert(!perm::splits_into_v<Spsc::whole_tag, Mpsc::producer_tag, Mpsc::consumer_tag>);
-static_assert(!perm::splits_into_v<OtherSpsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
+static_assert(!perm::can_split_into_v<Spsc::whole_tag, Spsc::consumer_tag, Spsc::producer_tag>);
+static_assert(!perm::can_split_into_v<Spsc::whole_tag, OtherSpsc::producer_tag, Spsc::consumer_tag>);
+static_assert(!perm::can_split_into_v<Spsc::whole_tag, Mpsc::producer_tag, Mpsc::consumer_tag>);
+static_assert(!perm::can_split_into_v<OtherSpsc::whole_tag, Spsc::producer_tag, Spsc::consumer_tag>);
 
 // ── The declared footprint ───────────────────────────────────────────
 

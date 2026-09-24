@@ -150,10 +150,17 @@ using IdleMachine = ::fixy::Machine<Idle, ^^idle_edges>;
 
 // The split that the spawn fit reads, declared beside its tags.
 template <>
-struct foundation::permissions::splits_into_pack<armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft,
+struct foundation::permissions::can_split_into_pack<armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft,
                                                  armed_roster_witness::SpawnRight> : std::true_type {};
 template <>
-struct foundation::permissions::splits_into_pack_authoring_witness<
+struct foundation::permissions::has_split_pack_authoring_witness<
+    armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft, armed_roster_witness::SpawnRight>
+    : std::true_type {};
+template <>
+struct foundation::permissions::can_split_into<armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft,
+                                               armed_roster_witness::SpawnRight> : std::true_type {};
+template <>
+struct foundation::permissions::has_split_authoring_witness<
     armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft, armed_roster_witness::SpawnRight>
     : std::true_type {};
 
@@ -262,6 +269,46 @@ struct foundation::contracts::armed_instances<^^fp::detail::ctx_admits_tuple> {
                               fp::detail::ctx_admits_tuple<w::BgIoCtx, std::tuple<w::RegionTag, fp::tag::HugePageTag>>>;
     using refuses = witnesses<fp::detail::ctx_admits_tuple<w::BgCtx, std::tuple<fp::tag::HugePageTag>>,
                               fp::detail::ctx_admits_tuple<w::BgCtx, std::tuple<w::RegionTag, fp::tag::HugePageTag>>>;
+};
+
+// A split manifest and its authoring witness hold only for the parent
+// and the children in the order that the author declared.  A reversed
+// or undeclared split holds neither.
+template <>
+struct foundation::contracts::armed_instances<^^fp::can_split_into> {
+    using accepts = witnesses<fp::can_split_into<w::SpawnWhole, w::SpawnLeft, w::SpawnRight>>;
+    using refuses = witnesses<fp::can_split_into<w::SpawnWhole, w::SpawnRight, w::SpawnLeft>,
+                              fp::can_split_into<w::SpawnLeft, w::SpawnWhole, w::SpawnRight>>;
+};
+
+template <>
+struct foundation::contracts::armed_instances<^^fp::has_split_authoring_witness> {
+    using accepts = witnesses<fp::has_split_authoring_witness<w::SpawnWhole, w::SpawnLeft, w::SpawnRight>>;
+    using refuses = witnesses<fp::has_split_authoring_witness<w::SpawnWhole, w::SpawnRight, w::SpawnLeft>,
+                              fp::has_split_authoring_witness<w::SpawnLeft, w::SpawnWhole, w::SpawnRight>>;
+};
+
+template <>
+struct foundation::contracts::armed_instances<^^fp::can_split_into_pack> {
+    using accepts = witnesses<fp::can_split_into_pack<w::SpawnWhole, w::SpawnLeft, w::SpawnRight>>;
+    using refuses = witnesses<fp::can_split_into_pack<w::SpawnWhole, w::SpawnRight, w::SpawnLeft>,
+                              fp::can_split_into_pack<w::SpawnWhole, w::SpawnLeft>>;
+};
+
+template <>
+struct foundation::contracts::armed_instances<^^fp::has_split_pack_authoring_witness> {
+    using accepts = witnesses<fp::has_split_pack_authoring_witness<w::SpawnWhole, w::SpawnLeft, w::SpawnRight>>;
+    using refuses = witnesses<fp::has_split_pack_authoring_witness<w::SpawnWhole, w::SpawnRight, w::SpawnLeft>,
+                              fp::has_split_pack_authoring_witness<w::SpawnWhole, w::SpawnLeft>>;
+};
+
+// A tag pack is distinct when no tag occurs twice in it.
+template <>
+struct foundation::contracts::armed_instances<^^fp::detail::is_each_tag_distinct> {
+    using accepts = witnesses<fp::detail::is_each_tag_distinct<>,
+                              fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight>>;
+    using refuses = witnesses<fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnLeft>,
+                              fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight, w::SpawnLeft>>;
 };
 
 // ── fixy: the throws atom, spawn and io ─────────────────────────────

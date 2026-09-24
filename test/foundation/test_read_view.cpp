@@ -150,10 +150,10 @@ struct Right {
 
 namespace foundation::permissions {
 template <>
-struct splits_into_pack<fork_tags::Whole, fork_tags::Left, fork_tags::Right> : std::true_type {};
+struct can_split_into_pack<fork_tags::Whole, fork_tags::Left, fork_tags::Right> : std::true_type {};
 
 template <>
-struct splits_into_pack_authoring_witness<fork_tags::Whole, fork_tags::Left, fork_tags::Right> : std::true_type {};
+struct has_split_pack_authoring_witness<fork_tags::Whole, fork_tags::Left, fork_tags::Right> : std::true_type {};
 }  // namespace foundation::permissions
 
 namespace {

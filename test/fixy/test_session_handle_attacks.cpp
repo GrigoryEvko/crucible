@@ -118,17 +118,17 @@ struct Right2 {
 }  // namespace attack_tags
 
 template <>
-struct foundation::permissions::splits_into_pack<attack_tags::Whole, attack_tags::Left, attack_tags::Right>
+struct foundation::permissions::can_split_into_pack<attack_tags::Whole, attack_tags::Left, attack_tags::Right>
     : std::true_type {};
 template <>
-struct foundation::permissions::splits_into_pack_authoring_witness<attack_tags::Whole, attack_tags::Left,
-                                                                    attack_tags::Right> : std::true_type {};
+struct foundation::permissions::has_split_pack_authoring_witness<attack_tags::Whole, attack_tags::Left,
+                                                                  attack_tags::Right> : std::true_type {};
 template <>
-struct foundation::permissions::splits_into_pack<attack_tags::Whole2, attack_tags::Left2, attack_tags::Right2>
+struct foundation::permissions::can_split_into_pack<attack_tags::Whole2, attack_tags::Left2, attack_tags::Right2>
     : std::true_type {};
 template <>
-struct foundation::permissions::splits_into_pack_authoring_witness<attack_tags::Whole2, attack_tags::Left2,
-                                                                    attack_tags::Right2> : std::true_type {};
+struct foundation::permissions::has_split_pack_authoring_witness<attack_tags::Whole2, attack_tags::Left2,
+                                                                  attack_tags::Right2> : std::true_type {};
 
 namespace {
 

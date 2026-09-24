@@ -212,11 +212,11 @@ mint_split(OwnedRegion<T, Tag, Brand>&& region) noexcept;  // MINT-PATTERN-OK: t
 namespace foundation::permissions {
 
 template <typename Parent, typename SplitName, std::size_t... Is>
-struct splits_into_pack<Parent, ::fixy::Slice<Parent, Is, SplitName>...> : std::true_type {};
+struct can_split_into_pack<Parent, ::fixy::Slice<Parent, Is, SplitName>...> : std::true_type {};
 
 // Specialize this witness in lockstep with the specialization above.
 template <typename Parent, typename SplitName, std::size_t... Is>
-struct splits_into_pack_authoring_witness<Parent, ::fixy::Slice<Parent, Is, SplitName>...> : std::true_type {};
+struct has_split_pack_authoring_witness<Parent, ::fixy::Slice<Parent, Is, SplitName>...> : std::true_type {};
 
 }  // namespace foundation::permissions
 
@@ -358,7 +358,7 @@ public:
     // The inverse of split_into.  The receipt and every shard are
     // surrendered here, and the shards' Slice permissions are combined
     // back into the parent's.  mint_permission_combine_n checks that the
-    // shard tags mirror a declared splits_into_pack and that every shard
+    // shard tags mirror a declared can_split_into_pack and that every shard
     // carries this region's brand; the receipt adds what the shards
     // cannot say, which is that one split produced them and that this
     // rebuild is the only one that split authorizes.
@@ -511,10 +511,10 @@ static_assert(::foundation::permissions::has_permission_row_v<Slice<detail::owne
               "a shard has its parent's row");
 
 static_assert(
-    ::foundation::permissions::splits_into_pack_v<
+    ::foundation::permissions::can_split_into_pack_v<
         detail::owned_region_test_tag, Slice<detail::owned_region_test_tag, 0>, Slice<detail::owned_region_test_tag, 1>,
         Slice<detail::owned_region_test_tag, 2>, Slice<detail::owned_region_test_tag, 3>>,
-    "Slice<Parent, 0..N-1> must auto-specialize splits_into_pack");
+    "Slice<Parent, 0..N-1> must auto-specialize can_split_into_pack");
 static_assert(::foundation::permissions::well_authored_split_pack_v<detail::owned_region_test_tag,
                                                                     Slice<detail::owned_region_test_tag, 0>>,
               "Slice<Parent, 0..N-1> must ship the authoring witness beside the manifest");

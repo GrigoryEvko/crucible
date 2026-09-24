@@ -1,5 +1,5 @@
 // The fork hands each body one child token, and the children must be
-// a declared partition of the parent.  No splits_into_pack<Whole, Left,
+// a declared partition of the parent.  No can_split_into_pack<Whole, Left,
 // Right> is declared here, so the fork's fit concept is not satisfied.
 
 #include <foundation/effects/Ctx.h>

@@ -63,11 +63,11 @@ struct Peer {
 }  // namespace channel_tags
 
 template <>
-struct foundation::permissions::splits_into_pack<channel_tags::Whole, channel_tags::Self, channel_tags::Peer>
+struct foundation::permissions::can_split_into_pack<channel_tags::Whole, channel_tags::Self, channel_tags::Peer>
     : std::true_type {};
 template <>
-struct foundation::permissions::splits_into_pack_authoring_witness<channel_tags::Whole, channel_tags::Self,
-                                                                    channel_tags::Peer> : std::true_type {};
+struct foundation::permissions::has_split_pack_authoring_witness<channel_tags::Whole, channel_tags::Self,
+                                                                  channel_tags::Peer> : std::true_type {};
 
 namespace {
 

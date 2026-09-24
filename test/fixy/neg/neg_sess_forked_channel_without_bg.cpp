@@ -33,9 +33,9 @@ using Proto = s::Send<Msg, s::End>;
 
 namespace foundation::permissions {
 template <>
-struct splits_into_pack<Whole, Left, Right> : std::true_type {};
+struct can_split_into_pack<Whole, Left, Right> : std::true_type {};
 template <>
-struct splits_into_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
+struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 }  // namespace foundation::permissions
 
 int main() {

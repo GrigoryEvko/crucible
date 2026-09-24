@@ -37,7 +37,7 @@
 using ::fixy::OwnedRegion;
 using ::fixy::Slice;
 using ::foundation::permissions::mint_permission_root;
-using ::foundation::permissions::splits_into_pack_v;
+using ::foundation::permissions::can_split_into_pack_v;
 
 struct TestFailure {};
 
@@ -118,9 +118,9 @@ void test_compile_time_properties() {
 
     // The split relation is generated rather than written out, so these
     // three widths stand in for any N.
-    static_assert(splits_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>>);
-    static_assert(splits_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>, Slice<DataA, 2>, Slice<DataA, 3>>);
-    static_assert(splits_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>, Slice<DataA, 2>, Slice<DataA, 3>,
+    static_assert(can_split_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>>);
+    static_assert(can_split_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>, Slice<DataA, 2>, Slice<DataA, 3>>);
+    static_assert(can_split_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>, Slice<DataA, 2>, Slice<DataA, 3>,
                                      Slice<DataA, 4>, Slice<DataA, 5>, Slice<DataA, 6>, Slice<DataA, 7>>);
 
     // The detection surface, with the cv-ref strip, and the two

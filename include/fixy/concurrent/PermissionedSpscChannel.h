@@ -194,26 +194,26 @@ private:
 
 // Both the binary and the variadic split forms are specialized, so a
 // caller can reach for either one.  The authoring witnesses are
-// deliberately redundant: a forged splits_into alone is caught by the
+// deliberately redundant: a forged can_split_into alone is caught by the
 // missing witness beside it.
 
 namespace foundation::permissions {
 
 template <typename UserTag>
-struct splits_into<::fixy::concurrent::spsc_tag::Whole<UserTag>, ::fixy::concurrent::spsc_tag::Producer<UserTag>,
+struct can_split_into<::fixy::concurrent::spsc_tag::Whole<UserTag>, ::fixy::concurrent::spsc_tag::Producer<UserTag>,
                    ::fixy::concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack<::fixy::concurrent::spsc_tag::Whole<UserTag>, ::fixy::concurrent::spsc_tag::Producer<UserTag>,
+struct can_split_into_pack<::fixy::concurrent::spsc_tag::Whole<UserTag>, ::fixy::concurrent::spsc_tag::Producer<UserTag>,
                         ::fixy::concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_authoring_witness<::fixy::concurrent::spsc_tag::Whole<UserTag>,
+struct has_split_authoring_witness<::fixy::concurrent::spsc_tag::Whole<UserTag>,
                                      ::fixy::concurrent::spsc_tag::Producer<UserTag>,
                                      ::fixy::concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack_authoring_witness<::fixy::concurrent::spsc_tag::Whole<UserTag>,
+struct has_split_pack_authoring_witness<::fixy::concurrent::spsc_tag::Whole<UserTag>,
                                           ::fixy::concurrent::spsc_tag::Producer<UserTag>,
                                           ::fixy::concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 

@@ -21,9 +21,9 @@ struct Right {
 
 namespace foundation::permissions {
 template <>
-struct splits_into<Whole, Left, Right> : std::true_type {};
+struct can_split_into<Whole, Left, Right> : std::true_type {};
 template <>
-struct splits_into_authoring_witness<Whole, Left, Right> : std::true_type {};
+struct has_split_authoring_witness<Whole, Left, Right> : std::true_type {};
 }  // namespace foundation::permissions
 
 int main() {

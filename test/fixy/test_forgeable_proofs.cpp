@@ -197,7 +197,7 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fe::is_exec_ctx,
     ^^fe::is_subrow,
     ^^fe::Row,
-    ^^fp::detail::all_distinct_tags_rec,
+    ^^fp::detail::is_each_tag_distinct,
     ^^fp::detail::combine_n_manifest,
     ^^fp::detail::ctx_admits_tuple,
     ^^fp::detail::is_permission_impl,
@@ -212,10 +212,10 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fp::perm_set_insert,
     ^^fp::perm_set_remove,
     ^^fp::perm_set_union,
-    ^^fp::splits_into,
-    ^^fp::splits_into_authoring_witness,
-    ^^fp::splits_into_pack,
-    ^^fp::splits_into_pack_authoring_witness,
+    ^^fp::can_split_into,
+    ^^fp::has_split_authoring_witness,
+    ^^fp::can_split_into_pack,
+    ^^fp::has_split_pack_authoring_witness,
 };
 
 struct ForgeVerdict {

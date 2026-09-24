@@ -1,4 +1,4 @@
-// A split is only as sound as its manifest.  No splits_into<Whole,
+// A split is only as sound as its manifest.  No can_split_into<Whole,
 // Left, Right> is declared here, so the token split refuses to mint
 // two subregion tokens out of the parent.
 

@@ -75,20 +75,20 @@ inline constexpr ::foundation::fail_closed::edge<permission_row_compile_tags::Bl
 namespace foundation::permissions {
 
 template <>
-struct splits_into<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
-                   permission_row_compile_tags::BlockChild> : std::true_type {};
+struct can_split_into<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
+                      permission_row_compile_tags::BlockChild> : std::true_type {};
 
 template <>
-struct splits_into_pack<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
-                        permission_row_compile_tags::BlockChild> : std::true_type {};
+struct can_split_into_pack<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
+                           permission_row_compile_tags::BlockChild> : std::true_type {};
 
 template <>
-struct splits_into_authoring_witness<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
-                                     permission_row_compile_tags::BlockChild> : std::true_type {};
+struct has_split_authoring_witness<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
+                                   permission_row_compile_tags::BlockChild> : std::true_type {};
 
 template <>
-struct splits_into_pack_authoring_witness<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
-                                          permission_row_compile_tags::BlockChild> : std::true_type {};
+struct has_split_pack_authoring_witness<permission_row_compile_tags::Whole, permission_row_compile_tags::IoChild,
+                                        permission_row_compile_tags::BlockChild> : std::true_type {};
 
 }  // namespace foundation::permissions
 

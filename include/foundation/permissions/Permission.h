@@ -76,7 +76,7 @@
 namespace foundation::permissions {
 
 // An unconstrained tag fails silently rather than loudly: a
-// `Permission<Tag*>` compiles, but the splits_into specialization
+// `Permission<Tag*>` compiles, but the can_split_into specialization
 // written for `Tag` never matches it and the pool instantiates under a
 // different key, so every discipline check quietly stops applying.
 
@@ -124,45 +124,45 @@ constexpr Permission<Parent, Brand> permission_fork_(Ctx const& ctx, Permission<
 // build-time source scan rejects one that is not.
 
 template <typename Parent, typename L, typename R>
-struct splits_into : std::false_type {};
+struct can_split_into : std::false_type {};
 
 template <typename Parent, typename L, typename R>
-inline constexpr bool splits_into_v = splits_into<Parent, L, R>::value;
+inline constexpr bool can_split_into_v = can_split_into<Parent, L, R>::value;
 
 template <typename Parent, typename... Children>
-struct splits_into_pack : std::false_type {};
+struct can_split_into_pack : std::false_type {};
 
 template <typename Parent, typename... Children>
-inline constexpr bool splits_into_pack_v = splits_into_pack<Parent, Children...>::value;
+inline constexpr bool can_split_into_pack_v = can_split_into_pack<Parent, Children...>::value;
 
 // A second trait that every legitimate split must specialize alongside
 // the first, in the same translation unit.  The duplication is not
-// redundant.  A forged specialization of splits_into alone is caught
+// redundant.  A forged specialization of can_split_into alone is caught
 // here, at the mint gate.  A forged specialization of both is caught by
 // the build-time source scan, which looks for either trait name outside
 // the locations allowed to author manifests.  Defeating the discipline
 // takes both.
 
 template <typename Parent, typename L, typename R>
-struct splits_into_authoring_witness : std::false_type {};
+struct has_split_authoring_witness : std::false_type {};
 
 template <typename Parent, typename L, typename R>
-inline constexpr bool splits_into_authoring_witness_v = splits_into_authoring_witness<Parent, L, R>::value;
+inline constexpr bool has_split_authoring_witness_v = has_split_authoring_witness<Parent, L, R>::value;
 
 template <typename Parent, typename... Children>
-struct splits_into_pack_authoring_witness : std::false_type {};
+struct has_split_pack_authoring_witness : std::false_type {};
 
 template <typename Parent, typename... Children>
-inline constexpr bool splits_into_pack_authoring_witness_v =
-    splits_into_pack_authoring_witness<Parent, Children...>::value;
+inline constexpr bool has_split_pack_authoring_witness_v =
+    has_split_pack_authoring_witness<Parent, Children...>::value;
 
 template <typename Parent, typename L, typename R>
 inline constexpr bool well_authored_split_v =
-    splits_into_v<Parent, L, R> && splits_into_authoring_witness_v<Parent, L, R>;
+    can_split_into_v<Parent, L, R> && has_split_authoring_witness_v<Parent, L, R>;
 
 template <typename Parent, typename... Children>
 inline constexpr bool well_authored_split_pack_v =
-    splits_into_pack_v<Parent, Children...> && splits_into_pack_authoring_witness_v<Parent, Children...>;
+    can_split_into_pack_v<Parent, Children...> && has_split_pack_authoring_witness_v<Parent, Children...>;
 
 // The split manifests say which parent a set of children decomposes,
 // but nothing about whether those children name disjoint regions.  A
@@ -173,16 +173,16 @@ inline constexpr bool well_authored_split_pack_v =
 namespace detail {
 
 template <typename... Children>
-struct all_distinct_tags_rec : std::true_type {};
+struct is_each_tag_distinct : std::true_type {};
 
 template <typename Head, typename... Rest>
-struct all_distinct_tags_rec<Head, Rest...>
-    : std::bool_constant<(!std::is_same_v<Head, Rest> && ...) && all_distinct_tags_rec<Rest...>::value> {};
+struct is_each_tag_distinct<Head, Rest...>
+    : std::bool_constant<(!std::is_same_v<Head, Rest> && ...) && is_each_tag_distinct<Rest...>::value> {};
 
 }  // namespace detail
 
 template <typename... Children>
-inline constexpr bool all_distinct_tags_v = detail::all_distinct_tags_rec<Children...>::value;
+inline constexpr bool all_distinct_tags_v = detail::is_each_tag_distinct<Children...>::value;
 
 // ── The effect row of a permission tag ───────────────────────────────
 //
@@ -710,19 +710,19 @@ mint_permission_split(Args&&...) noexcept {
                   "mint_permission_split<L, R>(Permission<In>&&) without ExecCtx is "
                   "only valid when parent and child permission rows are Row<>.  Use "
                   "the ctx-bound split overload for row-bearing permission tags.");
-    static_assert(splits_into_v<In, L, R>, "mint_permission_split<L, R>(Permission<In>&&) requires "
-                                           "splits_into<In, L, R>::value to be specialized true.  "
+    static_assert(can_split_into_v<In, L, R>, "mint_permission_split<L, R>(Permission<In>&&) requires "
+                                           "can_split_into<In, L, R>::value to be specialized true.  "
                                            "Declare the split in the same TU that defines the tags.");
-    static_assert(splits_into_authoring_witness_v<In, L, R>, "splits_into<In, L, R> is true but the accompanying "
-                                                             "splits_into_authoring_witness<In, L, R> specialization "
+    static_assert(has_split_authoring_witness_v<In, L, R>, "can_split_into<In, L, R> is true but the accompanying "
+                                                             "has_split_authoring_witness<In, L, R> specialization "
                                                              "is missing.  Every legitimate split ships the witness in "
                                                              "the same TU as the trait.  Add `template <> struct "
-                                                             "splits_into_authoring_witness<In, L, R> : "
-                                                             "std::true_type {};` next to the splits_into "
+                                                             "has_split_authoring_witness<In, L, R> : "
+                                                             "std::true_type {};` next to the can_split_into "
                                                              "specialization.");
     static_assert(all_distinct_tags_v<L, R>, "mint_permission_split<L, R> requires L and R to be "
                                              "DISTINCT region tags.  A manifest declaring "
-                                             "splits_into<In, A, A> would mint two Permission<A> from one "
+                                             "can_split_into<In, A, A> would mint two Permission<A> from one "
                                              "parent — two linear tokens for the SAME region, aliasing "
                                              "the very disjointness the CSL frame rule proves.");
     return std::pair<Permission<L, Brand>, Permission<R, Brand>>{Permission<L, Brand>{perm_mint_key{}},
@@ -748,10 +748,10 @@ mint_permission_combine(Args&&...) noexcept {
                       || (permission_row_empty_v<In> && permission_row_empty_v<L> && permission_row_empty_v<R>),
                   "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
                   "without ExecCtx is only valid for Row<> permission tags.");
-    static_assert(splits_into_v<In, L, R>, "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
-                                           "requires splits_into<In, L, R>::value true.");
-    static_assert(splits_into_authoring_witness_v<In, L, R>, "splits_into_authoring_witness<In, L, R> missing for "
-                                                             "combine; declare it next to the splits_into "
+    static_assert(can_split_into_v<In, L, R>, "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
+                                           "requires can_split_into<In, L, R>::value true.");
+    static_assert(has_split_authoring_witness_v<In, L, R>, "has_split_authoring_witness<In, L, R> missing for "
+                                                             "combine; declare it next to the can_split_into "
                                                              "specialization.");
     return Permission<In, Brand>{perm_mint_key{}};
 }
@@ -771,15 +771,15 @@ mint_permission_split_n(Args&&...) noexcept {
                   "mint_permission_split_n<Children...>(Permission<In>&&) without ExecCtx "
                   "is only valid when every permission row is Row<>.  Use the ctx-bound "
                   "split_n overload for row-bearing permission tags.");
-    static_assert(splits_into_pack_v<In, Children...>, "mint_permission_split_n<Children...>(Permission<In>&&) "
-                                                       "requires splits_into_pack<In, Children...>::value true.");
-    static_assert(splits_into_pack_authoring_witness_v<In, Children...>,
-                  "splits_into_pack_authoring_witness<In, Children...> "
-                  "missing; declare it next to the splits_into_pack "
+    static_assert(can_split_into_pack_v<In, Children...>, "mint_permission_split_n<Children...>(Permission<In>&&) "
+                                                       "requires can_split_into_pack<In, Children...>::value true.");
+    static_assert(has_split_pack_authoring_witness_v<In, Children...>,
+                  "has_split_pack_authoring_witness<In, Children...> "
+                  "missing; declare it next to the can_split_into_pack "
                   "specialization in the same TU.");
     static_assert(all_distinct_tags_v<Children...>, "mint_permission_split_n<Children...> requires the "
                                                     "child tags to be PAIRWISE DISTINCT.  A manifest declaring "
-                                                    "splits_into_pack<In, A, A, ...> would mint two Permission<A> "
+                                                    "can_split_into_pack<In, A, A, ...> would mint two Permission<A> "
                                                     "from one parent — aliasing the same region across the "
                                                     "disjoint children the CSL frame rule promises.");
     return std::tuple<Permission<Children, Brand>...>{Permission<Children, Brand>{perm_mint_key{}}...};
@@ -794,8 +794,8 @@ template <typename Parent, typename... Children>
 struct combine_n_manifest<Parent, std::tuple<Children...>> {
     static constexpr bool rows_declared = has_permission_row_v<Parent> && (has_permission_row_v<Children> && ...);
     static constexpr bool rows_empty = permission_row_empty_v<Parent> && (permission_row_empty_v<Children> && ...);
-    static constexpr bool declared = splits_into_pack_v<Parent, Children...>;
-    static constexpr bool witnessed = splits_into_pack_authoring_witness_v<Parent, Children...>;
+    static constexpr bool declared = can_split_into_pack_v<Parent, Children...>;
+    static constexpr bool witnessed = has_split_pack_authoring_witness_v<Parent, Children...>;
     static constexpr bool distinct = all_distinct_tags_v<Children...>;
 };
 
@@ -820,12 +820,12 @@ mint_permission_combine_n(Args&&...) noexcept {
                   "is only valid when every permission row is Row<>.");
     static_assert(manifest::declared, "mint_permission_combine_n<Parent, Children...>("
                                       "Permission<Children>&&...) requires "
-                                      "splits_into_pack<Parent, Children...>::value true.  "
+                                      "can_split_into_pack<Parent, Children...>::value true.  "
                                       "The combine call must mirror the prior split_n; "
                                       "declare the manifest in the same TU as the tags.");
-    static_assert(manifest::witnessed, "splits_into_pack_authoring_witness<Parent, Children...> "
+    static_assert(manifest::witnessed, "has_split_pack_authoring_witness<Parent, Children...> "
                                        "missing for combine_n; declare next to the "
-                                       "splits_into_pack specialization.");
+                                       "can_split_into_pack specialization.");
     static_assert(manifest::distinct, "mint_permission_combine_n<Parent, Children...> "
                                       "requires the child tags to be PAIRWISE DISTINCT — folding "
                                       "two Permission<A> back into one parent would require two "
@@ -1619,11 +1619,11 @@ inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_c, ::f
 }  // namespace permission_rows
 
 template <>
-struct splits_into_pack<detail::seplog_combine_n_parent, detail::seplog_combine_n_a, detail::seplog_combine_n_b,
+struct can_split_into_pack<detail::seplog_combine_n_parent, detail::seplog_combine_n_a, detail::seplog_combine_n_b,
                         detail::seplog_combine_n_c> : std::true_type {};
 
 template <>
-struct splits_into_pack_authoring_witness<detail::seplog_combine_n_parent, detail::seplog_combine_n_a,
+struct has_split_pack_authoring_witness<detail::seplog_combine_n_parent, detail::seplog_combine_n_a,
                                           detail::seplog_combine_n_b, detail::seplog_combine_n_c> : std::true_type {};
 
 namespace detail {

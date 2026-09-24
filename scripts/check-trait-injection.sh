@@ -52,9 +52,10 @@
 #                                     subtyping.  A forged edge widens
 #                                     what a channel accepts.
 #
-# `splits_into` / `splits_into_pack` are the sixth relation of this
-# shape; they have their own guard (check-splits-into-orphan.sh) plus a
-# companion authoring-witness trait, and are not duplicated here.
+# `splits_into` / `splits_into_pack` (in the new tree `can_split_into` /
+# `can_split_into_pack`) are the sixth relation of this shape.  They
+# have their own guard (check-splits-into-orphan.sh) plus a companion
+# authoring-witness trait, and are not duplicated here.
 #
 # ── Family C: fail-closed namespaces ─────────────────────────────────
 #

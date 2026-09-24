@@ -43,10 +43,10 @@ struct Right {
 }  // namespace async_tags
 
 template <>
-struct foundation::permissions::splits_into_pack<async_tags::Whole, async_tags::Left, async_tags::Right>
+struct foundation::permissions::can_split_into_pack<async_tags::Whole, async_tags::Left, async_tags::Right>
     : std::true_type {};
 template <>
-struct foundation::permissions::splits_into_pack_authoring_witness<async_tags::Whole, async_tags::Left,
+struct foundation::permissions::has_split_pack_authoring_witness<async_tags::Whole, async_tags::Left,
                                                                     async_tags::Right> : std::true_type {};
 
 namespace {

@@ -55,7 +55,7 @@ template <typename Ctx, typename Parent, typename... Children>
 concept CtxFitsPermissionForkInline =
     ::foundation::effects::IsExecCtx<Ctx> && CtxAdmitsPermission<Parent, Ctx>
     && (CtxAdmitsPermission<Children, Ctx> && ...)
-    && splits_into_pack_v<Parent, Children...> && splits_into_pack_authoring_witness_v<Parent, Children...>;
+    && can_split_into_pack_v<Parent, Children...> && has_split_pack_authoring_witness_v<Parent, Children...>;
 
 template <typename Ctx, typename Parent, typename... Children>
 concept CtxFitsPermissionFork = CtxFitsPermissionForkInline<Ctx, Parent, Children...>

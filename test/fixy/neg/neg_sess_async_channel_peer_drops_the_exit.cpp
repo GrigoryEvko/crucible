@@ -30,9 +30,9 @@ struct Right {
 }  // namespace tags
 
 template <>
-struct foundation::permissions::splits_into_pack<tags::Whole, tags::Left, tags::Right> : std::true_type {};
+struct foundation::permissions::can_split_into_pack<tags::Whole, tags::Left, tags::Right> : std::true_type {};
 template <>
-struct foundation::permissions::splits_into_pack_authoring_witness<tags::Whole, tags::Left, tags::Right>
+struct foundation::permissions::has_split_pack_authoring_witness<tags::Whole, tags::Left, tags::Right>
     : std::true_type {};
 
 namespace {
