@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""check-banned-calls — the reinterpret_cast, vector reserve and file-stream bans, read from the AST.
+"""check-banned-calls — the reinterpret_cast, vector reserve, file-stream and process-spawn bans, read from the AST.
 
 CLAUDE.md §III bans `reinterpret_cast`, and CLAUDE.md §IV bans
 `std::vector::reserve`.  The fixy-only band-3 directories ban the C++ file
-streams.  This guard finds each use in the parse tree of the pinned
+streams.  CLAUDE.md §IX bans a raw process spawn in production code,
+because the child carries no Permission and no effect row.  This guard
+finds each use in the parse tree of the pinned
 tree-sitter kit (scripts/tsast.py), so a comment, a string literal or a raw
 string cannot hold a false hit.  A use that spans lines, a use with a space
 before its `<` or `(`, and a qualified member call are still found.
 
-THE THREE BANS
+THE FOUR BANS
     reinterpret_cast   every identifier token spelled `reinterpret_cast`,
                        because the word is a keyword and has no other use.
                        Roots: include/ and vessel/.
@@ -26,6 +28,20 @@ THE THREE BANS
                        crucible_register_fixy_only_directory, and its src/
                        twin.  A registry that names no such directory fails
                        the guard, because the ban would then read nothing.
+    process spawn      every reference to a C library function that creates
+                       a process, replaces its image or reaps a child (fork,
+                       vfork, clone, the exec family, posix_spawn, system,
+                       popen, daemon, the wait family and more), and every
+                       syscall number of the same kernel entries (SYS_clone,
+                       __NR_execve and more).  A reference is a name in an
+                       expression or a template argument, bare, qualified
+                       from `::`, or qualified by std or a namespace alias
+                       of std, so a call, an address, a function pointer
+                       and a using-declaration are all found.  A member, the
+                       name of a declaration or an enumerator, and a name
+                       qualified by another namespace or a class are not.
+                       Roots: include/, src/ and vessel/, without the kernel
+                       dump under include/crucible/perf/bpf/.
     A path with a component named test, examples, third_party, external or
     vendor, or a component that starts with build, is out of scope.  The
     reinterpret_cast ban also skips bench/.
@@ -36,13 +52,21 @@ WHAT THE PARSER CANNOT READ
     literals, character literals and raw strings, and it reports each banned
     token that remains.  A file in tsast.UNPARSEABLE
     gets the same lexical scan over its whole text.  A parse error in any
-    other file is a guard failure.
+    other file is a guard failure.  In raw text a spawn name counts unless
+    `.`, `->` or a qualifier other than std stands before it, so a name that
+    a macro only passes as an argument also counts, and needs a row.
+
+WHAT THE GUARD CANNOT SEE
+    A name that a macro builds with `##`, a syscall number written as a
+    literal, and a call through a namespace of another file that holds a
+    using-directive for std.
 
 EXEMPTIONS
     A comment on the line of the banned token that says
     `NO-REINTERPRET-OK: <reason>` or `NO-RESERVE-OK: <reason>` exempts that
     line.  The reason must not be empty.
-    `NO-FILE-STREAM-OK: <reason>` exempts a file-stream line the same way.
+    `NO-FILE-STREAM-OK: <reason>` and `SPAWN-PROCESS-OK: <reason>` exempt a
+    line of their ban the same way.
     An entry `path:text` in the ban's allowlist exempts the site whose line,
     trimmed, equals `text`.  The key is the content of the line, not its
     number, so an edit above the site does not move it.  An entry that
@@ -76,6 +100,18 @@ FILE_STREAMS = frozenset({
     "wofstream", "wifstream", "wfstream", "wfilebuf",
     "basic_ofstream", "basic_ifstream", "basic_fstream", "basic_filebuf",
 })
+# The C library functions that create a process, replace its image or reap
+# a child, and the syscall numbers that reach the same kernel entry through
+# syscall(2).
+SPAWN_NAMES = frozenset({
+    "fork", "vfork", "_Fork", "forkpty", "daemon", "clone", "clone3", "__clone", "__clone2",
+    "execve", "execveat", "fexecve", "execv", "execvp", "execvpe", "execl", "execlp", "execle",
+    "posix_spawn", "posix_spawnp", "system", "popen", "pclose", "waitpid", "wait3", "wait4", "waitid",
+    "SYS_fork", "SYS_vfork", "SYS_clone", "SYS_clone3", "SYS_execve", "SYS_execveat",
+    "__NR_fork", "__NR_vfork", "__NR_clone", "__NR_clone3", "__NR_execve", "__NR_execveat",
+})
+SPAWN_TOKEN = re.compile(r"(?:(?P<scope>[A-Za-z_]\w*)?\s*(?P<access>::|\.|->)\s*)?\b(?P<name>"
+                         + "|".join(sorted(SPAWN_NAMES, key=len, reverse=True)) + r")\b")
 # A call of the CMake function that registers one fixy-only directory.
 FIXY_ONLY_DIRECTORY = re.compile(r"^[ \t]*crucible_register_fixy_only_directory\([ \t]*([^)\s]+)[ \t]*\)", re.M)
 
@@ -91,7 +127,14 @@ class Hit:
 
 @dataclass(frozen=True)
 class Ban:
-    """One banned construct, where it is banned, and how it is exempted."""
+    """One banned construct, where it is banned, and how it is exempted.
+
+    Attributes:
+        token: The lexical form, for a macro body and an unparseable file
+        token_filter: Decides whether one match of the token is a use, or
+            None when every match is
+        excluded_prefixes: Repo-relative path prefixes that the ban skips
+    """
 
     name: str
     roots: Callable[[Path], tuple[str, ...]]
@@ -101,6 +144,8 @@ class Ban:
     rule: str
     token: re.Pattern[str]
     node_hits: Callable[[tsast.Tree], Iterator[tsast.Node]]
+    token_filter: Callable[[re.Match[str]], bool] | None = None
+    excluded_prefixes: tuple[str, ...] = ()
 
 
 def _reinterpret_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
@@ -180,6 +225,100 @@ def _file_stream_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
             yield node
 
 
+def _qualifiers(node: tsast.Node) -> tuple[bool, list[str]]:
+    """Read the qualifier chain above a name, outermost first.
+
+    Args:
+        node: An identifier or a type_identifier
+
+    Returns:
+        Whether the chain starts at `::`, and the text of each scope
+    """
+    is_global = False
+    scopes: list[str] = []
+    current = node
+    while current.field == "name" and current.parent is not None and current.parent.type == "qualified_identifier":
+        scope = current.parent.child_by_field("scope")
+        if scope is None:
+            is_global = True
+        else:
+            scopes.insert(0, scope.text)
+        current = current.parent
+    return is_global, scopes
+
+
+def _std_aliases(tree: tsast.Tree) -> set[str]:
+    """Return every namespace alias of the file that names std, through chains of aliases.
+
+    Complexity: quadratic in the number of aliases of the file, which is small.
+    """
+    targets: dict[str, str] = {}
+    for node in tree.find("namespace_alias_definition"):
+        named = node.child_by_field("name")
+        if named is not None:
+            value = "".join(child.text for child in node.children if child.field != "name").replace(" ", "")
+            targets[named.text] = value.removeprefix("::")
+    names = {"std"}
+    changed = True
+    while changed:
+        changed = False
+        for alias, target in targets.items():
+            if alias not in names and target in names:
+                names.add(alias)
+                changed = True
+    return names
+
+
+def _spawn_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
+    """Yield each reference to a process-spawn function or syscall number of the C library.
+
+    A reference is a name in an expression, bare, qualified from `::`, or
+    qualified by std or an alias of std.  A call, an address, a function
+    pointer and a using-declaration all hold one.  A name in a template
+    argument counts as well, because `call<fork>()` parses it as a type.
+    The name of a declaration and a member name do not count, and a name
+    qualified by any other namespace or by a class names a project entity.
+
+    Args:
+        tree: One parsed file
+
+    Yields:
+        The name node of each reference
+    """
+    std_names = _std_aliases(tree)
+    for node in tree.find("identifier", "type_identifier"):
+        if node.text not in SPAWN_NAMES:
+            continue
+        if node.type == "type_identifier":
+            outer = node
+            while outer.field == "name" and outer.parent is not None and outer.parent.type == "qualified_identifier":
+                outer = outer.parent
+            if outer.parent is None or outer.parent.type != "type_descriptor":
+                continue
+        if node.field == "declarator" or (node.parent is not None and node.parent.type == "enumerator"):
+            continue
+        _, scopes = _qualifiers(node)
+        if not scopes or (len(scopes) == 1 and scopes[0].replace(" ", "") in std_names):
+            yield node
+
+
+def _spawn_token_is_use(match: re.Match[str]) -> bool:
+    """Decide whether one lexical match of a spawn name in raw text is a reference to the C library.
+
+    A name after `.` or `->` is a member.  A name after `X::` is a project
+    name unless X is std.
+
+    Args:
+        match: A match of the spawn token, with the groups `scope` and `access`
+
+    Returns:
+        Whether the match counts
+    """
+    if match.group("access") in (".", "->"):
+        return False
+    return match.group("scope") in (None, "std")
+
+
 def _band3_roots(root: Path) -> tuple[str, ...]:
     """Return each fixy-only include/crucible directory that CMakeLists.txt registers, and its src/ twin.
 
@@ -228,6 +367,19 @@ BANS = (
         token=re.compile(r"\b(?:basic_)?w?(?:[oi]?fstream|filebuf)\b"),
         node_hits=_file_stream_nodes,
     ),
+    Ban(
+        name="process spawn",
+        roots=lambda root: ("include", "src", "vessel"),
+        extra_excluded=frozenset(),
+        marker="SPAWN-PROCESS-OK",
+        allowlist="scripts/no-spawn-process-allowlist.txt",
+        rule="a raw process spawn is banned in production code (CLAUDE.md §IX). The child carries no "
+             "Permission and no effect row. Use std::jthread with permission_fork",
+        token=SPAWN_TOKEN,
+        node_hits=_spawn_nodes,
+        token_filter=_spawn_token_is_use,
+        excluded_prefixes=("include/crucible/perf/bpf/",),
+    ),
 )
 
 
@@ -254,6 +406,17 @@ def _row_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset)
 
 
+def _token_rows(ban: Ban, blanked: str) -> Iterator[int]:
+    """Yield the zero-based row of each lexical match of a ban's token that its filter keeps.
+
+    The row is the row of the group `name` when the token has one, so a
+    qualifier on the line above does not move the hit.
+    """
+    for match in ban.token.finditer(blanked):
+        if ban.token_filter is None or ban.token_filter(match):
+            yield _row_of(blanked, match.start("name") if "name" in ban.token.groupindex else match.start())
+
+
 def in_scope(rel: Path, ban: Ban, roots: tuple[str, ...]) -> bool:
     """Return True when a repo-relative path is inside the ban's scope.
 
@@ -265,7 +428,8 @@ def in_scope(rel: Path, ban: Ban, roots: tuple[str, ...]) -> bool:
     Returns:
         Whether the ban reads the file
     """
-    if rel.suffix not in SUFFIXES or not any(rel.is_relative_to(top) for top in roots):
+    if rel.suffix not in SUFFIXES or not any(rel.is_relative_to(top) for top in roots) \
+            or rel.as_posix().startswith(ban.excluded_prefixes):
         return False
     excluded = EXCLUDED_COMPONENTS | ban.extra_excluded
     return not any(part in excluded or part.startswith("build") for part in rel.parts[:-1])
@@ -340,7 +504,7 @@ def scan(root: Path, ban: Ban) -> tuple[list[Hit], list[str]]:
                                 f"{tree.diagnostic.strip()}")
                 continue
             blanked, comments = strip_literals(source)
-            rows.update(_row_of(blanked, match.start()) for match in ban.token.finditer(blanked))
+            rows.update(_token_rows(ban, blanked))
         else:
             rows.update(node.start[0] for node in ban.node_hits(tree))
             comments = []
@@ -349,7 +513,7 @@ def scan(root: Path, ban: Ban) -> tuple[list[Hit], list[str]]:
             for body in tree.find("preproc_arg"):
                 blanked, inner = strip_literals(body.text)
                 base_row = body.start[0]
-                rows.update(base_row + _row_of(blanked, match.start()) for match in ban.token.finditer(blanked))
+                rows.update(base_row + row for row in _token_rows(ban, blanked))
                 for offset, text in inner:
                     line_comments.setdefault(base_row + _row_of(body.text, offset), []).append(text)
         for offset, text in comments:
@@ -498,7 +662,40 @@ def self_test() -> int:
         "inline const char* text = \"std::ofstream in_string\";\n"
         "inline void other_name() { std::ofstreams_are_not_this plural; }\n"
     )
-    cast_ban, reserve_ban, stream_ban = BANS
+    spawn_fixture = (
+        "#define SPAWN_IN_MACRO() fork(macro_call)\n"
+        "#define SPAWN_NAME_IN_MACRO macro_name fork\n"
+        "#define STD_SYSTEM_IN_MACRO(c) std::system(c)\n"
+        "#define MEMBER_IN_MACRO(p) (p).clone(macro_member)\n"
+        "#define PROJECT_IN_MACRO() crucible::fork(macro_project)\n"
+        "namespace s = std;\n"
+        "namespace s2 = s;\n"
+        "inline int bare() { return fork(); }\n"
+        "inline int global() { return ::vfork(); }\n"
+        "inline int spanning() { return ::posix_spawn\n"
+        "    (nullptr, nullptr, nullptr, nullptr, nullptr, nullptr); }\n"
+        "inline int std_system() { return std::system(\"std_system\"); }\n"
+        "inline int aliased() { return s2::system(\"aliased\"); }\n"
+        "inline int global_std() { return ::std::system(\"global_std\"); }\n"
+        "inline auto address() { return &::execve; }\n"
+        "inline auto pointer() { auto p = execvp; return p; }\n"
+        "using ::popen;\n"
+        "inline long raw_syscall() { return syscall(SYS_clone3, 0); }\n"
+        "inline int template_arg() { return call<fork>(); }\n"
+        "inline int reap() { return ::waitpid(-1, nullptr, 0); }\n"
+        "inline int marked() { return fork(); }  // SPAWN-PROCESS-OK: fixture\n"
+        "inline int admitted() { return daemon(0, 0); }\n"
+        "inline int member(T& t) { return t.clone(); }\n"
+        "inline int arrow(T* t) { return t->fork(); }\n"
+        "inline int project() { return crucible::detail::fork(); }\n"
+        "inline int enum_value() { return int(Syscall::execve); }\n"
+        "enum class Syscall { clone = 1, execve = 2 };\n"
+        "inline int permission() { return permission_fork(0); }\n"
+        "inline int declared(int popen) { return 0; }\n"
+        "// return fork(in_comment);\n"
+        "inline const char* text = \"system(in_string)\";\n"
+    )
+    cast_ban, reserve_ban, stream_ban, spawn_ban = BANS
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         for rel, text in (
@@ -521,6 +718,12 @@ def self_test() -> int:
              "{ return reinterpret_cast<float*>(p); }\n"),
             ("scripts/no-reserve-allowlist.txt",
              "include/crucible/planted/Reserve.h:inline void admitted(V& v) { v.reserve(11); }\n"),
+            ("src/planted/Spawn.cpp", spawn_fixture),
+            ("vessel/spawn.cpp", "int vessel_spawn() { return fork(); }\n"),
+            ("include/crucible/perf/bpf/vmlinux.h", "int kernel_dump() { return fork(); }\n"),
+            ("include/crucible/test/spawn.h", "int test_dir_spawn() { return fork(); }\n"),
+            ("scripts/no-spawn-process-allowlist.txt",
+             "src/planted/Spawn.cpp:inline int admitted() { return daemon(0, 0); }\n"),
         ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
@@ -573,6 +776,38 @@ def self_test() -> int:
                               ("a directory that only a CMake comment registers", "commented_dir"),
                               ("a directory that is not band-3", "not_band3")):
             expect(f"file stream: {label} is not caught", not any(needle in key for key in streams), True)
+        spawns = keys(root, spawn_ban)
+        for label, needle in (("a call in a macro body", "SPAWN_IN_MACRO"),
+                              ("a name with no call in a macro body", "SPAWN_NAME_IN_MACRO"),
+                              ("a std-qualified call in a macro body", "STD_SYSTEM_IN_MACRO"),
+                              ("a bare call", "bare()"), ("a call qualified from ::", "global()"),
+                              ("a call that spans two lines", "spanning()"),
+                              ("a std-qualified call", "std_system()"),
+                              ("a call through a chain of aliases of std", "aliased()"),
+                              ("a call qualified by ::std", "global_std()"), ("an address", "address()"),
+                              ("a function pointer", "pointer()"), ("a using-declaration", "using ::popen"),
+                              ("a syscall number", "raw_syscall()"), ("a template argument", "template_arg()"),
+                              ("a reaping call", "reap()"), ("a call in vessel/", "vessel_spawn")):
+            expect(f"process spawn: {label} is caught", any(needle in key for key in spawns))
+        for label, needle in (("a marked call", "marked()"), ("a member call", "member("),
+                              ("a call through ->", "arrow("), ("a call qualified by a project namespace", "project()"),
+                              ("an enumerator qualified by its enum", "enum_value()"),
+                              ("the enumerators of an enum", "enum class"), ("a longer name", "permission()"),
+                              ("the name of a parameter", "declared("), ("a member call in a macro body",
+                                                                         "MEMBER_IN_MACRO"),
+                              ("a project call in a macro body", "PROJECT_IN_MACRO"),
+                              ("a call in a comment", "in_comment"), ("a call in a string literal", "in_string"),
+                              ("the kernel dump under perf/bpf", "kernel_dump"),
+                              ("a call under a test/ directory", "test_dir_spawn")):
+            expect(f"process spawn: {label} is not caught", not any(needle in key for key in spawns), True)
+        report = io.StringIO()
+        with contextlib.redirect_stderr(report):
+            check(root)
+        expect("process spawn: the report names an unadmitted site by its content key",
+               "Allowlist key: src/planted/Spawn.cpp:inline int bare()" in report.getvalue())
+        expect("process spawn: an allowlist row keyed by content admits its site",
+               "Allowlist key: src/planted/Spawn.cpp:inline int admitted()" not in report.getvalue(), True)
+
         registry = (root / "CMakeLists.txt").read_text(encoding="utf-8")
         (root / "CMakeLists.txt").write_text("crucible_register_fixy_only_directory(examples/fn)\n",
                                              encoding="utf-8")
@@ -605,7 +840,10 @@ def self_test() -> int:
         (root / "vessel/planted.cpp").unlink()
         (root / "include/crucible/cntp/Streams.h").unlink()
         (root / "src/cntp/streams.cpp").unlink()
+        (root / "src/planted/Spawn.cpp").unlink()
+        (root / "vessel/spawn.cpp").unlink()
         (root / "scripts/no-reinterpret-allowlist.txt").write_text("", encoding="utf-8")
+        (root / "scripts/no-spawn-process-allowlist.txt").write_text("", encoding="utf-8")
         allow.write_text("\n".join(live_keys) + "\n", encoding="utf-8")
         shifted = root / "include/crucible/planted/Reserve.h"
         shifted.write_text("\n\n" + reserve_fixture, encoding="utf-8")

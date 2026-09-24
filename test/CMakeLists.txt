@@ -709,12 +709,14 @@ set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 # The reinterpret_cast ban (CLAUDE.md §III), the std::vector::reserve ban
-# (CLAUDE.md §IV) and the file-stream ban of the fixy-only band-3
-# directories, read from the parse tree of the pinned kit.  Each ban has a
-# content-keyed allowlist: scripts/no-reinterpret-allowlist.txt,
-# scripts/no-reserve-allowlist.txt and scripts/no-file-stream-allowlist.txt.
-# The self-test plants each shape that a line regex misses or misreads.
-# Exit 3 when the kit is absent reports a skip.
+# (CLAUDE.md §IV), the file-stream ban of the fixy-only band-3 directories
+# and the process-spawn ban of production code (CLAUDE.md §IX), read from
+# the parse tree of the pinned kit.  Each ban has a content-keyed allowlist:
+# scripts/no-reinterpret-allowlist.txt, scripts/no-reserve-allowlist.txt,
+# scripts/no-file-stream-allowlist.txt and
+# scripts/no-spawn-process-allowlist.txt.  The self-test plants each shape
+# that a line regex misses or misreads.  Exit 3 when the kit is absent
+# reports a skip.
 add_test(NAME banned_calls_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-banned-calls.py
           --self-test)
@@ -1001,26 +1003,6 @@ set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
 # reaches the opposite verdict just as easily: a batch producing no output
 # reads as a clean scan.  A guard that can silently pass is worse than no
 # guard, and style is not worth that.
-
-# FIXY-V-210 process-spawn discipline (Agent 7 migration item 10 —
-# closes the regression-prevention surface for raw fork/exec/
-# posix_spawn/system/popen calls landing in production code).
-# scripts/check-fixy-spawn-discipline.sh + the GLOBAL property
-# CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS (CMakeLists.txt) form a coupled
-# pair: the script bans raw OS process-spawn calls in production
-# code; the CMake property is the opt-in surface for directories
-# that legitimately need shell-out.  Initial set is empty — no
-# production code today invokes any of the banned APIs outside
-# permission_fork (CSL parallel-rule, NOT OS fork) / session_fork /
-# cooperative_fork.  Self-test plants bare + qualified + suppression
-# + allowlist + stale-entry violations to verify every axis works.
-add_test(NAME spawn_discipline_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-spawn-discipline.sh
-          --self-test)
-add_test(NAME spawn_discipline
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-spawn-discipline.sh)
-set_tests_properties(spawn_discipline spawn_discipline_self_test PROPERTIES
-    LABELS "ci_guard")
 
 # foundation::effects::testing returns minted capabilities with no gate,
 # and a capability is what every ctx-bound mint checks for.  Effect.h says

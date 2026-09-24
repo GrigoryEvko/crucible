@@ -7,7 +7,7 @@
 // that wants to watch one fire has to survive it. A forked child is the usual
 // answer, and CLAUDE.md §IX bans raw process spawn outright: fork carries no
 // Permission<Tag> linearity proof and no Met(X) effect row into the child, so
-// the check-fixy-spawn-discipline guard rejects it. The abort is therefore
+// the process-spawn ban of check-banned-calls rejects it. The abort is therefore
 // caught where it happens. A SIGABRT handler jumps back to the arming point
 // on the same thread, which works for a guard that fires on a worker thread
 // as well as one that fires on the caller's.
