@@ -21,7 +21,7 @@
 //
 // Lattice direction: Relaxed is at the TOP (cheapest, no fence);
 // SeqCst is at the BOTTOM (most expensive, total-order fence).
-// Going DOWN (Relaxed → Acquire → Release → AcqRel → SeqCst) is
+// Going DOWN (Relaxed → Acquire or Release → AcqRel → SeqCst) is
 // allowed — stronger no-fence claim trivially serves weaker
 // requirement.  Going UP is FORBIDDEN — would CLAIM more no-fence
 // discipline than the source provides.

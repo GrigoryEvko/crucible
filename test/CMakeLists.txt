@@ -9362,12 +9362,21 @@ crucible_neg_compile_test(neg_mem_order_seqcst_at_acquire_fence
 crucible_neg_compile_test(neg_mem_order_acqrel_at_acquire_fence
   "constraints not satisfied|no matching function|associated constraints")
 
-# Three-tier-gap rejection: SeqCst is THREE positions below Relaxed in the
-# chain (SeqCst ⊑ AcqRel ⊑ Release ⊑ Acquire ⊑ Relaxed).  Strongest
+# Three-tier-gap rejection: SeqCst is three steps below Relaxed in the
+# order (SeqCst ⊑ AcqRel ⊑ Release, Acquire ⊑ Relaxed).  Strongest
 # possible rejection claim in the lattice — proves the requires-clause
 # correctly handles maximal cross-tier flow, not just adjacent gaps.
 crucible_neg_compile_test(neg_mem_order_seqcst_at_relaxed_fence
   "constraints not satisfied|no matching function|associated constraints")
+
+# Release and Acquire are incomparable: an acquire load orders the
+# operations after it and a release store the operations before it.  An
+# Acquire value does not satisfy a Release consumer, and it does not relax
+# to Release.
+crucible_neg_compile_test(neg_mem_order_acquire_at_release_fence
+  "W::satisfies<crucible::algebra::lattices::MemOrderTag::Release> \\[with W = crucible::safety::MemOrder<crucible::algebra::lattices::MemOrderTag::Acquire, int>\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_mem_order_relax_acquire_to_release
+  "no matching function for call to .crucible::safety::MemOrder<crucible::algebra::lattices::MemOrderTag::Acquire, int>::relax<crucible::algebra::lattices::MemOrderTag::Release>")
 
 # ─── FOUND-G04 NumericalTier production-call-site neg-compile ──────
 #

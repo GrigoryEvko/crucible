@@ -7,8 +7,9 @@
 // SeqCst-special-case.
 //
 // AcqRel is one tier weaker than Acquire in the hardware-friendliness
-// lattice: AcqRel ⊑ Release ⊑ Acquire ⊑ Relaxed.  satisfies<Acquire>
-// = leq(Acquire, AcqRel) = false.  The requires-clause rejects.
+// lattice: AcqRel ⊑ Acquire ⊑ Relaxed, with Release beside Acquire and
+// incomparable to it.  satisfies<Acquire> = leq(Acquire, AcqRel) =
+// false.  The requires-clause rejects.
 //
 // Concrete bug-class: a refactor adds a write that needs Release on
 // the same atomic that previously had pure Acquire-load semantics,

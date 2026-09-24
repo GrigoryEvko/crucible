@@ -3,21 +3,21 @@
 // MemOrder<Tag, T> pins a value to the heaviest memory ordering that
 // operations on it may use.
 //
-// The tags form a chain from the heaviest fence to the lightest:
-// SeqCst, then AcqRel, Release, Acquire, then Relaxed.  Higher in the
-// chain means less ordering is imposed, so Relaxed is the strongest
-// claim a producer can make and SeqCst the weakest.
+// The tags form a partial order from the heaviest fence to the
+// lightest: SeqCst, then AcqRel, then Release and Acquire side by side,
+// then Relaxed.  Higher means less ordering is imposed, so Relaxed is
+// the strongest claim a producer can make and SeqCst the weakest.
 //
 // satisfies<Required> asks whether the pinned tag covers what a
 // consumer demands: a lighter ordering satisfies a heavier one.  A
 // Relaxed value is admissible wherever AcqRel is required.  A SeqCst
 // value is admissible only where SeqCst is asked for.
 //
-// The chain puts Acquire above Release only because the underlying
-// enum orders them that way.  It is not a claim that the two orderings
-// are interchangeable.  A site names the ordering it needs, and
-// relaxing an Acquire value to Release says only that the site accepts
-// being treated as the lower of the two.
+// Release and Acquire are incomparable, as they are in the C++ memory
+// model: a release store orders the operations before it and an
+// acquire load the operations after it.  So an Acquire value does not
+// satisfy a Release requirement, and it relaxes to AcqRel, which is
+// both, and not to Release.
 //
 // relax<Weaker> moves down the chain and never up.  There is no
 // tighten(): a value fenced with a total order cannot afterwards claim
@@ -188,7 +188,8 @@ static_assert(RelaxInt::satisfies<MemOrderTag_v::AcqRel>);
 static_assert(RelaxInt::satisfies<MemOrderTag_v::SeqCst>);
 
 static_assert(AcqInt::satisfies<MemOrderTag_v::Acquire>);
-static_assert(AcqInt::satisfies<MemOrderTag_v::Release>);
+static_assert(!AcqInt::satisfies<MemOrderTag_v::Release>,
+              "An acquire load does not order the operations before it, so it does not satisfy Release.");
 static_assert(AcqInt::satisfies<MemOrderTag_v::AcqRel>);
 static_assert(AcqInt::satisfies<MemOrderTag_v::SeqCst>);
 static_assert(!AcqInt::satisfies<MemOrderTag_v::Relaxed>);
@@ -249,6 +250,11 @@ static_assert(!can_relax<SeqCstInt, MemOrderTag_v::AcqRel>,
               "relax<AcqRel> on a SeqCst value must be rejected.  A value "
               "that needs a total order cannot claim it needs less.");
 static_assert(!can_relax<SeqCstInt, MemOrderTag_v::Relaxed>);
+static_assert(!can_relax<AcqInt, MemOrderTag_v::Release> && !can_relax<RelInt, MemOrderTag_v::Acquire>,
+              "relax between Acquire and Release must be rejected in each direction.  Each orders the side of "
+              "the operation that the other leaves open.");
+static_assert(can_relax<AcqInt, MemOrderTag_v::AcqRel> && can_relax<RelInt, MemOrderTag_v::AcqRel>,
+              "AcqRel orders both sides, so each directional tag relaxes to it.");
 static_assert(can_relax<SeqCstInt, MemOrderTag_v::SeqCst>);
 
 static_assert(RelaxInt::value_type_name().ends_with("int"));

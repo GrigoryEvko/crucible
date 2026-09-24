@@ -1,7 +1,8 @@
-// The lattice runs SeqCst, AcqRel, Release, Acquire, Relaxed, from
-// bottom to top, where higher means more hardware-friendly.  That is
-// the opposite of the usual reading, in which SeqCst is the strongest.
-// satisfies<Required> is leq(Required, Self).
+// The lattice runs SeqCst, AcqRel, then Release and Acquire side by
+// side, then Relaxed, from bottom to top, where higher means more
+// hardware-friendly.  That is the opposite of the usual reading, in
+// which SeqCst is the strongest.  satisfies<Required> is
+// leq(Required, Self), and Release and Acquire are incomparable.
 
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/safety/IsMemOrder.h>
@@ -100,9 +101,9 @@ static void test_acquire_satisfies_self() {
 
 static void test_acquire_satisfies_weaker() {
     using Acq = MemOrder<MemOrderTag_v::Acquire, int>;
-    // A Release-tier consumer accepts an Acquire-tier value, because
-    // Acquire sits higher.
-    static_assert(Acq::satisfies<MemOrderTag_v::Release>);
+    // A Release-tier consumer refuses an Acquire-tier value: an acquire
+    // load does not order the operations before it.
+    static_assert(!Acq::satisfies<MemOrderTag_v::Release>);
     static_assert(Acq::satisfies<MemOrderTag_v::AcqRel>);
     static_assert(Acq::satisfies<MemOrderTag_v::SeqCst>);
 }
@@ -201,12 +202,16 @@ static void test_initial_value_via_load_mo_pinned() {
 static void test_relax_down_chain() {
     using crucible::safety::MemOrder;
 
-    // Each step goes down the lattice.
+    // Each step goes down the lattice.  Acquire and Release are side by
+    // side, so a path from Relaxed to AcqRel passes one of them, and
+    // the other side is reached from Relaxed on its own path.
     MemOrder<MemOrderTag_v::Relaxed, int> rlx{42};
     auto acq = std::move(rlx).relax<MemOrderTag_v::Acquire>();
-    auto rel = std::move(acq).relax<MemOrderTag_v::Release>();
-    auto acqrel = std::move(rel).relax<MemOrderTag_v::AcqRel>();
+    auto acqrel = std::move(acq).relax<MemOrderTag_v::AcqRel>();
     auto seqcst = std::move(acqrel).relax<MemOrderTag_v::SeqCst>();
+    MemOrder<MemOrderTag_v::Relaxed, int> rlx_other{7};
+    auto rel = std::move(rlx_other).relax<MemOrderTag_v::Release>();
+    auto rel_acqrel = std::move(rel).relax<MemOrderTag_v::AcqRel>();
 
     static_assert(std::is_same_v<decltype(acq), MemOrder<MemOrderTag_v::Acquire, int>>);
     static_assert(std::is_same_v<decltype(rel), MemOrder<MemOrderTag_v::Release, int>>);
@@ -215,6 +220,8 @@ static void test_relax_down_chain() {
 
     int v = std::move(seqcst).consume();
     assert(v == 42);
+    int other = std::move(rel_acqrel).consume();
+    assert(other == 7);
 }
 
 // The trait must agree with the wrapper's own tag across cv-ref
@@ -264,9 +271,9 @@ static void test_cross_axis_with_wait_pin() {
     assert(std::move(m_pin).consume() == 777ULL);
 }
 
-// Every (Self, Required) pair.  The ordinals run SeqCst 0, AcqRel 1,
-// Release 2, Acquire 3, Relaxed 4, and satisfies<R> holds when R's
-// ordinal is at most Self's.
+// Every (Self, Required) pair.  The heights run SeqCst 0, AcqRel 1,
+// Release 2, Acquire 2, Relaxed 3, and satisfies<R> holds when R is
+// Self or R's height is below Self's.
 static void test_full_truth_table() {
     using crucible::safety::MemOrder;
     using T = MemOrderTag_v;
@@ -283,7 +290,7 @@ static void test_full_truth_table() {
     using Acq = MemOrder<T::Acquire, int>;
     static_assert(!Acq::satisfies<T::Relaxed>);
     static_assert(Acq::satisfies<T::Acquire>);
-    static_assert(Acq::satisfies<T::Release>);
+    static_assert(!Acq::satisfies<T::Release>);
     static_assert(Acq::satisfies<T::AcqRel>);
     static_assert(Acq::satisfies<T::SeqCst>);
 

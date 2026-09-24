@@ -18,8 +18,8 @@
 // it on the hot path turns ~1-3 ns acquire-loads into ~10-30 ns
 // fence-bracketed sequences.
 //
-// Lattice direction (MemOrderLattice.h, lines 60-73):
-//     SeqCst(weakest) ⊑ AcqRel ⊑ Release ⊑ Acquire ⊑ Relaxed(strongest)
+// Lattice direction (MemOrderLattice.h):
+//     SeqCst(weakest) ⊑ AcqRel ⊑ {Release, Acquire} ⊑ Relaxed(strongest)
 //
 // satisfies<Required> = leq(Required, Self).  For SeqCst to satisfy
 // Acquire, we'd need leq(Acquire, SeqCst) — but Acquire is STRICTLY

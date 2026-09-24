@@ -7,8 +7,8 @@
 // friendliness), Relaxed at the top (strongest).
 //
 // SeqCst::satisfies<Relaxed> = leq(Relaxed, SeqCst) = false.
-// SeqCst is THREE positions below Relaxed in the chain
-// (SeqCst ⊑ AcqRel ⊑ Release ⊑ Acquire ⊑ Relaxed); a Relaxed-fence
+// SeqCst is three steps below Relaxed in the order
+// (SeqCst ⊑ AcqRel ⊑ Release, Acquire ⊑ Relaxed); a Relaxed-fence
 // consumer (foreground hot-path inner-loop counter increment) is
 // the WORST possible target for a SeqCst-emitting site.
 //

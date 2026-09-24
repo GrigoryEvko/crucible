@@ -1,18 +1,28 @@
 #pragma once
 
-// Chain over the memory orderings a function's atomic operations may
-// use.  bottom is SeqCst, the most constrained and most expensive
-// ordering.  top is Relaxed, which constrains nothing.  leq(a, b) reads
-// "a is admitted wherever b is", so a Relaxed function is admitted
-// everywhere and a SeqCst function only where SeqCst is tolerated.
-// join climbs toward Relaxed and meet descends toward SeqCst, so the
-// strictest-wins composition is meet, not join.
+// The partial order of the memory orderings a function's atomic
+// operations may use.  bottom is SeqCst, the most constrained and most
+// expensive ordering.  top is Relaxed, which constrains nothing.
+// leq(a, b) reads "a is admitted wherever b is", so a Relaxed function
+// is admitted everywhere and a SeqCst function only where SeqCst is
+// tolerated.  join climbs toward Relaxed and meet descends toward
+// SeqCst, so the strictest-wins composition is meet, not join.
 //
-// Acquire and Release are incomparable in the C++ memory model: one
-// fences the load side, the other the store side.  The chain places
-// Release below Acquire so that admission gating has a single answer.
-// That order carries no claim that either ordering substitutes for the
-// other.
+// Acquire and Release are incomparable, as they are in the C++ memory
+// model ([atomics.order]): an acquire load orders the operations after
+// it, a release store orders the operations before it, and neither
+// gives the guarantee of the other.  So the order is not a chain.  It
+// is a chain with one diamond:
+//
+//   SeqCst < AcqRel < {Release, Acquire} < Relaxed
+//
+// AcqRel is the meet of the two, because acq_rel is both an acquire and
+// a release, and Relaxed is their join.  Reading the two as a chain
+// admitted an Acquire value where a Release one was required, and gave
+// meet(Release, Acquire) = Release, which drops the acquire side of a
+// composition.  The fence-strength lattice of the new tree,
+// foundation/algebra/lattices/BarrierStrengthLattice.h, carries the
+// same diamond for the same reason.
 //
 // There is no Consume tier.  Compilers promote consume to acquire, so a
 // caller that would reach for it declares Acquire.
@@ -58,9 +68,41 @@ inline constexpr std::size_t mem_order_tag_count = std::meta::enumerators_of(^^M
     }
 }
 
-struct MemOrderLattice : ChainLatticeOps<MemOrderTag> {
+// The height of a tag in the order: its ordinal, with Release and
+// Acquire at one height.  A value outside the enum gets a height above
+// Relaxed, and every operation below stays defined for it.
+[[nodiscard]] constexpr std::uint8_t mem_order_height(MemOrderTag t) noexcept {
+    const std::uint8_t value = std::to_underlying(t);
+    return value <= std::to_underlying(MemOrderTag::Release) ? value : static_cast<std::uint8_t>(value - 1);
+}
+
+struct MemOrderLattice {
+    using element_type = MemOrderTag;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return MemOrderTag::SeqCst; }
     [[nodiscard]] static constexpr element_type top() noexcept { return MemOrderTag::Relaxed; }
+
+    // Two distinct tags at one height are incomparable.  Every other pair
+    // is ordered by height.
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
+        if (a == b) return true;
+        return mem_order_height(a) < mem_order_height(b);
+    }
+
+    // The only two distinct tags at one height are Release and Acquire,
+    // and the self-test below proves that by reflection.  Their join is
+    // Relaxed and their meet is AcqRel.
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
+        if (a == b) return a;
+        if (mem_order_height(a) == mem_order_height(b)) return MemOrderTag::Relaxed;
+        return mem_order_height(a) > mem_order_height(b) ? a : b;
+    }
+
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
+        if (a == b) return a;
+        if (mem_order_height(a) == mem_order_height(b)) return MemOrderTag::AcqRel;
+        return mem_order_height(a) < mem_order_height(b) ? a : b;
+    }
 
     [[nodiscard]] static consteval std::string_view name() noexcept { return "MemOrderLattice"; }
 
@@ -143,15 +185,45 @@ static_assert(std::is_empty_v<mem_order_tag::RelaxedTag::element_type>);
 static_assert(std::is_empty_v<mem_order_tag::AcqRelTag::element_type>);
 static_assert(std::is_empty_v<mem_order_tag::SeqCstTag::element_type>);
 
+// The walks read the enumerators and ask leq, join and meet at every
+// triple.  They take any lattice over an enum, a chain or not.
 static_assert(verify_chain_lattice_exhaustive<MemOrderLattice>(),
-              "MemOrderLattice chain-order lattice axioms fail at some triple.  "
+              "MemOrderLattice: a partial-order or bound law fails at some triple of tags.  "
               "The defect is in leq, join, meet or the enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<MemOrderLattice>(),
-              "MemOrderLattice chain fails distributivity at some triple.");
+              "MemOrderLattice: the distributive law fails at some triple of tags.");
+
+// The incomparable pairs, derived from the order rather than listed.  The
+// only pair is {Release, Acquire}, which join and meet above depend on.
+[[nodiscard]] consteval std::size_t incomparable_pairs() noexcept {
+    std::size_t pairs = 0;
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemOrderTag));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto first : enumerators) {
+        template for (constexpr auto second : enumerators) {
+            constexpr MemOrderTag a = [:first:];
+            constexpr MemOrderTag b = [:second:];
+            if (std::to_underlying(a) < std::to_underlying(b) && !MemOrderLattice::leq(a, b)
+                && !MemOrderLattice::leq(b, a)) {
+                ++pairs;
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return pairs;
+}
+static_assert(incomparable_pairs() == 1, "MemOrderLattice: the order must have exactly one incomparable pair, "
+                                         "Release and Acquire.  join and meet name Relaxed and AcqRel as its bounds.");
 
 static_assert(MemOrderLattice::leq(MemOrderTag::SeqCst, MemOrderTag::AcqRel));
 static_assert(MemOrderLattice::leq(MemOrderTag::AcqRel, MemOrderTag::Release));
-static_assert(MemOrderLattice::leq(MemOrderTag::Release, MemOrderTag::Acquire));
+static_assert(MemOrderLattice::leq(MemOrderTag::AcqRel, MemOrderTag::Acquire));
+static_assert(!MemOrderLattice::leq(MemOrderTag::Release, MemOrderTag::Acquire)
+                  && !MemOrderLattice::leq(MemOrderTag::Acquire, MemOrderTag::Release),
+              "A release store orders the operations before it and an acquire load the operations after it.  "
+              "Neither is admitted where the other is.");
+static_assert(MemOrderLattice::leq(MemOrderTag::Release, MemOrderTag::Relaxed));
 static_assert(MemOrderLattice::leq(MemOrderTag::Acquire, MemOrderTag::Relaxed));
 static_assert(MemOrderLattice::leq(MemOrderTag::SeqCst, MemOrderTag::Relaxed));
 static_assert(!MemOrderLattice::leq(MemOrderTag::Relaxed, MemOrderTag::SeqCst));
@@ -170,14 +242,11 @@ static_assert(MemOrderLattice::meet(MemOrderTag::AcqRel, MemOrderTag::Relaxed) =
               "meet gives the strictest-wins reading on this chain, because the "
               "bottom is SeqCst.  meet(AcqRel, Relaxed) returns AcqRel, the "
               "stricter of the two.");
-static_assert(MemOrderLattice::meet(MemOrderTag::Release, MemOrderTag::Acquire) == MemOrderTag::Release,
-              "meet(Release, Acquire) returns Release, the lower ordinal.  The "
-              "C++ memory model leaves the two incomparable.  This chain "
-              "linearizes them so that gating has a single answer.");
-static_assert(MemOrderLattice::join(MemOrderTag::Release, MemOrderTag::Acquire) == MemOrderTag::Acquire,
-              "join(Release, Acquire) returns Acquire, the higher ordinal and the "
-              "weaker ordering.  A consumer that wants strictest-wins calls meet, "
-              "not join.");
+static_assert(MemOrderLattice::meet(MemOrderTag::Release, MemOrderTag::Acquire) == MemOrderTag::AcqRel,
+              "meet(Release, Acquire) is AcqRel: a composition of a release store and an acquire load needs "
+              "both sides ordered, and acq_rel is the weakest ordering that gives both.");
+static_assert(MemOrderLattice::join(MemOrderTag::Release, MemOrderTag::Acquire) == MemOrderTag::Relaxed,
+              "join(Release, Acquire) is Relaxed, the only tag admitted wherever either one is.");
 
 static_assert(MemOrderLattice::name() == "MemOrderLattice");
 static_assert(mem_order_tag::SeqCstTag::name() == "MemOrderLattice::At<SeqCst>");
