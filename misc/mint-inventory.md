@@ -231,7 +231,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/Source.h:68` | HS14: 22 |
+| `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/Source.h:68` | HS14: 30 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/Perm.h:34` | HS14: 2 |
 | `mint_self_signed_handshake` | `include/crucible/permissions/FederationPermission.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Source.h:67` | HS14: 4 |
 
@@ -267,8 +267,8 @@ apply to the row.
 | `mint_chainedge_signaler_session` | `include/crucible/sessions/ChainEdgeSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:236` | HS14: 3 |
 | `mint_chainedge_waiter` | `include/crucible/sessions/ChainEdgeSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:235` | HS14: 2 |
 | `mint_chainedge_waiter_session` | `include/crucible/sessions/ChainEdgeSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:237` | HS14: 3 |
-| `mint_channel` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 10 |
-| `mint_channel` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Sess.h:228` | HS14: 10 |
+| `mint_channel` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 12 |
+| `mint_channel` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Sess.h:228` | HS14: 12 |
 | `mint_chaselev_owner` | `include/crucible/sessions/ChaseLevDequeSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:175` | HS14: 3 |
 | `mint_chaselev_thief(Deque&)` | `include/crucible/sessions/ChaseLevDequeSession.h` | Y | - (alloc) | Y | Y | token | · | `include/crucible/fixy/Substr.h:176` | HS14: 3 |
 | `mint_chaselev_thief(Deque&,::crucible::safety::SharedPermission<typename Deque::thief_tag>)` | `include/crucible/sessions/ChaseLevDequeSession.h` | Y | - | Y | Y | token | · | `include/crucible/fixy/Substr.h:176` | HS14: 3 |
@@ -276,8 +276,8 @@ apply to the row.
 | `mint_consumer_session` | `include/crucible/sessions/ShardedCalendarGridSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:334` | HS14: 10 |
 | `mint_consumer_session` | `include/crucible/sessions/ShardedGridSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:367` | HS14: 10 |
 | `mint_consumer_session` | `include/crucible/sessions/SpscSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:114` | HS14: 10 |
-| `mint_coord` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:17` | HS14: 3 |
-| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/SessFederation.h:20` | HS14: 13 |
+| `mint_coord` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:17` | HS14: 5 |
+| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/SessFederation.h:20` | HS14: 21 |
 | `mint_metalog_consumer` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:206` | HS14: 2 |
 | `mint_metalog_consumer_session` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:208` | HS14: 4 |
 | `mint_metalog_producer` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:205` | HS14: 2 |
@@ -294,8 +294,8 @@ apply to the row.
 | `mint_producer_session` | `include/crucible/sessions/SpscSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:113` | HS14: 11 |
 | `mint_reader_runtime_session` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:141` | HS14: 3 |
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:139` | HS14: 2 |
-| `mint_receiver` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:16` | HS14: 4 |
-| `mint_sender` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:15` | HS14: 10 |
+| `mint_receiver` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:16` | HS14: 6 |
+| `mint_sender` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:15` | HS14: 12 |
 | `mint_session_handle` | `include/crucible/sessions/Session.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Sess.h:229` | HS14: 26 |
 | `mint_session_view` | `include/crucible/sessions/SessionView.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Sess.h:235` | HS14: 5 |
 | `mint_sharded_calendar_grid_consumer` | `include/crucible/sessions/ShardedCalendarGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:332` | HS14: 2 |

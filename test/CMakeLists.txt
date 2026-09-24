@@ -12543,6 +12543,42 @@ crucible_neg_compile_test(neg_federation_mint_raw_permission
 crucible_neg_compile_test(neg_federation_mint_wrong_org_share
     "no matching function|could not convert|cannot convert|invalid initialization|deduction/substitution failed")
 
+# A projection of a global type is safe only on per-pair FIFO.  Each
+# multiparty mint rejects a carrier with the session_network value Mailbox,
+# and a carrier with no session_network value.  Each of the five gates has
+# one fixture for each of the two carriers.  In each fixture the context,
+# the admittance and the manifest are valid.
+crucible_neg_compile_test(neg_federation_mint_sender_mailbox_carrier
+    "required for the satisfaction of .CtxFitsFederationOn<Ctx, SenderEndpoint>."
+    "the expression .\\(CarrierIsPerPairFifo<Endpoints> && \\.\\.\\.\\) \\[with Endpoints = \\{neg_fed_sender_mailbox::MailboxEndpoint\\}\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_federation_mint_sender_undeclared_carrier
+    "required for the satisfaction of .CtxFitsFederationOn<Ctx, SenderEndpoint>."
+    "the expression .\\(CarrierIsPerPairFifo<Endpoints> && \\.\\.\\.\\) \\[with Endpoints = \\{neg_fed_sender_undeclared::UndeclaredEndpoint\\}\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_federation_mint_receiver_mailbox_carrier
+    "required for the satisfaction of .CtxFitsFederationOn<Ctx, ReceiverEndpoint>."
+    "the expression .\\(CarrierIsPerPairFifo<Endpoints> && \\.\\.\\.\\) \\[with Endpoints = \\{neg_fed_receiver_mailbox::MailboxEndpoint\\}\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_federation_mint_receiver_undeclared_carrier
+    "required for the satisfaction of .CtxFitsFederationOn<Ctx, ReceiverEndpoint>."
+    "the expression .\\(CarrierIsPerPairFifo<Endpoints> && \\.\\.\\.\\) \\[with Endpoints = \\{neg_fed_receiver_undeclared::UndeclaredEndpoint\\}\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_federation_mint_coord_mailbox_carrier
+    "required for the satisfaction of .CtxFitsFederationOn<Ctx, CoordEndpoint>."
+    "the expression .\\(CarrierIsPerPairFifo<Endpoints> && \\.\\.\\.\\) \\[with Endpoints = \\{neg_fed_coord_mailbox::MailboxEndpoint\\}\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_federation_mint_coord_undeclared_carrier
+    "required for the satisfaction of .CtxFitsFederationOn<Ctx, CoordEndpoint>."
+    "the expression .\\(CarrierIsPerPairFifo<Endpoints> && \\.\\.\\.\\) \\[with Endpoints = \\{neg_fed_coord_undeclared::UndeclaredEndpoint\\}\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_federation_mint_channel_mailbox_carrier
+    "required for the satisfaction of .CtxFitsFederationOn<Ctx, SenderEndpoint, ReceiverEndpoint>."
+    "the expression .\\(CarrierIsPerPairFifo<Endpoints> && \\.\\.\\.\\) \\[with Endpoints = \\{neg_fed_channel_mailbox::MailboxEndpoint, neg_fed_channel_mailbox::FifoEndpoint\\}\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_federation_mint_channel_undeclared_carrier
+    "required for the satisfaction of .CtxFitsFederationOn<Ctx, SenderEndpoint, ReceiverEndpoint>."
+    "the expression .\\(CarrierIsPerPairFifo<Endpoints> && \\.\\.\\.\\) \\[with Endpoints = \\{neg_fed_channel_undeclared::FifoEndpoint, neg_fed_channel_undeclared::UndeclaredEndpoint\\}\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_session_fork_mailbox_carrier
+    "static assertion failed: crucible::session::diagnostic \\[Carrier_Not_Per_Pair_Fifo\\]: session_fork"
+    "the expression .\\(session_network_v<Carrier>\\) == fixy::session::Network::PerPairFifo \\[with Carrier = neg_fork_mailbox::MailboxChan\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_session_fork_undeclared_carrier
+    "static assertion failed: crucible::session::diagnostic \\[Carrier_Not_Per_Pair_Fifo\\]: session_fork"
+    "the expression .has_session_network_v<Carrier> \\[with Carrier = neg_fork_undeclared::UndeclaredChan\\]. evaluated to .false.")
+
 # fixy-L-02 #1518 — substrate-side HS14 floor for
 # `mint_self_signed_handshake<Org>` §XXI mint gate.
 # Two distinct rejection classes both targeting FederationOrgTag<Org>:

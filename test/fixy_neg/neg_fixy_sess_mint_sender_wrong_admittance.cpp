@@ -41,7 +41,9 @@ namespace eff = ::crucible::effects;
 namespace neg_fixy_sender_wrong_admit {
 struct PeerOrg {};
 struct TraceKey {};
-struct Endpoint {};
+struct Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 }  // namespace neg_fixy_sender_wrong_admit
 
 int main() {

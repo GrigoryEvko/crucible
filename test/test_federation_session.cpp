@@ -29,7 +29,9 @@ namespace {
 struct TraceKey {};
 struct PeerOrg {};
 
+// Each role has one queue for each peer.  This carrier is per-pair FIFO.
 struct Endpoint {
+    static constexpr fixy::session::Network session_network = fixy::session::Network::PerPairFifo;
     std::vector<int>* events = nullptr;
 };
 

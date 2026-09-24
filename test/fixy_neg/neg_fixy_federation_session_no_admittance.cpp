@@ -27,10 +27,13 @@ namespace fsess = crucible::fixy::sess;
 
 struct NegFedNoAdmit_PeerOrg {};
 struct NegFedNoAdmit_KeyTag {};
+struct NegFedNoAdmit_Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 
 int main() {
     crucible::effects::BgCompileCtx ctx{::crucible::effects::testing::bg()};
-    int endpoint = 0;
+    NegFedNoAdmit_Endpoint endpoint{};
 
     // Missing the 3rd (admittance) argument — must fail arity check.
     auto bad = fsess::mint_sender<NegFedNoAdmit_PeerOrg, NegFedNoAdmit_KeyTag>(ctx, endpoint);

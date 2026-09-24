@@ -39,7 +39,9 @@ namespace saf = ::crucible::safety;
 namespace neg_fixy_sender_non_ctx {
 struct PeerOrg {};
 struct TraceKey {};
-struct Endpoint {};
+struct Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 }  // namespace neg_fixy_sender_non_ctx
 
 #pragma GCC diagnostic push

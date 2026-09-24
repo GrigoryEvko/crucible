@@ -31,7 +31,9 @@ namespace eff = ::crucible::effects;
 namespace neg_fixy_fed_fg {
 struct PeerOrg {};
 struct TraceKey {};
-struct Endpoint {};
+struct Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 }  // namespace neg_fixy_fed_fg
 
 #pragma GCC diagnostic push

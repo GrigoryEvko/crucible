@@ -13,7 +13,9 @@ using FederationFitCtx =
 
 struct Key {};
 struct PeerOrg {};
-struct Endpoint {};
+struct Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 
 // fixy-CR-07 + fixy-A2-009: federation session mints now take an `Org`
 // first template parameter and a `SharedPermission<FederatedPeer<Org>>`

@@ -6,9 +6,11 @@
 // federation::mint_channel, which calls mint_permissioned_session for
 // each endpoint.  mint_permissioned_session is constrained
 // `CtxFitsPermissionedProtocol<SenderProto<KeyTag>, Ctx, PermSet<>>`.
-// Passing a `void*` as the sender endpoint cannot satisfy the
-// protocol's resource-shape concept gate, so the constraint chain
-// fires at the inner mint_permissioned_session call.
+// The endpoints are lvalues of a carrier that has the session_network
+// value PerPairFifo but is not Pinned.  The network gate accepts the
+// carrier.  The resource-shape concept gate rejects a reference to a type
+// that is not Pinned.  This rejection occurs at the inner
+// mint_permissioned_session call.
 //
 // fixy-CR-07 + fixy-A2-009: federation mints now also take a
 // `SharedPermission<FederatedPeer<Org>>` admittance witness (by value);
@@ -44,6 +46,9 @@ using FederationFitCtx =
                  .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 struct NegFedChannelWrongEp_PeerOrg {};
+struct NegFedChannelWrongEp_Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 
 // CR-02/CR-03/CR-04 — mint_federation_admittance is [[deprecated]];
 // suppress so the diagnostic does not interleave with the expected
@@ -61,10 +66,10 @@ int main() {
     // fixy-CR-13: use the widened FederationFitCtx so the surface row
     // gate (CtxFitsFederation) is satisfied; the constraint chain then
     // reaches the inner mint_permissioned_session call and fires
-    // SessionResource_NotPinned for the void* endpoints.
+    // SessionResource_NotPinned for the endpoint references.
     FederationFitCtx ctx{::crucible::effects::testing::bg()};
-    void* bad_sender = nullptr;
-    void* bad_receiver = nullptr;
+    NegFedChannelWrongEp_Endpoint bad_sender{};
+    NegFedChannelWrongEp_Endpoint bad_receiver{};
     auto bad =
         fsess::mint_federation_channel<NegFedChannelWrongEp_PeerOrg>(ctx, bad_sender, bad_receiver, guard->token());
     (void)bad;

@@ -36,6 +36,9 @@ namespace ff = crucible::fixy::source::federation;
 
 struct NegFedWrongOrg_OrgA {};
 struct NegFedWrongOrg_OrgB {};
+struct NegFedWrongOrg_Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 
 // CR-02/CR-03/CR-04 — mint_federation_admittance is [[deprecated]];
 // suppress so it does not interleave with the expected cross-org
@@ -50,7 +53,7 @@ int main() {
     auto admitted_a = ff::mint_federation_admittance<NegFedWrongOrg_OrgA>(local, handshake_a);
 
     crucible::effects::BgCompileCtx ctx{::crucible::effects::testing::bg()};
-    int endpoint = 0;
+    NegFedWrongOrg_Endpoint endpoint{};
 
     // Try to mint a session to OrgB using an OrgA admittance — the
     // Permission tags are distinct phantom types and must not bind.

@@ -37,7 +37,9 @@ namespace neg_fed_wrong_org {
 struct OrgA {};
 struct OrgB {};
 struct TraceKey {};
-struct Endpoint {};
+struct Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 }  // namespace neg_fed_wrong_org
 
 // fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.

@@ -34,6 +34,9 @@ namespace cs = crucible::safety;
 namespace ff = crucible::fixy::source::federation;
 
 struct NegFedChannelNonCtx_PeerOrg {};
+struct NegFedChannelNonCtx_Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 
 // CR-02/CR-03/CR-04 — mint_federation_admittance is [[deprecated]];
 // suppress the diagnostic so it does not interleave with the expected
@@ -52,7 +55,8 @@ int main() {
     // Plain int as ctx — fails IsExecCtx constraint at template
     // parameter substitution time; the 4-arg shape is satisfied so
     // arity-check passes and the constraint check is what surfaces.
-    auto bad = fsess::mint_federation_channel<NegFedChannelNonCtx_PeerOrg>(not_a_ctx, 0, 0, guard->token());
+    auto bad = fsess::mint_federation_channel<NegFedChannelNonCtx_PeerOrg>(
+        not_a_ctx, NegFedChannelNonCtx_Endpoint{}, NegFedChannelNonCtx_Endpoint{}, guard->token());
     (void)bad;
     return 0;
 }

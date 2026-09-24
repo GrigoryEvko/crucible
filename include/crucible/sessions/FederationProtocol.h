@@ -44,6 +44,12 @@ template <typename Ctx>
 concept CtxFitsFederation =
     ::crucible::effects::IsExecCtx<Ctx> && ::crucible::effects::Subrow<federation_required_row, typename Ctx::row_type>;
 
+// A federation mint accepts a context only if the context has the federation
+// row, and an endpoint only if the endpoint has the session_network value
+// PerPairFifo.  The check of the context comes first.
+template <typename Ctx, typename... Endpoints>
+concept CtxFitsFederationOn = CtxFitsFederation<Ctx> && (CarrierIsPerPairFifo<Endpoints> && ...);
+
 struct SenderRole {};
 struct ReceiverRole {};
 struct CoordRole {};
@@ -137,7 +143,7 @@ template <typename Org>
 }
 
 template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typename SenderEndpoint>
-    requires CtxFitsFederation<Ctx>
+    requires CtxFitsFederationOn<Ctx, SenderEndpoint>
 [[nodiscard]] constexpr auto mint_sender(
     Ctx const& ctx, SenderEndpoint&& sender_endpoint,
     ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
@@ -151,7 +157,7 @@ template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typena
 }
 
 template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typename ReceiverEndpoint>
-    requires CtxFitsFederation<Ctx>
+    requires CtxFitsFederationOn<Ctx, ReceiverEndpoint>
 [[nodiscard]] constexpr auto mint_receiver(
     Ctx const& ctx, ReceiverEndpoint&& receiver_endpoint,
     ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
@@ -166,7 +172,7 @@ template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typena
 
 template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typename SenderEndpoint,
           typename ReceiverEndpoint>
-    requires CtxFitsFederation<Ctx>
+    requires CtxFitsFederationOn<Ctx, SenderEndpoint, ReceiverEndpoint>
 [[nodiscard]] constexpr auto mint_channel(
     Ctx const& ctx, SenderEndpoint&& sender_endpoint, ReceiverEndpoint&& receiver_endpoint,
     ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> admittance) noexcept {
@@ -177,7 +183,7 @@ template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typena
 }
 
 template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typename CoordEndpoint>
-    requires CtxFitsFederation<Ctx>
+    requires CtxFitsFederationOn<Ctx, CoordEndpoint>
 [[nodiscard]] constexpr auto mint_coord(
     Ctx const& ctx, CoordEndpoint&& coord_endpoint,
     ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {

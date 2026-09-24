@@ -34,6 +34,7 @@
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/SessionPermPayloads.h>
 #include <crucible/sessions/SessionSubtype.h>
+#include <fixy/session/Network.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -1367,6 +1368,15 @@ template <typename PSH, typename Body>
     return std::optional{std::forward<Body>(body)(std::forward<PSH>(h))};
 }
 
+// A projection of a global type is safe on one FIFO queue for each ordered
+// pair of roles, and not on a mailbox or a bag (fixy/session/Network.h).
+// A multiparty mint of this tree accepts only a carrier that has the
+// session_network value PerPairFifo.  It rejects all other carriers.
+template <typename Carrier>
+concept CarrierIsPerPairFifo =
+    ::fixy::session::has_session_network_v<Carrier>
+    && ::fixy::session::session_network_v<Carrier> == ::fixy::session::Network::PerPairFifo;
+
 // Spawns one thread per role, each running that role's projection of the
 // global type with the role's permission as its initial set, and rebuilds the
 // whole permission once every role has joined.
@@ -1424,6 +1434,12 @@ template <typename G, typename Whole, typename... RolePerms, ::crucible::effects
                                                    "session_fork: the SharedChannel must be Pinned (its address "
                                                    "must be stable across the spawned threads' lifetimes).  "
                                                    "Derive your channel from safety::Pinned<ChannelType>.");
+    static_assert(CarrierIsPerPairFifo<SharedChannel>,
+                  "crucible::session::diagnostic [Carrier_Not_Per_Pair_Fifo]: "
+                  "session_fork: each role uses its projection of G on the SharedChannel, "
+                  "and a projection is safe only on per-pair FIFO.  Give the SharedChannel "
+                  "the member static constexpr fixy::session::Network session_network = "
+                  "fixy::session::Network::PerPairFifo.");
 
     return mint_permission_fork<RolePerms...>(
         ctx, std::move(whole_perm),

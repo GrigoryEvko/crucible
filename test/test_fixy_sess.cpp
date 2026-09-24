@@ -47,12 +47,17 @@ static_assert(std::is_same_v<fsess::Stop, proto::Stop>, "fixy::sess::Stop must a
 
 namespace test_fixy_sess {
 struct KeyTag {};
+// A federation mint accepts only a carrier that is per-pair FIFO.
+struct Wire {
+    static constexpr fixy::session::Network session_network = fixy::session::Network::PerPairFifo;
+};
 }  // namespace test_fixy_sess
 
 static_assert(
     std::is_same_v<decltype(&fsess::federation::mint_sender<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag,
-                                                            FederationFitCtx, int>),
-                   decltype(&fed::mint_sender<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx, int>)>,
+                                                            FederationFitCtx, test_fixy_sess::Wire>),
+                   decltype(&fed::mint_sender<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx,
+                                              test_fixy_sess::Wire>)>,
     "fixy::sess::federation::mint_sender must be the substrate function "
     "(name-lookup-only re-export).");
 
@@ -72,13 +77,16 @@ static_assert(
     "fixy::sess::mint_channel must be the session-protocol form "
     "(proto::mint_channel), not federation's.");
 
+using test_fixy_sess::Wire;
+
 static_assert(
     std::is_same_v<
-        decltype(fsess::mint_federation_channel<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx, int,
-                                                int>(std::declval<const FederationFitCtx&>(), std::declval<int>(),
-                                                     std::declval<int>(), std::declval<TestPeerAdmittance>())),
-        decltype(fed::mint_channel<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx, int, int>(
-            std::declval<const FederationFitCtx&>(), std::declval<int>(), std::declval<int>(),
+        decltype(fsess::mint_federation_channel<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx,
+                                                Wire, Wire>(std::declval<const FederationFitCtx&>(),
+                                                            std::declval<Wire>(), std::declval<Wire>(),
+                                                            std::declval<TestPeerAdmittance>())),
+        decltype(fed::mint_channel<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx, Wire, Wire>(
+            std::declval<const FederationFitCtx&>(), std::declval<Wire>(), std::declval<Wire>(),
             std::declval<TestPeerAdmittance>()))>,
     "fixy::sess::mint_federation_channel must forward to "
     "federation::mint_channel with identical return type.");
@@ -87,11 +95,12 @@ static_assert(
 // edited.
 static_assert(
     std::is_same_v<
-        decltype(fsess::federation::mint_channel<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx, int,
-                                                 int>(std::declval<const FederationFitCtx&>(), std::declval<int>(),
-                                                      std::declval<int>(), std::declval<TestPeerAdmittance>())),
-        decltype(fed::mint_channel<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx, int, int>(
-            std::declval<const FederationFitCtx&>(), std::declval<int>(), std::declval<int>(),
+        decltype(fsess::federation::mint_channel<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx,
+                                                 Wire, Wire>(std::declval<const FederationFitCtx&>(),
+                                                             std::declval<Wire>(), std::declval<Wire>(),
+                                                             std::declval<TestPeerAdmittance>())),
+        decltype(fed::mint_channel<test_fixy_sess::PeerOrg, test_fixy_sess::KeyTag, FederationFitCtx, Wire, Wire>(
+            std::declval<const FederationFitCtx&>(), std::declval<Wire>(), std::declval<Wire>(),
             std::declval<TestPeerAdmittance>()))>,
     "fixy::sess::federation::mint_channel must remain callable via the "
     "namespace alias.");

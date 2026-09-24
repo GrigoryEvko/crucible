@@ -450,8 +450,11 @@ struct Whole {};
 
 // One slot per direction, each gated by its own flag. The fork binds the
 // channel by lvalue reference, and the resource concept admits such a
-// reference only when the referent is pinned.
+// reference only when the referent is pinned. A slot for each direction is
+// a FIFO queue for each ordered pair of roles. The fork accepts only such a
+// channel.
 struct SharedChan : ::crucible::safety::Pinned<SharedChan> {
+    static constexpr fixy::session::Network session_network = fixy::session::Network::PerPairFifo;
     std::atomic<int> c2s_value{0};
     std::atomic<bool> c2s_ready{false};
     std::atomic<bool> s2c_value{false};

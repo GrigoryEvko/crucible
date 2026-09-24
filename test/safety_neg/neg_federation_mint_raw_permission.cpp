@@ -37,7 +37,9 @@ namespace eff = ::crucible::effects;
 namespace neg_fed_raw_perm {
 struct PeerOrg {};
 struct TraceKey {};
-struct Endpoint {};
+struct Endpoint {
+    static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::PerPairFifo;
+};
 }  // namespace neg_fed_raw_perm
 
 // fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
