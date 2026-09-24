@@ -19,7 +19,7 @@
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>

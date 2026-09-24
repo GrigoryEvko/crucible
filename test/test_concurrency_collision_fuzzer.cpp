@@ -23,7 +23,7 @@
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/concurrent/_SpscRing.h>
 #include <crucible/concurrent/scheduler/Policies.h>

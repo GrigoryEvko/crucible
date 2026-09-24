@@ -27,7 +27,7 @@
 // MUST contain "private".
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>

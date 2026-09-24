@@ -50,7 +50,7 @@
 // 'mint_recording_endpoint'" OR "cannot bind non-const lvalue
 // reference of type 'SessionEventLog&'" OR "could not convert".
 
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Bridge.h>
 #include <crucible/fixy/Pipe.h>

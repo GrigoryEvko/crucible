@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/_Pinned.h>

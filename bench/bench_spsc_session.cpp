@@ -87,7 +87,7 @@
 #include <cstdlib>
 #include <memory>
 
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SpscSession.h>
 #include <foundation/Platform.h>

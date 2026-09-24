@@ -17,7 +17,7 @@
 // swmr_stage_from_endpoint_gate / is_swmr_writer.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 #include <crucible/permissions/_Permission.h>

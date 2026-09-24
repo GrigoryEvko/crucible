@@ -6,7 +6,7 @@
 
 #include <crucible/fixy/Substr.h>
 
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/permissions/_Permission.h>
 
 #include <cstdio>

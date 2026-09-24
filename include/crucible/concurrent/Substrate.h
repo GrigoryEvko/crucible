@@ -4,7 +4,7 @@
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/_WorkingSet.h>
 
 #include <cstddef>

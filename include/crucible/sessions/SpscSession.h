@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionMint.h>

@@ -18,7 +18,7 @@
 #include <crucible/Platform.h>
 #include <crucible/_Saturate.h>
 #include <crucible/SchemaTable.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/_Pipeline.h>
 #include <crucible/concurrent/_SpinLock.h>
 #include <crucible/effects/_EffectRow.h>

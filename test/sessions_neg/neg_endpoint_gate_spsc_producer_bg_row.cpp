@@ -5,7 +5,7 @@
 // admits no background row, so the send side of the protocol does not fit it.
 // The refusal is a constraint failure on the mint, not an error inside it.
 
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/sessions/SpscSession.h>
 

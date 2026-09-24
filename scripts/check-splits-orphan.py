@@ -101,9 +101,9 @@ AUTHORING: dict[str, str] = {
     "include/crucible/concurrent/PermissionedChaseLevDeque.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/PermissionedMpmcChannel.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/PermissionedSnapshot.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/PermissionedSpscChannel.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/Queue.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/_PermissionedMpscChannel.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/_PermissionedSpscChannel.h": FROZEN_CHANNEL,
     "include/crucible/permissions/FederationPermission.h":
         "the split of a federated peer is partial over its children, which are template parameters",
     "include/crucible/safety/PermissionTreeGenerator.h": "the generator splits every parent into its slices",

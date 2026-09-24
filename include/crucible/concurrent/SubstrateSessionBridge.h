@@ -5,7 +5,7 @@
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
 #include <crucible/effects/_ExecCtx.h>

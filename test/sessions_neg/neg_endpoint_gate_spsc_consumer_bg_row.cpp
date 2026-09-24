@@ -5,7 +5,7 @@
 // its row into the receiver, so the receive side of the protocol does not fit
 // the foreground context either.
 
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/sessions/SpscSession.h>
 

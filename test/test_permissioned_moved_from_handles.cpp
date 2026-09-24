@@ -22,7 +22,7 @@
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/Queue.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/permissions/_Permission.h>

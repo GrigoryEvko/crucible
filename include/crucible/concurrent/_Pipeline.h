@@ -21,7 +21,7 @@
 // admits the effects of all the stage contexts it is about to start.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/_Stage.h>
 #include <crucible/concurrent/_Topology.h>
 #include <crucible/concurrent/_WorkingSet.h>
