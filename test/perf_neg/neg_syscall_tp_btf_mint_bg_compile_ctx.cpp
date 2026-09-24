@@ -14,7 +14,8 @@
 
 int main() {
     auto hub =
-        crucible::perf::mint_syscall_tp_btf(crucible::effects::BgCompileCtx{::crucible::effects::testing::bg()}, crucible::effects::testing::init());
+        crucible::perf::mint_syscall_tp_btf(crucible::effects::BgCompileCtx{::crucible::effects::testing::bg()},
+                                            ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;
 }

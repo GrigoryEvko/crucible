@@ -47,6 +47,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Refined.h>
+#include <fixy/Ctx.h>
 #include <fixy/Stale.h>
 
 #include <atomic>
@@ -185,10 +186,13 @@ public:
         // so on_region_ready can observe on the very first region transition
         // without a null check.  Attach failure is not an error here: every
         // observation then returns InsufficientData.
+        //
+        // The program load waits in the kernel for the verifier, so it takes
+        // the startup load context, which the init door gives.
         if (cfg_.enable_deadline_watchdog) {
-            senses_.emplace(::crucible::perf::Senses::load_subset(
-                ::crucible::effects::mint_init_context(::crucible::effects::detail::ctx_mint::init_key{}),
-                ::crucible::perf::SensesMask{.sched_switch = true}));
+            const ::fixy::InitLoadCtx startup{::foundation::effects::host::InitOwner::mint_init_context()};
+            senses_.emplace(
+                ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true}));
             wd_.emplace(&*senses_, cfg_.watchdog_policy,
                         ::crucible::effects::mint_init_context(::crucible::effects::detail::ctx_mint::init_key{}));
         }

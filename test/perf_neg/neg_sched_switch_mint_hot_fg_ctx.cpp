@@ -8,7 +8,8 @@
 #include <crucible/perf/SchedSwitch.h>
 
 int main() {
-    auto hub = crucible::perf::mint_sched_switch(crucible::effects::HotFgCtx{}, crucible::effects::testing::init());
+    auto hub = crucible::perf::mint_sched_switch(crucible::effects::HotFgCtx{},
+                                                 ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;
 }

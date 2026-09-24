@@ -188,7 +188,6 @@ include/crucible/perf/SchedSwitch.h
 include/crucible/perf/SchedTpBtf.h
 include/crucible/perf/SenseHub.h
 include/crucible/perf/SenseHubV2.h
-include/crucible/perf/Senses.h
 include/crucible/perf/SyscallLatency.h
 include/crucible/perf/SyscallTpBtf.h
 include/crucible/perf/WorkloadProfiler.h
@@ -222,7 +221,6 @@ src/perf/SchedSwitch.cpp
 src/perf/SchedTpBtf.cpp
 src/perf/SenseHub.cpp
 src/perf/SenseHubV2.cpp
-src/perf/Senses.cpp
 src/perf/SyscallLatency.cpp
 src/perf/SyscallTpBtf.cpp
 src/topology/Discovery.cpp

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/perf/LockContention.h>
 #include <crucible/perf/PmuSample.h>
 #include <crucible/perf/SchedSwitch.h>
@@ -8,6 +7,7 @@
 #include <crucible/perf/SenseHub.h>
 #include <crucible/perf/SyscallLatency.h>
 #include <crucible/perf/SyscallTpBtf.h>
+#include <fixy/Ctx.h>
 
 #include <cstdint>
 #include <optional>
@@ -65,9 +65,12 @@ struct CoverageReport {
 
 class Senses {
 public:
-    [[nodiscard]] static Senses load_all(::crucible::effects::Init) noexcept;
+    // Each load takes the startup load context.  Its row carries Block,
+    // because each program load waits in the kernel while the verifier
+    // examines the program.
+    [[nodiscard]] static Senses load_all(::fixy::InitLoadCtx const&) noexcept;
 
-    [[nodiscard]] static Senses load_subset(::crucible::effects::Init, SensesMask which) noexcept;
+    [[nodiscard]] static Senses load_subset(::fixy::InitLoadCtx const&, SensesMask which) noexcept;
 
     [[nodiscard]] const SenseHub* sense_hub() const noexcept;
     [[nodiscard]] const SchedSwitch* sched_switch() const noexcept;

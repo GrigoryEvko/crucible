@@ -54,7 +54,8 @@ int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
 
-    auto s = crucible::perf::Senses::load_all(::crucible::effects::testing::init());
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    auto s = crucible::perf::Senses::load_all(startup);
     static_assert(std::is_same_v<decltype(s), crucible::perf::Senses>);
 
     // For every facade, the coverage report and the accessor must
@@ -101,10 +102,10 @@ int main() {
 
     // Loading a subset must leave every facade outside the mask
     // unloaded.
-    auto sub = crucible::perf::Senses::load_subset(::crucible::effects::testing::init(), crucible::perf::SensesMask{
-                                                                                             .sense_hub = true,
-                                                                                             .pmu_sample = true,
-                                                                                         });
+    auto sub = crucible::perf::Senses::load_subset(startup, crucible::perf::SensesMask{
+                                                                .sense_hub = true,
+                                                                .pmu_sample = true,
+                                                            });
     const auto sub_cov = sub.coverage();
     if (sub.sched_switch() != nullptr || sub_cov.sched_switch_attached) {
         std::fprintf(stderr, "Senses::load_subset masked off sched_switch but it's loaded\n");
@@ -172,9 +173,9 @@ int main() {
 
     // Move assignment owes the same guarantee as move construction,
     // and it is a separate piece of code, so it is checked separately.
-    auto reloaded = crucible::perf::Senses::load_all(::crucible::effects::testing::init());
+    auto reloaded = crucible::perf::Senses::load_all(startup);
     auto assigned_into = crucible::perf::Senses::load_subset(
-        ::crucible::effects::testing::init(), crucible::perf::SensesMask{});  // empty mask — target starts disengaged
+        startup, crucible::perf::SensesMask{});  // empty mask — target starts disengaged
     assigned_into = std::move(reloaded);
     const auto reloaded_cov = reloaded.coverage();
     if (reloaded_cov.attached_count() != 0u) {

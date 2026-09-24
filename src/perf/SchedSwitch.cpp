@@ -80,7 +80,7 @@ SchedSwitch::SchedSwitch(SchedSwitch&&) noexcept = default;
 SchedSwitch& SchedSwitch::operator=(SchedSwitch&&) noexcept = default;
 SchedSwitch::~SchedSwitch() = default;
 
-std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept {
+std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const&) noexcept {
     install_libbpf_log_cb_once();
 
     const auto report = [](const char* why, int err = 0) {

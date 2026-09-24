@@ -73,7 +73,7 @@ SchedTpBtf::SchedTpBtf(SchedTpBtf&&) noexcept = default;
 SchedTpBtf& SchedTpBtf::operator=(SchedTpBtf&&) noexcept = default;
 SchedTpBtf::~SchedTpBtf() = default;
 
-std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
+std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const&) noexcept {
     install_libbpf_log_cb_once();
 
     const auto report = [](const char* why, int err = 0) {

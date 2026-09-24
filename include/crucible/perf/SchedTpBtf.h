@@ -7,6 +7,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_Refined.h>
+#include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
 
 #include <cstddef>
@@ -45,7 +46,11 @@ public:
     // at /sys/kernel/btf/vmlinux.  Returns nullopt on a kernel that
     // carries no such type information, and when CAP_BPF or
     // CAP_PERFMON is missing or the verifier rejects the program.
-    [[nodiscard]] static std::optional<SchedTpBtf> load(::crucible::effects::Init) noexcept;
+    //
+    // The load takes the startup load context.  Its row carries Block,
+    // because the load waits in the kernel while the verifier examines
+    // the program.
+    [[nodiscard]] static std::optional<SchedTpBtf> load(::fixy::InitLoadCtx const&) noexcept;
 
     // Counts only this process, from the load onward.  Reading it
     // costs a map-lookup syscall: the counter lives in a one-element
@@ -96,11 +101,11 @@ private:
 // mmap traffic.  Alloc covers the state the load path takes from the
 // heap.
 //
-// An Init-capability context cannot reach this surface.  The permitted
-// row of that capability is Row<Init, Alloc, IO> and carries no Block,
-// so a startup context widens no further than IO and the gate is
-// unsatisfiable there.  A background context permits all three atoms
-// and widens to them.
+// An old-tree init context cannot pass this gate.  The permitted row of
+// the old-tree init capability is Row<Init, Alloc, IO> and carries no
+// Block, so that context widens no further than IO.  A background
+// context permits all three atoms and widens to them.  The second
+// argument is the startup load context that the load takes.
 
 using sched_tp_btf_required_row =
     ::crucible::effects::Row<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::IO,
@@ -131,7 +136,7 @@ template <::crucible::effects::IsExecCtx Ctx>
 // §XXI carve-out: cx=alloc — the load path maps the timeline ring and
 // heap-allocates State.  Compile-time evaluation would lie about the
 // runtime cost.
-[[nodiscard]] inline std::optional<SchedTpBtf> mint_sched_tp_btf(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<SchedTpBtf> mint_sched_tp_btf(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
     return SchedTpBtf::load(init);
 }
 
@@ -149,9 +154,8 @@ static_assert(CtxFitsSchedTpBtfMint<::crucible::effects::TestRunnerCtx>);
 // one named context, so a new alias on either side cannot evade them.
 static_assert(!::crucible::effects::Subrow<sched_tp_btf_required_row,
                                           ::crucible::effects::cap_permitted_row_t<::crucible::effects::Init>>,
-              "The initialization capability must never permit every atom this gate demands.  It omits "
-              "Block because a startup scope must not wait, and the BPF program load waits on the "
-              "kernel verifier.  No widening rescues an initialization context.");
+              "The old-tree init capability permits Row<Init, Alloc, IO>, which does not contain every "
+              "atom this gate demands.  No widening takes an old-tree init context through this gate.");
 static_assert(::crucible::effects::Subrow<sched_tp_btf_required_row,
                                           ::crucible::effects::cap_permitted_row_t<::crucible::effects::Bg>>,
               "The background capability must permit every atom this gate demands, or no production "

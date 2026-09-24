@@ -78,7 +78,7 @@ int main() {
     // without reading any telemetry.  That must hold even with senses
     // attached.
     {
-        auto senses = crucible::perf::Senses::load_subset(::crucible::effects::testing::init(),
+        auto senses = crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                           crucible::perf::SensesMask{.sense_hub = true});
         WorkloadProfiler profiler{&senses, ::crucible::effects::testing::init()};
 
@@ -110,7 +110,7 @@ int main() {
     // demotion would need injectable telemetry, which is more than a
     // smoke test is worth.
     {
-        auto senses = crucible::perf::Senses::load_subset(::crucible::effects::testing::init(),
+        auto senses = crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                           crucible::perf::SensesMask{.sense_hub = true});
         WorkloadProfiler profiler{&senses, ::crucible::effects::testing::init()};
 

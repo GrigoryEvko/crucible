@@ -13,7 +13,8 @@
 #include <crucible/perf/SchedTpBtf.h>
 
 int main() {
-    auto hub = crucible::perf::mint_sched_tp_btf(crucible::effects::BgCompileCtx{::crucible::effects::testing::bg()}, crucible::effects::testing::init());
+    auto hub = crucible::perf::mint_sched_tp_btf(crucible::effects::BgCompileCtx{::crucible::effects::testing::bg()},
+                                                 ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;
 }

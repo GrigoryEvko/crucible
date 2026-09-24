@@ -1,17 +1,18 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-004c (#1279): PmuSample::load() takes effects::Init by value.
-// Same cap-typing gate as SenseHub/SchedSwitch — Bg/Init/Test are
-// distinct 1-byte structs with no implicit conversion.
+// PmuSample::load takes the startup load context.  A background load
+// context also claims Block, but its capability source is the background
+// source.  No conversion makes it a startup load context, so the compiler
+// rejects the call.
 
 #include <crucible/perf/PmuSample.h>
-#include <crucible/effects/_Capabilities.h>
+#include <fixy/Ctx.h>
 
 #include <optional>
 
 int main() {
-    auto bg_cap = crucible::effects::testing::bg();
-    std::optional<crucible::perf::PmuSample> hub = crucible::perf::PmuSample::load(bg_cap);  // <-- must NOT compile
+    const ::fixy::BgLoadCtx background{::foundation::effects::testing::bg()};
+    std::optional<crucible::perf::PmuSample> hub = crucible::perf::PmuSample::load(background);
     (void)hub;
     return 0;
 }

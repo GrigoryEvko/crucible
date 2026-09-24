@@ -1,24 +1,17 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-121b negative fixture #1 (HS14 ≥2 floor, mint #5 of 8):
-// `mint_sense_hub(ctx, init)` requires-clause routed through the
-// `fixy::perf::` re-export (Perf.h:152, FIXY-U-121 landing).
-//
-// Substrate gate is
-//   CtxFitsSenseHubMint = IsExecCtx<Ctx>
-//                       ∧ CtxOwnsCapability<Ctx, Effect::Init>.
-// BgDrainCtx::row = Row<Bg, Alloc> — IsExecCtx admits but the Init
-// capability is absent.
-//
-// Expected diagnostic: "constraints not satisfied" /
-// "CtxFitsSenseHubMint" / "Init" / "row_contains".
+// crucible::fixy::perf::mint_sense_hub is the re-export of the perf mint.
+// Its gate asks for a context row that contains Alloc, IO and Block.  The
+// old-tree BgDrainCtx claims Row<Bg, Alloc>, so the gate rejects it.  The
+// second argument is a valid startup load context, so the gate is the one
+// reason that the compiler rejects the call.
 
-#include <crucible/fixy/Perf.h>
 #include <crucible/effects/_ExecCtx.h>
+#include <crucible/fixy/Perf.h>
 
 int main() {
-    auto hub =
-        crucible::fixy::perf::mint_sense_hub(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, crucible::effects::testing::init());
+    auto hub = crucible::fixy::perf::mint_sense_hub(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()},
+                                                    ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;
 }

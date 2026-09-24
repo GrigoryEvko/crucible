@@ -37,7 +37,7 @@ int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
     std::optional<crucible::perf::SchedTpBtf> hub =
-        crucible::perf::SchedTpBtf::load(::crucible::effects::testing::init());
+        crucible::perf::SchedTpBtf::load(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(hub), std::optional<crucible::perf::SchedTpBtf>>);
 
     if (hub.has_value()) {

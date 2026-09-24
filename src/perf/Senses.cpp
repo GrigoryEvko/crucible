@@ -23,10 +23,10 @@ Senses& Senses::operator=(Senses&& other) noexcept {
 
 Senses::~Senses() noexcept = default;
 
-// Init is the once-at-startup capability and this is startup, so the one tag
-// admits every subprogram load below.
+// The startup load context admits every subprogram load below.  Its row
+// carries Block, and each load waits in the kernel for the verifier.
 
-Senses Senses::load_subset(::crucible::effects::Init init, SensesMask which) noexcept {
+Senses Senses::load_subset(::fixy::InitLoadCtx const& init, SensesMask which) noexcept {
     // State is stack-constructed.  A noexcept load path must not allocate: a
     // nothrow new that fails under memory pressure would degrade silently
     // into an all-false coverage report.
@@ -43,7 +43,7 @@ Senses Senses::load_subset(::crucible::effects::Init init, SensesMask which) noe
     return Senses{std::optional<State>{std::move(s)}};
 }
 
-Senses Senses::load_all(::crucible::effects::Init init) noexcept { return load_subset(init, SensesMask::all()); }
+Senses Senses::load_all(::fixy::InitLoadCtx const& init) noexcept { return load_subset(init, SensesMask::all()); }
 
 const SenseHub* Senses::sense_hub() const noexcept {
     if (!state_ || !state_->sense_hub.has_value()) return nullptr;

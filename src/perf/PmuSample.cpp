@@ -181,7 +181,7 @@ PmuSample::PmuSample(PmuSample&&) noexcept = default;
 PmuSample& PmuSample::operator=(PmuSample&&) noexcept = default;
 PmuSample::~PmuSample() = default;
 
-std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
+std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const&) noexcept {
     install_libbpf_log_cb_once();
 
     const auto report = [](const char* why, int err = 0) {

@@ -115,11 +115,11 @@ int main() {
     // would be misleading here.
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
-    // The loader takes an init capability tag, and main is genuine init
-    // context, so the tag costs nothing to produce here.  The call site
-    // doubles as the check that the capability-gated signature still
-    // compiles from an ordinary init frame.
-    std::optional<crucible::perf::SenseHub> hub = crucible::perf::SenseHub::load(::crucible::effects::testing::init());
+    // The loader takes the startup load context, and main is a startup
+    // frame.  The call site is also the check that the gated signature
+    // compiles from an ordinary startup frame.
+    std::optional<crucible::perf::SenseHub> hub =
+        crucible::perf::SenseHub::load(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(hub), std::optional<crucible::perf::SenseHub>>);
     // Either outcome is valid.  A populated hub also carries counters
     // that must agree with each other.

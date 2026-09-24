@@ -8,7 +8,8 @@
 #include <crucible/perf/SyscallLatency.h>
 
 int main() {
-    auto hub = crucible::perf::mint_syscall_latency(crucible::effects::HotFgCtx{}, crucible::effects::testing::init());
+    auto hub = crucible::perf::mint_syscall_latency(crucible::effects::HotFgCtx{},
+                                                    ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;
 }

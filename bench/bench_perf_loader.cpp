@@ -127,7 +127,7 @@ int main() {
     // doing it again would (a) double the libbpf attach cost (~130 ms on
     // this hardware) and (b) double the partial-attach noise on stderr.
     const auto t0 = steady::now();
-    auto s = crucible::perf::Senses::load_all(crucible::effects::testing::init());
+    auto s = crucible::perf::Senses::load_all(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     const auto t1 = steady::now();
     const auto cov = s.coverage();
     std::printf("load_all: %lld ms\n", elapsed_ms(t0, t1));
@@ -140,10 +140,11 @@ int main() {
     // a second handle on top of `s` above.
     const auto t2 = steady::now();
     {
-        auto sub = crucible::perf::Senses::load_subset(crucible::effects::testing::init(), crucible::perf::SensesMask{
-                                                                                               .sense_hub = true,
-                                                                                               .pmu_sample = true,
-                                                                                           });
+        auto sub = crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
+                                                       crucible::perf::SensesMask{
+                                                           .sense_hub = true,
+                                                           .pmu_sample = true,
+                                                       });
         bench::do_not_optimize(sub);
     }
     const auto t3 = steady::now();

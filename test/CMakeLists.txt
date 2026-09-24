@@ -3534,43 +3534,41 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_ill_formed_proto
     "no matching function|incomplete type|no type named|constraints.*not satisfied"
     "mint_atomic_session|is_well_formed")
 
-# FIXY-U-121b — HS14 ≥2 floor for the 8 V1 perf mints surfaced
-# through `fixy::perf::` (Perf.h:120-180, FIXY-U-121 landing).  Each
-# mint's `CtxFitsXMint = IsExecCtx<Ctx> ∧ CtxOwnsCapability<Ctx, Init>`
-# gets 2 fixtures targeting DISTINCT conjuncts:
-# (#1) bg_ctx       — BgDrainCtx (IsExecCtx ✓, Init capability ✗);
-# (#2) not_exec_ctx — struct missing row_type (IsExecCtx ✗).
-#
-# 16 fixtures total.  Sentinel test_fixy_perf.cpp pins identity +
-# concept-resolution + cardinality; these fixtures pin the requires-
-# clause FIRES through the using-decl name lookup (a regression that
-# replaced the using-decl with a free-function shim would leave
-# substrate's `perf_neg/neg_X_mint_bg_ctx.cpp` green while these
-# fixtures unexpectedly compiled).  V2 hub deferred per FIXY-U-121.
+# The perf mints that crucible/fixy/Perf.h re-exports through
+# `fixy::perf::`.  Each mint is gated on IsExecCtx and on a context row
+# that contains Alloc, IO and Block.  Each gets two fixtures, one for
+# each conjunct:
+#   bg_ctx       — BgDrainCtx is an execution context, and its row has
+#                  no IO and no Block.
+#   not_exec_ctx — a struct with no row is not an execution context.
+# The second argument of each call is a valid startup load context, so
+# the gate is the one reason for each refusal.  The fixtures prove that
+# the constraint fires through the re-export.  test_fixy_perf.cpp pins
+# that each re-export names the mint it re-exports.
 crucible_neg_compile_fixy_test(neg_fixy_perf_lock_contention_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_lock_contention|CtxFitsLockContentionMint|Init|row_contains")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_fixy_test(neg_fixy_perf_lock_contention_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_lock_contention|CtxFitsLockContentionMint|IsExecCtx|NotAnExecCtx")
+    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_lock_contention_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
+    "no matching function for call to .mint_lock_contention\\(test_fixy_perf_lock_contention_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
 crucible_neg_compile_fixy_test(neg_fixy_perf_pmu_sample_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_pmu_sample|CtxFitsPmuSampleMint|Init|row_contains")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_fixy_test(neg_fixy_perf_pmu_sample_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_pmu_sample|CtxFitsPmuSampleMint|IsExecCtx|NotAnExecCtx")
+    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_pmu_sample_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
+    "no matching function for call to .mint_pmu_sample\\(test_fixy_perf_pmu_sample_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sched_switch_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_sched_switch|CtxFitsSchedSwitchMint|Init|row_contains")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sched_switch_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_sched_switch|CtxFitsSchedSwitchMint|IsExecCtx|NotAnExecCtx")
+    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_sched_switch_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
+    "no matching function for call to .mint_sched_switch\\(test_fixy_perf_sched_switch_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sched_tp_btf_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_sched_tp_btf|CtxFitsSchedTpBtfMint|Init|row_contains")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sched_tp_btf_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_sched_tp_btf|CtxFitsSchedTpBtfMint|IsExecCtx|NotAnExecCtx")
+    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_sched_tp_btf_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
+    "no matching function for call to .mint_sched_tp_btf\\(test_fixy_perf_sched_tp_btf_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
 # FIXY-V-197 HS14 floor for fixy::sched::mint_priority (closes V-191 gap).
 crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_not_exec_ctx
     "no matching function|constraints.*not satisfied"
@@ -3579,23 +3577,23 @@ crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_nice_out_of_range
     "no matching function|constraints.*not satisfied"
     "mint_priority|CtxFitsPriorityMint|Nice|-21|-20")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sense_hub_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_sense_hub|CtxFitsSenseHubMint|Init|row_contains")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sense_hub_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_sense_hub|CtxFitsSenseHubMint|IsExecCtx|NotAnExecCtx")
+    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_sense_hub_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
+    "no matching function for call to .mint_sense_hub\\(test_fixy_perf_sense_hub_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
 crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_latency_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_syscall_latency|CtxFitsSyscallLatencyMint|Init|row_contains")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_latency_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_syscall_latency|CtxFitsSyscallLatencyMint|IsExecCtx|NotAnExecCtx")
+    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_syscall_latency_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
+    "no matching function for call to .mint_syscall_latency\\(test_fixy_perf_syscall_latency_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
 crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_tp_btf_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_syscall_tp_btf|CtxFitsSyscallTpBtfMint|Init|row_contains")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_tp_btf_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_syscall_tp_btf|CtxFitsSyscallTpBtfMint|IsExecCtx|NotAnExecCtx")
+    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_syscall_tp_btf_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
+    "no matching function for call to .mint_syscall_tp_btf\\(test_fixy_perf_syscall_tp_btf_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
 crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_bg_ctx
     "no matching function|constraints.*not satisfied"
     "mint_workload_profiler|CtxFitsWorkloadProfilerMint|Init|row_contains")
@@ -5223,11 +5221,11 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
 # hub stay valid across that migration, because a drain context and a
 # foreground one are rejected under either gate shape.
 crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSenseHubMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sense_hub_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSenseHubMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubV2Mint")
@@ -5244,41 +5242,41 @@ crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
 # BgDrainCtx and HotFgCtx are rejected under either gate shape, so
 # these fourteen registrations stand unchanged across that migration.
 crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsLockContentionMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_lock_contention_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsLockContentionMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_pmu_sample_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPmuSampleMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_pmu_sample_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPmuSampleMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_sched_switch_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSchedSwitchMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sched_switch_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSchedSwitchMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSchedTpBtfMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSchedTpBtfMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_syscall_latency_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSyscallLatencyMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_syscall_latency_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSyscallLatencyMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSyscallTpBtfMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSyscallTpBtfMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_workload_profiler_mint_bg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsWorkloadProfilerMint")
@@ -5302,47 +5300,47 @@ crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
 # a family-wide pair would leave seven gates unwitnessed.  Sixteen
 # fixtures, one pair per mint across the eight BPF hubs.
 crucible_neg_compile_perf_test(neg_lock_contention_mint_cold_init_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsLockContentionMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Init, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Init,")
 crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_compile_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsLockContentionMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_pmu_sample_mint_cold_init_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPmuSampleMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Init, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Init,")
 crucible_neg_compile_perf_test(neg_pmu_sample_mint_bg_compile_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPmuSampleMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sched_switch_mint_cold_init_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSchedSwitchMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Init, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Init,")
 crucible_neg_compile_perf_test(neg_sched_switch_mint_bg_compile_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSchedSwitchMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_cold_init_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSchedTpBtfMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Init, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Init,")
 crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_bg_compile_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSchedTpBtfMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sense_hub_mint_cold_init_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSenseHubMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Init, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Init,")
 crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_compile_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSenseHubMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_syscall_latency_mint_cold_init_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSyscallLatencyMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Init, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Init,")
 crucible_neg_compile_perf_test(neg_syscall_latency_mint_bg_compile_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSyscallLatencyMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_cold_init_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSyscallTpBtfMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Init, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Init,")
 crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_compile_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSyscallTpBtfMint")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc, crucible::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_cold_init_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsSenseHubV2Mint")
@@ -5859,82 +5857,64 @@ crucible_neg_compile_effects_test(neg_pipeline_dag_unreachable
     "template constraint failure|constraints.*not satisfied"
     "StageGraphWellFormed")
 
-# GAPS-004a-AUDIT (#1288): SenseHub::load() takes effects::Init by
-# value as its sole parameter.  The cap-typing gate is structural —
-# Bg/Init/Test are distinct 1-byte structs with no implicit conversion,
-# so a hot-path / background frame holding only Bg cannot reach the
-# startup-only loader.  These two fixtures pin the gate at
-# compile time as the regression-witness for the SenseHub.h docblock
-# claim at lines 234-240.
+# Each perf program load, and the Senses aggregate over the seven of
+# them, takes the startup load context as its one parameter.  A
+# background load context also claims Block, but no conversion makes it
+# a startup load context, and the parameter has no default.  The two
+# fixtures of each load pin these two refusals.
 crucible_neg_compile_effects_test(neg_perf_sense_hub_load_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "effects::Bg.*effects::Init")
+    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
+    "initializing argument 1 of .static std::optional<crucible::perf::SenseHub> crucible::perf::SenseHub::load\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_effects_test(neg_perf_sense_hub_load_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 1 argument")
+    "no matching function for call to .crucible::perf::SenseHub::load\\(\\)."
+    "candidate expects 1 argument, 0 provided")
 
-# GAPS-004b-AUDIT (#1289): SchedSwitch::load() cap-tag gate.  Same
-# discipline as SenseHub::load — Init-by-value parameter, no implicit
-# conversion from Bg/Test contexts, mandatory argument.
 crucible_neg_compile_effects_test(neg_perf_sched_switch_load_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "effects::Bg.*effects::Init")
+    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
+    "initializing argument 1 of .static std::optional<crucible::perf::SchedSwitch> crucible::perf::SchedSwitch::load\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_effects_test(neg_perf_sched_switch_load_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 1 argument")
+    "no matching function for call to .crucible::perf::SchedSwitch::load\\(\\)."
+    "candidate expects 1 argument, 0 provided")
 
-# GAPS-004c (#1279): PmuSample::load() cap-tag gate.  Same Init-by-value
-# discipline as SenseHub/SchedSwitch.
 crucible_neg_compile_effects_test(neg_perf_pmu_sample_load_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "effects::Bg.*effects::Init")
+    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
+    "initializing argument 1 of .static std::optional<crucible::perf::PmuSample> crucible::perf::PmuSample::load\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_effects_test(neg_perf_pmu_sample_load_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 1 argument")
+    "no matching function for call to .crucible::perf::PmuSample::load\\(\\)."
+    "candidate expects 1 argument, 0 provided")
 
-# GAPS-004d-AUDIT (#1280): LockContention::load() cap-tag gate.  Same
-# Init-by-value discipline as SenseHub/SchedSwitch/PmuSample.
 crucible_neg_compile_effects_test(neg_perf_lock_contention_load_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "effects::Bg.*effects::Init")
+    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
+    "initializing argument 1 of .static std::optional<crucible::perf::LockContention> crucible::perf::LockContention::load\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_effects_test(neg_perf_lock_contention_load_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 1 argument")
+    "no matching function for call to .crucible::perf::LockContention::load\\(\\)."
+    "candidate expects 1 argument, 0 provided")
 
-# GAPS-004e (#1281): SyscallLatency::load() cap-tag gate.  Same
-# Init-by-value discipline as SenseHub/SchedSwitch/PmuSample/LockContention.
 crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "effects::Bg.*effects::Init")
+    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
+    "initializing argument 1 of .static std::optional<crucible::perf::SyscallLatency> crucible::perf::SyscallLatency::load\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 1 argument")
+    "no matching function for call to .crucible::perf::SyscallLatency::load\\(\\)."
+    "candidate expects 1 argument, 0 provided")
 
-# GAPS-004y (#1287): Senses::load_all() cap-tag gate.  Same
-# Init-by-value discipline as the underlying per-program facades.
 crucible_neg_compile_effects_test(neg_perf_senses_load_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "effects::Bg.*effects::Init")
+    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
+    "initializing argument 1 of .static crucible::perf::Senses crucible::perf::Senses::load_all\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_effects_test(neg_perf_senses_load_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 1 argument")
-
-# GAPS-004f (#1282): SchedTpBtf::load() + SyscallTpBtf::load() cap-tag
-# gates.  Same Init-by-value discipline as the raw tracepoint facades
-# they parallel — hot-path frames hold no Init token, so structurally
-# can't reach the BTF loaders either.
+    "no matching function for call to .crucible::perf::Senses::load_all\\(\\)."
+    "candidate expects 1 argument, 0 provided")
 crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "effects::Bg.*effects::Init")
+    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
+    "initializing argument 1 of .static std::optional<crucible::perf::SchedTpBtf> crucible::perf::SchedTpBtf::load\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 1 argument")
+    "no matching function for call to .crucible::perf::SchedTpBtf::load\\(\\)."
+    "candidate expects 1 argument, 0 provided")
 crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "effects::Bg.*effects::Init")
+    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
+    "initializing argument 1 of .static std::optional<crucible::perf::SyscallTpBtf> crucible::perf::SyscallTpBtf::load\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 1 argument")
+    "no matching function for call to .crucible::perf::SyscallTpBtf::load\\(\\)."
+    "candidate expects 1 argument, 0 provided")
 
 # GAPS-004g (#1283): warden::DeadlineWatchdog cap-tag gate.  Construction
 # takes effects::Init by value as the third parameter — wrong-cap and
@@ -15686,11 +15666,11 @@ crucible_neg_compile_fixy_test(neg_fixy_v_180_hardening_hot_fg_reject
 # Distinct fixtures exercise distinct mint sites (mint_sense_hub vs
 # mint_pmu_sample) — HS14 floor satisfied per CLAUDE.md §XXI.
 crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_bg_drain_reject
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsSenseHubMint|CtxOwnsCapability")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
 crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_hot_fg_reject
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsPmuSampleMint|CtxOwnsCapability")
+    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 
 # ── FIXY-V-212 — fixy::cap::cntp:: CC mint re-export HS14 ─────────
 #

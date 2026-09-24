@@ -432,20 +432,19 @@ namespace detail {
 namespace detail {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
 [[nodiscard]] inline const ::crucible::perf::Senses* senses_instance() noexcept {
-    // Senses::load_subset(effects::Init, mask) loads only the masked
-    // facades — same per-event cost as the old 2-singleton form
-    // because only sense_hub + sched_switch are masked in.  Static-
-    // init context is load-bearing init; constructing Init{} here is
-    // the canonical form.  Hot-path code holds no Init capability and
-    // therefore cannot synthesize the argument — this guarantees the
-    // entire call chain rooted at Senses::load_subset() never reaches
-    // a hot frame.  Senses is move-only; static direct-init move-
-    // constructs from the rvalue return.
+    // Senses::load_subset(startup load context, mask) loads only the
+    // masked facades, which are sense_hub and sched_switch.  The bench
+    // takes the startup load context from the test door.  Hot-path code
+    // holds no init context, so it cannot make the argument, and the
+    // call chain of Senses::load_subset() never reaches a hot frame.
+    // Senses is move-only, and the static is built from the returned
+    // value.
     static ::crucible::perf::Senses slot =
-        ::crucible::perf::Senses::load_subset(::crucible::effects::testing::init(), ::crucible::perf::SensesMask{
-                                                                                        .sense_hub = true,
-                                                                                        .sched_switch = true,
-                                                                                    });
+        ::crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
+                                              ::crucible::perf::SensesMask{
+                                                  .sense_hub = true,
+                                                  .sched_switch = true,
+                                              });
     return &slot;
 }
 #else

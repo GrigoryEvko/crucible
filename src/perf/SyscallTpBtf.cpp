@@ -74,7 +74,7 @@ SyscallTpBtf::SyscallTpBtf(SyscallTpBtf&&) noexcept = default;
 SyscallTpBtf& SyscallTpBtf::operator=(SyscallTpBtf&&) noexcept = default;
 SyscallTpBtf::~SyscallTpBtf() = default;
 
-std::optional<SyscallTpBtf> SyscallTpBtf::load(::crucible::effects::Init) noexcept {
+std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const&) noexcept {
     install_libbpf_log_cb_once();
 
     const auto report = [](const char* why, int err = 0) {

@@ -1,21 +1,12 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-V-179 HS14 fixture #1 of 2 for the 7 perf-hub mints.
-// CtxFitsSenseHubMint (and its 6 siblings) reject BgDrainCtx because
-// the bg-drain row carries Effect::Bg + Alloc + IO + Block but NOT
-// Effect::Init.  SenseHub::load() (and every other perf hub's load)
-// opens per-CPU perf_event_open file descriptors + bpf() program load
-// + mmaps the kernel ringbuf — startup-only operations belonging to
-// the Init row.  Engaging mint_sense_hub from a bg-drain thread would
-// race the warden's own startup pinning against the bg worker pool.
-//
-// Mismatch axis: Bg-cap context, NOT Init.
-//   Distinct from fixture #2 (HotFgCtx — Fg-cap, also NOT Init).  Both
-//   are Init-rejections but exercise distinct effect-row failure paths
-//   (Bg vs Fg) ⇒ HS14 floor satisfied.
-//
-// Expected diagnostic: CtxFitsSenseHubMint / CtxOwnsCapability /
-//                      Effect::Init / constraints not satisfied.
+// The gate of mint_sense_hub asks for a context row that contains Alloc,
+// IO and Block, because the load enters the kernel and waits for the
+// verifier.  The old-tree BgDrainCtx claims Row<Bg, Alloc>, so the gate
+// rejects it.  The second argument is a valid startup load context, so
+// the gate is the one reason that the compiler rejects the call.  The
+// hot foreground fixture of this pair fails the same gate from an empty
+// row.
 
 #include <crucible/perf/SenseHub.h>
 
@@ -23,11 +14,8 @@ namespace neg_fixy_v_179_perf_hubs_bg_drain {
 
 namespace eff = ::crucible::effects;
 
-// BgDrainCtx admits Bg + Alloc + IO + Block but NOT Init.  Engaging
-// mint_sense_hub from a bg-drain thread is a clear category error —
-// the privileged bpf()/perf_event_open/mmap startup set belongs to
-// Init.
-[[maybe_unused]] constexpr auto bad_dispatch = ::crucible::perf::mint_sense_hub(eff::BgDrainCtx{::crucible::effects::testing::bg()}, eff::Init{});
+[[maybe_unused]] constexpr auto bad_dispatch = ::crucible::perf::mint_sense_hub(
+    eff::BgDrainCtx{::crucible::effects::testing::bg()}, ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
 }  // namespace neg_fixy_v_179_perf_hubs_bg_drain
 

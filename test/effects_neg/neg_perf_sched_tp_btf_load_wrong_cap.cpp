@@ -1,26 +1,18 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-004f (#1282): SchedTpBtf::load() takes `effects::Init` by
-// value as its sole parameter.  Bg / Init / Test are distinct
-// 1-byte capability structs with no implicit conversion between them
-// — a hot-path frame that holds only `Bg` cannot accidentally reach
-// the startup-only loader.
-//
-// Violation: passes `effects::testing::bg()` where `effects::testing::init()` is required.
-// Expected diagnostic: "could not convert|no matching function|
-// cannot convert|expected.*Init".
+// SchedTpBtf::load takes the startup load context.  A background load
+// context also claims Block, but its capability source is the background
+// source.  No conversion makes it a startup load context, so the compiler
+// rejects the call.
 
 #include <crucible/perf/SchedTpBtf.h>
-#include <crucible/effects/_Capabilities.h>
+#include <fixy/Ctx.h>
 
 #include <optional>
 
 int main() {
-    auto bg_cap = crucible::effects::testing::bg();
-
-    // <-- this line must NOT compile (Bg cap, Init required)
-    std::optional<crucible::perf::SchedTpBtf> hub = crucible::perf::SchedTpBtf::load(bg_cap);
-
+    const ::fixy::BgLoadCtx background{::foundation::effects::testing::bg()};
+    std::optional<crucible::perf::SchedTpBtf> hub = crucible::perf::SchedTpBtf::load(background);
     (void)hub;
     return 0;
 }

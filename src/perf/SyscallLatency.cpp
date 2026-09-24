@@ -76,7 +76,7 @@ SyscallLatency::SyscallLatency(SyscallLatency&&) noexcept = default;
 SyscallLatency& SyscallLatency::operator=(SyscallLatency&&) noexcept = default;
 SyscallLatency::~SyscallLatency() = default;
 
-std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) noexcept {
+std::optional<SyscallLatency> SyscallLatency::load(::fixy::InitLoadCtx const&) noexcept {
     install_libbpf_log_cb_once();
 
     const auto report = [](const char* why, int err = 0) {

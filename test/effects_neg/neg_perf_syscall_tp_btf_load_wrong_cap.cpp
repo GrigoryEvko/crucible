@@ -1,24 +1,18 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-004f (#1282): SyscallTpBtf::load() takes `effects::Init` by
-// value.  Bg / Init / Test are distinct 1-byte capability structs
-// with no implicit conversion.
-//
-// Violation: passes `effects::testing::bg()` where `effects::testing::init()` is required.
-// Expected diagnostic: "could not convert|no matching function|
-// cannot convert|expected.*Init".
+// SyscallTpBtf::load takes the startup load context.  A background load
+// context also claims Block, but its capability source is the background
+// source.  No conversion makes it a startup load context, so the compiler
+// rejects the call.
 
 #include <crucible/perf/SyscallTpBtf.h>
-#include <crucible/effects/_Capabilities.h>
+#include <fixy/Ctx.h>
 
 #include <optional>
 
 int main() {
-    auto bg_cap = crucible::effects::testing::bg();
-
-    // <-- this line must NOT compile (Bg cap, Init required)
-    std::optional<crucible::perf::SyscallTpBtf> hub = crucible::perf::SyscallTpBtf::load(bg_cap);
-
+    const ::fixy::BgLoadCtx background{::foundation::effects::testing::bg()};
+    std::optional<crucible::perf::SyscallTpBtf> hub = crucible::perf::SyscallTpBtf::load(background);
     (void)hub;
     return 0;
 }

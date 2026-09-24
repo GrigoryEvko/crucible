@@ -75,7 +75,7 @@ SenseHub::SenseHub(SenseHub&&) noexcept = default;
 SenseHub& SenseHub::operator=(SenseHub&&) noexcept = default;
 SenseHub::~SenseHub() = default;
 
-std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
+std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const&) noexcept {
     install_libbpf_log_cb_once();
 
     const auto report = [](const char* why, int err = 0) {
