@@ -344,10 +344,16 @@ jobs:
           - { arch: x86_64,  runner: ubuntu-24.04,     preset: tsan,     jobs: 3, regen_btf: false, run_tests: true  }
           - { arch: x86_64,  runner: ubuntu-24.04,     preset: release,  jobs: 2, regen_btf: false, run_tests: true  }
           - { arch: x86_64,  runner: ubuntu-24.04,     preset: analyzer, jobs: 2, regen_btf: false, run_tests: false }
+          # ubsan-strict puts the full UBSan set on every target, with signed
+          # overflow undefined.  It is the only leg that reports a wrapping
+          # signed add.  verify builds Release code with the contracts armed.
+          - { arch: x86_64,  runner: ubuntu-24.04,     preset: ubsan-strict, jobs: 3, regen_btf: false, run_tests: true }
+          - { arch: x86_64,  runner: ubuntu-24.04,     preset: verify,   jobs: 2, regen_btf: false, run_tests: true  }
           # aarch64 — regenerate vmlinux.h from the runner kernel's BTF.
           - { arch: aarch64, runner: ubuntu-24.04-arm, preset: default,  jobs: 3, regen_btf: true,  run_tests: true  }
           - { arch: aarch64, runner: ubuntu-24.04-arm, preset: tsan,     jobs: 3, regen_btf: true,  run_tests: true  }
           - { arch: aarch64, runner: ubuntu-24.04-arm, preset: release,  jobs: 2, regen_btf: true,  run_tests: true  }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, preset: ubsan-strict, jobs: 3, regen_btf: true, run_tests: true }
     env:
       CRUCIBLE_CXX: /usr/bin/g++
       # ccache lives at an absolute path (survives the checkout wipe) and is
