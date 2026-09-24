@@ -5,7 +5,6 @@
 # file that another change owns at the time of writing.  The change that moves
 # the member to std::array or fixy::FixedArray deletes its line in the same
 # commit.
-include/fixy/os/ThreadName.h data thread name buffer, move to std::array<char, N> with the ThreadName proof rewrite
 include/fixy/session/EventLog.h pad explicit padding of a wire record, move to std::array<std::uint8_t, 5>
 include/fixy/session/EventLog.h pad_ explicit padding of a wire record, move to std::array<std::uint8_t, 5>
 include/fixy/session/Watch.h endpoints live-session table, move to std::array with the watch changes

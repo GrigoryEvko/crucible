@@ -15,6 +15,7 @@
 
 #include <pthread.h>
 
+#include <array>
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
@@ -29,7 +30,7 @@ struct ThreadNameLiteral {
     static_assert(N <= 16, "thread name exceeds TASK_COMM_LEN (15 visible chars + "
                            "NUL); the Linux kernel would SILENTLY truncate it — shorten the name.");
 
-    char data[N]{};
+    std::array<char, N> data{};
 
     consteval ThreadNameLiteral(const char (&literal)[N]) noexcept {
         for (std::size_t index = 0; index < N; ++index) {
@@ -37,7 +38,7 @@ struct ThreadNameLiteral {
         }
     }
 
-    [[nodiscard]] constexpr const char* c_str() const noexcept { return data; }
+    [[nodiscard]] constexpr const char* c_str() const noexcept { return data.data(); }
 
     static constexpr std::size_t visible_length = N - 1;
 };
