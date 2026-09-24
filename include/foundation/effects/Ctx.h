@@ -370,8 +370,8 @@ public:
     // holds the live claims.  A cold gate of the brand asks this through
     // require_brand_thread below.
     [[nodiscard]] static bool can_caller_use_brand() noexcept {
-        const auto holder = brand_holder_.load(std::memory_order_acquire);
-        return holder == std::thread::id{} || holder == std::this_thread::get_id();
+        const void* const holder = brand_holder_.load(std::memory_order_acquire);
+        return holder == nullptr || holder == calling_thread_identity_();
     }
 
 private:
@@ -386,7 +386,7 @@ private:
             // records which thread arrived first.  A failed exchange leaves
             // the winner's id in `holder`, which the check below reports.
             if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_relaxed)) {
-                const bool is_only_brand_thread = enter_brand_(current_tid);
+                const bool is_only_brand_thread = enter_brand_(calling_thread_identity_());
                 if (is_only_brand_thread) return;
                 // Another thread holds a live claim of this brand.  The claim
                 // is undone first, so that its destructor removes no entry
@@ -407,12 +407,12 @@ private:
     // cannot tell the two threads apart.  Only a won claim and its
     // destructor write the record, so the flag that guards the count is
     // never on the path that runs for each op.
-    [[gnu::cold, gnu::noinline]] static bool enter_brand_(std::thread::id current_tid) noexcept {
+    [[gnu::cold, gnu::noinline]] static bool enter_brand_(const void* thread_identity) noexcept {
         lock_brand_();
         const bool is_only_brand_thread =
-            brand_claims_ == 0 || brand_holder_.load(std::memory_order_relaxed) == current_tid;
+            brand_claims_ == 0 || brand_holder_.load(std::memory_order_relaxed) == thread_identity;
         if (is_only_brand_thread) {
-            brand_holder_.store(current_tid, std::memory_order_release);
+            brand_holder_.store(thread_identity, std::memory_order_release);
             ++brand_claims_;
         }
         unlock_brand_();
@@ -422,9 +422,21 @@ private:
     [[gnu::cold, gnu::noinline]] static void leave_brand_() noexcept {
         lock_brand_();
         const bool has_entry = brand_claims_ != 0;
-        if (has_entry && --brand_claims_ == 0) brand_holder_.store(std::thread::id{}, std::memory_order_release);
+        if (has_entry && --brand_claims_ == 0) brand_holder_.store(nullptr, std::memory_order_release);
         unlock_brand_();
         CRUCIBLE_FATAL_INVARIANT(has_entry);
+    }
+
+    // The record names a thread by the address of a byte that each thread
+    // owns, not by std::thread::id.  The default constructor of
+    // std::thread::id is not constexpr, so an atomic of it cannot be
+    // constinit, and this templated static member needs constinit: its
+    // dynamic initialization is unordered.  A null address names no
+    // thread.  Like a std::thread::id, an address can name a new thread
+    // after the thread that owned it ends.
+    [[nodiscard]] static const void* calling_thread_identity_() noexcept {
+        static thread_local const unsigned char identity_byte = 0;
+        return &identity_byte;
     }
 
     static void lock_brand_() noexcept {
@@ -440,7 +452,7 @@ private:
     std::atomic<std::thread::id> holder_{};
 
     static inline constinit std::atomic_flag brand_lock_{};
-    static inline constinit std::atomic<std::thread::id> brand_holder_{};
+    static inline constinit std::atomic<const void*> brand_holder_{nullptr};
     static inline constinit std::size_t brand_claims_ = 0;
 };
 
