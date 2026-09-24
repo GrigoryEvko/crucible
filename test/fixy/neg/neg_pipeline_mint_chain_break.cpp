@@ -28,7 +28,7 @@ inline void float_to_double(FakeConsumer<float>&&, FakeProducer<double>&&) noexc
 }  // namespace
 
 int main() {
-    fixy::HotFgCtx ctx;
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto first = fixy::concurrent::mint_stage<&int_pass>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
     auto second = fixy::concurrent::mint_stage<&float_to_double>(ctx, FakeConsumer<float>{}, FakeProducer<double>{});
 

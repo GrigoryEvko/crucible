@@ -12,10 +12,10 @@ struct NeedsIo {
     using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
 };
 
-using FgCtx = ::foundation::effects::detail::ctx_witnesses::FgWitness;
 }  // namespace
 
 int main() {
-    [[maybe_unused]] auto token = ::foundation::permissions::mint_permission_root<NeedsIo>(FgCtx{});
+    [[maybe_unused]] auto token =
+        ::foundation::permissions::mint_permission_root<NeedsIo>(::foundation::effects::testing::foreground());
     return 0;
 }

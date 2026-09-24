@@ -14,10 +14,10 @@
 // through the band wrappers now, and a channel or a fork that wants a
 // budget takes it as its own parameter.
 //
-// Only the foreground context builds from nothing.  Each of the others
-// is handed the capability it claims, because a context is not
-// evidence of a capability: it carries one, and the one it carries came
-// from mint_bg_context, mint_init_context or mint_test_context.
+// No context builds from nothing.  Each is handed the capability it
+// claims, because a context is not evidence of a capability: it carries
+// one, and the one it carries came from mint_context or, for the
+// foreground, from the key that the producer claim holds.
 //
 // Old spelling: include/crucible/effects/_ExecCtx.h (HotFgCtx,
 // BgDrainCtx, BgCompileCtx, ColdInitCtx, TestRunnerCtx).
@@ -138,9 +138,8 @@ static_assert(!fe::CtxCanMint<HotFgCtx, fe::Effect::Alloc>);
 static_assert(!fe::CtxCanMint<HotFgCtx, fe::Effect::Bg>);
 static_assert(fe::CtxCanMint<TestRunnerCtx, fe::Effect::Block>);
 
-// The foreground context builds from nothing; every other one is
-// handed its capability.
-static_assert(std::is_default_constructible_v<HotFgCtx>);
+// No context builds from nothing.
+static_assert(!std::is_default_constructible_v<HotFgCtx>);
 static_assert(!std::is_default_constructible_v<BgDrainCtx>);
 static_assert(!std::is_default_constructible_v<BgCompileCtx>);
 static_assert(!std::is_default_constructible_v<ColdInitCtx>);

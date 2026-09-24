@@ -38,7 +38,7 @@ std::uint64_t storage[3] = {1, 2, 3};
 int main() {
     auto borrow = ::fixy::mint_borrowed<Spilled>(storage);
     auto witnessed = ::fixy::mint_witnessed_under(borrow);
-    FgCtx ctx{};
+    FgCtx ctx = eff::testing::foreground();
     [[maybe_unused]] auto read = deref(witnessed, ctx);
     return 0;
 }

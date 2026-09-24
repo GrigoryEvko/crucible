@@ -28,7 +28,7 @@ namespace fe = ::foundation::effects;
 }  // namespace
 
 int main() {
-    constexpr auto climbed = fe::ExecCtx<>{}.with_cap<fe::Init>();
+    constexpr auto climbed = fe::testing::foreground().with_cap<fe::Init>();
     static_cast<void>(climbed);
     return 0;
 }

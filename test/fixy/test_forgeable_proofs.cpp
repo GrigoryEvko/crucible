@@ -100,10 +100,20 @@ inline constexpr int max_gate_depth = 4;
     return std::meta::extract<bool>(std::meta::substitute(^^std::is_implicit_lifetime_v, {type}));
 }
 
-// True when one of the two routes builds the type with no constructor.
+// True when the checked lifetime start admits the type.  It refuses a
+// class that carries no_start_over_bytes, and every class that holds one.
+[[nodiscard]] consteval bool starts_over_bytes(std::meta::info type) {
+    return std::meta::extract<bool>(
+        std::meta::substitute(^^::foundation::lifetime::ImplicitLifetimeThroughout, {type}));
+}
+
+// True when one of the two routes builds the type with no constructor.  A
+// type that keeps a trivial copy constructor, so that a call passes it in
+// a register, is implicit-lifetime.  Its annotation closes the second
+// route, because the checked lifetime start then refuses it.
 [[nodiscard]] consteval bool is_forgeable(std::meta::info spelled) {
     const std::meta::info type = std::meta::dealias(spelled);
-    return std::meta::is_trivially_copyable_type(type) || is_implicit_lifetime(type);
+    return std::meta::is_trivially_copyable_type(type) || (is_implicit_lifetime(type) && starts_over_bytes(type));
 }
 
 // Complexity: linear in the number of declarations under the two
@@ -151,6 +161,7 @@ inline constexpr std::meta::info template_witnesses[] = {
     ^^fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg>>,
     ^^fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO>>,
     ^^fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test>>,
+    ^^fe::ExecCtx<fe::ctx_cap::Fg, fe::Row<>>,
     ^^BgBase,
     ^^sess::Transferable<int, Region>,
     ^^sess::Returned<int, Region>,
@@ -448,7 +459,8 @@ static_assert(is_proof_shape(^^KeyedProbe) && is_forgeable(^^KeyedProbe),
               "a public constructor that takes a proof type is a gate, and a defaulted copy leaves it open");
 static_assert(!is_proof_shape(^^OpenProbe), "a public constructor from an int is no gate");
 static_assert(!is_proof_shape(^^Region), "an empty aggregate is not a proof type");
-static_assert(!is_proof_shape(^^fe::ExecCtx<>), "the foreground context claims nothing, and anyone may build it");
+static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
+              "the foreground context is built only from the key of the producer claim");
 
 // ── the route ledger ────────────────────────────────────────────────
 //

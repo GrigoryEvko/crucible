@@ -17,6 +17,7 @@
 # they are for.
 
 include/foundation/effects/Effect.h x14  — declares the new-tree door, its three factories and TestWitness, and pins their noexcept in its own self-test.  This is the definition site.
+include/foundation/effects/Ctx.h x4  — declares the foreground door and ForegroundWitness, and friends the witness from the key of the foreground context.  This is the definition site.
 include/crucible/effects/_Capabilities.h x17  — declares the old-tree door, its three factories and TestWitness, friends TestWitness from each key, and pins the factories in its own self-test.  This is the definition site.
 include/crucible/effects/_Capability.h x3  — the self-test of the capability mint takes one context of each kind from the door.
 include/crucible/effects/_ExecCtx.h x7  — the header-time self-tests of ExecCtx build each context kind and a rebuild from the door.

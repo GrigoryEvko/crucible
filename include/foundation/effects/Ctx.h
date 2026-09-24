@@ -28,6 +28,7 @@
 // wants a budget takes it as its own parameter.  A context describes
 // the surrounding scope, not a value.
 
+#include <foundation/Lifetime.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
@@ -38,14 +39,64 @@
 
 namespace foundation::effects {
 
+namespace testing {
+struct ForegroundWitness;
+}  // namespace testing
+
+namespace host {
+// The owner of the foreground thread's producer claim defines this type.
+// The claim is the one production place that mints a foreground context,
+// so a foreground context is evidence that its holder runs on the thread
+// that won the claim.
+struct ForegroundOwner;
+}  // namespace host
+
+namespace detail::ctx_mint {
+
+// Both constructors are user-provided, for the reason Effect.h gives for
+// the other keys: a key with a trivial constructor is built by
+// std::bit_cast or std::start_lifetime_as without the access check.
+class fg_key {
+private:
+    constexpr fg_key() noexcept {}
+
+    friend struct ::foundation::effects::host::ForegroundOwner;
+    friend struct ::foundation::effects::testing::ForegroundWitness;
+
+public:
+    constexpr fg_key(const fg_key&) noexcept {}
+};
+
+}  // namespace detail::ctx_mint
+
 namespace ctx_cap {
-// The foreground thread holds no minted capability token.  A reach for
-// one fails to compile, because this context has no member of any
-// capability type.  It permits the empty row, spelled the way a context
-// spells its own, so that one reader below serves every source.
-struct Fg {
+// The foreground thread holds no value atom.  A reach for one fails to
+// compile, because this source has no member of any capability type.  It
+// permits the empty row, spelled the way a context spells its own, so
+// that one reader below serves every source.
+//
+// It is still evidence.  A gate that admits only the foreground context
+// states that its caller runs on the thread that claimed the producer
+// role, so the source is built only from the key that claim holds.
+//
+// The copy constructor stays trivial, so a call passes the source in no
+// register at all.  The copy assignment is user-provided, so the type is
+// not trivially copyable and std::bit_cast refuses it.  A trivial copy
+// constructor still makes the type implicit-lifetime, and the annotation
+// is what makes the checked lifetime start refuse it and every class
+// that holds one.
+class [[=::foundation::lifetime::no_start_over_bytes{}]] Fg {
+public:
     template <template <Effect...> class R>
     using permitted_as = R<>;
+
+    constexpr explicit Fg(detail::ctx_mint::fg_key) noexcept {}
+
+    constexpr Fg(const Fg&) noexcept = default;
+    constexpr Fg(Fg&&) noexcept = default;
+    constexpr Fg& operator=(const Fg&) noexcept { return *this; }
+    constexpr Fg& operator=(Fg&&) noexcept { return *this; }
+    ~Fg() = default;
 };
 
 // These name the same three types the enclosing namespace declares.
@@ -116,27 +167,19 @@ private:
     [[no_unique_address]] Row row_{};
 
 public:
-    // A context that claims nothing is free to build, because there is
-    // nothing in it to forge.
+    // Every context is handed the capability it claims, and that
+    // capability IS the evidence.  No capability source has a public
+    // default constructor: a background, init or test source comes from
+    // mint_context, and a foreground source from its key.
     //
-    // This constructor was once public for EVERY specialization, and
-    // that was the hole: `ExecCtx<Init, Row<Init, Alloc, IO>>{}`
-    // default-built the Init member, which the capability types then
-    // befriended this template to allow, and satisfied CtxCanMint for
-    // every effect an init source permits.  The capability was
-    // reachable by constructing the context that holds it, without
-    // ever passing the passkey that guards Init's own constructor.
-    // The capability types no longer befriend this template: nothing
-    // here builds one, and the member's default initializer is reached
-    // through this constructor alone, which exists for the foreground
-    // marker only.
-    constexpr ExecCtx() noexcept
-        requires std::is_same_v<Cap, ctx_cap::Fg>
-    = default;
-
-    // Every other context is handed the capability it claims, and that
-    // capability IS the evidence: Cap's own default constructor is
-    // private, so a caller holding one obtained it from mint_context.
+    // There is no default constructor.  One existed for the foreground
+    // context, on the reasoning that a context which claims nothing has
+    // nothing to forge.  A gate that admits only the foreground context
+    // claims something, though: that the caller runs on the thread that
+    // won the producer claim, and a default constructor let any thread
+    // make that claim.  An older form of it was public for every
+    // specialization, and `ExecCtx<Init, Row<Init, Alloc, IO>>{}` then
+    // built an init context without the init key.
     constexpr explicit ExecCtx(Cap cap) noexcept : cap_{cap} {}
 
     // The only way to reach the capability, and it borrows rather than
@@ -174,6 +217,30 @@ public:
 
     [[nodiscard]] static consteval std::string_view kind_name() noexcept { return "ExecCtx"; }
 };
+
+// The one door of the foreground context.  The key is the evidence: its
+// constructor is private to the producer claim and to the test witness.
+[[nodiscard]] constexpr auto mint_foreground_context(detail::ctx_mint::fg_key key) noexcept
+    -> ExecCtx<ctx_cap::Fg, Row<>> {
+    return ExecCtx<ctx_cap::Fg, Row<>>{ctx_cap::Fg{key}};
+}
+
+// The test door of the foreground context.  scripts/check-ctx-testing-boundary.sh
+// refuses a use of it in code that ships, as it does for the door in
+// Effect.h.
+namespace testing {
+
+struct ForegroundWitness {
+    [[nodiscard]] static constexpr auto fg() noexcept -> ExecCtx<ctx_cap::Fg, Row<>> {
+        return mint_foreground_context(detail::ctx_mint::fg_key{});
+    }
+};
+
+[[nodiscard]] inline constexpr auto foreground() noexcept -> ExecCtx<ctx_cap::Fg, Row<>> {
+    return ForegroundWitness::fg();
+}
+
+}  // namespace testing
 
 // Top-level cv and reference are stripped before matching, so that a
 // concept fed a forwarding-reference deduction still recognizes the
@@ -286,12 +353,11 @@ static_assert(sizeof(InitWitness) == 1);
 static_assert(sizeof(TestWitnessCtx) == 1);
 
 // A context that holds a capability source is evidence, so no route
-// builds one without a constructor.  The source has no trivial
-// constructor, so the copy of the context is not trivial either, and
-// the one constructor that is not a copy takes a source.  std::bit_cast
-// and std::start_lifetime_as then refuse the context.  The foreground
-// context stays trivially copyable, because it claims nothing and
-// anyone may build it.
+// builds one without a constructor.  The background, init and test
+// sources have no trivial constructor, so the copy of the context is not
+// trivial either, and the one constructor that is not a copy takes a
+// source.  std::bit_cast and std::start_lifetime_as then refuse the
+// context.
 template <class Ctx>
 inline constexpr bool is_context_forgeable_v = std::is_trivially_copyable_v<Ctx> || std::is_implicit_lifetime_v<Ctx>;
 
@@ -299,8 +365,22 @@ static_assert(!is_context_forgeable_v<BgWitness> && !is_context_forgeable_v<BgBl
                   && !is_context_forgeable_v<InitWitness> && !is_context_forgeable_v<TestWitnessCtx>,
               "An execution context over Bg, Init or Test must have no trivial constructor, or std::bit_cast "
               "builds it from a byte and every ctx-bound gate admits the forged scope.");
-static_assert(std::is_trivially_copyable_v<FgWitness>, "The foreground context claims nothing, so a copy of it "
-                                                       "stays free.");
+
+// The foreground source keeps a trivial copy constructor, so that the
+// hot path passes the context in no register.  That leaves it an
+// implicit-lifetime type, and the annotation on the source is what the
+// checked lifetime start refuses.  std::bit_cast is refused by the
+// user-provided copy assignment, and the default constructor is gone.
+static_assert(!std::is_trivially_copyable_v<FgWitness>,
+              "The foreground context must not be trivially copyable, or std::bit_cast builds it from a byte.");
+static_assert(std::is_trivially_copy_constructible_v<FgWitness>,
+              "The foreground context must copy trivially, so that the hot path passes it for free.");
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<FgWitness>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<ctx_cap::Fg>,
+              "The checked lifetime start must refuse the foreground context and its source.");
+static_assert(!std::is_default_constructible_v<FgWitness> && !std::is_default_constructible_v<ctx_cap::Fg>
+                  && !std::is_default_constructible_v<detail::ctx_mint::fg_key>,
+              "A foreground context is built from the key of the producer claim, never from nothing.");
 
 // Every axis defaults to the claim-nothing end of its range.
 static_assert(std::is_same_v<typename ExecCtx<>::cap_type, ctx_cap::Fg>);

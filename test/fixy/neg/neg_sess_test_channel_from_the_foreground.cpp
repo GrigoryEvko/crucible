@@ -11,11 +11,10 @@ namespace s = ::fixy::session;
 namespace eff = ::foundation::effects;
 struct Msg {};
 struct Wire {};
-using FgCtx = eff::detail::ctx_witnesses::FgWitness;
 }  // namespace
 
 int main() {
-    auto both = s::mint_test_channel<s::Recv<Msg, s::End>>(FgCtx{}, Wire{}, Wire{});
+    auto both = s::mint_test_channel<s::Recv<Msg, s::End>>(eff::testing::foreground(), Wire{}, Wire{});
     (void)both;
     return 0;
 }

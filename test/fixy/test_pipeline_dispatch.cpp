@@ -114,7 +114,7 @@ static void test_small_pipeline_runs_inline() {
 
     require(SmallPipeline::will_run_inline(), "8KB inline-safe pipeline should select inline dispatch");
 
-    fixy::HotFgCtx ctx{};
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto s0 = cc::mint_stage<&small_a>(ctx, Consumer<1 * KiB>{}, Producer<1 * KiB>{});
     auto s1 = cc::mint_stage<&small_b>(ctx, Consumer<1536>{}, Producer<1536>{});
     auto s2 = cc::mint_stage<&small_c>(ctx, Consumer<1536>{}, Producer<1536>{});
@@ -134,7 +134,7 @@ static void test_large_pipeline_spawns_threads() {
 
     require(!LargePipeline::will_run_inline(), "100MB inline-safe pipeline should exceed private-L2 inline gate");
 
-    fixy::HotFgCtx ctx{};
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto s0 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s1 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s2 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});

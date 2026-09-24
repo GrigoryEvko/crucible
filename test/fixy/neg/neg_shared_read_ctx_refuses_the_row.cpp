@@ -23,7 +23,7 @@ using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg,
 int main() {
     static int storage[2] = {};
     IoCtx io{::foundation::effects::testing::bg()};
-    FgCtx fg{};
+    FgCtx fg = ::foundation::effects::testing::foreground();
 
     auto region =
         ::fixy::mint_owned_region(storage, std::size_t{2}, ::foundation::permissions::mint_permission_root<Spilled>(io));

@@ -33,7 +33,7 @@ using TwoStageGraph = cc::StageGraph<cc::StagePack<PlainStage, PlainStage>, cc::
 }  // namespace
 
 int main() {
-    fixy::HotFgCtx ctx;
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto only_stage = cc::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
 
     auto bad = cc::mint_pipeline_dag(ctx, TwoStageGraph{}, std::move(only_stage));

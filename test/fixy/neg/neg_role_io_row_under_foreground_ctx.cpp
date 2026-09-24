@@ -50,5 +50,5 @@ static_assert(std::is_same_v<fe::row_type_of_t<::fixy::HotFgCtx>, fe::Row<>>);
 
 int main() {
     const auto emitted = ::fixy::mint_fn_for<::fixy::role::IoFunction>(7);
-    return emit(::fixy::HotFgCtx{}, emitted);
+    return emit(::foundation::effects::testing::foreground(), emitted);
 }

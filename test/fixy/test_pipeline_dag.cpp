@@ -51,7 +51,7 @@ using PlainStage = cc::Stage<&one_to_one_body, fixy::HotFgCtx>;
 
 static void test_diamond_dag_runtime() {
     reset();
-    fixy::HotFgCtx ctx{};
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
 
     auto s0 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
     auto s1 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});

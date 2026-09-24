@@ -210,7 +210,7 @@ void test_fork_inline_inside_the_door() {
 
     auto [rebuilt, config_back] = with_read_view(std::move(config_perm), [&](ReadView<ConfigData> const& cv) {
         return mint_permission_fork_inline<fork_tags::Left, fork_tags::Right>(
-            HotFgCtx{}, std::move(whole),
+            eff::testing::foreground(), std::move(whole),
             [&cv, &order, &left_seen_at](Permission<fork_tags::Left>, HotFgCtx const&) noexcept {
                 (void)cv;
                 left_seen_at = ++order;

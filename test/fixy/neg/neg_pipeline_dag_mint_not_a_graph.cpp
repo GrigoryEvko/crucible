@@ -27,7 +27,7 @@ inline void pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 }  // namespace
 
 int main() {
-    fixy::HotFgCtx ctx;
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto stage = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
     int not_a_graph = 0;
 

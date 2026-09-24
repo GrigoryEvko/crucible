@@ -29,7 +29,7 @@ inline void int_to_int(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 }  // namespace
 
 int main() {
-    fixy::HotFgCtx ctx;
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     FakeConsumer<float> wrong_element_type;
     FakeProducer<int> out;
 

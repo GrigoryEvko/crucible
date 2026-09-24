@@ -5,7 +5,7 @@
 #include <foundation/effects/Ctx.h>
 
 int main() {
-    ::foundation::effects::ExecCtx<> const foreground{};
+    ::foundation::effects::ExecCtx<> const foreground = ::foundation::effects::testing::foreground();
     fixy::VersionSource source = fixy::mint_version_source(foreground);
     return static_cast<int>(source.stamp().epoch().raw());
 }

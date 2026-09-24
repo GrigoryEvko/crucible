@@ -2,9 +2,9 @@
 #
 # The testing door hands out a context with no key.  Both trees have one:
 # foundation::effects::testing in the new tree, and
-# crucible::effects::testing in the old tree.  bg(), init() and test()
-# each mint a context, and TestWitness is the friend that reaches the
-# keys.  A context is what every ctx-bound mint checks for, so a use of the
+# crucible::effects::testing in the old tree.  bg(), init(), test() and
+# foreground() each mint a context, and TestWitness and ForegroundWitness
+# are the friends that reach the keys.  A context is what every ctx-bound mint checks for, so a use of the
 # door in code that ships hands out authority that no mint gave.
 #
 # This guard scans the trees that ship and counts each use of the door in
@@ -58,8 +58,8 @@ SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".tpp", ".c",
 # namespace, however it is qualified, the friend by its own name, and a
 # using-directive or a namespace alias that brings the testing namespace
 # into scope, because the calls it enables name no testing::.
-DOOR = re.compile(r"(?<!\w)testing\s*::\s*(?:bg|init|test|TestWitness)\b"
-                  r"|\bTestWitness\b"
+DOOR = re.compile(r"(?<!\w)testing\s*::\s*(?:bg|init|test|foreground|TestWitness|ForegroundWitness)\b"
+                  r"|\b(?:Test|Foreground)Witness\b"
                   r"|\busing\s+namespace\s+(?:::\s*)?(?:\w+\s*::\s*)*testing\b"
                   r"|\bnamespace\s+\w+\s*=\s*(?:::\s*)?(?:\w+\s*::\s*)*testing\b")
 ENTRY = re.compile(r"^(?P<path>\S+?)(?: x(?P<count>[1-9][0-9]*))?\s+—\s+\S")
@@ -135,6 +135,7 @@ self_test() {
     cat >"$tmp/include/foundation/effects/Planted.h" <<'EOF'
 #pragma once
 inline auto forged() noexcept { return ::foundation::effects::testing::init(); }
+inline auto forged_foreground() noexcept { return ::foundation::effects::testing::foreground(); }
 EOF
     cat >"$tmp/src/planted.cpp" <<'EOF'
 namespace crucible::effects::testing { struct Door { static int bg() { return 0; } }; }
@@ -166,7 +167,7 @@ EOF
     run_scan "$tmp" "$list" >"$tmp/out" 2>&1
     rc=$?
     set -e
-    if [[ $rc -ne 1 ]] || ! rg -q -F 'include/foundation/effects/Planted.h uses the testing door 1 time(s)' "$tmp/out" \
+    if [[ $rc -ne 1 ]] || ! rg -q -F 'include/foundation/effects/Planted.h uses the testing door 2 time(s)' "$tmp/out" \
         || ! rg -q -F 'src/planted.cpp uses the testing door 4 time(s)' "$tmp/out"; then
         printf 'check-ctx-testing-boundary --self-test: FAIL — a use in the new tree or the old tree was not reported (exit %s).\n' "$rc" >&2
         rg -N '' "$tmp/out" >&2 || true

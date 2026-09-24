@@ -257,7 +257,7 @@ foundation_neg_compile_test(neg_permission_fork_rebuild_no_nullary_door
 # on the fixture's row type.
 foundation_neg_compile_test(neg_exec_ctx_forged_specialization
   "no matching function for call to"
-  "ExecCtx<.*Init.*>::ExecCtx\\(\\)")
+  "ExecCtx<foundation::effects::Init, .*>::ExecCtx.<brace-enclosed initializer list>.")
 
 # Route two: promotion takes the capability, not its name.
 # Closing one route and not the other leaves the gate open, so these two
@@ -265,6 +265,30 @@ foundation_neg_compile_test(neg_exec_ctx_forged_specialization
 foundation_neg_compile_test(neg_exec_ctx_with_cap_needs_the_capability
   "no matching function for call to"
   "with_cap<")
+
+# A foreground context states that its holder runs on the thread that won
+# the producer claim, so each route that builds one without the claim's
+# key is refused: braces, the key itself, a byte, and a lifetime started
+# over a buffer.  The key refuses the last two routes on its way into the
+# mint.  The witness roster refuses a source and a key built with braces.
+foundation_neg_compile_test(neg_foreground_ctx_default_built
+  "no matching function for call to"
+  "ctx_cap::Fg, foundation::effects::Row<> >::ExecCtx.<brace-enclosed initializer list>.")
+foundation_neg_compile_test(neg_foreground_key_built
+  "is private within this context"
+  "foundation::effects::detail::ctx_mint::fg_key::fg_key..")
+foundation_neg_compile_test(neg_foreground_ctx_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
+foundation_neg_compile_test(neg_foreground_ctx_start_as_array
+  "no matching function for call to .start_as_array<foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
+foundation_neg_compile_test(neg_foreground_key_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::detail::ctx_mint::fg_key"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::detail::ctx_mint::fg_key")
+foundation_neg_compile_test(neg_foreground_key_start_as_array
+  "no matching function for call to .start_as_array<foundation::effects::detail::ctx_mint::fg_key"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = foundation::effects::detail::ctx_mint::fg_key.")
 
 # The one door of the contexts, mint_context, has one constraint, and
 # these two fixtures stand on its two atoms.  The key is a reference the

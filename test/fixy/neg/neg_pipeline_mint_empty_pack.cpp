@@ -8,7 +8,7 @@
 #include <fixy/concurrent/Pipeline.h>
 
 int main() {
-    fixy::HotFgCtx ctx;
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
 
     auto bad = fixy::concurrent::mint_pipeline(ctx);
     (void)bad;

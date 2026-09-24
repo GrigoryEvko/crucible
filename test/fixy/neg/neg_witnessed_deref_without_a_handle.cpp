@@ -38,7 +38,7 @@ int main() {
     auto at_send = s::mint_session_handle<Sending, Wire>(Wire{});
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
     auto witnessed = ::fixy::mint_witnessed_at(at_send, borrow);
-    FgCtx ctx{};
+    FgCtx ctx = eff::testing::foreground();
     [[maybe_unused]] auto read = deref(witnessed, ctx);
     (void)std::move(at_send)
         .send(Ping{1},

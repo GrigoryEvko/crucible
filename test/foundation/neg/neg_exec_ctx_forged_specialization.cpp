@@ -9,9 +9,9 @@
 // holds it, without ever passing the passkey guarding Init's own
 // constructor.  That was the hole.
 //
-// The default constructor is now constrained to the foreground source,
-// which claims nothing and so has nothing to forge.  Every other
-// specialization takes the capability as a constructor argument.
+// No specialization has a default constructor.  Each one takes its
+// capability source as a constructor argument, and the foreground source
+// takes the key of the producer claim.
 //
 // This fixture is one of a pair.  Its sibling,
 // neg_exec_ctx_with_cap_needs_the_capability.cpp, closes the builder

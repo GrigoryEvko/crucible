@@ -42,7 +42,7 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 int main() {
     auto whole = perm::mint_permission_root<Whole>();
     auto back = s::mint_forked_channel<Proto, Left, Right>(
-        FgCtx{}, std::move(whole), Wire{}, Wire{},
+        eff::testing::foreground(), std::move(whole), Wire{}, Wire{},
         [](auto head, perm::Permission<Left>, FgCtx const&) noexcept {
             return std::move(head).send(Msg{}, [](Wire&, Msg&) noexcept { return true; });
         },

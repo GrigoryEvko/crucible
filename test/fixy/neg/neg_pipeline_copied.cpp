@@ -27,7 +27,7 @@ inline void pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 }  // namespace
 
 int main() {
-    fixy::HotFgCtx ctx;
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto first = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
     auto second = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
     auto pipeline = fixy::concurrent::mint_pipeline(ctx, std::move(first), std::move(second));

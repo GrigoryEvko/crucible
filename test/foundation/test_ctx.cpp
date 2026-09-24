@@ -49,11 +49,12 @@ static_assert(!fe::CtxOwnsAllOf<FgWitness, Effect::Bg>);
 // A context is two empty axes and one byte.
 static_assert(sizeof(fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>) == 1);
 
-// A promotion chain: the claim-nothing context takes a real capability,
-// then widens its row twice.  The promotion needs a real Bg, which a
-// test takes from the testing witness.  Production code promotes with
-// the capability its own mint returned.
-constexpr auto ctx0 = fe::ExecCtx<>{};
+// A promotion chain: the foreground context takes a real capability,
+// then widens its row twice.  The foreground context and the promotion
+// both come from the testing witnesses.  Production code takes the
+// foreground context from the producer claim, and promotes with the
+// capability its own mint returned.
+constexpr auto ctx0 = fe::testing::foreground();
 constexpr auto ctx1 = ctx0.with_cap(fe::testing::bg());
 static_assert(std::is_same_v<typename decltype(ctx1)::cap_type, fe::Bg>);
 static_assert(std::is_same_v<typename decltype(ctx1)::row_type, Row<>>);
@@ -71,7 +72,7 @@ static_assert(sizeof(ctx0) == 1 && sizeof(ctx1) == 1 && sizeof(ctx2) == 1 && siz
 // Promoting the empty row to a background capability is admitted.
 // Moving a background row to an initialization capability is not, and
 // would have to narrow the row first.
-constexpr auto bg_promoted = FgWitness{}.with_cap(fe::testing::bg());
+constexpr auto bg_promoted = fe::testing::foreground().with_cap(fe::testing::bg());
 static_assert(std::is_same_v<typename decltype(bg_promoted)::cap_type, fe::Bg>);
 static_assert(std::is_same_v<typename decltype(bg_promoted)::row_type, Row<>>);
 
@@ -83,10 +84,13 @@ static_assert(!CanTakeInitCap<BgWitness>, "A row that names Bg cannot move under
 // Every operation driven with non-constant arguments.  The
 // static_assert walls only prove the constant-evaluated path.
 void every_operation_runs_at_run_time() {
-    // Only the foreground witness builds from nothing.  Each of the
-    // others is handed the capability it claims: a context is not
-    // evidence of a capability, it carries one.
-    [[maybe_unused]] FgWitness fg{};
+    // Each context is handed the capability it claims: a context is not
+    // evidence of a capability, it carries one.  The foreground source
+    // comes from the key of the producer claim, here the test door.
+    FgWitness fg = fe::testing::foreground();
+    // A copy of a held foreground context stays legal, and it is free.
+    FgWitness fg_copy = fg;
+    fg_copy = fg;
     BgWitness bg{fe::testing::bg()};
     [[maybe_unused]] BgIoWitness bg_io{fe::testing::bg()};
     [[maybe_unused]] InitWitness init{fe::testing::init()};

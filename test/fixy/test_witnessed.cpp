@@ -100,7 +100,7 @@ concept HasBareAccessor = requires(Wit const& w) { w.size(); } || requires(Wit c
 
 void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it() {
     static std::uint64_t storage[4] = {2, 4, 6, 8};
-    FgCtx ctx{};
+    FgCtx ctx = eff::testing::foreground();
 
     auto region = ::fixy::mint_owned_region(storage, std::size_t{4}, perm::mint_permission_root<Cache>());
     auto borrow = ::fixy::mint_borrowed(region);

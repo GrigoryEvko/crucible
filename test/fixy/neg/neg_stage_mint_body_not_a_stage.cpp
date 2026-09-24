@@ -27,7 +27,7 @@ inline void consumer_only(FakeConsumer<int>&&) noexcept {}
 }  // namespace
 
 int main() {
-    fixy::HotFgCtx ctx;
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     FakeConsumer<int> in;
     FakeProducer<int> out;
 

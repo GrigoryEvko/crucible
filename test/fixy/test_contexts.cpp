@@ -117,11 +117,11 @@ static_assert(!CanWidenByBlock<ColdInitCtx>, "an init source never permits Block
 
 // ---------------------------------------------------------------------
 // A static_assert proves the constant-evaluated path only.  These run.
-// Only the foreground context builds from nothing; each of the others
-// is handed the capability it claims.
+// Each context is handed the capability it claims.  The foreground one
+// comes from the key of the producer claim, here the test door.
 
 [[nodiscard]] int check_runtime_paths() {
-    HotFgCtx fg{};
+    HotFgCtx fg = fe::testing::foreground();
     BgDrainCtx drain{fe::testing::bg()};
     BgCompileCtx compile{fe::testing::bg()};
     ColdInitCtx cold{fe::testing::init()};

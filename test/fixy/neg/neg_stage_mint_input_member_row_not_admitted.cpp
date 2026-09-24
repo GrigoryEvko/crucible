@@ -39,7 +39,7 @@ inline void stage(FakeConsumer<IoPayload>&&, FakeProducer<int>&&) noexcept {}
 }  // namespace
 
 int main() {
-    fixy::HotFgCtx ctx;
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     FakeConsumer<IoPayload> in;
     FakeProducer<int> out;
 
