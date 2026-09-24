@@ -423,6 +423,7 @@ apply to the row.
 | `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_permissioned_session` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 6 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
+| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 35 |
 | `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
@@ -467,15 +468,15 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 68 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 69 |
 | `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
+| `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 
 ## Summary
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 211 | 105 | 98 | 8 | 0 | 72 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 91 | 37 | 54 | 0 | 0 | · | 31 |
+| new (`include/foundation/`, `include/fixy/`) | 92 | 38 | 54 | 0 | 0 | · | 31 |
