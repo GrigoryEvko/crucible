@@ -104,6 +104,12 @@ fixy_neg_compile_test(neg_qtt_consume_through_const_ref
   "discards qualifiers"
   "fixy::Qtt<Grade, T>::consume\\(\\) &&")
 
+# A class that compares equal to the One grade is not a grade.  The
+# value check of IsConsumeBound admits it, and the type check refuses it.
+fixy_neg_compile_test(neg_qtt_grade_that_only_compares_equal
+  "template constraint failure for .template<auto Grade, class T> +requires +IsConsumeBound<Grade> class fixy::Qtt."
+  "required for the satisfaction of .same_as<decltype \\(Grade\\), foundation::algebra::lattices::QttGrade>. \\[with Grade = <unnamed>::LookalikeGrade\\{\\}\\]")
+
 # A body CRUCIBLE_PRE reaches its consteval trap when a constant
 # expression steps a Monotonic backward or sets a WriteOnce twice.
 fixy_neg_compile_test(neg_mutation_monotonic_step_backward
