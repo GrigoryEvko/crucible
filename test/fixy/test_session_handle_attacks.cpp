@@ -52,10 +52,13 @@
 // The route that runs no code at all is one row for all of them:
 // leak_then_skip_exit_hooks.
 //
-// The watch also follows the waits of polling transports across sessions,
-// and aborts on a cycle.  The two forest attacks use polling transports
-// and are caught.  A transport that waits inside its own call publishes no
-// wait, which is the row blocking_transport_hides_the_cycle.
+// The watch also orders the sessions by priority.  A wait on an endpoint
+// whose peer the thread holds, or while the thread holds another endpoint
+// of a priority that is not lower, is refused before the thread waits.
+// The two forest attacks use polling transports and are refused so, and
+// the captured diagnostics show which check refused each.  A transport
+// that waits inside its own call publishes no wait, which is the row
+// blocking_transport_hides_the_cycle.
 
 #include <fixy/Fn.h>
 #include <fixy/ScopedView.h>
@@ -669,6 +672,57 @@ struct CycleLeftB {
     std::_Exit(kSilentExit);
 }
 
+// ── The priority order ───────────────────────────────────────────────
+//
+// A thread that waits on a session while it holds another session whose
+// priority is not lower breaks the order of fixy/session/Watch.h, and the
+// watch refuses the wait before the thread waits.  The other order is
+// admitted.  Each Resource states its priority, and the read finds
+// nothing on its first call, so the handle waits.
+
+struct LowWire {
+    static constexpr s::watch::priority session_priority{0};
+    int value = 7;
+};
+struct HighWire {
+    static constexpr s::watch::priority session_priority{1};
+    int value = 7;
+};
+
+// A read that finds nothing on its first call and the value after it.
+struct LateRead {
+    int calls = 0;
+
+    template <typename Wire>
+    [[nodiscard]] std::optional<int> operator()(Wire& wire) noexcept {
+        if (calls++ == 0) return std::nullopt;
+        return wire.value;
+    }
+};
+
+using OneRead = s::Recv<int, s::End>;
+
+// Waits on the low session while it holds the high one.
+[[noreturn]] void wait_low_while_holding_high() {
+    auto high = s::mint_session_handle<OneRead, HighWire>(HighWire{});
+    auto low = s::mint_session_handle<OneRead, LowWire>(LowWire{});
+    auto [low_value, low_done] = std::move(low).recv(LateRead{});
+    (void)std::move(low_done).close();
+    std::move(high).detach(s::detach_reason::TestInstrumentation{});
+    std::_Exit(low_value == 7 ? kSilentExit : kCorrectExit);
+}
+
+// Waits on the high session while it holds the low one.
+[[noreturn]] void wait_high_while_holding_low() {
+    auto low = s::mint_session_handle<OneRead, LowWire>(LowWire{});
+    auto high = s::mint_session_handle<OneRead, HighWire>(HighWire{});
+    auto [high_value, high_done] = std::move(high).recv(LateRead{});
+    (void)std::move(high_done).close();
+    auto [low_value, low_done] = std::move(low).recv(LateRead{});
+    (void)std::move(low_done).close();
+    std::_Exit(high_value == 7 && low_value == 7 ? kCorrectExit : kSilentExit);
+}
+
 // ── The cancellation path racing a send ──────────────────────────────
 //
 // The left side runs under check::Cancel and drops its handle at once.
@@ -754,6 +808,8 @@ constexpr attack_case kAttacks[] = {
     {"quick_exit_with_static_handle", Outcome::Caught, quick_exit_with_static_handle},
     {"one_thread_holds_both_ends_after_fork", Outcome::Caught, one_thread_holds_both_ends_after_fork},
     {"two_forked_sessions_in_a_cycle", Outcome::Caught, two_forked_sessions_in_a_cycle},
+    {"wait_low_while_holding_high", Outcome::Caught, wait_low_while_holding_high},
+    {"wait_high_while_holding_low", Outcome::Correct, wait_high_while_holding_low},
     {"swap_two_live_handles", Outcome::Correct, swap_two_live_handles},
     {"self_move_assign", Outcome::Correct, self_move_assign},
     {"cancellation_races_a_send", Outcome::Correct, cancellation_races_a_send},
@@ -929,6 +985,41 @@ constexpr std::string_view kSignalReport = "LIVE PROTOCOL AT A FATAL SIGNAL";
     return failures;
 }
 
+// ── Which check refused a wait ───────────────────────────────────────
+//
+// The priority order refuses each wait below before the thread waits, so
+// the deadlock detector never runs for them.  The child's standard error
+// names the check that refused the wait.
+
+struct wait_refusal_case {
+    std::string_view name;
+    std::string_view diagnostic;
+    void (*run)();
+};
+
+constexpr wait_refusal_case kWaitRefusals[] = {
+    {"one_thread_holds_both_ends_after_fork", "[Wait_On_Held_Peer]", one_thread_holds_both_ends_after_fork},
+    {"two_forked_sessions_in_a_cycle", "[Wait_Breaks_Priority_Order]", two_forked_sessions_in_a_cycle},
+    {"wait_low_while_holding_high", "[Wait_Breaks_Priority_Order]", wait_low_while_holding_high},
+};
+
+[[nodiscard]] int run_wait_refusals() {
+    int failures = 0;
+    for (const wait_refusal_case& entry : kWaitRefusals) {
+        const captured_end end = run_capturing(entry.run);
+        const bool names_the_check = end.output.find(entry.diagnostic) != std::string::npos;
+        const bool is_expected = !end.is_clean_exit && names_the_check
+                              && end.output.find("DEADLOCK ACROSS SESSIONS") == std::string::npos;
+        std::fprintf(stderr, "[wait] %-40.*s %s\n", static_cast<int>(entry.name.size()), entry.name.data(),
+                     is_expected ? "refused before the wait" : "UNEXPECTED");
+        if (!is_expected) {
+            ++failures;
+            std::fprintf(stderr, "  child output:\n%s\n", end.output.c_str());
+        }
+    }
+    return failures;
+}
+
 [[nodiscard]] const char* outcome_name(Outcome outcome) noexcept {
     switch (outcome) {
         case Outcome::Caught: return "caught";
@@ -968,5 +1059,6 @@ int main() {
     }
     std::fprintf(stderr, "[attack] the default policy caught %zu of %zu drop and reuse routes\n", caught, drop_routes);
     failures += run_signal_cases();
+    failures += run_wait_refusals();
     return failures == 0 ? 0 : 1;
 }

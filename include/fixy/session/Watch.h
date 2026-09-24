@@ -14,7 +14,10 @@
 //     (Jacobs, Hinrichsen and Krebbers, POPL 2024) then does not hold,
 //     and the threads deadlock.
 //
-// The watch detects the two at run time.  It does not prevent them.
+// The watch reports the first at exit and at each fatal signal.  It
+// prevents the second: a wait that could close a cycle is refused before
+// the thread waits, by a priority order on sessions.  A cycle detector
+// stays as a second line.
 //
 // ── The endpoint table ──────────────────────────────────────────────
 //
@@ -41,29 +44,72 @@
 // that action.  std::_Exit and SIGKILL run no code at all, so the watch
 // sees nothing there.
 //
+// ── Every wait goes through the watch ───────────────────────────────
+//
+// A transport of fixy/session/Handle.h never waits in secret.  A read
+// either polls, and returns no value while no message is there, or it
+// takes a wait_scope that the handle opened before the call.  A write
+// either tries, and returns false while it cannot take the value, or it
+// takes a wait_scope.  So each wait of a thread on an endpoint opens a
+// wait_scope first, and the scope publishes the endpoint that the thread
+// waits on.
+//
+// ── The priority order ──────────────────────────────────────────────
+//
+// Each session has a priority, which its Resource states as a static
+// member session_priority, and which is 0 when the Resource states none.
+// The two ends of a channel have one priority.  When a thread opens a
+// wait on an endpoint of priority p, every other live endpoint that the
+// thread holds must have a priority below p, and the thread must not
+// hold the peer of the endpoint it waits on.  A wait that breaks the
+// order is refused before the thread waits.
+//
+// This is the lock order of Kobayashi's deadlock-free processes, which
+// Dardha and Gay (Prioritised GV, 2022) and van den Heuvel and Pérez
+// (APCP, LMCS 2024) give to sessions.  In a cycle of waits, each thread
+// waits on an endpoint and holds the peer of the endpoint that the thread
+// before it waits on.  The order would need each priority on the cycle to
+// be above the one before it, which no cycle allows.  Priority 0 is the
+// lowest, so a thread that waits at priority 0 holds no other endpoint:
+// the forest condition of LinearActris, checked when the thread waits.
+//
+// The check runs when a thread starts to wait, and not at each step.  A
+// step that finds its message there, or room for its value, does not
+// wait, and a thread that does not wait is on no cycle of waits.  So a
+// program that breaks the order is refused on the run where it waits,
+// and one thread can drive the two ends of a test channel in an order
+// that never waits.
+//
+// One priority for each session cannot order a thread that waits on
+// session A while it holds B, and later waits on B while it holds A.  The
+// priorities of Dardha and Gay are on each action and grow along the
+// protocol, so they can.  This watch keeps one number for each session,
+// and such a thread is refused at its second wait.
+//
 // ── The deadlock detector ───────────────────────────────────────────
 //
-// A handle waits through the watch when its transport polls: the
-// transport returns an empty std::optional while no message is there.
-// The first empty result opens a wait_scope, which publishes the endpoint
-// that the thread waits on.  The scope then follows the wait-for chain:
-// the peer of the endpoint, the thread that holds the peer, the endpoint
-// that thread waits on, and so on.  A chain that comes back to the
-// waiting thread is a cycle.  When the same cycle, with the same wait of
-// each thread, holds at two checks confirm_after apart, the scope prints
-// the cycle and aborts.  A step that does not wait never touches the
-// watch.
+// A polling wait also follows the wait-for chain: the peer of the
+// endpoint, the thread that holds the peer, the endpoint that thread
+// waits on, and so on.  A chain that comes back to the waiting thread is
+// a cycle.  When the same cycle, with the same wait of each thread,
+// holds at two checks confirm_after apart, the scope prints the cycle
+// and aborts.  A step that does not wait never touches the watch.
+//
+// ── The holder of an endpoint ───────────────────────────────────────
+//
+// The holder is the thread that last stepped or moved the handle.  A
+// channel mint claims the records of its two ends on the thread that
+// forks, and names no holder: each end's thread becomes the holder when
+// it opens its end.
 //
 // Limits, stated rather than implied:
 //
-//   - A transport that blocks inside its own call publishes no wait, so a
-//     cycle through it is not seen.
-//   - The holder of an endpoint is the thread that last moved or stepped
-//     its handle.  A thread that only holds a pointer to a handle is not
-//     its holder.  A cycle that runs through such a pointer can be
-//     reported, although the pointer holder will step the handle later.
-//     Linear handles do not cross threads by pointer, so this needs code
-//     that breaks linearity already.
+//   - A handle that reaches a thread without a move or a step on that
+//     thread, inside a lambda capture or through a pointer, counts for
+//     the thread that moved or stepped it last, until the new thread
+//     steps it.  A wait of the new thread in that window is not checked
+//     against that endpoint.  No C++ event marks the first moment that a
+//     thread can reach an object, so no check can run there.
 //   - The table has a fixed capacity.  A session minted when it is full
 //     is not tracked, and a thread with no free slot is not either.
 //
@@ -87,12 +133,18 @@
 #include <iterator>
 #include <source_location>
 #include <string_view>
+#include <utility>
 
 namespace fixy::session::watch {
 
 // The index of an endpoint record, plus one.  Zero is no record, so a
 // handle that no mint tracks carries the zero value.
 enum class endpoint_id : std::uint32_t { none = 0 };
+
+// The priority of a session in the order that the watch keeps.  A
+// Resource states it as a static constexpr member session_priority of
+// this type.  lowest is the priority of a Resource that states none.
+enum class priority : std::uint32_t { lowest = 0 };
 
 inline constexpr std::uint32_t endpoint_capacity = 4096;
 inline constexpr std::uint32_t thread_capacity = 1024;
@@ -135,6 +187,8 @@ struct alignas(64) endpoint_record {
     // The next free record, one-based, while the record is free.
     std::atomic<std::uint32_t> next_free{0};
     std::atomic<std::uint32_t> protocol_size{0};
+    // The priority of the session, from its Resource.  0 is the lowest.
+    std::atomic<std::uint32_t> priority{0};
     // The peer endpoint, packed with its generation.
     std::atomic<std::uint64_t> peer{0};
     // The thread that holds the handle, packed with its slot generation.
@@ -194,6 +248,16 @@ inline constinit thread_local std::uint16_t tls_holder_stamp = 0;
 
 static_assert(thread_capacity < (1u << stamp_index_bits),
               "the one-based slot index must fit the low bits of a holder stamp");
+
+// The records that this thread took as holder, each a one-based index
+// packed with its generation.  An entry is only a candidate: the order
+// check keeps the entries whose record is live, has that generation and
+// names this thread as its owner.  Only this thread reads or writes the
+// list.  When every entry is taken by a record this thread still holds,
+// the check reads the whole table instead.
+inline constexpr std::size_t held_capacity = 16;
+inline constinit thread_local std::uint64_t tls_held[held_capacity]{};
+inline constinit thread_local bool tls_held_overflowed = false;
 
 [[nodiscard]] constexpr std::uint16_t holder_stamp_of(std::uint32_t slot, std::uint32_t generation) noexcept {
     return static_cast<std::uint16_t>(slot | (generation << stamp_index_bits));
@@ -550,12 +614,107 @@ struct wait_chain {
     std::abort();
 }
 
+// ── The priority order ───────────────────────────────────────────────
+
+/// True when the record at `index` is live, has `generation`, and has
+/// `self` as its owner.
+[[nodiscard]] inline bool holds_record(std::uint64_t self, std::uint32_t index, std::uint32_t generation) noexcept {
+    const endpoint_record& record = record_at_(index);
+    return record.is_live.load(std::memory_order_acquire) != 0
+        && record.generation.load(std::memory_order_acquire) == generation
+        && record.owner.load(std::memory_order_acquire) == self;
+}
+
+/// Adds a record that this thread just took as holder to its list.  It
+/// takes an entry whose record this thread no longer holds, and marks the
+/// list overflowed when every entry is still held.  Complexity: linear in
+/// held_capacity, on the cold path of a claim or a change of holder.
+inline void remember_held(std::uint64_t self, std::uint32_t index) noexcept {
+    const std::uint64_t entry = pack(index, record_at_(index).generation.load(std::memory_order_acquire));
+    std::size_t free_slot = held_capacity;
+    for (std::size_t slot = 0; slot < held_capacity; ++slot) {
+        const std::uint64_t held = tls_held[slot];
+        if (held == entry) return;
+        if (free_slot == held_capacity && (held == 0 || !holds_record(self, index_of(held), generation_of(held)))) {
+            free_slot = slot;
+        }
+    }
+    if (free_slot == held_capacity) {
+        tls_held_overflowed = true;
+        return;
+    }
+    tls_held[free_slot] = entry;
+}
+
+[[noreturn, gnu::cold, gnu::noinline]] inline void refuse_wait(const char* what, std::uint32_t waited,
+                                                               std::uint32_t held) noexcept {
+    std::fprintf(stderr,
+                 "\n"
+                 "fixy::session: diagnostic [%s]\n"
+                 "  A thread opened a wait that could close a cycle of waits across sessions, so the watch\n"
+                 "  refused it before the thread waited.  When a thread waits on an endpoint of priority p,\n"
+                 "  each other endpoint it holds must have a priority below p, and it must not hold the peer\n"
+                 "  of the endpoint it waits on.  A Resource states the priority of its session with a\n"
+                 "  static member session_priority, and a session with none has priority 0, the lowest.\n",
+                 what);
+    std::fprintf(stderr, "  the thread waits on:\n");
+    print_endpoint("waited", waited);
+    std::fprintf(stderr, "  priority %u\n  and holds:\n",
+                 record_at_(waited).priority.load(std::memory_order_acquire));
+    print_endpoint("held", held);
+    std::fprintf(stderr, "  priority %u\n", record_at_(held).priority.load(std::memory_order_acquire));
+    std::abort();
+}
+
+/// Refuses a wait of the calling thread on `waited` that breaks the
+/// priority order: the thread holds the peer of `waited`, or it holds
+/// another live endpoint whose priority is not below the priority of
+/// `waited`.  Complexity: linear in held_capacity, or in the records ever
+/// claimed after the list overflowed.
+inline void check_wait_order(std::uint64_t self, std::uint32_t waited) noexcept {
+    const endpoint_record& waited_record = record_at_(waited);
+    const std::uint32_t priority = waited_record.priority.load(std::memory_order_acquire);
+    const std::uint64_t peer = waited_record.peer.load(std::memory_order_acquire);
+    const auto check_one = [&](std::uint32_t index, std::uint32_t generation) noexcept {
+        if (index == waited) return;
+        if (peer != 0 && index == index_of(peer) && generation == generation_of(peer)) {
+            refuse_wait("Wait_On_Held_Peer", waited, index);
+        }
+        if (record_at_(index).priority.load(std::memory_order_acquire) >= priority) {
+            refuse_wait("Wait_Breaks_Priority_Order", waited, index);
+        }
+    };
+    if (!tls_held_overflowed) {
+        for (const std::uint64_t held : tls_held) {
+            if (held == 0 || !holds_record(self, index_of(held), generation_of(held))) continue;
+            check_one(index_of(held), generation_of(held));
+        }
+        return;
+    }
+    const std::uint32_t claimed = g_registry.next_unused.load(std::memory_order_acquire);
+    const std::uint32_t bound = claimed < endpoint_capacity ? claimed : endpoint_capacity;
+    for (std::uint32_t index = 1; index <= bound; ++index) {
+        const endpoint_record& record = record_at_(index);
+        if (record.is_live.load(std::memory_order_acquire) == 0) continue;
+        if (record.owner.load(std::memory_order_acquire) != self) continue;
+        check_one(index, record.generation.load(std::memory_order_acquire));
+    }
+}
+
 }  // namespace detail
 
+// Whether a claim names the calling thread as the holder.  A mint that
+// opens the session on the calling thread names it.  A channel mint
+// claims on the thread that forks, and each end's own thread becomes the
+// holder when it opens its end.
+enum class holder_on_claim : std::uint8_t { calling_thread, none_yet };
+
 /// Claims a record for a session that starts at `protocol`, minted at
-/// `site`.  A full table gives endpoint_id::none, and the session is then
-/// not tracked.  The first claim installs the exit hooks.
-[[nodiscard]] inline endpoint_id claim(std::string_view protocol, std::source_location site) noexcept {
+/// `site`, with the priority of its Resource.  A full table gives
+/// endpoint_id::none, and the session is then not tracked.  The first
+/// claim installs the exit hooks.
+[[nodiscard]] inline endpoint_id claim(std::string_view protocol, std::source_location site, priority order,
+                                       holder_on_claim holder) noexcept {
     if (detail::g_registry.hooks_installed.load(std::memory_order_acquire) == 0) [[unlikely]] {
         detail::install_exit_hooks();
     }
@@ -573,8 +732,16 @@ struct wait_chain {
     record.protocol_text.store(protocol.data(), std::memory_order_release);
     record.protocol_size.store(static_cast<std::uint32_t>(protocol.size()), std::memory_order_release);
     record.site.store(site, std::memory_order_release);
-    record.owner.store(detail::owner_token(), std::memory_order_release);
-    record.is_live.store(1, std::memory_order_release);
+    record.priority.store(std::to_underlying(order), std::memory_order_release);
+    if (holder == holder_on_claim::calling_thread) {
+        const std::uint64_t self = detail::owner_token();
+        record.owner.store(self, std::memory_order_release);
+        record.is_live.store(1, std::memory_order_release);
+        if (self != detail::untracked_owner) detail::remember_held(self, index);
+    } else {
+        record.owner.store(0, std::memory_order_release);
+        record.is_live.store(1, std::memory_order_release);
+    }
     return static_cast<endpoint_id>(index);
 }
 
@@ -632,7 +799,9 @@ struct session_ref {
 [[gnu::cold, gnu::noinline]] inline thread_slot note_holder(endpoint_id endpoint) noexcept {
     const std::uint64_t token = detail::owner_token();
     if (endpoint != endpoint_id::none) {
-        detail::record_at_(static_cast<std::uint32_t>(endpoint)).owner.store(token, std::memory_order_release);
+        const auto index = static_cast<std::uint32_t>(endpoint);
+        detail::record_at_(index).owner.store(token, std::memory_order_release);
+        if (token != detail::untracked_owner) detail::remember_held(token, index);
     }
     return current_thread_slot();
 }
@@ -647,9 +816,10 @@ struct session_ref {
 /// records ever claimed.
 [[nodiscard]] inline std::uint32_t live_count() noexcept { return detail::count_live(); }
 
-// The wait of one thread on one endpoint.  A handle opens it when its
-// polling transport first finds no message, and poll() runs between the
-// retries.  The scope lives on the stack of the waiting thread only.
+// The wait of one thread on one endpoint.  A handle opens it before a
+// declared blocking call of its transport, and when a polling or trying
+// transport first finds nothing to do.  poll() runs between the retries.
+// The scope lives on the stack of the waiting thread only.
 class wait_scope {
     std::uint32_t endpoint_ = 0;
     std::uint64_t self_ = 0;
@@ -659,7 +829,8 @@ class wait_scope {
     detail::wait_chain suspect_{};
 
 public:
-    /// Publishes that the calling thread waits on `endpoint`.
+    /// Refuses the wait when it breaks the priority order, and otherwise
+    /// publishes that the calling thread waits on `endpoint`.
     explicit wait_scope(endpoint_id endpoint) noexcept : start_{std::chrono::steady_clock::now()} {
         last_trace_ = start_;
         if (endpoint == endpoint_id::none) return;
@@ -667,6 +838,7 @@ public:
         if (self == detail::untracked_owner) return;
         endpoint_ = static_cast<std::uint32_t>(endpoint);
         self_ = self;
+        detail::check_wait_order(self, endpoint_);
         detail::thread_record& me = detail::thread_at_(detail::index_of(self));
         me.wait_epoch.fetch_add(1, std::memory_order_acq_rel);
         me.blocked_on.store(endpoint_, std::memory_order_release);

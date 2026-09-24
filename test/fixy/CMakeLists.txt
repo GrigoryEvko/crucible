@@ -1903,6 +1903,15 @@ fixy_neg_compile_test(neg_sess_crash_reporter_copied
   "use of deleted function .fixy::session::CrashReporter::CrashReporter\\(const fixy::session::CrashReporter&\\)"
   "a cell has one reporter, so its count has one source")
 #
+# The priority order of fixy/session/Watch.h: the two ends of a channel
+# state one priority, and a Resource states it with its own type.
+fixy_neg_compile_test(neg_sess_channel_ends_disagree_on_priority
+  "no matching function for call to .mint_test_channel"
+  "session_priority_v<ResourceA>\\) == \\(session_priority_v<ResourceB>\\)")
+fixy_neg_compile_test(neg_sess_session_priority_untyped
+  "fixy::session::diagnostic \\[Session_Priority_Type\\]"
+  "declares session_priority with a type other than fixy::session::watch::priority")
+#
 # Legal code that tries to defeat the crash transport, the checkpoint
 # session and the event log.  Each runtime attack runs in a child under
 # a watchdog, and the attacks that succeed are pinned on a ledger that

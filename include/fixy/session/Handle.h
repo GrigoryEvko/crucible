@@ -70,12 +70,14 @@
 //      this: it makes a channel only as part of a fork, and each
 //      endpoint goes to its own thread.
 //
-// The guarantee is for acyclic ownership only.  If a program sends an
-// endpoint over a channel to a thread that already holds the dual, or
-// connects two fork-shaped channels in a cycle, then the forest
-// condition does not hold, and the guarantee does not apply.  Priorities
-// across sessions (van den Heuvel and Pérez, LMCS 2024; Kokke and
-// Dardha, LMCS 2023) remove that limit, and they are not implemented.
+// The guarantee of the types is for acyclic ownership only.  If a program
+// sends an endpoint over a channel to a thread that already holds the
+// dual, or connects two fork-shaped channels in a cycle, then the forest
+// condition does not hold.  fixy/session/Watch.h then orders the sessions
+// at run time by priority (Dardha and Gay, Prioritised GV; van den Heuvel
+// and Pérez, LMCS 2024).  A Resource states its priority as
+// session_priority, and a wait that could close a cycle of waits is
+// refused before the thread waits.
 //
 // ── The decorator shape ─────────────────────────────────────────────
 //
@@ -1530,6 +1532,41 @@ concept SessionResource = !std::is_reference_v<Resource>
                            && std::derived_from<std::remove_reference_t<Resource>,
                                                 ::foundation::Pinned<std::remove_reference_t<Resource>>>);
 
+// ── The priority of a session ────────────────────────────────────────
+//
+// A Resource states the priority of its session in the order of
+// fixy/session/Watch.h with a static constexpr member session_priority of
+// the type watch::priority.  A Resource that states none has the lowest
+// priority.  A member of that name with another type is refused: a plain
+// integer with that name could be a count, and the order would read it.
+
+namespace detail {
+
+template <typename Resource>
+consteval watch::priority session_priority_of() noexcept {
+    using Bare = std::remove_cvref_t<Resource>;
+    constexpr bool states_a_priority = requires { Bare::session_priority; };
+    if constexpr (states_a_priority) {
+        constexpr bool is_typed = std::same_as<std::remove_cv_t<decltype(Bare::session_priority)>, watch::priority>;
+        static_assert(is_typed,
+                      "fixy::session::diagnostic [Session_Priority_Type]: the Resource declares session_priority "
+                      "with a type other than fixy::session::watch::priority.  Declare it as "
+                      "static constexpr fixy::session::watch::priority session_priority{N};");
+        if constexpr (is_typed) return Bare::session_priority;
+    }
+    return watch::priority::lowest;
+}
+
+}  // namespace detail
+
+template <typename Resource>
+inline constexpr watch::priority session_priority_v = detail::session_priority_of<Resource>();
+
+// The two ends of a channel are one session, so their Resources state one
+// priority.
+template <typename ResourceA, typename ResourceB>
+concept ChannelEndsShareAPriority = session_priority_v<ResourceA> == session_priority_v<ResourceB>;
+
 // The admission gate for handle construction, expressed as a concept
 // rather than as body static_asserts alone.  A body static_assert is
 // not visible to SFINAE: overload resolution accepts the signature for
@@ -1663,13 +1700,16 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename 
     return step_to_next<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
 }
 
-// Opens a session that has no record yet, and claims one for it.
+// Opens a session that has no record yet, and claims one for it with the
+// priority of its Resource.  The calling thread holds the first handle.
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
 [[nodiscard]] constexpr auto open_session_(Resource r, std::source_location loc) noexcept {
     watch::session_ref session{};
     if constexpr (Policy::checks_abandonment) {
         if !consteval {
-            const watch::endpoint_id endpoint = watch::claim(type_display_name_v<Proto>, loc);
+            const watch::endpoint_id endpoint = watch::claim(type_display_name_v<Proto>, loc,
+                                                             session_priority_v<Resource>,
+                                                             watch::holder_on_claim::calling_thread);
             session = {endpoint, watch::current_thread_slot()};
         }
     }
@@ -1677,8 +1717,8 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename 
 }
 
 // Opens a session on a record that a channel mint claimed and linked to
-// its peer.  The mint can run on a different thread, so the calling
-// thread records itself as the holder.
+// its peer.  The mint claimed it with no holder, and can run on a
+// different thread, so the calling thread records itself as the holder.
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
 [[nodiscard]] constexpr auto open_session_(Resource r, std::source_location loc, watch::endpoint_id endpoint) noexcept {
     watch::session_ref session{};
@@ -1690,13 +1730,17 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename 
     return start_session_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, session);
 }
 
-// Claims the two linked records of a channel, one for each end.  Under
+// Claims the two linked records of a channel, one for each end, with the
+// one priority of the channel.  The thread that claims them does not hold
+// the ends: each end's holder is the thread that opens it.  Under
 // check::Off it claims nothing.
-template <typename SelfProto, typename PeerProto, AbandonmentPolicy Policy>
+template <typename SelfProto, typename PeerProto, AbandonmentPolicy Policy, watch::priority Order>
 [[nodiscard]] inline std::pair<watch::endpoint_id, watch::endpoint_id> claim_channel_(std::source_location loc) noexcept {
     if constexpr (Policy::checks_abandonment) {
-        const watch::endpoint_id self = watch::claim(type_display_name_v<SelfProto>, loc);
-        const watch::endpoint_id peer = watch::claim(type_display_name_v<PeerProto>, loc);
+        const watch::endpoint_id self =
+            watch::claim(type_display_name_v<SelfProto>, loc, Order, watch::holder_on_claim::none_yet);
+        const watch::endpoint_id peer =
+            watch::claim(type_display_name_v<PeerProto>, loc, Order, watch::holder_on_claim::none_yet);
         watch::link(self, peer);
         return {self, peer};
     } else {
@@ -1881,9 +1925,13 @@ template <typename SelfProto, typename PeerProto, typename SelfTag, typename Pee
 fork_channel_(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
               ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
               std::source_location loc) noexcept {
+    static_assert(ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>,
+                  "fixy::session::diagnostic [Channel_Priority_Mismatch]: the two Resources of one channel state "
+                  "different session priorities.  The two ends are one session, so they have one priority.");
     using SelfSide = forked_endpoint_<SelfProto, Policy, ResourceSelf, SelfBody>;
     using PeerSide = forked_endpoint_<PeerProto, Policy, ResourcePeer, PeerBody>;
-    const auto [self_endpoint, peer_endpoint] = claim_channel_<SelfProto, PeerProto, Policy>(loc);
+    const auto [self_endpoint, peer_endpoint] =
+        claim_channel_<SelfProto, PeerProto, Policy, session_priority_v<ResourceSelf>>(loc);
     return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
         ctx, std::move(parent),
         SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
@@ -1920,7 +1968,7 @@ template <typename Proto, typename SelfTag, typename PeerTag, AbandonmentPolicy 
           typename Ctx, typename Parent, typename Brand, typename ResourceSelf, typename ResourcePeer,
           typename SelfBody, typename PeerBody>
     requires CtxFitsForkedChannel<Ctx, Proto, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
-          && SessionResource<ResourcePeer>
+          && SessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
           && detail::ForkedEndpointBody<SelfBody, Proto, ResourceSelf, Policy, SelfTag, Ctx>
           && detail::ForkedEndpointBody<PeerBody, dual_of_t<Proto>, ResourcePeer, Policy, PeerTag, Ctx>
 // §XXI carve-out: cx=alloc — starting a thread is a kernel side effect.
@@ -1947,11 +1995,12 @@ concept CtxFitsTestChannel = ::foundation::effects::CtxOwnsCapability<Ctx, ::fou
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename ResourceA,
           typename ResourceB>
     requires CtxFitsTestChannel<Ctx, Proto> && SessionResource<ResourceA> && SessionResource<ResourceB>
+          && ChannelEndsShareAPriority<ResourceA, ResourceB>
 [[nodiscard]] constexpr auto mint_test_channel(Ctx const&, ResourceA resource_a, ResourceB resource_b,
                                                std::source_location loc = std::source_location::current()) noexcept {
     std::pair<watch::endpoint_id, watch::endpoint_id> endpoints{watch::endpoint_id::none, watch::endpoint_id::none};
     if !consteval {
-        endpoints = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy>(loc);
+        endpoints = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy, session_priority_v<ResourceA>>(loc);
     }
     return std::pair{
         detail::open_session_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(

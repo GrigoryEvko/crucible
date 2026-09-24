@@ -39,6 +39,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
+#include <source_location>
 #include <string_view>
 #include <thread>
 #include <type_traits>
@@ -1004,6 +1005,70 @@ struct PollBox {
     return 0;
 }
 
+// ── Runtime: the holder of a channel end ─────────────────────────────
+//
+// A channel mint claims the records of its two ends on the thread that
+// makes the channel, and names no holder.  Each end's thread becomes its
+// holder when it opens the end.  So the thread that made the channel
+// holds neither end, and a wait of that thread on another session is not
+// refused for the two records.
+
+struct LateWire {
+    int value = 5;
+};
+
+// A read that finds nothing on its first call and the value after it.
+struct LateRead {
+    int calls = 0;
+
+    [[nodiscard]] std::optional<int> operator()(LateWire& wire) noexcept {
+        if (calls++ == 0) return std::nullopt;
+        return wire.value;
+    }
+};
+
+[[nodiscard]] int channel_claim_names_no_holder() {
+    namespace watch = s::watch;
+    const std::source_location loc = std::source_location::current();
+    const watch::endpoint_id first = watch::claim("first end", loc, watch::priority::lowest,
+                                                  watch::holder_on_claim::none_yet);
+    const watch::endpoint_id second = watch::claim("second end", loc, watch::priority::lowest,
+                                                   watch::holder_on_claim::none_yet);
+    watch::link(first, second);
+    const auto owner_of = [](watch::endpoint_id endpoint) noexcept {
+        return watch::detail::record_at_(static_cast<std::uint32_t>(endpoint)).owner.load(std::memory_order_acquire);
+    };
+    if (owner_of(first) != 0 || owner_of(second) != 0) {
+        std::fprintf(stderr, "a channel claim named the claiming thread as the holder of an end\n");
+        return 1;
+    }
+
+    // This thread waits on its own session while the two records live.
+    auto other = s::mint_session_handle<s::Recv<int, s::End>, LateWire>(LateWire{});
+    auto [value, done] = std::move(other).recv(LateRead{});
+    (void)std::move(done).close();
+    if (value != 5) {
+        std::fprintf(stderr, "the late read gave %d, not 5\n", value);
+        return 1;
+    }
+
+    // The thread that opens an end holds it.
+    std::uint64_t opener = 0;
+    std::jthread open_first{[&] {
+        static_cast<void>(watch::note_holder(first));
+        opener = watch::detail::owner_token();
+    }};
+    open_first.join();
+    const bool is_held_by_opener = owner_of(first) == opener && opener != 0;
+    watch::release(first);
+    watch::release(second);
+    if (!is_held_by_opener) {
+        std::fprintf(stderr, "the thread that opened an end is not its holder\n");
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -1023,5 +1088,6 @@ int main() {
     if (const int rc = liveness_and_cancel_run(); rc != 0) return rc;
     if (const int rc = watch_counts_sessions(); rc != 0) return rc;
     if (const int rc = polling_channel_waits_without_a_false_deadlock(); rc != 0) return rc;
+    if (const int rc = channel_claim_names_no_holder(); rc != 0) return rc;
     return 0;
 }

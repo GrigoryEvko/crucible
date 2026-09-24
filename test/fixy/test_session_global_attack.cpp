@@ -1625,10 +1625,12 @@ constexpr KnownLimitation known_limitations[] = {
      "Liveness by construction covers one session (Pischke, Masters, Yoshida, Theorem 13; Pischke, Yoshida, "
      "Top-down = Bottom-up, p. 25).  Freedom from deadlock across sessions needs an acyclic ownership of channels, "
      "where a channel is made with the peer that holds its other end (LinearActris, POPL 2024), or a priority order "
-     "on sessions (Dardha and Gay, Prioritised GV).  This header set has neither.  fixy/session/Watch.h detects "
-     "such a cycle at run time when each wait goes through a polling transport.  The wait traces the wait-for chain, "
-     "and it aborts on a cycle that holds at two traces.  That is detection and not freedom.  A transport that "
-     "blocks inside its own call publishes no wait, so the watch does not see a cycle through it.",
+     "on sessions (Dardha and Gay, Prioritised GV).  The types here order no sessions, so the composed context of "
+     "this attack still deadlocks in the explorer.  fixy/session/Watch.h keeps the priority order at run time: a "
+     "thread that waits while it holds a session of a priority that is not lower is refused before it waits, and "
+     "test_session_handle_attacks refuses the crossed and the cyclic waits so.  That is prevention on the run that "
+     "waits, and not a type that refuses the program.  A transport that blocks inside its own call publishes no "
+     "wait, so the watch does not see a wait through it.",
      &crossed_sessions_deadlock},
 };
 

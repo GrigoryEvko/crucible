@@ -100,11 +100,15 @@ class tracked_policy {
 
     // Tells the watch when the handle is on a thread other than the one
     // it last saw.  A handle that stays on its thread reads one
-    // thread-local value and writes nothing.
+    // thread-local value and writes nothing.  A handle that no thread
+    // holds yet, from a channel mint, names none, and so does a thread
+    // that has not touched the watch: the first move or step on a thread
+    // then makes that thread the holder.
     constexpr void track_holder_() noexcept {
         if !consteval {
             if (endpoint_ == watch::endpoint_id::none) return;
-            if (watch::current_thread_slot() != holder_) [[unlikely]] {
+            const watch::thread_slot current = watch::current_thread_slot();
+            if (current != holder_ || current == watch::thread_slot::none) [[unlikely]] {
                 holder_ = watch::note_holder(endpoint_);
             }
         }
