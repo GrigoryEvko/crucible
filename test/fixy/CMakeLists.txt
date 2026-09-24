@@ -1485,6 +1485,40 @@ fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
   "no matching function for call to .mint_session_handle"
   "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>, fixy::session::End>, fixy::session::Send<int, fixy::session::End>")
 
+# A keyed step is a choice of one branch.  A keyed label branch is its
+# label step, a keyed step needs a keyed choice in its registration, and
+# a keyed Send sends no value.  A keyed step refines a choice by label.
+fixy_neg_compile_test(neg_sess_wf_keyed_label_under_loop
+  "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
+  "a label branch of a keyed choice starts with a wrapper or a binder")
+fixy_neg_compile_test(neg_sess_wf_keyed_label_under_vendor_pin
+  "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
+  "a label branch of a keyed choice starts with a wrapper or a binder")
+fixy_neg_compile_test(neg_sess_wf_keyed_step_without_keyed_choice
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = .*Emit<fixy::session::Labelled<.*Hello, int>")
+fixy_neg_compile_test(neg_sess_wf_keyed_step_without_keyed_choice_input
+  "no matching function for call to .mint_session_handle"
+  "is_well_formed_v<Proto> \\[with Proto = .*Absorb<fixy::session::PeerMsg<.*Hello, int>")
+fixy_neg_compile_test(neg_sess_keyed_send_with_value
+  "use of deleted function"
+  "Keyed_Message_Has_No_Value\\] a Send of a PeerMsg or a Labelled is keyed")
+fixy_neg_compile_test(neg_sess_keyed_send_with_value_peer_msg
+  "use of deleted function"
+  "Keyed_Message_Has_No_Value\\] a Send of a PeerMsg or a Labelled is keyed")
+fixy_neg_compile_test(neg_sess_subtype_keyed_step_label_set_input
+  "fixy::session::diagnostic \\[Subtype_LabelSet\\]: assert_subtype_sync"
+  "The failed pair is .*Offer<.*L1, int>.* against .*Recv<.*L2, int>")
+fixy_neg_compile_test(neg_sess_subtype_keyed_step_label_set_output
+  "fixy::session::diagnostic \\[Subtype_LabelSet\\]: assert_subtype_sync"
+  "The failed pair is .*Send<.*L2, int>.* against .*Select<.*L0, int>")
+fixy_neg_compile_test(neg_sess_incoherent_registration_keyed_choice_direction
+  "diagnostic \\[(Protocol|Subtype)_Incoherent_Registration\\]"
+  "Emit is incoherent: the keyed choice of a step is not a registered choice of the same direction")
+fixy_neg_compile_test(neg_sess_incoherent_registration_keyed_choice_one_sided
+  "diagnostic \\[(Protocol|Subtype)_Incoherent_Registration\\]"
+  "Absorb is incoherent: the dual step names a keyed choice that is not the dual of this keyed choice")
+
 # The adversarial campaign against the algebra and the relations.  The
 # runtime half runs two threads over bounded queues with a watchdog, so
 # a deadlock ends the run with a verdict and never hangs.  The attacks

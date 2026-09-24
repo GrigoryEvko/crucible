@@ -48,13 +48,13 @@ static_assert(g::is_global_well_formed_v<Logging>);
 static_assert(g::is_balanced_plus_v<Logging>);
 static_assert(std::is_same_v<g::crashed_roles_t<Logging>, g::Roles<>>);
 
-// The projections of section 2, with the crash label kept last.  Each
-// choice that the receiver can see a crash of stays a Select on the
-// sending side, so the label reaches the receiver.
+// The projections of section 2, with the crash label kept last.  The
+// sender of a choice with one message branch sends a keyed Send, which
+// puts its label word on the wire, so the label reaches the receiver.
 using ProjC = s::project_crash_t<Logging, C, LoggerAndInterface>;
 using ProjL = s::project_crash_t<Logging, L, LoggerAndInterface>;
 using ProjI = s::project_crash_t<Logging, I, LoggerAndInterface>;
-static_assert(std::is_same_v<ProjC::local, s::Select<s::Send<s::PeerMsg<I, Read, void>, s::Recv<s::PeerMsg<I, Report, Log>, s::End>>>>);
+static_assert(std::is_same_v<ProjC::local, s::Send<s::PeerMsg<I, Read, void>, s::Recv<s::PeerMsg<I, Report, Log>, s::End>>>);
 static_assert(std::is_same_v<ProjL::local,
                              s::Send<s::PeerMsg<I, Trigger, void>,
                                      s::Offer<s::Sender<I>,
@@ -141,7 +141,7 @@ static_assert(std::is_same_v<g::active_roles_t<RemarkWithoutQ>, g::Roles<P>>);
 static_assert(std::is_same_v<g::crashed_roles_t<RemarkWithoutQ>, g::Roles<Q>>);
 // p still sends, into a lost queue.
 static_assert(std::is_same_v<s::project_crash_t<RemarkWithoutQ, P, s::NoReliableRoles>::local,
-                             s::Select<s::Send<s::PeerMsg<Q, M, void>, s::End>>>);
+                             s::Send<s::PeerMsg<Q, M, void>, s::End>>);
 // Removal of both roles leaves the crash branch.
 static_assert(std::is_same_v<g::remove_role_t<RemarkWithoutQ, P>, g::End>);
 
@@ -206,9 +206,9 @@ static_assert(s::crash_live_by_construction_v<Example, s::NoReliableRoles>);
 
 using BinaryP = s::strip_peers_t<s::project_crash_t<Example, P, s::NoReliableRoles>::local>;
 using BinaryQ = s::strip_peers_t<s::project_crash_t<Example, Q, s::NoReliableRoles>::local>;
-static_assert(std::is_same_v<BinaryP, s::Select<s::Send<s::Labelled<M, int>,
-                                                        s::Offer<s::Recv<s::Labelled<Answer, int>, s::End>, s::Recv<s::Crash<Q>, s::End>>>>>);
-static_assert(std::is_same_v<BinaryQ, s::Offer<s::Recv<s::Labelled<M, int>, s::Select<s::Send<s::Labelled<Answer, int>, s::End>>>,
+static_assert(std::is_same_v<BinaryP, s::Send<s::Labelled<M, int>,
+                                              s::Offer<s::Recv<s::Labelled<Answer, int>, s::End>, s::Recv<s::Crash<Q>, s::End>>>>);
+static_assert(std::is_same_v<BinaryQ, s::Offer<s::Recv<s::Labelled<M, int>, s::Send<s::Labelled<Answer, int>, s::End>>,
                                                s::Recv<s::Crash<P>, s::End>>>);
 // The two binary views are crash duals, and the crash transport admits
 // each of them.
@@ -225,16 +225,10 @@ struct Port {
     Mailbox* out = nullptr;
 };
 
+// Every message of these binary views is keyed, so each is its label word.
 constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
-constexpr auto push_value = [](Port& port, auto&& message) noexcept { port.out->slots.push_back(1); (void)message; };
-// A crash-watched reception reads with no wait: the payload when one is
+// A crash-watched reception reads with no wait: the word when one is
 // queued, and no value otherwise.
-template <typename T>
-constexpr auto read_value = [](Port& port) noexcept -> std::optional<T> {
-    if (port.in->slots.empty()) return std::nullopt;
-    port.in->slots.pop_front();
-    return T{};
-};
 constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t> {
     if (port.in->slots.empty()) return std::nullopt;
     const std::uint64_t slot = port.in->slots.front();
@@ -259,22 +253,22 @@ int run_sender_crashes_after_send() {
     auto p = s::mint_crash_session<BinaryP, P, Q>(Port{&to_p, &to_q}, cell_q);
     auto q = s::mint_crash_session<BinaryQ, Q, P>(Port{&to_q, &to_p}, cell_p);
 
-    auto p_sent = std::move(p).select<0>(push_label);
-    auto [p_wait, p_lost] = std::move(p_sent).send(s::Labelled<M, int>{}, push_value);
-    if (p_lost) return fail("a payload to a live peer came back");
+    auto [p_wait, p_lost] = std::move(p).send(push_label);
+    if (p_lost) return fail("a message to a live peer came back");
+    if (to_q.slots.size() != 1 || to_q.slots.front() != s::step_wire_word_v<BinaryP>) {
+        return fail("the keyed send did not write its label word, and only that word");
+    }
     (void)std::move(p_wait).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
 
     bool took_message = false;
-    std::move(q).branch(poll_label, [&](auto q_branch) noexcept {
-        using Head = typename decltype(q_branch)::protocol;
+    std::move(q).branch(poll_label, [&](auto q_reply) noexcept {
+        using Head = typename decltype(q_reply)::protocol;
         if constexpr (s::is_crash_branch_v<Head>) {
             std::fprintf(stderr, "q detected the crash before the queued message\n");
             std::abort();
         } else {
-            auto [message, q_reply] = std::move(q_branch).recv(read_value<s::Labelled<M, int>>);
-            (void)message;
-            auto q_sel = std::move(q_reply).template select<0>(push_label);
-            auto [q_end, q_reply_lost] = std::move(q_sel).send(s::Labelled<Answer, int>{}, push_value);
+            // The word was the whole message, so q stands at its reply.
+            auto [q_end, q_reply_lost] = std::move(q_reply).send(push_label);
             took_message = q_reply_lost.has_value();
             (void)std::move(q_end).close();
         }

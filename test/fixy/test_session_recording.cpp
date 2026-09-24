@@ -337,13 +337,6 @@ using KeyedAsk = s::Select<s::Send<s::PeerMsg<Carol, Yes, int>, s::End>, s::Send
 using KeyedHear = s::Offer<s::Recv<s::PeerMsg<Carol, No, int>, s::End>, s::Recv<s::PeerMsg<Carol, Yes, int>, s::End>>;
 using PlainAsk = s::Select<s::Send<int, s::End>, s::Send<char, s::End>>;
 
-constexpr auto push_empty = [](Port& port, auto&&) noexcept { port.out->slots.push_back(0); };
-template <typename T>
-constexpr auto pop_empty = [](Port& port) noexcept {
-    port.in->slots.pop_front();
-    return T{};
-};
-
 namespace {
 
 int check_keyed_recording() {
@@ -355,18 +348,12 @@ int check_keyed_recording() {
         s::mint_recorded_session(s::mint_session_handle<KeyedAsk>(Port{&to_left, &to_right}), log_left, kSelf, kPeer);
     auto right =
         s::mint_recorded_session(s::mint_session_handle<KeyedHear>(Port{&to_right, &to_left}), log_right, kPeer, kSelf);
-    auto left_sent = std::move(left).select<1>(push_label);
-    auto left_end = std::move(left_sent).send(s::PeerMsg<Carol, No, int>{}, push_empty);
+    // The label word is the whole keyed message, so each side stands past
+    // the label step of its branch, here at End.
+    auto left_end = std::move(left).select<1>(push_label);
     (void)std::move(left_end).close();
-    bool took_no = false;
-    std::move(right).branch(pop_label, [&](auto branch) {
-        using B = typename decltype(branch)::protocol;
-        auto [message, right_end] = std::move(branch).recv(pop_empty<typename B::message_type>);
-        (void)message;
-        took_no = std::is_same_v<B, s::Recv<s::PeerMsg<Carol, No, int>, s::End>>;
-        (void)std::move(right_end).close();
-    });
-    if (!took_no) return fail("the label No did not reach the No branch of the peer");
+    if (to_right.slots.size() != 1) return fail("the keyed select put more than its label word on the wire");
+    std::move(right).branch(pop_label, [&](auto right_end) { (void)std::move(right_end).close(); });
 
     constexpr s::LabelWord no_word{s::branch_wire_word_v<KeyedAsk, 1>};
     if (log_left[0].op() != s::SessionOp::Select || log_left[0].branch_index() != 1 || log_left[0].label_word() != no_word)
@@ -389,6 +376,20 @@ int check_keyed_recording() {
     if (s::replayed_branch<KeyedAsk>(s::SessionEvent::select(kSelf, kPeer, 2, s::DeliveryFate::Delivered, no_word)))
         return fail("an index past the last branch replayed");
 
+    // A keyed Send step records a send, and its word is the whole message.
+    Mailbox step_out;
+    Mailbox step_in;
+    s::SessionEventLog log_step;
+    using SayNo = s::Send<s::PeerMsg<Carol, No, int>, s::End>;
+    auto stepper = s::mint_recorded_session(s::mint_session_handle<SayNo>(Port{&step_in, &step_out}), log_step, kSelf,
+                                            kPeer);
+    (void)std::move(stepper).send(push_label).close();
+    if (step_out.slots.size() != 1 || step_out.slots.front() != s::step_wire_word_v<SayNo>
+        || step_out.slots.front() != s::branch_wire_word_v<KeyedAsk, 1>)
+        return fail("the keyed step did not send the word of its label, which the wider Select sends for No");
+    if (log_step.size() != 2 || log_step[0].op() != s::SessionOp::Send)
+        return fail("the keyed step did not record one send");
+
     // A positional choice replays an event with no word, and refuses one
     // with a word.
     if (s::replayed_branch<PlainAsk>(s::SessionEvent::select(kSelf, kPeer, 1)) != 1)
@@ -396,6 +397,45 @@ int check_keyed_recording() {
     if (s::replayed_branch<PlainAsk>(s::SessionEvent::select(kSelf, kPeer, 1, s::DeliveryFate::Delivered, no_word)))
         return fail("a positional choice replayed an event with a label word");
     return 0;
+}
+
+// A keyed choice inside a checkpoint session.  The checkpoint handle
+// follows its inner handle past the label step of the keyed branch.
+int check_keyed_checkpoint() {
+    using Decide = s::Select<s::Commit<s::Select<s::Send<s::PeerMsg<Carol, Yes, int>, s::End>,
+                                                 s::Send<s::PeerMsg<Carol, No, int>, s::Send<int, s::End>>>>,
+                             s::Roll>;
+    using Hear = s::Offer<s::Recv<s::PeerMsg<Carol, Yes, int>, s::End>,
+                          s::Recv<s::PeerMsg<Carol, No, int>, s::Recv<int, s::End>>>;
+    using Follow = s::Offer<s::Commit<Hear>, s::Roll>;
+    Mailbox to_left;
+    Mailbox to_right;
+    auto left = s::mint_checkpoint_session<Decide, Follow>(Port{&to_left, &to_right});
+    auto right = s::mint_checkpoint_session<Follow, Decide>(Port{&to_right, &to_left});
+    auto left_value = std::move(left).select<0>(push_label).template select<1>(push_label);
+    static_assert(std::is_same_v<typename decltype(left_value)::protocol, s::Send<int, s::End>>);
+    (void)std::move(left_value).send(5, push_int).close();
+
+    int got = 0;
+    std::move(right).branch(pop_label, [&](auto committed) {
+        if constexpr (std::is_same_v<typename decltype(committed)::protocol, Hear>) {
+            std::move(committed).branch(pop_label, [&](auto taken) {
+                using Taken = typename decltype(taken)::protocol;
+                if constexpr (std::is_same_v<Taken, s::Recv<int, s::End>>) {
+                    auto [value, right_end] = std::move(taken).recv(pop_int);
+                    got = value;
+                    (void)std::move(right_end).close();
+                } else if constexpr (std::is_same_v<Taken, s::End>) {
+                    (void)std::move(taken).close();
+                } else {
+                    std::abort();
+                }
+            });
+        } else {
+            std::abort();
+        }
+    });
+    return got == 5 ? 0 : fail("the keyed branch of a checkpoint session did not carry its value");
 }
 
 }  // namespace
@@ -411,5 +451,6 @@ int main() {
     if (const int rc = check_crash_recording(); rc != 0) return rc;
     if (const int rc = check_checkpoint_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_recording(); rc != 0) return rc;
+    if (const int rc = check_keyed_checkpoint(); rc != 0) return rc;
     return 0;
 }

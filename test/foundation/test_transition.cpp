@@ -55,12 +55,14 @@ inline constexpr tr::combinator put{.shape = ^^Put,
                                     .kind = tr::shape_kind::step,
                                     .direction = tr::polarity::output,
                                     .dual = ^^Take,
-                                    .payload_variance = tr::variance::covariant};
+                                    .payload_variance = tr::variance::covariant,
+                                    .keyed_choice = ^^Pick};
 inline constexpr tr::combinator take{.shape = ^^Take,
                                      .kind = tr::shape_kind::step,
                                      .direction = tr::polarity::input,
                                      .dual = ^^Put,
-                                     .payload_variance = tr::variance::contravariant};
+                                     .payload_variance = tr::variance::contravariant,
+                                     .keyed_choice = ^^Wait};
 inline constexpr tr::combinator pick{.shape = ^^Pick,
                                      .kind = tr::shape_kind::choice,
                                      .direction = tr::polarity::output,
@@ -729,6 +731,25 @@ static_assert(refine(^^HearBye, ^^HearHelloBye).reason == tr::mismatch::label_se
 static_assert(refines(dual(^^SendHelloBye), dual(^^SendBye)) && refines(dual(^^HearBye), dual(^^HearByeHello)),
               "closed under duality");
 static_assert(dual(dual(^^SendByeHello)) == plain(^^SendByeHello), "duality keeps the order of the branches");
+
+// A keyed step outside a choice is the choice of that one branch, so it
+// pairs with a choice by label.  A step whose payload names no label
+// stays a step.
+struct Hi {};
+using SendByeStep = Put<Envelope<Alice, Bye, int>, Done>;
+using HearByeStep = Take<Envelope<Alice, Bye, int>, Done>;
+static_assert(refines(^^SendByeStep, ^^SendHelloBye) && refines(^^SendByeStep, ^^SendBye) && refines(^^SendBye, ^^SendByeStep),
+              "a keyed send step sends one label of the choice");
+static_assert(refines(^^HearHelloBye, ^^HearByeStep) && refines(^^HearByeStep, ^^HearBye) && refines(^^HearBye, ^^HearByeStep),
+              "a choice that receives more labels stands for a keyed receive step");
+static_assert(refine(^^HearByeStep, ^^HearHelloBye).reason == tr::mismatch::label_set);
+static_assert(refine(^^Put<Envelope<Alice, Hi, int>, Done>, ^^SendHelloBye).reason == tr::mismatch::label_set);
+static_assert(refine(^^HearHelloBye, ^^Take<Envelope<Alice, Hi, int>, Done>).reason == tr::mismatch::label_set);
+static_assert(refines(dual(^^SendHelloBye), dual(^^SendByeStep)), "closed under duality");
+static_assert(refine(^^Put<int, Done>, ^^Pick<Put<int, Done>>).reason == tr::mismatch::shape,
+              "a plain step is not a choice");
+static_assert(tr::wire_word_of_step(reg, ^^SendByeStep).value == tr::wire_word_of(reg, ^^SendHelloBye, 1).value,
+              "a keyed step sends the word of its branch");
 
 // Two labels pair by label word and label key.  One word with two keys is
 // refused, and a keyed choice never pairs with a positional one.

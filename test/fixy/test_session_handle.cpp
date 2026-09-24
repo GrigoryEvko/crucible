@@ -420,9 +420,12 @@ using test_session_handle_labels::Bob;
 using test_session_handle_labels::Bye;
 using test_session_handle_labels::Hello;
 
-using KeyedSelect = s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::End>, s::Send<s::PeerMsg<Bob, Bye, int>, s::End>>;
-using KeyedOfferSwapped =
-    s::Offer<s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>>;
+// Hello continues with a reply, so the branch that a handle enters shows
+// in its type.
+using KeyedSelect = s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::Recv<int, s::End>>,
+                              s::Send<s::PeerMsg<Bob, Bye, int>, s::End>>;
+using KeyedOfferSwapped = s::Offer<s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>,
+                                   s::Recv<s::PeerMsg<Bob, Hello, int>, s::Send<int, s::End>>>;
 using PlainOffer = s::Offer<s::Recv<Ping, s::End>, s::Recv<Stop, s::End>>;
 
 static_assert(s::is_keyed_choice_v<KeyedSelect> && s::is_keyed_choice_v<KeyedOfferSwapped>);
@@ -445,25 +448,34 @@ static_assert(s::branch_of_wire_word<PlainOffer>(s::branch_wire_word_v<KeyedSele
     auto sender = s::mint_session_handle<KeyedSelect, std::uint64_t*>(&wire);
     auto receiver = s::mint_session_handle<KeyedOfferSwapped, std::uint64_t*>(&wire);
 
-    auto sent = std::move(sender).select<0>([](std::uint64_t* box, std::size_t word) noexcept { *box = word; });
-    auto sender_end = std::move(sent).send(s::PeerMsg<Bob, Hello, int>{}, [](std::uint64_t*, auto&&) noexcept {});
-    (void)std::move(sender_end).close();
+    // The word is the whole keyed message, so the sender stands at the
+    // reply of Hello, past its label step.
+    auto awaiting = std::move(sender).select<0>([](std::uint64_t* box, std::size_t word) noexcept { *box = word; });
+    static_assert(std::is_same_v<typename decltype(awaiting)::protocol, s::Recv<int, s::End>>);
 
     const int taken = std::move(receiver).branch(
         [](std::uint64_t* box) noexcept -> std::size_t { return *box; },
         [](auto branch_handle) {
             using B = typename decltype(branch_handle)::protocol;
-            auto [message, at_end] = std::move(branch_handle).recv(
-                [](std::uint64_t*) noexcept { return typename decltype(branch_handle)::message_type{}; });
-            (void)message;
-            (void)std::move(at_end).close();
-            return std::is_same_v<B, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>> ? 0 : 1;
+            if constexpr (std::is_same_v<B, s::Send<int, s::End>>) {
+                auto at_end = std::move(branch_handle).send(7, [](std::uint64_t* box, int&& value) noexcept {
+                    *box = static_cast<std::uint64_t>(value);
+                });
+                (void)std::move(at_end).close();
+                return 0;
+            } else {
+                (void)std::move(branch_handle).close();
+                return 1;
+            }
         });
     if (taken != 0) {
         std::fprintf(stderr, "the label word of Hello did not reach the Hello branch of the peer\n");
         return 1;
     }
-    return 0;
+    auto [reply, sender_end] =
+        std::move(awaiting).recv([](std::uint64_t* box) noexcept { return static_cast<int>(*box); });
+    (void)std::move(sender_end).close();
+    return reply == 7 ? 0 : 1;
 }
 
 // ── Viewing a position ───────────────────────────────────────────────

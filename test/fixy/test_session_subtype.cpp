@@ -450,10 +450,10 @@ static_assert(s::is_subtype_sync_v<Send<projected::HelloBob, End>, Send<projecte
 static_assert(s::is_subtype_sync_v<projected::Menu, projected::Menu>
               && s::is_subtype_sync_v<projected::Inbox, projected::Inbox>);
 static_assert(s::subtype_mismatch_v<Send<projected::HelloBob, End>, Send<s::PeerMsg<Alice, projected::Hello, int>, End>>
-                  == tr::mismatch::payload,
-              "the peer is compared for identity");
+                  == tr::mismatch::label_set,
+              "the peer is part of the label, so a message to another peer is another label");
 static_assert(s::subtype_mismatch_v<Send<projected::HelloBob, End>, Send<projected::ByeBob, End>>
-                  == tr::mismatch::payload,
+                  == tr::mismatch::label_set,
               "the label is compared for identity");
 static_assert(s::is_subtype_sync_v<Send<s::PeerMsg<Bob, projected::Hello, Refined<::fixy::positive, int>>, End>,
                                    Send<projected::HelloBob, End>>,
@@ -479,6 +479,35 @@ static_assert(s::subtype_mismatch_v<projected::Inbox,
                                           Recv<projected::ByeBob, End>>>
                   == tr::mismatch::annotation,
               "the sender of an input choice is compared for identity");
+
+// A keyed step is a choice with one branch: p⊕q:m(B) and p&q:m(B) of
+// Definition 4.9 of the crash-stop paper.  So a keyed Send pairs with a
+// Select by label, and a keyed Recv with an Offer, and each reads as the
+// choice of its one branch, the Offer with the note of its sender.
+namespace projected {
+struct Retry {};
+using RetryBob = PeerMsg<Bob, Retry, int>;
+}  // namespace projected
+static_assert(s::is_subtype_sync_v<projected::Inbox, Recv<projected::HelloBob, End>>,
+              "an Offer that receives more labels stands for a keyed Recv");
+static_assert(s::is_subtype_sync_v<Send<projected::HelloBob, End>, projected::Menu>,
+              "a keyed Send sends one label of the Select");
+static_assert(s::subtype_mismatch_v<Recv<projected::RetryBob, End>, projected::Inbox> == tr::mismatch::label_set
+                  && s::subtype_mismatch_v<projected::Inbox, Recv<projected::RetryBob, End>> == tr::mismatch::label_set,
+              "a keyed Recv of a label the Offer does not name is refused both ways");
+static_assert(s::subtype_mismatch_v<Send<projected::RetryBob, End>, projected::Menu> == tr::mismatch::label_set
+                  && s::subtype_mismatch_v<projected::Menu, Send<projected::RetryBob, End>> == tr::mismatch::label_set,
+              "a keyed Send of a label the Select does not name is refused both ways");
+static_assert(s::equivalent_sync_v<Send<projected::HelloBob, End>, Select<Send<projected::HelloBob, End>>>
+                  && s::equivalent_sync_v<Recv<projected::HelloBob, End>,
+                                          Offer<s::Sender<Bob>, Recv<projected::HelloBob, End>>>,
+              "a keyed step and the choice of its one branch are one type");
+static_assert(s::subtype_mismatch_v<Offer<Recv<projected::HelloBob, End>>, Recv<projected::HelloBob, End>>
+                  == tr::mismatch::annotation,
+              "a keyed Recv of a message from Bob is the Offer that Bob signals");
+static_assert(s::is_subtype_sync_v<Send<int, End>, Send<int, End>>
+                  && s::subtype_mismatch_v<Send<int, End>, Select<Send<int, End>>> == tr::mismatch::shape,
+              "a step whose payload names no label stays a plain step");
 
 // ── The asynchronous relation ────────────────────────────────────────
 

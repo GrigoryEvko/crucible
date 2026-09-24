@@ -48,7 +48,8 @@
 //
 // A crash report carries the number of messages that the peer sent on
 // the session before it stopped.  The decorator counts the messages it
-// receives, and a label with the payload of its branch counts as one.
+// receives.  A positional label with the payload of its branch counts as
+// one, and a keyed label is one message by itself.
 // Rule r-rcv-⊙ (LMCS 2025, Fig. 4) takes the crash branch when the peer
 // has crashed and no message of the peer is left in the queue.  The count
 // makes "no message left" a fact the decorator checks: when the received
@@ -337,7 +338,10 @@ struct sender_of {
 
 // Where a handle stands inside one message.  A label and the payload that
 // heads its branch are one message (fixy/session/Crash.h), so a handle
-// that holds the label and not yet the payload is inside a message.
+// that holds the label and not yet the payload is inside a message.  In
+// a keyed choice the label word is the whole message, and the handle
+// enters past the label step, so only a positional choice has a handle
+// inside a message.
 struct between_messages {};
 
 // This endpoint picked a label whose branch opens with a send.  The
@@ -552,7 +556,8 @@ public:
     // decide.  A payload that moves, lends or releases a permission needs
     // the refusing form, or a crash between the two steps loses the token.
     template <typename Transport, typename P = protocol>
-        requires is_send_v<P> && std::is_invocable_v<Transport, resource_type&, typename P::message_type&&>
+        requires is_send_v<P> && (!is_keyed_step_v<P>)
+              && std::is_invocable_v<Transport, resource_type&, typename P::message_type&&>
     [[nodiscard]] constexpr auto send(typename P::message_type value, Transport transport) && {
         using T = typename P::message_type;
         using Result = std::invoke_result_t<Transport, resource_type&, T&&>;
@@ -588,10 +593,33 @@ public:
         return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
     }
 
+    // A keyed Send is one message, its label word, and the transport has
+    // the signature void(Resource&, std::size_t).  A keyed payload holds no
+    // permission, so the word to a crashed peer is lost with nothing in it,
+    // and `undelivered` then holds the empty message.
+    template <typename Transport, typename P = protocol>
+        requires is_send_v<P> && is_keyed_step_v<P> && std::is_invocable_v<Transport, resource_type&, std::size_t>
+    [[nodiscard]] constexpr auto send(Transport transport) && {
+        using T = typename P::message_type;
+        constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, std::size_t>;
+        bool is_written = false;
+        auto next = std::move(inner_).send([&](resource_type& resource, std::size_t word) noexcept(is_nothrow) {
+            if (!peer_cell_->has_crashed()) {
+                std::invoke(transport, resource, word);
+                is_written = true;
+            }
+        });
+        auto wrapped = wrap_(std::move(next), is_written ? one_more_sent_() : counts_);
+        std::optional<T> undelivered;
+        if (!is_written) undelivered.emplace();
+        return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
+    }
+
     // ── select ───────────────────────────────────────────────────────
     //
-    // A branch that opens with a send carries the payload of the label, so
-    // the successor stands inside that message until the send.
+    // A positional branch that opens with a send carries the payload of
+    // the label, so the successor stands inside that message until the
+    // send.  A keyed branch is its word, so the successor stands past it.
     template <std::size_t I, typename Transport, typename P = protocol>
         requires is_select_v<P> && std::is_invocable_v<Transport, resource_type&, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
@@ -605,7 +633,9 @@ public:
         });
         const detail::crash_transport::message_counts counts = is_written ? one_more_sent_() : counts_;
         using Next = decltype(next);
-        if constexpr (is_send_v<typename Next::protocol>) {
+        // A keyed branch is its label word alone, so the successor stands
+        // past the whole message.
+        if constexpr (!is_keyed_choice_v<P> && is_send_v<typename Next::protocol>) {
             return wrap_<detail::crash_transport::payload_to_send>(std::move(next), counts);
         } else {
             return wrap_(std::move(next), counts);
@@ -627,7 +657,7 @@ public:
     // payload of a label travels with it, so the wait ends with
     // Crash_Of_Reliable_Peer or with Crash_Splits_A_Message.
     template <typename Read, typename P = protocol>
-        requires is_recv_v<P> && (!is_crash_payload_v<typename P::message_type>)
+        requires is_recv_v<P> && (!is_keyed_step_v<P>) && (!is_crash_payload_v<typename P::message_type>)
               && std::is_invocable_v<Read, resource_type&>
     [[nodiscard]] constexpr auto recv(Read read) && {
         using T = typename P::message_type;
@@ -646,6 +676,22 @@ public:
         // of the label's message, which the branch counted.
         constexpr bool is_new_message = std::is_same_v<Position, detail::crash_transport::between_messages>;
         return std::pair{std::move(value), wrap_(std::move(next), is_new_message ? one_more_received_() : counts_)};
+    }
+
+    // A keyed Recv is one message, its label word.  Poll has the signature
+    // std::optional<std::size_t>(Resource&), and the wait is the wait of
+    // the recv above.
+    template <typename Poll, typename P = protocol>
+        requires is_recv_v<P> && is_keyed_step_v<P> && std::is_invocable_v<Poll, resource_type&>
+    [[nodiscard]] constexpr auto recv(Poll poll) && {
+        static_assert(std::same_as<std::invoke_result_t<Poll, resource_type&>, std::optional<std::size_t>>,
+                      "fixy::session::diagnostic [Crash_Read_Must_Poll]: recv(): the poll of a keyed message does "
+                      "not return std::optional<std::size_t>.  A poll that returns the word waits inside the "
+                      "transport, where no crash is seen, so a dead peer blocks it for ever.");
+        const std::optional<std::size_t> word = detail::crash_transport::await_payload<Position, Peer, Reliable>(
+            poll, inner_.resource(), *peer_cell_, counts_.received);
+        auto next = std::move(inner_).recv([&word](resource_type&) noexcept -> std::optional<std::size_t> { return word; });
+        return wrap_(std::move(next), one_more_received_());
     }
 
     // A crash branch head gives the crash record.  No transport runs.
@@ -676,8 +722,8 @@ public:
     // word names (branch_of_wire_word in fixy/session/Handle.h).  A crash
     // branch is no label, so no word names it.  On a crash the decorator
     // enters the crash branch with pick_local, and no word is read.  A
-    // branch that opens with a reception waits for the payload of the
-    // label, from the sender of the Offer.
+    // positional branch that opens with a reception waits for the payload
+    // of the label, from the sender of the Offer.
     template <typename Poll, typename Handler, typename P = protocol>
         requires is_offer_v<P> && std::is_invocable_v<Poll, resource_type&>
     constexpr auto branch(Poll poll, Handler handler) && {
@@ -696,11 +742,18 @@ public:
         // A word is one more message received.  The crash branch receives
         // none: it runs because the count of the report was reached.
         detail::crash_transport::message_counts counts = counts_;
+        // A keyed label branch is its word alone, so its handle stands past
+        // the whole message.  A positional branch that opens with a
+        // reception still waits for the payload of its label.
         const auto wrapped = [this, &handler, &counts](auto branch_handle) {
             using Head = typename decltype(branch_handle)::protocol;
-            if constexpr (is_recv_v<Head> && !is_crash_payload_v<typename Head::message_type>) {
-                return std::invoke(handler, wrap_<detail::crash_transport::payload_to_receive<OfferSender>>(
-                                                std::move(branch_handle), counts));
+            if constexpr (!is_keyed_choice_v<P> && is_recv_v<Head>) {
+                if constexpr (!is_crash_payload_v<typename Head::message_type>) {
+                    return std::invoke(handler, wrap_<detail::crash_transport::payload_to_receive<OfferSender>>(
+                                                    std::move(branch_handle), counts));
+                } else {
+                    return std::invoke(handler, wrap_(std::move(branch_handle), counts));
+                }
             } else {
                 return std::invoke(handler, wrap_(std::move(branch_handle), counts));
             }
@@ -747,7 +800,8 @@ public:
     // exists, so the call gives back the Resource instead of a handle.
     // Rule r-↯ does not apply to a process that has already ended, so End
     // has no crash().  A crash never falls inside one message: after a
-    // label whose branch opens with a send, the payload goes first.
+    // positional label whose branch opens with a send, the payload goes
+    // first.
     template <typename P = protocol>
         requires(!is_terminal_state_v<P>)
     [[nodiscard]] resource_type crash(CrashCause cause, CrashReporter&& announce) && {

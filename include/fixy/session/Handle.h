@@ -927,11 +927,16 @@ public:
     using message_type = T;
     using continuation = R;
 
+    // A keyed message (a PeerMsg or a Labelled) holds no value: its label
+    // word is the whole message.  The step is a Select of one branch, and
+    // it sends that word as the Select does (fixy/session/Protocol.h).
+    static constexpr bool is_keyed = is_keyed_step_v<Send<T, R>>;
+
     // The Transport is what physically moves the value to the peer.
     // Its signature is void(Resource&, T&&).  The returned handle sits
     // at the continuation, with Continue and Loop already resolved.
     template <typename Transport>
-        requires std::is_invocable_v<Transport, Resource&, T&&>
+        requires(!is_keyed) && std::is_invocable_v<Transport, Resource&, T&&>
     [[nodiscard]] constexpr auto
     send(T value, Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, T&&>
                                                    && std::is_nothrow_move_constructible_v<Resource>
@@ -945,6 +950,29 @@ public:
         return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
             this->take_resource_(), session);
     }
+
+    // Sends the label word of the message through Transport, whose
+    // signature is void(Resource&, std::size_t).  The peer can hold an
+    // Offer with more labels, and it enters the branch of this word.
+    template <typename Transport>
+        requires is_keyed && std::is_invocable_v<Transport, Resource&, std::size_t>
+    [[nodiscard]] constexpr auto send(Transport transport) && noexcept(
+        std::is_nothrow_invocable_v<Transport, Resource&, std::size_t> && std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(detail::handle_admits_send_v<PS, T>,
+                      "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
+                      "message takes, or the payload walk of fixy/session/Payload.h refuses the message.");
+        std::invoke(transport, this->live_resource_(), static_cast<std::size_t>(step_wire_word_v<Send<T, R>>));
+        const watch::session_ref session = this->session_();
+        return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
+            this->take_resource_(), session);
+    }
+
+    template <typename U, typename Transport>
+        requires is_keyed
+    void send(U&&, Transport) && = delete("[Keyed_Message_Has_No_Value] a Send of a PeerMsg or a Labelled is keyed: its "
+                                          "label word is the whole message, so the step sends no value.  Call "
+                                          "send(transport) with a transport of the signature "
+                                          "void(Resource&, std::size_t).");
 };
 
 template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
@@ -965,12 +993,16 @@ public:
     using message_type = T;
     using continuation = R;
 
+    // A keyed message holds no value: the step is an Offer of one branch,
+    // and it reads the label word as the Offer does.
+    static constexpr bool is_keyed = is_keyed_step_v<Recv<T, R>>;
+
     // The Transport signature is T(Resource&).  The pair is the
     // received value and the handle at the continuation.  A transport of
     // this kind waits inside its own call, so the deadlock detector of
     // fixy/session/Watch.h does not see the wait.
     template <typename Transport>
-        requires std::is_invocable_r_v<T, Transport, Resource&>
+        requires(!is_keyed) && std::is_invocable_r_v<T, Transport, Resource&>
               && (!std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<T>>)
     [[nodiscard]] constexpr auto
     recv(Transport transport) && noexcept(std::is_nothrow_invocable_r_v<T, Transport, Resource&>
@@ -992,7 +1024,7 @@ public:
     // then waits through fixy/session/Watch.h, which aborts on a cycle of
     // waits across sessions.  A message that is there costs nothing more.
     template <typename Transport>
-        requires std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<T>>
+        requires(!is_keyed) && std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<T>>
     [[nodiscard]] constexpr auto
     recv(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport&, Resource&>
                                           && std::is_nothrow_move_constructible_v<Resource>
@@ -1008,6 +1040,45 @@ public:
         auto next = detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
             this->take_resource_(), session);
         return std::pair{std::move(*arrived), std::move(next)};
+    }
+
+    // Reads the label word of the message through Transport, whose
+    // signature is std::size_t(Resource&), and returns the handle at the
+    // continuation.  A word other than the label word of this message
+    // aborts: the peer sent a label that this position does not accept,
+    // as a word that names no branch of an Offer aborts.
+    template <typename Transport>
+        requires is_keyed && std::is_invocable_r_v<std::size_t, Transport, Resource&>
+              && (!std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<std::size_t>>)
+    [[nodiscard]] constexpr auto recv(Transport transport) && {
+        const std::size_t word = std::invoke(transport, this->live_resource_());
+        return std::move(*this).take_word_(word);
+    }
+
+    // The polling form: std::optional<std::size_t>(Resource&), with the
+    // wait of the polling recv above.
+    template <typename Transport>
+        requires is_keyed && std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<std::size_t>>
+    [[nodiscard]] constexpr auto recv(Transport transport) && {
+        std::optional<std::size_t> word = std::invoke(transport, this->live_resource_());
+        if (!word) [[unlikely]]
+            word = detail::wait_for_arrival(transport, this->live_resource_(), this->session_().endpoint);
+        return std::move(*this).take_word_(*word);
+    }
+
+private:
+    [[nodiscard]] constexpr auto take_word_(std::size_t word) &&
+        requires is_keyed
+    {
+        static_assert(detail::handle_admits_recv_v<PS, T>,
+                      "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
+                      "message closes, or the payload walk of fixy/session/Payload.h refuses the message.");
+        if (word != static_cast<std::size_t>(step_wire_word_v<Recv<T, R>>)) [[unlikely]] {
+            std::abort();
+        }
+        const watch::session_ref session = this->session_();
+        return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
+            this->take_resource_(), session);
     }
 };
 
@@ -1084,6 +1155,62 @@ template <typename Choice>
     }
 }
 
+namespace detail {
+
+template <typename Choice, std::size_t I>
+consteval auto branch_landing_of() {
+    using Branch = std::tuple_element_t<I, typename Choice::branches_tuple>;
+    if constexpr (is_keyed_choice_v<Choice> && wire_words_v<Choice>[I].is_wired) {
+        return std::type_identity<typename Branch::next>{};
+    } else {
+        return std::type_identity<Branch>{};
+    }
+}
+
+}  // namespace detail
+
+// The protocol at which a choice enters branch I: past the label step in
+// a label branch of a keyed choice, and at the branch otherwise.  A
+// decorator that tracks the protocol of its inner handle reads it here.
+template <typename Choice, std::size_t I>
+using branch_landing_t = typename decltype(detail::branch_landing_of<Choice, I>())::type;
+
+namespace detail {
+
+// The handle that a choice enters for branch I.  A label branch of a
+// keyed choice is its label step (rule 6 of the section on branches and
+// labels of foundation/algebra/Transition.h), and the word of the branch
+// is the whole message of that step, so the handle enters past the step.
+// Every other branch, a positional one or one that is no label, enters at
+// its head.
+template <typename Choice, std::size_t I, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
+[[nodiscard]] constexpr auto enter_branch(Resource r, watch::session_ref session) noexcept(
+    std::is_nothrow_move_constructible_v<Resource>) {
+    using Branch = std::tuple_element_t<I, typename Choice::branches_tuple>;
+    if constexpr (is_keyed_choice_v<Choice> && wire_words_v<Choice>[I].is_wired) {
+        using Message = typename Branch::message_type;
+        if constexpr (is_select_v<Choice>) {
+            static_assert(handle_admits_send_v<PS, Message>,
+                          "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what "
+                          "the message of the branch takes, or the payload walk of fixy/session/Payload.h refuses "
+                          "the message.");
+            return step_to_next<typename Branch::next, Resource, LoopCtx, Policy, perm_set_after_send_t<PS, Message>>(
+                std::forward<Resource>(r), session);
+        } else {
+            static_assert(handle_admits_recv_v<PS, Message>,
+                          "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what "
+                          "the message of the branch closes, or the payload walk of fixy/session/Payload.h refuses "
+                          "the message.");
+            return step_to_next<typename Branch::next, Resource, LoopCtx, Policy, perm_set_after_recv_t<PS, Message>>(
+                std::forward<Resource>(r), session);
+        }
+    } else {
+        return step_to_next<Branch, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
+    }
+}
+
+}  // namespace detail
+
 template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy, PS>
     : public detail::handle_core<Select<Branches...>, Resource, LoopCtx, Policy, PS> {
@@ -1119,7 +1246,10 @@ public:
     // Picks branch I and signals the choice to the peer through
     // Transport, whose signature is void(Resource&, std::size_t).  The
     // Transport receives the wire word of branch I: its label word in a
-    // keyed choice, and I in a positional one.
+    // keyed choice, and I in a positional one.  In a keyed choice the
+    // word is the whole message of the branch, so the returned handle
+    // stands past the label step of branch I.  In a positional choice it
+    // stands at the branch, and the branch sends its payload next.
     //
     // The index bound is a body static_assert rather than a
     // requires-clause so that an out-of-range index reports the named
@@ -1137,9 +1267,8 @@ public:
                                         "verify I < branch_count at the call site (decltype("
                                         "handle)::branch_count is exposed for compile-time queries).");
         std::invoke(transport, this->live_resource_(), static_cast<std::size_t>(branch_wire_word_v<protocol, I>));
-        using Chosen = std::tuple_element_t<I, branches>;
         const watch::session_ref session = this->session_();
-        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
+        return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     // Advances the local handle WITHOUT telling the peer which branch
@@ -1156,9 +1285,8 @@ public:
                                         "has fewer branches than the index requested; verify I < "
                                         "branch_count at the call site.");
         this->require_live_();
-        using Chosen = std::tuple_element_t<I, branches>;
         const watch::session_ref session = this->session_();
-        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
+        return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1224,7 +1352,9 @@ public:
     // is std::size_t(Resource&), then calls the handler with the handle
     // for the branch that the word names (branch_of_wire_word).  The
     // handler is invoked once per branch type and every branch must give
-    // the handler the same return type, or all of them void.
+    // the handler the same return type, or all of them void.  In a keyed
+    // choice the word is the whole message of a label branch, so that
+    // handle stands past the label step of the branch.
     //
     // A word that names no branch aborts.  The peer has sent a label this
     // protocol does not define, so the two endpoints no longer agree
@@ -1268,9 +1398,8 @@ public:
                                         "Offer<Sender<Role>, B0, ...> the annotation is not a "
                                         "branch, so B0 is index 0.");
         this->require_live_();
-        using Chosen = std::tuple_element_t<I, branches>;
         const watch::session_ref session = this->session_();
-        return detail::step_to_next<Chosen, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
+        return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1288,8 +1417,7 @@ public:
 private:
     template <std::size_t I>
     static constexpr auto make_branch_handle_(Resource r, watch::session_ref session) {
-        using B = std::tuple_element_t<I, branches>;
-        return detail::step_to_next<B, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
+        return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
     }
 
     template <std::size_t... Is, typename Handler>

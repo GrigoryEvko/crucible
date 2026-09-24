@@ -46,6 +46,7 @@
 #include <foundation/algebra/lattices/VendorLattice.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <string>
 #include <string_view>
@@ -180,6 +181,17 @@ struct label_of<PeerMsg<Peer, Label, Payload>> {
 };
 template <typename T>
 using label_of_t = typename label_of<T>::type;
+
+// The sender of a received message signals the Offer that its keyed
+// Recv stands for.
+template <typename T>
+struct note_of;
+template <typename Peer, typename Label, typename Payload>
+struct note_of<PeerMsg<Peer, Label, Payload>> {
+    using type = Sender<Peer>;
+};
+template <typename T>
+using note_of_t = typename note_of<T>::type;
 }  // namespace peer_message
 
 // The label key of a message of the binary view is its label without the
@@ -219,19 +231,24 @@ using label_of_t = typename label_of<T>::type;
 
 namespace combinators {
 
+// A keyed Send is a Select of one branch, and a keyed Recv is an Offer of
+// one branch (foundation/algebra/Transition.h, section on branches and
+// labels).
 inline constexpr ::foundation::algebra::transition::combinator send{
     .shape = ^^Send,
     .kind = ::foundation::algebra::transition::shape_kind::step,
     .direction = ::foundation::algebra::transition::polarity::output,
     .dual = ^^Recv,
-    .payload_variance = ::foundation::algebra::transition::variance::covariant};
+    .payload_variance = ::foundation::algebra::transition::variance::covariant,
+    .keyed_choice = ^^Select};
 
 inline constexpr ::foundation::algebra::transition::combinator recv{
     .shape = ^^Recv,
     .kind = ::foundation::algebra::transition::shape_kind::step,
     .direction = ::foundation::algebra::transition::polarity::input,
     .dual = ^^Send,
-    .payload_variance = ::foundation::algebra::transition::variance::contravariant};
+    .payload_variance = ::foundation::algebra::transition::variance::contravariant,
+    .keyed_choice = ^^Offer};
 
 // A choice and its dual name the same note template, so the dual of an
 // Offer with a note is a Select with the same note, and duality is an
@@ -271,8 +288,12 @@ inline constexpr ::foundation::algebra::transition::combinator vendor_pinned{
 inline constexpr ::foundation::algebra::transition::payload_rule crash_label{
     .shape = ^^Crash, .is_sendable = false, .is_label = false};
 
+// A keyed Recv of a message from Peer is the Offer that Peer signals, so
+// it takes the note Sender<Peer>, as the projection writes that Offer.
 inline constexpr ::foundation::algebra::transition::payload_rule peer_message{
-    .shape = ^^PeerMsg, .label_key = ^^detail::peer_message::label_of_t};
+    .shape = ^^PeerMsg,
+    .label_key = ^^detail::peer_message::label_of_t,
+    .input_note = ^^detail::peer_message::note_of_t};
 
 // A message of the binary view names a label key too, so a choice of the
 // binary view is keyed, and the handle sends the label word.
@@ -401,6 +422,18 @@ inline constexpr VendorBackend protocol_vendor_v = is_vendor_pinned<P>::vendor_b
 template <typename P>
 using protocol_inner_t = typename is_vendor_pinned<P>::protocol;
 
+// A Send or a Recv whose payload names a label key, a PeerMsg or a
+// Labelled.  Outside a choice it is the Select or the Offer of that one
+// branch, and its whole message is the label word below.
+template <typename P>
+inline constexpr bool is_keyed_step_v =
+    ::foundation::algebra::transition::is_keyed_step_type(detail::protocol_registry, ^^P);
+
+template <typename P>
+    requires is_keyed_step_v<P>
+inline constexpr std::uint64_t step_wire_word_v =
+    ::foundation::algebra::transition::wire_word_of_step(detail::protocol_registry, ^^P).value;
+
 // A protocol head is a position a handle can occupy.  The test is
 // negative, so a combinator that a different header registers is a
 // head without an edit here.  Loop is the one non-head: the factory
@@ -495,6 +528,41 @@ struct dual_of {
     using type = typename[:detail::dual_type_of<P>():];
 };
 
+// ── The canonical spelling ───────────────────────────────────────────
+//
+// A keyed Send and the Select of that one branch are one type, and so are
+// a keyed Recv and the Offer of that one branch with the note of its
+// sender.  canonical_t writes each such choice as its step, so two
+// spellings of one protocol have one canonical spelling.
+
+namespace detail {
+
+template <typename P>
+struct canonical_of;
+
+}  // namespace detail
+
+template <typename P>
+using canonical_t = typename detail::canonical_of<P>::type;
+
+namespace detail {
+
+// A node that the registry does not know keeps its spelling, so a
+// checkpoint node, which its own header gives a dual, compares as it is.
+template <typename P>
+consteval std::meta::info canonical_type_of() {
+    return ::foundation::algebra::transition::fold(
+        protocol_registry, ^^P, ::foundation::algebra::transition::canonical_algebra{protocol_registry}, 0,
+        ^^canonical_t);
+}
+
+template <typename P>
+struct canonical_of {
+    using type = typename[:canonical_type_of<P>():];
+};
+
+}  // namespace detail
+
 // The two endpoints of one channel must be duals, or the guarantee of
 // deadlock freedom does not hold.
 //
@@ -503,9 +571,11 @@ struct dual_of {
 // arguments.  Coherence makes duality an involution on each registered
 // combinator, so the two directions agree there.  An explicit
 // specialization of dual_of that is no involution makes them differ, and
-// the test then refuses the pair.
+// the test then refuses the pair.  The test compares canonical
+// spellings, so a keyed step faces the choice of that one branch.
 template <typename P1, typename P2>
-inline constexpr bool is_dual_v = std::is_same_v<dual_of_t<P1>, P2> && std::is_same_v<dual_of_t<P2>, P1>;
+inline constexpr bool is_dual_v = std::is_same_v<canonical_t<dual_of_t<P1>>, canonical_t<P2>>
+                               && std::is_same_v<canonical_t<dual_of_t<P2>>, canonical_t<P1>>;
 
 template <typename P1, typename P2>
 consteval void ensure_dual() noexcept {
@@ -698,10 +768,15 @@ public:
 //   5. each Select and each Offer has a label branch or more, puts its
 //      label branches before each branch that is no label, matches each
 //      branch uniquely, names a label key on each label branch or on
-//      none, and gives each label key its own label word.
-//      foundation/algebra/Transition.h states the five rules, and
-//      ensure_choices_well_formed below names the rule that a choice
-//      breaks.
+//      none, gives each label key its own label word, and in a keyed
+//      choice makes each label branch its label step, with no Loop and
+//      no VendorPinned above it.  foundation/algebra/Transition.h states
+//      the six rules, and ensure_choices_well_formed below names the
+//      rule that a choice breaks.
+//
+// A Send or a Recv of a PeerMsg or a Labelled is keyed.  Outside a choice
+// it is the Select or the Offer of that one branch, and the handle puts
+// its label word on the wire (fixy/session/Handle.h).
 //
 // LoopCtx is void outside a loop.  A Loop type as LoopCtx, the form the
 // handle carries, means inside one loop after its first step.  The fold

@@ -74,6 +74,11 @@
 //   payload_variance  The variance of the payload of a step.  An output
 //                     step is covariant or invariant, and an input step
 //                     is contravariant or invariant.
+//   keyed_choice      For a step, the registered choice of the same
+//                     direction that a keyed step of this shape stands
+//                     for (the section on branches and labels).  The dual
+//                     step names the dual choice.  A step with no keyed
+//                     choice cannot carry a payload that names a label.
 //   annotation        The template of the note of a choice, or null.
 //                     The dual shape must name the same template, so
 //                     the dual keeps the note.  Refinement compares
@@ -97,8 +102,10 @@
 // registration keeps that closure when its dual has the same
 // kind, the opposite direction, the opposite payload variance, the
 // opposite value variance, the same absorption and the same note
-// template.  The last rule makes duality an involution on a choice with
-// a note, because the dual keeps the note.  A self-dual wrapper
+// template.  The note rule makes duality an involution on a choice with
+// a note, because the dual keeps the note.  The keyed choice of a step
+// is a choice of the same direction, and the dual step names its dual,
+// so a keyed step and its dual stand for dual choices.  A self-dual wrapper
 // must therefore have an invariant value.  The flip alone admits a pair
 // with each side backwards, so a step also needs the variance of its
 // direction: the receiver of an output step then accepts each payload
@@ -121,6 +128,10 @@
 //                that a payload of this shape names.  Two label branches
 //                of one choice whose heads name the same label are not
 //                well-formed.  Null: the payload names no label.
+//   input_note   An alias template `template <class T> using`, the note
+//                of the input choice that a keyed input step with this
+//                payload stands for.  It must name the note template of
+//                that choice.  Null: that choice has no note.
 //
 // ── Branches and labels ───────────────────────────────────────────────
 //
@@ -144,7 +155,7 @@
 // A branch that is no label has no word on the wire.  The endpoint
 // enters it on an event, for example the detection of a crash, and
 // finds it by its payload.  So refinement matches such a branch by its
-// payload, wherever it stands.  Five rules keep the kinds apart:
+// payload, wherever it stands.  Six rules keep the kinds apart:
 //
 //   1. Each choice has one label branch or more.  An empty internal
 //      choice has no branch to pick, and an empty external choice has
@@ -164,6 +175,22 @@
 //   5. No two label words of one choice are equal.  Two distinct key
 //      types can print one name, for example two closure types, and
 //      then share a word.  The peer would enter the wrong branch.
+//   6. In a keyed choice, each label branch is its label step, with no
+//      wrapper and no binder above it.  The endpoint enters a keyed
+//      branch past its label step, so nothing may stand above that step.
+//      The label step of a branch that starts with a binder is also the
+//      entry of the loop, where it is a choice of its own.
+//
+// A keyed step is a choice with one branch.  In the papers a message is
+// a choice with one label, p⊕q:m(B) and p&q:m(B) (Barwell, Hou, Yoshida
+// and Zhou, LMCS 2025, Definition 4.9), so a keyed step and a keyed
+// choice of one branch are one type.  A step whose payload names a label
+// key, anywhere but as a branch of a choice, is read as the keyed choice
+// of its registration with the step as its one branch.  The type graph
+// below reads it so, and the relation pairs it with a choice by label.
+// The endpoint sends its label word, as a choice sends the word of the
+// branch it picks.  An input step takes the note that the payload rule
+// names.  A step whose payload names no label is a plain step.
 //
 // ── Recursion ─────────────────────────────────────────────────────────
 //
@@ -217,6 +244,7 @@ struct combinator {
     polarity direction = polarity::neutral;
     std::meta::info dual{};
     variance payload_variance = variance::invariant;
+    std::meta::info keyed_choice{};
     std::meta::info annotation{};
     variance value_variance = variance::invariant;
     std::meta::info value_order{};
@@ -229,6 +257,7 @@ struct payload_rule {
     bool is_sendable = true;
     bool is_label = true;
     std::meta::info label_key{};
+    std::meta::info input_note{};
 };
 
 // One axiom of a payload preorder.  An axiom drops a wrapper, weakens a
@@ -456,6 +485,9 @@ enum class incoherence : std::uint8_t {
     direction_on_neutral_kind,
     order_on_non_wrapper,
     variance_against_direction,
+    keyed_choice_on_non_step,
+    keyed_choice_not_a_choice,
+    keyed_choice_not_dual,
 };
 
 struct coherence_verdict {
@@ -518,6 +550,21 @@ namespace detail {
     const bool is_backwards = (entry.direction == polarity::output && entry.payload_variance == variance::contravariant)
                               || (entry.direction == polarity::input && entry.payload_variance == variance::covariant);
     if (entry.kind == shape_kind::step && is_backwards) return {incoherence::variance_against_direction, shape};
+    // A keyed step stands for a choice of its own direction, and its dual
+    // stands for the dual of that choice.
+    if (entry.kind != shape_kind::step) {
+        if (entry.keyed_choice != std::meta::info{}) return {incoherence::keyed_choice_on_non_step, shape};
+        return {};
+    }
+    if (entry.keyed_choice == std::meta::info{}) {
+        if (mirror.keyed_choice != std::meta::info{}) return {incoherence::keyed_choice_not_dual, shape};
+        return {};
+    }
+    const combinator_lookup keyed = lookup_combinator(registry, entry.keyed_choice);
+    if (!keyed.is_found || keyed.entry.kind != shape_kind::choice || keyed.entry.direction != entry.direction) {
+        return {incoherence::keyed_choice_not_a_choice, shape};
+    }
+    if (mirror.keyed_choice != keyed.entry.dual) return {incoherence::keyed_choice_not_dual, shape};
     return {};
 }
 
@@ -564,6 +611,13 @@ namespace detail {
         case incoherence::variance_against_direction:
             return "an output step with a contravariant payload, or an input step with a covariant payload, lets a "
                    "subtype send a payload that the peer does not receive";
+        case incoherence::keyed_choice_on_non_step:
+            return "a keyed choice on a combinator that is not a step";
+        case incoherence::keyed_choice_not_a_choice:
+            return "the keyed choice of a step is not a registered choice of the same direction";
+        case incoherence::keyed_choice_not_dual:
+            return "the dual step names a keyed choice that is not the dual of this keyed choice, so a keyed step and "
+                   "its dual do not stand for dual choices";
         default:
             break;
     }
@@ -792,12 +846,14 @@ inline constexpr std::uint64_t label_word_bit = std::uint64_t{1} << 63;
 // The head of one branch of a choice, under its wrappers.  `payload` is
 // the payload of a head step, or null.  `label_key` is the label that
 // the payload names through its registration, or null, and
-// `label_word` is the word of that key, or zero.
+// `label_word` is the word of that key, or zero.  `is_at_root` is false
+// when a wrapper or a binder stands above the head step.
 struct branch_head {
     bool is_label = true;
     std::meta::info payload{};
     std::meta::info label_key{};
     std::uint64_t label_word = 0;
+    bool is_at_root = true;
 };
 
 // Why a choice is not well-formed, by the rules of the section on
@@ -811,6 +867,7 @@ enum class choice_fault : std::uint8_t {
     repeated_label_key,
     mixed_label_keys,
     label_word_collision,
+    keyed_label_below_root,
 };
 
 namespace detail {
@@ -822,10 +879,12 @@ namespace detail {
 // binders at the head.
 [[nodiscard]] consteval branch_head head_of_branch(std::meta::info registry, std::meta::info branch) {
     branch_head result{};
-    node head = decompose(registry, strip_wrappers(registry, branch));
+    const std::meta::info root = std::meta::dealias(branch);
+    node head = decompose(registry, strip_wrappers(registry, root));
     while (head.is_registered && head.entry.kind == shape_kind::binder) {
         head = decompose(registry, strip_wrappers(registry, head.next));
     }
+    result.is_at_root = head.type == root;
     if (!head.is_registered || head.entry.kind != shape_kind::step) return result;
     result.payload = head.payload;
     const payload_lookup rule = lookup_payload_rule(registry, head.payload);
@@ -840,6 +899,17 @@ namespace detail {
 
 [[nodiscard]] consteval bool is_label_branch(std::meta::info registry, std::meta::info branch) {
     return head_of_branch(registry, branch).is_label;
+}
+
+// The label key of a step whose payload names one, or null.  Complexity:
+// one read of the payload rules.
+[[nodiscard]] consteval std::meta::info step_label_key(std::meta::info registry, const node& step) {
+    if (!step.is_registered || step.entry.kind != shape_kind::step) return {};
+    const payload_lookup rule = lookup_payload_rule(registry, step.payload);
+    if (!rule.is_found || rule.entry.label_key == std::meta::info{}) return {};
+    if (step.entry.direction == polarity::input && !rule.entry.is_label) return {};
+    if (!std::meta::can_substitute(rule.entry.label_key, {step.payload})) return {};
+    return std::meta::dealias(std::meta::substitute(rule.entry.label_key, {step.payload}));
 }
 
 [[nodiscard]] consteval std::size_t label_count(std::meta::info registry, const node& choice) {
@@ -878,6 +948,9 @@ namespace detail {
         if (head.label_key != std::meta::info{}) ++keyed;
     }
     if (keyed != 0 && keyed != labels) return choice_fault::mixed_label_keys;
+    for (const branch_head& head : heads) {
+        if (keyed != 0 && head.is_label && !head.is_at_root) return choice_fault::keyed_label_below_root;
+    }
     for (std::size_t first = 0; first < heads.size(); ++first) {
         for (std::size_t second = first + 1; second < heads.size(); ++second) {
             const branch_head& left = heads[first];
@@ -919,6 +992,10 @@ namespace detail {
         case choice_fault::label_word_collision:
             return "two label keys of the choice have one label word, so the peer cannot tell the two labels apart. "
                    "Two distinct types that print one name, for example two closure types, share a word";
+        case choice_fault::keyed_label_below_root:
+            return "a label branch of a keyed choice starts with a wrapper or a binder, not with its label step.  The "
+                   "label word is the whole message of the branch, so the endpoint enters the branch past its label "
+                   "step, and a wrapper or a loop entry above that step has no place on the wire";
         default:
             break;
     }
@@ -964,6 +1041,24 @@ struct wire_word {
 [[nodiscard]] consteval bool is_keyed_choice_type(std::meta::info registry, std::meta::info choice) {
     const node view = decompose(registry, choice);
     return view.is_registered && view.entry.kind == shape_kind::choice && is_keyed_choice(registry, view);
+}
+
+// True when the node is a step whose payload names a label key.  Outside
+// a choice such a step is a choice with one branch.
+[[nodiscard]] consteval bool is_keyed_step(std::meta::info registry, const node& step) {
+    return detail::step_label_key(registry, step) != std::meta::info{};
+}
+
+[[nodiscard]] consteval bool is_keyed_step_type(std::meta::info registry, std::meta::info step) {
+    return is_keyed_step(registry, decompose(registry, step));
+}
+
+// The word that a keyed step sends or expects: the label word of its key.
+// A step that is not keyed has no word.
+[[nodiscard]] consteval wire_word wire_word_of_step(std::meta::info registry, std::meta::info step) {
+    const std::meta::info key = detail::step_label_key(registry, decompose(registry, step));
+    if (key == std::meta::info{}) return {};
+    return {true, label_word_of(key)};
 }
 
 struct choice_verdict {
@@ -1111,9 +1206,10 @@ struct empty_choice_algebra {
 //   3. No output step sends a payload that a payload registration
 //      marks as not sendable.
 //   4. Each wrapper value is admitted by the value filter.
-//   5. Each choice obeys the three rules of the section on branches and
-//      labels: a label branch or more, the label branches first, and
-//      each match unique.
+//   5. Each choice obeys the six rules of the section on branches and
+//      labels.
+//   6. Each step whose payload names a label has a keyed choice in its
+//      registration, so the step reads as that choice.
 //
 // The hook receives the child type and a `scope` type.
 struct well_formed_algebra {
@@ -1140,6 +1236,7 @@ struct well_formed_algebra {
             const payload_lookup rule = lookup_payload_rule(registry, view.payload);
             if (rule.is_found && !rule.entry.is_sendable) return false;
         }
+        if (is_keyed_step(registry, view) && view.entry.keyed_choice == std::meta::info{}) return false;
         return child(view.next, position{ctx.depth, true});
     }
     template <class Child>
@@ -1214,6 +1311,69 @@ private:
     static consteval std::meta::info rebuild_nullary(const node& view) {
         return view.entry.dual == std::meta::info{} ? view.type : view.entry.dual;
     }
+};
+
+// The note that a keyed step stands for as a choice: the note that its
+// payload rule names for an input step, or null.
+[[nodiscard]] consteval std::meta::info implied_note(std::meta::info registry, const node& step) {
+    if (step.entry.direction != polarity::input) return {};
+    const payload_lookup rule = lookup_payload_rule(registry, step.payload);
+    if (!rule.is_found || rule.entry.input_note == std::meta::info{}) return {};
+    if (!std::meta::can_substitute(rule.entry.input_note, {step.payload})) return {};
+    return std::meta::dealias(std::meta::substitute(rule.entry.input_note, {step.payload}));
+}
+
+// The canonical spelling of a protocol.  A keyed step and the keyed
+// choice of that one branch are one type, so the choice of one label
+// branch, with no other branch and the note that the step stands for, is
+// written as its step.  Every other node keeps its shape.  Two spellings
+// of one protocol have one canonical spelling, so a test that compares
+// types, such as duality, compares canonical spellings.  A node the
+// registry does not know stays as it is.
+struct canonical_algebra {
+    using result = std::meta::info;
+    using context = int;
+    std::meta::info registry{};
+
+    template <class Child>
+    consteval std::meta::info terminal(const node& view, context, const Child&) const {
+        return view.type;
+    }
+    template <class Child>
+    consteval std::meta::info back(const node& view, context, const Child&) const {
+        return view.type;
+    }
+    template <class Child>
+    consteval std::meta::info step(const node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.shape, {view.payload, child(view.next, ctx)});
+    }
+    template <class Child>
+    consteval std::meta::info choice(const node& view, context ctx, const Child& child) const {
+        if (view.branches.size() == 1) {
+            const node head = decompose(registry, view.branches[0]);
+            if (is_keyed_step(registry, head) && head.entry.keyed_choice == view.entry.shape
+                && implied_note(registry, head) == view.annotation) {
+                return child(view.branches[0], ctx);
+            }
+        }
+        std::vector<std::meta::info> mapped;
+        for (const std::meta::info branch : view.branches) mapped.push_back(child(branch, ctx));
+        return std::meta::substitute(view.entry.shape,
+                                     detail::choice_arguments(registry, view, view.entry.shape, mapped));
+    }
+    template <class Child>
+    consteval std::meta::info binder(const node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.shape, {child(view.next, ctx)});
+    }
+    template <class Child>
+    consteval std::meta::info wrapper(const node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.shape, {view.value, child(view.next, ctx)});
+    }
+    consteval std::meta::info unregistered(const node& view, context) const { return view.type; }
+    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
+        return {child_type};
+    }
+    consteval std::meta::info from_hook(std::meta::info answer) const { return std::meta::dealias(answer); }
 };
 
 // Sequential composition with a suffix: each terminal that does not
@@ -1510,8 +1670,11 @@ inline constexpr bool subsorts_v = detail::subsorts_within(Axioms, Sub, Super, d
 // ── The type graph ────────────────────────────────────────────────────
 //
 // One node per occurrence of a combinator.  A back node points to the
-// binder it binds.  A binder points to its body.  The graph of a
-// protocol has as many nodes as the protocol has combinators.
+// binder it binds.  A binder points to its body.  A keyed step outside a
+// choice is two nodes: the keyed choice of its registration, and the
+// step as the one branch of that choice.  The graph of a protocol then
+// has as many nodes as the protocol has combinators, plus one for each
+// such step.
 
 // `is_label` is the answer of the payload rules for this node as a
 // branch, and `head_payload` is the payload of its head step under its
@@ -1554,8 +1717,64 @@ struct type_graph {
 namespace detail {
 
 consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type,
-                                   std::vector<std::size_t>& binders) {
+                                   std::vector<std::size_t>& binders, bool is_branch);
+
+// The note of the choice that a keyed step stands for: the note that the
+// payload rule names for an input step, or none.  A note of a template
+// other than the note template of the choice is refused, and the graph
+// records the payload as the node it cannot read.
+[[nodiscard]] consteval std::meta::info keyed_step_note(std::meta::info registry, type_graph& graph, const node& step,
+                                                        const combinator& choice) {
+    if (step.entry.direction != polarity::input) return {};
+    const payload_lookup rule = lookup_payload_rule(registry, step.payload);
+    if (!rule.is_found || rule.entry.input_note == std::meta::info{}) return {};
+    if (choice.annotation == std::meta::info{} || !std::meta::can_substitute(rule.entry.input_note, {step.payload})) {
+        if (graph.unregistered == std::meta::info{}) graph.unregistered = step.payload;
+        return {};
+    }
+    const std::meta::info note = std::meta::dealias(std::meta::substitute(rule.entry.input_note, {step.payload}));
+    if (shape_of(note) != choice.annotation) {
+        if (graph.unregistered == std::meta::info{}) graph.unregistered = step.payload;
+        return {};
+    }
+    return note;
+}
+
+// A keyed step outside a choice, as the choice of one branch that it
+// stands for.  The branch is the step itself, read as a branch.
+consteval std::size_t add_keyed_step(std::meta::info registry, type_graph& graph, const node& step,
+                                     std::vector<std::size_t>& binders) {
+    const combinator choice = lookup_combinator(registry, step.entry.keyed_choice).entry;
+    const std::size_t here = graph.nodes.size();
+    graph.nodes.push_back(graph_node{});
+    graph.nodes[here].type = step.type;
+    graph.nodes[here].entry = choice;
+    graph.nodes[here].annotation = keyed_step_note(registry, graph, step, choice);
+    const branch_head head = head_of_branch(registry, step.type);
+    graph.nodes[here].is_label = head.is_label;
+    graph.nodes[here].head_payload = head.payload;
+    graph.nodes[here].label_key = head.label_key;
+    graph.nodes[here].label_word = head.label_word;
+    const std::size_t branch = add_to_graph(registry, graph, step.type, binders, true);
+    graph.nodes[here].first_child = graph.children.size();
+    graph.nodes[here].child_count = 1;
+    graph.children.push_back(branch);
+    graph.nodes[here].is_keyed = true;
+    graph.nodes[here].first_label = graph.sorted_labels.size();
+    graph.nodes[here].label_count = 1;
+    graph.sorted_labels.push_back(branch);
+    return here;
+}
+
+// `is_branch` is true for a branch of a choice, where a keyed step is the
+// branch itself and not a choice of its own.
+consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type,
+                                   std::vector<std::size_t>& binders, bool is_branch) {
     const node view = decompose(registry, type);
+    if (!is_branch && view.is_registered && view.entry.keyed_choice != std::meta::info{}
+        && is_keyed_step(registry, view)) {
+        return add_keyed_step(registry, graph, view, binders);
+    }
     const std::size_t here = graph.nodes.size();
     graph.nodes.push_back(graph_node{});
     if (!view.is_registered) {
@@ -1585,20 +1804,22 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
             break;
         case shape_kind::step:
         case shape_kind::wrapper: {
-            const std::size_t below = add_to_graph(registry, graph, view.next, binders);
+            const std::size_t below = add_to_graph(registry, graph, view.next, binders, false);
             graph.nodes[here].next = below;
             break;
         }
         case shape_kind::binder: {
             binders.push_back(here);
-            const std::size_t below = add_to_graph(registry, graph, view.next, binders);
+            const std::size_t below = add_to_graph(registry, graph, view.next, binders, false);
             binders.pop_back();
             graph.nodes[here].next = below;
             break;
         }
         case shape_kind::choice: {
             std::vector<std::size_t> own;
-            for (const std::meta::info branch : view.branches) own.push_back(add_to_graph(registry, graph, branch, binders));
+            for (const std::meta::info branch : view.branches) {
+                own.push_back(add_to_graph(registry, graph, branch, binders, true));
+            }
             graph.nodes[here].first_child = graph.children.size();
             graph.nodes[here].child_count = own.size();
             for (const std::size_t index : own) graph.children.push_back(index);
@@ -1675,7 +1896,7 @@ consteval void mark_can_end(type_graph& graph) {
 [[nodiscard]] consteval type_graph build_graph(std::meta::info registry, std::meta::info type) {
     type_graph graph{};
     std::vector<std::size_t> binders;
-    detail::add_to_graph(registry, graph, type, binders);
+    detail::add_to_graph(registry, graph, type, binders, false);
     detail::mark_can_end(graph);
     return graph;
 }
@@ -1741,7 +1962,9 @@ inline constexpr graph_view graph_v = freeze(build_graph(Registry, Type));
 //   step      the same shape.  The payload order follows the payload
 //             variance of the shape, then the continuations refine.
 //   choice    the same shape, the same note, and the same kind of wire
-//             word: both keyed or both positional.
+//             word: both keyed or both positional.  A keyed step outside
+//             a choice is the choice of one branch that it stands for,
+//             so it pairs with a choice by label.
 //             In a keyed choice the label branches pair by label.  Each
 //             label of an output choice of T is a label of U, and each
 //             label of an input choice of U is a label of T (Gay and
@@ -2189,19 +2412,47 @@ struct named_label<Named<L, P>> {
 template <class T>
 using named_label_t = typename named_label<T>::type;
 
+template <class T>
+struct named_note;
+template <class L, class P>
+struct named_note<Named<L, P>> {
+    using type = From<L>;
+};
+template <class T>
+using named_note_t = typename named_note<T>::type;
+
 template <int V>
 inline constexpr bool pin_is_named_v = V != 0;
+
+template <class T, class K>
+struct Drop {};
+template <class T, class K>
+struct Grab {};
 
 namespace registry {
 inline constexpr combinator put{.shape = ^^Put,
                                 .kind = shape_kind::step,
                                 .direction = polarity::output,
                                 .dual = ^^Take,
-                                .payload_variance = variance::covariant};
+                                .payload_variance = variance::covariant,
+                                .keyed_choice = ^^Pick};
 inline constexpr combinator take{.shape = ^^Take,
                                  .kind = shape_kind::step,
                                  .direction = polarity::input,
                                  .dual = ^^Put,
+                                 .payload_variance = variance::contravariant,
+                                 .keyed_choice = ^^Wait};
+// A step pair with no keyed choice: it cannot carry a payload that names
+// a label.
+inline constexpr combinator drop{.shape = ^^Drop,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::output,
+                                 .dual = ^^Grab,
+                                 .payload_variance = variance::covariant};
+inline constexpr combinator grab{.shape = ^^Grab,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::input,
+                                 .dual = ^^Drop,
                                  .payload_variance = variance::contravariant};
 inline constexpr combinator pick{.shape = ^^Pick,
                                  .kind = shape_kind::choice,
@@ -2220,8 +2471,52 @@ inline constexpr combinator halt{.shape = ^^Halt, .kind = shape_kind::terminal, 
 inline constexpr combinator pin{
     .shape = ^^Pin, .kind = shape_kind::wrapper, .dual = ^^Pin, .value_admits = ^^pin_is_named_v};
 inline constexpr payload_rule fault{.shape = ^^Fault, .is_sendable = false, .is_label = false};
-inline constexpr payload_rule named{.shape = ^^Named, .label_key = ^^named_label_t};
+inline constexpr payload_rule named{.shape = ^^Named, .label_key = ^^named_label_t, .input_note = ^^named_note_t};
 }  // namespace registry
+
+// Two registries whose keyed choices break the coherence rules.
+namespace keyed_backwards {
+inline constexpr combinator put{.shape = ^^Put,
+                                .kind = shape_kind::step,
+                                .direction = polarity::output,
+                                .dual = ^^Take,
+                                .payload_variance = variance::covariant,
+                                .keyed_choice = ^^Wait};
+inline constexpr combinator take{.shape = ^^Take,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::input,
+                                 .dual = ^^Put,
+                                 .payload_variance = variance::contravariant,
+                                 .keyed_choice = ^^Pick};
+inline constexpr combinator pick{
+    .shape = ^^Pick, .kind = shape_kind::choice, .direction = polarity::output, .dual = ^^Wait};
+inline constexpr combinator wait{
+    .shape = ^^Wait, .kind = shape_kind::choice, .direction = polarity::input, .dual = ^^Pick};
+}  // namespace keyed_backwards
+
+namespace keyed_one_sided {
+inline constexpr combinator put{.shape = ^^Put,
+                                .kind = shape_kind::step,
+                                .direction = polarity::output,
+                                .dual = ^^Take,
+                                .payload_variance = variance::covariant,
+                                .keyed_choice = ^^Pick};
+inline constexpr combinator take{.shape = ^^Take,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::input,
+                                 .dual = ^^Put,
+                                 .payload_variance = variance::contravariant};
+inline constexpr combinator pick{
+    .shape = ^^Pick, .kind = shape_kind::choice, .direction = polarity::output, .dual = ^^Wait};
+inline constexpr combinator wait{
+    .shape = ^^Wait, .kind = shape_kind::choice, .direction = polarity::input, .dual = ^^Pick};
+}  // namespace keyed_one_sided
+
+static_assert(check_combinator(^^keyed_backwards, ^^Put).reason == incoherence::keyed_choice_not_a_choice,
+              "the keyed choice of an output step is an output choice");
+static_assert(check_combinator(^^keyed_one_sided, ^^Put).reason == incoherence::keyed_choice_not_dual &&
+                  check_combinator(^^keyed_one_sided, ^^Take).reason == incoherence::keyed_choice_not_dual,
+              "a keyed step and its dual stand for dual choices, or neither is keyed");
 
 namespace no_axioms {}
 
@@ -2285,6 +2580,39 @@ static_assert(wire_word_of(reg, ^^Pick<Put<int, Done>, Put<char, Done>>, 1).valu
 static_assert(!wire_word_of(reg, ^^Wait<Take<int, Done>, Take<Fault<int>, Done>>, 1).is_wired,
               "a branch that is no label has no word");
 static_assert(!wire_word_of(reg, ^^KeyedPick, 2).is_wired, "an index past the last branch has no word");
+
+// A keyed step is a choice with one branch.
+struct LabelC {};
+using SendA = Put<Named<LabelA, int>, Done>;
+using RecvA = Take<Named<LabelA, int>, Done>;
+using KeyedWait = Wait<From<LabelA>, Take<Named<LabelA, int>, Done>, Take<Named<LabelB, int>, Done>>;
+static_assert(is_keyed_step_type(reg, ^^SendA) && !is_keyed_step_type(reg, ^^Put<int, Done>));
+static_assert(wire_word_of_step(reg, ^^SendA).is_wired && wire_word_of_step(reg, ^^SendA).value == label_word_of(^^LabelA),
+              "a keyed step sends the label word of its key");
+static_assert(!wire_word_of_step(reg, ^^Put<int, Done>).is_wired, "a plain step has no word");
+static_assert(refines_plain(^^SendA, ^^KeyedPick), "a keyed step sends one label of the larger choice");
+static_assert(refines(reg, ^^no_axioms, ^^Put<Named<LabelC, int>, Done>, ^^KeyedPick).reason == mismatch::label_set);
+static_assert(refines_plain(^^KeyedWait, ^^RecvA), "a choice that receives more labels stands for a keyed step");
+static_assert(refines(reg, ^^no_axioms, ^^RecvA, ^^KeyedWait).reason == mismatch::label_set);
+static_assert(refines(reg, ^^no_axioms, ^^Wait<From<LabelC>, Take<Named<LabelA, int>, Done>, Take<Named<LabelB, int>, Done>>,
+                      ^^Take<Named<LabelC, int>, Done>)
+                  .reason
+              == mismatch::label_set);
+static_assert(refines(reg, ^^no_axioms, ^^Wait<Take<Named<LabelA, int>, Done>>, ^^RecvA).reason
+                  == mismatch::annotation,
+              "an input keyed step takes the note of its payload rule");
+static_assert(refines_plain(^^SendA, ^^Pick<SendA>) && refines_plain(^^Pick<SendA>, ^^SendA),
+              "a keyed step and the choice of that one branch are one type");
+static_assert(refines_plain(^^Again<Put<Named<LabelA, int>, Back>>, ^^Again<Pick<Put<Named<LabelA, int>, Back>>>),
+              "the entry of a loop reads as the choice it stands for");
+static_assert(!well_formed(^^Drop<Named<LabelA, int>, Done>) && well_formed(^^Drop<int, Done>),
+              "a step with no keyed choice cannot carry a payload that names a label");
+static_assert(first_faulty_choice(reg, ^^Pick<Again<Put<Named<LabelA, int>, Back>>>).fault
+                  == choice_fault::keyed_label_below_root,
+              "a keyed label branch is its label step, not a loop entry");
+static_assert(first_faulty_choice(reg, ^^Pick<Pin<1, SendA>>).fault == choice_fault::keyed_label_below_root);
+static_assert(first_faulty_choice(reg, ^^Pick<Again<Put<int, Back>>>).fault == choice_fault::none,
+              "a positional label branch may start with a binder");
 
 static_assert(fold(reg, ^^Put<int, Pick<Done, Halt>>, compose_algebra{reg, ^^Ping}, 0)
               == ^^Put<int, Pick<Ping, Halt>>);

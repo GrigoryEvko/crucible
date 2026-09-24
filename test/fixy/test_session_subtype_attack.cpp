@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <iterator>
 #include <meta>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <thread>
@@ -668,15 +669,17 @@ static_assert(!s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select
 // branches of a keyed choice by label, so it admits the permutation that
 // the run below routes, in both directions and in both relations.
 
-using Projected = Select<Send<s::PeerMsg<Bob, L0, int>, End>, Send<s::PeerMsg<Bob, L1, int>, End>>;
-using Permuted = Select<Send<s::PeerMsg<Bob, L1, int>, End>, Send<s::PeerMsg<Bob, L0, int>, End>>;
+// L1 continues with a value, so the branch that a handle enters shows in
+// its type.
+using Projected = Select<Send<s::PeerMsg<Bob, L0, int>, End>, Send<s::PeerMsg<Bob, L1, int>, Send<int, End>>>;
+using Permuted = Select<Send<s::PeerMsg<Bob, L1, int>, Send<int, End>>, Send<s::PeerMsg<Bob, L0, int>, End>>;
 static_assert(s::is_subtype_sync_v<Permuted, Projected> && s::is_subtype_sync_v<Projected, Permuted>);
 static_assert(s::is_subtype_async_v<Permuted, Projected, ring<4>> && s::CompatibleServer<Permuted, s::dual_of_t<Projected>>);
 
 // A keyed Select drops labels in any position, and a keyed Offer adds
 // them in any position.  A label that the supertype does not send is
 // refused, and so is a keyed choice against a positional one.
-using SendsL1 = Select<Send<s::PeerMsg<Bob, L1, int>, End>>;
+using SendsL1 = Select<Send<s::PeerMsg<Bob, L1, int>, Send<int, End>>>;
 static_assert(s::is_subtype_sync_v<SendsL1, Projected>);
 static_assert(s::subtype_mismatch_v<Projected, SendsL1> == tr::mismatch::label_set);
 static_assert(s::is_subtype_sync_v<s::dual_of_t<Projected>, s::dual_of_t<SendsL1>>);
@@ -687,6 +690,7 @@ static_assert(s::branch_wire_word_v<Permuted, 0> == s::branch_wire_word_v<Projec
 
 struct WordWire {
     std::size_t word = 0;
+    int value = 0;
 };
 struct PickerEnd {
     WordWire* wire = nullptr;
@@ -695,12 +699,10 @@ struct OffererEnd {
     WordWire* wire = nullptr;
 };
 
-template <class Message>
-inline constexpr int label_number_v = std::is_same_v<typename Message::label, L0> ? 0 : 1;
-
 // Returns the label that the picker sent and the label that the offerer
 // received, when the picker speaks Permuted and the offerer speaks the
-// dual of Projected.
+// dual of Projected.  A keyed label word is its whole message, so each
+// side enters its branch past the label step: L1 at the value, L0 at End.
 namespace {
 
 [[nodiscard]] std::pair<int, int> labels_on_a_word_wire() {
@@ -708,21 +710,92 @@ namespace {
     auto picker = s::mint_session_handle<Permuted>(PickerEnd{&wire});
     auto chosen =
         std::move(picker).template select<0>([](PickerEnd& end, std::size_t word) noexcept { end.wire->word = word; });
-    using Sent = typename decltype(chosen)::message_type;
-    auto picker_done = std::move(chosen).send(Sent{}, [](PickerEnd&, Sent&&) noexcept {});
+    static_assert(std::is_same_v<typename decltype(chosen)::protocol, Send<int, End>>, "branch 0 of Permuted is L1");
+    auto picker_done = std::move(chosen).send(5, [](PickerEnd& end, int&& value) noexcept { end.wire->value = value; });
     (void)std::move(picker_done).close();
 
     int received = -1;
     auto offerer = s::mint_session_handle<s::dual_of_t<Projected>>(OffererEnd{&wire});
     std::move(offerer).branch([](OffererEnd& end) noexcept { return end.wire->word; },
                               [&received](auto handle) noexcept {
-                                  using Got = typename decltype(handle)::message_type;
-                                  received = label_number_v<Got>;
-                                  auto [message, done] = std::move(handle).recv([](OffererEnd&) noexcept { return Got{}; });
-                                  (void)message;
-                                  (void)std::move(done).close();
+                                  if constexpr (std::is_same_v<typename decltype(handle)::protocol, Recv<int, End>>) {
+                                      auto [value, done] = std::move(handle).recv(
+                                          [](OffererEnd& end) noexcept { return end.wire->value; });
+                                      received = value == 5 ? 1 : -1;
+                                      (void)std::move(done).close();
+                                  } else {
+                                      received = 0;
+                                      (void)std::move(handle).close();
+                                  }
                               });
-    return {label_number_v<Sent>, received};
+    return {1, received};
+}
+
+// ── A keyed step against a wider Offer, on two threads ──────────────
+//
+// A keyed Send is the Select of its one branch, so it refines a Select
+// that names more labels, and its peer can hold the dual of that Select.
+// The step puts the label word on the wire, and the Offer of the peer
+// enters the branch of that word.  The two endpoints run on two threads
+// over one slot for the word and one for the value, each read by a poll.
+
+using SendsL1Step = Send<s::PeerMsg<Bob, L1, int>, Send<int, End>>;
+static_assert(s::is_subtype_sync_v<SendsL1Step, Projected> && s::equivalent_sync_v<SendsL1Step, SendsL1>);
+static_assert(s::step_wire_word_v<SendsL1Step> == s::branch_wire_word_v<Projected, 1>,
+              "the keyed step sends the word of its branch in the wider Select");
+
+struct SharedWire {
+    std::atomic<std::uint64_t> word{0};
+    std::atomic<bool> has_word{false};
+    std::atomic<int> value{0};
+    std::atomic<bool> has_value{false};
+};
+struct StepEnd {
+    SharedWire* wire = nullptr;
+};
+struct WideEnd {
+    SharedWire* wire = nullptr;
+};
+
+[[nodiscard]] int keyed_step_meets_wider_offer() {
+    SharedWire wire{};
+    int received = -1;
+    {
+        std::jthread offerer_thread{[&wire, &received] {
+            auto offerer = s::mint_session_handle<s::dual_of_t<Projected>>(WideEnd{&wire});
+            std::move(offerer).branch(
+                [](WideEnd& end) noexcept -> std::optional<std::size_t> {
+                    if (!end.wire->has_word.load(std::memory_order_acquire)) return std::nullopt;
+                    return end.wire->word.load(std::memory_order_relaxed);
+                },
+                [&received](auto handle) noexcept {
+                    if constexpr (std::is_same_v<typename decltype(handle)::protocol, Recv<int, End>>) {
+                        auto [value, done] = std::move(handle).recv([](WideEnd& end) noexcept -> std::optional<int> {
+                            if (!end.wire->has_value.load(std::memory_order_acquire)) return std::nullopt;
+                            return end.wire->value.load(std::memory_order_relaxed);
+                        });
+                        received = value;
+                        (void)std::move(done).close();
+                    } else {
+                        received = 0;
+                        (void)std::move(handle).close();
+                    }
+                });
+        }};
+        std::jthread stepper_thread{[&wire] {
+            auto stepper = s::mint_session_handle<SendsL1Step>(StepEnd{&wire});
+            auto sent = std::move(stepper).send([](StepEnd& end, std::size_t word) noexcept {
+                end.wire->word.store(word, std::memory_order_relaxed);
+                end.wire->has_word.store(true, std::memory_order_release);
+            });
+            auto done = std::move(sent).send(9, [](StepEnd& end, int&& value) noexcept {
+                end.wire->value.store(value, std::memory_order_relaxed);
+                end.wire->has_value.store(true, std::memory_order_release);
+            });
+            (void)std::move(done).close();
+        }};
+    }
+    return received;
 }
 
 }  // namespace
@@ -873,6 +946,10 @@ int main() {
     // the label that the picker sent.
     const auto [sent, received] = labels_on_a_word_wire();
     expect(sent == 1 && received == 1, "a permuted keyed Select took the branch of another label");
+
+    // A keyed Send step, on its own thread, reaches the L1 branch of an
+    // Offer of two labels, and the value after the label follows it.
+    expect(keyed_step_meets_wider_offer() == 9, "a keyed Send step did not reach its branch of a wider Offer");
 
     // The generated family: every admitted pair runs to completion.
     const generated_tally tally = run_generated();

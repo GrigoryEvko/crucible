@@ -256,7 +256,7 @@ public:
     // not deliver.  The recorder passes that result through, and records
     // a refused payload as lost to the crashed peer.
     template <typename T, typename Transport>
-        requires is_send_v<protocol> && detail::recording::inner_can_send<Inner, T, Transport>
+        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>) && detail::recording::inner_can_send<Inner, T, Transport>
     [[nodiscard]] constexpr auto send(T value, Transport transport) && {
         using Message = typename protocol::message_type;
         using Result = std::invoke_result_t<Transport, resource_type&, Message&&>;
@@ -286,11 +286,45 @@ public:
     }
 
     template <typename Transport>
-        requires is_recv_v<protocol> && detail::recording::inner_can_recv<Inner, Transport>
+        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>) && detail::recording::inner_can_recv<Inner, Transport>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         auto [value, next] = std::move(inner_).recv(std::move(transport));
         record_(detail::recording::event_for_recv<typename protocol::message_type>(self_, peer_));
         return std::pair{std::move(value), wrap_(std::move(next))};
+    }
+
+    // A keyed message is its label word.  The transport of the send has the
+    // signature void(Resource&, std::size_t), and the event records the
+    // message as a send, delivered unless the peer had crashed.
+    template <typename Transport>
+        requires is_send_v<protocol> && is_keyed_step_v<protocol>
+              && std::is_invocable_v<Transport, resource_type&, std::size_t>
+    [[nodiscard]] constexpr auto send(Transport transport) && {
+        using Message = typename protocol::message_type;
+        constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, std::size_t>;
+        bool is_delivered = false;
+        auto marked = [&transport, &is_delivered](resource_type& resource, std::size_t word) noexcept(is_nothrow) {
+            is_delivered = true;
+            std::invoke(transport, resource, word);
+        };
+        auto result = std::move(inner_).send(marked);
+        record_(detail::recording::event_for_send<Message>(
+            self_, peer_, is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
+        if constexpr (detail::recording::crash_send_shape<decltype(result)>::value) {
+            using Wrapped = decltype(wrap_(std::move(result.next)));
+            return CrashSend<Wrapped, Message>{wrap_(std::move(result.next)), std::move(result.undelivered)};
+        } else {
+            return wrap_(std::move(result));
+        }
+    }
+
+    // The keyed receive gives the handle at the continuation and no value.
+    template <typename Transport>
+        requires is_recv_v<protocol> && is_keyed_step_v<protocol> && detail::recording::inner_can_recv<Inner, Transport>
+    [[nodiscard]] constexpr auto recv(Transport transport) && {
+        auto next = std::move(inner_).recv(std::move(transport));
+        record_(detail::recording::event_for_recv<typename protocol::message_type>(self_, peer_));
+        return wrap_(std::move(next));
     }
 
     // The crash record of a crash branch.

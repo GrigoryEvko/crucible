@@ -272,7 +272,10 @@ namespace detail::proj {
 // The merge reads a local type as a side (internal or external), a
 // peer, and a list of branches, and it writes the result back in the
 // canonical form: one branch is a Send or a Recv, several branches are
-// a Select or an Offer.
+// a Select or an Offer.  A keyed Send or Recv is the choice of its one
+// branch (fixy/session/Protocol.h), so the view reads a Select of one
+// branch and a Send as one choice, and the handle sends one label word
+// for either spelling.
 
 template <typename L, typename P, typename K>
 struct Br {
@@ -292,27 +295,21 @@ enum class Side : std::uint8_t {
     External,
 };
 
-// is_select_node: the type is a Select, even with one branch.  The
-// sender of a transmission with a crash branch keeps a Select, because
-// the receiver reads a label to tell the message from the crash.
 template <typename T>
 struct view {
     static constexpr Side side = Side::Neither;
-    static constexpr bool is_select_node = false;
     using peer = void;
     using branches = BL<>;
 };
 template <typename Q, typename L, typename P, typename K>
 struct view<Send<PeerMsg<Q, L, P>, K>> {
     static constexpr Side side = Side::Internal;
-    static constexpr bool is_select_node = false;
     using peer = Q;
     using branches = BL<Br<L, P, K>>;
 };
 template <typename Q, typename L, typename P, typename K>
 struct view<Recv<PeerMsg<Q, L, P>, K>> {
     static constexpr Side side = Side::External;
-    static constexpr bool is_select_node = false;
     using peer = Q;
     using branches = BL<Br<L, P, K>>;
 };
@@ -320,7 +317,6 @@ template <typename... Qs, typename... Ls, typename... Ps, typename... Ks>
 struct view<Select<Send<PeerMsg<Qs, Ls, Ps>, Ks>...>> {
     static constexpr bool one_peer = sizeof...(Qs) > 0 && (std::is_same_v<Qs, Qs...[0]> && ...);
     static constexpr Side side = one_peer ? Side::Internal : Side::Neither;
-    static constexpr bool is_select_node = true;
     using peer = std::conditional_t<one_peer, Qs...[0], void>;
     using branches = BL<Br<Ls, Ps, Ks>...>;
 };
@@ -328,7 +324,6 @@ template <typename Q, typename... Qs, typename... Ls, typename... Ps, typename..
 struct view<Offer<Sender<Q>, Recv<PeerMsg<Qs, Ls, Ps>, Ks>...>> {
     static constexpr bool one_peer = sizeof...(Qs) > 0 && (std::is_same_v<Qs, Q> && ...);
     static constexpr Side side = one_peer ? Side::External : Side::Neither;
-    static constexpr bool is_select_node = false;
     using peer = Q;
     using branches = BL<Br<Ls, Ps, Ks>...>;
 };
@@ -341,14 +336,6 @@ struct rebuild<Side::Internal, Peer, BL<Br<L, P, K>>> {
 };
 template <typename Peer, typename... Brs>
 struct rebuild<Side::Internal, Peer, BL<Brs...>> {
-    using type = Select<Send<PeerMsg<Peer, typename Brs::label, typename Brs::payload>, typename Brs::next>...>;
-};
-
-// An internal choice that stays a Select with one branch.
-template <typename Peer, typename List, bool IsSelect>
-struct rebuild_internal : rebuild<Side::Internal, Peer, List> {};
-template <typename Peer, typename... Brs>
-struct rebuild_internal<Peer, BL<Brs...>, true> {
     using type = Select<Send<PeerMsg<Peer, typename Brs::label, typename Brs::payload>, typename Brs::next>...>;
 };
 template <typename Peer, typename L, typename P, typename K>
@@ -518,7 +505,7 @@ consteval auto merge_internal_branch() {
 
 // Two internal choices to the same peer merge when they offer the same
 // labels (rule merge-internal).
-template <typename Peer, int Fuel, bool IsSelect, typename... As, typename... Bs>
+template <typename Peer, int Fuel, typename... As, typename... Bs>
 consteval auto merge_internal(BL<As...>, BL<Bs...>) {
     if constexpr (sizeof...(As) != sizeof...(Bs)) {
         return std::type_identity<NotProjectable<projection_failure::MergeLabelSetMismatch>>{};
@@ -528,8 +515,8 @@ consteval auto merge_internal(BL<As...>, BL<Bs...>) {
         if constexpr (!std::is_void_v<failure>) {
             return std::type_identity<failure>{};
         } else {
-            return std::type_identity<typename rebuild_internal<
-                Peer, BL<typename decltype(merge_internal_branch<As, BL<Bs...>, Fuel>())::type...>, IsSelect>::type>{};
+            return std::type_identity<typename rebuild<
+                Side::Internal, Peer, BL<typename decltype(merge_internal_branch<As, BL<Bs...>, Fuel>())::type...>>::type>{};
         }
     }
 }
@@ -566,8 +553,7 @@ consteval auto merge_select() {
         }
     } else if constexpr (view<A>::side == Side::Internal && view<B>::side == Side::Internal
                          && std::is_same_v<typename view<A>::peer, typename view<B>::peer>) {
-        return merge_internal<typename view<A>::peer, Fuel, view<A>::is_select_node || view<B>::is_select_node>(
-            typename view<A>::branches{}, typename view<B>::branches{});
+        return merge_internal<typename view<A>::peer, Fuel>(typename view<A>::branches{}, typename view<B>::branches{});
     } else if constexpr (view<A>::side == Side::External && view<B>::side == Side::External
                          && std::is_same_v<typename view<A>::peer, typename view<B>::peer>) {
         return merge_external<typename view<A>::peer, Fuel>(typename view<A>::branches{}, typename view<B>::branches{});
@@ -637,11 +623,11 @@ consteval auto proj_comm(BL<Br<Ls, Ps, Cs>...>) {
         if constexpr (!(queue_agrees_v<typename proj_walk<Cs, R, Reliable>::type, first> && ...)) {
             return std::type_identity<NotProjectable<projection_failure::QueueDiffersAcrossBranches>>{};
         } else if constexpr (std::is_same_v<R, From>) {
-            // No role sends the crash label.  The choice stays a Select, so
-            // the receiver can tell the message from the crash.
+            // No role sends the crash label.  One message branch is a keyed
+            // Send, which puts its label word on the wire as a Select does,
+            // so the receiver still tells the message from the crash.
             return std::type_identity<Projected<
-                typename first::queue,
-                typename rebuild_internal<To, typename without_crash<projected>::type, has_crash_branch>::type>>{};
+                typename first::queue, typename rebuild<Side::Internal, To, typename without_crash<projected>::type>::type>>{};
         } else if constexpr (std::is_same_v<R, To>) {
             if constexpr (!is_reliable_role_v<Reliable, From> && !has_crash_branch) {
                 return std::type_identity<NotProjectable<projection_failure::MissingCrashBranch>>{};
