@@ -536,6 +536,15 @@ foundation_neg_compile_test(neg_read_view_brand_not_empty
 foundation_neg_compile_test(neg_read_view_const_source_refused
   "use of deleted function"
   "Pass the source with std::move")
+# The deleted twin asks for a real source with an empty row, so a named
+# look-alike and a named effectful source meet the rule they break, not the
+# std::move message.
+foundation_neg_compile_test(neg_read_view_named_look_alike_refused
+  "no matching function for call to .*with_read_view"
+  "is_read_view_source")
+foundation_neg_compile_test(neg_read_view_named_effectful_source_refused
+  "no matching function for call to .*with_read_view"
+  "ReadViewNeedsNoCtx")
 foundation_neg_compile_test(neg_read_view_body_by_value
   "no matching function for call to .with_read_view\\("
   "required for the satisfaction of .ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>.")
