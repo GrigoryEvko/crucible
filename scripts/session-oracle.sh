@@ -23,10 +23,16 @@
 #                      No licence.  coqc applies it to fixy's projected
 #                      context of each multiparty case, with a certificate
 #                      for its four premises (tools/session_oracle/coq).
-#   implementability   Sprout(A) of Li and Wies (PLDI 2026), the container
-#                      image of the artifact doi 10.5281/zenodo.19600644.
-#                      CC BY 4.0.  It decides implementability on per-pair
-#                      FIFO queues, a mailbox and a bag for each receiver.
+#   implementability   Sprout(A) of Li and Wies (PLDI 2026), built natively
+#                      from the pinned sources that
+#                      tools/session_oracle/sprout.py names (artifact doi
+#                      10.5281/zenodo.19600644, CC BY 4.0).  It decides
+#                      implementability on per-pair FIFO queues, a mailbox
+#                      and a bag for each receiver.  Only the verdict of the
+#                      naive mode counts as evidence.  The opt mode names
+#                      each query file by four state numbers with no
+#                      separator, so one query can replace another, and
+#                      its verdict is kept for information only.
 #   crash-stop         mpstk-crash-stop of Barwell, Scalas, Yoshida and
 #                      Zhou (CONCUR 2022), github.com/alcestes/mpstk-crash-stop.
 #                      MIT licence.  It model-checks the context of each
@@ -63,7 +69,9 @@
 #                  This mode needs those two toolchains only.  With the
 #                  compiler as the second argument, it also measures the
 #                  transition systems of Semantics.h again, at the commit
-#                  that golden.csv names.  CI does not run it.
+#                  that golden.csv names, and implementable_on of
+#                  fixy/session/Network.h on each network, at HEAD.  CI
+#                  does not run it.
 #
 # --self-test and --regenerate take a commit as an optional third
 # argument, for example HEAD.  The tool then measures the include tree of
@@ -123,10 +131,15 @@
 #      zlib-ng-compat-static.  The first run downloads and builds MuVal
 #      and the front end in the cache, which takes less than one minute.
 #      SESSION_ORACLE_SPROUT_SWITCH names a different switch.
-#   5. The crash-stop oracle needs a Java 17 runtime, sbt (the build of
-#      the pinned commit asks for sbt 1.6.1 and downloads it), and the
-#      mCRL2 tools mcrl22lps, lps2pbes and pbes2bool.  Put the three on
-#      PATH before --regenerate.
+#   5. The crash-stop oracle needs a Java 17 runtime, sbt, and the mCRL2
+#      tools mcrl22lps, lps2pbes and pbes2bool.  Install nothing by hand:
+#      tools/session_oracle/toolchain.py downloads a pinned release of each
+#      into the cache (Temurin JDK 17.0.20.1+1, sbt 1.10.7, mCRL2
+#      202607.0), checks its SHA-256, and unpacks it there.  The build of
+#      the pinned commit then asks sbt for sbt 1.6.1 and downloads it into
+#      the same cache.  The host needs rpm2cpio and cpio, which unpack the
+#      mCRL2 package.  To install ahead of a run:
+#        python3 tools/session_oracle/session_oracle.py install-toolchain
 #
 # How to regenerate after a relation changes:
 #
@@ -150,6 +163,8 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 driver="$root/tools/session_oracle/session_oracle.py"
+# The oracle writes no bytecode into the source tree.
+export PYTHONDONTWRITEBYTECODE=1
 
 usage() {
     cat >&2 <<'USAGE'

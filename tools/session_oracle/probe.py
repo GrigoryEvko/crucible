@@ -56,8 +56,8 @@ def canonical(spelling: str) -> str:
 HEADS = {
     "old": "#include <crucible/sessions/SessionGlobal.h>\n#include <type_traits>\n",
     "fixy": "#include <fixy/session/Protocol.h>\n#include <type_traits>\n",
-    "multi": "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n"
-             "#include <type_traits>\n",
+    "multi": "#include <fixy/session/Liveness.h>\n#include <fixy/session/Network.h>\n"
+             "#include <fixy/session/Projection.h>\n#include <type_traits>\n",
     "subtype": "#include <fixy/session/Subtype.h>\n#include <type_traits>\n",
     "keyed": "#include <fixy/session/Projection.h>\n#include <fixy/session/Subtype.h>\n"
              "#include <type_traits>\n",

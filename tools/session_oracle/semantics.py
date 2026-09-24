@@ -102,8 +102,11 @@ _CRASH_HELPER = (
     "template <class... Rs> struct session_oracle_projfail<fg::NoTransition, Rs...> { using type = fg::NoTransition; };\n")
 # Divergence classes on a shrink-only ledger: the most rows a run may give.
 # A run that gives more fails (check_ledger).  When a repair lowers the
-# count, lower the bound in the same commit.  At 0, delete the class.
-SHRINK_ONLY = {"crash-under-recursion-unprojected": 256}
+# count, lower the bound in the same commit.  At 0, delete the class when
+# no code gives it any more.  The three network classes stay at 0, because
+# evaluate_sprout of session_oracle.py gives a class for each network: a
+# global type that fixy refuses on that network and Sprout(A) admits.
+SHRINK_ONLY = {"p2pbox-incomplete": 44, "mailbox-incomplete": 0, "bag-incomplete": 13}
 # The enumerators of fixy::session::config::CrashAssociationFault, in order.
 FAULTS = ("None", "NotWellAnnotated", "NotBalancedPlus", "CrashedRoleMismatch", "LiveRoleMismatch", "UnfinishedRole",
           "QueueMismatch")
@@ -345,17 +348,9 @@ def classify(case: str, text: str, nodes: list[Node], measured, variant: str = "
         note = (f"ours wrong: the configuration and the global state that one path reaches are not associated, and "
                 f"association holds at the start and is kept by each step ({BARWELL}, Definition 4.19 and "
                 f"Theorem 4.20).  The fault is {fault}")
-        if fault == "LiveRoleMismatch" and failure == "EnRouteUnderRecursion":
-            klass = "crash-under-recursion-unprojected"
-            note += (".  The crash of a sender in a loop leaves the crash pseudo-message of that sender under the "
-                     "Rec of the loop (the crash rule of Figure 7, where remove(mu t.G, p) is mu t.remove(G, p)), "
-                     "and Projection.h refuses an en-route node under a Rec (EnRouteUnderRecursion).  Definition "
-                     "4.3 projects a crash pseudo-message at any depth, so the live receiver has no projection to "
-                     "refine")
-        else:
-            klass = "association-lost"
-            if failure:
-                note += f", and a live role has no crash-stop projection ({failure})"
+        klass = "association-lost"
+        if failure:
+            note += f", and a live role has no crash-stop projection ({failure})"
         shown = f"false ({fault}{', ' + failure if failure else ''})"
         rows.append(Row("fixy.crash_association", case, where, text, "true", shown, "divergence", klass, note))
     return rows

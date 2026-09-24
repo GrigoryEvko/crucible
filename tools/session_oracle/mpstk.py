@@ -15,14 +15,16 @@ synchronous.  The properties the harness asks for:
                     an input from the crashed role
 
 This module downloads the pinned commit into the cache of rocq.py, builds
-it with sbt, and runs its verifier.  The toolchain: a Java 17 runtime,
-sbt, and the mCRL2 tools mcrl22lps, lps2pbes and pbes2bool on PATH
-(scripts/session-oracle.sh says how to install them).
+it with sbt, and runs its verifier.  The toolchain is a Java 17 runtime,
+sbt, and the mCRL2 tools mcrl22lps, lps2pbes and pbes2bool.  toolchain.py
+installs a pinned release of each into the same cache, and each process of
+this module runs in the environment that toolchain.py gives.
 """
 
 from __future__ import annotations
 
 import csv
+import functools
 import hashlib
 import io
 import logging
@@ -34,6 +36,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import toolchain
 from model import LBranch, LChoice, LEnd, LMsg, LRec, LVar, Local
 from rocq import OracleError, answer_cache_path, cache_root, load_answers, save_answers
 
@@ -45,11 +48,15 @@ PROPERTIES = ("safety", "deadlock-freedom", "liveness+")
 BATCH = 24
 
 
+@functools.cache
+def _environment() -> dict[str, str]:
+    return toolchain.environment()
+
+
 def _tool(name: str) -> str:
-    path = shutil.which(name)
+    path = shutil.which(name, path=_environment()["PATH"])
     if path is None:
-        raise OracleError(f"{name} is not on PATH.  mpstk needs a Java 17 runtime, sbt and the mCRL2 "
-                          "tools; scripts/session-oracle.sh says how to install them.")
+        raise OracleError(f"{name} is not in the toolchain that tools/session_oracle/toolchain.py installs.")
     return path
 
 
@@ -80,7 +87,8 @@ def build(root: Path) -> str:
     classpath = root / "target" / "CLASSPATH"
     if not classpath.is_file():
         LOG.info("building mpstk in %s", root)
-        proc = subprocess.run([_tool("sbt"), "-batch", "package"], cwd=root, capture_output=True, text=True)
+        proc = subprocess.run([_tool("sbt"), "-batch", "package"], cwd=root, capture_output=True, text=True,
+                              env=_environment())
         if proc.returncode != 0 or not classpath.is_file():
             raise OracleError(f"building mpstk failed:\n{(proc.stdout + proc.stderr)[-4000:]}")
     return classpath.read_text(encoding="utf-8").strip()
@@ -154,7 +162,7 @@ def _verify_batch(classpath: str, texts: list[str]) -> list[dict[str, bool]]:
         out = root / "out.csv"
         proc = subprocess.run([_tool("java"), "-cp", classpath, "mpstk.tool.Verifier",
                                "-p", ",".join(PROPERTIES), "-o", str(out), *files],
-                              capture_output=True, text=True, cwd=tmp)
+                              capture_output=True, text=True, cwd=tmp, env=_environment())
         if proc.returncode != 0 or not out.is_file():
             raise OracleError(f"mpstk failed:\n{(proc.stdout + proc.stderr)[-4000:]}")
         table = {Path(row["protocol"]).name: row for row in csv.DictReader(io.StringIO(out.read_text()))}

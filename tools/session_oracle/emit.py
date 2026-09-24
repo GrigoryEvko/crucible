@@ -60,7 +60,12 @@ CORPORA = ("r", "a", "o", "h", "p", "m", "fr", "fa", "fh", "fm")
 
 FIXY_FAMILIES = ("fixy.dual", "fixy.is_dual", "fixy.involution", "fixy.involutive_flag",
                  "fixy.well_formed", "fixy.accepts")
-MULTI_FAMILIES = ("fixy.global_wf", "fixy.projection", "fixy.live")
+MULTI_FAMILIES = ("fixy.global_wf", "fixy.projection", "fixy.live", "fixy.network")
+# The networks of the network family and of the implementability family
+# (sprout.py), and the enumerator of fixy::session::Network for each.  The
+# role of a fixy.network row is the network, and its ours column is
+# implementable_on_v of fixy/session/Network.h.
+NETWORK_ENUMERATORS = {"p2pbox": "PerPairFifo", "mailbox": "Mailbox", "bag": "Bag"}
 SUBTYPE_FAMILIES = ("fixy.subtype_sync", "fixy.subtype_async")
 # The capacity that the asynchronous subtyping rows use, in the probe, in
 # the run that decides them, and in the emitted assertion.  The relation
@@ -354,7 +359,8 @@ def emit_multi(rows: list[Row]) -> str:
            "// Global types, projection and liveness of fixy/session against the\n",
            "// projection oracle.  A projection row asserts the oracle's answer when\n",
            "// fixy gives it as written, and pins fixy's answer otherwise.\n\n",
-           "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n\n",
+           "#include <fixy/session/Liveness.h>\n#include <fixy/session/Network.h>\n"
+           "#include <fixy/session/Projection.h>\n\n",
            "#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
            "namespace session_oracle::fixy_projection {\n\n"]
@@ -372,6 +378,12 @@ def emit_multi(rows: list[Row]) -> str:
                 out.append(f"static_assert(fg::is_global_well_formed_v<G> == {row.ours}, \"{msg}\");\n")
             elif row.family == "fixy.live":
                 out.append(f"static_assert(fs::is_live_by_construction_v<G> == {row.ours}, \"{msg}\");\n")
+            elif row.family == "fixy.network":
+                network = NETWORK_ENUMERATORS.get(row.role)
+                if network is None:
+                    raise GoldenError(f"fixy.network case {row.case}: {row.role!r} names no network")
+                out.append(f"static_assert(fs::implementable_on_v<G, fs::Network::{network}> == {row.ours}, "
+                           f"\"{msg}\");\n")
             else:
                 if row.ours == "=":
                     expected = read_local(row.oracle)

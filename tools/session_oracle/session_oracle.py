@@ -97,6 +97,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+# The oracle writes no bytecode into the source tree, whichever runner starts it.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from emit import GoldenError, Row, emit_all, read_golden, write_golden  # noqa: E402
@@ -722,6 +724,42 @@ def _multi_probe(g: Global, roles: list[int]) -> str:
     for r in roles:
         src += show(f"fproj{r}", f"typename session_oracle_proj<G, {cpp_role(r)}>::type")
     return src
+
+
+def _network_probe(g: Global) -> str:
+    from emit import NETWORK_ENUMERATORS
+    from probe import probe_header, show
+    src = probe_header("multi", MULTI_ALIAS) + f"using G = {cpp_fixy_global(g)};\n"
+    for network, enumerator in NETWORK_ENUMERATORS.items():
+        src += show(f"net_{network}",
+                    f"std::bool_constant<fs::implementable_on_v<G, fs::Network::{enumerator}>>")
+    return src
+
+
+def evaluate_network(rows: list[Row], env: Env) -> list[Row]:
+    """Measure implementable_on of fixy/session/Network.h for each well-formed multiparty case.
+
+    A row pins fixy's verdict on one network, and the implementability
+    family (evaluate_sprout) compares that verdict with Sprout(A).  A probe
+    that stops the build stops the run, because a gate must answer.
+    O(cases × networks).
+    """
+    from emit import NETWORK_ENUMERATORS
+    from model import read_global
+    from probe import run_many
+    cases = [r for r in rows if r.family == "fixy.global_wf" and r.ours == "true"]
+    sources = [_network_probe(read_global(r.global_text)) for r in cases]
+    measured = run_many(env.cxx, env.include, sources, env.workers, env.heads)
+    out: list[Row] = []
+    for wf, m in zip(cases, measured, strict=True):
+        if m.rejection is not None:
+            raise RuntimeError(f"fixy.network case {wf.case}: the probe stops the build ({m.rejection})")
+        for network in NETWORK_ENUMERATORS:
+            verdict = _bool(m.values.get(f"net_{network}"))
+            if verdict is None:
+                raise RuntimeError(f"fixy.network case {wf.case}: no measurement on {network}: {m}")
+            out.append(Row("fixy.network", wf.case, network, wf.global_text, "-", verdict, "agree", "", ""))
+    return out
 
 
 # ── Evaluation pipelines ─────────────────────────────────────────────
@@ -1363,28 +1401,42 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
     ``rows`` are the rows of the multiparty families.  Sprout(A) decides the
     implementability of each well-formed case on per-pair FIFO queues, one
     FIFO mailbox for each receiver and one unordered bag for each receiver
-    (sprout.py).  On per-pair queues, fixy's projection must imply
-    implementability.  On the two other networks, a type that fixy projects
-    and no implementation carries marks a protocol that our SPSC channels
-    carry and our MPSC and MPMC channels cannot.  O(cases × networks).
+    (sprout.py).  Fixy's verdict on a network is its fixy.network row:
+    implementable_on of fixy/session/Network.h.  Only the naive query
+    generator of Sprout(A) counts, because its opt generator admits a type
+    that deadlocks on a bag.  A type that fixy admits and the naive
+    generator refuses is a soundness defect, and it stops the run.  A type
+    that fixy refuses and Sprout(A) admits is an incompleteness gap on the
+    shrink-only ledger of semantics.SHRINK_ONLY.  O(cases × networks).
     """
     import sprout
     from model import read_global
     fam = "sprout.implementable"
     cite = "Li and Wies, PLDI 2026, doi 10.1145/3808319"
-    substrate = {"p2pbox": "an SPSC channel for each ordered pair", "mailbox": "one MPSC channel for each receiver",
-                 "bag": "one MPMC queue with no order for each receiver"}
+    ours_on = {(r.case, r.role): r.ours for r in rows if r.family == "fixy.network"}
     cases = sprout_verdicts(rows)
     answers = sprout.decide([(read_global(wf.global_text),
                               sprout.NETWORKS if ours == "projects" else ("p2pbox",)) for wf, ours in cases])
     out: list[Row] = []
-    for (wf, ours), by_network in zip(cases, answers, strict=True):
+    defects: list[str] = []
+    for (wf, _), by_network in zip(cases, answers, strict=True):
         for network, answer in by_network.items():
+            measured = ours_on.get((wf.case, network))
+            if measured not in ("true", "false"):
+                raise RuntimeError(f"sprout.implementable case {wf.case}: no fixy.network row on {network}")
+            ours = "admits" if measured == "true" else "refuses"
             verdict = str(answer["verdict"])
+            naive = str(answer["modes"]["naive"])  # type: ignore[index]
             valid = list(answer["valid"])  # type: ignore[call-overload]
             witness = f"  MuVal finds these queries valid: {' '.join(valid)}" if valid else ""
             row = (fam, wf.case, network, wf.global_text, verdict, ours)
-            if verdict == "gclts-ineligible":
+            if ours == "admits" and naive == "non-implementable":
+                defects.append(f"{wf.case} on {network}: {wf.global_text}")
+            if verdict != "modes-disagree" and naive != verdict:
+                out.append(Row(*row, "gap", "naive-silent",
+                               f"only the opt query generator of Sprout(A) decides this type on the network "
+                               f"{network} (naive {naive}), and only the naive one counts.{witness}"))
+            elif verdict == "gclts-ineligible":
                 out.append(Row(*row, "gap", verdict,
                                f"Sprout(A) decides implementability only for a sender-driven, sink-final, "
                                f"deterministic protocol with no global deadlock, and this protocol is outside "
@@ -1393,28 +1445,21 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
                 modes = ", ".join(f"{mode} {v}" for mode, v in answer["modes"].items())  # type: ignore[attr-defined]
                 out.append(Row(*row, "gap", verdict,
                                f"the two query generators of Sprout(A) give different verdicts on the network "
-                               f"{network} ({modes}), so neither counts.{witness}"))
+                               f"{network} ({modes}), so the pair does not count as a verdict.  The naive one "
+                               f"still bounds fixy: fixy {ours} the type.{witness}"))
             elif verdict in ("inconclusive", "no-tree"):
                 out.append(Row(*row, "gap", verdict,
                                f"Sprout(A) gives no verdict on the network {network} ({verdict})"))
-            elif network == "p2pbox" and ours == "projects" and verdict != "implementable":
-                out.append(Row(*row, "divergence", "projects-unimplementable",
-                               "ours wrong: fixy projects every role, and Sprout(A) decides that no implementation "
-                               f"on per-pair FIFO queues is free of deadlock and of communication errors "
-                               f"({cite}).{witness}"))
-            elif network == "p2pbox" and ours == "refuses" and verdict == "implementable":
-                out.append(Row(*row, "divergence", "incomplete",
-                               "ours incomplete, not unsound: fixy's projection refuses a type that an "
-                               f"implementation on per-pair FIFO queues carries ({cite}).  Projection is a "
-                               "sufficient condition only"))
-            elif network != "p2pbox" and ours == "projects" and verdict != "implementable":
-                out.append(Row(*row, "divergence", f"{network}-unimplementable",
-                               f"ours has no check that depends on the network: fixy projects every role, and "
-                               f"Sprout(A) decides that no implementation on the network {network} is free of "
-                               f"deadlock and of communication errors ({cite}).  {substrate['p2pbox']} carries "
-                               f"the type, and {substrate[network]} does not.{witness}"))
+            elif ours == "refuses" and verdict == "implementable":
+                out.append(Row(*row, "divergence", f"{network}-incomplete",
+                               f"ours incomplete, not unsound: implementable_on refuses a type that an "
+                               f"implementation on the network {network} carries ({cite}).  Projection and the "
+                               f"reductions of fixy/session/Network.h are sufficient conditions only"))
             else:
                 out.append(Row(*row, "agree", "", ""))
+    if defects:
+        raise RuntimeError("sprout.implementable: fixy admits a type that Sprout(A) refuses on the network, so a "
+                           "binding that implementable_on admits can deadlock: " + "; ".join(defects))
     return out
 
 
@@ -2383,6 +2428,7 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
             minimal = minimal_corpus(rows, cases, Evaluator(env), shrinkable)
         rows += minimal
         rows += evaluate_semantics(rows, env)
+        rows += evaluate_network(rows, env)
     rows += _derived_rows(rows)
     import ekici
     import mpstk
@@ -2396,6 +2442,7 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
         *_derived_meta(),
         f"# toolchain: {rocq.coq_version()}; for {ekici.REPO}: {ekici.coq_version()}",
         f"# relations measured at commit {measured}",
+        f"{NETWORK_MARKER}{measured}",
         f"# fixy corpora: fr seed {FIXY_SEED}, {FIXY_COUNT} types, depth {FIXY_DEPTH}; "
         f"fa seed {FIXY_ADV_SEED}, {FIXY_ADV_COUNT} types, depth {FIXY_ADV_DEPTH}",
         f"# frozen-tree corpora: r seed {OLD_SEED}, {OLD_COUNT} types over {OLD_ROLES} roles, "
@@ -2419,6 +2466,10 @@ def _write_tests(rows: list[Row]) -> None:
 
 
 DERIVED_FAMILIES = ("keskin.live", "sprout.implementable")
+# The metadata line that names the tree whose implementable_on the
+# fixy.network rows measure.  --derive with a compiler measures them again
+# at HEAD, so a change to fixy/session/Network.h needs no other oracle.
+NETWORK_MARKER = "# network verdicts measured at commit "
 
 
 def _derived_meta() -> list[str]:
@@ -2442,7 +2493,8 @@ def derive(cxx: str | None, workers: int) -> int:
     (sprout.implementable) read only the multiparty rows, so a change to
     their oracles needs no compiler and no other oracle.  With ``cxx``, the
     families of Semantics.h are measured again too, against the include tree
-    of the commit that the golden file names.
+    of the commit that the golden file names, and the network family
+    (fixy.network) against the include tree of HEAD.
     """
     import keskin
     import semantics
@@ -2456,6 +2508,12 @@ def derive(cxx: str | None, workers: int) -> int:
         base = [r for r in base if r.family not in semantics.FAMILIES]
         with measured_tree(commit) as (include, _), pch_heads(cxx, include) as heads:
             base += evaluate_semantics(base, Env(cxx, heads, workers, include))
+        base = [r for r in base if r.family != "fixy.network"]
+        with measured_tree("HEAD") as (include, network_commit), pch_heads(cxx, include) as heads:
+            base += evaluate_network(base, Env(cxx, heads, workers, include))
+        meta = [line for line in meta if not line.startswith(NETWORK_MARKER)]
+        relations = next(i for i, line in enumerate(meta) if line.startswith(marker))
+        meta.insert(relations + 1, f"{NETWORK_MARKER}{network_commit}")
     cited = (*HAND_CASES, *PAPER_OLD, *FIXY_HAND, *PAPER_FIXY)
     ours = (f"# oracle: github.com/{keskin.REPO} ", f"# oracle: doi {sprout.ARTIFACT}",
             f"# toolchain for {keskin.REPO}:", *(f"# {c.ident}: " for c in cited))
@@ -2634,7 +2692,7 @@ def _self_test(cxx: str, include: Path) -> int:
 def main(argv: list[str]) -> int:
     """Parse the command line and run one mode."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("mode", choices=("regenerate", "derive", "emit", "check", "self-test"))
+    parser.add_argument("mode", choices=("regenerate", "derive", "emit", "check", "self-test", "install-toolchain"))
     parser.add_argument("--cxx", help="the project compiler (regenerate, self-test)")
     parser.add_argument("--jobs", type=int, default=32, help="parallel probe compiles")
     parser.add_argument("--no-shrink", action="store_true",
@@ -2656,6 +2714,10 @@ def main(argv: list[str]) -> int:
         return check()
     if args.mode == "check":
         return check()
+    if args.mode == "install-toolchain":
+        import toolchain
+        LOG.info("the crash-stop toolchain is in %s", toolchain.install())
+        return 0
     return self_test(args.cxx, args.at)
 
 
