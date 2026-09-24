@@ -3021,6 +3021,34 @@ fixy_neg_compile_test(neg_handle_publish_once_copied
   "fixy::handle::PublishOnce<T>::PublishOnce\\(const fixy::handle::PublishOnce<T>&\\)"
   "copies would duplicate channel state")
 
+# PublishSlot makes its own pointee check, apart from PublishOnce's.
+fixy_neg_compile_test(neg_handle_publish_slot_pointer_pointee
+  "static assertion failed"
+  "PublishSlot<T> hands off a T\\*, so T is the pointee")
+
+# The three preconditions of SetOnce, reached in a constant evaluation.
+fixy_neg_compile_test(neg_handle_set_once_null
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .slot\\.fixy::handle::SetOnce<int>::set\\(0\\)."
+  "fixy/handle/Once\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_handle_set_once_twice
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .slot\\.fixy::handle::SetOnce<int>::set\\(\\(& second\\)\\)."
+  "fixy/handle/Once\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_handle_set_once_reset_unset
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .slot\\.fixy::handle::SetOnce<int>::reset\\(\\)."
+  "fixy/handle/Once\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+
+# Once::call and Lazy::get_or_init each refuse, at the door, an argument
+# their body cannot use as it must.
+fixy_neg_compile_test(neg_handle_once_call_not_invocable
+  "no matching function for call to .fixy::handle::Once::call\\(int\\)."
+  "the expression .is_invocable_v<F> \\[with F = int\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_handle_lazy_init_explicit_conversion
+  "no matching function for call to .fixy::handle::Lazy<int>::get_or_init"
+  "the expression .is_invocable_r_v<T, F> \\[with T = int; F = .*\\]. evaluated to .false.")
+
 # ── The fixy/os smoke tests, migrated out of the headers ─────────────
 #
 # Each of these used to be a `runtime_smoke_test` inside the header it

@@ -367,6 +367,48 @@ template <typename Body>
     return 0;
 }
 
+// ── Runtime: the preconditions no constant evaluation reaches ────────
+//
+// publish and Lazy::get read atomics, so neither is constexpr, and a
+// negative-compile fixture cannot reach their preconditions.  Each
+// refusal is observed in a child process instead.  The runs above are
+// the positive controls: a non-null publish and a get after the value is
+// built do not abort.
+[[nodiscard]] int preconditions_abort() {
+    std::fprintf(stderr, "[expected] the four contract violations below come from child processes that prove "
+                         "each precondition aborts\n");
+
+    if (!child_aborted([] {
+            h::PublishOnce<Payload> slot{};
+            slot.publish(nullptr);
+        })) {
+        std::fprintf(stderr, "PublishOnce::publish took a null pointer, which reads as never published\n");
+        return 1;
+    }
+    if (!child_aborted([] {
+            h::PublishSlot<Payload> slot{};
+            slot.publish(nullptr);
+        })) {
+        std::fprintf(stderr, "PublishSlot::publish took a null pointer, which reads as nothing pending\n");
+        return 1;
+    }
+    if (!child_aborted([] {
+            h::Lazy<int> lazy{};
+            (void)lazy.get();
+        })) {
+        std::fprintf(stderr, "Lazy::get read a value that was never built\n");
+        return 1;
+    }
+    if (!child_aborted([] {
+            const h::Lazy<int> lazy{};
+            (void)lazy.get();
+        })) {
+        std::fprintf(stderr, "the const Lazy::get read a value that was never built\n");
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -377,5 +419,6 @@ int main() {
     if (const int rc = lazy_initializes_once_single_threaded(); rc != 0) return rc;
     if (const int rc = lazy_initializes_once(); rc != 0) return rc;
     if (const int rc = double_publish_aborts(); rc != 0) return rc;
+    if (const int rc = preconditions_abort(); rc != 0) return rc;
     return 0;
 }

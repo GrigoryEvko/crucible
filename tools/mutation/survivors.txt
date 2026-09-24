@@ -59,6 +59,17 @@ include/fixy/Qtt.h | delete | operator= | ConsumeTrackerImpl& operator=(const Co
 include/fixy/Qtt.h | requires | Qtt | std::is_constructible_v<T, Args...> | the constructor is private, and its only callers are mint_linear and mint_affine, whose requires-clauses carry the same check
 include/fixy/Qtt.h | delete | operator= | Qtt& operator=(const Qtt&) | the declared move constructor and move assignment make the implicit copy assignment deleted
 include/foundation/diag/FailClosed.h | static_assert | unique_target | std::meta::is_namespace(Ns) | the next assertion calls edge_count_from<Ns, T>, whose own static_assert refuses a reflection that is not a namespace
+include/fixy/handle/PublishOnce.h | delete | operator= | PublishOnce& operator=(const PublishOnce&) | the atomic member makes the implicit copy assignment deleted
+include/fixy/handle/PublishOnce.h | delete | PublishOnce | PublishOnce(PublishOnce&&) | the declared copy constructor and destructor suppress the implicit move constructor, so an rvalue selects the deleted copy constructor
+include/fixy/handle/PublishOnce.h | delete | operator= | PublishOnce& operator=(PublishOnce&&) | the declared copy assignment and destructor suppress the implicit move assignment, so an rvalue selects the deleted copy assignment
+include/fixy/handle/PublishOnce.h | contract | publish | slot_.load(std::memory_order_relaxed) == ptr | the exchange that succeeded stored ptr, and any later publish aborts before it stores, so the condition holds on every path
+include/fixy/handle/PublishOnce.h | delete | PublishSlot | PublishSlot(const PublishSlot&) | the atomic member makes the implicit copy constructor deleted
+include/fixy/handle/PublishOnce.h | delete | operator= | PublishSlot& operator=(const PublishSlot&) | the atomic member makes the implicit copy assignment deleted
+include/fixy/handle/PublishOnce.h | delete | PublishSlot | PublishSlot(PublishSlot&&) | the declared copy constructor and destructor suppress the implicit move constructor, so an rvalue selects the deleted copy constructor
+include/fixy/handle/PublishOnce.h | delete | operator= | PublishSlot& operator=(PublishSlot&&) | the declared copy assignment and destructor suppress the implicit move assignment, so an rvalue selects the deleted copy assignment
+include/fixy/handle/Once.h | contract | set | ptr_ == p | the line above stores p, so the condition holds on every path
+include/fixy/handle/Once.h | contract | try_set | p == nullptr || ptr_ != nullptr | each exit leaves it true: a claim stores a non-null p, a refused null has p null, and a refused second set finds the slot non-null
+include/fixy/handle/Once.h | contract | reset | ptr_ == nullptr | the line above stores null, so the condition holds on every path
 include/foundation/permissions/Permission.h | concept | PermissionTag | std::is_class_v<T> | the is_empty_v conjunct beside it still refuses: std::is_empty_v is true only for a class type that is not a union
 include/foundation/permissions/Permission.h | concept | IsPermissionFor | IsPermission<T> | the is_same conjunct names the tag_type member, which only the Permission specialization of is_permission_impl declares, so a type that is not a Permission fails it by substitution
 include/foundation/permissions/Permission.h | concept | IsSharedPermissionFor | IsSharedPermission<T> | the is_same conjunct names the tag_type member, which only the SharedPermission specialization of is_shared_permission_impl declares, so a type that is not a SharedPermission fails it by substitution
