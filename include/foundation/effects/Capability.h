@@ -318,10 +318,12 @@ static_assert(CanMintCap<Effect::Bg, Bg>);
 static_assert(!CanMintCap<Effect::Init, Bg>);
 static_assert(!CanMintCap<Effect::Test, Bg>);
 
+// An init source authorizes Block, because process startup waits in the
+// kernel.  It still cannot stand in for a background or a test source.
 static_assert(CanMintCap<Effect::Alloc, Init>);
 static_assert(CanMintCap<Effect::IO, Init>);
 static_assert(CanMintCap<Effect::Init, Init>);
-static_assert(!CanMintCap<Effect::Block, Init>);
+static_assert(CanMintCap<Effect::Block, Init>);
 static_assert(!CanMintCap<Effect::Bg, Init>);
 static_assert(!CanMintCap<Effect::Test, Init>);
 

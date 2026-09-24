@@ -562,9 +562,9 @@ concept CtxCanMint = IsExecCtx<Ctx> && row_contains_v<cap_permitted_row_t<cap_ty
 
 namespace detail::ctx_witnesses {
 
-// Witnesses in the shape of the five named contexts the layer above
-// defines (fixy/Ctx.h).  They are scaffolding, not a second
-// spelling of those contexts.
+// Witnesses in the shape of the named contexts the layer above defines
+// (fixy/Ctx.h).  They are scaffolding, not a second spelling of those
+// contexts.
 //
 // They live in the header rather than in a test because Capability.h,
 // Computation.h, Permission.h and the fixtures of all three name them.
@@ -578,6 +578,7 @@ using BgWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc>>;
 using BgIoWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
 using BgBlockWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>;
 using InitWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>;
+using InitBlockWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>;
 using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>;
 
 // The five named contexts of include/crucible/effects/_ExecCtx.h, with
@@ -589,6 +590,9 @@ using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO
 // row the old tree declared, so the layer that promotes them to
 // production contexts starts from a declaration rather than from
 // memory.  The comment on each is the old tree's.
+//
+// The two load contexts are not in the old tree.  Each claims Block on
+// top of a row of the old tree, and the comment on each is new.
 
 // The context of the foreground thread that runs dispatch.
 using HotFgCtx = FgWitness;
@@ -614,6 +618,13 @@ static_assert(std::is_same_v<BgLoadCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Allo
 using ColdInitCtx = InitWitness;
 static_assert(std::is_same_v<ColdInitCtx, ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>>);
 
+// The startup load context claims Block on top of the cold init row.
+// Startup work that waits in the kernel, such as a BPF program load that
+// waits for the verifier, needs that atom.  The init capability permits
+// all four atoms, so this is the widest row an init context can claim.
+using InitLoadCtx = InitBlockWitness;
+static_assert(std::is_same_v<InitLoadCtx, ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>>);
+
 // A fixture may claim any effect this row names, and no others.  In
 // particular it cannot claim the background or initialization effects,
 // so it cannot stand in for either of those contexts.
@@ -627,6 +638,7 @@ static_assert(sizeof(BgWitness) == 1);
 static_assert(sizeof(BgIoWitness) == 1);
 static_assert(sizeof(BgBlockWitness) == 1);
 static_assert(sizeof(InitWitness) == 1);
+static_assert(sizeof(InitBlockWitness) == 1);
 static_assert(sizeof(TestWitnessCtx) == 1);
 
 // A context that holds a capability source is evidence, so no route
@@ -639,7 +651,8 @@ template <class Ctx>
 inline constexpr bool is_context_forgeable_v = std::is_trivially_copyable_v<Ctx> || std::is_implicit_lifetime_v<Ctx>;
 
 static_assert(!is_context_forgeable_v<BgWitness> && !is_context_forgeable_v<BgBlockWitness>
-                  && !is_context_forgeable_v<InitWitness> && !is_context_forgeable_v<TestWitnessCtx>,
+                  && !is_context_forgeable_v<InitWitness> && !is_context_forgeable_v<InitBlockWitness>
+                  && !is_context_forgeable_v<TestWitnessCtx>,
               "An execution context over Bg, Init or Test must have no trivial constructor, or std::bit_cast "
               "builds it from a byte and every ctx-bound gate admits the forged scope.");
 
@@ -728,7 +741,7 @@ static_assert(IsEffectRow<Row<Effect::Bg>&&>);
 
 static_assert(std::is_same_v<cap_permitted_row_t<ctx_cap::Fg>, Row<>>);
 static_assert(std::is_same_v<cap_permitted_row_t<Bg>, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>);
-static_assert(std::is_same_v<cap_permitted_row_t<Init>, Row<Effect::Init, Effect::Alloc, Effect::IO>>);
+static_assert(std::is_same_v<cap_permitted_row_t<Init>, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>);
 static_assert(std::is_same_v<cap_permitted_row_t<Test>, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>);
 
 // The witnesses already satisfy this, or their own declarations would
@@ -737,11 +750,16 @@ static_assert(Subrow<typename FgWitness::row_type, cap_permitted_row_t<typename 
 static_assert(Subrow<typename BgWitness::row_type, cap_permitted_row_t<typename BgWitness::cap_type>>);
 static_assert(Subrow<typename BgIoWitness::row_type, cap_permitted_row_t<typename BgIoWitness::cap_type>>);
 static_assert(Subrow<typename InitWitness::row_type, cap_permitted_row_t<typename InitWitness::cap_type>>);
+static_assert(Subrow<typename InitBlockWitness::row_type, cap_permitted_row_t<typename InitBlockWitness::cap_type>>);
 static_assert(Subrow<typename TestWitnessCtx::row_type, cap_permitted_row_t<typename TestWitnessCtx::cap_type>>);
 
 static_assert(!WellFormedExecCtx<ctx_cap::Fg, Row<Effect::Bg>>,
               "A foreground source permits the empty row only; a context claiming Bg on it is ill-formed.");
-static_assert(!WellFormedExecCtx<Init, Row<Effect::Block>>, "An init source never permits Block.");
+static_assert(!WellFormedExecCtx<ctx_cap::Fg, Row<Effect::Block>>,
+              "A foreground source never permits Block, so the hot path cannot claim it.");
+static_assert(WellFormedExecCtx<Init, Row<Effect::Init, Effect::Block>>,
+              "An init source permits Block, because process startup waits in the kernel.");
+static_assert(!WellFormedExecCtx<Init, Row<Effect::Bg>>, "An init source cannot stand in for a background one.");
 static_assert(!WellFormedExecCtx<Test, Row<Effect::Bg>>, "A test source cannot stand in for a background one.");
 static_assert(!WellFormedExecCtx<int, Row<>>);
 
@@ -783,6 +801,8 @@ static_assert(CtxOwnsCapability<BgWitness, Effect::Alloc>);
 static_assert(!CtxOwnsCapability<BgWitness, Effect::IO>);
 static_assert(CtxOwnsCapability<BgIoWitness, Effect::IO>);
 static_assert(!CtxOwnsCapability<FgWitness, Effect::Bg>);
+static_assert(!CtxOwnsCapability<InitWitness, Effect::Block>);
+static_assert(CtxOwnsCapability<InitLoadCtx, Effect::Block>);
 
 static_assert(CtxOwnsAnyOf<BgWitness, Effect::Bg, Effect::IO>,
               "The disjunctive lift must accept a row that carries one of the named atoms.");
@@ -807,6 +827,8 @@ static_assert(CtxOwnsAllOf<BgWitness, Effect::Bg> == CtxOwnsCapability<BgWitness
 
 // The background witness claims two effects but its source permits
 // four, so the next assertions differ from the ownership ones above.
+// The init witness claims three and its source permits four in the same
+// way.
 static_assert(CtxCanMint<BgWitness, Effect::Alloc>);
 static_assert(CtxCanMint<BgWitness, Effect::IO>);
 static_assert(CtxCanMint<BgWitness, Effect::Block>);
@@ -815,7 +837,8 @@ static_assert(!CtxCanMint<BgWitness, Effect::Init>);
 static_assert(CtxCanMint<BgCompileCtx, Effect::Block>);
 static_assert(CtxCanMint<InitWitness, Effect::Alloc>);
 static_assert(CtxCanMint<InitWitness, Effect::IO>);
-static_assert(!CtxCanMint<InitWitness, Effect::Block>);
+static_assert(CtxCanMint<InitWitness, Effect::Block>);
+static_assert(!CtxCanMint<InitWitness, Effect::Bg>);
 static_assert(!CtxCanMint<FgWitness, Effect::Alloc>);
 static_assert(!CtxCanMint<FgWitness, Effect::Bg>);
 static_assert(CtxCanMint<TestWitnessCtx, Effect::Block>);

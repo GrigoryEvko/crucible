@@ -238,9 +238,8 @@ static_assert(std::is_empty_v<cap::Alloc>,
               "accessor, or carry the state on the linear capability token instead.");
 static_assert(std::is_empty_v<cap::IO>, "cap::IO must remain stateless.  Bg, Init and Test expose a public "
                                         "field of this type.");
-static_assert(std::is_empty_v<cap::Block>, "cap::Block must remain stateless.  Bg and Test expose a public "
-                                           "field of this type.  Init omits it because an init context must "
-                                           "not block.");
+static_assert(std::is_empty_v<cap::Block>, "cap::Block must remain stateless.  Bg, Init and Test expose a "
+                                           "public field of this type.");
 
 using Alloc = cap::Alloc;
 using IO = cap::IO;
@@ -426,11 +425,13 @@ private:
 
 }  // namespace detail
 
-// A context names the atoms a thread or scope may exercise.  Init
-// omits Block because an initialization scope must never wait on a
-// synchronization primitive.  Test is not a superset of Bg or Init: a
-// fixture that must drive a background or initialization path
-// constructs that context explicitly rather than passing a Test one.
+// A context names the atoms a thread or scope may exercise.  Init holds
+// Block, because process startup waits in the kernel, for example while
+// the verifier examines a BPF program.  The hot path stays free of Block,
+// because the foreground source permits no atom.  Test is not a superset
+// of Bg or Init: a fixture that must drive a background or
+// initialization path constructs that context explicitly rather than
+// passing a Test one.
 //
 // Each context has a private default constructor and befriends the one
 // factory, whose constraint admits the context's own passkey and no
@@ -452,7 +453,8 @@ class Bg final
     friend constexpr Ctx mint_context(Key) noexcept;
 };
 
-class Init final : public detail::ContextBase<Init, detail::ctx_mint::init_key, Effect::Init, Effect::Alloc, Effect::IO> {
+class Init final
+    : public detail::ContextBase<Init, detail::ctx_mint::init_key, Effect::Init, Effect::Alloc, Effect::IO, Effect::Block> {
     constexpr Init() noexcept = default;
 
     template <class Ctx, class Key>

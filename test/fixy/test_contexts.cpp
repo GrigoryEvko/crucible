@@ -1,8 +1,8 @@
-// Sentinel TU for fixy/Ctx.h: the five production contexts are the
-// rows the old tree declared and the shapes foundation recorded, a
-// body gated on a row resolves for the contexts that own it and for no
-// other, and every context is built at run time from the capability
-// it claims.
+// Sentinel TU for fixy/Ctx.h: the production contexts are the rows the
+// old tree declared, or one of those rows widened by Block, and the
+// shapes foundation recorded.  A body gated on a row resolves for the
+// contexts that own it and for no other, and every context is built at
+// run time from the capability it claims.
 //
 // The header self-test pins the shapes.  What this file adds is the
 // scenarios: a gated call, a row widened from one production context
@@ -26,6 +26,7 @@ using ::fixy::BgCompileCtx;
 using ::fixy::BgDrainCtx;
 using ::fixy::ColdInitCtx;
 using ::fixy::HotFgCtx;
+using ::fixy::InitLoadCtx;
 using ::fixy::TestRunnerCtx;
 
 // ---------------------------------------------------------------------
@@ -113,7 +114,14 @@ template <class Ctx>
 concept CanClaimBg = requires(Ctx const& ctx) { ctx.template in_row<Row<Effect::Bg>>(); };
 static_assert(CanWidenByBlock<BgDrainCtx>);
 static_assert(!CanClaimBg<HotFgCtx>);
-static_assert(!CanWidenByBlock<ColdInitCtx>, "an init source never permits Block, and its row is not the drain row");
+static_assert(!CanWidenByBlock<ColdInitCtx>, "the init row is not a subrow of the drain row, and an init source permits no Bg");
+
+// The cold init context widens by Block into the startup load context,
+// because its source permits Block.  The two production names are one
+// promotion apart, as the drain and the compile contexts are.
+static_assert(std::is_same_v<decltype(std::declval<ColdInitCtx const&>()
+                                          .in_row<Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>()),
+                             InitLoadCtx>);
 
 // ---------------------------------------------------------------------
 // A static_assert proves the constant-evaluated path only.  These run.
@@ -146,7 +154,14 @@ static_assert(!CanWidenByBlock<ColdInitCtx>, "an init source never permits Block
     BgCompileCtx widened = drain.in_row<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
     if (needs_io(widened) != 7) return 7;
 
-    if (sizeof(fg) != 1 || sizeof(drain) != 1 || sizeof(compile) != 1 || sizeof(cold) != 1 || sizeof(test_ctx) != 1) {
+    // The cold init context widened by Block is the startup load context,
+    // and it carries the init capability, which holds a block.
+    InitLoadCtx load = cold.in_row<Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>();
+    [[maybe_unused]] fe::cap::Block block_tag = load.cap().block;
+    if (needs_io(load) != 7) return 9;
+
+    if (sizeof(fg) != 1 || sizeof(drain) != 1 || sizeof(compile) != 1 || sizeof(cold) != 1 || sizeof(load) != 1
+        || sizeof(test_ctx) != 1) {
         return 8;
     }
     return 0;

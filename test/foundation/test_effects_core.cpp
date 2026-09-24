@@ -73,12 +73,15 @@ static_assert(std::is_same_v<fe::Init::key_type, fe::detail::ctx_mint::init_key>
 static_assert(std::is_same_v<fe::Test::key_type, fe::detail::ctx_mint::test_key>);
 static_assert(std::is_same_v<fe::Bg::permitted_as<RowProbe>,
                              RowProbe<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<fe::Init::permitted_as<RowProbe>, RowProbe<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO>>);
+static_assert(std::is_same_v<fe::Init::permitted_as<RowProbe>,
+                             RowProbe<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::Test::permitted_as<RowProbe>,
                              RowProbe<fe::Effect::Test, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>);
 
-// The fields are the holdings and nothing else: Init has no block to
-// hand to a function that waits.
+// The fields are the holdings and nothing else.  Each of the three
+// contexts has a block to give to a function that waits, because process
+// startup waits in the kernel too.  A lookalike with no Block holding
+// has no field of that name.
 template <class C>
 concept HoldsBlock = requires(C const& c) { c.block; };
 template <class C>
@@ -87,8 +90,10 @@ concept HoldsAllocAndIo = requires(C const& c) {
     c.io;
 };
 static_assert(HoldsAllocAndIo<fe::Bg> && HoldsAllocAndIo<fe::Init> && HoldsAllocAndIo<fe::Test>);
-static_assert(HoldsBlock<fe::Bg> && HoldsBlock<fe::Test> && !HoldsBlock<fe::Init>);
+static_assert(HoldsBlock<fe::Bg> && HoldsBlock<fe::Test> && HoldsBlock<fe::Init>);
+static_assert(!HoldsBlock<Lookalike>);
 static_assert(std::is_same_v<decltype(fe::testing::init().alloc), fe::cap::Alloc>);
+static_assert(std::is_same_v<decltype(fe::testing::init().block), fe::cap::Block>);
 static_assert(std::is_same_v<decltype(fe::testing::bg().block), fe::cap::Block>);
 
 // The mask lattice is a Row, and the two row spellings agree on
@@ -208,6 +213,7 @@ int main() {
     [[maybe_unused]] fe::cap::Block blk_bg = bg.block;
     [[maybe_unused]] fe::cap::Alloc a_init = init.alloc;
     [[maybe_unused]] fe::cap::IO io_init = init.io;
+    [[maybe_unused]] fe::cap::Block blk_init = init.block;
     [[maybe_unused]] fe::cap::Block blk_test = test.block;
     if (with_alloc(bg.alloc) != 42) return 1;
     if (with_alloc(test.alloc) != 42) return 2;
