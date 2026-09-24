@@ -12,7 +12,9 @@ namespace {
 struct CapturedCall {
     std::atomic<int> count{0};
     crucible::safety::diag::Category last_cat{crucible::safety::diag::Category::EffectRowMismatch};
-    char last_fn[128]{};
+    // The runtime formats "<file>:<line>:<column>@<function>" into 2048
+    // bytes. A shorter buffer cuts the function name off in a deep checkout.
+    char last_fn[2048]{};
     char last_detail[256]{};
 };
 

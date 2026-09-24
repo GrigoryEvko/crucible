@@ -381,7 +381,9 @@ void test_insights_runtime() {
 struct CapturedCall {
     std::atomic<int> count{0};
     diag::Category last_cat{diag::Category::EffectRowMismatch};
-    char last_fn[512]{};
+    // The runtime formats "<file>:<line>:<column>@<function>" into 2048
+    // bytes. A shorter buffer cuts the function name off in a deep checkout.
+    char last_fn[2048]{};
     char last_detail[256]{};
 };
 
