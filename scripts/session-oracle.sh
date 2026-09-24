@@ -106,7 +106,9 @@
 #      10.5281/zenodo.19600644, then load it:
 #        podman load -i sprout-a.tar
 #      The image is built for arm64.  On x86_64, podman runs it with
-#      qemu-user-static, which is slow but gives the same verdicts.
+#      qemu-user-static, and a MuVal query is 50 to 80 times slower than on
+#      arm64.  Then most multiparty cases exceed the query budget, and
+#      their rows are gaps (inconclusive).  Run --derive on an arm64 host.
 #   5. The crash-stop oracle needs a Java 17 runtime, sbt (the build of
 #      the pinned commit asks for sbt 1.6.1 and downloads it), and the
 #      mCRL2 tools mcrl22lps, lps2pbes and pbes2bool.  Put the three on
