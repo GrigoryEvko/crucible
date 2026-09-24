@@ -231,9 +231,14 @@ struct Port {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
-// Every message of these binary views is keyed, so each is its label word.
+// Every message of these binary views is keyed, so each is its label word
+// and then its value.
 constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
     port.out->slots.push_back(label);
+    return true;
+};
+constexpr auto push_int = [](Port& port, int& value) noexcept {
+    port.out->slots.push_back(static_cast<std::uint64_t>(static_cast<std::uint32_t>(value)));
     return true;
 };
 // A crash-watched reception reads with no wait: the word when one is
@@ -243,6 +248,10 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
     return static_cast<std::size_t>(slot);
+};
+constexpr auto poll_int = [](Port& port) noexcept -> std::optional<int> {
+    return poll_label(port).transform(
+        [](std::size_t slot) noexcept { return static_cast<int>(static_cast<std::uint32_t>(slot)); });
 };
 
 namespace {
@@ -262,28 +271,36 @@ int run_sender_crashes_after_send() {
     auto p = s::mint_crash_session<BinaryP, P, Q>(Port{&to_p, &to_q}, cell_q);
     auto q = s::mint_crash_session<BinaryQ, Q, P>(Port{&to_q, &to_p}, cell_p);
 
-    auto [p_wait, p_lost] = std::move(p).send(push_label);
-    if (p_lost) return fail("a message to a live peer came back");
-    if (to_q.slots.size() != 1 || to_q.slots.front() != s::step_wire_word_v<BinaryP>) {
-        return fail("the keyed send did not write its label word, and only that word");
+    auto [p_value, p_label_lost] = std::move(p).send(push_label);
+    if (p_label_lost) return fail("a label to a live peer came back");
+    auto [p_wait, p_value_lost] = std::move(p_value).send(11, push_int);
+    if (p_value_lost) return fail("a value to a live peer came back");
+    if (to_q.slots.size() != 2 || to_q.slots.front() != s::step_wire_word_v<BinaryP> || to_q.slots.back() != 11) {
+        return fail("the keyed send did not write its label word and then its value");
     }
     (void)std::move(p_wait).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
 
-    bool took_message = false;
-    std::move(q).branch(poll_label, [&](auto q_reply) noexcept {
-        using Head = typename decltype(q_reply)::protocol;
+    int value_on_q = 0;
+    bool reply_was_lost = false;
+    std::move(q).branch(poll_label, [&](auto q_value) noexcept {
+        using Head = typename decltype(q_value)::protocol;
         if constexpr (s::is_crash_branch_v<Head>) {
             std::fprintf(stderr, "q detected the crash before the queued message\n");
             std::abort();
         } else {
-            // The word was the whole message, so q stands at its reply.
-            auto [q_end, q_reply_lost] = std::move(q_reply).send(push_label);
-            took_message = q_reply_lost.has_value();
+            // The label word and the value are one message, and it came
+            // before the crash, so q reads the value and then replies.
+            auto [value, q_reply] = std::move(q_value).recv(poll_int);
+            value_on_q = value;
+            auto [q_reply_value, q_label_lost] = std::move(q_reply).send(push_label);
+            auto [q_end, q_value_lost] = std::move(q_reply_value).send(value + 1, push_int);
+            reply_was_lost = q_label_lost.has_value() && q_value_lost == value + 1;
             (void)std::move(q_end).close();
         }
     });
     if (!to_p.slots.empty()) return fail("a message reached the queue of a crashed peer");
-    return took_message ? 0 : fail("q did not receive the queued message or its reply was not lost");
+    if (value_on_q != 11) return fail("q did not read the value of the queued message");
+    return reply_was_lost ? 0 : fail("the reply of q to the crashed p was not lost");
 }
 
 // p crashes before it sends.  q detects the crash with its cause.

@@ -1048,6 +1048,8 @@ inline constexpr StatedZero kZeros[] = {
      "handle, and it is never a template argument of a kernel signature"},
     {^^::fixy::session::is_permission_classified, kMetafunction},
     {^^::fixy::session::payload_perm_delta, kMetafunction},
+    {^^::fixy::session::keyed_value, kMetafunction},
+    {^^::fixy::session::keyed_landing, kMetafunction},
     {^^::fixy::session::is_plain_payload, kMetafunction},
     {^^::fixy::session::MoveOnlyResource,
      "an empty member that deletes the copy of a session Resource: it holds nothing, makes no claim, and is "

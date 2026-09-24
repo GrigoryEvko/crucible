@@ -1,6 +1,7 @@
 // A Send of a PeerMsg is keyed, as the projection writes a message: its
-// label word is the whole message, so the step sends no value.  A call
-// that passes the message as a value is refused.
+// label step sends the label word, and the value step after it sends the
+// value.  A call that passes the message as a value to the label step is
+// refused.
 
 #include <fixy/session/Handle.h>
 #include <fixy/session/Projection.h>

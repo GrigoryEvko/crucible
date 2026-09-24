@@ -994,8 +994,8 @@ namespace detail {
                    "Two distinct types that print one name, for example two closure types, share a word";
         case choice_fault::keyed_label_below_root:
             return "a label branch of a keyed choice starts with a wrapper or a binder, not with its label step.  The "
-                   "label word is the whole message of the branch, so the endpoint enters the branch past its label "
-                   "step, and a wrapper or a loop entry above that step has no place on the wire";
+                   "endpoint enters the branch past the label word of that step, so a wrapper or a loop entry above "
+                   "the step has no place on the wire";
         default:
             break;
     }

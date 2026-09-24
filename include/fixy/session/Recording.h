@@ -299,9 +299,11 @@ public:
                                      "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
                                      "wait where the watch of fixy/session/Watch.h does not see it.");
 
-    // A keyed message is its label word.  The transport of the send is a
-    // write of the word, and the event records the message as a send,
-    // delivered unless the peer had crashed.
+    // A keyed message is its label word and then the value of its payload.
+    // The transport of this send is a write of the word, and the event
+    // records the message as a send, delivered unless the peer had
+    // crashed.  The value step that follows is a plain send, and it records
+    // one more Send event, of the payload.
     template <typename Transport>
         requires is_send_v<protocol> && is_keyed_step_v<protocol>
                  && WriteTransport<Transport, resource_type, std::size_t>
@@ -329,7 +331,9 @@ public:
                                      "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
                                      "another shape can wait where the watch of fixy/session/Watch.h does not see it.");
 
-    // The keyed receive gives the handle at the continuation and no value.
+    // The keyed receive reads the label word.  It gives the handle at the
+    // value step, or past the message when the payload is void, and no
+    // value.
     template <typename Transport>
         requires is_recv_v<protocol> && is_keyed_step_v<protocol>
                  && ReadTransport<Transport, resource_type, std::size_t>

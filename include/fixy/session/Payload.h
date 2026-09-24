@@ -25,6 +25,11 @@
 //                            move with it.
 //   SharedReader<Tag>        A read share of a pool.  No set changes,
 //                            because the pool counts its shares.
+//   PeerMsg<Q, L, U>, Labelled<L, U>
+//                            A keyed message.  Its payload U changes the
+//                            sets as a member of the message does.  The
+//                            value step of the handle moves U after the
+//                            label word (fixy/session/Handle.h).
 //
 // A bare Permission in a payload moves as a Transferable does.
 //
@@ -591,6 +596,14 @@ struct PayloadAccount {
             }
             if (family == ^^SharedReader) {
                 if (owned_or_refuse(node)) account.carries_share = true;
+                continue;
+            }
+            // A keyed message is its label word and then the value of its
+            // payload, which the value step of the handle moves.  The
+            // payload counts as a member of the message.  A payload of
+            // void is no class, so it adds nothing.
+            if (family == ^^PeerMsg || family == ^^Labelled) {
+                pending.push_back(Node{refl::bare_type(arguments.back()), true, node.reach, node.in_ct_carrier});
                 continue;
             }
             // The carrier declassifies at the transport, so the Secret it

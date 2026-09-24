@@ -1360,6 +1360,11 @@ fixy_test(test_session_entry)
 # registers a combinator of its own, and main compares their words.
 fixy_test(test_session_wire_word test_session_wire_word.cpp test_session_wire_word_peer.cpp)
 
+# A keyed message is its label word and then its value.  Two roles of a
+# projected global type run on two threads over one channel, and each
+# side checks the value that it reads.
+fixy_test(test_session_projected_value)
+
 # The adversarial campaign: legal code that tries to drop a protocol,
 # reuse a handle or make a deadlock.  Each attack runs in a child process
 # with a deadline, and the attacks that succeed are pinned on a ledger
@@ -1684,7 +1689,8 @@ fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
 
 # A keyed step is a choice of one branch.  A keyed label branch is its
 # label step, a keyed step needs a keyed choice in its registration, and
-# a keyed Send sends no value.  A keyed step refines a choice by label.
+# the label step of a keyed Send takes no value: the value step after it
+# sends the value.  A keyed step refines a choice by label.
 fixy_neg_compile_test(neg_sess_wf_keyed_label_under_loop
   "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
   "a label branch of a keyed choice starts with a wrapper or a binder")
@@ -1699,10 +1705,10 @@ fixy_neg_compile_test(neg_sess_wf_keyed_step_without_keyed_choice_input
   "is_well_formed_v<Proto> \\[with Proto = .*Absorb<fixy::session::PeerMsg<.*Hello, int>")
 fixy_neg_compile_test(neg_sess_keyed_send_with_value
   "use of deleted function"
-  "Keyed_Message_Has_No_Value\\] a Send of a PeerMsg or a Labelled is keyed")
+  "Keyed_Label_Takes_No_Value\\] a Send of a PeerMsg or a Labelled is keyed")
 fixy_neg_compile_test(neg_sess_keyed_send_with_value_peer_msg
   "use of deleted function"
-  "Keyed_Message_Has_No_Value\\] a Send of a PeerMsg or a Labelled is keyed")
+  "Keyed_Label_Takes_No_Value\\] a Send of a PeerMsg or a Labelled is keyed")
 fixy_neg_compile_test(neg_sess_subtype_keyed_step_label_set_input
   "fixy::session::diagnostic \\[Subtype_LabelSet\\]: assert_subtype_sync"
   "The failed pair is .*Offer<.*L1, int>.* against .*Recv<.*L2, int>")
@@ -2069,6 +2075,10 @@ fixy_neg_compile_test(neg_sess_crash_token_not_held
 fixy_neg_compile_test(neg_sess_crash_between_label_and_payload
   "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
   "CrashWatched<Handle, Self, Peer, Reliable, Position>::crash\\(")
+# The label word of a keyed message and its value are one message too.
+fixy_neg_compile_test(neg_sess_crash_between_keyed_label_and_value
+  "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
+  "CrashWatched<Handle, Self, Peer, Reliable, Position>::crash\\(.*\\[with P = fixy::session::Send<int, fixy::session::End>. Handle = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_crash_between_keyed_label_and_value_types::Wire")
 fixy_neg_compile_test(neg_sess_crash_recorded_between_label_and_payload
   "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
   "required from .fixy::session::Recorded<Inner>::resource_type fixy::session::Recorded<Inner>::crash\\(")

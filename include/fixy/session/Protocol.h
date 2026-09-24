@@ -437,7 +437,8 @@ using protocol_inner_t = typename is_vendor_pinned<P>::protocol;
 
 // A Send or a Recv whose payload names a label key, a PeerMsg or a
 // Labelled.  Outside a choice it is the Select or the Offer of that one
-// branch, and its whole message is the label word below.
+// branch.  Its message is the label word below, and then the value of its
+// payload when the payload is not void (fixy/session/Handle.h).
 template <typename P>
 inline constexpr bool is_keyed_step_v =
     ::foundation::algebra::transition::is_keyed_step_type(detail::protocol_registry, ^^P);

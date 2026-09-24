@@ -32,6 +32,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -450,49 +451,74 @@ static_assert(s::branch_wire_word_v<PlainOffer, 1> == 1 && s::branch_of_wire_wor
 static_assert(s::branch_of_wire_word<PlainOffer>(s::branch_wire_word_v<KeyedSelect, 0>) == s::no_branch,
               "a label word is no position");
 
-// One word that the two ends share.  It is Pinned, so each handle holds
-// it by reference and no copy of a pointer to it exists.
-struct WordWire : ::foundation::Pinned<WordWire> {
-    std::uint64_t word = 0;
+// A queue of words that the two ends share, in the order of the writes.
+// The two ends take turns, so one queue carries each direction.  It is
+// Pinned, so each handle holds it by reference and no copy of a pointer to
+// it exists.  A label word and a value each take one word.
+struct WordQueue : ::foundation::Pinned<WordQueue> {
+    std::array<std::uint64_t, 8> words{};
+    std::size_t head = 0;
+    std::size_t tail = 0;
+};
+
+constexpr auto push_word = [](WordQueue& queue, std::size_t word) noexcept {
+    if (queue.tail == queue.words.size()) return false;
+    queue.words[queue.tail++] = word;
+    return true;
+};
+constexpr auto push_int = [](WordQueue& queue, int& value) noexcept {
+    if (queue.tail == queue.words.size()) return false;
+    queue.words[queue.tail++] = static_cast<std::uint64_t>(value);
+    return true;
+};
+constexpr auto pop_word = [](WordQueue& queue) noexcept -> std::optional<std::size_t> {
+    if (queue.head == queue.tail) return std::nullopt;
+    return static_cast<std::size_t>(queue.words[queue.head++]);
+};
+constexpr auto pop_int = [](WordQueue& queue) noexcept -> std::optional<int> {
+    if (queue.head == queue.tail) return std::nullopt;
+    return static_cast<int>(queue.words[queue.head++]);
 };
 
 // The Select holds Hello first and the Offer holds it second.  The word
-// of Hello reaches the Hello branch.
+// of Hello reaches the Hello branch, and the value of Hello follows it.
 [[nodiscard]] int walk_keyed_choice_in_another_order() {
-    WordWire wire{};
-    auto sender = s::mint_session_handle<KeyedSelect, WordWire&>(wire);
-    auto receiver = s::mint_session_handle<KeyedOfferSwapped, WordWire&>(wire);
+    WordQueue wire{};
+    auto sender = s::mint_session_handle<KeyedSelect, WordQueue&>(wire);
+    auto receiver = s::mint_session_handle<KeyedOfferSwapped, WordQueue&>(wire);
 
-    // The word is the whole keyed message, so the sender stands at the
-    // reply of Hello, past its label step.
-    auto awaiting = std::move(sender).select<0>([](WordWire& box, std::size_t word) noexcept {
-        box.word = word;
-        return true;
-    });
+    // The select sends the label word of Hello, and the sender then stands
+    // at the value step of Hello.
+    auto value_step = std::move(sender).select<0>(push_word);
+    static_assert(std::is_same_v<typename decltype(value_step)::protocol, s::Send<int, s::Recv<int, s::End>>>);
+    auto awaiting = std::move(value_step).send(5, push_int);
     static_assert(std::is_same_v<typename decltype(awaiting)::protocol, s::Recv<int, s::End>>);
 
-    const int taken = std::move(receiver).branch(
-        [](WordWire& box) noexcept -> std::optional<std::size_t> { return box.word; },
-        [](auto branch_handle) {
-            using B = typename decltype(branch_handle)::protocol;
-            if constexpr (std::is_same_v<B, s::Send<int, s::End>>) {
-                auto at_end = std::move(branch_handle).send(7, [](WordWire& box, int& value) noexcept {
-                    box.word = static_cast<std::uint64_t>(value);
-                    return true;
-                });
-                (void)std::move(at_end).close();
-                return 0;
-            } else {
-                (void)std::move(branch_handle).close();
-                return 1;
-            }
-        });
+    int hello_value = 0;
+    const int taken = std::move(receiver).branch(pop_word, [&hello_value](auto branch_handle) {
+        using B = typename decltype(branch_handle)::protocol;
+        if constexpr (std::is_same_v<B, s::Recv<int, s::Send<int, s::End>>>) {
+            auto [value, replying] = std::move(branch_handle).recv(pop_int);
+            hello_value = value;
+            auto at_end = std::move(replying).send(7, push_int);
+            (void)std::move(at_end).close();
+            return 0;
+        } else {
+            auto [value, at_end] = std::move(branch_handle).recv(pop_int);
+            static_cast<void>(value);
+            (void)std::move(at_end).close();
+            return 1;
+        }
+    });
     if (taken != 0) {
         std::fprintf(stderr, "the label word of Hello did not reach the Hello branch of the peer\n");
         return 1;
     }
-    auto [reply, sender_end] =
-        std::move(awaiting).recv([](WordWire& box) noexcept { return std::optional{static_cast<int>(box.word)}; });
+    if (hello_value != 5) {
+        std::fprintf(stderr, "the value of Hello is %d on the receiving side, want 5\n", hello_value);
+        return 1;
+    }
+    auto [reply, sender_end] = std::move(awaiting).recv(pop_int);
     (void)std::move(sender_end).close();
     return reply == 7 ? 0 : 1;
 }

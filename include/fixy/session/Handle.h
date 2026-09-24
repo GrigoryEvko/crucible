@@ -1138,6 +1138,64 @@ public:
     }
 };
 
+// ── The value of a keyed message ─────────────────────────────────────
+//
+// A keyed message, a PeerMsg or a Labelled, is its label word and then
+// the value of its payload.  The label step sends or reads the word.  The
+// handle then stands at the value step, a plain Send or Recv of the
+// payload, which moves the value through a transport of that type.  A
+// payload of void has no value.  The label word is then the whole
+// message, and the handle stands past the label step.
+//
+// The label step and the value step are one message.  The crash transport
+// of fixy/session/CrashTransport.h counts them as one message, and it
+// refuses a crash between them.  The label step does not change the
+// permission set.  The value step changes it, as each plain Send or Recv
+// of the payload does.  The payload walk of fixy/session/Payload.h reads
+// the payload of a keyed message, so the permission flow of the whole
+// protocol changes the set at the same message.
+
+// The payload of a keyed message.  Only PeerMsg and Labelled are keyed,
+// because the payload rules of fixy/session/Protocol.h are sealed.  The
+// primary has no definition, so a message of another shape stops the
+// build.
+template <typename Message>
+struct keyed_value;
+template <typename Peer, typename Label, typename Payload>
+struct keyed_value<PeerMsg<Peer, Label, Payload>> {
+    using type = Payload;
+};
+template <typename Label, typename Payload>
+struct keyed_value<Labelled<Label, Payload>> {
+    using type = Payload;
+};
+
+template <typename Message>
+using keyed_value_t = typename keyed_value<Message>::type;
+
+// The position after the label word of a keyed step: the value step, or
+// the continuation when the payload is void.  The template parameters of
+// the partial specializations have the names that the handle classes use,
+// because GCC can print a Send or a Recv with the names of another
+// specialization, and the fixtures match the printed names.
+template <typename Step>
+struct keyed_landing;
+template <typename T, typename R>
+struct keyed_landing<Send<T, R>> {
+    using type = std::conditional_t<std::is_void_v<keyed_value_t<T>>, R, Send<keyed_value_t<T>, R>>;
+};
+template <typename T, typename R>
+struct keyed_landing<Recv<T, R>> {
+    using type = std::conditional_t<std::is_void_v<keyed_value_t<T>>, R, Recv<keyed_value_t<T>, R>>;
+};
+
+template <typename Step>
+using keyed_landing_t = typename keyed_landing<Step>::type;
+
+// True when the message of a keyed step has a value.
+template <typename Step>
+inline constexpr bool keyed_step_has_value_v = !std::is_void_v<keyed_value_t<typename Step::message_type>>;
+
 template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>
     : public detail::handle_core<Send<T, R>, Resource, LoopCtx, Policy, PS> {
@@ -1154,9 +1212,11 @@ public:
     using message_type = T;
     using continuation = R;
 
-    // A keyed message (a PeerMsg or a Labelled) holds no value: its label
-    // word is the whole message.  The step is a Select of one branch, and
-    // it sends that word as the Select does (fixy/session/Protocol.h).
+    // A keyed message (a PeerMsg or a Labelled) is its label word and then
+    // the value of its payload.  The step is a Select of one branch, and it
+    // sends the word as the Select does (fixy/session/Protocol.h).  The
+    // value step then sends the value (the section on the value of a keyed
+    // message above).
     static constexpr bool is_keyed = is_keyed_step_v<Send<T, R>>;
 
     // The Transport is what physically moves the value to the peer.  It
@@ -1189,7 +1249,8 @@ public:
 
     // Sends the label word of the message through Transport, a write of a
     // std::size_t word.  The peer can hold an Offer with more labels, and
-    // it enters the branch of this word.
+    // it enters the branch of this word.  The returned handle stands at the
+    // value step, or past the message when its payload is void.
     template <typename Transport>
         requires is_keyed && WriteTransport<Transport, Resource, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && noexcept(
@@ -1200,7 +1261,7 @@ public:
         std::size_t word = static_cast<std::size_t>(step_wire_word_v<Send<T, R>>);
         detail::write_through<std::size_t>(transport, this->live_resource_(), word, this->session_().endpoint);
         const watch::session_ref session = this->session_();
-        return HandleFactory::step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
+        return HandleFactory::step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(
             this->take_resource_(), session);
     }
 
@@ -1213,9 +1274,10 @@ public:
 
     template <typename U, typename Transport>
         requires is_keyed
-    void send(U&&, Transport) && = delete("[Keyed_Message_Has_No_Value] a Send of a PeerMsg or a Labelled is keyed: its "
-                                          "label word is the whole message, so the step sends no value.  Call "
-                                          "send(transport) with a write of a std::size_t word.");
+    void send(U&&, Transport) && = delete("[Keyed_Label_Takes_No_Value] a Send of a PeerMsg or a Labelled is keyed: "
+                                          "this step sends only its label word.  Call send(transport) with a write "
+                                          "of a std::size_t word.  The handle then stands at the value step, which "
+                                          "sends the value of the payload.");
 };
 
 template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
@@ -1234,8 +1296,9 @@ public:
     using message_type = T;
     using continuation = R;
 
-    // A keyed message holds no value: the step is an Offer of one branch,
-    // and it reads the label word as the Offer does.
+    // A keyed message is its label word and then the value of its payload.
+    // The step is an Offer of one branch, and it reads the label word as the
+    // Offer does.  The value step then reads the value.
     static constexpr bool is_keyed = is_keyed_step_v<Recv<T, R>>;
 
     // The Transport has one of the two read shapes above the handle
@@ -1266,10 +1329,10 @@ public:
                                      "wait where the watch of fixy/session/Watch.h does not see it.");
 
     // Reads the label word of the message through Transport, a read of a
-    // std::size_t word, and returns the handle at the continuation.  A
-    // word other than the label word of this message aborts: the peer sent
-    // a label that this position does not accept, as a word that names no
-    // branch of an Offer aborts.
+    // std::size_t word.  It returns the handle at the value step, or past
+    // the message when its payload is void.  A word other than the label
+    // word of this message aborts: the peer sent a label that this position
+    // does not accept, as a word that names no branch of an Offer aborts.
     template <typename Transport>
         requires is_keyed && ReadTransport<Transport, Resource, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
@@ -1296,7 +1359,7 @@ private:
             std::abort();
         }
         const watch::session_ref session = this->session_();
-        return HandleFactory::step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
+        return HandleFactory::step_<keyed_landing_t<Recv<T, R>>, Resource, LoopCtx, Policy, PS>(
             this->take_resource_(), session);
     }
 };
@@ -1380,7 +1443,7 @@ template <typename Choice, std::size_t I>
 consteval auto branch_landing_of() {
     using Branch = std::tuple_element_t<I, typename Choice::branches_tuple>;
     if constexpr (is_keyed_choice_v<Choice> && wire_words_v<Choice>[I].is_wired) {
-        return std::type_identity<typename Branch::next>{};
+        return std::type_identity<keyed_landing_t<Branch>>{};
     } else {
         return std::type_identity<Branch>{};
     }
@@ -1388,18 +1451,20 @@ consteval auto branch_landing_of() {
 
 }  // namespace detail
 
-// The protocol at which a choice enters branch I: past the label step in
-// a label branch of a keyed choice, and at the branch otherwise.  A
-// decorator that tracks the protocol of its inner handle reads it here.
+// The protocol at which a choice enters branch I.  A label branch of a
+// keyed choice enters past its label word: at the value step, or past the
+// message when its payload is void.  Every other branch enters at the
+// branch.  A decorator that tracks the protocol of its inner handle reads
+// it here.
 template <typename Choice, std::size_t I>
 using branch_landing_t = typename decltype(detail::branch_landing_of<Choice, I>())::type;
 
 // The handle that a choice enters for branch I.  A label branch of a
 // keyed choice is its label step (rule 6 of the section on branches and
 // labels of foundation/algebra/Transition.h), and the word of the branch
-// is the whole message of that step, so the handle enters past the step.
-// Every other branch, a positional one or one that is no label, enters at
-// its head.
+// is the label word of that step.  The handle enters at the value step of
+// the message, or past the message when its payload is void.  Every other
+// branch, a positional one or one that is no label, enters at its head.
 template <typename Choice, std::size_t I, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 constexpr auto HandleFactory::branch_(Resource r, watch::session_ref session) noexcept(
     std::is_nothrow_move_constructible_v<Resource>) {
@@ -1411,16 +1476,13 @@ constexpr auto HandleFactory::branch_(Resource r, watch::session_ref session) no
                           "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what "
                           "the message of the branch takes, or the payload walk of fixy/session/Payload.h refuses "
                           "the message.");
-            return step_<typename Branch::next, Resource, LoopCtx, Policy, perm_set_after_send_t<PS, Message>>(
-                std::forward<Resource>(r), session);
         } else {
             static_assert(detail::handle_admits_recv_v<PS, Message>,
                           "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what "
                           "the message of the branch closes, or the payload walk of fixy/session/Payload.h refuses "
                           "the message.");
-            return step_<typename Branch::next, Resource, LoopCtx, Policy, perm_set_after_recv_t<PS, Message>>(
-                std::forward<Resource>(r), session);
         }
+        return step_<keyed_landing_t<Branch>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
     } else {
         return step_<Branch, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
     }
@@ -1459,9 +1521,9 @@ public:
     // Picks branch I and signals the choice to the peer through
     // Transport, a write of a std::size_t word.  The Transport receives the
     // wire word of branch I: its label word in a keyed choice, and I in a
-    // positional one.  In a keyed choice the
-    // word is the whole message of the branch, so the returned handle
-    // stands past the label step of branch I.  In a positional choice it
+    // positional one.  In a keyed choice the returned handle stands at the
+    // value step of the message of branch I, which sends the value next, or
+    // past the message when its payload is void.  In a positional choice it
     // stands at the branch, and the branch sends its payload next.
     //
     // The index bound is a body static_assert rather than a
@@ -1573,8 +1635,9 @@ public:
     // branch that the word names (branch_of_wire_word).  The
     // handler is invoked once per branch type and every branch must give
     // the handler the same return type, or all of them void.  In a keyed
-    // choice the word is the whole message of a label branch, so that
-    // handle stands past the label step of the branch.
+    // choice the handle of a label branch stands at the value step of its
+    // message, which reads the value next, or past the message when its
+    // payload is void.
     //
     // A word that names no branch aborts.  The peer has sent a label this
     // protocol does not define, so the two endpoints no longer agree

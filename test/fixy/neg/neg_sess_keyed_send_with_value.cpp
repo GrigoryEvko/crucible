@@ -1,6 +1,6 @@
-// A Send of a Labelled is keyed: its label word is the whole message, so
-// the step sends no value.  A call that passes a value is refused, and the
-// diagnostic names the form to call.
+// A Send of a Labelled is keyed: its label step sends the label word, and
+// the value step after it sends the value.  A call that passes a value to
+// the label step is refused, and the diagnostic names the form to call.
 
 #include <fixy/session/Handle.h>
 #include <fixy/session/Projection.h>

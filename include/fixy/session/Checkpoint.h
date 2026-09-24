@@ -718,22 +718,25 @@ public:
         return std::pair{std::move(value), wrap_<typename P::next, HeadLoop, Frame>(std::move(next))};
     }
 
-    // A keyed message is its label word (fixy/session/Handle.h).
+    // A keyed message is its label word and then the value of its payload
+    // (fixy/session/Handle.h).  This step moves the word, and the handle
+    // then stands at the value step, or past the message when the payload
+    // is void (keyed_landing_t).
     template <typename Transport, typename P = Head>
         requires is_send_v<P> && is_keyed_step_v<P> && WriteTransport<Transport, resource_t, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && {
-        return wrap_<typename P::next, HeadLoop, Frame>(std::move(inner_).send(std::move(transport)));
+        return wrap_<keyed_landing_t<P>, HeadLoop, Frame>(std::move(inner_).send(std::move(transport)));
     }
 
     template <typename Transport, typename P = Head>
         requires is_recv_v<P> && is_keyed_step_v<P> && ReadTransport<Transport, resource_t, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
-        return wrap_<typename P::next, HeadLoop, Frame>(std::move(inner_).recv(std::move(transport)));
+        return wrap_<keyed_landing_t<P>, HeadLoop, Frame>(std::move(inner_).recv(std::move(transport)));
     }
 
     // Selects label I and tells the peer.  A Commit, Roll or Abort takes
     // effect here, on this side, in the same call.
-    // A keyed choice enters past the label step of its branch, and a
+    // A keyed choice enters its branch past the label word, and a
     // checkpoint primitive is never a keyed branch, so the landing is the
     // branch that take_branch_ reads (branch_landing_t in
     // fixy/session/Handle.h).
