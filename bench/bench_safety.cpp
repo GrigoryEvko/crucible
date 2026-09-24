@@ -11,7 +11,13 @@
 #include <cstdio>
 #include <utility>
 
-#include <crucible/safety/Safety.h>
+#include <crucible/safety/_ConstantTime.h>
+#include <crucible/safety/_Linear.h>
+#include <crucible/safety/_Machine.h>
+#include <crucible/safety/_Mutation.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_Secret.h>
+#include <crucible/safety/_Tagged.h>
 
 #include "bench_harness.h"
 

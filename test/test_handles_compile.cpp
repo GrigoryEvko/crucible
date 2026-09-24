@@ -2,7 +2,6 @@
 // matrix so their static_asserts run.
 
 #include <crucible/handles/FileHandle.h>
-#include <crucible/handles/Handles.h>
 #include <crucible/handles/LazyEstablishedChannel.h>
 #include <crucible/handles/_Once.h>
 #include <crucible/handles/OneShotFlag.h>
@@ -50,7 +49,6 @@ void run_test(const char* name, F&& body) {
 }
 
 void test_file_handle_compile() {}
-void test_handles_umbrella() {}
 void test_lazy_established_channel_compile() {}
 void test_once_compile() {}
 void test_one_shot_flag_compile() {}
@@ -61,7 +59,6 @@ void test_publish_once_compile() {}
 int main() {
     std::fprintf(stderr, "test_handles_compile:\n");
     run_test("test_file_handle_compile", test_file_handle_compile);
-    run_test("test_handles_umbrella", test_handles_umbrella);
     run_test("test_lazy_established_channel_compile", test_lazy_established_channel_compile);
     run_test("test_once_compile", test_once_compile);
     run_test("test_one_shot_flag_compile", test_one_shot_flag_compile);

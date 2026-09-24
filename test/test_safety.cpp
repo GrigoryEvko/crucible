@@ -1,8 +1,16 @@
-#include <crucible/safety/Safety.h>
-#include <crucible/permissions/Permissions.h>
-#include <crucible/handles/Handles.h>
-#include <crucible/sessions/Sessions.h>
-#include <crucible/bridges/Bridges.h>
+#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/PublishOnce.h>
+#include <crucible/safety/_Checked.h>
+#include <crucible/safety/_ConstantTime.h>
+#include <crucible/safety/_Linear.h>
+#include <crucible/safety/_Machine.h>
+#include <crucible/safety/_Mutation.h>
+#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/_Refined.h>
+#include <crucible/safety/_Secret.h>
+#include <crucible/safety/_Tagged.h>
+#include <crucible/sessions/Session.h>
+#include <foundation/Platform.h>
 
 #include "test_assert.h"
 

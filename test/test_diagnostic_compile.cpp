@@ -1,11 +1,8 @@
 // A static_assert that lives only in a header is never evaluated under
 // the project warning flags until some translation unit includes it.
-// This one includes the diagnostic header both directly and through the
-// umbrella, so a header that fell out of the umbrella would show up as
-// an unresolved name here.
+// This file is that translation unit for the diagnostic header.
 
 #include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/Safety.h>
 
 #include <cstdio>
 #include <cstdlib>

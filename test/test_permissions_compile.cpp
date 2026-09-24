@@ -8,7 +8,6 @@
 #include <crucible/permissions/_Permission.h>
 #include <crucible/permissions/_PermissionFork.h>
 #include <crucible/permissions/PermissionInherit.h>
-#include <crucible/permissions/Permissions.h>
 #include <crucible/permissions/_PermSet.h>
 #include <crucible/permissions/_ReadView.h>
 
@@ -234,7 +233,6 @@ void test_mint_permission_inherit_compile() {
     static_assert(std::is_same_v<pi::mint_permission_inherit_t<InheritWorkerTag, InheritCoordTag>,
                                  std::tuple<::crucible::safety::Permission<InheritCoordTag>>>);
 }
-void test_permissions_umbrella() {}
 void test_perm_set_compile() {}
 void test_read_view_compile() {}
 
@@ -246,7 +244,6 @@ int main() {
     run_test("test_permission_fork_compile", test_permission_fork_compile);
     run_test("test_permission_row_compile", test_permission_row_compile);
     run_test("test_mint_permission_inherit_compile", test_mint_permission_inherit_compile);
-    run_test("test_permissions_umbrella", test_permissions_umbrella);
     run_test("test_perm_set_compile", test_perm_set_compile);
     run_test("test_read_view_compile", test_read_view_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);

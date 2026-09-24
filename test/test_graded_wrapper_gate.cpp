@@ -3,10 +3,8 @@
 // the build proves. They are rebuilt here rather than shared with the
 // wider cheat suite, so this file stands alone and depends on nothing but
 // the concept it checks.
-//
-// The gate specialization must be visible before any probe in this file
-// instantiates it, so its header comes first.
-#include <crucible/safety/diag/GradedWrapperGate.h>
+
+#include <crucible/algebra/_GradedTrait.h>
 
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/_QttSemiring.h>
@@ -59,21 +57,12 @@ struct Cheat3_LyingForwarders {
 
 }  // namespace cheats
 
-// Each probe carries a static_assert that the gate rejects its cheat, so
-// the build succeeding is the whole claim.
+// Each assertion states that the concept rejects its cheat, so the build
+// succeeding is the whole claim.
 
-namespace diag = ::crucible::safety::diag;
-
-using probe_1 = diag::cheat_probe_type<cheats::Cheat1_ValueTypeMismatch, diag::Category::GradedWrapperViolation>;
-using probe_2 = diag::cheat_probe_type<cheats::Cheat2_LatticeMismatch, diag::Category::GradedWrapperViolation>;
-using probe_3 = diag::cheat_probe_type<cheats::Cheat3_LyingForwarders, diag::Category::GradedWrapperViolation>;
-
-// The same facts again, stated directly. The probes above assert them
-// through a layer of machinery, and these read without it.
-static_assert(
-    !diag::concept_gate<diag::Category::GradedWrapperViolation>::admits_type<cheats::Cheat1_ValueTypeMismatch>);
-static_assert(!diag::concept_gate<diag::Category::GradedWrapperViolation>::admits_type<cheats::Cheat2_LatticeMismatch>);
-static_assert(!diag::concept_gate<diag::Category::GradedWrapperViolation>::admits_type<cheats::Cheat3_LyingForwarders>);
+static_assert(!::crucible::algebra::GradedWrapper<cheats::Cheat1_ValueTypeMismatch>);
+static_assert(!::crucible::algebra::GradedWrapper<cheats::Cheat2_LatticeMismatch>);
+static_assert(!::crucible::algebra::GradedWrapper<cheats::Cheat3_LyingForwarders>);
 
 int main() {
     // Reaching here means every cheat was rejected at compile time.
