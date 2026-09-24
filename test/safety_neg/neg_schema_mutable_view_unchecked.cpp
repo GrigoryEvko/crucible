@@ -9,7 +9,7 @@
 
 int main() {
     crucible::SchemaTable table;
-    table.register_name(table.mint_mutable_view(), crucible::SchemaHash{0x42},
+    table.register_name(table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>()), crucible::SchemaHash{0x42},
                         crucible::SchemaTable::SanitizedName{"aten::mm"});
     return 0;
 }

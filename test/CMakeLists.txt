@@ -11261,6 +11261,28 @@ crucible_neg_compile_multi_test(neg_ckernel_table_clear_needs_test_context
   "no matching function for call to"
   "crucible::CKernelTable::clear..")
 
+# The names and schemas in the two tables come from the ops that a Vigil
+# records, so a mutable view, and a trace load that registers names, ask
+# for the context of a Vigil's producer claim.
+crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_schema_mint_mutable_view_unbranded_ctx.cpp:11")
+crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_other_brand
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_schema_mint_mutable_view_other_brand.cpp:15")
+crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_ckernel_mint_mutable_view_unbranded_ctx.cpp:11")
+crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_other_brand
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_ckernel_mint_mutable_view_other_brand.cpp:15")
+crucible_neg_compile_multi_test(neg_trace_loader_names_unbranded_ctx
+  "no matching function for call to .load_trace.foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "neg_trace_loader_names_unbranded_ctx.cpp:10")
+crucible_neg_compile_multi_test(neg_trace_loader_names_other_brand
+  "no matching function for call to .load_trace.foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >"
+  "neg_trace_loader_names_other_brand.cpp:14")
+
 # FIXY-U-137 — HS14 floor for CrucibleContext::mint_compiled_view.
 # CrucibleContext has only one typed view (CompiledView; no companion
 # RecordingView), so the intra-carrier per-state mismatch pattern used

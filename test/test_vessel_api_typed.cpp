@@ -211,11 +211,13 @@ void test_data_ptr_typed() {
 void test_schema_name_typed() {
     // This target links the core library rather than the vessel one, so
     // the name is registered through the C++ API.  That reaches the same
-    // global table the C thunk would use.
+    // global table the C thunk would use.  The view asks for the context
+    // of a Vigil's producer claim, which the test takes from the test door.
     constexpr uint64_t hash_a = 0xA1A2A3A4A5A6A7A8ULL;
     constexpr uint64_t hash_b = 0xB1B2B3B4B5B6B7B8ULL;
 
-    if (const auto view = crucible::global_schema_table().mint_mutable_view()) {
+    constexpr crucible::VigilFgCtx fg = ::foundation::effects::testing::foreground<crucible::Vigil>();
+    if (const auto view = crucible::global_schema_table().mint_mutable_view(fg)) {
         const bool was_a_registered = crucible::register_schema_name(
             *view, crucible::SchemaHash{hash_a}, crucible::SchemaTable::SanitizedName{"aten::test_op_a"});
         EXPECT(was_a_registered, "an open schema table must take the first registration");

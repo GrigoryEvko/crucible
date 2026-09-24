@@ -39,6 +39,10 @@ constexpr uint32_t ROUND_COUNT = 64;
 static_assert(WRITER_COUNT * WRITES_PER_WRITER <= crucible::CKERNEL_TABLE_CAP);
 static_assert(WRITER_COUNT * WRITES_PER_WRITER <= crucible::SCHEMA_TABLE_CAP);
 
+// A mutable view asks for the context of a Vigil's producer claim.  The race
+// uses no Vigil, so it takes that context from the test door.
+constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
 using RegisteredFlags = std::array<std::array<bool, WRITES_PER_WRITER>, WRITER_COUNT>;
 
 // A distinct, non-zero hash for each write of each writer in each round.
@@ -79,7 +83,7 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
 // Each race returns the number of writes that the seal refused.
 [[nodiscard]] uint32_t race_schema_table(uint32_t round) {
     crucible::SchemaTable table;
-    const auto view = table.mint_mutable_view();
+    const auto view = table.mint_mutable_view(kVigilForeground);
     assert(view.has_value());
 
     RegisteredFlags registered{};
@@ -127,7 +131,7 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
 
 [[nodiscard]] uint32_t race_ckernel_table(uint32_t round) {
     crucible::CKernelTable table;
-    const auto view = table.mint_mutable_view();
+    const auto view = table.mint_mutable_view(kVigilForeground);
     assert(view.has_value());
 
     RegisteredFlags registered{};

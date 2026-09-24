@@ -1,5 +1,6 @@
 #pragma once
 
+#include <crucible/ForegroundCtx.h>
 #include <crucible/Platform.h>
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
@@ -268,8 +269,11 @@ public:
     // file runs from the body instead of a pre/post clause.
     // A registration writes entries that a classifying reader reads with no
     // lock once the table is sealed.  So the view is minted only before the
-    // seal.  Past the seal it is empty, in every build mode.
-    [[nodiscard]] std::optional<MutableView> mint_mutable_view() const noexcept {
+    // seal.  Past the seal it is empty, in every build mode.  The schemas come
+    // from the ops that a Vigil records, so the view asks for the context of
+    // a Vigil's producer claim.  The sealed view is for readers, and a
+    // classifying reader on the background thread holds no such claim.
+    [[nodiscard]] std::optional<MutableView> mint_mutable_view(VigilFgCtx const&) const noexcept {
         if (is_sealed()) return std::nullopt;
         return crucible::fixy::wrap::mint_view<ckernel_state::Mutable>(*this);
     }
@@ -379,10 +383,11 @@ static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
 // False when the table is sealed, before the view or before the write, and
 // then nothing is registered.
 [[nodiscard]] inline bool
-register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::tags::source::External> schema_hash,
+register_schema_hash(VigilFgCtx const& fg,
+                     crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::tags::source::External> schema_hash,
                      CKernelId id) {
     CKernelTable* table = global_ckernel_table().value();
-    const auto view = table->mint_mutable_view();
+    const auto view = table->mint_mutable_view(fg);
     if (!view) return false;
     return table->register_op(*view, schema_hash.value(), id);
 }

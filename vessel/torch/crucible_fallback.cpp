@@ -132,7 +132,8 @@ struct SchemaInfo {
     bool is_foreach = false;
 };
 
-[[nodiscard]] static SchemaInfo get_schema_info(const c10::OperatorHandle& op, const c10::FunctionSchema& schema) {
+[[nodiscard]] static SchemaInfo get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op,
+                                                const c10::FunctionSchema& schema) {
     // The handle's address is the cache key. bit_cast reproduces it as an
     // integer for the index arithmetic; the pointer itself is compared
     // below, so the integer never turns back into one.
@@ -168,9 +169,12 @@ struct SchemaInfo {
     }
     // PyTorch's Operator schema is trusted by source — compiled into
     // the libtorch binary.  Construct Sanitized directly.
-    // A sealed table mints no view, or refuses the write when the seal lands
-    // after the view, and the name then stays out of it.
-    if (const auto schema_table_view = crucible::global_schema_table().mint_mutable_view()) {
+    // The table takes names only from a thread that holds a Vigil's producer
+    // claim, which the caller checked.  A sealed table mints no view, or
+    // refuses the write when the seal lands after the view, and the name
+    // then stays out of it.
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    if (const auto schema_table_view = crucible::global_schema_table().mint_mutable_view(fg)) {
         [[maybe_unused]] const bool was_registered = crucible::register_schema_name(
             *schema_table_view, schema_hash, crucible::SchemaTable::SanitizedName{full_name.c_str()});
         CRUCIBLE_DEBUG_ASSERT(was_registered || crucible::global_schema_table().is_sealed());
@@ -402,7 +406,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     auto [counts, scalars] = extract_inputs(*stack, args_begin, num_args, inline_metas);
 
     // -- Compute hashes + mutability -----------------------------------
-    const auto [schema_hash, is_mutable, is_foreach] = get_schema_info(op, schema);
+    const auto [schema_hash, is_mutable, is_foreach] = get_schema_info(*vigil, op, schema);
     const auto shape_hash = compute_shape_hash(inline_metas, counts.inputs);
 
     // -- Execute eagerly (Tier 1: always redispatch) ------------------

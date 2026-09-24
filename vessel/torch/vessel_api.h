@@ -175,9 +175,12 @@ CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h) CRUCIBLE_
 
 // ── Schema name registration ─────────────────────────────────────────
 
-// Register an op name for a schema hash. Call once per op at startup.
-// Enables human-readable labels in trace visualization and diagnostics.
-CRUCIBLE_VESSEL_API void crucible_register_schema_name(uint64_t schema_hash, const char* name) CRUCIBLE_VESSEL_NOEXCEPT;
+// Register an op name for a schema hash, for the labels of trace
+// visualization and diagnostics.  The call must run on the thread that holds
+// the producer claim of the Vigil h.  A call from any other thread ends the
+// process, as a dispatch from one does.
+CRUCIBLE_VESSEL_API void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash,
+                                                       const char* name) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Lookup the registered name for a schema hash. Returns NULL if unknown.
 CRUCIBLE_VESSEL_API const char* crucible_schema_name(uint64_t schema_hash) CRUCIBLE_VESSEL_NOEXCEPT;

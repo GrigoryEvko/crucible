@@ -20,6 +20,11 @@ static const crucible::SchemaHash HASH_UNKNOWN{0xDEAD000000000000ULL};
 // outside.
 using ExtHash = crucible::safety::Tagged<crucible::SchemaHash, crucible::safety::source::External>;
 
+// A mutable view asks for the context of a Vigil's producer claim.  These
+// tests use no Vigil, so they take that context from the test door.
+static constexpr crucible::VigilFgCtx kVigilForeground =
+    ::foundation::effects::testing::foreground<crucible::Vigil>();
+
 int main() {
     using namespace crucible;
 
@@ -29,7 +34,7 @@ int main() {
 
     // Each registration below reaches an unsealed table, so each one lands.
     const auto register_or_fail = [](ExtHash schema_hash, CKernelId id) {
-        const bool was_registered = register_schema_hash(schema_hash, id);
+        const bool was_registered = register_schema_hash(kVigilForeground, schema_hash, id);
         assert(was_registered);
     };
     register_or_fail(ExtHash{HASH_LINEAR}, CKernelId::GEMM_LINEAR);
@@ -117,7 +122,7 @@ int main() {
     {
         CKernelTable t;
         assert(!t.is_sealed());
-        const auto mv = t.mint_mutable_view();
+        const auto mv = t.mint_mutable_view(kVigilForeground);
         assert(mv.has_value());
 
         const bool was_registered = t.register_op(*mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
@@ -131,7 +136,7 @@ int main() {
         assert(t.is_sealed());
 
         // A sealed table mints no mutable view, in every build mode.
-        assert(!t.mint_mutable_view().has_value());
+        assert(!t.mint_mutable_view(kVigilForeground).has_value());
 
         // A view minted before the seal proves only that the table was open
         // then.  Its write after the seal is refused and changes nothing.
@@ -148,7 +153,7 @@ int main() {
         assert(!t.is_sealed());
         assert(t.count() == 0);
 
-        const auto mv_after_clear = t.mint_mutable_view();
+        const auto mv_after_clear = t.mint_mutable_view(kVigilForeground);
         assert(mv_after_clear.has_value());
         const bool was_registered_after_clear = t.register_op(*mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
         assert(was_registered_after_clear);
@@ -157,7 +162,7 @@ int main() {
 
     {
         CKernelTable t;
-        const auto mv = t.mint_mutable_view();
+        const auto mv = t.mint_mutable_view(kVigilForeground);
         assert(mv.has_value());
         const bool was_registered = t.register_op(*mv, SchemaHash{0x42}, CKernelId::CONV2D);
         assert(was_registered);
@@ -168,7 +173,7 @@ int main() {
     // must keep working once the table is sealed.
     {
         CKernelTable t;
-        const auto mv = t.mint_mutable_view();
+        const auto mv = t.mint_mutable_view(kVigilForeground);
         assert(mv.has_value());
         const bool was_mm_registered = t.register_op(*mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
         assert(was_mm_registered);
@@ -188,7 +193,8 @@ int main() {
 
     // A registration after the seal is refused and changes nothing.
     global_ckernel_table().value()->seal();
-    const bool was_registered_after_seal = register_schema_hash(ExtHash{HASH_UNKNOWN}, CKernelId::SDPA);
+    const bool was_registered_after_seal =
+        register_schema_hash(kVigilForeground, ExtHash{HASH_UNKNOWN}, CKernelId::SDPA);
     assert(!was_registered_after_seal);
     assert(classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
 

@@ -35,7 +35,7 @@
 // static_assert below is the actual neg-compile gate.
 [[maybe_unused]] static auto anchor_mutable_view_mint() {
     crucible::CKernelTable t;
-    return t.mint_mutable_view();
+    return t.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
 }
 
 // A class with a CKernelTable::MutableView field.  The audit walks

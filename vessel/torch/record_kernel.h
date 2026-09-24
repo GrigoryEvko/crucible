@@ -1071,10 +1071,13 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // per operation.
     static inline std::atomic<bool> schema_name_registered{false};
 
-    [[gnu::cold, gnu::noinline]] static void register_schema_name_once() {
-        // A sealed table mints no view, or refuses the write when the seal
-        // lands after the view, and the name then stays out of it.
-        if (const auto view = crucible::global_schema_table().mint_mutable_view()) {
+    [[gnu::cold, gnu::noinline]] static void register_schema_name_once(crucible::Vigil& vigil) {
+        // The table takes names only from a thread that holds a Vigil's
+        // producer claim, which this thread does.  A sealed table mints no
+        // view, or refuses the write when the seal lands after the view, and
+        // the name then stays out of it.
+        const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+        if (const auto view = crucible::global_schema_table().mint_mutable_view(fg)) {
             // PyTorch's operator names are compiled into the generated headers
             // this table was built from, so the name is trusted by source.
             const QualifiedOpName name{aten_op_table[TableIndex]};
@@ -1091,7 +1094,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     [[gnu::noinline]] static Ret call_recording(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
                                                 Args... args) {
         if (!schema_name_registered.load(std::memory_order_relaxed)) [[unlikely]]
-            register_schema_name_once();
+            register_schema_name_once(*vigil);
 
         // Inputs before the operation runs, because an out= argument is
         // written by it.

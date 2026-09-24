@@ -78,7 +78,8 @@ static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 //
 // Sealing exists to stop a registration racing the background thread.
 // Nothing here weakens that: the global table stays sealed, and this
-// table is touched only by the thread calling the C ABI.
+// table takes writes only from the thread that holds the producer claim of
+// the Vigil that the C ABI names.
 [[nodiscard]] static crucible::SchemaTable& late_schema_names() {
     static crucible::SchemaTable table;
     return table;
@@ -277,7 +278,7 @@ void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
     return vigil->input_ptr(vigil->mint_producer_context(), j);
 }
 
-void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexcept {
+void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const char* name) noexcept {
     // C ABI boundary: validate before routing to SanitizedName.
     // Rules:
     //   - schema_hash != 0 (0 is the invalid sentinel)
@@ -293,8 +294,11 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexc
     const size_t len = ::strnlen(name, MAX_NAME + 1);
     if (len == 0 || len > MAX_NAME) return;
 
-    // Before the Vigil exists the global table still accepts writes, so
-    // an early registration goes there and the trace keeps one table.
+    // The tables take names only from the thread that holds the producer
+    // claim of this Vigil.  Minting the context proves that, and it ends
+    // the process on any other thread.
+    const crucible::VigilFgCtx fg = crucible::vessel::as_vigil_typed(h).value()->mint_producer_context();
+
     // After crucible_create() seals it, the global table mints no view, or
     // refuses the write when the seal lands between the view and the write.
     // Then the registration goes to the late table instead. It is never
@@ -303,13 +307,13 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexc
     crucible::SchemaTable::SanitizedName const name_tag{name};
     const crucible::SchemaHash hash{schema_hash};
     auto& global_table = crucible::global_schema_table();
-    if (const auto global_view = global_table.mint_mutable_view()) {
+    if (const auto global_view = global_table.mint_mutable_view(fg)) {
         if (global_table.register_name(*global_view, hash, name_tag)) return;
     }
     // Nothing seals the late table, so its view always exists and its write
     // always lands.
     auto& late_table = late_schema_names();
-    const auto late_view = late_table.mint_mutable_view();
+    const auto late_view = late_table.mint_mutable_view(fg);
     CRUCIBLE_FATAL_INVARIANT(late_view.has_value());
     const bool was_registered_late = late_table.register_name(*late_view, hash, name_tag);
     CRUCIBLE_FATAL_INVARIANT(was_registered_late);

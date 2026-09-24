@@ -265,7 +265,7 @@ class _VesselLib:
 
         # Schema name registration (bridge from dispatch lib)
         L.crucible_register_schema_name.restype = None
-        L.crucible_register_schema_name.argtypes = [ctypes.c_uint64, ctypes.c_char_p]
+        L.crucible_register_schema_name.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
 
     def create(self) -> int:
         """Create a Vigil and return its opaque handle."""
@@ -311,10 +311,14 @@ class _VesselLib:
         """The number of operations in the active region."""
         return self._lib.crucible_active_num_ops(h)
 
-    def register_schema_name(self, schema_hash: int, name: str) -> None:
-        """Put one operator name into this library's copy of the SchemaTable."""
+    def register_schema_name(self, h: int, schema_hash: int, name: str) -> None:
+        """Put one operator name into this library's copy of the SchemaTable.
+
+        The call must run on the thread that holds the producer claim of the
+        Vigil h.  A call from any other thread ends the process.
+        """
         self._lib.crucible_register_schema_name(
-            ctypes.c_uint64(schema_hash), name.encode("utf-8"))
+            h, ctypes.c_uint64(schema_hash), name.encode("utf-8"))
 
 
 # =====================================================================
@@ -941,11 +945,11 @@ class CrucibleNative:
         The dispatch lib populates its copy during op recording; the vessel
         lib reads its copy during .crtrace export.  This method bridges them.
         """
-        if not self._dispatch or not self._vessel:
+        if not self._dispatch or not self._vessel or not self._handle:
             return
         entries = self._dispatch.schema_entries()
         for schema_hash, name in entries:
-            self._vessel.register_schema_name(schema_hash, name)
+            self._vessel.register_schema_name(self._handle, schema_hash, name)
         if self._verbose and entries:
             log.info("[crucible] bridged %d schema names from dispatch lib "
                      "to vessel lib", len(entries))

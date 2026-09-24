@@ -22,7 +22,9 @@ int main() {
 
     constexpr uint32_t N = 250;
     SchemaTable table{};
-    const auto mutable_view = table.mint_mutable_view();
+    // The view asks for the context of a Vigil's producer claim.  The bench
+    // uses no Vigil, so it takes that context from the test door.
+    const auto mutable_view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
     CRUCIBLE_FATAL_INVARIANT(mutable_view.has_value());
     SchemaHash hashes[N];
     char names[N][16];

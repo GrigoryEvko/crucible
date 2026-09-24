@@ -87,7 +87,7 @@ class _VesselLib:
 
         lib.crucible_register_schema_name.restype = None
         lib.crucible_register_schema_name.argtypes = [
-            ctypes.c_uint64, ctypes.c_char_p,
+            ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p,
         ]
 
         lib.crucible_schema_name.restype = ctypes.c_char_p
@@ -474,7 +474,7 @@ class CrucibleMode(TorchDispatchMode):
             self._schema_cache[op_name] = h
             # Register name in the global SchemaTable for visualization/diagnostics.
             self._vessel.crucible_register_schema_name(
-                h, op_name.encode("ascii"))
+                self._handle, h, op_name.encode("ascii"))
         return h
 
     def _compute_shape_hash(self, tensors):

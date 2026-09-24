@@ -24,6 +24,11 @@ static const char* C(SchemaTable::LookupName name) { return name.value().data();
 
 static bool missing(SchemaTable::LookupName name) { return name.value().data() == nullptr; }
 
+// A load that registers schema names takes the context of a Vigil's producer
+// claim.  These tests load without a Vigil, so they take that context from
+// the test door.
+constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
+
 // The caller removes the file when done.  The path is built from the
 // process id and a counter because tmpnam is deprecated and its
 // replacement signature warns on an unused result.
@@ -227,7 +232,13 @@ static void test_schema_name_table_round_trip() {
     append_entry(0xCCCC777788889999ULL, "aten::matmul");
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(path.c_str());
+
+    // A load with no producer context reads the names and registers none.
+    auto t_without_context = load_trace(path.c_str());
+    assert(t_without_context);
+    assert(global_schema_table().count() == 0);
+
+    auto t = load_trace(kVigilForeground, path.c_str());
     std::remove(path.c_str());
 
     assert(t);
@@ -260,7 +271,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     append_le<uint16_t>(buf, 0);  // CORRUPT name_len
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kVigilForeground, path.c_str());
     std::remove(path.c_str());
 
     // The header and ops parsed cleanly, so the loader still returns a
@@ -298,7 +309,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
     buf.insert(buf.end(), 300, static_cast<unsigned char>(0x5A));
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kVigilForeground, path.c_str());
     std::remove(path.c_str());
 
     assert(t);
@@ -480,7 +491,7 @@ static void test_names_on_a_sealed_table_are_skipped() {
     buf.insert(buf.end(), name, name + sizeof(name) - 1);
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kVigilForeground, path.c_str());
     std::remove(path.c_str());
 
     assert(t);

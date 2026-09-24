@@ -1,5 +1,6 @@
 #pragma once
 
+#include <crucible/ForegroundCtx.h>
 #include <crucible/Platform.h>
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
@@ -71,8 +72,11 @@ public:
 
     // A registration writes entries that the background thread reads with no
     // lock once the table is sealed.  So the view is minted only before the
-    // seal.  Past the seal it is empty, in every build mode.
-    [[nodiscard]] std::optional<MutableView> mint_mutable_view() const noexcept {
+    // seal.  Past the seal it is empty, in every build mode.  The names come
+    // from the ops that a Vigil records, so the view asks for the context of
+    // a Vigil's producer claim.  The sealed view is for readers, and a
+    // reader on the background thread holds no such claim.
+    [[nodiscard]] std::optional<MutableView> mint_mutable_view(VigilFgCtx const&) const noexcept {
         if (is_sealed()) return std::nullopt;
         return crucible::fixy::wrap::mint_view<schema_state::Mutable>(*this);
     }

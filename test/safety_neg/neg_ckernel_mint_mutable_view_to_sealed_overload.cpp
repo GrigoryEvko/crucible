@@ -31,7 +31,7 @@ int main() {
     crucible::CKernelTable t;
     // t is in Mutable state (default-constructed, sealed_ = false), so
     // mint_mutable_view returns a view.
-    const auto mv = t.mint_mutable_view();
+    const auto mv = t.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
 
     // requires_sealed_view takes ScopedView<CKernelTable, Sealed>.  *mv
     // is ScopedView<CKernelTable, Mutable>.  Distinct template

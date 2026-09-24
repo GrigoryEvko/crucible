@@ -212,7 +212,12 @@ template <class Field>
     return meta;
 }
 
-[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(const char* path) {
+// Loads the trace at path.  When should_register_names is true, the schema
+// names of the trace go into the global table through schema_table_view.  An
+// empty view means that the table is sealed, and the names then stay out.
+[[nodiscard]] inline std::unique_ptr<LoadedTrace>
+load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
+            bool should_register_names) {
     ::crucible::fixy::handle::OwnedFile trace_file{std::fopen(path, "rb")};
     if (!trace_file.is_open()) {
         std::fprintf(stderr, "load_trace: cannot open %s\n", path);
@@ -320,8 +325,9 @@ template <class Field>
         // Once the table is sealed the background thread reads it with no
         // lock, so a trace loaded after the seal keeps its names out of the
         // table.  The trace itself still loads.
-        const auto schema_table_view = global_schema_table().mint_mutable_view();
-        if (!schema_table_view) {
+        if (!should_register_names) {
+            num_names = 0;
+        } else if (!schema_table_view) {
             std::fprintf(stderr, "load_trace: the schema table is sealed, so the %u names in %s are not registered\n",
                          num_names, path);
             num_names = 0;
@@ -412,6 +418,18 @@ template <class Field>
     }
 
     return trace;
+}
+
+// Loads the trace at path.  Its schema names stay out of the global table,
+// because only a thread that holds a Vigil's producer claim writes there.
+[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(const char* path) {
+    return load_trace_(path, std::nullopt, false);
+}
+
+// Loads the trace at path, and puts its schema names into the global table.
+// The context proves that the caller holds a Vigil's producer claim.
+[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(VigilFgCtx const& fg, const char* path) {
+    return load_trace_(path, global_schema_table().mint_mutable_view(fg), true);
 }
 
 }  // namespace crucible
