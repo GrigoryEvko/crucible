@@ -24,9 +24,11 @@ must carry no branch at all.  The taint tests cover the dynamic form.
 Two censuses keep the case list complete.  A reflection walk in the
 generated translation unit stops the compile when a namespace of
 primitives holds a function this guard does not wrap.  A source scan
-stops the guard when production code uses role::CtCrypto, because a
-function that states the constant-time role needs its own disassembly
-case here, and the list of such functions is empty.
+stops the guard when production code states the constant-time grade,
+through role::CtCrypto or through atom::constant_time, in a file with no
+case in CTCRYPTO_CASES.  A case is a wrapper that the guard compiles and
+checks with the primitives.  The map is empty, because no production
+function states the grade.
 
 Exit 0: every wrapper is clean.  Exit 1: a finding, printed per wrapper.
 Exit 2: the guard could not run (no compiler, no objdump, a compile
@@ -56,11 +58,27 @@ OPTS = ("-O2", "-O3")
 # reflection census until it has a wrapper below.
 COVERED_NAMES = ("mask_from_bit", "select", "eq", "less", "is_zero", "cswap")
 
-# Production mentions of the constant-time role, each with the wrappers
-# that check it.  The list is empty: no production function states the
-# role yet.  A new mention stops the guard until it has a case here.
-CTCRYPTO_CASES: dict[str, list[str]] = {}
-CTCRYPTO_DEFINITION_FILES = {"include/fixy/Role.h", "include/crucible/fixy/Fn.h"}
+# The production files that state the constant-time grade, each with the
+# wrappers that exercise its functions.  A case is (wrapper name, whether
+# the wrapper takes a pointer, the C++ definition of an extern "C"
+# function of that name).  The guard includes the file, compiles every
+# case with the primitives and checks it the same way.  The map is empty:
+# no production function states the grade yet.  A new statement stops
+# the guard until it has a case here, and an entry with no case, or for a
+# file that no longer states the grade, stops it too.
+CTCRYPTO_CASES: dict[str, tuple[tuple[str, bool, str], ...]] = {}
+
+# The files that define the role, the atom or the rules that read them.
+# A statement there is a definition or a self-test, not a binding.
+CTCRYPTO_DEFINITION_FILES = {
+    "include/fixy/Atom.h",
+    "include/fixy/Collision.h",
+    "include/fixy/Role.h",
+    "include/crucible/fixy/Fn.h",
+}
+
+# A binding states the grade through the role or through the atom.
+CTCRYPTO_STATEMENT = re.compile(r"\bCtCrypto\b|\b(?:atom|at)::constant_time\b")
 
 PREFIXES = {"rep", "repz", "repe", "repnz", "repne", "lock", "notrack", "bnd", "data16", "cs", "ds"}
 
@@ -137,6 +155,14 @@ def wrapper_source() -> tuple[str, dict[str, bool]]:
             f"return ::fixy::ct::eq(std::span<const std::byte, {n}>{{a, {n}}}, "
             f"std::span<const std::byte, {n}>{{b, {n}}}); }}"
         )
+    for rel, file_cases in CTCRYPTO_CASES.items():
+        # A header is included here.  A case for a source file includes
+        # the headers it needs in its own definition.
+        if rel.startswith("include/"):
+            lines.append(f"#include <{pathlib.PurePosixPath(rel).relative_to('include')}>")
+        for name, takes_pointers, definition in file_cases:
+            names[name] = takes_pointers
+            lines.append(definition)
     return "\n".join(lines) + "\n", names
 
 
@@ -256,20 +282,44 @@ def check_object(cxx: str, source: pathlib.Path, expected: dict[str, bool], work
     return findings
 
 
-def ctcrypto_mentions() -> list[str]:
-    """Return every production mention of the constant-time role that has no case."""
-    uncovered: list[str] = []
+def ctcrypto_statements(repo: pathlib.Path) -> dict[str, list[str]]:
+    """Map each production file under `repo` to its code lines that state the constant-time grade.
+
+    A comment line is not a statement, and neither is the old tree's
+    stance alias, which carries no binding.  O(bytes of the scanned trees).
+    """
+    statements: dict[str, list[str]] = {}
     for root in ("include", "src", "vessel"):
-        for path in sorted((REPO / root).rglob("*")):
+        for path in sorted((repo / root).rglob("*")):
             if path.suffix not in (".h", ".hpp", ".cpp", ".cc") or not path.is_file():
                 continue
-            rel = path.relative_to(REPO).as_posix()
+            rel = path.relative_to(repo).as_posix()
             if rel in CTCRYPTO_DEFINITION_FILES:
                 continue
             for number, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
-                if "CtCrypto" in line and rel not in CTCRYPTO_CASES and "stance::CtCrypto" not in line:
-                    uncovered.append(f"{rel}:{number}: {line.strip()}")
-    return uncovered
+                code = line.split("//", 1)[0]
+                if code.lstrip().startswith("*") or "stance::CtCrypto" in code:
+                    continue
+                if CTCRYPTO_STATEMENT.search(code):
+                    statements.setdefault(rel, []).append(f"{rel}:{number}: {line.strip()}")
+    return statements
+
+
+def ctcrypto_problems(repo: pathlib.Path, cases: dict[str, tuple[tuple[str, bool, str], ...]]) -> list[str]:
+    """Return each statement of the grade with no case, and each case entry that checks nothing."""
+    statements = ctcrypto_statements(repo)
+    problems = [
+        f"a production binding states the constant-time grade and has no disassembly case: {line}"
+        for rel, lines in statements.items()
+        if rel not in cases
+        for line in lines
+    ]
+    for rel, file_cases in cases.items():
+        if not file_cases:
+            problems.append(f"the case entry for {rel} holds no wrapper, so it checks nothing")
+        if rel not in statements:
+            problems.append(f"the case entry for {rel} names a file that states no constant-time grade")
+    return problems
 
 
 def run_guard(cxx: str) -> int:
@@ -280,13 +330,11 @@ def run_guard(cxx: str) -> int:
         source = workdir / "ct_wrappers.cpp"
         source.write_text(source_text)
         findings = check_object(cxx, source, names, workdir)
-    uncovered = ctcrypto_mentions()
-    for line in findings:
+    problems = ctcrypto_problems(REPO, CTCRYPTO_CASES)
+    for line in findings + problems:
         print(f"check-ct-disassembly: {line}")
-    for line in uncovered:
-        print(f"check-ct-disassembly: a production function states role::CtCrypto and has no disassembly case: {line}")
-    if findings or uncovered:
-        print(f"check-ct-disassembly: FAIL, {len(findings)} findings, {len(uncovered)} uncovered role uses")
+    if findings or problems:
+        print(f"check-ct-disassembly: FAIL, {len(findings)} findings, {len(problems)} case-list problems")
         return 1
     print(f"check-ct-disassembly: clean, {len(names)} wrappers x {len(MARCHES) * len(OPTS)} targets")
     return 0
@@ -307,6 +355,35 @@ extern "C" std::uint32_t ct_plant_call(std::uint32_t x) noexcept { return extern
 extern "C" std::uint32_t ct_plant_divide(std::uint32_t x, std::uint32_t y) noexcept { return x / (y | 1u); }
 extern "C" std::uint32_t ct_plant_clean(std::uint32_t x, std::uint32_t y) noexcept { return (x * 5u + y) ^ 0xFFu; }
 """
+
+
+def self_test_case_list() -> int:
+    """Plant bindings of the grade in a scratch tree; return the number of wrong verdicts of the scan."""
+    failures = 0
+    binding = "using Seal = ::fixy::fn<int, ::fixy::atom::with<>, ::fixy::atom::constant_time>;\n"
+    role = "using Mac = ::fixy::role::CtCrypto<int>;\n"
+    comment = "// role::CtCrypto and atom::constant_time, named in a comment only\n"
+    wrapper = ("ct_case_seal", False, 'extern "C" int ct_case_seal(int x) noexcept { return x; }')
+    trials = (
+        ("an atom binding with no case", {"include/a.h": binding}, {}, 1),
+        ("a role binding with no case", {"src/b.cpp": role}, {}, 1),
+        ("a comment only", {"include/c.h": comment}, {}, 0),
+        ("a binding with a case", {"include/a.h": binding}, {"include/a.h": (wrapper,)}, 0),
+        ("a case entry with no wrapper", {"include/a.h": binding}, {"include/a.h": ()}, 1),
+        ("a case entry for a file with no binding", {"include/c.h": comment}, {"include/c.h": (wrapper,)}, 1),
+        ("a binding in a definition file", {"include/fixy/Role.h": role}, {}, 0),
+    )
+    for title, files, cases, expected in trials:
+        with tempfile.TemporaryDirectory(prefix="ct-disassembly-scan-") as tmp:
+            root = pathlib.Path(tmp)
+            for rel, text in files.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(text)
+            problems = ctcrypto_problems(root, cases)
+        if len(problems) != expected:
+            print(f"self-test: the case-list scan over {title} gave {len(problems)} problems, not {expected}: {problems}")
+            failures += 1
+    return failures
 
 
 def run_self_test(cxx: str) -> int:
@@ -357,6 +434,7 @@ def run_self_test(cxx: str) -> int:
         if fired != must_fail:
             print(f"self-test: the census over {fake} {'did not fire' if must_fail else 'fired'}: {result.stderr[:400]}")
             failures += 1
+    failures += self_test_case_list()
     print("self-test:", "PASS" if failures == 0 else f"FAIL ({failures})")
     return 0 if failures == 0 else 1
 
