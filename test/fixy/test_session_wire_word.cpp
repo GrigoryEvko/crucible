@@ -67,11 +67,23 @@ static_assert(s::is_keyed_choice_v<Menu>);
 
 inline constexpr std::array<std::uint64_t, 2> own_words{s::branch_wire_word_v<Menu, 0>, s::branch_wire_word_v<Menu, 1>};
 
-static_assert(own_words[0] == tr::label_word_of(^^s::PeerMsg<Alice, Hello, void>));
-static_assert(own_words[0]
-                  == (::foundation::reflect::stable_type_id<s::PeerMsg<Alice, Hello, void>> | tr::label_word_bit),
+static_assert(own_words[0] == tr::label_word_of(^^s::Labelled<Hello, void>));
+static_assert(own_words[0] == (::foundation::reflect::stable_type_id<s::Labelled<Hello, void>> | tr::label_word_bit),
               "the word is the stable type id of the label key, with the top bit set");
 static_assert(own_words[0] != own_words[1]);
+
+// Each endpoint names the other role as its peer.  A PeerMsg is keyed by
+// its label alone, so a choice, its dual and its stripped view put the
+// same word on the wire for each label.
+struct Bob {};
+using AliceMenu = s::Offer<s::Sender<Bob>, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>,
+                           s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>>;
+using ViewMenu = s::Select<s::Send<s::Labelled<Hello, int>, s::End>, s::Send<s::Labelled<Bye, int>, s::End>>;
+static_assert(s::branch_wire_word_v<Menu, 0> == s::branch_wire_word_v<AliceMenu, 0>
+              && s::branch_wire_word_v<Menu, 1> == s::branch_wire_word_v<AliceMenu, 1>);
+static_assert(s::branch_wire_word_v<Menu, 0> == s::branch_wire_word_v<ViewMenu, 0>
+              && s::branch_wire_word_v<Menu, 1> == s::branch_wire_word_v<ViewMenu, 1>);
+static_assert(s::step_wire_word_v<s::Send<s::PeerMsg<Alice, Bye, int>, s::End>> == s::branch_wire_word_v<AliceMenu, 1>);
 
 }  // namespace
 

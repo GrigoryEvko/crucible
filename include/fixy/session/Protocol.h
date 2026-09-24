@@ -168,16 +168,22 @@ namespace detail {
 template <VendorBackend V>
 inline constexpr bool vendor_is_named_v = V != VendorBackend::None;
 
-// The label that a message names is its peer and its label, without the
-// payload.  Two branches of one choice that name the same label are not
-// well-formed, as two branches of one Comm with the same label are not
-// (fixy/session/Global.h).
+// The label key of a message is its label alone, the key of the binary
+// view.  Each endpoint names the other role as the peer, so a key that
+// held the peer would differ between a choice and its dual, and the two
+// would put different words on one wire.  With the label alone, a
+// PeerMsg choice, its dual and its stripped view put one word on the
+// wire.  The peer stays exact in the payload order (the axiom
+// peer_message of fixy/session/Subtype.h), so a message to another peer
+// refines nothing.  A choice of the paper has one peer, so two branches
+// that name one label are not well-formed, whatever their peers, as two
+// branches of one Comm with the same label are not (fixy/session/Global.h).
 namespace peer_message {
 template <typename T>
 struct label_of;
 template <typename Peer, typename Label, typename Payload>
 struct label_of<PeerMsg<Peer, Label, Payload>> {
-    using type = PeerMsg<Peer, Label, void>;
+    using type = Labelled<Label, void>;
 };
 template <typename T>
 using label_of_t = typename label_of<T>::type;

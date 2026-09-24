@@ -162,17 +162,18 @@ static_assert(!s::is_well_formed_v<Offer<AliceCrash>>, "a choice of crash branch
 
 // ── Labels that a payload names ──────────────────────────────────────
 //
-// A PeerMsg names a peer and a label.  Two branches of one choice that
-// name the same label are not well-formed, whatever their payloads.
+// A PeerMsg names a peer and a label, and its label key is the label
+// alone.  Two branches of one choice that name the same label are not
+// well-formed, whatever their payloads and their peers.
 
 static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
                                           Send<s::PeerMsg<Bob, PingReq, int>, Send<int, End>>>>);
 static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
                                           Send<s::PeerMsg<Bob, PingReq, bool>, End>>>,
               "the payload is not part of the label");
-static_assert(s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
-                                         Send<s::PeerMsg<Alice, PingReq, int>, End>>>,
-              "the peer is part of the label");
+static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
+                                          Send<s::PeerMsg<Alice, PingReq, int>, End>>>,
+              "the peer is not part of the label, so each side of a channel puts one word on the wire");
 static_assert(!s::is_well_formed_v<Offer<Sender<Bob>, Recv<s::PeerMsg<Bob, PingReq, int>, End>,
                                          Recv<s::PeerMsg<Bob, PingReq, int>, End>>>);
 
@@ -450,8 +451,8 @@ static_assert(s::is_subtype_sync_v<Send<projected::HelloBob, End>, Send<projecte
 static_assert(s::is_subtype_sync_v<projected::Menu, projected::Menu>
               && s::is_subtype_sync_v<projected::Inbox, projected::Inbox>);
 static_assert(s::subtype_mismatch_v<Send<projected::HelloBob, End>, Send<s::PeerMsg<Alice, projected::Hello, int>, End>>
-                  == tr::mismatch::label_set,
-              "the peer is part of the label, so a message to another peer is another label");
+                  == tr::mismatch::payload,
+              "the label pairs the two messages, and the payload order keeps the peer exact");
 static_assert(s::subtype_mismatch_v<Send<projected::HelloBob, End>, Send<projected::ByeBob, End>>
                   == tr::mismatch::label_set,
               "the label is compared for identity");
