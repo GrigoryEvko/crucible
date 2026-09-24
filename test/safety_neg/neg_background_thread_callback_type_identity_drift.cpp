@@ -11,7 +11,7 @@
 // flexible by accepting any callable") would silently break the
 // load-bearing discipline.  This fixture pins the type-identity
 // at the SURFACE: `Fn` is `void(*)(void*, effects::Bg const&,
-// BackgroundThread::PublishStage const&, RegionNode*) noexcept`, nothing
+// BackgroundThread::PublishStage, RegionNode*) noexcept`, nothing
 // else.
 //
 // Distinct mismatch class (HS14 "≥2 distinct mismatch classes"):
@@ -37,10 +37,9 @@ namespace c = crucible;
 // reddens the assertion at compile time.
 // It spells the whole parameter list of Fn, so the one difference the
 // assertion can see is the noexcept.
-using non_noexcept_fn = void (*)(void*, c::effects::Bg const&, c::BackgroundThread::PublishStage const&,
-                                 c::RegionNode*);
+using non_noexcept_fn = void (*)(void*, c::effects::Bg const&, c::BackgroundThread::PublishStage, c::RegionNode*);
 static_assert(std::is_same_v<c::BackgroundThread::RegionReadyCallback::Fn,
-                             void (*)(void*, c::effects::Bg const&, c::BackgroundThread::PublishStage const&,
+                             void (*)(void*, c::effects::Bg const&, c::BackgroundThread::PublishStage,
                                       c::RegionNode*) noexcept>,
               "the parameter list above must track Fn, or this fixture fails for the wrong reason");
 

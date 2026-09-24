@@ -166,8 +166,7 @@ public:
                 Cipher::open(crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>{cfg_.cipher_path}));
         }
 
-        bg_.set_region_ready_callback(this, [](void* self, effects::Bg const& bg,
-                                               BackgroundThread::PublishStage const& stage,
+        bg_.set_region_ready_callback(this, [](void* self, effects::Bg const& bg, BackgroundThread::PublishStage stage,
                                                RegionNode* region) noexcept {
             static_cast<Vigil*>(self)->on_region_ready(bg, stage, region);
         });

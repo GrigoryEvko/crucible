@@ -28,11 +28,23 @@
 #include <cstdlib>
 #include <memory>
 #include <thread>
+#include <type_traits>
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
 
 namespace {
+
+// Each call on the stage gets its own proof, by value, and the proof dies
+// when the call returns.  A job or a callback that keeps the address of
+// its proof keeps an invalid pointer, and no later use of it is legal
+// C++, so no test runs one.  These assertions pin the shape that makes
+// that true: no signature takes the proof by reference.
+using Stage = crucible::BackgroundThread::PublishStage;
+static_assert(std::is_same_v<crucible::BackgroundThread::RegionReadyCallback::Fn,
+                             void (*)(void*, crucible::effects::Bg const&, Stage, crucible::RegionNode*) noexcept>);
+static_assert(std::is_same_v<decltype(crucible::BackgroundThread::OwnerJob::fn), void (*)(void*, Stage) noexcept>);
+static_assert(!std::is_copy_constructible_v<Stage> && !std::is_move_constructible_v<Stage>);
 
 constexpr uint32_t kOps = 8;
 constexpr uint32_t kSignature = crucible::Vigil::ALIGNMENT_K;
