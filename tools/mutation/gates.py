@@ -54,6 +54,7 @@ NAMED_DECLS = (
 
 CONTRACT_SPECIFIER = re.compile(r"\b(pre|post)\s*\(")
 SPECIFIER_LEAD = re.compile(r"(\)|\bnoexcept|\bconst|\boverride|\bfinal|&)\s*$")
+IDENTIFIER_BYTE = re.compile(rb"[A-Za-z0-9_]")
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,26 @@ def _entity(node: tsast.Node) -> str:
                 return text
         decl = decl.ancestor_of_type(*NAMED_DECLS)
     return ""
+
+
+def _bounded(source: bytes, start: int, end: int, replacement: str) -> str:
+    """The replacement, kept apart from the tokens on each side of the span.
+
+    A requires-clause written `requires(X)` has the span `(X)`, and a bare
+    `true` in it reads `requirestrue`, one identifier, so the mutant does not
+    parse and its gate goes untested.  A span in parentheses keeps them, and
+    a replacement that would join the identifier before or after the span
+    gets a space on that side."""
+    if not replacement:
+        return replacement
+    original = source[start:end]
+    text = "(true)" if replacement == "true" and original[:1] == b"(" and original[-1:] == b")" else replacement
+    if start > 0 and IDENTIFIER_BYTE.match(source[start - 1:start]) and IDENTIFIER_BYTE.match(text[:1].encode()):
+        text = " " + text
+    if end < len(source) and IDENTIFIER_BYTE.match(source[end:end + 1]) and IDENTIFIER_BYTE.match(
+            text[-1:].encode()):
+        text = text + " "
+    return text
 
 
 def _joined_by_and(node: tsast.Node, source: bytes, starts: list[int]) -> bool:
@@ -214,7 +235,7 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
 
     def add(kind: str, node: tsast.Node, replacement: str, span: tuple[int, int] | None = None) -> None:
         start, end = span if span is not None else _span(node, starts)
-        gates.append(Gate(rel, kind, node.line, start, end, replacement, _entity(node),
+        gates.append(Gate(rel, kind, node.line, start, end, _bounded(source, start, end, replacement), _entity(node),
                           source[start:end].decode("utf-8", errors="replace")))
 
     for clause in tree.find("requires_clause"):

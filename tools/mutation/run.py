@@ -27,7 +27,12 @@ A candidate that fails on the original header can never kill a mutant.
 
 A mutant whose header does not compile on its own is recorded as invalid and
 never as killed, because every dependent test would then fail for a reason
-that says nothing about the gate.
+that says nothing about the gate.  An invalid mutant leaves its gate
+untested, so it stops the run after the header that holds it, with the gate
+named, unless tools/mutation/invalid-exemptions.txt lists the gate with a
+reason.  A header that does not compile on its own stops the run before its
+first mutant, because then no probe can tell a malformed mutant from a
+killed one.
 
 Complexity: one baseline pass over the candidates of a header, then for each
 mutant up to one pass, in batches of --jobs compiles that stop at the first
@@ -54,6 +59,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gates as gate_finder  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+INVALID_EXEMPTIONS = Path(__file__).resolve().parent / "invalid-exemptions.txt"
 DEP_FLAGS_WITH_VALUE = ("-o", "-MF", "-MT", "-MQ")
 DEP_FLAGS = ("-c", "-MD", "-MMD")
 TIMEOUT_S = 600
@@ -314,23 +320,47 @@ def _build_and_run(batch: list[Candidate], jobs: int) -> list[tuple[Candidate, b
 
 
 PARSE_ERROR = re.compile(r"expected [^\n]* before|expected primary-expression|expected unqualified-id|stray ")
+# The refusals a check of the header itself makes.  A probe that fails
+# with none of them failed for another reason, such as a mutant that joined
+# two tokens into a name nobody declared, and it witnesses nothing.
+SELF_TEST_REFUSAL = re.compile(r"static assertion failed|non-constant condition for static assertion|"
+                               r"constraints not satisfied|template constraint failure|use of deleted function|"
+                               r"no matching function for call|is private within this context|"
+                               r"is not a constant expression|call to non-.constexpr. function")
+
+
+def probe_verdict(output: str) -> str:
+    """The verdict on a mutant whose header alone no longer compiles, read from the compiler's output.
+
+    A refusal by one of the header's own checks kills the mutant.  A parse
+    error, or an error that no check makes, says the mutant is malformed."""
+    if PARSE_ERROR.search(output) or not SELF_TEST_REFUSAL.search(output):
+        return "invalid"
+    return "killed"
 
 
 def _probe(header_abs: Path, flags_from: Candidate | None, compiler_argv: list[str] | None) -> tuple[bool, str]:
-    """Compile a TU that only includes the header, and say whether it compiled, with its output."""
+    """Compile a TU that only includes the header, and say whether it compiled, with its whole output.
+
+    The output is uncoloured and whole, because the verdict reads the first
+    error in it, and a colour escape or a cut would hide the words."""
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / "probe.cpp"
         probe.write_text(f'#include "{header_abs}"\n')
         if compiler_argv is not None:
-            argv = compiler_argv + ["-fsyntax-only", str(probe)]
+            argv = compiler_argv + ["-fsyntax-only", "-fdiagnostics-color=never", str(probe)]
             cwd = tmp
         else:
             assert flags_from is not None
             argv = [a for a in flags_from.compile_argv if Path(a).resolve() != Path(flags_from.source)
                     and not a.endswith(".cpp")]
-            argv = argv + ["-fsyntax-only", str(probe)]
+            argv = argv + ["-fsyntax-only", "-fdiagnostics-color=never", str(probe)]
             cwd = flags_from.cwd if flags_from.kind == "syntax" else str(Path(flags_from.source).parent)
-        return _run(argv, cwd, {})
+        try:
+            proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT_S, check=False)
+        except subprocess.TimeoutExpired:
+            return False, "timeout"
+        return proc.returncode == 0, proc.stdout + proc.stderr
 
 
 def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: int, neg_cap: int,
@@ -383,6 +413,11 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
     probe_from = next((c for c in reach if c.kind == "syntax" and c.compile_argv), None) or next(
         (c for c in reach if c.compile_argv), None)
     base_probe = _probe(header_abs, probe_from, probe_argv)[0] if (probe_from or probe_argv) else False
+    if (probe_from or probe_argv) and not base_probe:
+        # Without a probe that passes on the original, a mutant that does
+        # not parse fails every check and would count as killed.
+        raise SystemExit(f"mutation: {header} does not compile on its own, so the run cannot tell a mutant that "
+                         f"does not parse from a killed one.  Make the header self-contained first.")
 
     outcomes: list[Outcome] = []
     try:
@@ -395,13 +430,11 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
             header_abs.write_bytes(gate_finder.apply(original, gate))
             probe_ok, probe_out = _probe(header_abs, probe_from, probe_argv) if base_probe else (True, "")
             if not probe_ok:
-                # The header alone no longer compiles.  A parse error says the
-                # mutant is malformed.  Any other error comes from the header's
-                # own checks, and that self-test is a witness of the gate.
-                if PARSE_ERROR.search(probe_out):
-                    outcome.status = "invalid"
-                else:
-                    outcome.status, outcome.killer = "killed", "header-self-test"
+                # The header alone no longer compiles.  A refusal by one of
+                # the header's own checks is a witness of the gate.
+                outcome.status = probe_verdict(probe_out)
+                if outcome.status == "killed":
+                    outcome.killer = "header-self-test"
             else:
                 batches = [(chosen[start:start + jobs], check_all) for start in range(0, len(chosen), jobs)]
                 if runs:
@@ -425,20 +458,61 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
     return outcomes
 
 
+def gate_key(header: str, kind: str, entity: str, text: str) -> str:
+    """The key of one gate in a reviewed list: header, kind, entity and the gate text, whitespace squeezed."""
+    return " | ".join((header, kind, entity, " ".join(text.split())))
+
+
+def load_exemptions(path: Path) -> set[str]:
+    """The gate keys of a reviewed list whose rows are `header | kind | entity | text | reason`.
+
+    A row with no reason is refused, because an exemption that says nothing
+    cannot be reviewed.  Complexity: linear in the size of the file."""
+    keys: set[str] = set()
+    for number, raw in enumerate(path.read_text().splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = [field.strip() for field in line.split(" | ")]
+        if len(fields) < 5 or not fields[-1]:
+            raise SystemExit(f"{path}:{number}: a row needs five fields separated by ' | ', the last a reason")
+        keys.add(gate_key(fields[0], fields[1], fields[2], " | ".join(fields[3:-1])))
+    return keys
+
+
+def unexempted_invalid(outcomes: list[Outcome], exempt: set[str]) -> list[Outcome]:
+    """The invalid outcomes whose gate the reviewed list does not name."""
+    return [o for o in outcomes if o.status == "invalid" and gate_key(o.header, o.kind, o.entity, o.original)
+            not in exempt]
+
+
 def cmd_mutate(args: argparse.Namespace) -> int:
-    """Run the mutants of each named header and append one JSON line per mutant."""
+    """Run the mutants of each named header and append one JSON line per mutant.
+
+    The run stops after a header that holds an invalid mutant the reviewed
+    list does not name, because that gate went untested."""
     build = Path(args.build).resolve()
     src_root = Path(args.src).resolve()
     out = Path(args.out)
     deps = json.loads((out / "deps.json").read_text())
     candidates = load_candidates(build, deps)
+    exempt = load_exemptions(INVALID_EXEMPTIONS)
     only_lines = {int(line) for line in args.lines.split(",")} if args.lines else None
     with (out / args.results).open("a") as sink:
         for header in args.header:
-            for outcome in run_header(header, src_root, candidates, args.jobs, args.neg_cap, args.syntax_cap,
-                                      run_cap=args.run_cap, only_lines=only_lines):
+            outcomes = run_header(header, src_root, candidates, args.jobs, args.neg_cap, args.syntax_cap,
+                                  run_cap=args.run_cap, only_lines=only_lines)
+            for outcome in outcomes:
                 sink.write(json.dumps(asdict(outcome)) + "\n")
                 sink.flush()
+            untested = unexempted_invalid(outcomes, exempt)
+            for outcome in untested:
+                print(f"mutation: INVALID MUTANT {outcome.header}:{outcome.line} {outcome.kind} {outcome.entity}: "
+                      f"{outcome.original!r} does not parse, so the gate went untested.  Fix the mutant in "
+                      f"tools/mutation/gates.py, or list the gate in {INVALID_EXEMPTIONS.name} with a reason.",
+                      file=sys.stderr)
+            if untested:
+                return 1
     return 0
 
 
@@ -446,15 +520,22 @@ def cmd_mutate(args: argparse.Namespace) -> int:
 
 PLANTED = """#pragma once
 #include <concepts>
+#include <type_traits>
 namespace planted {
 template <class T> concept Small = sizeof(T) <= 4;
 template <class T> requires Small<T> constexpr int take(T) { return 1; }
 template <class T> requires std::integral<T> constexpr int count(T) { return 2; }
+template <class T> requires(std::is_integral_v<T>) constexpr int widen(T) { return 3; }
 inline int half(int n) { contract_assert(n % 2 == 0); return n / 2; }
 }
 """
 FIXTURE = """#include "planted.h"
 int main() { return planted::take(1.0L); }
+"""
+# The gate of widen is written `requires(` with no space, so a mutant that
+# writes `true` flush against it reads `requirestrue` and does not parse.
+WIDEN_FIXTURE = """#include "planted.h"
+int main() { return planted::widen(1.5); }
 """
 USER = """#include "planted.h"
 static_assert(planted::take(1) == 1 && planted::count(1) == 2);
@@ -474,10 +555,13 @@ build run_half: cxx run_half.cpp | include/planted.h
 
 
 def cmd_selftest(args: argparse.Namespace) -> int:
-    """Plant a header with three witnessed gates and one bare gate, and check each verdict.
+    """Plant a header with four witnessed gates and one bare gate, and check each verdict.
 
     One witness is a negative fixture, one a syntax-only compile, and one a
-    test that ninja builds and the run executes, so each tier is proved."""
+    test that ninja builds and the run executes, so each tier is proved.  A
+    fourth gate is written `requires(` with no space, which proves that its
+    mutant parses.  The check of the invalid outcomes is then proved on a
+    planted invalid outcome, with and without an exemption."""
     global NINJA
     NINJA = args.ninja or NINJA
     with tempfile.TemporaryDirectory() as tmp_name:
@@ -485,12 +569,14 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         (tmp / "include").mkdir()
         (tmp / "include" / "planted.h").write_text(PLANTED)
         (tmp / "neg_take_large.cpp").write_text(FIXTURE)
+        (tmp / "neg_widen_double.cpp").write_text(WIDEN_FIXTURE)
         (tmp / "user.cpp").write_text(USER)
         (tmp / "run_half.cpp").write_text(RUNNER)
         (tmp / "build.ninja").write_text(NINJA_FILE.format(compiler=args.compiler))
         base = [args.compiler, "-std=c++26", "-fcontracts", f"-I{tmp / 'include'}"]
         rows = [{"directory": str(tmp), "file": str(tmp / name), "arguments": base + ["-c", str(tmp / name),
-                 "-o", str(tmp / (name + ".o"))]} for name in ("neg_take_large.cpp", "user.cpp")]
+                 "-o", str(tmp / (name + ".o"))]}
+                for name in ("neg_take_large.cpp", "neg_widen_double.cpp", "user.cpp")]
         (tmp / "compile_commands.json").write_text(json.dumps(rows))
         driver = REPO_ROOT / "test" / "neg_compile_driver.py"
         headers = frozenset({"include/planted.h"})
@@ -499,6 +585,10 @@ def cmd_selftest(args: argparse.Namespace) -> int:
                       [sys.executable, str(driver), str(tmp), str(tmp / "neg_take_large.cpp"), "neg_take_large",
                        "constraints not satisfied", "Small"],
                       str(tmp), {}, str(tmp / "neg_take_large.cpp"), headers),
+            Candidate("neg_widen_double", "neg",
+                      [sys.executable, str(driver), str(tmp), str(tmp / "neg_widen_double.cpp"), "neg_widen_double",
+                       "constraints not satisfied", "is_integral_v"],
+                      str(tmp), {}, str(tmp / "neg_widen_double.cpp"), headers),
             Candidate("syntax:user.cpp", "syntax", base + ["-fsyntax-only", str(tmp / "user.cpp")],
                       str(tmp), {}, str(tmp / "user.cpp"), headers),
             Candidate("run:run_half", "run", [str(tmp / "run_half")], str(tmp), {}, str(tmp / "run_half.cpp"),
@@ -512,18 +602,36 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         verdicts = {(o.kind, o.entity): o.status for o in outcomes}
         killers = {(o.kind, o.entity): o.killer for o in outcomes}
         expected = {("concept", "Small"): "killed", ("requires", "take"): "killed",
-                    ("requires", "count"): "survived", ("contract", "half"): "killed"}
+                    ("requires", "count"): "survived", ("requires", "widen"): "killed",
+                    ("contract", "half"): "killed"}
         failures = [f"{k}: expected {v}, got {verdicts.get(k)}" for k, v in expected.items() if verdicts.get(k) != v]
         if killers.get(("contract", "half")) != "run:run_half":
             failures.append(f"the contract of half must fall to the run tier, not {killers.get(('contract', 'half'))!r}")
+        if killers.get(("requires", "widen")) != "neg_widen_double":
+            failures.append(f"the gate of widen must fall to its fixture, not {killers.get(('requires', 'widen'))!r}")
         if len(outcomes) != len(expected):
             failures.append(f"expected {len(expected)} mutants, got {len(outcomes)}: {sorted(verdicts)}")
+        # An invalid outcome stops the run unless an exemption names its gate.
+        planted_invalid = Outcome("k", "include/planted.h", "requires", 1, "fused", "(x)", "invalid")
+        if unexempted_invalid([planted_invalid], set()) != [planted_invalid]:
+            failures.append("an invalid outcome with no exemption was not reported")
+        exemption = tmp / "exemptions.txt"
+        exemption.write_text("include/planted.h | requires | fused | (x) | a planted reason\n")
+        if unexempted_invalid([planted_invalid], load_exemptions(exemption)):
+            failures.append("an invalid outcome that an exemption names was still reported")
+        # Only a refusal by a check of the header kills a mutant at the probe.
+        probe_cases = {"planted.h:3:1: error: static assertion failed: small": "killed",
+                       "planted.h:3:1: error: 'requirestrue' does not name a type": "invalid",
+                       "planted.h:3:1: error: expected ';' before '}' token": "invalid"}
+        for text, verdict in probe_cases.items():
+            if probe_verdict(text) != verdict:
+                failures.append(f"the probe output {text!r} must read as {verdict}, not {probe_verdict(text)}")
         if (tmp / "include" / "planted.h").read_text() != PLANTED:
             failures.append("the planted header was not restored")
         for line in failures:
             print(f"mutation selftest: FAIL {line}", file=sys.stderr)
         if not failures:
-            print("mutation selftest: one survivor and three kills, as planted")
+            print("mutation selftest: one survivor and four kills, as planted, and the invalid check holds")
         return 1 if failures else 0
 
 
