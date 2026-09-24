@@ -271,10 +271,11 @@ struct RawEvent {
     std::uint8_t op = 0;
     std::uint8_t branch_index = 0;
     std::uint8_t reason_kind = 0;
-    std::uint8_t pad[5]{};
+    std::array<std::uint8_t, 5> pad{};
 };
 
 static_assert(sizeof(RawEvent) == session_event_size);
+static_assert(offsetof(RawEvent, pad) == 67, "the padding of the wire record starts at byte 67");
 
 }  // namespace detail::event_log
 
@@ -292,7 +293,7 @@ class SessionEvent {
     SessionOp op_ = SessionOp::Send;
     std::uint8_t branch_index_ = 0;
     std::uint8_t reason_kind_ = 0;
-    std::uint8_t pad_[5]{};
+    std::array<std::uint8_t, 5> pad_{};
 
     // User-provided, so that no constructor of the event is trivial.  A
     // trivial constructor makes an implicit-lifetime type, and
@@ -515,7 +516,7 @@ public:
         raw.op = static_cast<std::uint8_t>(op_);
         raw.branch_index = branch_index_;
         raw.reason_kind = reason_kind_;
-        for (std::size_t index = 0; index < std::size(pad_); ++index) raw.pad[index] = pad_[index];
+        raw.pad = pad_;
         return std::bit_cast<std::array<std::byte, session_event_size>>(raw);
     }
 };

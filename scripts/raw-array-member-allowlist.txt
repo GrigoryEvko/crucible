@@ -5,5 +5,3 @@
 # file that another change owns at the time of writing.  The change that moves
 # the member to std::array or fixy::FixedArray deletes its line in the same
 # commit.
-include/fixy/session/EventLog.h pad explicit padding of a wire record, move to std::array<std::uint8_t, 5>
-include/fixy/session/EventLog.h pad_ explicit padding of a wire record, move to std::array<std::uint8_t, 5>
