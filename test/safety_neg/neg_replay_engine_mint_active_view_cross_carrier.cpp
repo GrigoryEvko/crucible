@@ -34,7 +34,7 @@ int main() {
     // runtime — but this neg-compile fixture never gets to runtime.
     // GCC type-checks the requires_ckernel_mutable_view call below
     // and rejects the cross-carrier conversion at parse time.
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(::foundation::effects::testing::foreground<crucible::Vigil>());
     requires_ckernel_mutable_view(av);  // ERROR: cross-carrier mismatch
     return 0;
 }

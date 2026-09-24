@@ -36,6 +36,11 @@ using crucible::TensorSlot;
 
 namespace {
 
+// The pool is minted live on the thread that holds a Vigil's producer
+// claim.  These benches run the pool without a Vigil, so they take that
+// context from the test door.
+constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
 // N internal slots, each 256-byte aligned, offsets = i * slot_size.
 MemoryPlan make_uniform_plan(TensorSlot* slots, uint32_t n, uint64_t slot_size) {
     for (uint32_t i = 0; i < n; i++) {
@@ -117,7 +122,7 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots, 1, 256);
         PoolAllocator pool;
         pool.init(&plan);
-        auto pv = pool.mint_initialized_view();
+        auto pv = pool.mint_initialized_view(kVigilForeground);
         const SlotId s0{0};
         auto r = bench::run("slot_ptr(1 slot, same)", [&] { bench::do_not_optimize(pool.slot_ptr(s0, pv)); });
         pool.destroy();
@@ -130,7 +135,7 @@ int main() {
             MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
             PoolAllocator pool;
             pool.init(&plan);
-            auto pv = pool.mint_initialized_view();
+            auto pv = pool.mint_initialized_view(kVigilForeground);
             char label[64];
             std::snprintf(label, sizeof(label), "slot_ptr(%u slots, sweep)", N);
             auto r = bench::run(label, [&, N] {
@@ -152,7 +157,7 @@ int main() {
             MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
             PoolAllocator pool;
             pool.init(&plan);
-            auto pv = pool.mint_initialized_view();
+            auto pv = pool.mint_initialized_view(kVigilForeground);
 
             std::vector<uint32_t> indices(ACCESS_COUNT);
             fill_random_indices(indices.data(), ACCESS_COUNT, N);
@@ -180,7 +185,7 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
         PoolAllocator pool;
         pool.init(&plan);
-        auto pv = pool.mint_initialized_view();
+        auto pv = pool.mint_initialized_view(kVigilForeground);
         auto r = bench::run("slot_ptr(100, direct ref)", [&] {
             for (uint32_t i = 0; i < N; i++)
                 bench::do_not_optimize(pool.slot_ptr(SlotId{i}, pv));
@@ -195,7 +200,7 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
         PoolAllocator pool;
         pool.init(&plan);
-        auto pv = pool.mint_initialized_view();
+        auto pv = pool.mint_initialized_view(kVigilForeground);
         const PoolAllocator* pool_ptr = &pool;
         bench::do_not_optimize(pool_ptr);
         auto r = bench::run("slot_ptr(100, via pointer)", [&] {
@@ -212,7 +217,7 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
         PoolAllocator pool;
         pool.init(&plan);
-        auto pv = pool.mint_initialized_view();
+        auto pv = pool.mint_initialized_view(kVigilForeground);
         void* const* tbl = pool.table(pv);
         bench::do_not_optimize(tbl);
         auto r = bench::run("table[sid] (100, captured raw)", [&] {
@@ -269,7 +274,7 @@ int main() {
             PoolAllocator pool;
             pool.init(&plan_a);
             {
-                auto pv = pool.mint_initialized_view();
+                auto pv = pool.mint_initialized_view(kVigilForeground);
                 auto old = pool.detach(pv);
                 bench::do_not_optimize(old.base);
                 pool.init(&plan_b);
@@ -290,7 +295,7 @@ int main() {
 
         PoolAllocator pool;
         pool.init(&plan);
-        auto pv = pool.mint_initialized_view();
+        auto pv = pool.mint_initialized_view(kVigilForeground);
 
         alignas(256) static char ext_bufs[N_EXT][256];
 
@@ -312,7 +317,7 @@ int main() {
 
         PoolAllocator pool;
         pool.init(&plan);
-        auto pv = pool.mint_initialized_view();
+        auto pv = pool.mint_initialized_view(kVigilForeground);
 
         struct OpSlots {
             SlotId in0, in1, out;

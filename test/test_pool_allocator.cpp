@@ -19,6 +19,11 @@ using crucible::Layout;
 
 // The offsets here are written by hand rather than produced by the
 // planner, so these tests exercise the allocator on its own.
+// The pool is minted live on the thread that holds a Vigil's producer
+// claim.  These tests run the pool without a Vigil, so they take that
+// context from the test door.
+static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
 static MemoryPlan make_manual_plan(TensorSlot* slots, uint32_t n, uint64_t pool_bytes, uint32_t num_ext) {
     MemoryPlan plan{};
     plan.slots = slots;
@@ -75,7 +80,7 @@ static void test_basic_init() {
     pool.init(&plan);
     // The view is checked once, here.  Every later call that takes it
     // treats it as proof and re-checks nothing.
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
     assert(pool.pool_base() != nullptr);
@@ -131,7 +136,7 @@ static void test_external_registration() {
 
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.slot_ptr(SlotId{1}, pv) == nullptr);
 
@@ -189,7 +194,7 @@ static void test_write_read_isolation() {
 
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     std::memset(pool.slot_ptr(SlotId{0}, pv), 0xAA, 256);
     std::memset(pool.slot_ptr(SlotId{1}, pv), 0xBB, 512);
@@ -242,7 +247,7 @@ static void test_all_external() {
 
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
     assert(pool.pool_base() == nullptr);
@@ -315,7 +320,7 @@ static void test_reinit() {
 
     MemoryPlan plan_b = make_manual_plan(slots_b, 2, 3072, 0);
     pool.init(&plan_b);
-    auto pv_b = pool.mint_initialized_view();
+    auto pv_b = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
     assert(pool.pool_bytes() == 3072);
@@ -396,7 +401,7 @@ static void test_integration_with_sweep_line() {
 
     PoolAllocator pool;
     pool.init(plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
     assert(pool.pool_bytes() == plan->pool_bytes);

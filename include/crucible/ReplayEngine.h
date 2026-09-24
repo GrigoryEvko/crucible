@@ -69,7 +69,7 @@ struct ReplayEngine {
         // The precondition above already established what minting this view
         // checks, and the call it gates returns a pointer promised non-null,
         // which is what the postcondition below rests on.
-        const auto pool_view = pool->mint_initialized_view();
+        const auto pool_view = pool->initialized_view_();
         slot_table_ = pool->table(pool_view);
         // Load the first operation's guard values, so the first advance finds
         // them here like every later one does.
@@ -224,8 +224,12 @@ struct ReplayEngine {
         return e.is_initialized();
     }
 
-    [[nodiscard]] CRUCIBLE_INLINE ActiveView mint_active_view() const noexcept pre(is_initialized()) {
-        return crucible::fixy::wrap::mint_view<engine_state::Active>(*this);
+    // The cursor is foreground state, so the proof that the engine is live
+    // is minted only on the thread that holds the producer claim of its
+    // Vigil.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr ActiveView mint_active_view(VigilFgCtx const&) const noexcept
+        pre(is_initialized()) {
+        return active_view_();
     }
 
     // These overloads take a proof that the engine is initialised and then
@@ -256,6 +260,14 @@ struct ReplayEngine {
     }
 
 private:
+    // The context mints the view on paths that the gate of its Vigil
+    // already passed, so it reaches the view without a context.
+    friend struct CrucibleContext;
+
+    [[nodiscard]] CRUCIBLE_INLINE ActiveView active_view_() const noexcept pre(is_initialized()) {
+        return crucible::fixy::wrap::mint_view<engine_state::Active>(*this);
+    }
+
     // Ordered so that an advance reads and writes them front to back, and
     // padded so the whole object is one cache line. The assertion below pins
     // that. A ninth field would cost a second line on every operation.

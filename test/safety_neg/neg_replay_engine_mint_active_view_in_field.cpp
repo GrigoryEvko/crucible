@@ -31,7 +31,7 @@
     // reached.  The function-body-execution would also be suppressed
     // by the file's static_assert failure below.  The anchor exists
     // solely for grep-discoverability of the bare-name token.
-    return engine.mint_active_view();
+    return engine.mint_active_view(::foundation::effects::testing::foreground<crucible::Vigil>());
 }
 
 // A class with a ReplayEngine::ActiveView field.  The audit walks

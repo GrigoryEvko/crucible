@@ -8,6 +8,11 @@
 
 using namespace crucible;
 
+// The views of the replay chain are minted on the thread that holds a
+// Vigil's producer claim.  This test drives the context without a Vigil,
+// so it takes that context from the test door.
+static constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
+
 // The synthetic workload is a linear chain: op 0 has no input, and
 // every later op consumes exactly the tensor its predecessor produced.
 // Each tensor is a contiguous 1D float of 1024 elements, which is where
@@ -146,7 +151,7 @@ static void test_pipeline_basic() {
     assert(ctx.active_region() == region);
     assert(ctx.pool().is_initialized());
 
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
@@ -199,7 +204,7 @@ static void test_pipeline_divergence() {
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     for (uint32_t i = 0; i < 3; i++) {
         assert(ctx.advance(SCHEMA[i], SHAPE[i], cv) == ReplayStatus::MATCH);
@@ -247,7 +252,7 @@ static void test_pipeline_data_flow() {
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     assert(ctx.advance(SCHEMA[0], SHAPE[0], cv) == ReplayStatus::MATCH);
     std::memset(ctx.output_ptr(0, cv), 0x11, 4096);
@@ -305,7 +310,7 @@ static void test_pipeline_pool_bounds() {
     assert(pool_base != nullptr);
     assert(pool_bytes > 0);
 
-    auto cv2 = ctx.mint_compiled_view();
+    auto cv2 = ctx.mint_compiled_view(kVigilForeground);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv2);
@@ -386,7 +391,7 @@ static void test_pipeline_multi_iteration() {
 
     CrucibleContext ctx;
     assert(ctx.activate(region2));
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
         if (i < NUM_OPS - 1) {

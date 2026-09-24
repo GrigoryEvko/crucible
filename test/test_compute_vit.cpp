@@ -24,6 +24,11 @@
 
 using namespace crucible;
 
+// The views of the replay chain are minted on the thread that holds a
+// Vigil's producer claim.  This test drives the context without a Vigil,
+// so it takes that context from the test door.
+static constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
+
 // The dimensions are small so the reference pass stays cheap, but still
 // differ from each other so that equal-sized slots cannot mask an offset
 // assignment bug: D and D_FF differ, and [B,S,D], [B,D] and [B,N_CLS] are
@@ -316,7 +321,7 @@ int main() {
     assert(ctx.is_compiled());
 
     using crucible::safety::NonNull;
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     ctx.register_external(SlotId{SL_X}, NonNull<void*>{X}, cv);
     ctx.register_external(SlotId{SL_G1}, NonNull<void*>{gamma1}, cv);
@@ -447,7 +452,7 @@ int main() {
     cpu::mm(ref_cls, W_head, ref_logits, B, N_CLS, D);
     cpu::softmax(ref_logits, ref_probs, B, N_CLS);
 
-    auto pv = ctx.pool().mint_initialized_view();
+    auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
     auto* pool_probs = static_cast<const float*>(ctx.pool().slot_ptr(SlotId{SL_PROBS}, pv));
 
     float max_err = 0.0f;

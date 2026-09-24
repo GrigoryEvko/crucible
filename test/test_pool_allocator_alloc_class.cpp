@@ -27,6 +27,11 @@ using crucible::Layout;
 using crucible::safety::AllocClass;
 using crucible::safety::AllocClassTag_v;
 
+// The pool is minted live on the thread that holds a Vigil's producer
+// claim.  These tests run the pool without a Vigil, so they take that
+// context from the test door.
+static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
 static MemoryPlan make_plan(TensorSlot* slots, uint32_t n, uint64_t pool_bytes, uint32_t num_ext) {
     MemoryPlan plan{};
     plan.slots = slots;
@@ -61,7 +66,7 @@ static void test_slot_ptr_pinned_bit_equality() {
 
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     void* raw_0 = pool.slot_ptr(SlotId{0}, pv);
     void* raw_1 = pool.slot_ptr(SlotId{1}, pv);
@@ -83,7 +88,7 @@ static void test_slot_ptr_pinned_type_identity() {
 
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     using Got = decltype(pool.slot_ptr_pinned(SlotId{0}, pv));
     using Want = AllocClass<AllocClassTag_v::Pool, void*>;
@@ -212,7 +217,7 @@ static void test_pool_relax_to_weaker() {
 
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     auto pinned = pool.slot_ptr_pinned(SlotId{0}, pv);
     // Relaxing toward a weaker class is allowed.  Tightening toward a
@@ -255,7 +260,7 @@ static void test_e2e_fence_checked_consumer() {
 
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     auto slot_pinned = pool.slot_ptr_pinned(SlotId{0}, pv);
     uintptr_t addr = pool_consumer(std::move(slot_pinned));

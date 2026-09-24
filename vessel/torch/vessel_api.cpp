@@ -265,12 +265,16 @@ uint32_t crucible_metalog_size(CrucibleHandle h) noexcept {
     return crucible::vessel::as_vigil_typed(h).value()->meta_log().size().peek();
 }
 
+// Each call proves that it runs on the thread that holds the producer claim.
+// A call from any other thread ends the process, as a dispatch from one does.
 void* crucible_output_ptr(CrucibleHandle h, uint16_t j) noexcept {
-    return crucible::vessel::as_vigil_typed(h).value()->output_ptr(j);
+    auto* vigil = crucible::vessel::as_vigil_typed(h).value();
+    return vigil->output_ptr(vigil->mint_producer_context(), j);
 }
 
 void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
-    return crucible::vessel::as_vigil_typed(h).value()->input_ptr(j);
+    auto* vigil = crucible::vessel::as_vigil_typed(h).value();
+    return vigil->input_ptr(vigil->mint_producer_context(), j);
 }
 
 void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexcept {

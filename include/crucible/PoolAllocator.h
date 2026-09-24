@@ -12,6 +12,7 @@
 // One thread builds it and the replay path only reads it once initialisation
 // has returned.
 
+#include <crucible/ForegroundCtx.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/warden/Registry.h>
@@ -187,8 +188,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // the methods that require it are unreachable on a dead pool.
     using InitializedView = crucible::fixy::wrap::ScopedView<PoolAllocator, pool_state::Initialized>;
 
-    [[nodiscard]] CRUCIBLE_INLINE InitializedView mint_initialized_view() const noexcept pre(is_initialized()) {
-        return crucible::fixy::wrap::mint_view<pool_state::Initialized>(*this);
+    // The pool is foreground state, so the proof that it is live is minted
+    // only on the thread that holds the producer claim of its Vigil.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView mint_initialized_view(VigilFgCtx const&) const noexcept
+        pre(is_initialized()) {
+        return initialized_view_();
     }
 
     // The alignment promise holds on both kinds of slot: an internal one is
@@ -301,6 +305,15 @@ struct CRUCIBLE_OWNER PoolAllocator {
     }
 
 private:
+    // The engine and the context mint the view on paths that the gate of
+    // their Vigil already passed, so they reach it without a context.
+    friend struct ReplayEngine;
+    friend struct CrucibleContext;
+
+    [[nodiscard]] CRUCIBLE_INLINE InitializedView initialized_view_() const noexcept pre(is_initialized()) {
+        return crucible::fixy::wrap::mint_view<pool_state::Initialized>(*this);
+    }
+
     [[noreturn, gnu::cold, gnu::noinline]] static void report_unservable_slot_(uint32_t slot_index, const TensorSlot& slot,
                                                                             uint64_t pool_bytes) noexcept {
         std::fprintf(stderr,

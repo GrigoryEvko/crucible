@@ -38,7 +38,7 @@
     // function-body-execution would also be suppressed by the file's
     // static_assert failure below.  The anchor exists solely for
     // grep-discoverability of the bare-name token.
-    return ctx.mint_compiled_view();
+    return ctx.mint_compiled_view(::foundation::effects::testing::foreground<crucible::Vigil>());
 }
 
 // A class with a CrucibleContext::CompiledView field.  The audit walks

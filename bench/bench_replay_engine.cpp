@@ -25,6 +25,11 @@ using namespace crucible;
 
 namespace {
 
+// The views of the replay chain are minted on the thread that holds a
+// Vigil's producer claim.  These benches run the chain without a Vigil,
+// so they take that context from the test door.
+constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
+
 // Synthetic region: N ops, one output + one input each. Slot layout:
 // op[i] writes to slot i, reads from slot (i-1) mod N. Plan gives each
 // slot 256 B of a dummy pool.
@@ -100,7 +105,7 @@ struct BenchRegion {
 // through auto-batch is stateless.  Each helper mints its own
 // ActiveView; engine is already initialized before being passed in.
 ReplayStatus walk_advance_only(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     engine.reset(av);
     ReplayStatus last = ReplayStatus::MATCH;
     for (uint32_t i = 0; i < n; i++) {
@@ -110,7 +115,7 @@ ReplayStatus walk_advance_only(ReplayEngine& engine, const TraceEntry* ops, uint
 }
 
 void* walk_advance_output(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     engine.reset(av);
     void* last_ptr = nullptr;
     for (uint32_t i = 0; i < n; i++) {
@@ -121,7 +126,7 @@ void* walk_advance_output(ReplayEngine& engine, const TraceEntry* ops, uint32_t 
 }
 
 void* walk_advance_both(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     engine.reset(av);
     void* last_ptr = nullptr;
     for (uint32_t i = 0; i < n; i++) {
@@ -134,7 +139,7 @@ void* walk_advance_both(ReplayEngine& engine, const TraceEntry* ops, uint32_t n)
 
 // CrucibleContext drives its internal ReplayEngine; no external reset.
 void* walk_context(CrucibleContext& ctx, const TraceEntry* ops, uint32_t n) {
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
     void* last_ptr = nullptr;
     for (uint32_t i = 0; i < n; i++) {
         auto s = ctx.advance(ops[i].schema_hash, ops[i].shape_hash, cv);

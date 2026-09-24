@@ -169,7 +169,7 @@ struct CrucibleContext {
 
         // Detaching empties the pool, which makes the view stale, but it goes
         // out of scope before anything touches the pool again.
-        auto pv = pool_.mint_initialized_view();
+        auto pv = pool_.initialized_view_();
         auto old_pool = pool_.detach(pv);
         pool_.init(alt->plan);
         migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
@@ -179,7 +179,7 @@ struct CrucibleContext {
 
         // Replay the prefix the two regions share, so the new region resumes
         // where the old one diverged.
-        auto av = engine_.mint_active_view();
+        auto av = engine_.active_view_();
         for (uint32_t i = 0; i < div_pos; i++) {
             auto s = engine_.advance(alt->ops[i].schema_hash, alt->ops[i].shape_hash, av);
             // Debug-only: the engine was just pointed at alt, and these are
@@ -210,7 +210,9 @@ struct CrucibleContext {
         return c.mode_ == ContextMode::COMPILED;
     }
 
-    [[nodiscard]] CRUCIBLE_INLINE CompiledView mint_compiled_view() const noexcept {
+    // The context is foreground state, so the proof that it is compiled is
+    // minted only on the thread that holds the producer claim of its Vigil.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr CompiledView mint_compiled_view(VigilFgCtx const&) const noexcept {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return crucible::fixy::wrap::mint_view<ctx_mode::Compiled>(*this);
     }
@@ -222,7 +224,7 @@ struct CrucibleContext {
 
     [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash,
                                                                   CompiledView const&) {
-        auto av = engine_.mint_active_view();
+        auto av = engine_.active_view_();
         switch (engine_.advance(schema_hash, shape_hash, av)) {
             case ReplayStatus::MATCH:
                 return ReplayStatus::MATCH;
@@ -239,17 +241,17 @@ struct CrucibleContext {
     }
 
     [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const CRUCIBLE_LIFETIMEBOUND {
-        auto av = engine_.mint_active_view();
+        auto av = engine_.active_view_();
         return engine_.output_ptr(j, av);
     }
 
     [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, CompiledView const&) const CRUCIBLE_LIFETIMEBOUND {
-        auto av = engine_.mint_active_view();
+        auto av = engine_.active_view_();
         return engine_.input_ptr(j, av);
     }
 
     CRUCIBLE_INLINE void register_external(SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr, CompiledView const&) {
-        auto pv = pool_.mint_initialized_view();
+        auto pv = pool_.initialized_view_();
         pool_.register_external(sid, ptr, pv);
     }
 

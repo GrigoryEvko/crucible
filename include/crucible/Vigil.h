@@ -20,6 +20,7 @@
 #include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
 #include <crucible/CrucibleContext.h>
+#include <crucible/ForegroundCtx.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
@@ -38,7 +39,6 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Refined.h>
-#include <foundation/effects/Ctx.h>
 
 #include <atomic>
 #include <chrono>
@@ -206,7 +206,7 @@ public:
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
                                                            uint32_t n_metas, ScopeHash scope_hash = {},
                                                            CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
-        assert_producer_thread_();
+        (void)assert_producer_thread_();
         MetaIndex meta_start;  // default = none()
         if (metas && n_metas > 0) {
             meta_start = meta_log_->try_append(metas, n_metas);
@@ -247,17 +247,20 @@ public:
         //    (crucible_dispatch_op and crucible_dispatch_op_ex in
         //    vessel/torch/vessel_api.cpp, called by crucible_mode.py) does
         //    not ask is_producer_thread(), so this gate is its only guard.
-        assert_producer_thread_();
+        //
+        // The gate returns the context of this Vigil's claim, and every view
+        // of the replay chain below is minted from it.
+        const VigilFgCtx fg = assert_producer_thread_();
         const TraceRing::Entry& entry = *ve.value();
 
         // The branch itself proves the context is compiled.  Minting the
         // view once here is what makes the engine transition below reachable
         // only from inside this branch.
         if (ctx_.is_compiled()) [[likely]] {
-            auto compiled_view = ctx_.mint_compiled_view();
+            auto compiled_view = ctx_.mint_compiled_view(fg);
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
-                return handle_divergence_(entry.schema_hash, entry.shape_hash);
+                return handle_divergence_(fg, entry.schema_hash, entry.shape_hash);
             return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {}, .op_index = OpIndex{}};
         }
 
@@ -268,7 +271,7 @@ public:
         // op before alignment completes.
         auto* pending = pending_region_.observe();
         if (pending || pending_activation_) [[unlikely]]
-            return dispatch_transition_(ve, metas, n_metas, scope_hash, callsite_hash);
+            return dispatch_transition_(fg, ve, metas, n_metas, scope_hash, callsite_hash);
 
         (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
         return {
@@ -308,12 +311,13 @@ public:
     // a program with no defined producer, and this query cannot repair it.
     [[nodiscard]] bool is_producer_thread() const noexcept { return producer_claim_.is_claimable_by_caller(); }
 
-    // The first call claims the thread; every later call verifies the match.
-    // A call from a second thread ends the process, in every build mode.
-    // This is the one check between a second producer and a ring that tears
-    // without a diagnostic: both threads claim the same slot and the later
-    // write erases the earlier one.
-    CRUCIBLE_INLINE void assert_producer_thread_() noexcept { (void)producer_claim_.mint_producer_context(); }
+    // The context of the thread that holds this Vigil's producer claim.  The
+    // first call claims the calling thread, and a call from any other thread
+    // then ends the process, as dispatch_op does.  The output, input and
+    // external-slot surfaces below ask for it.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr VigilFgCtx mint_producer_context() noexcept {
+        return assert_producer_thread_();
+    }
 
     // Relaxed suffices: only the foreground writes the mode, at each
     // activation and deactivation of the replay context, and a cross-thread
@@ -387,7 +391,7 @@ public:
     // between two publications, and never beside one.  The job copies out the
     // restored region, because a transaction pointer belongs to the owning
     // thread and a later publication can recycle its slot.  The foreground
-    // part below then acts on that copy alone.
+    // part below then acts on that copy alone, on the producer thread.
     [[nodiscard, gnu::cold]] bool rollback() {
         bool restored_one = false;
         RegionNode* restored = nullptr;
@@ -397,6 +401,7 @@ public:
             if (const Transaction* tx = tx_log_.active(stage)) restored = tx->region.value();
         });
         if (!restored_one) return false;
+        const VigilFgCtx fg = assert_producer_thread_();
         // The deactivation abandons the replayed region the way a divergence
         // does, so the mode takes the same transition.  A restored region
         // with a memory plan takes it back to COMPILED below.
@@ -405,7 +410,7 @@ public:
         if (restored != nullptr) {
             bg_.active_region.store(restored, std::memory_order_release);
             if (ctx_.activate(restored)) {
-                register_externals_from_region_(restored);
+                register_externals_from_region_(fg, restored);
                 mode_.publish_compiled();
             }
         }
@@ -442,7 +447,8 @@ public:
     }
 
     // Loads the most recent stored region and makes it active, activating
-    // replay too when that region carries a memory plan.
+    // replay too when that region carries a memory plan.  The activation is
+    // foreground state, so this runs on the producer thread.
     template <class Ctx>
         requires effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, effects::Alloc a) {
@@ -450,11 +456,12 @@ public:
         auto open_view = cipher_->mint_open_view(ctx);
         RegionNode* region = cipher_->load_content_addressed(open_view, a, cipher_->head(), load_arena_).get();
         if (!region) return false;
+        const VigilFgCtx fg = assert_producer_thread_();
         bg_.active_region.store(region, std::memory_order_release);
         // COMPILED only when the context activates.  A region without a
         // memory plan cannot replay, and the mode must not say it does.
         if (ctx_.activate(region)) {
-            register_externals_from_region_(region);
+            register_externals_from_region_(fg, region);
             region_cache_.insert(region);
             mode_.publish_compiled();
         }
@@ -463,19 +470,20 @@ public:
 
     // Pre-allocated pointer for output j of the current op.  Valid only
     // after dispatch_op returned COMPILED with a matching or complete
-    // status, which is what the minted view's precondition checks.
-    [[nodiscard]] void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        auto compiled_view = ctx_.mint_compiled_view();
+    // status, which is what the minted view's precondition checks.  The
+    // context proves that the caller holds this Vigil's producer claim.
+    [[nodiscard]] void* output_ptr(VigilFgCtx const& fg, uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+        auto compiled_view = ctx_.mint_compiled_view(fg);
         return ctx_.output_ptr(j, compiled_view);
     }
 
-    [[nodiscard]] void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        auto compiled_view = ctx_.mint_compiled_view();
+    [[nodiscard]] void* input_ptr(VigilFgCtx const& fg, uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+        auto compiled_view = ctx_.mint_compiled_view(fg);
         return ctx_.input_ptr(j, compiled_view);
     }
 
-    void register_external(SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr) {
-        auto compiled_view = ctx_.mint_compiled_view();
+    void register_external(VigilFgCtx const& fg, SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr) {
+        auto compiled_view = ctx_.mint_compiled_view(fg);
         ctx_.register_external(sid, ptr, compiled_view);
     }
 
@@ -537,6 +545,15 @@ public:
     // from the region-ready callback.
 
 private:
+    // The first call claims the thread; every later call verifies the match.
+    // A call from a second thread ends the process, in every build mode.
+    // This is the one check between a second producer and a ring that tears
+    // without a diagnostic: both threads claim the same slot and the later
+    // write erases the earlier one.
+    [[nodiscard]] CRUCIBLE_INLINE VigilFgCtx assert_producer_thread_() noexcept {
+        return producer_claim_.mint_producer_context();
+    }
+
     // Runs on the background thread when a new region is ready.  It must
     // not touch the persistence store: that owns mutable resident-cache and
     // log state and belongs to the foreground.  The background thread hands
@@ -602,7 +619,8 @@ private:
     // last four were all `[[maybe_unused]]`: the divergent operation is
     // deliberately not recorded, as the tail of this function says, so no
     // metadata ever reaches a reader from here.
-    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(SchemaHash schema_hash,
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(VigilFgCtx const& fg,
+                                                                                SchemaHash schema_hash,
                                                                                 ShapeHash shape_hash) {
         const uint32_t div_pos = ctx_.engine().ops_matched();
 
@@ -638,10 +656,10 @@ private:
         // excluding the current one.
         auto* alt = region_cache_.find_alternate(div_pos, schema_hash, shape_hash, ctx_.active_region());
 
-        if (alt && try_switch_region_(alt, div_pos)) {
+        if (alt && try_switch_region_(fg, alt, div_pos)) {
             // The switch leaves the context compiled, so advance past the
             // divergent op.
-            auto compiled_view = ctx_.mint_compiled_view();
+            auto compiled_view = ctx_.mint_compiled_view(fg);
             auto status = ctx_.advance(schema_hash, shape_hash, compiled_view);
             if (status != ReplayStatus::DIVERGED) {
                 return {.action = DispatchResult::Action::COMPILED,
@@ -670,8 +688,9 @@ private:
     // is already certified means minting the second tag with no check behind
     // it. Carrying the pointer keeps the caller's certification.
     [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult
-    dispatch_transition_(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
-                         ScopeHash scope_hash, CallsiteHash callsite_hash) pre(ve.value() != nullptr) {
+    dispatch_transition_(VigilFgCtx const& fg, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
+                         uint32_t n_metas, ScopeHash scope_hash, CallsiteHash callsite_hash)
+        pre(ve.value() != nullptr) {
         const TraceRing::Entry& entry = *ve.value();
         // A newer region arriving mid-alignment replaces the pending one and
         // restarts the alignment from zero.  That is correct: the newer
@@ -682,7 +701,7 @@ private:
         if (pending_activation_) {
             // Nothing is recorded during alignment, because it would create
             // false iteration boundaries in the background detector.
-            try_align_(entry.schema_hash, entry.shape_hash);
+            try_align_(fg, entry.schema_hash, entry.shape_hash);
         } else {
             (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
         }
@@ -709,7 +728,7 @@ private:
     // locate the boundary, at which point replay activates and the engine
     // skips forward over the ops already matched.  One op could match by
     // coincidence; K in a row will not.
-    [[gnu::cold]] void try_align_(SchemaHash schema, ShapeHash shape) {
+    [[gnu::cold]] void try_align_(VigilFgCtx const& fg, SchemaHash schema, ShapeHash shape) {
         // Debug-only: the single caller reaches this helper from inside a
         // branch that has already tested pending_activation_, so a null here
         // means that branch was rewritten, not that a caller misused the
@@ -746,7 +765,7 @@ private:
                 return;
             }
 
-            register_externals_from_region_(region);
+            register_externals_from_region_(fg, region);
             region_cache_.insert(region);
 
             // The matched ops already executed eagerly, so the engine has
@@ -770,7 +789,7 @@ private:
 
     // Walks the region's ops to recover each external slot's data pointer
     // from the recorded tensor metadata.  Runs once per activation.
-    [[gnu::cold]] void register_externals_from_region_(const RegionNode* region) {
+    [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode* region) {
         if (!region->plan) return;
 
         for (uint32_t slot_idx = 0; slot_idx < region->plan->num_slots; slot_idx++) {
@@ -793,7 +812,7 @@ private:
             if (ptr != nullptr) {
                 // Every call site activates the context immediately before
                 // calling here, so it is compiled.
-                auto compiled_view = ctx_.mint_compiled_view();
+                auto compiled_view = ctx_.mint_compiled_view(fg);
                 ctx_.register_external(target, crucible::fixy::wrap::NonNull<void*>{ptr}, compiled_view);
             }
         }
@@ -802,7 +821,8 @@ private:
     // Verifies the prefix match, then delegates the pool detach, the slot
     // migration and the engine advance.  Returns true when the switch
     // succeeded and the engine sits at div_pos.
-    [[nodiscard, gnu::cold]] bool try_switch_region_(const RegionNode* alt, uint32_t div_pos) pre(alt != nullptr) {
+    [[nodiscard, gnu::cold]] bool try_switch_region_(VigilFgCtx const& fg, const RegionNode* alt, uint32_t div_pos)
+        pre(alt != nullptr) {
         if (!alt->plan) return false;
 
         // Every op before the divergence point must carry an identical
@@ -825,7 +845,7 @@ private:
         }
 
         if (!ctx_.switch_region(alt, div_pos)) return false;
-        register_externals_from_region_(alt);
+        register_externals_from_region_(fg, alt);
         // These hold only on the success path; every failure returns above.
         // Pinning them here catches a refactor that skips the publication or
         // publishes the wrong region, which would otherwise keep dispatching

@@ -22,6 +22,11 @@
 
 using namespace crucible;
 
+// The views of the replay chain are minted on the thread that holds a
+// Vigil's producer claim.  This test drives the context without a Vigil,
+// so it takes that context from the test door.
+static constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
+
 static constexpr int BATCH = 2;
 static constexpr int IN_DIM = 4;
 static constexpr int HIDDEN = 8;
@@ -225,7 +230,7 @@ int main() {
     // the whole loop.  Passing it to every call costs nothing at run
     // time and makes each call site state, in its own types, that it
     // is only reachable in compiled mode.
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     ctx.register_external(SlotId{SL_X}, crucible::safety::NonNull<void*>{X}, cv);
     ctx.register_external(SlotId{SL_W1}, crucible::safety::NonNull<void*>{W1}, cv);
@@ -233,7 +238,7 @@ int main() {
 
     // A read-only view, so that even these checks reach the pool the
     // way the hot path does.
-    auto pv = ctx.pool().mint_initialized_view();
+    auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
     assert(ctx.pool().slot_ptr(SlotId{SL_X}, pv) == X);
     assert(ctx.pool().slot_ptr(SlotId{SL_W1}, pv) == W1);
     assert(ctx.pool().slot_ptr(SlotId{SL_W2}, pv) == W2);

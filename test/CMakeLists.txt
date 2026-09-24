@@ -11455,6 +11455,34 @@ crucible_neg_compile_test(neg_replay_engine_mint_active_view_cross_carrier
 crucible_neg_compile_test(neg_replay_engine_mint_active_view_in_field
   "Type contains a safety::ScopedView<> in some field")
 
+# The foreground views are read only by the thread that holds the claim
+# of the Vigil, so each gate asks for the context of the Vigil's brand.
+# A context with no brand and a context of another state are refused.
+crucible_neg_compile_multi_test(neg_crucible_context_compiled_view_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_crucible_context_compiled_view_unbranded_ctx.cpp:11")
+crucible_neg_compile_multi_test(neg_crucible_context_compiled_view_other_brand
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_crucible_context_compiled_view_other_brand.cpp:15")
+crucible_neg_compile_multi_test(neg_replay_engine_active_view_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_replay_engine_active_view_unbranded_ctx.cpp:11")
+crucible_neg_compile_multi_test(neg_replay_engine_active_view_other_brand
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_replay_engine_active_view_other_brand.cpp:15")
+crucible_neg_compile_multi_test(neg_pool_allocator_initialized_view_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_pool_allocator_initialized_view_unbranded_ctx.cpp:11")
+crucible_neg_compile_multi_test(neg_pool_allocator_initialized_view_other_brand
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_pool_allocator_initialized_view_other_brand.cpp:15")
+crucible_neg_compile_multi_test(neg_vigil_output_ptr_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_vigil_output_ptr_unbranded_ctx.cpp:11")
+crucible_neg_compile_multi_test(neg_vigil_mint_producer_context_const
+  "passing .const crucible::Vigil. as .this. argument discards qualifiers"
+  "neg_vigil_mint_producer_context_const.cpp:10")
+
 # [FIXY-U-140] safety::Machine<> HS14 floor — first non-ScopedView
 # primitive to get neg-compile pair coverage (closes #146 A8-P2 slice).
 # Class T: deleted-copy with reason string (linearity gate).

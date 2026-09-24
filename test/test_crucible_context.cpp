@@ -22,6 +22,11 @@ using crucible::Layout;
 using crucible::SchemaHash;
 using crucible::ShapeHash;
 
+// The views of the replay chain are minted on the thread that holds a
+// Vigil's producer claim.  These tests run the context without a Vigil,
+// so they take that context from the test door.
+static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
 static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n, MemoryPlan* plan) {
     ::new(r) RegionNode{};
     r->kind = TraceNodeKind::REGION;
@@ -141,8 +146,8 @@ static void test_full_replay() {
 
     CrucibleContext ctx;
     assert(ctx.activate(&region));
-    auto cv = ctx.mint_compiled_view();
-    auto pv = ctx.pool().mint_initialized_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
+    auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
     assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
     void* p0 = ctx.output_ptr(0, cv);
@@ -185,7 +190,7 @@ static void test_divergence() {
 
     CrucibleContext ctx;
     assert(ctx.activate(&region));
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
 
@@ -241,7 +246,7 @@ static void test_reactivate() {
 
     assert(ctx.activate(&region_a));
     {
-        auto cv = ctx.mint_compiled_view();
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
         assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::COMPLETE);
     }
     assert(ctx.compiled_iterations() == 1);
@@ -252,7 +257,7 @@ static void test_reactivate() {
     assert(ctx.activate(&region_b));
     assert(ctx.active_region() == &region_b);
     {
-        auto cv = ctx.mint_compiled_view();
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
         assert(ctx.advance(SchemaHash{30}, ShapeHash{40}, cv) == ReplayStatus::MATCH);
         assert(ctx.advance(SchemaHash{31}, ShapeHash{41}, cv) == ReplayStatus::COMPLETE);
     }
@@ -312,7 +317,7 @@ static void test_external_slots() {
 
     CrucibleContext ctx;
     assert(ctx.activate(&region));
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
     ctx.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param}, cv);
@@ -320,7 +325,7 @@ static void test_external_slots() {
     assert(ctx.advance(SchemaHash{50}, ShapeHash{60}, cv) == ReplayStatus::COMPLETE);
     // The registration is checked through the pool, which is where an
     // external pointer has to land for any op to resolve it.
-    auto pv = ctx.pool().mint_initialized_view();
+    auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
     assert(ctx.pool().slot_ptr(SlotId{1}, pv) == fake_param);
 
     std::printf("  test_external_slots: PASSED\n");
@@ -402,12 +407,12 @@ static void test_integration_sweep_line() {
 
     CrucibleContext ctx;
     assert(ctx.activate(&region));
-    auto cv = ctx.mint_compiled_view();
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
     std::memset(fake_param, 0xEE, 128);
     ctx.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param}, cv);
-    auto pv = ctx.pool().mint_initialized_view();
+    auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
     assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
     assert(ctx.output_ptr(0, cv) == ctx.pool().slot_ptr(SlotId{0}, pv));
@@ -463,7 +468,7 @@ static void test_divergence_counter() {
 
     assert(ctx.activate(&region));
     {
-        auto cv = ctx.mint_compiled_view();
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
         assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
         assert(ctx.advance(SchemaHash{99}, ShapeHash{99}, cv) == ReplayStatus::DIVERGED);
     }
@@ -474,7 +479,7 @@ static void test_divergence_counter() {
     // that ends before the next activation.
     assert(ctx.activate(&region));
     {
-        auto cv = ctx.mint_compiled_view();
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
         assert(ctx.advance(SchemaHash{99}, ShapeHash{20}, cv) == ReplayStatus::DIVERGED);
     }
     assert(ctx.diverged_count() == 2);
@@ -482,7 +487,7 @@ static void test_divergence_counter() {
 
     assert(ctx.activate(&region));
     {
-        auto cv = ctx.mint_compiled_view();
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
         assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
         assert(ctx.advance(SchemaHash{11}, ShapeHash{21}, cv) == ReplayStatus::COMPLETE);
     }

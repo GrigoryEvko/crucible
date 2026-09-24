@@ -7,6 +7,11 @@
 #include <cstring>
 #include <type_traits>
 
+// The views of the replay chain are minted on the thread that holds a
+// Vigil's producer claim.  These tests run the chain without a Vigil, so
+// they take that context from the test door.
+static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
 using crucible::ReplayEngine;
 using crucible::ReplayStatus;
 using crucible::PoolAllocator;
@@ -81,11 +86,11 @@ static void test_linear_match() {
     auto plan = make_simple_plan(slots, 3);
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     ReplayEngine engine;
     engine.init(&region, ReplayEngine::PoolBorrow{pool});
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
 
     assert(engine.is_initialized());
     assert(engine.num_ops() == 3);
@@ -135,10 +140,10 @@ static void test_schema_divergence() {
     auto plan = make_simple_plan(slots, 1);
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(&region, ReplayEngine::PoolBorrow{pool});
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{100}, ShapeHash{200}, av) == ReplayStatus::MATCH);
 
     assert(engine.advance(SchemaHash{999}, ShapeHash{200}, av) == ReplayStatus::DIVERGED);
@@ -173,10 +178,10 @@ static void test_shape_divergence() {
     auto plan = make_simple_plan(slots, 1);
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(&region, ReplayEngine::PoolBorrow{pool});
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{100}, ShapeHash{200}, av) == ReplayStatus::MATCH);
 
     // The schema still matches here, so only the shape can be the cause
@@ -207,10 +212,10 @@ static void test_reset() {
     auto plan = make_simple_plan(slots, 1);
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(&region, ReplayEngine::PoolBorrow{pool});
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{10}, ShapeHash{20}, av) == ReplayStatus::MATCH);
     assert(engine.advance(SchemaHash{11}, ShapeHash{21}, av) == ReplayStatus::COMPLETE);
     assert(engine.is_complete());
@@ -255,10 +260,10 @@ static void test_input_ptr() {
     auto plan = make_simple_plan(slots, 2);
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(&region, ReplayEngine::PoolBorrow{pool});
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{50}, ShapeHash{60}, av) == ReplayStatus::MATCH);
     assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
 
@@ -287,10 +292,10 @@ static void test_invalid_slot() {
     auto plan = make_simple_plan(slots, 1);
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(&region, ReplayEngine::PoolBorrow{pool});
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{77}, ShapeHash{88}, av) == ReplayStatus::COMPLETE);
 
     assert(engine.output_ptr(0, av) != nullptr);
@@ -317,10 +322,10 @@ static void test_current_entry() {
     auto plan = make_simple_plan(slots, 1);
     PoolAllocator pool;
     pool.init(&plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(&region, ReplayEngine::PoolBorrow{pool});
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t i = 0; i < 3; i++) {
         auto s = engine.advance(SchemaHash{300 + i}, ShapeHash{400 + i}, av);
         assert(s == (i < 2 ? ReplayStatus::MATCH : ReplayStatus::COMPLETE));
@@ -385,7 +390,7 @@ static void test_integration_with_pool() {
 
     PoolAllocator pool;
     pool.init(plan);
-    auto pv = pool.mint_initialized_view();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
     pool.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param}, pv);
@@ -415,7 +420,7 @@ static void test_integration_with_pool() {
 
     ReplayEngine engine;
     engine.init(&region, ReplayEngine::PoolBorrow{pool});
-    auto av = engine.mint_active_view();
+    auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av) == ReplayStatus::MATCH);
     assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
     // The external slot resolves to registered storage, not into the pool.

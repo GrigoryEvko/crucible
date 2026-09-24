@@ -33,6 +33,11 @@ using namespace crucible;
 
 namespace {
 
+// The views of the replay chain are minted on the thread that holds a
+// Vigil's producer claim.  The benches that drive the chain without a
+// Vigil take that context from the test door.
+constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
+
 // Certifies an Entry this file built field by field, so it can reach
 // record_op and dispatch_op, which take the second trust tag. It runs no
 // check, because a literal written here is whatever this file wrote. An
@@ -292,7 +297,7 @@ int main() {
         pool.init(plan);
 
         uint32_t slot_idx = 0;
-        auto pv = pool.mint_initialized_view();
+        auto pv = pool.mint_initialized_view(kVigilForeground);
         auto r = bench::run("PoolAllocator::slot_ptr (cyclic, N=16)", [&] {
             bench::do_not_optimize(pool.slot_ptr(SlotId{slot_idx}, pv));
             slot_idx = (slot_idx + 1) & (NSLOTS - 1);
@@ -320,7 +325,7 @@ int main() {
         pool.init(br.plan);
         ReplayEngine engine;
         engine.init(br.region, ReplayEngine::PoolBorrow{pool});
-        auto av = engine.mint_active_view();
+        auto av = engine.mint_active_view(kVigilForeground);
 
         uint32_t op_idx = 0;
         auto r = bench::run("ReplayEngine::advance (cyclic, 8 ops)", [&] {
@@ -344,7 +349,7 @@ int main() {
         (void)ctx.activate(br.region);
 
         uint32_t op_idx = 0;
-        auto cv = ctx.mint_compiled_view();
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto r = bench::run("CrucibleContext::advance (cyclic, 8 ops)", [&] {
             bench::do_not_optimize(&ctx);
             auto s = ctx.advance(SCHEMA[op_idx], SHAPE[op_idx], cv);
@@ -369,7 +374,7 @@ int main() {
         (void)ctx.activate(br.region);
 
         uint32_t op_idx = 0;
-        auto cv = ctx.mint_compiled_view();
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto r = bench::run("CrucibleContext::advance (cyclic, 32 ops)", [&] {
             bench::do_not_optimize(&ctx);
             auto s = ctx.advance(big_sch[op_idx], big_shp[op_idx], cv);
@@ -439,11 +444,14 @@ int main() {
         for (uint32_t i = 0; i < NUM_OPS; i++)
             ops[i] = make_op(10, i);
 
+        // The claim is checked once here, as the adapter holds it for a whole
+        // window, so the loop measures the pointer read and not the claim.
+        const VigilFgCtx fg = vigil.mint_producer_context();
         uint32_t op_idx = 0;
         return bench::run("dispatch_op [COMPILED + output_ptr]", [&] {
             auto& d = ops[op_idx];
             auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-            if (r.action == DispatchResult::Action::COMPILED) bench::do_not_optimize(vigil.output_ptr(0));
+            if (r.action == DispatchResult::Action::COMPILED) bench::do_not_optimize(vigil.output_ptr(fg, 0));
             bench::do_not_optimize(r);
             op_idx = (op_idx + 1) % NUM_OPS;
         });
