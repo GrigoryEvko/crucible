@@ -29,12 +29,15 @@
 // the surrounding scope, not a value.
 
 #include <foundation/Lifetime.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
+#include <atomic>
 #include <concepts>
 #include <cstddef>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 
 namespace foundation::effects {
@@ -43,12 +46,13 @@ namespace testing {
 struct ForegroundWitness;
 }  // namespace testing
 
+// The owner of the foreground key, and the producer claim that is its one
+// friend.  Both are defined below in this header, for the reason
+// Effect.h gives for the other owners.
 namespace host {
-// The owner of the foreground thread's producer claim defines this type.
-// The claim is the one production place that mints a foreground context,
-// so a foreground context is evidence that its holder runs on the thread
-// that won the claim.
 struct ForegroundOwner;
+template <class Brand>
+class ProducerClaim;
 }  // namespace host
 
 namespace detail::ctx_mint {
@@ -75,16 +79,41 @@ namespace ctx_cap {
 // permits the empty row, spelled the way a context spells its own, so
 // that one reader below serves every source.
 //
-// It is still evidence.  A gate that admits only the foreground context
-// states that its caller runs on the thread that claimed the producer
-// role, so the source is built only from the key that claim holds.
+// It is still evidence.  A branded source names the single-producer
+// state whose claim built it, and only the claim of that brand builds
+// one.  A gate of the brand therefore states that its caller runs on the
+// thread that owns that state, and it refuses the claim of any other
+// state.  The unbranded source below names no state, and any translation
+// unit can declare a brand of its own, so no route turns a branded source
+// into an unbranded one.  Only the test door builds the unbranded source.
 //
 // The copy constructor stays trivial, so a call passes the source in no
 // register at all.  The copy assignment is user-provided, so the type is
 // not trivially copyable and std::bit_cast refuses it.  A trivial copy
 // constructor still makes the type implicit-lifetime, and the annotation
 // is what makes the checked lifetime start refuse it and every class
-// that holds one.
+// that holds one.  The unbranded source obeys the same copy rules.
+template <class Brand>
+class [[=::foundation::lifetime::no_start_over_bytes{}]] BrandedFg {
+public:
+    using brand_type = Brand;
+
+    template <template <Effect...> class R>
+    using permitted_as = R<>;
+
+    constexpr BrandedFg(const BrandedFg&) noexcept = default;
+    constexpr BrandedFg(BrandedFg&&) noexcept = default;
+    constexpr BrandedFg& operator=(const BrandedFg&) noexcept { return *this; }
+    constexpr BrandedFg& operator=(BrandedFg&&) noexcept { return *this; }
+    ~BrandedFg() = default;
+
+private:
+    constexpr explicit BrandedFg(detail::ctx_mint::fg_key) noexcept {}
+
+    friend class ::foundation::effects::host::ProducerClaim<Brand>;
+    friend struct ::foundation::effects::testing::ForegroundWitness;
+};
+
 class [[=::foundation::lifetime::no_start_over_bytes{}]] Fg {
 public:
     template <template <Effect...> class R>
@@ -110,8 +139,21 @@ using Test = ::foundation::effects::Test;
 // This is a concept over the roster in Effect.h, so nothing a
 // translation unit declares can add a source.  The value and the trait
 // spellings are derived from it and read by nothing that gates.
+//
+// A branded source is recognized by reflection on its template, not by a
+// trait a translation unit could specialize.
+namespace detail {
 template <class T>
-concept IsCapType = std::same_as<T, ctx_cap::Fg> || IsContext<T>;
+[[nodiscard]] consteval bool is_branded_foreground_() noexcept {
+    return std::meta::has_template_arguments(^^T) && std::meta::template_of(^^T) == ^^ctx_cap::BrandedFg;
+}
+}  // namespace detail
+
+template <class T>
+concept IsBrandedForeground = detail::is_branded_foreground_<T>();
+
+template <class T>
+concept IsCapType = std::same_as<T, ctx_cap::Fg> || IsBrandedForeground<T> || IsContext<T>;
 template <class T>
 inline constexpr bool is_cap_type_v = IsCapType<T>;
 template <class T>
@@ -219,11 +261,90 @@ public:
 };
 
 // The one door of the foreground context.  The key is the evidence: its
-// constructor is private to the producer claim and to the test witness.
+// constructor is private to the foreground owner and to the test witness.
 [[nodiscard]] constexpr auto mint_foreground_context(detail::ctx_mint::fg_key key) noexcept
     -> ExecCtx<ctx_cap::Fg, Row<>> {
     return ExecCtx<ctx_cap::Fg, Row<>>{ctx_cap::Fg{key}};
 }
+
+namespace host {
+
+// The one production builder of the foreground key.  Its member is
+// private, and the producer claims below are its only friends.
+struct ForegroundOwner final {
+private:
+    [[nodiscard]] static constexpr auto key() noexcept -> detail::ctx_mint::fg_key { return detail::ctx_mint::fg_key{}; }
+
+    template <class Brand>
+    friend class ProducerClaim;
+};
+
+// The one production route to a foreground context.  The first thread
+// that asks for a context holds the claim for the life of this object.
+// A request from any other thread ends the process.
+//
+// Only the brand builds its claim, and the context names the brand.  The
+// single-producer state S holds a ProducerClaim<S>, so a context branded
+// S is evidence that its holder runs on the thread that owns an S.  A
+// thread that holds the claim of another state passes no gate of S.
+template <class Brand>
+class ProducerClaim {
+public:
+    ProducerClaim(const ProducerClaim&) = delete("a claim names one owner of single-producer state");
+    ProducerClaim& operator=(const ProducerClaim&) = delete("a claim names one owner of single-producer state");
+    ProducerClaim(ProducerClaim&&) = delete("a claim names one owner of single-producer state");
+    ProducerClaim& operator=(ProducerClaim&&) = delete("a claim names one owner of single-producer state");
+
+    // User-provided, so the claim is neither trivially copyable nor an
+    // implicit-lifetime type.  GCC counts a class whose copies are all
+    // deleted as trivially copyable, and std::start_lifetime_as would
+    // then build a claim over bytes that a thread already holds.
+    constexpr ~ProducerClaim() noexcept {}
+
+    // The part that inlines is a relaxed load, a comparison and a branch.
+    // The claim and the failure report sit out of line and cold.
+    [[nodiscard]] CRUCIBLE_INLINE auto mint_producer_context() noexcept -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
+        const auto current_tid = std::this_thread::get_id();
+        if (holder_.load(std::memory_order_relaxed) != current_tid) [[unlikely]]
+            claim_or_reject_(current_tid);
+        return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ctx_cap::BrandedFg<Brand>{ForegroundOwner::key()}};
+    }
+
+    // True when no thread holds the claim yet, or the calling thread
+    // holds it.  Two threads that both ask before either claims both read
+    // true, and the loser of the claim then ends the process.
+    [[nodiscard]] bool is_claimable_by_caller() const noexcept {
+        const auto holder = holder_.load(std::memory_order_relaxed);
+        return holder == std::thread::id{} || holder == std::this_thread::get_id();
+    }
+
+private:
+    constexpr ProducerClaim() noexcept = default;
+
+    friend Brand;
+
+    [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::thread::id current_tid) noexcept {
+        auto holder = holder_.load(std::memory_order_relaxed);
+        if (holder == std::thread::id{}) {
+            // Relaxed is enough: the claim synchronizes nothing, it only
+            // records which thread arrived first.  A failed exchange leaves
+            // the winner's id in `holder`, which the check below reports.
+            if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_relaxed)) return;
+        }
+        // Not a contract clause.  The predicate is about a thread identity
+        // this function just read, and a contract evaluates to nothing in a
+        // target built with the semantic set to `ignore`.
+        CRUCIBLE_FATAL_INVARIANT(holder == current_tid);
+    }
+
+    // A thread id is not a lock-free atomic on every target, and a hidden
+    // mutex on this check would put a lock on the dispatch path.
+    static_assert(std::atomic<std::thread::id>::is_always_lock_free,
+                  "std::atomic<std::thread::id> must be lock-free on this target.");
+    std::atomic<std::thread::id> holder_{};
+};
+
+}  // namespace host
 
 // The test door of the foreground context.  scripts/check-ctx-testing-boundary.sh
 // refuses a use of it in code that ships, as it does for the door in
@@ -234,10 +355,22 @@ struct ForegroundWitness {
     [[nodiscard]] static constexpr auto fg() noexcept -> ExecCtx<ctx_cap::Fg, Row<>> {
         return mint_foreground_context(detail::ctx_mint::fg_key{});
     }
+
+    template <class Brand>
+    [[nodiscard]] static constexpr auto branded_fg() noexcept -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
+        return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ctx_cap::BrandedFg<Brand>{detail::ctx_mint::fg_key{}}};
+    }
 };
 
-[[nodiscard]] inline constexpr auto foreground() noexcept -> ExecCtx<ctx_cap::Fg, Row<>> {
-    return ForegroundWitness::fg();
+// With no brand, the unbranded context; with a brand, the context a
+// claim of that brand would mint.
+template <class Brand = void>
+[[nodiscard]] inline constexpr auto foreground() noexcept {
+    if constexpr (std::is_void_v<Brand>) {
+        return ForegroundWitness::fg();
+    } else {
+        return ForegroundWitness::branded_fg<Brand>();
+    }
 }
 
 }  // namespace testing
@@ -381,6 +514,40 @@ static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<FgWitness>
 static_assert(!std::is_default_constructible_v<FgWitness> && !std::is_default_constructible_v<ctx_cap::Fg>
                   && !std::is_default_constructible_v<detail::ctx_mint::fg_key>,
               "A foreground context is built from the key of the producer claim, never from nothing.");
+
+// A branded foreground context obeys every rule of the unbranded one, and
+// its source is built only by the claim of its brand.  It passes a gate
+// that asks for no brand, and no gate of another brand.
+struct BrandWitness {};
+struct OtherBrandWitness {};
+using BrandedFgWitness = ExecCtx<ctx_cap::BrandedFg<BrandWitness>, Row<>>;
+using OtherBrandedFgWitness = ExecCtx<ctx_cap::BrandedFg<OtherBrandWitness>, Row<>>;
+static_assert(IsCapType<ctx_cap::BrandedFg<BrandWitness>> && IsBrandedForeground<ctx_cap::BrandedFg<BrandWitness>>);
+static_assert(!IsBrandedForeground<ctx_cap::Fg> && !IsBrandedForeground<Bg> && !IsBrandedForeground<int>);
+static_assert(sizeof(BrandedFgWitness) == 1);
+static_assert(std::is_same_v<cap_permitted_row_t<ctx_cap::BrandedFg<BrandWitness>>, Row<>>);
+static_assert(!std::is_trivially_copyable_v<BrandedFgWitness> && std::is_trivially_copy_constructible_v<BrandedFgWitness>,
+              "A branded foreground context copies for free and is refused by std::bit_cast.");
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<BrandedFgWitness>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<ctx_cap::BrandedFg<BrandWitness>>,
+              "The checked lifetime start must refuse the branded foreground context and its source.");
+static_assert(!std::is_default_constructible_v<BrandedFgWitness>
+                  && !std::is_default_constructible_v<ctx_cap::BrandedFg<BrandWitness>>
+                  && !std::is_constructible_v<ctx_cap::BrandedFg<BrandWitness>, detail::ctx_mint::fg_key>,
+              "A branded source is built only by the claim of its brand.");
+static_assert(!std::is_constructible_v<FgWitness, BrandedFgWitness>,
+              "No route forgets a brand.  Any translation unit can declare a brand and hold its claim, so a "
+              "context with no brand names no single-producer state and is not evidence.");
+static_assert(!std::is_constructible_v<BrandedFgWitness, FgWitness>, "No route adds a brand to a context.");
+static_assert(!std::is_constructible_v<OtherBrandedFgWitness, BrandedFgWitness>,
+              "A context of one brand passes no gate of another brand.");
+static_assert(!std::is_default_constructible_v<host::ProducerClaim<BrandWitness>>,
+              "Only the brand builds its producer claim.");
+static_assert(!std::is_trivially_copyable_v<host::ProducerClaim<BrandWitness>>
+                  && !std::is_implicit_lifetime_v<host::ProducerClaim<BrandWitness>>,
+              "No producer claim is built from bytes or started over a buffer.");
+static_assert(!std::is_constructible_v<ctx_cap::Fg, const ctx_cap::BrandedFg<BrandWitness>&>,
+              "A branded source does not become the unbranded source.");
 
 // Every axis defaults to the claim-nothing end of its range.
 static_assert(std::is_same_v<typename ExecCtx<>::cap_type, ctx_cap::Fg>);

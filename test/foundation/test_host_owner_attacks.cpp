@@ -1,41 +1,29 @@
 // Attacks on the production keys of the execution contexts.
 //
 // A background, init or foreground context is evidence: its key has a
-// private constructor, and the friends of the key are a host owner type
-// that the layer owning the entry point defines, and the test witness.
-// Each attack below is legal C++ that tries to build a key without that
-// owner.  An attack that still succeeds is an entry of the ledger at the
-// foot of this file, and the ledger only shrinks.
+// private constructor, and the friends of the key are a host owner and
+// the test witness.  Each owner is defined in the header that declares
+// its key, so a translation unit that names a key sees the definition,
+// and a second definition is a redefinition error.  The foreground key
+// reaches production only through a producer claim, and only the brand
+// of a claim builds it.  The fixtures under neg/ named neg_host_* and
+// neg_producer_claim_* pin the refusals that a static_assert cannot state.
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <cstdlib>
-#include <iterator>
-#include <string_view>
+#include <thread>
 #include <type_traits>
-
-// The three host owners are declared in foundation and defined nowhere,
-// so the first translation unit that defines one is its owner, and no
-// rule is broken.  This file is that translation unit.
-namespace foundation::effects::host {
-struct InitOwner {
-    [[nodiscard]] static constexpr auto key() noexcept { return detail::ctx_mint::init_key{}; }
-};
-struct BackgroundOwner {
-    [[nodiscard]] static constexpr auto key() noexcept { return detail::ctx_mint::bg_key{}; }
-};
-struct ForegroundOwner {
-    [[nodiscard]] static constexpr auto key() noexcept { return detail::ctx_mint::fg_key{}; }
-};
-}  // namespace foundation::effects::host
+#include <utility>
 
 namespace host_owner_attacks {
 
 namespace fe = ::foundation::effects;
 
-// ── Attacks that the keys refuse ─────────────────────────────────────
+template <class T>
+concept Complete = requires { sizeof(T); };
 
 // No key is built from nothing, and none is a byte.
 static_assert(!std::is_default_constructible_v<fe::detail::ctx_mint::init_key>);
@@ -43,39 +31,96 @@ static_assert(!std::is_default_constructible_v<fe::detail::ctx_mint::bg_key>);
 static_assert(!std::is_default_constructible_v<fe::detail::ctx_mint::fg_key>);
 static_assert(!std::is_trivially_copyable_v<fe::detail::ctx_mint::init_key>);
 
-// ── The ledger ───────────────────────────────────────────────────────
-
-struct KnownLimit {
-    std::string_view attack;
-    std::string_view reason;
+// The single-producer state of this test, and a state that is not it.
+struct Producer {
+    fe::host::ProducerClaim<Producer> claim;
 };
+struct Intruder {};
 
-inline constexpr KnownLimit kLedger[] = {
-    {"a translation unit defines host::InitOwner, host::BackgroundOwner or host::ForegroundOwner and mints the "
-     "production context",
-     "the owners are declared and defined nowhere, so a first definition is legal C++; only a definition in the "
-     "home of each entry point, and a guard that refuses every other definition, would refuse it"},
+// Every owner is complete where its key is visible, so no translation
+// unit that can name a key defines an owner first.
+static_assert(Complete<fe::host::InitOwner> && Complete<fe::host::BackgroundOwner>
+              && Complete<fe::host::ForegroundOwner> && Complete<fe::host::ProducerClaim<Producer>>);
+
+// The background and init owners have no member, so no route outside the
+// test witness builds their keys.
+static_assert(std::is_empty_v<fe::host::InitOwner> && std::is_empty_v<fe::host::BackgroundOwner>);
+
+// The foreground owner builds its key only for a producer claim.
+template <class Owner>
+concept KeyReachable = requires { Owner::key(); };
+static_assert(!KeyReachable<fe::host::ForegroundOwner>);
+
+// No owner is a base, so no derived class borrows its position.
+static_assert(std::is_final_v<fe::host::InitOwner> && std::is_final_v<fe::host::BackgroundOwner>
+              && std::is_final_v<fe::host::ForegroundOwner>);
+
+// Only the brand builds its claim, and a claim neither copies nor moves.
+static_assert(!std::is_default_constructible_v<fe::host::ProducerClaim<Producer>>);
+static_assert(!std::is_default_constructible_v<fe::host::ProducerClaim<Intruder>>);
+static_assert(std::is_default_constructible_v<Producer>);
+static_assert(!std::is_copy_constructible_v<fe::host::ProducerClaim<Producer>>
+              && !std::is_move_constructible_v<fe::host::ProducerClaim<Producer>>);
+
+// A claim is not built from bytes and is not started over a buffer.
+static_assert(!std::is_trivially_copyable_v<fe::host::ProducerClaim<Producer>>
+              && !std::is_implicit_lifetime_v<fe::host::ProducerClaim<Producer>>);
+
+// The claim mints the context of its brand, which passes no gate that asks
+// for another brand.
+using ProducerCtx = fe::ExecCtx<fe::ctx_cap::BrandedFg<Producer>, fe::Row<>>;
+using IntruderCtx = fe::ExecCtx<fe::ctx_cap::BrandedFg<Intruder>, fe::Row<>>;
+using UnbrandedCtx = fe::ExecCtx<fe::ctx_cap::Fg, fe::Row<>>;
+static_assert(std::is_same_v<decltype(std::declval<Producer&>().claim.mint_producer_context()), ProducerCtx>);
+static_assert(!std::is_convertible_v<ProducerCtx, IntruderCtx> && !std::is_constructible_v<IntruderCtx, ProducerCtx>);
+
+// Any translation unit can declare a brand of its own and hold its claim,
+// as SelfBranded below does.  So no branded context becomes the context
+// with no brand, which names no single-producer state.
+struct SelfBranded {
+    fe::host::ProducerClaim<SelfBranded> claim;
 };
-static_assert(std::size(kLedger) <= 1, "the ledger only shrinks");
+using SelfBrandedCtx = fe::ExecCtx<fe::ctx_cap::BrandedFg<SelfBranded>, fe::Row<>>;
+static_assert(std::is_same_v<decltype(std::declval<SelfBranded&>().claim.mint_producer_context()), SelfBrandedCtx>);
+static_assert(!std::is_convertible_v<SelfBrandedCtx, UnbrandedCtx> && !std::is_constructible_v<UnbrandedCtx, SelfBrandedCtx>);
+static_assert(!std::is_convertible_v<SelfBrandedCtx, ProducerCtx> && !std::is_constructible_v<ProducerCtx, SelfBrandedCtx>);
+static_assert(!std::is_convertible_v<ProducerCtx, UnbrandedCtx> && !std::is_constructible_v<UnbrandedCtx, ProducerCtx>);
 
-// The ledger entry reproduces: three production contexts from a test file.
-[[nodiscard]] inline bool a_self_made_owner_mints_every_context() {
-    const fe::Init init = fe::mint_context<fe::Init>(fe::host::InitOwner::key());
-    const fe::Bg bg = fe::mint_context<fe::Bg>(fe::host::BackgroundOwner::key());
-    const auto fg = fe::mint_foreground_context(fe::host::ForegroundOwner::key());
-    (void)init;
-    (void)bg;
-    return std::is_same_v<decltype(fg), const fe::ExecCtx<fe::ctx_cap::Fg, fe::Row<>>>;
+// The first thread that mints holds the claim, and a second thread reads
+// that it cannot take it.
+[[nodiscard]] inline bool a_second_thread_cannot_take_the_claim() {
+    Producer producer;
+    if (!producer.claim.is_claimable_by_caller()) return false;
+    const ProducerCtx fg = producer.claim.mint_producer_context();
+    (void)fg;
+    if (!producer.claim.is_claimable_by_caller()) return false;
+    bool other_thread_can_claim = true;
+    std::thread other([&] { other_thread_can_claim = producer.claim.is_claimable_by_caller(); });
+    other.join();
+    return !other_thread_can_claim;
+}
+
+// A claim that no thread has used yet is claimable by any thread.
+[[nodiscard]] inline bool a_fresh_claim_is_claimable_from_any_thread() {
+    Producer producer;
+    bool other_thread_can_claim = false;
+    std::thread other([&] { other_thread_can_claim = producer.claim.is_claimable_by_caller(); });
+    other.join();
+    return other_thread_can_claim && producer.claim.is_claimable_by_caller();
 }
 
 }  // namespace host_owner_attacks
 
 int main() {
     using namespace host_owner_attacks;
-    if (!a_self_made_owner_mints_every_context()) {
-        std::fprintf(stderr, "FAIL: stale ledger entry: a self-made owner no longer mints a context, delete it\n");
+    if (!a_second_thread_cannot_take_the_claim()) {
+        std::fprintf(stderr, "FAIL: a producer claim did not bind the thread that first minted from it\n");
         return EXIT_FAILURE;
     }
-    std::printf("test_host_owner_attacks: %zu ledger entry reproduces\n", std::size(kLedger));
+    if (!a_fresh_claim_is_claimable_from_any_thread()) {
+        std::fprintf(stderr, "FAIL: an unused producer claim refused a thread\n");
+        return EXIT_FAILURE;
+    }
+    std::printf("test_host_owner_attacks: every owner is complete, and a claim binds its first thread\n");
     return EXIT_SUCCESS;
 }

@@ -250,15 +250,12 @@ namespace testing {
 struct TestWitness;
 }  // namespace testing
 
-// The production entry points that may start a context belong to the
-// layer that stands up the thread or the phase, and this layer cannot
-// name them.  Each host type below is declared here and defined by the
-// owner of the corresponding entry point (the background-thread header
-// defines BackgroundOwner, the initialization owner defines InitOwner).
-// That definition is the one place a production key is built, and it
-// decides who may call it.  The forgery surface is the one a friend
-// naming the host class directly already had: a second definition of
-// the host type is an ODR violation, as a fake host class would be.
+// Each key below names an owner as a friend, and each owner is defined
+// in the header that declares its key.  A translation unit that can name
+// a key has included that header, so it sees the definition, and a second
+// definition of an owner is a redefinition error.  An owner declared here
+// and defined in some other file is a door: the first definition in any
+// translation unit is legal C++, and its members build the key.
 namespace host {
 struct BackgroundOwner;
 struct InitOwner;
@@ -307,6 +304,18 @@ public:
 };
 
 }  // namespace detail::ctx_mint
+
+namespace host {
+
+// No production entry point of this tree starts a background thread or
+// an initialization phase yet.  So neither owner has a member, and only
+// the test witness builds a background or an init key.  The entry point
+// that starts the thread or the phase adds its claim function here, as
+// the one friend of a private key member.
+struct BackgroundOwner final {};
+struct InitOwner final {};
+
+}  // namespace host
 
 class Bg;
 class Init;

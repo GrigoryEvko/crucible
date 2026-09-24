@@ -826,9 +826,41 @@ foundation_test(test_row_hash)
 # still succeeds is a row of the shrink-only ledger in the file.
 foundation_test(test_identity_attacks)
 
-# Legal C++ that builds a production context key without its owner.  An
-# attack that still succeeds is a row of the shrink-only ledger.
+# Each host owner is defined beside its key, so a second definition is a
+# redefinition, and the foreground key is private to the producer claim.
+# Only the brand of a claim builds it, and the context of one brand
+# passes no gate of another, nor the gate that asks for no brand.  A
+# branded context, like the unbranded one, is not built from a byte or
+# over a buffer.
 foundation_test(test_host_owner_attacks)
+foundation_neg_compile_test(neg_host_owner_defined_again
+  "redefinition of .struct foundation::effects::host::ForegroundOwner."
+  "neg_host_owner_defined_again.cpp:9")
+foundation_neg_compile_test(neg_host_background_owner_defined_again
+  "redefinition of .struct foundation::effects::host::BackgroundOwner."
+  "neg_host_background_owner_defined_again.cpp:9")
+foundation_neg_compile_test(neg_host_owner_key_private
+  "is private within this context"
+  "foundation::effects::host::ForegroundOwner::key\\(\\)")
+foundation_neg_compile_test(neg_producer_claim_default_built
+  "is private within this context"
+  "ProducerClaim<Brand>::ProducerClaim\\(\\) .with Brand = .anonymous.::Brand")
+foundation_neg_compile_test(neg_producer_claim_outside_brand
+  "is private within this context"
+  "ProducerClaim<Brand>::ProducerClaim\\(\\) .with Brand = .anonymous.::Brand"
+  "neg_producer_claim_outside_brand.cpp:10")
+foundation_neg_compile_test(neg_branded_ctx_other_brand
+  "invalid initialization of reference"
+  "ctx_cap::BrandedFg<.anonymous.::Stranger>")
+foundation_neg_compile_test(neg_branded_ctx_to_unbranded_gate
+  "invalid initialization of reference"
+  "ctx_cap::BrandedFg<.anonymous.::SelfDeclared>")
+foundation_neg_compile_test(neg_branded_foreground_ctx_bit_cast
+  "no matching function for call to .bit_cast<foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<"
+  "is_trivially_copyable_v<_To> .with _To = foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<")
+foundation_neg_compile_test(neg_branded_foreground_ctx_start_as_array
+  "no matching function for call to .start_as_array<foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<")
 
 # A stable id refuses a template argument that names an object by address
 # or by reference, a class value that holds an address, and a reflection

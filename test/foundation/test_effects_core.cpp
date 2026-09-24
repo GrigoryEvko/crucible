@@ -29,12 +29,14 @@ static_assert(!std::is_default_constructible_v<fe::Init>);
 static_assert(!std::is_default_constructible_v<fe::Test>);
 static_assert(noexcept(fe::testing::bg()) && noexcept(fe::testing::init()) && noexcept(fe::testing::test()));
 
-// The production minters are declared here and defined above this
-// layer, so they are incomplete in a foundation TU.
+// The owners are defined beside their keys, so they are complete in
+// every TU that can name a key, and no TU can define one again.  The
+// background and init owners have no member yet, so nothing but the
+// test witness builds their keys.
 template <class T>
 concept Complete = requires { sizeof(T); };
-static_assert(!Complete<fe::host::BackgroundOwner>);
-static_assert(!Complete<fe::host::InitOwner>);
+static_assert(Complete<fe::host::BackgroundOwner> && Complete<fe::host::InitOwner>);
+static_assert(std::is_empty_v<fe::host::BackgroundOwner> && std::is_empty_v<fe::host::InitOwner>);
 
 // The three are the whole roster.  The foreground marker, a plain type,
 // a value atom and a lookalike that derives from the family base with a

@@ -38,6 +38,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Refined.h>
+#include <foundation/effects/Ctx.h>
 
 #include <atomic>
 #include <chrono>
@@ -305,45 +306,14 @@ public:
     // Two threads that both arrive before either has claimed both read true
     // here, and the loser of the claim below ends the process.  That case is
     // a program with no defined producer, and this query cannot repair it.
-    [[nodiscard]] bool is_producer_thread() const noexcept {
-        const auto claimed = producer_tid_.load(std::memory_order_relaxed);
-        return claimed == std::thread::id{} || claimed == std::this_thread::get_id();
-    }
+    [[nodiscard]] bool is_producer_thread() const noexcept { return producer_claim_.is_claimable_by_caller(); }
 
     // The first call claims the thread; every later call verifies the match.
-    //
-    // Split in two so the part that inlines into dispatch_op is a relaxed
-    // load, a comparison and a branch. The claim and the failure report sit
-    // out of line and cold, which keeps them out of the instruction cache
-    // lines the recording path occupies.
-    CRUCIBLE_INLINE void assert_producer_thread_() noexcept {
-        const auto current_tid = std::this_thread::get_id();
-        if (producer_tid_.load(std::memory_order_relaxed) == current_tid) [[likely]]
-            return;
-        claim_or_reject_producer_thread_(current_tid);
-    }
-
-    [[gnu::cold, gnu::noinline]] void claim_or_reject_producer_thread_(std::thread::id current_tid) noexcept {
-        auto claimed = producer_tid_.load(std::memory_order_relaxed);
-        if (claimed == std::thread::id{}) {
-            // Relaxed is enough: this gate synchronizes nothing, it only
-            // records which thread arrived first. A failed exchange leaves
-            // the winner's id in `claimed`, which the check below reports.
-            if (producer_tid_.compare_exchange_strong(claimed, current_tid, std::memory_order_relaxed)) {
-                return;
-            }
-            // Another thread claimed first, so fall through and fail.
-        }
-        // Not a contract clause, for two reasons. The predicate is about a
-        // thread identity this function just read, not about an argument the
-        // caller passed, so a precondition cannot state it. And a contract
-        // evaluates to nothing in a target built with the semantic set to
-        // `ignore`, as one target in this tree is, whereas this is the one
-        // check standing between a second producer and a ring that tears
-        // without a diagnostic: both threads claim the same slot and the
-        // later write erases the earlier one.
-        CRUCIBLE_FATAL_INVARIANT(claimed == current_tid);
-    }
+    // A call from a second thread ends the process, in every build mode.
+    // This is the one check between a second producer and a ring that tears
+    // without a diagnostic: both threads claim the same slot and the later
+    // write erases the earlier one.
+    CRUCIBLE_INLINE void assert_producer_thread_() noexcept { (void)producer_claim_.mint_producer_context(); }
 
     // Relaxed suffices: only the foreground writes the mode, at each
     // activation and deactivation of the replay context, and a cross-thread
@@ -879,18 +849,11 @@ private:
     std::optional<Cipher> cipher_;
     // Every dispatch and every record must come from one and the same
     // thread.  Another thread entering breaks the ring's single-producer
-    // protocol and can corrupt the head-to-tail relationship.  This holds
-    // the first dispatching thread's id, and every later dispatch checks the
-    // match in every build mode, release included.
-    //
-    // An atomic thread id is not lock-free on every target.  Where the
-    // underlying handle has no native atomic instruction, the standard
-    // library falls back to a mutex-backed atomic, and a hidden mutex on
-    // this check would invert the hot path's whole latency budget.  Refuse
-    // to build rather than regress silently.
-    static_assert(std::atomic<std::thread::id>::is_always_lock_free,
-                  "std::atomic<std::thread::id> must be lock-free on this target.");
-    std::atomic<std::thread::id> producer_tid_{};
+    // protocol and can corrupt the head-to-tail relationship.  The claim
+    // holds the first dispatching thread, and every later dispatch checks
+    // the match in every build mode, release included.  It is also the one
+    // production route to a foreground context.
+    ::foundation::effects::host::ProducerClaim<Vigil> producer_claim_;
     ModeCell mode_;
     fixy::wrap::AtomicMonotonic<uint64_t> step_{0};
     Arena load_arena_{1 << 20};

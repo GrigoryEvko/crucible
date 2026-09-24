@@ -34,6 +34,7 @@ foundation::effects::detail::ctx_mint::init_key | foundation/effects/Effect.h | 
 foundation::effects::detail::ctx_mint::test_key | foundation/effects/Effect.h | foundation::effects::detail::ctx_mint::test_key{} | private | closed
 foundation::effects::detail::ctx_mint::fg_key | foundation/effects/Ctx.h | foundation::effects::detail::ctx_mint::fg_key{} | private | closed
 foundation::effects::ctx_cap::Fg | foundation/effects/Ctx.h | foundation::effects::ctx_cap::Fg{} | no-match | closed
+foundation::effects::ctx_cap::BrandedFg<int> | foundation/effects/Ctx.h | foundation::effects::ctx_cap::BrandedFg<int>{} | no-match | closed
 foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>> | foundation/effects/Ctx.h | foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>>{} | no-match | closed
 foundation::effects::cap_mint_key | foundation/effects/Capability.h | foundation::effects::cap_mint_key{} | private | closed
 foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Bg> | foundation/effects/Capability.h | foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Bg>{} | no-match | closed
