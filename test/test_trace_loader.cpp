@@ -5,12 +5,17 @@
 #include <crucible/SchemaTable.h>
 
 #include "test_assert.h"
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <string>
+#include <sys/resource.h>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 using namespace crucible;
@@ -366,7 +371,129 @@ static void test_meta_count_uint16_overflow_rejected() {
     std::printf("  test_meta_uint16_overflow:      PASSED\n");
 }
 
+// The peak resident size of this process, in kilobytes.  It only grows,
+// so the case that reads it runs first.
+static long peak_resident_kb() {
+    rusage usage{};
+    getrusage(RUSAGE_SELF, &usage);
+    return usage.ru_maxrss;
+}
+
+static void test_counts_past_the_file_allocate_nothing() {
+    // Each count is under its cap, and the file holds the header alone.
+    // A loader that sizes its vectors from the counts before it compares
+    // them with the file touches hundreds of megabytes here.
+    const long peak_before_kb = peak_resident_kb();
+    for (const auto& [claimed_ops, claimed_metas] : {std::pair<uint32_t, uint32_t>{MAX_OPS, 0u},
+                                                    std::pair<uint32_t, uint32_t>{0u, 1u << 20}}) {
+        auto buf = make_zero_op_header();
+        std::memcpy(buf.data() + 8, &claimed_ops, 4);
+        std::memcpy(buf.data() + 12, &claimed_metas, 4);
+        std::string path = write_tmp(buf.data(), buf.size());
+        auto t = load_trace(path.c_str());
+        std::remove(path.c_str());
+        assert(!t);
+    }
+    const long growth_kb = peak_resident_kb() - peak_before_kb;
+    assert(growth_kb < 64 * 1024);
+    std::printf("  test_counts_past_the_file:      PASSED\n");
+}
+
+// One metadata record as the file carries it.  A record of zeros is a
+// valid descriptor of rank zero.
+using MetaRecord = std::array<uint8_t, sizeof(TensorMeta)>;
+
+template <class Field>
+static void set_meta_field(MetaRecord& record, std::size_t field_offset, Field value) {
+    std::memcpy(record.data() + field_offset, &value, sizeof(Field));
+}
+
+// Loads a trace of one op with one tensor, whose metadata is the record.
+static bool loads_with_meta(const MetaRecord& record) {
+    std::vector<uint8_t> buf(16 + 80 + sizeof(TensorMeta), 0);
+    const char magic[4] = {'C', 'R', 'T', 'R'};
+    const uint32_t version = 1, n_ops = 1, n_metas = 1;
+    const uint16_t num_inputs = 1;
+    std::memcpy(buf.data() + 0, magic, 4);
+    std::memcpy(buf.data() + 4, &version, 4);
+    std::memcpy(buf.data() + 8, &n_ops, 4);
+    std::memcpy(buf.data() + 12, &n_metas, 4);
+    std::memcpy(buf.data() + 16 + 72, &num_inputs, 2);
+    std::memcpy(buf.data() + 16 + 80, record.data(), record.size());
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+    return t != nullptr;
+}
+
+template <class Field>
+static bool loads_with_meta_field(std::size_t field_offset, Field value) {
+    MetaRecord record{};
+    set_meta_field(record, field_offset, value);
+    return loads_with_meta(record);
+}
+
+static void test_meta_bytes_break_no_claim_of_the_type() {
+    assert(loads_with_meta(MetaRecord{}));
+
+    // A bool that holds any byte but zero or one is undefined to read.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, requires_grad), uint8_t{2}));
+    assert(loads_with_meta_field(offsetof(TensorMeta, requires_grad), uint8_t{1}));
+
+    // A size lane inside the rank must fit the extent bound.
+    {
+        MetaRecord rank_one{};
+        set_meta_field(rank_one, offsetof(TensorMeta, ndim), uint8_t{1});
+        set_meta_field(rank_one, offsetof(TensorMeta, sizes), kMaxTensorDimExtent);
+        assert(loads_with_meta(rank_one));
+        set_meta_field(rank_one, offsetof(TensorMeta, sizes), std::numeric_limits<int64_t>::max());
+        assert(!loads_with_meta(rank_one));
+    }
+
+    // A lane past the rank holds zero, so equal descriptors write equal
+    // bytes.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, sizes) + sizeof(int64_t) * 3, int64_t{5}));
+    assert(!loads_with_meta_field(offsetof(TensorMeta, strides) + sizeof(int64_t) * 7, int64_t{1}));
+
+    // A flag bit that no meta_flags constant names is reserved.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, flags), uint8_t{0x40}));
+    assert(loads_with_meta_field(offsetof(TensorMeta, flags), meta_flags::IS_CONJ));
+
+    // A device index below the host is not a device.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, device_idx), int8_t{-2}));
+
+    // A rank past the bound is refused before a lane is read.
+    assert(!loads_with_meta_field(offsetof(TensorMeta, ndim), uint8_t{9}));
+    std::printf("  test_meta_bytes_checked:        PASSED\n");
+}
+
+static void test_names_on_a_sealed_table_are_skipped() {
+    // The trace loads, and its names stay out of the sealed table.
+    global_schema_table().clear();
+    global_schema_table().seal();
+
+    auto buf = make_zero_op_header();
+    append_le<uint32_t>(buf, 1);  // num_names
+    append_le<uint64_t>(buf, 0x5EA1ED0000000001ULL);
+    const char name[] = "aten::sealed";
+    append_le<uint16_t>(buf, static_cast<uint16_t>(sizeof(name) - 1));
+    buf.insert(buf.end(), name, name + sizeof(name) - 1);
+
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+
+    assert(t);
+    assert(global_schema_table().is_sealed());
+    assert(global_schema_table().count() == 0);
+    assert(missing(global_schema_table().lookup(SchemaHash{0x5EA1ED0000000001ULL})));
+
+    global_schema_table().clear();
+    std::printf("  test_names_on_sealed_table:     PASSED\n");
+}
+
 int main() {
+    test_counts_past_the_file_allocate_nothing();
     test_missing_file();
     test_empty_file();
     test_bad_magic();
@@ -382,6 +509,8 @@ int main() {
     test_meta_overrun_rejected();
     test_meta_exact_count_loads();
     test_meta_count_uint16_overflow_rejected();
-    std::printf("test_trace_loader: 15 groups, all passed\n");
+    test_meta_bytes_break_no_claim_of_the_type();
+    test_names_on_a_sealed_table_are_skipped();
+    std::printf("test_trace_loader: 18 groups, all passed\n");
     return 0;
 }

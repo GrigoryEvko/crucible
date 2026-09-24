@@ -168,10 +168,9 @@ struct SchemaInfo {
     }
     // PyTorch's Operator schema is trusted by source — compiled into
     // the libtorch binary.  Construct Sanitized directly.
-    auto& schema_table = crucible::global_schema_table();
-    if (!schema_table.is_sealed()) {
-        auto schema_table_view = schema_table.mint_mutable_view();
-        crucible::register_schema_name(schema_table_view, schema_hash,
+    // A sealed table mints no view, and the name then stays out of it.
+    if (const auto schema_table_view = crucible::global_schema_table().mint_mutable_view()) {
+        crucible::register_schema_name(*schema_table_view, schema_hash,
                                        crucible::SchemaTable::SanitizedName{full_name.c_str()});
     }
 

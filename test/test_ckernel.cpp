@@ -27,11 +27,16 @@ int main() {
     assert(classify_kernel(HASH_CONV2D) == CKernelId::OPAQUE);
     assert(classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
 
-    register_schema_hash(ExtHash{HASH_LINEAR}, CKernelId::GEMM_LINEAR);
-    register_schema_hash(ExtHash{HASH_CONV2D}, CKernelId::CONV2D);
-    register_schema_hash(ExtHash{HASH_SDPA}, CKernelId::SDPA);
-    register_schema_hash(ExtHash{HASH_RELU}, CKernelId::ACT_RELU);
-    register_schema_hash(ExtHash{HASH_EWISE_ADD}, CKernelId::EWISE_ADD);
+    // Each registration below reaches an unsealed table, so each one lands.
+    const auto register_or_fail = [](ExtHash schema_hash, CKernelId id) {
+        const bool was_registered = register_schema_hash(schema_hash, id);
+        assert(was_registered);
+    };
+    register_or_fail(ExtHash{HASH_LINEAR}, CKernelId::GEMM_LINEAR);
+    register_or_fail(ExtHash{HASH_CONV2D}, CKernelId::CONV2D);
+    register_or_fail(ExtHash{HASH_SDPA}, CKernelId::SDPA);
+    register_or_fail(ExtHash{HASH_RELU}, CKernelId::ACT_RELU);
+    register_or_fail(ExtHash{HASH_EWISE_ADD}, CKernelId::EWISE_ADD);
 
     assert(classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
     assert(classify_kernel(HASH_CONV2D) == CKernelId::CONV2D);
@@ -49,7 +54,7 @@ int main() {
     assert(classify_kernel(SchemaHash{0xFFFF000000000010ULL}) == CKernelId::OPAQUE);
 
     // Registering the same pair twice must leave the answer unchanged.
-    register_schema_hash(ExtHash{HASH_LINEAR}, CKernelId::GEMM_LINEAR);
+    register_or_fail(ExtHash{HASH_LINEAR}, CKernelId::GEMM_LINEAR);
     assert(classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
 
     assert(std::strcmp(ckernel_name(CKernelId::OPAQUE), "OPAQUE") == 0);
@@ -112,9 +117,10 @@ int main() {
     {
         CKernelTable t;
         assert(!t.is_sealed());
-        auto mv = t.mint_mutable_view();
+        const auto mv = t.mint_mutable_view();
+        assert(mv.has_value());
 
-        t.register_op(mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
+        t.register_op(*mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
         assert(t.count() == 1);
 
         t.seal();
@@ -123,20 +129,25 @@ int main() {
         t.seal();
         assert(t.is_sealed());
 
+        // A sealed table mints no mutable view, in every build mode.
+        assert(!t.mint_mutable_view().has_value());
+
         // Clearing resets the seal along with the entries.
         t.clear();
         assert(!t.is_sealed());
         assert(t.count() == 0);
 
-        auto mv_after_clear = t.mint_mutable_view();
-        t.register_op(mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
+        const auto mv_after_clear = t.mint_mutable_view();
+        assert(mv_after_clear.has_value());
+        t.register_op(*mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
         assert(t.classify(SchemaHash{0x2}) == CKernelId::SDPA);
     }
 
     {
         CKernelTable t;
-        auto mv = t.mint_mutable_view();
-        t.register_op(mv, SchemaHash{0x42}, CKernelId::CONV2D);
+        const auto mv = t.mint_mutable_view();
+        assert(mv.has_value());
+        t.register_op(*mv, SchemaHash{0x42}, CKernelId::CONV2D);
         assert(t.classify(SchemaHash{0x42}) == CKernelId::CONV2D);
     }
 
@@ -144,9 +155,10 @@ int main() {
     // must keep working once the table is sealed.
     {
         CKernelTable t;
-        auto mv = t.mint_mutable_view();
-        t.register_op(mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
-        t.register_op(mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
+        const auto mv = t.mint_mutable_view();
+        assert(mv.has_value());
+        t.register_op(*mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
+        t.register_op(*mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
         t.seal();
         assert(t.classify(SchemaHash{0x111}) == CKernelId::GEMM_MM);
         assert(t.classify(SchemaHash{0x222}) == CKernelId::LAYER_NORM);
@@ -158,6 +170,13 @@ int main() {
     // The global table outlives this function, so it is returned to a
     // known state for whatever runs next in the same process.
     static_assert(std::is_same_v<decltype(global_ckernel_table()), CKernelTableSingleton>);
+
+    // A registration after the seal is refused and changes nothing.
+    global_ckernel_table().value()->seal();
+    const bool was_registered_after_seal = register_schema_hash(ExtHash{HASH_UNKNOWN}, CKernelId::SDPA);
+    assert(!was_registered_after_seal);
+    assert(classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
+
     global_ckernel_table().value()->clear();
 
     std::printf("test_ckernel: all tests passed\n");

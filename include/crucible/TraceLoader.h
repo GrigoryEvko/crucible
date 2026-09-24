@@ -16,8 +16,9 @@
 //     uint16 input count, uint16 output count, uint16 scalar count,
 //     uint8  gradient flag, uint8 packed operation flags
 //
-//   Metadata records, 168 bytes each: tensor metadata structs, verbatim.
-//   Two shorter historical record sizes are also accepted, 144 and 160.
+//   Metadata records, 168 bytes each, at the offsets of the tensor metadata
+//   struct.  Two shorter historical record sizes are also accepted, 144 and
+//   160.  Each field is read through the checked doors of that struct.
 //
 //   A schema-name table follows if the file has trailing data:
 //     uint32   name count
@@ -26,14 +27,19 @@
 //       uint16   name length, terminator excluded
 //       char     the name itself, not terminated in the file
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <optional>
+#include <type_traits>
 #include <vector>
 
 #include <crucible/MerkleDag.h>
 #include <crucible/SchemaTable.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/fixy/Handle.h>
@@ -122,12 +128,108 @@ struct LoadedTrace {
 // The file is written and read as raw struct bytes.
 static_assert(std::endian::native == std::endian::little, ".crtrace format requires little-endian host");
 
+// A metadata record is read field by field from its bytes, at the offsets
+// of TensorMeta.  The shortest historical record carries every field up to
+// the output index, and the fields past its end keep their zero value.
+static_assert(std::is_standard_layout_v<TensorMeta>, "the record offsets below come from offsetof");
+static_assert(offsetof(TensorMeta, output_nr) < 144, "the shortest record must carry every byte-sized field");
+
+inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
+
+// Every metadata record is at least this long.  A count whose records
+// would not fit in the bytes that remain is refused before any vector is
+// sized from it.
+inline constexpr uint64_t MIN_TRACE_META_BYTES = 144;
+
+namespace detail {
+
+template <class Field>
+[[nodiscard]] inline Field trace_meta_field_(const std::byte* raw, std::size_t offset) noexcept {
+    Field value{};
+    std::memcpy(&value, raw + offset, sizeof(Field));
+    return value;
+}
+
+// A lane inside the rank must fit the extent bound that the storage-span
+// arithmetic relies on.  A lane past the rank must hold zero, because the
+// wire image writes every lane and two equal descriptors must write equal
+// bytes.
+[[nodiscard]] inline bool read_trace_dims_(const std::byte* raw, std::size_t block_offset, uint8_t ndim,
+                                           TensorDimArray& out) noexcept {
+    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
+        const auto lane = trace_meta_field_<int64_t>(raw, block_offset + sizeof(int64_t) * d);
+        const bool lane_is_valid = d < ndim ? lane <= kMaxTensorDimExtent : lane == 0;
+        if (!lane_is_valid) return false;
+        out[d] = tensor_dim(lane);
+    }
+    return true;
+}
+
+}  // namespace detail
+
+// Builds one metadata record from its bytes through the checked doors of
+// TensorMeta.  A record whose bytes break a claim of its type is refused.
+// The bool is read as a byte, because a bool that holds any other byte is
+// undefined behaviour to read.  The stored address is not read: it has no
+// meaning in this process, so the field keeps its null value and a later
+// use of it fails loudly.
+[[nodiscard]] inline std::optional<TensorMeta> decode_trace_meta(const std::byte* raw) noexcept {
+    using detail::trace_meta_field_;
+    TensorMeta meta{};
+
+    const auto ndim = trace_meta_field_<uint8_t>(raw, offsetof(TensorMeta, ndim));
+    if (ndim > kMaxTensorNDim) return std::nullopt;
+    meta.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(ndim));
+    if (!detail::read_trace_dims_(raw, offsetof(TensorMeta, sizes), ndim, meta.sizes)) return std::nullopt;
+    if (!detail::read_trace_dims_(raw, offsetof(TensorMeta, strides), ndim, meta.strides)) return std::nullopt;
+
+    const auto dtype = trace_meta_field_<int8_t>(raw, offsetof(TensorMeta, dtype));
+    const auto device_type = trace_meta_field_<int8_t>(raw, offsetof(TensorMeta, device_type));
+    const auto layout = trace_meta_field_<int8_t>(raw, offsetof(TensorMeta, layout));
+    if (!valid_scalar_type(dtype) || !valid_device_type(device_type) || !valid_layout(layout)) return std::nullopt;
+    meta.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(dtype));
+    meta.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(device_type));
+    meta.layout = make_layout(::fixy::mint_refined<valid_layout>(layout));
+
+    // The host is -1, and a device index is never negative otherwise.  A
+    // flag bit that no meta_flags constant names is reserved and written as
+    // zero.
+    constexpr uint8_t known_flags = meta_flags::IS_LEAF | meta_flags::IS_CONTIGUOUS | meta_flags::HAS_GRAD_FN
+                                  | meta_flags::IS_VIEW | meta_flags::IS_NEG | meta_flags::IS_CONJ;
+    const auto device_idx = trace_meta_field_<int8_t>(raw, offsetof(TensorMeta, device_idx));
+    const auto requires_grad = trace_meta_field_<uint8_t>(raw, offsetof(TensorMeta, requires_grad));
+    const auto flags = trace_meta_field_<uint8_t>(raw, offsetof(TensorMeta, flags));
+    if (device_idx < -1 || requires_grad > 1 || (flags & ~known_flags) != 0) return std::nullopt;
+    meta.device_idx = device_idx;
+    meta.requires_grad = requires_grad == 1;
+    meta.flags = flags;
+
+    meta.output_nr = trace_meta_field_<uint8_t>(raw, offsetof(TensorMeta, output_nr));
+    meta.storage_offset = trace_meta_field_<int64_t>(raw, offsetof(TensorMeta, storage_offset));
+    meta.version = trace_meta_field_<uint32_t>(raw, offsetof(TensorMeta, version));
+    meta.storage_nbytes = trace_meta_field_<uint32_t>(raw, offsetof(TensorMeta, storage_nbytes));
+    meta.grad_fn_hash = grad_fn_hash(trace_meta_field_<uint64_t>(raw, offsetof(TensorMeta, grad_fn_hash)));
+    return meta;
+}
+
 [[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(const char* path) {
     ::crucible::fixy::handle::OwnedFile trace_file{std::fopen(path, "rb")};
     if (!trace_file.is_open()) {
         std::fprintf(stderr, "load_trace: cannot open %s\n", path);
         return nullptr;
     }
+
+    // The size of the file bounds every count in it, so it is read first.
+    if (std::fseek(trace_file.get(), 0, SEEK_END) != 0) {
+        std::fprintf(stderr, "load_trace: cannot size %s\n", path);
+        return nullptr;
+    }
+    const long file_end = std::ftell(trace_file.get());
+    if (file_end < 0 || std::fseek(trace_file.get(), 0, SEEK_SET) != 0) {
+        std::fprintf(stderr, "load_trace: cannot size %s\n", path);
+        return nullptr;
+    }
+    const auto file_size = static_cast<uint64_t>(file_end);
 
     char magic[4]{};
     uint32_t version = 0, num_ops = 0, num_metas = 0;
@@ -160,6 +262,20 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
     num_ops = make_trace_num_ops(ValidTraceNumOps{num_ops});
     num_metas = make_trace_num_metas(ValidTraceNumMetas{num_metas});
 
+    // A count is refused when its records cannot fit in the bytes that
+    // remain.  The check comes before any vector is sized from a count, so a
+    // small file that claims millions of records allocates nothing.  The
+    // header read succeeded, so the file holds at least the header.
+    const uint64_t after_header = file_size - TRACE_HEADER_BYTES;
+    const uint64_t op_bytes = uint64_t{num_ops} * sizeof(TraceOpRecord);
+    if (op_bytes > after_header || uint64_t{num_metas} * MIN_TRACE_META_BYTES > after_header - op_bytes) {
+        std::fprintf(stderr,
+                     "load_trace: header counts exceed the file in %s "
+                     "(num_ops=%u num_metas=%u, %llu bytes after the header)\n",
+                     path, num_ops, num_metas, static_cast<unsigned long long>(after_header));
+        return nullptr;
+    }
+
     std::vector<TraceOpRecord> records(num_ops);
     if (num_ops > 0 && std::fread(records.data(), sizeof(TraceOpRecord), num_ops, trace_file.get()) != num_ops) {
         std::fprintf(stderr, "load_trace: truncated op records in %s\n", path);
@@ -168,91 +284,48 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
 
     // Which of the three record sizes this file uses is inferred from how many
     // bytes remain after the op records.
-    const long meta_start_pos = std::ftell(trace_file.get());
-    std::fseek(trace_file.get(), 0, SEEK_END);
-    const long file_size = std::ftell(trace_file.get());
-    std::fseek(trace_file.get(), meta_start_pos, SEEK_SET);
-
-    const long remaining = file_size - meta_start_pos;
-    const long meta_bytes_144 = static_cast<long>(num_metas) * 144;
-    const long meta_bytes_160 = static_cast<long>(num_metas) * 160;
-    const long meta_bytes_168 = static_cast<long>(num_metas) * 168;
-
+    const uint64_t remaining = after_header - op_bytes;
     uint32_t meta_record_size = 168;
     if (num_metas > 0) {
-        if (remaining >= meta_bytes_168)
+        if (remaining >= uint64_t{num_metas} * 168)
             meta_record_size = 168;
-        else if (remaining >= meta_bytes_160)
+        else if (remaining >= uint64_t{num_metas} * 160)
             meta_record_size = 160;
-        else if (remaining >= meta_bytes_144)
+        else
             meta_record_size = 144;
     }
-    const bool historical_144 = (meta_record_size == 144);
-    const bool historical_160 = (meta_record_size == 160);
 
+    // Each record is read into a zeroed buffer at its own size and decoded
+    // from there, so no byte of the file reaches a TensorMeta unchecked.
     std::vector<TensorMeta> metas(num_metas);
-    if (num_metas > 0) {
-        if (historical_144 || historical_160) {
-            // One record at a time at its original size. The fields the older
-            // layout does not carry keep their zero-initialised values.
-            for (uint32_t i = 0; i < num_metas; i++) {
-                if (std::fread(&metas[i], meta_record_size, 1, trace_file.get()) != 1) {
-                    std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
-                    return nullptr;
-                }
-            }
-        } else {
-            if (std::fread(metas.data(), sizeof(TensorMeta), num_metas, trace_file.get()) != num_metas) {
-                std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
-                return nullptr;
-            }
+    std::array<std::byte, sizeof(TensorMeta)> raw_record{};
+    for (uint32_t i = 0; i < num_metas; i++) {
+        raw_record.fill(std::byte{0});
+        if (std::fread(raw_record.data(), meta_record_size, 1, trace_file.get()) != 1) {
+            std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
+            return nullptr;
         }
-
-        // The bulk read above copies disk bytes straight into the struct, so
-        // every field below is untrusted until checked here. Each of the four
-        // is checked because something downstream would otherwise act on it.
-        for (uint32_t i = 0; i < num_metas; i++) {
-            // The rank indexes fixed-width size and stride arrays, so a value
-            // past their capacity reads off the end of them.
-            if (metas[i].ndim > 8) [[unlikely]] {
-                std::fprintf(stderr, "load_trace: meta[%u].ndim=%u exceeds max 8 in %s — corrupt trace\n", i,
-                             metas[i].ndim, path);
-                return nullptr;
-            }
-            // Computing a storage size from an unrecognised element type
-            // reaches a switch whose default is marked unreachable.
-            if (!valid_scalar_type(static_cast<std::int8_t>(metas[i].dtype))) [[unlikely]] {
-                std::fprintf(stderr, "load_trace: meta[%u].dtype=%d invalid in %s — corrupt trace\n", i,
-                             static_cast<int>(metas[i].dtype), path);
-                return nullptr;
-            }
-            // The device type is folded into the node's content hash, which is
-            // its identity and half of a compiled-kernel lookup key, so an
-            // unrecognised value would not fail. It would key the wrong entry.
-            if (!valid_device_type(static_cast<std::int8_t>(metas[i].device_type))) [[unlikely]] {
-                std::fprintf(stderr, "load_trace: meta[%u].device_type=%d invalid in %s — corrupt trace\n", i,
-                             static_cast<int>(metas[i].device_type), path);
-                return nullptr;
-            }
-            // This path only copies the layout onward, but another consumer
-            // hashes it, and every other boundary refuses an unrecognised one.
-            if (!valid_layout(static_cast<std::int8_t>(metas[i].layout))) [[unlikely]] {
-                std::fprintf(stderr, "load_trace: meta[%u].layout=%d invalid in %s — corrupt trace\n", i,
-                             static_cast<int>(metas[i].layout), path);
-                return nullptr;
-            }
-            // The stored address is written as zero and is meaningless in this
-            // process anyway. Re-zeroing it means a later use of it fails
-            // loudly rather than treating a disk byte pattern as an address.
-            metas[i].data_ptr = external_data_ptr(nullptr);
+        const std::optional<TensorMeta> meta = decode_trace_meta(raw_record.data());
+        if (!meta) [[unlikely]] {
+            std::fprintf(stderr, "load_trace: meta[%u] breaks a claim of its type in %s — corrupt trace\n", i, path);
+            return nullptr;
         }
+        metas[i] = *meta;
     }
 
     // The name table is optional and sits after the metadata.
     uint32_t num_names = 0;
     if (std::fread(&num_names, 4, 1, trace_file.get()) == 1 && num_names > 0 && num_names <= SCHEMA_TABLE_CAP) {
         num_names = make_trace_num_names(ValidTraceNumNames{num_names});
-        auto schema_table_view = global_schema_table().mint_mutable_view();
+        // Once the table is sealed the background thread reads it with no
+        // lock, so a trace loaded after the seal keeps its names out of the
+        // table.  The trace itself still loads.
+        const auto schema_table_view = global_schema_table().mint_mutable_view();
+        if (!schema_table_view) {
+            std::fprintf(stderr, "load_trace: the schema table is sealed, so the %u names in %s are not registered\n",
+                         num_names, path);
+            num_names = 0;
+        }
         for (uint32_t i = 0; i < num_names; i++) {
             uint64_t schema_hash_raw = 0;
             uint16_t raw_name_len = 0;
@@ -268,7 +341,7 @@ static_assert(std::endian::native == std::endian::little, ".crtrace format requi
             name_buf[name_len] = '\0';
             // Bounded and terminated here, which is what lets the bytes cross
             // from untrusted file content into the table.
-            register_schema_name(schema_table_view, SchemaHash{schema_hash_raw},
+            register_schema_name(*schema_table_view, SchemaHash{schema_hash_raw},
                                  SchemaTable::SanitizedName{static_cast<const char*>(name_buf)});
         }
     }

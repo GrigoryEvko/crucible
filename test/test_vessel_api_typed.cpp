@@ -215,12 +215,10 @@ void test_schema_name_typed() {
     constexpr uint64_t hash_a = 0xA1A2A3A4A5A6A7A8ULL;
     constexpr uint64_t hash_b = 0xB1B2B3B4B5B6B7B8ULL;
 
-    auto& table = crucible::global_schema_table();
-    if (!table.is_sealed()) {
-        auto view = table.mint_mutable_view();
-        crucible::register_schema_name(view, crucible::SchemaHash{hash_a},
+    if (const auto view = crucible::global_schema_table().mint_mutable_view()) {
+        crucible::register_schema_name(*view, crucible::SchemaHash{hash_a},
                                        crucible::SchemaTable::SanitizedName{"aten::test_op_a"});
-        crucible::register_schema_name(view, crucible::SchemaHash{hash_b},
+        crucible::register_schema_name(*view, crucible::SchemaHash{hash_b},
                                        crucible::SchemaTable::SanitizedName{"aten::test_op_b"});
     }
 

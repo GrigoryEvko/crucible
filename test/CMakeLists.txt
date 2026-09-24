@@ -11417,6 +11417,15 @@ crucible_neg_compile_test(neg_schema_mint_mutable_view_to_sealed_overload
 crucible_neg_compile_test(neg_schema_mint_mutable_view_in_field
   "Type contains a safety::ScopedView<> in some field")
 
+# A sealed table mints no mutable view.  The view comes back optional, so
+# a registration that forgets the seal does not compile.
+crucible_neg_compile_multi_test(neg_schema_mutable_view_unchecked
+  "cannot convert .std::optional<crucible::safety::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable> >."
+  "neg_schema_mutable_view_unchecked.cpp:12")
+crucible_neg_compile_multi_test(neg_ckernel_mutable_view_unchecked
+  "cannot convert .std::optional<crucible::safety::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
+  "neg_ckernel_mutable_view_unchecked.cpp:12")
+
 # FIXY-U-137 — HS14 floor for CrucibleContext::mint_compiled_view.
 # CrucibleContext has only one typed view (CompiledView; no companion
 # RecordingView), so the intra-carrier per-state mismatch pattern used

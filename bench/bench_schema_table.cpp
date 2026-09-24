@@ -22,14 +22,15 @@ int main() {
 
     constexpr uint32_t N = 250;
     SchemaTable table{};
-    auto mutable_view = table.mint_mutable_view();
+    const auto mutable_view = table.mint_mutable_view();
+    CRUCIBLE_FATAL_INVARIANT(mutable_view.has_value());
     SchemaHash hashes[N];
     char names[N][16];
     for (uint32_t i = 0; i < N; i++) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
         hashes[i] = SchemaHash{h};
         std::snprintf(names[i], sizeof(names[i]), "aten::op%u", i);
-        table.register_name(mutable_view, hashes[i], crucible::SchemaTable::SanitizedName{names[i]});
+        table.register_name(*mutable_view, hashes[i], crucible::SchemaTable::SanitizedName{names[i]});
     }
 
     std::printf("=== schema_table ===\n");

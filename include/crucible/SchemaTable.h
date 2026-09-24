@@ -15,6 +15,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <type_traits>
 
@@ -66,8 +67,11 @@ struct SchemaTable {
     using MutableView = crucible::fixy::wrap::ScopedView<SchemaTable, schema_state::Mutable>;
     using SealedView = crucible::fixy::wrap::ScopedView<SchemaTable, schema_state::Sealed>;
 
-    [[nodiscard]] MutableView mint_mutable_view() const noexcept {
-        CRUCIBLE_PRE(!is_sealed());
+    // A registration writes entries that the background thread reads with no
+    // lock once the table is sealed.  So the view is minted only before the
+    // seal.  Past the seal it is empty, in every build mode.
+    [[nodiscard]] constexpr std::optional<MutableView> mint_mutable_view() const noexcept {
+        if (is_sealed()) return std::nullopt;
         return crucible::fixy::wrap::mint_view<schema_state::Mutable>(*this);
     }
 
@@ -93,9 +97,12 @@ struct SchemaTable {
     static_assert(sizeof(LookupName) == sizeof(BorrowedName));
     static_assert(std::is_trivially_copy_constructible_v<LookupName>);
 
-    // The view parameter is unnamed and unread. Its type is the proof that
-    // the table is not sealed, so no runtime phase check is needed.
-    void register_name(MutableView const&, SchemaHash hash, SanitizedName name_tag) {
+    // The view's type is the proof that the table was not sealed when the
+    // view was minted.  The view names the table it proves, and a view of
+    // another table proves nothing about this one, so that is checked in
+    // every build mode.
+    void register_name(MutableView const& view, SchemaHash hash, SanitizedName name_tag) {
+        CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
         const char* name = name_tag.value();
         if (!name) return;
 
@@ -218,7 +225,8 @@ private:
 static_assert(crucible::fixy::wrap::no_scoped_view_field_check<SchemaTable>());
 
 // The global is sealed before any second thread starts, so a registration
-// must mint its mutable view before that point.
+// must mint its mutable view before that point.  A view minted after it is
+// empty.
 [[nodiscard]] inline SchemaTable& global_schema_table() {
     static SchemaTable table;
     return table;

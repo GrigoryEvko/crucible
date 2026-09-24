@@ -70,8 +70,8 @@ static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 // late by construction, not by a caller's mistake.
 //
 // This second table is where they go. It is a plain SchemaTable that
-// this file never seals, so mint_mutable_view() always succeeds and the
-// registration path stays the audited one -- same bounds, same dedup by
+// this file never seals, so mint_mutable_view() always returns a view and
+// the registration path stays the audited one -- same bounds, same dedup by
 // hash, same abort on overflow. crucible_export_crtrace() writes the
 // union of the two, and crucible_schema_name() reads through both, so a
 // registration is observable immediately whichever table accepted it.
@@ -295,22 +295,28 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexc
 
     // Before the Vigil exists the global table still accepts writes, so
     // an early registration goes there and the trace keeps one table.
-    // After crucible_create() seals it, the registration goes to the
-    // late table instead. It is never dropped: returning here is what
-    // made a whole run export zero names with nothing to show for it.
+    // After crucible_create() seals it, the global table mints no view,
+    // and the registration goes to the late table instead. It is never
+    // dropped: returning here is what made a whole run export zero names
+    // with nothing to show for it.
     //
-    // The seal can in principle land between this check and the mint, and
-    // the mint's precondition would then abort. That window is inherited,
-    // not introduced -- the previous code checked and minted the same way
-    // -- and closing it needs an atomic test-and-acquire inside
+    // The seal can still land after the view is minted and before the
+    // write.  Closing that window needs an atomic test-and-acquire inside
     // SchemaTable. It requires crucible_create() to run concurrently with
     // a registration on another thread, which no caller does: the Python
     // controller creates during __enter__ and registers during export.
-    auto& global_table = crucible::global_schema_table();
-    auto& table = global_table.is_sealed() ? late_schema_names() : global_table;
-    auto view = table.mint_mutable_view();
     crucible::SchemaTable::SanitizedName const name_tag{name};
-    table.register_name(view, crucible::SchemaHash{schema_hash}, name_tag);
+    const crucible::SchemaHash hash{schema_hash};
+    auto& global_table = crucible::global_schema_table();
+    if (const auto global_view = global_table.mint_mutable_view()) {
+        global_table.register_name(*global_view, hash, name_tag);
+        return;
+    }
+    // Nothing seals the late table, so its view always exists.
+    auto& late_table = late_schema_names();
+    const auto late_view = late_table.mint_mutable_view();
+    CRUCIBLE_FATAL_INVARIANT(late_view.has_value());
+    late_table.register_name(*late_view, hash, name_tag);
 }
 
 const char* crucible_schema_name(uint64_t schema_hash) noexcept {

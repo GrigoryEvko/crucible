@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <span>
 #include <type_traits>
 
@@ -261,8 +262,11 @@ struct CKernelTable {
     // A contract predicate that reads a member through `this` is skipped when
     // the compiler folds the body at compile time, so every such check in this
     // file runs from the body instead of a pre/post clause.
-    [[nodiscard]] MutableView mint_mutable_view() const noexcept {
-        CRUCIBLE_PRE(!is_sealed());
+    // A registration writes entries that a classifying reader reads with no
+    // lock once the table is sealed.  So the view is minted only before the
+    // seal.  Past the seal it is empty, in every build mode.
+    [[nodiscard]] constexpr std::optional<MutableView> mint_mutable_view() const noexcept {
+        if (is_sealed()) return std::nullopt;
         return crucible::fixy::wrap::mint_view<ckernel_state::Mutable>(*this);
     }
 
@@ -284,7 +288,11 @@ struct CKernelTable {
     // Overflow aborts rather than truncating. A dropped registration would
     // leave classify() answering OPAQUE for that one schema, and that only
     // shows up much later, at replay, on whichever trace happens to use it.
-    void register_op(MutableView const&, SchemaHash schema_hash, CKernelId id) {
+    //
+    // The view names the table it proves, and a view of another table
+    // proves nothing about this one, so that is checked in every build mode.
+    void register_op(MutableView const& view, SchemaHash schema_hash, CKernelId id) {
+        CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
         for (uint32_t i = 0; i < size.get(); i++) {
             if (entries[i].schema_hash == schema_hash) {
                 entries[i].id = id;
@@ -345,11 +353,15 @@ static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
     return CKernelTableSingleton{&table};
 }
 
-inline void
+// False when the table is already sealed, and then nothing is registered.
+[[nodiscard]] inline bool
 register_schema_hash(crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::tags::source::External> schema_hash,
                      CKernelId id) {
     CKernelTable* table = global_ckernel_table().value();
-    table->register_op(table->mint_mutable_view(), schema_hash.value(), id);
+    const auto view = table->mint_mutable_view();
+    if (!view) return false;
+    table->register_op(*view, schema_hash.value(), id);
+    return true;
 }
 
 // ---------------------------------------------------------------------

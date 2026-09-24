@@ -28,14 +28,13 @@ static void requires_sealed_view(crucible::SchemaTable::SealedView const&) noexc
 
 int main() {
     crucible::SchemaTable t;
-    // t is in Mutable state (default-constructed, sealed_ = false).
-    // mint_mutable_view's pre `!is_sealed()` is satisfied, so the view
-    // is produced legitimately.
-    auto mv = t.mint_mutable_view();
+    // t is in Mutable state (default-constructed, sealed_ = false), so
+    // mint_mutable_view returns a view.
+    const auto mv = t.mint_mutable_view();
 
-    // requires_sealed_view takes ScopedView<SchemaTable, Sealed>.  mv
+    // requires_sealed_view takes ScopedView<SchemaTable, Sealed>.  *mv
     // is ScopedView<SchemaTable, Mutable>.  Distinct template
     // instantiations: GCC rejects the call at overload resolution.
-    requires_sealed_view(mv);
+    requires_sealed_view(*mv);
     return 0;
 }
