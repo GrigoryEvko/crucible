@@ -25,6 +25,21 @@ if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   return()
 endif()
 
+# The disassembly guard compiles each constant-time primitive at -O2 and
+# -O3 for three ISA levels, and refuses a conditional branch, a call, a
+# division or a data-dependent load in its body.  Its self-test plants a
+# branch, a table lookup, a call and a division, and a census escape.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_program(CRUCIBLE_OBJDUMP objdump REQUIRED)
+add_test(NAME check_ct_disassembly
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/check-ct-disassembly.py
+          --cxx ${CMAKE_CXX_COMPILER})
+add_test(NAME check_ct_disassembly_self_test
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/check-ct-disassembly.py
+          --cxx ${CMAKE_CXX_COMPILER} --self-test)
+set_tests_properties(check_ct_disassembly check_ct_disassembly_self_test
+  PROPERTIES LABELS "ci_guard;ct" WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 if(NOT CRUCIBLE_VALGRIND OR NOT CRUCIBLE_VALGRIND_INCLUDE)
   if(CRUCIBLE_REQUIRE_CT_TAINT)
     message(FATAL_ERROR

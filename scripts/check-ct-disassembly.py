@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+"""check-ct-disassembly.py: no secret-steered branch, call or indexed load in a compiled constant-time primitive.
+
+The taint tests run under valgrind, which cannot decode AVX-512, so they
+build for x86-64-v3.  This guard covers the code that the release build
+really emits.  It compiles one wrapper per constant-time primitive, per
+unsigned width and per tree (fixy::ct and the old crucible::safety::ct), at
+-O2 and -O3, for -march=native, x86-64-v3 and the x86-64 baseline.  Then
+it reads the disassembly of every wrapper and refuses:
+
+  - a conditional branch (any jcc, jrcxz, loop): its direction would leak
+    the operand it tests
+  - a call, or a jump to another function: the guard cannot see the code
+    it reaches
+  - div or idiv: their latency depends on the operands
+  - a memory operand with an index register: a load indexed by a secret
+    leaks the index through the cache
+
+The dynamic-length eq is not a wrapper here: its loop branches on the
+length, which is public, and the guard cannot tell that branch from a
+secret one.  The static-extent eq has no loop, so it is a wrapper and
+must carry no branch at all.  The taint tests cover the dynamic form.
+
+Two censuses keep the case list complete.  A reflection walk in the
+generated translation unit stops the compile when a namespace of
+primitives holds a function this guard does not wrap.  A source scan
+stops the guard when production code uses role::CtCrypto, because a
+function that states the constant-time role needs its own disassembly
+case here, and the list of such functions is empty.
+
+Exit 0: every wrapper is clean.  Exit 1: a finding, printed per wrapper.
+Exit 2: the guard could not run (no compiler, no objdump, a compile
+error), which is a failure, never a pass.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+
+WIDTHS = (("u8", "std::uint8_t"), ("u16", "std::uint16_t"), ("u32", "std::uint32_t"), ("u64", "std::uint64_t"))
+TREES = (("fixy", "::fixy::ct", "fixy/ConstantTime.h"), ("safety", "::crucible::safety::ct", "crucible/safety/_ConstantTime.h"))
+STATIC_EQ_LENGTHS = (16, 32)
+MARCHES = ("native", "x86-64-v3", "x86-64")
+OPTS = ("-O2", "-O3")
+
+# The functions each namespace of primitives may hold.  A new one fails the
+# reflection census until it has a wrapper below.
+COVERED_NAMES = ("mask_from_bit", "select", "eq", "less", "is_zero", "cswap")
+
+# Production mentions of the constant-time role, each with the wrappers
+# that check it.  The list is empty: no production function states the
+# role yet.  A new mention stops the guard until it has a case here.
+CTCRYPTO_CASES: dict[str, list[str]] = {}
+CTCRYPTO_DEFINITION_FILES = {"include/fixy/Role.h", "include/crucible/fixy/Fn.h"}
+
+PREFIXES = {"rep", "repz", "repe", "repnz", "repne", "lock", "notrack", "bnd", "data16", "cs", "ds"}
+
+
+def default_compiler() -> str:
+    """Return the GCC 16 driver that the toolchain file selects."""
+    if os.environ.get("CRUCIBLE_CXX"):
+        return os.environ["CRUCIBLE_CXX"]
+    prefix = pathlib.Path(os.environ.get("CRUCIBLE_GCC16_PREFIX", pathlib.Path.home() / ".local/gcc16-patched"))
+    for name in ("g++-16p", "g++-16", "g++"):
+        candidate = prefix / "usr/bin" / name
+        if candidate.exists():
+            return str(candidate)
+    return "g++"
+
+
+def census_prelude() -> str:
+    """Return the reflection census: true when a namespace holds only covered functions."""
+    covered = ", ".join(f'"{n}"' for n in COVERED_NAMES)
+    return "\n".join([
+        "#include <meta>",
+        "#include <string_view>",
+        "namespace ct_disassembly {",
+        "consteval bool is_covered(std::string_view name) {",
+        f"    constexpr std::string_view covered[] = {{{covered}}};",
+        "    for (std::string_view c : covered) if (c == name) return true;",
+        "    return false;",
+        "}",
+        "consteval bool covers_every_primitive(std::meta::info ns) {",
+        "    for (std::meta::info m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {",
+        "        if (!std::meta::is_function(m) && !std::meta::is_function_template(m)) continue;",
+        "        if (!std::meta::has_identifier(m) || !is_covered(std::meta::identifier_of(m))) return false;",
+        "    }",
+        "    return true;",
+        "}",
+        "}  // namespace ct_disassembly",
+    ])
+
+
+def wrapper_source() -> tuple[str, dict[str, bool]]:
+    """Return the generated translation unit and {wrapper name: takes pointers}."""
+    names: dict[str, bool] = {}
+    lines = [
+        "#include <fixy/ConstantTime.h>",
+        "#include <crucible/safety/_ConstantTime.h>",
+        "#include <cstddef>",
+        "#include <cstdint>",
+        census_prelude(),
+    ]
+    for prefix, ns, _ in TREES:
+        lines.append(
+            f"static_assert(ct_disassembly::covers_every_primitive(^^{ns}), \"{ns} holds a function that "
+            "scripts/check-ct-disassembly.py does not wrap. Add its wrappers and its name to COVERED_NAMES, "
+            "so the compiled code of the new primitive is checked for branches.\");"
+        )
+    for prefix, ns, _ in TREES:
+        for tn, ty in WIDTHS:
+            specs = (
+                ("mask_from_bit", f"{ty} b", f"return {ns}::mask_from_bit<{ty}>(b);", ty),
+                ("select", f"{ty} b, {ty} x, {ty} y", f"return {ns}::select<{ty}>(b, x, y);", ty),
+                ("less", f"{ty} x, {ty} y", f"return {ns}::less<{ty}>(x, y);", ty),
+                ("is_zero", f"{ty} x", f"return {ns}::is_zero<{ty}>(x);", ty),
+                ("cswap", f"{ty} c, {ty}* x, {ty}* y", f"{ns}::cswap<{ty}>(c, *x, *y);", "void"),
+            )
+            for fn, params, body, ret in specs:
+                name = f"ct_{prefix}_{fn}_{tn}"
+                names[name] = "*" in params
+                lines.append(f'extern "C" {ret} {name}({params}) noexcept {{ {body} }}')
+    for n in STATIC_EQ_LENGTHS:
+        name = f"ct_fixy_eq_static_{n}"
+        names[name] = True
+        lines.append(
+            f'extern "C" bool {name}(const std::byte* a, const std::byte* b) noexcept {{ '
+            f"return ::fixy::ct::eq(std::span<const std::byte, {n}>{{a, {n}}}, "
+            f"std::span<const std::byte, {n}>{{b, {n}}}); }}"
+        )
+    return "\n".join(lines) + "\n", names
+
+
+def compile_object(cxx: str, source: pathlib.Path, obj: pathlib.Path, march: str, opt: str) -> None:
+    """Compile `source` to `obj`; stop the guard with exit 2 on a compile error."""
+    cmd = [cxx, "-std=c++26", "-freflection", "-fcontracts", "-fcontract-evaluation-semantic=observe", "-DNDEBUG",
+           opt, f"-march={march}", "-fno-asynchronous-unwind-tables", f"-I{REPO / 'include'}",
+           "-c", str(source), "-o", str(obj)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        sys.stderr.write(f"check-ct-disassembly: the compile failed for -march={march} {opt}:\n{result.stderr}")
+        sys.exit(2)
+
+
+class Insn:
+    """One disassembled instruction, with the symbol its relocation names, if any."""
+
+    def __init__(self, mnemonic: str, operands: str) -> None:
+        self.mnemonic = mnemonic
+        self.operands = operands
+        self.relocation: str | None = None
+
+    def text(self) -> str:
+        """Return the instruction as objdump prints it, plus its relocation."""
+        base = f"{self.mnemonic} {self.operands}".strip()
+        return f"{base} (reloc {self.relocation})" if self.relocation else base
+
+
+def disassemble(obj: pathlib.Path) -> dict[str, list[Insn]]:
+    """Return {function: [instruction]} for every function in `obj`, relocations attached."""
+    result = subprocess.run(["objdump", "-dr", "--no-show-raw-insn", "-M", "intel", str(obj)],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        sys.stderr.write(f"check-ct-disassembly: objdump failed:\n{result.stderr}")
+        sys.exit(2)
+    functions: dict[str, list[Insn]] = {}
+    current: str | None = None
+    head = re.compile(r"^[0-9a-f]+ <([^>]+)>:$")
+    reloc = re.compile(r"^\s+[0-9a-f]+:\s+R_\w+\s+(\S+)")
+    insn = re.compile(r"^\s+[0-9a-f]+:\s+(.*)$")
+    for line in result.stdout.splitlines():
+        match = head.match(line)
+        if match:
+            current = match.group(1)
+            functions[current] = []
+            continue
+        if current is None:
+            continue
+        match = reloc.match(line)
+        if match:
+            if functions[current]:
+                functions[current][-1].relocation = re.split(r"[-+]", match.group(1))[0]
+            continue
+        match = insn.match(line)
+        if match:
+            tokens = match.group(1).split()
+            while tokens and tokens[0] in PREFIXES:
+                tokens = tokens[1:]
+            if tokens:
+                functions[current].append(Insn(tokens[0], " ".join(tokens[1:])))
+    return functions
+
+
+ADDRESS = re.compile(r"\[([^\]]*)\]")
+REGISTER = re.compile(r"\b(r[a-z0-9]+|e[a-z]{2}|[a-z]{2}l|[a-z]{2})\b")
+
+
+def findings_of(name: str, body: list[Insn], takes_pointers: bool) -> list[str]:
+    """Return every refused instruction of one function, as text.
+
+    A function that takes no pointer has no public address to read, so
+    any memory operand built from a general register reads an address
+    that a secret may have formed.  A function that takes pointers may
+    read through them, but not with an index register.
+    """
+    out: list[str] = []
+    for ins in body:
+        m = ins.mnemonic
+        text = ins.text()
+        if m == "nop" or m.startswith("nop"):
+            continue
+        if (m.startswith("j") and m != "jmp") or m.startswith("loop"):
+            out.append(f"conditional branch: {text}")
+        elif m == "call":
+            out.append(f"call: {text}")
+        elif m == "jmp" and ins.relocation is not None and ins.relocation != name:
+            out.append(f"jump out of the function: {text}")
+        elif m in ("div", "idiv"):
+            out.append(f"operand-dependent latency: {text}")
+        # lea computes an address and reads no memory, so it is arithmetic.
+        if m == "lea":
+            continue
+        for address in ADDRESS.findall(ins.operands):
+            registers = {r for r in REGISTER.findall(address) if r not in ("rsp", "rip", "ptr")}
+            if "*" in address:
+                out.append(f"indexed load or store: {text}")
+            elif registers and not takes_pointers:
+                out.append(f"load or store through a computed address: {text}")
+    return out
+
+
+def check_object(cxx: str, source: pathlib.Path, expected: dict[str, bool], workdir: pathlib.Path) -> list[str]:
+    """Compile `source` for every target and return the findings, each tagged with its target."""
+    findings: list[str] = []
+    for march in MARCHES:
+        for opt in OPTS:
+            obj = workdir / f"ct_{march}_{opt[1:]}.o"
+            compile_object(cxx, source, obj, march, opt)
+            functions = disassemble(obj)
+            missing = [n for n in expected if n not in functions]
+            if missing:
+                sys.stderr.write(f"check-ct-disassembly: -march={march} {opt} emitted no code for {missing}\n")
+                sys.exit(2)
+            for name, takes_pointers in expected.items():
+                for finding in findings_of(name, functions[name], takes_pointers):
+                    findings.append(f"-march={march} {opt} {name}: {finding}")
+    return findings
+
+
+def ctcrypto_mentions() -> list[str]:
+    """Return every production mention of the constant-time role that has no case."""
+    uncovered: list[str] = []
+    for root in ("include", "src", "vessel"):
+        for path in sorted((REPO / root).rglob("*")):
+            if path.suffix not in (".h", ".hpp", ".cpp", ".cc") or not path.is_file():
+                continue
+            rel = path.relative_to(REPO).as_posix()
+            if rel in CTCRYPTO_DEFINITION_FILES:
+                continue
+            for number, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+                if "CtCrypto" in line and rel not in CTCRYPTO_CASES and "stance::CtCrypto" not in line:
+                    uncovered.append(f"{rel}:{number}: {line.strip()}")
+    return uncovered
+
+
+def run_guard(cxx: str) -> int:
+    """Check every wrapper of both trees; return the exit code."""
+    source_text, names = wrapper_source()
+    with tempfile.TemporaryDirectory(prefix="ct-disassembly-") as tmp:
+        workdir = pathlib.Path(tmp)
+        source = workdir / "ct_wrappers.cpp"
+        source.write_text(source_text)
+        findings = check_object(cxx, source, names, workdir)
+    uncovered = ctcrypto_mentions()
+    for line in findings:
+        print(f"check-ct-disassembly: {line}")
+    for line in uncovered:
+        print(f"check-ct-disassembly: a production function states role::CtCrypto and has no disassembly case: {line}")
+    if findings or uncovered:
+        print(f"check-ct-disassembly: FAIL, {len(findings)} findings, {len(uncovered)} uncovered role uses")
+        return 1
+    print(f"check-ct-disassembly: clean, {len(names)} wrappers x {len(MARCHES) * len(OPTS)} targets")
+    return 0
+
+
+PLANTED = r"""
+#include <cstdint>
+extern "C" std::uint32_t external_sink(std::uint32_t) noexcept;
+extern "C" std::uint32_t ct_plant_branch(std::uint32_t b, std::uint32_t x) noexcept {
+    if (b & 1u) __builtin_trap();
+    return x;
+}
+extern "C" std::uint8_t ct_plant_index(std::uint32_t x) noexcept {
+    static const std::uint8_t table[256] = {1, 2, 3, 4, 5};
+    return table[x & 255u];
+}
+extern "C" std::uint32_t ct_plant_call(std::uint32_t x) noexcept { return external_sink(x) + 1u; }
+extern "C" std::uint32_t ct_plant_divide(std::uint32_t x, std::uint32_t y) noexcept { return x / (y | 1u); }
+extern "C" std::uint32_t ct_plant_clean(std::uint32_t x, std::uint32_t y) noexcept { return (x * 5u + y) ^ 0xFFu; }
+"""
+
+
+def run_self_test(cxx: str) -> int:
+    """Plant one violation of each kind beside a clean function; each must be found, the clean one must pass."""
+    expect_flagged = {
+        "ct_plant_branch": "conditional branch",
+        "ct_plant_index": "computed address",
+        "ct_plant_call": "call",
+        "ct_plant_divide": "operand-dependent latency",
+    }
+    with tempfile.TemporaryDirectory(prefix="ct-disassembly-self-") as tmp:
+        workdir = pathlib.Path(tmp)
+        source = workdir / "planted.cpp"
+        source.write_text(PLANTED)
+        names = {name: False for name in expect_flagged} | {"ct_plant_clean": False}
+        findings = check_object(cxx, source, names, workdir)
+    failures = 0
+    for name, kind in expect_flagged.items():
+        for march in MARCHES:
+            for opt in OPTS:
+                tag = f"-march={march} {opt} {name}: "
+                if not any(f.startswith(tag) and kind in f for f in findings):
+                    print(f"self-test: {name} must be flagged for '{kind}' at -march={march} {opt}")
+                    failures += 1
+    clean_hits = [f for f in findings if " ct_plant_clean: " in f]
+    if clean_hits:
+        print(f"self-test: the clean function was flagged: {clean_hits}")
+        failures += 1
+    source_text, names = wrapper_source()
+    if len(names) != len(TREES) * len(WIDTHS) * 5 + len(STATIC_EQ_LENGTHS):
+        print("self-test: the wrapper list lost a primitive")
+        failures += 1
+    # The census must stop a compile when a namespace of primitives gains
+    # a function with no wrapper, and must pass one that holds only
+    # covered names.
+    for fake, body, must_fail in (
+        ("fake_ct_unwrapped", "inline unsigned leak(unsigned x) { return x; }", True),
+        ("fake_ct_covered", "inline unsigned select(unsigned x) { return x; }", False),
+    ):
+        tu = (f"{census_prelude()}\nnamespace {fake} {{ {body} }}\n"
+              f"static_assert(ct_disassembly::covers_every_primitive(^^{fake}), \"census fired\");\n")
+        with tempfile.TemporaryDirectory(prefix="ct-disassembly-census-") as tmp:
+            source = pathlib.Path(tmp) / "census.cpp"
+            source.write_text(tu)
+            result = subprocess.run([cxx, "-std=c++26", "-freflection", "-fsyntax-only", str(source)],
+                                    capture_output=True, text=True)
+        fired = result.returncode != 0 and "census fired" in result.stderr
+        if fired != must_fail:
+            print(f"self-test: the census over {fake} {'did not fire' if must_fail else 'fired'}: {result.stderr[:400]}")
+            failures += 1
+    print("self-test:", "PASS" if failures == 0 else f"FAIL ({failures})")
+    return 0 if failures == 0 else 1
+
+
+def main() -> int:
+    """Parse the arguments and run the guard or its self-test."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--cxx", default=default_compiler(), help="the GCC 16 driver")
+    parser.add_argument("--self-test", action="store_true", help="check the checker on planted code")
+    args = parser.parse_args()
+    if shutil.which(args.cxx) is None and not pathlib.Path(args.cxx).exists():
+        sys.stderr.write(f"check-ct-disassembly: no compiler at {args.cxx}\n")
+        return 2
+    if shutil.which("objdump") is None:
+        sys.stderr.write("check-ct-disassembly: objdump is missing\n")
+        return 2
+    return run_self_test(args.cxx) if args.self_test else run_guard(args.cxx)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
