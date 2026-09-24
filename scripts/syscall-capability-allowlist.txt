@@ -4,11 +4,11 @@
 # is the trimmed source of the call line with its trailing `//` comment
 # removed, not a line number: an edit above the call shifts nothing, and an
 # entry goes stale only when the call itself is rewritten or removed.  A
-# stale entry is exit 2 from check-syscall-capability.sh, so the file drains
+# stale entry is exit 2 from check-syscall-capability.py, so the file drains
 # in lockstep with the code.  Two calls with identical text in one file share
 # one entry; write prose that covers both.
 #
-# To add an entry, run `scripts/check-syscall-capability.sh --emit-keys`: it
+# To add an entry, run `scripts/check-syscall-capability.py --emit-keys`: it
 # prints a template line for every live site that is neither allowlisted nor
 # marked, with the syscall(s) the line invokes already named.  Fill in the
 # capability and the function.
@@ -16,7 +16,7 @@
 # A site covered by an in-statement `// SYSCALL-CAP-OK:` marker is exempted
 # by that marker and is deliberately absent here.
 #
-# The prose after the em dash is the audit surface.  check-syscall-capability.sh
+# The prose after the em dash is the audit surface.  check-syscall-capability.py
 # only asks whether a key exists, so an entry whose sentence is false still
 # reports clean — a green-and-wrong audit.  scripts/check-syscall-allowlist-prose.sh
 # holds each sentence to the code at the line it names: the syscall the line

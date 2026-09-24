@@ -199,8 +199,8 @@ jobs:
 
       - name: syscall capability admission (self-test + scan)
         run: |
-          bash scripts/check-syscall-capability.sh --self-test
-          bash scripts/check-syscall-capability.sh
+          python3 scripts/check-syscall-capability.py --self-test
+          python3 scripts/check-syscall-capability.py
 
       - name: spawn discipline (self-test + scan)
         run: |

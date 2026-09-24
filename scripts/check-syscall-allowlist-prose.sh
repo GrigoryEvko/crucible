@@ -8,7 +8,7 @@
 # sites.  Each entry is `path:<call text>  — <effects::* cap proof + note>`,
 # where <call text> is the trimmed, comment-stripped source of the call
 # line (a content key, immune to line shifts), and the note is the whole
-# point: check-syscall-capability.sh only asks whether a key exists, never
+# point: check-syscall-capability.py only asks whether a key exists, never
 # what the entry says about it.
 #
 # A key can therefore stay valid while the prose beside it rots: the
@@ -267,7 +267,7 @@ scan "$allowlist" "$scan_root" || rc=$?
 if [[ "$rc" -ne 0 ]]; then
     cat >&2 <<'HINT'
 
-The entries above have a valid path:line key, so check-syscall-capability.sh
+The entries above have a valid path:line key, so check-syscall-capability.py
 reports clean while the sentence beside each key is false.  An audit
 surface that is green and wrong is worse than one that is red.
 

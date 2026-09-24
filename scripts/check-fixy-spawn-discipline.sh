@@ -68,7 +68,7 @@
 #
 # ── COMPANION SURFACES ───────────────────────────────────────────────
 #
-# This guard complements (not replaces) scripts/check-syscall-capability.sh.
+# This guard complements (not replaces) scripts/check-syscall-capability.py.
 # Syscall-capability catches socket/mmap/ioctl/epoll/sched — kernel
 # interactions that need effects::* admission.  Spawn-discipline catches
 # fork/exec/system — process-creation that escapes the whole effect-row

@@ -881,23 +881,20 @@ add_test(NAME fixy_dim_prose
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.sh)
 set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
     LABELS "ci_guard")
-# FIXY-U-100 syscall capability discipline (closes fixy-A5-016
-# regression-prevention surface).  scripts/check-syscall-capability.sh
-# flags every NEW direct Linux syscall invocation outside the allowlist
-# (sched_setattr, mmap, ioctl, socket family, prctl, madvise, ...).
-# 47 grandfathered sites live in scripts/syscall-capability-allowlist.txt,
-# each with explicit effects::* capability proof (Init/IO/Bg/Block);
-# new sites must be added with cap proof, forcing review through the
-# capability-discipline surface.  Self-test verifies drift detection,
-# allowlist exemption, inline `// SYSCALL-CAP-OK` marker, and comment
-# filter all work.
+# Each direct Linux syscall call in include/, src/ and vessel/ carries a
+# `// SYSCALL-CAP-OK: <reason>` comment in its statement or an entry in
+# scripts/syscall-capability-allowlist.txt with its effects::* capability
+# claim.  scripts/check-syscall-capability.py reads the calls from the
+# parse tree, and an entry that matches no live call is stale.  Exit 3
+# when the kit is absent reports a skip.
 add_test(NAME syscall_capability_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.py
           --self-test)
 add_test(NAME syscall_capability
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.py)
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # oob-62 fullness discipline.  `if (count == Capacity) return false;` reads
 # as a bounds check but only rejects the exact boundary: a count already
 # past Capacity compares unequal, the guard passes, and the next push
