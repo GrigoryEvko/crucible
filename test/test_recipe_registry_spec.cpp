@@ -6,11 +6,12 @@
 // what follows probes the places where that difference shows.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <crucible/safety/_RecipeSpec.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 #include <cassert>
@@ -37,10 +38,10 @@ using crucible::safety::RecipeSpec;
 
 namespace names = crucible::recipe_names;
 
-auto g_test = crucible::effects::testing::test();
-auto g_init = crucible::effects::testing::init();
-inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
-inline crucible::effects::Init init_cap() noexcept { return g_init; }
+auto g_test = ::foundation::effects::testing::test();
+auto g_init = ::foundation::effects::testing::init();
+inline ::foundation::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
+inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
 [[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries().value(); }
 
@@ -70,7 +71,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     }
 
     Arena arena{};
-    RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+    RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
     RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     {
@@ -389,7 +390,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
         }
 
         Arena arena2{};
-        RecipePool pool2{RecipePool::ArenaBorrow{arena2}, init_cap()};
+        RecipePool pool2{::fixy::mint_borrowed_ref(arena2), init_cap()};
         RecipeRegistry reg2{RecipeRegistry::PoolBorrow{pool2}, alloc_cap()};
 
         for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {

@@ -2,17 +2,21 @@
 // Licensed under the Apache License, Version 2.0
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <fixy/Bits.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 
 namespace {
 
@@ -40,12 +44,17 @@ using crucible::SoftmaxRecurrence;
     return r;
 }
 
+namespace eff = ::foundation::effects;
+
 // A capability is minted through one of the context types rather than
 // constructed directly.
-auto g_test = crucible::effects::testing::test();
-auto g_init = crucible::effects::testing::init();
-inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
-inline crucible::effects::Init init_cap() noexcept { return g_init; }
+auto g_test = eff::testing::test();
+auto g_init = eff::testing::init();
+inline eff::Alloc alloc_cap() noexcept { return g_test.alloc; }
+inline eff::Init init_cap() noexcept { return g_init; }
+
+// The borrow that the mint door gives, and the borrow that names no brand.
+using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&>()));
 
 }  // namespace
 
@@ -56,36 +65,38 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
         static_assert(!std::is_copy_assignable_v<RecipePool>, "RecipePool must not be copy-assignable");
         static_assert(!std::is_move_constructible_v<RecipePool>, "RecipePool must not be move-constructible");
         static_assert(!std::is_move_assignable_v<RecipePool>, "RecipePool must not be move-assignable");
-        static_assert(std::is_same_v<RecipePool::Capacity, crucible::safety::PowerOfTwo<uint32_t>>,
+        static_assert(std::is_same_v<RecipePool::Capacity, ::fixy::PowerOfTwo<uint32_t>>,
                       "RecipePool capacity must carry the power-of-two invariant");
-        static_assert(std::is_same_v<RecipePool::Size, crucible::safety::Monotonic<uint32_t>>,
+        static_assert(std::is_same_v<RecipePool::Size, ::fixy::Monotonic<uint32_t>>,
                       "RecipePool size must carry the monotonic-growth invariant");
-        static_assert(std::is_same_v<RecipePool::ArenaBorrow, crucible::safety::BorrowedRef<Arena>>,
+        static_assert(std::is_same_v<RecipePool::ArenaBorrow, ::fixy::BorrowedRef<Arena>>,
                       "RecipePool arena dependency must be an explicit borrow");
         static_assert(sizeof(RecipePool::Capacity) == sizeof(uint32_t),
                       "PowerOfTwo capacity wrapper must stay zero-cost");
         static_assert(sizeof(RecipePool::Size) == sizeof(uint32_t), "Monotonic size wrapper must stay zero-cost");
         static_assert(sizeof(RecipePool::ArenaBorrow) == sizeof(Arena*), "BorrowedRef<Arena> must stay pointer-sized");
-        static_assert(crucible::effects::Subrow<RecipePool::init_required_row,
-                                                crucible::effects::Row<crucible::effects::Effect::Init>>,
+        static_assert(std::is_constructible_v<RecipePool, MintedArenaBorrow, eff::Init>,
+                      "RecipePool takes the borrow that mint_borrowed_ref gives");
+        static_assert(!std::is_constructible_v<RecipePool, RecipePool::ArenaBorrow, eff::Init>,
+                      "RecipePool refuses a borrow that names no brand");
+        static_assert(eff::Subrow<RecipePool::init_required_row, eff::Row<eff::Effect::Init>>,
                       "RecipePool construction must admit Init callers");
-        static_assert(!crucible::effects::Subrow<RecipePool::init_required_row, crucible::effects::Row<>>,
+        static_assert(!eff::Subrow<RecipePool::init_required_row, eff::Row<>>,
                       "pure callers cannot construct RecipePool");
-        static_assert(!crucible::effects::Subrow<RecipePool::init_required_row,
-                                                 crucible::effects::Row<crucible::effects::Effect::Alloc>>,
+        static_assert(!eff::Subrow<RecipePool::init_required_row, eff::Row<eff::Effect::Alloc>>,
                       "allocation authority alone is not the Init phase");
     }
 
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap(), 32};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
         assert(pool.size() == 0);
         assert(pool.capacity() == 32);
     }
 
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap(), 32};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         const NumericalRecipe fields = mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::BITEXACT_TC);
 
@@ -103,7 +114,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
 
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap(), 32};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         const auto* r_f32_strict =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::BITEXACT_STRICT));
@@ -120,7 +131,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
 
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap(), 32};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         NumericalRecipe poisoned = mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::ORDERED);
         poisoned.hash = RecipeHash{0xDEADBEEFCAFEBABEULL};
@@ -136,7 +147,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // that folded the stored hash into it would break this.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap(), 32};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         NumericalRecipe fresh = mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::BITEXACT_STRICT);
         const auto* a = pool.intern(alloc_cap(), fresh);
@@ -154,7 +165,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // so 10 insertions force two grows, to 16 and then 32.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap(), 8};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 8};
         assert(pool.capacity() == 8);
 
         constexpr unsigned N = 10;
@@ -198,7 +209,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // 400 distinct recipes.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap(), 32};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         const ScalarType dtypes[] = {
             ScalarType::Float,         ScalarType::Half,        ScalarType::BFloat16,
@@ -245,8 +256,8 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena_a{};
         Arena arena_b{};
-        RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, init_cap(), 32};
-        RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, init_cap(), 32};
+        RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap(), 32};
+        RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap(), 32};
 
         const NumericalRecipe fields = mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::BITEXACT_STRICT);
 
@@ -260,7 +271,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
 
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap(), 32};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
         const auto* r =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::ORDERED));
         static_assert(std::is_same_v<decltype(r), const NumericalRecipe*>,

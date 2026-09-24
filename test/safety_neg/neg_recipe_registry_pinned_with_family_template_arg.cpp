@@ -44,14 +44,16 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <crucible/safety/_RecipeSpec.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 using namespace crucible;
 
 int main() {
     Arena arena{};
     auto test_ctx = effects::testing::test();
-    auto init_ctx = effects::testing::init();
-    RecipePool pool{RecipePool::ArenaBorrow{arena}, init_ctx};
+    auto init_ctx = ::foundation::effects::testing::init();
+    RecipePool pool{::fixy::mint_borrowed_ref(arena), init_ctx};
     RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, test_ctx.alloc};
 
     // Should FAIL: by_name_pinned is `template <safety::Tolerance T>`;

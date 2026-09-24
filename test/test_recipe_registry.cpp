@@ -12,11 +12,12 @@
 // hash it produces are both pinned below.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 #include <cinttypes>
@@ -42,10 +43,10 @@ using crucible::SoftmaxRecurrence;
 
 namespace names = crucible::recipe_names;
 
-auto g_test = crucible::effects::testing::test();
-auto g_init = crucible::effects::testing::init();
-inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
-inline crucible::effects::Init init_cap() noexcept { return g_init; }
+auto g_test = ::foundation::effects::testing::test();
+auto g_init = ::foundation::effects::testing::init();
+inline ::foundation::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
+inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
 [[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries().value(); }
 
@@ -80,7 +81,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
 
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         assert(entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
@@ -98,7 +99,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
 
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         std::unordered_set<const NumericalRecipe*> entry_ptrs;
@@ -137,7 +138,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // below have to miss just as firmly as the nonsense ones.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         const std::string_view missing[] = {
@@ -164,7 +165,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // receives, without any of them changing a line.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         {
@@ -231,7 +232,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // become unreachable without anything reporting it.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         std::unordered_set<std::string_view> seen;
@@ -247,7 +248,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // the pool would simply hold fewer entries than there are names.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         std::unordered_set<const NumericalRecipe*> ptrs;
@@ -273,7 +274,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // been audited and accepted.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         struct Golden {
@@ -316,7 +317,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // already holds, rather than adding a second copy beside it.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         for (const auto& spec : crucible::detail_recipe_registry::kStarterRecipes) {
@@ -335,7 +336,7 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     // it has to reach the same pointer as lookup by name.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         for (const auto& entry : entries_view(reg)) {
@@ -377,8 +378,8 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena_a{};
         Arena arena_b{};
-        RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, init_cap()};
-        RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, init_cap()};
+        RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
+        RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
         RecipeRegistry reg_a{RecipeRegistry::PoolBorrow{pool_a}, alloc_cap()};
         RecipeRegistry reg_b{RecipeRegistry::PoolBorrow{pool_b}, alloc_cap()};
 

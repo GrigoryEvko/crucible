@@ -2,11 +2,12 @@
 // Licensed under the Apache License, Version 2.0
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 #include <cstdio>
@@ -26,10 +27,10 @@ using crucible::TraceEntry;
 
 namespace names = crucible::recipe_names;
 
-auto g_test = crucible::effects::testing::test();
-auto g_init = crucible::effects::testing::init();
-inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
-inline crucible::effects::Init init_cap() noexcept { return g_init; }
+auto g_test = ::foundation::effects::testing::test();
+auto g_init = ::foundation::effects::testing::init();
+inline ::foundation::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
+inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
 [[nodiscard]] CompiledKernel* kernel_ptr(void* p) noexcept { return static_cast<CompiledKernel*>(p); }
 
@@ -51,8 +52,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     {
         Arena arena_a{};
         Arena arena_b{};
-        RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, init_cap()};
-        RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, init_cap()};
+        RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
+        RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
         RecipeRegistry reg_a{RecipeRegistry::PoolBorrow{pool_a}, alloc_cap()};
         RecipeRegistry reg_b{RecipeRegistry::PoolBorrow{pool_b}, alloc_cap()};
 
@@ -75,7 +76,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // breaks replay determinism.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         auto rec_tc = registry.by_name(names::kF16F32AccumTc);
@@ -108,7 +109,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // interned pointer in the current process.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         // Persistence time: the original process pins a recipe and takes
@@ -149,7 +150,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     {
         // The original process.
         Arena arena_a{};
-        RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, init_cap()};
+        RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
         RecipeRegistry reg_a{RecipeRegistry::PoolBorrow{pool_a}, alloc_cap()};
         auto rec_a = reg_a.by_name(names::kFp8E4m3F32AccumMxOrd);
         assert(rec_a.has_value());
@@ -162,7 +163,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         // A second process, with its own pool, registry and arena, and so
         // with different addresses throughout.
         Arena arena_b{};
-        RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, init_cap()};
+        RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
         RecipeRegistry reg_b{RecipeRegistry::PoolBorrow{pool_b}, alloc_cap()};
         auto rec_b = reg_b.by_name(names::kFp8E4m3F32AccumMxOrd);
         assert(rec_b.has_value());
@@ -187,7 +188,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // key is too, and the two recipes cannot share a slot.
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         auto rec_tc = registry.by_name(names::kF16F32AccumTc);

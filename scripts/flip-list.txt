@@ -88,8 +88,6 @@ fuzz/property/prop_intervals_cover_unit.cpp
 fuzz/property/prop_is_power_of_two_le.cpp
 fuzz/property/prop_memory_plan_no_overlap.cpp
 fuzz/property/prop_monotonic_predicates.cpp
-fuzz/property/prop_recipe_pool_intern.cpp
-fuzz/property/prop_recipe_registry_roundtrip.cpp
 fuzz/property/prop_trace_graph_csr.cpp
 include/crucible/BackgroundThread.h
 include/crucible/CKernel.h
@@ -104,7 +102,6 @@ include/crucible/MerkleDag.h
 include/crucible/MetaLog.h
 include/crucible/Philox.h
 include/crucible/PoolAllocator.h
-include/crucible/RecipePool.h
 include/crucible/RecipeRegistry.h
 include/crucible/RegionCache.h
 include/crucible/ReplayEngine.h

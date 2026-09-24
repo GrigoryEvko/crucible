@@ -1,23 +1,25 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-RecipePool-5 (#974): RecipePool construction does allocate
-// table storage, but Alloc alone is not the startup phase.  CallerRow
-// must include Init, not merely the value-level allocation capability.
+// The RecipePool constructor allocates its table, but Alloc alone is not
+// the initialization phase.  The CallerRow must contain Init, and not only
+// the allocation capability.
 //
-// [GCC-WRAPPER-TEXT] - requires-clause constraint failure on
-// Subrow<Row<Init>, Row<Alloc>>.
+// Expected diagnostic: the Subrow<Row<Init>, Row<Alloc>> constraint of the
+// constructor is not satisfied.
 
 #include <crucible/RecipePool.h>
-#include <crucible/effects/_EffectRow.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <type_traits>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     crucible::Arena arena{};
     auto init = eff::testing::init();
-    crucible::RecipePool pool{crucible::RecipePool::ArenaBorrow{arena}, init, 32u,
+    crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init, 32u,
                               std::type_identity<eff::Row<eff::Effect::Alloc>>{}};
     return pool.capacity() == 0;
 }

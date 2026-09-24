@@ -9666,33 +9666,40 @@ crucible_neg_compile_multi_test(neg_expr_pool_make_cross_tag
   "could not convert"
   "source::External>>. to .Graded<.*source::Interned>>")
 
-# WRAP-RecipePool-2 (#971) — capacity_ is a PowerOfTwo<uint32_t>
-# and size_ is a Monotonic<uint32_t>.  The fixtures pin the two
-# load-bearing absences: non-pow2 capacities cannot be constructed,
-# and the monotonic size counter cannot be overwritten with a raw
-# integer.
-crucible_neg_compile_test(neg_recipe_pool_capacity_not_power_of_two
-  "contract|Refined|power_of_two|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_recipe_pool_size_assign_raw
-  "no match for|no known conversion")
+# RecipePool::capacity_ is a PowerOfTwo<uint32_t>, and size_ is a
+# Monotonic<uint32_t>.  The fixtures pin two absences: no capacity that
+# is not a power of two, and no assignment of a raw integer to the size.
+# The first regex says that the gate refused.  The second names the
+# door, the predicate or the type, so the refusal is the one under test.
+crucible_neg_compile_multi_test(neg_recipe_pool_capacity_not_power_of_two
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsPowerOfTwo\\(\\), unsigned int>\\(12\\)")
+crucible_neg_compile_multi_test(neg_recipe_pool_size_assign_raw
+  "no match for .operator=."
+  "crucible::RecipePool::Size.*fixy::Monotonic<unsigned int")
 
-# WRAP-RecipePool-3 (#972) — arena_ is a BorrowedRef<Arena>.
-# Raw Arena* and wrong-owner BorrowedRef<T> must fail at the
-# constructor boundary.
-crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
-  "no matching function|no known conversion|cannot convert")
-crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
-  "no matching function|no known conversion|cannot convert")
+# The RecipePool constructor takes a minted BorrowedRef<Arena, Brand>.
+# A raw Arena* and a borrow of a different type must fail at the
+# constructor.
+crucible_neg_compile_multi_test(neg_recipe_pool_arena_raw_pointer
+  "no matching function for call to .crucible::RecipePool::RecipePool"
+  "mismatched types .fixy::BorrowedRef<crucible::Arena, Brand>. and .crucible::Arena\\*.")
+crucible_neg_compile_multi_test(neg_recipe_pool_arena_wrong_borrow
+  "no matching function for call to .crucible::RecipePool::RecipePool"
+  "mismatched types .crucible::Arena. and .OtherArena.")
 
-# WRAP-RecipePool-5 (#974) — RecipePool construction is init-phase
-# work. The constructor defaults to Row<Init>; explicit pure,
-# Alloc-only, and Bg-only caller rows fail the Subrow gate.
-crucible_neg_compile_test(neg_recipe_pool_ctor_pure_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_recipe_pool_ctor_alloc_only_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_recipe_pool_ctor_bg_only_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+# A RecipePool is built in the initialization phase.  The constructor
+# defaults to Row<Init>, and a pure row, a row with only Alloc and a row
+# with only Bg each fail the Subrow gate.
+crucible_neg_compile_multi_test(neg_recipe_pool_ctor_pure_row
+  "constraints.*not satisfied"
+  "Subrow<foundation::effects::Row<foundation::effects::Effect::Init>, CallerRow>. \\[with CallerRow = foundation::effects::Row<>\\]")
+crucible_neg_compile_multi_test(neg_recipe_pool_ctor_alloc_only_row
+  "constraints.*not satisfied"
+  "Subrow<foundation::effects::Row<foundation::effects::Effect::Init>, CallerRow>. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>\\]")
+crucible_neg_compile_multi_test(neg_recipe_pool_ctor_bg_only_row
+  "constraints.*not satisfied"
+  "Subrow<foundation::effects::Row<foundation::effects::Effect::Init>, CallerRow>. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>\\]")
 
 # WRAP-RecipeReg-5 (#980) — RecipeRegistry seeds from
 # BorrowedRef<RecipePool>. Raw RecipePool* and wrong-owner borrowed

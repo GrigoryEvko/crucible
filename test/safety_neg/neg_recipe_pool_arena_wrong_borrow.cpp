@@ -1,18 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-RecipePool-3 (#972): the constructor requires a borrow of the
-// actual Arena owner.  A lookalike object cannot stand in for Arena,
-// which keeps the lifetime dependency attached to the real owner type.
+// The RecipePool constructor takes a borrow of the Arena that owns the
+// recipes.  A minted borrow of a different type must not take its place,
+// so the lifetime dependency stays attached to the real owner.
 //
-// Expected diagnostic: no constructor from BorrowedRef<OtherArena>.
+// Expected diagnostic: no constructor takes a BorrowedRef<OtherArena>.
 
 #include <crucible/RecipePool.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 struct OtherArena {};
 
 int main() {
     OtherArena other{};
-    auto init = crucible::effects::testing::init();
-    crucible::RecipePool pool{crucible::safety::BorrowedRef<OtherArena>{other}, init};
+    auto init = ::foundation::effects::testing::init();
+    crucible::RecipePool pool{::fixy::mint_borrowed_ref(other), init};
     return pool.capacity() == 0;
 }

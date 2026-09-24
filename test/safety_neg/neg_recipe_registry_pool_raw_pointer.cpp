@@ -8,12 +8,14 @@
 // Expected diagnostic: no constructor from RecipePool*.
 
 #include <crucible/RecipeRegistry.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 int main() {
     auto test = crucible::effects::testing::test();
-    auto init = crucible::effects::testing::init();
+    auto init = ::foundation::effects::testing::init();
     crucible::Arena arena{};
-    crucible::RecipePool pool{crucible::RecipePool::ArenaBorrow{arena}, init};
+    crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
     crucible::RecipeRegistry registry{&pool, test.alloc};
     return registry.entries().value().empty();
 }

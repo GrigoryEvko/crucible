@@ -8,15 +8,16 @@
 // arena-owned, so nothing here is freed until the arena is.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Pre.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <foundation/Brand.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <bit>
 #include <cstddef>
@@ -27,37 +28,32 @@ namespace crucible {
 
 class CRUCIBLE_OWNER RecipePool {
 public:
-    using ArenaBorrow = fixy::wrap::BorrowedRef<Arena>;
-    using Capacity = fixy::wrap::PowerOfTwo<uint32_t>;
-    using Size = fixy::wrap::Monotonic<uint32_t>;
-    using init_required_row = effects::Row<effects::Effect::Init>;
+    using ArenaBorrow = ::fixy::BorrowedRef<Arena>;
+    using Capacity = ::fixy::PowerOfTwo<uint32_t>;
+    using Size = ::fixy::Monotonic<uint32_t>;
+    using init_required_row = ::foundation::effects::Row<::foundation::effects::Effect::Init>;
 
-    static_assert(fixy::wrap::IsBorrowedRef<ArenaBorrow>);
+    static_assert(::fixy::IsBorrowedRef<ArenaBorrow>);
 
     // The table never passes half full, so the initial capacity holds half
     // that many distinct recipes before the first resize.
-    template <typename CallerRow = init_required_row>
-        requires effects::Subrow<init_required_row, CallerRow>
-    [[gnu::cold]] explicit RecipePool(ArenaBorrow arena, effects::Init init, uint32_t initial_capacity = 32,
-                                      std::type_identity<CallerRow> = {}) noexcept
+    //
+    // The arena comes through ::fixy::mint_borrowed_ref, and the constructor
+    // refuses a borrow that names no brand.  The pool keeps the erased
+    // pointer, so the layout does not change.  Each mint site is a new
+    // brand, so this constructor only checks and forwards.  The one body
+    // below does the work out of line.
+    template <typename Brand, typename CallerRow = init_required_row>
+        requires ::foundation::brand::IsFreshBrand<Brand>
+              && ::foundation::effects::Subrow<init_required_row, CallerRow>
+    [[gnu::cold]] explicit RecipePool(::fixy::BorrowedRef<Arena, Brand> arena, ::foundation::effects::Init init,
+                                      uint32_t initial_capacity = 32, std::type_identity<CallerRow> = {}) noexcept
         // The lower bound is a load-factor sanity floor. The power-of-two
         // requirement is structural: the probe below masks instead of
         // dividing.
         pre(initial_capacity >= 8)
-            pre(::crucible::decide::is_power_of_two_le<std::uint32_t>(initial_capacity, UINT32_MAX))
-        : arena_{arena}, capacity_{initial_capacity}, size_{0} {
-        const ::foundation::effects::Alloc a = init.alloc;
-        slots_ = arena_->alloc_array_nonzero<Slot>(a, initial_capacity);
-        for (uint32_t i = 0; i < initial_capacity; ++i) {
-            slots_[i] = Slot{};
-        }
-        // A post clause whose predicate reads a member through `this` is
-        // skipped at consteval, so these route through the macro. The leading
-        // 0 is the placeholder return value for a function returning void.
-        CRUCIBLE_POST(0, capacity_.value() == initial_capacity);
-        CRUCIBLE_POST(0, slots_ != nullptr);
-        CRUCIBLE_POST(0, size_.get() == 0);
-    }
+            pre(::foundation::decide::is_power_of_two_le<std::uint32_t>(initial_capacity, UINT32_MAX))
+        : RecipePool{erased_door_{}, ArenaBorrow{arena}, init, initial_capacity} {}
 
     RecipePool(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");
     RecipePool& operator=(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");
@@ -104,6 +100,28 @@ private:
         const NumericalRecipe* recipe = nullptr;  // null marks an empty slot
     };
 
+    // Only the public constructor names this tag, so no caller reaches the
+    // erased borrow below.
+    struct erased_door_ {};
+
+    [[gnu::cold, gnu::noinline]] RecipePool(erased_door_, ArenaBorrow arena, ::foundation::effects::Init init,
+                                            uint32_t initial_capacity) noexcept
+        : arena_{arena},
+          capacity_{::fixy::mint_refined<::fixy::power_of_two>(initial_capacity)},
+          size_{::fixy::mint_monotonic<uint32_t>(0)} {
+        const ::foundation::effects::Alloc a = init.alloc;
+        slots_ = arena_->alloc_array_nonzero<Slot>(a, initial_capacity);
+        for (uint32_t i = 0; i < initial_capacity; ++i) {
+            slots_[i] = Slot{};
+        }
+        // A post clause whose predicate reads a member through `this` is
+        // skipped at consteval, so these route through the macro. The leading
+        // 0 is the placeholder return value for a function returning void.
+        CRUCIBLE_POST(0, capacity_.value() == initial_capacity);
+        CRUCIBLE_POST(0, slots_ != nullptr);
+        CRUCIBLE_POST(0, size_.get() == 0);
+    }
+
     [[nodiscard, gnu::pure]] static constexpr bool semantic_equal_(const NumericalRecipe& a,
                                                                    const NumericalRecipe& b) noexcept {
         // The hash field is deliberately not compared. The stored one is
@@ -135,7 +153,7 @@ private:
         for (uint32_t i = 0; i < new_cap; ++i) {
             slots_[i] = Slot{};
         }
-        capacity_ = Capacity{new_cap};
+        capacity_ = ::fixy::mint_refined<::fixy::power_of_two>(new_cap);
 
         const uint32_t new_mask = new_cap - 1;
         uint32_t reinserted = 0;
@@ -159,7 +177,7 @@ private:
     }
 
     ArenaBorrow arena_;
-    Slot* slots_;
+    Slot* slots_ = nullptr;
     Capacity capacity_;
     Size size_;
 };

@@ -25,7 +25,8 @@
 #include <crucible/Arena.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
-#include <crucible/effects/_Capabilities.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 
@@ -47,12 +48,12 @@ int main(int argc, char** argv) {
         },
         [](const std::array<NumericalRecipe, 30>& recipes) {
             Arena arena{};
-            // Test contexts mint via the effects::testing scaffolding
-            // entry point; RecipePool takes an Init capability (it
-            // allocates its slot table once at construction) plus an
-            // Alloc capability per intern() call.
-            const effects::Init init = effects::testing::init();
-            RecipePool pool{RecipePool::ArenaBorrow{arena}, init,
+            // The test context comes from foundation::effects::testing.
+            // RecipePool takes an Init context, because it allocates its
+            // slot table at construction.  Each intern() call takes an
+            // Alloc capability.
+            const ::foundation::effects::Init init = ::foundation::effects::testing::init();
+            RecipePool pool{::fixy::mint_borrowed_ref(arena), init,
                             /*initial_capacity=*/8};
 
             // Phase 1: insert all, capture pointers.

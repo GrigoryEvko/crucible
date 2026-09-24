@@ -31,7 +31,8 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <crucible/effects/_Capabilities.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 namespace names = crucible::recipe_names;
 
@@ -50,12 +51,12 @@ int main(int argc, char** argv) {
         },
         [](const NumericalRecipe& extra) {
             Arena arena{};
-            // Test contexts mint via the effects::testing scaffolding
-            // entry point.  RecipePool takes an Init capability at
-            // construction; RecipeRegistry takes an Alloc capability
-            // (it interns the starter recipes into the pool eagerly).
-            const effects::Init init = effects::testing::init();
-            RecipePool pool{RecipePool::ArenaBorrow{arena}, init};
+            // The test context comes from foundation::effects::testing.
+            // RecipePool takes an Init context at construction.
+            // RecipeRegistry takes an Alloc capability, because it
+            // interns the starter recipes into the pool at construction.
+            const ::foundation::effects::Init init = ::foundation::effects::testing::init();
+            RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
             RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, init.alloc};
 
             // Phase 1: every starter name → canonical pointer →

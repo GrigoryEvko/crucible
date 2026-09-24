@@ -7,14 +7,16 @@
 #include <crucible/Arena.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 namespace eff = ::crucible::effects;
 
 int main() {
     crucible::Arena arena{};
-    auto init = eff::testing::init();
+    auto init = ::foundation::effects::testing::init();
     auto test = eff::testing::test();
-    crucible::RecipePool pool{crucible::RecipePool::ArenaBorrow{arena}, init};
+    crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
     crucible::RecipeRegistry reg{crucible::RecipeRegistry::PoolBorrow{pool}, test.alloc};
     auto wrong = reg.by_name_pinned<crucible::safety::Tolerance::BITEXACT, eff::Row<eff::Effect::Alloc>>(
         crucible::recipe_names::kF32Strict);

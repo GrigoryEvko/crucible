@@ -17,11 +17,12 @@
 
 #include <crucible/Arena.h>
 #include <crucible/CKernel.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <crucible/Types.h>
+#include <fixy/Borrowed.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include "test_assert.h"
@@ -41,10 +42,10 @@ using crucible::ReductionDeterminism;
 using crucible::ScalarType;
 namespace names = crucible::recipe_names;
 
-auto g_test = crucible::effects::testing::test();
-auto g_init = crucible::effects::testing::init();
-inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
-inline crucible::effects::Init init_cap() noexcept { return g_init; }
+auto g_test = ::foundation::effects::testing::test();
+auto g_init = ::foundation::effects::testing::init();
+inline ::foundation::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
+inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
 [[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries().value(); }
 
@@ -399,7 +400,7 @@ int main() {
 
     {
         Arena arena{};
-        RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
+        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
         for (const auto& cell : kCoverageMatrix) {
