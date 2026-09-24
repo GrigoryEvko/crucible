@@ -39,6 +39,16 @@ test/test_permissioned_moved_from_handles.cpp:snapshot_writer:writer
 test/test_permissioned_moved_from_handles.cpp:snapshot_writer_after_release:writer
 test/test_permissioned_moved_from_handles.cpp:spsc_consumer:consumer
 test/test_permissioned_moved_from_handles.cpp:spsc_producer:producer
+test/fixy/test_channel_moved_from.cpp:mpsc_producer:*producer
+test/fixy/test_channel_moved_from.cpp:mpsc_producer_in_drained_window:*producer
+test/test_permissioned_moved_from_handles.cpp:mpsc_producer:*producer
+test/test_permissioned_moved_from_handles.cpp:mpsc_producer_in_drained_window:*producer
+test/test_permissioned_moved_from_handles.cpp:mpmc_producer:*producer
+test/test_permissioned_moved_from_handles.cpp:mpmc_consumer:*consumer
+test/test_permissioned_moved_from_handles.cpp:mpmc_producer_after_close:*producer
+test/test_permissioned_moved_from_handles.cpp:mpmc_consumer_after_close:*consumer
+test/test_permissioned_moved_from_handles.cpp:snapshot_reader:*reader
+test/test_permissioned_moved_from_handles.cpp:deque_thief:*thief
 
 # Probe: a moved-from or released mapping is unmapped, so the pages are
 # unmapped one time.

@@ -228,15 +228,29 @@ def join(a: State, b: State) -> State:
 
 
 def spent_prefix(state: dict[str, int], key: str) -> str | None:
-    """The spent key that key names or reaches into, if any."""
+    """The spent key that key names or reaches into, if any.
+
+    A move through a dereference, std::move(*p), spends the key *p.  Then *p,
+    a member of *p and p->m reach into it, and p itself does not.
+    """
     for spent in state:
         if key == spent or key.startswith(spent + ".") or key.startswith(spent + "->"):
+            return spent
+        if spent.startswith("*") and key.startswith(spent[1:] + "->"):
             return spent
     return None
 
 
 def restore(state: dict[str, int], key: str) -> None:
-    for spent in [s for s in state if s == key or s.startswith(key + ".") or s.startswith(key + "->")]:
+    """Drop the spent keys that an assignment to key refills.
+
+    An assignment to p also refills *p, because p then holds or points at a new value.
+    """
+    def refilled(spent: str) -> bool:
+        base = spent[1:] if spent.startswith("*") and not key.startswith("*") else spent
+        return base == key or base.startswith(key + ".") or base.startswith(key + "->")
+
+    for spent in [s for s in state if refilled(s)]:
         del state[spent]
 
 
@@ -864,15 +878,23 @@ class Body:
         return "".join(parts), m
 
     def move_argument(self, open_paren: int) -> str | None:
-        """The path inside std::move( ... ) when the argument is a plain path."""
+        """The path inside std::move( ... ) when the argument is a plain path or *path.
+
+        The move std::move(*p) spends the object that p reaches, so its key is *p.
+        """
         close = self.partner[open_paren]
         k = open_paren + 1
+        deref = self.t(k) == "*"
+        if deref:
+            k += 1
         if self.t(k) == "this" and self.t(k + 1) == "->":
             k += 2
         if self.toks[k].kind != "id" or self.t(k) in KEYWORDS:
             return None
         path, end = self.path_at(k, close)
-        return path if end == close else None
+        if end != close:
+            return None
+        return "*" + path if deref else path
 
     def swap_arguments(self, open_paren: int) -> tuple[str, str] | None:
         """The two paths of swap(a, b) when each argument is a plain path."""
@@ -1050,6 +1072,12 @@ class Body:
                     continue
                 path, end = self.path_at(k, hi)
                 nxt = self.t(end)
+                # A unary * before the path, or a call of value() on it, reaches the object
+                # that the path holds, which is the key *path.
+                unary_deref = prev == "*" and not self.is_operand_end(k - 2)
+                value_call = nxt == "." and self.t(end + 1) == "value" and self.t(end + 2) == "("
+                if unary_deref or value_call:
+                    path = "*" + path
                 if prev == "&" and self.t(k - 2) == "(" and self.t(k - 3) in ("destroy_at", "construct_at"):
                     pending.append(path)
                     k = end
@@ -1249,6 +1277,11 @@ struct must_catch_converting_ctor {
     Token a; int n;
     must_catch_converting_ctor(Pair&& p) : a{std::move(p)}, n{p.size} {}
 };
+void must_catch_deref_use(Opt o) { take(std::move(*o)); read(*o); }
+void must_catch_deref_arrow(Opt o) { take(std::move(*o)); auto n = o->size; }
+void must_catch_deref_value(Opt o) { take(std::move(*o)); read(o.value()); }
+void must_catch_deref_paren(Opt o) { take(std::move(*o)); auto n = (*o).size; }
+void must_catch_deref_second_move(Opt o) { take(std::move(*o)); take(std::move(*o)); }
 
 // Each must_accept function is correct, and a finding in it is a false alarm.
 void must_accept_reassign(Token t) { take(std::move(t)); t = Token{}; read(t); }
@@ -1280,6 +1313,11 @@ void must_accept_try_if_else(Token t) { if (try_take(std::move(t))) { return; } 
 void must_accept_swap(Token t, Token u) { take(std::move(t)); swap(t, u); read(t); }
 void must_accept_member_swap(Token t, Token u) { take(std::move(t)); t.swap(u); read(t); }
 void must_accept_scalar_cast(int x) { take_int(static_cast<int&&>(x)); read(x); }
+void must_accept_deref_refill(Opt o) { take(std::move(*o)); *o = Token{}; read(*o); }
+void must_accept_deref_rebind(Opt o) { take(std::move(*o)); o = make(); read(*o); }
+void must_accept_deref_reset(Opt o) { take(std::move(*o)); o.reset(); if (o) { read(*o); } }
+void must_accept_deref_engaged(Opt o) { take(std::move(*o)); if (o.has_value()) {} }
+void must_accept_deref_product(Opt o, int n) { take(std::move(*o)); auto z = n * o; }
 struct must_accept_base_move : Base {
     Token r;
     must_accept_base_move(must_accept_base_move&& other) : Base(std::move(other)), r{std::move(other.r)} {}
