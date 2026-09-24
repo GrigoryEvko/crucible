@@ -1709,8 +1709,8 @@ private:
 
     Arena arena_;
     ::foundation::SwissTableBuffer<const Expr*> backing_;
-    int8_t* ctrl_;  // Points into backing_ at offset 0.
-    const Expr** slots_;  // Points into backing_ at offset capacity_.
+    int8_t* ctrl_ = nullptr;  // Points into backing_ at offset 0.
+    const Expr** slots_ = nullptr;  // Points into backing_ at offset capacity_.
     Capacity capacity_;  // Total slots, a power of two and a group multiple.
     InternCount intern_count_;  // Occupied slots.
     std::vector<const char*> symbol_names_;
@@ -1721,8 +1721,8 @@ private:
     std::vector<const Expr*> symbol_exprs_;
 
     std::array<const Expr*, kIntCacheSize> int_cache_{};
-    const Expr* true_;
-    const Expr* false_;
+    const Expr* true_ = nullptr;
+    const Expr* false_ = nullptr;
 };
 
 }  // namespace crucible
