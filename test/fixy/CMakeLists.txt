@@ -2108,11 +2108,26 @@ fixy_neg_compile_test(neg_sess_checkpoint_delegation_owned_handle
 # checkpoint session.  The test corrupts records one byte at a time.
 fixy_test(test_session_recording)
 
-# HS14 for mint_recorded_session: a value that is no handle, and a log
-# that dies before the recorder does.
+# HS14 for mint_recorded_session: a value that is no handle, a handle
+# that already has a recorder, and a log that dies before the recorder
+# does.
 fixy_neg_compile_test(neg_sess_record_not_a_handle
   "no matching function for call to .mint_recorded_session"
   "required for the satisfaction of .RecordableHandle<H>. \\[with H = int\\]")
+
+fixy_neg_compile_test(neg_sess_record_recorded_handle
+  "no matching function for call to .mint_recorded_session"
+  "the required type .typename fixy::session::detail::recording::wire_protocol<H>::type. is invalid")
+
+# The door of the recording mint puts a recorder around a handle.  Its
+# member is private, and the class is final.  Only the mint calls the
+# member, and no class can use the door as a base to get access to it.
+fixy_neg_compile_test(neg_sess_record_door_called_outside
+  "is private within this context"
+  "fixy::session::RecordingDoor::make_")
+fixy_neg_compile_test(neg_sess_record_door_derived_look_alike
+  "cannot derive from .final. base"
+  "RecordingDoor")
 
 fixy_neg_compile_test(neg_sess_record_temporary_log
   "no matching function for call to .mint_recorded_session"

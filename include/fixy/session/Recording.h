@@ -182,10 +182,6 @@ template <typename Branch>
     }
 }
 
-template <typename Inner>
-[[nodiscard]] constexpr auto make_recorded(Inner inner, SessionEventLog& log, RoleTagId self, RoleTagId peer) noexcept
-    -> Recorded<Inner>;
-
 // The operations of the inner handle that the recorder forwards with no
 // transport.  Each such member of Recorded exists only when the inner
 // handle has it.  A member that takes a transport exists when the
@@ -204,13 +200,20 @@ concept inner_can_crash = requires(Inner&& inner, CrashCause cause, CrashReporte
 
 }  // namespace detail::recording
 
-// What a recorder can wrap: a handle that names its protocol and its
-// Resource.
+// What a recorder accepts: a plain handle, a crash-watched handle or a
+// checkpoint handle.  The recorder reads the label words of each from the
+// plain handle at the bottom of the decorators, and a handle of another
+// shape has no such protocol.  A recorded handle is not one of the three,
+// so the recorder does not record one session two times.
 template <typename H>
 concept RecordableHandle = requires {
     typename H::protocol;
     typename H::resource_type;
-} && !std::is_reference_v<H>;
+    typename detail::recording::wire_protocol<H>::type;
+};
+
+// The door of the recording mint, which stands after the mint.
+class RecordingDoor;
 
 template <typename Inner>
 class [[nodiscard]] Recorded {
@@ -222,9 +225,8 @@ class [[nodiscard]] Recorded {
     template <typename>
     friend class Recorded;
 
-    template <typename F>
-    friend constexpr auto detail::recording::make_recorded(F, SessionEventLog&, RoleTagId, RoleTagId) noexcept
-        -> Recorded<F>;
+    // The first recorder of a session comes only from this door.
+    friend class RecordingDoor;
 
     constexpr Recorded(Inner inner, SessionEventLog& log, RoleTagId self, RoleTagId peer) noexcept
         : inner_{std::move(inner)}, log_{&log}, self_{self}, peer_{peer} {}
@@ -465,24 +467,49 @@ private:
     }
 };
 
-namespace detail::recording {
-
-template <typename Inner>
-[[nodiscard]] constexpr auto make_recorded(Inner inner, SessionEventLog& log, RoleTagId self, RoleTagId peer) noexcept
-    -> Recorded<Inner> {
-    return Recorded<Inner>{std::move(inner), log, self, peer};
-}
-
-}  // namespace detail::recording
-
 // ── The mint ─────────────────────────────────────────────────────────
 
 template <typename H>
     requires RecordableHandle<H>
 [[nodiscard]] constexpr auto mint_recorded_session(H handle, SessionEventLog& log, RoleTagId self,
                                                    RoleTagId peer) noexcept {
-    return detail::recording::make_recorded(std::move(handle), log, self, peer);
+    return detail::late_door_t<RecordingDoor, H>::template make_<H>(std::move(handle), log, self, peer);
 }
+
+// ── The door of the recording mint ───────────────────────────────────
+//
+// mint_recorded_session gets the recorder through this class.  The member
+// of the class is private and static.  The one friend of the class is the
+// mint, which does the check of the handle before it calls the member.
+// The member does that check again, and puts the recorder around the
+// handle.  The class is final, and no object of it exists.
+//
+// The class is after the mint, as the door of the mints in
+// fixy/session/Handle.h is after its mints.  The mint names the class
+// through detail::late_door_t.
+class RecordingDoor final {
+    RecordingDoor() = delete("the recording door holds static members only, and no object of it exists");
+    RecordingDoor(const RecordingDoor&) = delete("the recording door holds static members only");
+    RecordingDoor& operator=(const RecordingDoor&) = delete("the recording door holds static members only");
+    RecordingDoor(RecordingDoor&&) = delete("the recording door holds static members only");
+    RecordingDoor& operator=(RecordingDoor&&) = delete("the recording door holds static members only");
+    constexpr ~RecordingDoor() noexcept {}
+
+    template <typename H>
+        requires RecordableHandle<H>
+    friend constexpr auto mint_recorded_session(H handle, SessionEventLog& log, RoleTagId self,
+                                                RoleTagId peer) noexcept;
+
+    // Puts the recorder around the handle.  The recorder writes each step
+    // of the handle to the log, with self and peer as the two roles.
+    template <typename H>
+    [[nodiscard]] static constexpr auto make_(H handle, SessionEventLog& log, RoleTagId self,
+                                              RoleTagId peer) noexcept -> Recorded<H> {
+        static_assert(RecordableHandle<H>, "fixy::session::diagnostic [Recording_Handle_Refused]: the recording "
+                                           "door accepts only a handle that mint_recorded_session accepts.");
+        return Recorded<H>{std::move(handle), log, self, peer};
+    }
+};
 
 // ── Replay of a choice ───────────────────────────────────────────────
 

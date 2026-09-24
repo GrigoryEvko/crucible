@@ -191,3 +191,4 @@ fixy::session::DelegationDoor | fixy/session/Delegate.h | fixy::session::Delegat
 fixy::session::AsyncChannelDoor | fixy/session/AsyncChannel.h | fixy::session::AsyncChannelDoor{} | deleted | closed
 fixy::session::CheckpointDoor | fixy/session/Checkpoint.h | fixy::session::CheckpointDoor{} | deleted | closed
 fixy::session::CrashSessionDoor | fixy/session/CrashTransport.h | fixy::session::CrashSessionDoor{} | deleted | closed
+fixy::session::RecordingDoor | fixy/session/Recording.h | fixy::session::RecordingDoor{} | deleted | closed
