@@ -253,7 +253,6 @@ apply to the row.
 | `mint_stack_use` | `include/crucible/safety/StackUse.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:289` | HS14: 2 |
 | `mint_stdio` | `include/crucible/safety/Stdio.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:294` | HS14: 2 |
 | `mint_suspend_behavior` | `include/crucible/safety/SuspendBehavior.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:265` | HS14: 2 |
-| `mint_thread_local_ref` | `include/crucible/safety/ThreadLocalRef.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:305` | HS14: 2 |
 | `mint_thread_name` | `include/crucible/safety/ThreadName.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/Sched.h:244` | HS14: 2 |
 | `mint_witness` | `include/crucible/safety/Witness.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:231` | HS14: 2 |
 
@@ -365,7 +364,7 @@ apply to the row.
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_sealed_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
+| `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | · | HS14: 14 |
 | `mint_shared_read(Ctx const&,::foundation::permissions::SharedPermissionGuard<Tag,Brand>const&,SharedRegion<T,Tag,Brand>const&)` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_shared_read(Ctx const&,::foundation::permissions::SharedPermissionGuard<Tag,Brand>const&/*guard*/,SharedRegion<T,Tag,Brand>const&)` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 4 |
@@ -415,7 +414,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
+| `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | · | HS14: 6 |
 | `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | Y | Y | Y | token | · | · | HS14: 21 |
@@ -424,9 +423,15 @@ apply to the row.
 | `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 33 |
+| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 35 |
 | `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
+
+## include/foundation/
+
+| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
+|---|---|---|---|---|---|---|---|---|---|
+| `mint_thread_local_ref` | `include/foundation/ThreadLocalRef.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 
 ## include/foundation/algebra/
 
@@ -449,6 +454,7 @@ apply to the row.
 | `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
 | `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
+| `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | · | HS14: 3 |
 | `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
 
 ## include/foundation/permissions/
@@ -470,5 +476,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 212 | 105 | 99 | 8 | 0 | 72 | 42 |
-| new (`include/foundation/`, `include/fixy/`) | 88 | 36 | 52 | 0 | 0 | · | 31 |
+| old (`include/crucible/`) | 211 | 105 | 98 | 8 | 0 | 72 | 42 |
+| new (`include/foundation/`, `include/fixy/`) | 90 | 36 | 54 | 0 | 0 | · | 31 |
