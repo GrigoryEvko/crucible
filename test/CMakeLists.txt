@@ -847,6 +847,17 @@ add_test(NAME no_unchecked_access
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-unchecked-access.py)
 set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
+# A function in a detail namespace does the work of a door with no gate of
+# its own.  scripts/check-detail-namespace.py refuses a use of a detail
+# namespace of foundation or fixy outside the two layers.  The reviewed uses
+# in tests are in scripts/detail-namespace-allowlist.txt, keyed by file and
+# namespace.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
+add_test(NAME detail_namespace_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-detail-namespace.py --self-test)
+add_test(NAME detail_namespace
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-detail-namespace.py)
+set_tests_properties(detail_namespace detail_namespace_self_test PROPERTIES
+    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # A write past the end of a C array member lands in the next member of the
 # same object, where the address sanitizer sees valid memory, and no build
 # checks the subscript.  scripts/check-no-raw-array-member.py refuses a C

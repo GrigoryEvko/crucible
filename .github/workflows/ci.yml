@@ -251,6 +251,11 @@ jobs:
           python3 scripts/check-no-unchecked-access.py --self-test
           python3 scripts/check-no-unchecked-access.py
 
+      - name: detail namespaces of foundation and fixy only inside the layers (self-test + scan)
+        run: |
+          python3 scripts/check-detail-namespace.py --self-test
+          python3 scripts/check-detail-namespace.py
+
       - name: single combine_ids source of truth (self-test + scan)
         run: |
           bash scripts/check-no-combine-ids-duplicate.sh --self-test
