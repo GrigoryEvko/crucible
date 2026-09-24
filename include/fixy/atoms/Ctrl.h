@@ -8,6 +8,7 @@
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 
+#include <array>
 #include <cstddef>
 #include <tuple>
 #include <type_traits>
@@ -22,7 +23,7 @@ inline constexpr atom_seal atom_namespace_seal{};
 // two sites that state different reasons are different types.
 template <std::size_t N>
 struct rationale final {
-    char data[N]{};
+    std::array<char, N> data{};
 
     consteval rationale(const char (&literal)[N]) noexcept {
         for (std::size_t index = 0; index < N; ++index) {
