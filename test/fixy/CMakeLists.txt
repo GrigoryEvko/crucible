@@ -110,6 +110,16 @@ fixy_neg_compile_test(neg_mutation_write_once_twice
 # ── The atom catalog ──────────────────────────────────────────────────
 fixy_test(test_atom)
 
+# register_bits_v names a width only for an ISA with a fixed register
+# width.  SVE is scalable and Portable names no register, so the
+# constraint refuses both.
+fixy_neg_compile_test(neg_simd_register_bits_of_a_scalable_isa
+  "use of invalid variable template .register_bits_v<fixy::atom::simd::SimdIsa::Sve>."
+  "the expression .has_fixed_register_width\\(fixy::atom::simd::SimdIsa\\)\\(Isa\\) \\[with Isa = fixy::atom::simd::SimdIsa::Sve\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_simd_register_bits_of_portable
+  "use of invalid variable template .register_bits_v<fixy::atom::simd::SimdIsa::Portable>."
+  "the expression .has_fixed_register_width\\(fixy::atom::simd::SimdIsa\\)\\(Isa\\) \\[with Isa = fixy::atom::simd::SimdIsa::Portable\\]. evaluated to .false.")
+
 # ── The fn gate ───────────────────────────────────────────────────────
 # The resolver, the silent strict defaults and what the gate refuses.
 # The negative fixtures for the tiers are in the gate-fixture section.

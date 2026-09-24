@@ -9,8 +9,10 @@
 #include <crucible/effects/Concurrent.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/fixy/Vendor.h>
-#include <crucible/fixy/Simd.h>
+#include <fixy/Atom.h>
+#include <fixy/Axis.h>
+#include <fixy/atoms/Hw.h>
+#include <fixy/atoms/Simd.h>
 #include <foundation/Lifetime.h>
 
 #include <algorithm>
@@ -208,38 +210,36 @@ struct alignas(32) NibbleTables {
 #endif
 
 // These aliases have no runtime use.  They restate the preprocessor arm
-// selected below as types, so an external lint can read which vendor
-// intrinsic and register width the kernels depend on.
+// selected below as fixy atoms: the ISA the kernels were emitted for, and
+// the instruction class they issue.
 namespace fec_hw {
 
-namespace fv = ::crucible::fixy::vendor;
-namespace fs = ::crucible::fixy::simd;
+namespace fas = ::fixy::atom::simd;
+namespace fah = ::fixy::atom::hw;
 
 #if defined(__AVX2__)
-using ActiveVendorIsa = fv::avx2_intrinsic;
-using ActiveSimdWidth = fs::width_256;
-static_assert(32u * 8u == std::to_underlying(fs::WidthBits::Bits256),
-              "the AVX2 kernels stride 32-byte blocks, which must equal the declared 256-bit width");
+using ActiveSimdIsa = fas::avx2;
+inline constexpr std::size_t kKernelStrideBytes = 32;  // the AVX2 kernels step 32 bytes per iteration
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-using ActiveVendorIsa = fv::neon_intrinsic;
-using ActiveSimdWidth = fs::width_128;
-static_assert(16u * 8u == std::to_underlying(fs::WidthBits::Bits128),
-              "the NEON kernels stride 16-byte blocks, which must equal the declared 128-bit width");
+using ActiveSimdIsa = fas::neon;
+inline constexpr std::size_t kKernelStrideBytes = 16;  // the NEON kernels step 16 bytes per iteration
 #else
-using ActiveSimdWidth = fs::width_scalar;
+using ActiveSimdIsa = fas::scalar;
+inline constexpr std::size_t kKernelStrideBytes = 1;  // the scalar kernels step one byte per iteration
 #endif
 
-static_assert(::crucible::fixy::grant::IsGrantTag<ActiveSimdWidth>, "the active simd::width grant must be well-formed");
-static_assert(::crucible::fixy::grant::which_dim_v<ActiveSimdWidth> == ::crucible::fixy::dim::DimensionAxis::SimdIsa,
-              "simd::width routes to the SimdIsa axis");
+// The two vector arms issue SIMD intrinsics.  The portable arm is scalar.
+using InstructionTier = std::conditional_t<fas::is_trunk_pinned(ActiveSimdIsa::isa), fah::vectorizable, fah::scalar>;
 
-#if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
-static_assert(::crucible::fixy::grant::IsGrantTag<ActiveVendorIsa>,
-              "the active vendor::intrinsic grant must be well-formed");
-static_assert(::crucible::fixy::grant::which_dim_v<ActiveVendorIsa>
-                  == ::crucible::fixy::dim::DimensionAxis::HwInstruction,
-              "vendor::intrinsic routes to the HwInstruction axis");
-#endif
+static_assert(::fixy::atom::IsAtom<ActiveSimdIsa> && ActiveSimdIsa::axis == ::fixy::Axis::SimdIsa,
+              "the kernels' ISA is a shipped atom of the SimdIsa axis");
+static_assert(::fixy::atom::IsAtom<InstructionTier> && InstructionTier::axis == ::fixy::Axis::HwInstruction,
+              "the kernels' instruction class is a shipped atom of the HwInstruction axis");
+
+// A vector kernel steps one register per iteration.
+static_assert(fas::register_bits_v<ActiveSimdIsa::isa> == 0
+                  || kKernelStrideBytes * 8U == fas::register_bits_v<ActiveSimdIsa::isa>,
+              "a vector kernel must stride exactly one register of the active ISA");
 
 }  // namespace fec_hw
 

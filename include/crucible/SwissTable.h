@@ -2,10 +2,13 @@
 
 #include <crucible/Platform.h>
 #include <crucible/fixy/Wrap.h>
-#include <crucible/fixy/Vendor.h>
-#include <crucible/fixy/Simd.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Pre.h>
+
+#include <fixy/Atom.h>
+#include <fixy/Axis.h>
+#include <fixy/atoms/Hw.h>
+#include <fixy/atoms/Simd.h>
 
 #include <bit>
 #include <cstdint>
@@ -50,48 +53,41 @@ static_assert(std::is_standard_layout_v<GroupWidth>);
 static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(group_width(), std::size_t{64}),
               "kGroupWidth must be a power of two ≤ 64 (AVX-512 width)");
 
+// The ISA the probe was emitted for and the instruction class it issues,
+// restated as fixy atoms of the arm the preprocessor selects above.
 namespace swiss_hw {
 
-namespace fv = ::crucible::fixy::vendor;
-namespace fs = ::crucible::fixy::simd;
+namespace fas = ::fixy::atom::simd;
+namespace fah = ::fixy::atom::hw;
 
 #if defined(__AVX512BW__)
-using ActiveVendorIsa = fv::avx512bw_intrinsic;
-using ActiveSimdWidth = fs::width_512;
-static_assert(group_width() * 8u == std::to_underlying(fs::WidthBits::Bits512),
-              "AVX-512BW group bytes x 8 must equal width_512 bits");
+using ActiveSimdIsa = fas::avx512bw;
 #elif defined(__AVX2__)
-using ActiveVendorIsa = fv::avx2_intrinsic;
-using ActiveSimdWidth = fs::width_256;
-static_assert(group_width() * 8u == std::to_underlying(fs::WidthBits::Bits256),
-              "AVX2 group bytes x 8 must equal width_256 bits");
+using ActiveSimdIsa = fas::avx2;
 #elif defined(__SSE2__)
-using ActiveVendorIsa = fv::sse2_intrinsic;
-using ActiveSimdWidth = fs::width_128;
-static_assert(group_width() * 8u == std::to_underlying(fs::WidthBits::Bits128),
-              "SSE2 group bytes x 8 must equal width_128 bits");
+using ActiveSimdIsa = fas::sse2;
 #elif defined(__aarch64__)
-using ActiveVendorIsa = fv::neon_intrinsic;
-using ActiveSimdWidth = fs::width_128;
-static_assert(group_width() * 8u == std::to_underlying(fs::WidthBits::Bits128),
-              "NEON group bytes x 8 must equal width_128 bits");
+using ActiveSimdIsa = fas::neon;
 #else
-using ActiveSimdWidth = fs::width_scalar;
+using ActiveSimdIsa = fas::scalar;
 #endif
 
-static_assert(::crucible::fixy::grant::IsGrantTag<ActiveSimdWidth>, "the active simd::width grant must be well-formed");
-static_assert(::crucible::fixy::grant::which_dim_v<ActiveSimdWidth> == ::crucible::fixy::dim::DimensionAxis::SimdIsa,
-              "simd::width routes to the SimdIsa axis");
+// The four vector arms issue SIMD intrinsics.  The portable arm runs SWAR
+// over general-purpose registers, which is the scalar class.
+using InstructionTier = std::conditional_t<fas::is_trunk_pinned(ActiveSimdIsa::isa), fah::vectorizable, fah::scalar>;
 
-// The portable arm runs SWAR over general-purpose registers, so it declares
-// no vendor intrinsic. Only the four vector arms pin one.
-#if defined(__AVX512BW__) || defined(__AVX2__) || defined(__SSE2__) || defined(__aarch64__)
-static_assert(::crucible::fixy::grant::IsGrantTag<ActiveVendorIsa>,
-              "the active vendor::intrinsic grant must be well-formed");
-static_assert(::crucible::fixy::grant::which_dim_v<ActiveVendorIsa>
-                  == ::crucible::fixy::dim::DimensionAxis::HwInstruction,
-              "vendor::intrinsic routes to the HwInstruction axis");
-#endif
+static_assert(::fixy::atom::IsAtom<ActiveSimdIsa> && ActiveSimdIsa::axis == ::fixy::Axis::SimdIsa,
+              "the probe's ISA is a shipped atom of the SimdIsa axis");
+static_assert(::fixy::atom::IsAtom<InstructionTier> && InstructionTier::axis == ::fixy::Axis::HwInstruction,
+              "the probe's instruction class is a shipped atom of the HwInstruction axis");
+static_assert(!fah::at_or_above(InstructionTier::tier, fah::HwInstruction::NonDeterministicTsc),
+              "the probe runs on the hot path, which refuses the timestamp and privileged tiers");
+
+// A vector arm loads one control-byte group into one register, so the group
+// is exactly one register wide.  The portable arm has no register to match.
+static_assert(fas::register_bits_v<ActiveSimdIsa::isa> == 0
+                  || group_width() * 8U == fas::register_bits_v<ActiveSimdIsa::isa>,
+              "the control-byte group must be exactly one vector register of the active ISA");
 
 }  // namespace swiss_hw
 

@@ -319,14 +319,14 @@ crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h �
 crucible_test(test_fixy_v_258_vendor_intrinsic)         # FIXY-V-258 fixy/Vendor.h — IsaTag enum (22 ISA families) + strong-typed grant::vendor::intrinsic<V,I> + 7 canonical aliases
 crucible_test(test_fixy_v_259_simd_width)               # FIXY-V-259 fixy/Simd.h — WidthBits enum (6 width classes) + strong-typed grant::simd::width<W> + 4 canonical aliases
 crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
-crucible_test(test_fixy_v_262_swisstable_hw_grants)     # FIXY-V-262 SwissTable.h #if arms declare vendor::intrinsic<V,I> + simd::width<W> per ISA arm + width↔group-bytes consistency
-# test_fixy_v_263 / test_cntp_fec instantiate cntp/Fec.h's `#if __AVX2__` kernels, which
+crucible_test(test_hardware_axis_pins)  # the hot headers pin their compile-time hardware constructs as fixy atoms
+# test_fec_hardware_axis_pin / test_cntp_fec instantiate cntp/Fec.h's `#if __AVX2__` kernels, which
 # call std::start_lifetime_as<const __m256i> — rejected by libstdc++ 16's writable-asm
 # barrier under -march=native (release/bench). CRUCIBLE_FEC_CONST_SIMD_OK (probed in the
 # top-level CMakeLists) is TRUE on default/tsan/analyzer (AVX2 arm #if'd out → scalar
 # path tested) and FALSE under release/bench until cntp/Fec.h adopts a const-safe load.
 if(CRUCIBLE_FEC_CONST_SIMD_OK)
-crucible_test(test_fixy_v_263_fec_hw_grants)            # FIXY-V-263 cntp/Fec.h #if arms declare vendor::intrinsic<V,I> + simd::width<W> per ISA arm (AVX2/NEON/portable) + stride↔width consistency
+crucible_test(test_fec_hardware_axis_pin)  # cntp/Fec.h pins its kernel arm as fixy atoms, with the stride one register wide
 endif()
 crucible_test(test_fixy_v_264_hw_grants)               # FIXY-V-264 TraceRing cache<Prefetch,3> (HwInstruction) + ChaseLevDeque barrier<Compiler,SeqCst> (BarrierStrength) grant declarations on distinct axes
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
@@ -434,10 +434,10 @@ crucible_test(test_cntp_quic_transport)
 crucible_test(test_cntp_roce_config)
 crucible_test(test_cntp_wireguard)
 crucible_test(test_cntp_integrity)
-if(CRUCIBLE_FEC_CONST_SIMD_OK)  # see test_fixy_v_263 note: AVX2 Fec kernels need a const-safe start_lifetime_as
+if(CRUCIBLE_FEC_CONST_SIMD_OK)  # see test_fec_hardware_axis_pin note: AVX2 Fec kernels need a const-safe start_lifetime_as
 crucible_test(test_cntp_fec)
 endif()
-if(CRUCIBLE_FEC_CONST_SIMD_OK)  # Fountain.h pulls cntp/Fec.h AVX2 kernels; see test_fixy_v_263 note
+if(CRUCIBLE_FEC_CONST_SIMD_OK)  # Fountain.h pulls cntp/Fec.h AVX2 kernels; see test_fec_hardware_axis_pin note
 crucible_test(test_cntp_fountain)
 endif()
 crucible_test(test_cntp_overlay_multicast)

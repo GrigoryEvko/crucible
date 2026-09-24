@@ -10,8 +10,8 @@
 # `which_dim_v<>`.  A site on the new tree pins a fixy atom with
 # `IsAtom<>` and the `::fixy::Axis` the atom engages.
 #
-#   include/crucible/SwissTable.h            → swiss_hw      (SimdIsa, grant)
-#   include/crucible/cntp/Fec.h              → fec_hw        (SimdIsa, grant)
+#   include/crucible/SwissTable.h            → swiss_hw      (SimdIsa, atom)
+#   include/crucible/cntp/Fec.h              → fec_hw        (SimdIsa, atom)
 #   include/crucible/TraceRing.h             → tracering_hw  (HwInstruction, atom)
 #   include/crucible/concurrent/ChaseLevDeque.h → chaselev_hw (BarrierStrength, grant)
 #
@@ -67,8 +67,8 @@ manifest_markers=(
     "namespace chaselev_hw"
 )
 manifest_kinds=(
-    "grant"
-    "grant"
+    "atom"
+    "atom"
     "atom"
     "grant"
 )
@@ -174,8 +174,8 @@ using InstructionTier = int;  // synthetic — asserts deliberately stripped
 EOF
         }
 
-        write_complete_grant "$tmp_root/include/crucible/SwissTable.h"            "swiss_hw"
-        write_complete_grant "$tmp_root/include/crucible/cntp/Fec.h"             "fec_hw"
+        write_complete_atom  "$tmp_root/include/crucible/SwissTable.h"            "swiss_hw"
+        write_complete_atom  "$tmp_root/include/crucible/cntp/Fec.h"             "fec_hw"
         write_gutted         "$tmp_root/include/crucible/TraceRing.h"            "tracering_hw"
         write_complete_grant "$tmp_root/include/crucible/concurrent/ChaseLevDeque.h" "chaselev_hw"
 
@@ -271,8 +271,8 @@ the compile-time-selected hardware construct makes.
 
 Remediations:
   (1) If you removed/renamed a hardware construct, restore (or relocate)
-      the matching block — see SwissTable.h swiss_hw for a grant site and
-      TraceRing.h tracering_hw for an atom site.
+      the matching block — see ChaseLevDeque.h chaselev_hw for a grant site
+      and SwissTable.h swiss_hw for an atom site.
   (2) If you moved a site to a new file or to the new tree, update the
       manifest arrays in scripts/check-fixy-hw-discipline.sh in the SAME
       commit.

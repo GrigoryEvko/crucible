@@ -39,6 +39,7 @@
 
 #include <foundation/effects/Lift.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -141,6 +142,13 @@ struct portable final : atom_of<Axis::SimdIsa> {
 [[nodiscard]] consteval bool on_x86_trunk(SimdIsa isa) noexcept { return trunk_of(isa) == 0x1; }
 [[nodiscard]] consteval bool on_arm_trunk(SimdIsa isa) noexcept { return trunk_of(isa) == 0x2; }
 
+// Whether an ISA has one fixed vector-register width.  SVE and SVE2 are
+// scalable, so the width belongs to the processor and not to the ISA.
+// Portable names no register at all.
+[[nodiscard]] consteval bool has_fixed_register_width(SimdIsa isa) noexcept {
+    return isa != SimdIsa::Sve && isa != SimdIsa::Sve2 && isa != SimdIsa::Portable;
+}
+
 }  // namespace fixy::atom::simd
 
 namespace fixy::atom::detail {
@@ -149,7 +157,49 @@ using simd_atom_roster = std::tuple<simd::scalar, simd::sse2, simd::sse3, simd::
                                     simd::avx2, simd::avx512f, simd::avx512bw, simd::neon, simd::neon_fp16,
                                     simd::neon_dot_product, simd::sve, simd::sve2, simd::portable>;
 
+// One row for each ISA with a fixed register width, and no row for the
+// others.  The self-test below holds that partition against the enum.
+inline constexpr std::array<std::pair<simd::SimdIsa, std::uint16_t>, 12> simd_register_bits_table{{
+    {simd::SimdIsa::Scalar, 0},
+    {simd::SimdIsa::Sse2, 128},
+    {simd::SimdIsa::Sse3, 128},
+    {simd::SimdIsa::Ssse3, 128},
+    {simd::SimdIsa::Sse41, 128},
+    {simd::SimdIsa::Sse42, 128},
+    {simd::SimdIsa::Avx2, 256},
+    {simd::SimdIsa::Avx512F, 512},
+    {simd::SimdIsa::Avx512Bw, 512},
+    {simd::SimdIsa::Neon, 128},
+    {simd::SimdIsa::NeonFp16, 128},
+    {simd::SimdIsa::NeonDotProduct, 128},
+}};
+
+[[nodiscard]] consteval std::size_t simd_register_bits_rows_for_(simd::SimdIsa isa) noexcept {
+    std::size_t rows = 0;
+    for (const auto& row : simd_register_bits_table) rows += (row.first == isa) ? 1U : 0U;
+    return rows;
+}
+
+[[nodiscard]] consteval std::uint16_t simd_register_bits_of_(simd::SimdIsa isa) noexcept {
+    std::uint16_t bits = 0;
+    for (const auto& row : simd_register_bits_table)
+        if (row.first == isa) bits = row.second;
+    return bits;
+}
+
 }  // namespace fixy::atom::detail
+
+namespace fixy::atom::simd {
+
+// The width of one vector register, in bits.  Scalar has no vector
+// register, so its width is 0.  A kernel that steps one register per
+// iteration checks its stride against this value.  An ISA without a fixed
+// width has no value here, and naming one does not compile.
+template <SimdIsa Isa>
+    requires(has_fixed_register_width(Isa))
+inline constexpr std::uint16_t register_bits_v = ::fixy::atom::detail::simd_register_bits_of_(Isa);
+
+}  // namespace fixy::atom::simd
 
 namespace fixy::atom::detail::simd_atom_self_test {
 
@@ -211,7 +261,49 @@ template <simd::SimdIsa I>
     return partitioned;
 }
 
+// Every ISA with a fixed register width has exactly one row in the width
+// table, and every other ISA has none.  A new enumerator therefore cannot
+// take a width by default.
+[[nodiscard]] consteval bool register_bits_table_partitions_the_enum_() noexcept {
+    bool exact = true;
+    static constexpr auto isas = std::define_static_array(std::meta::enumerators_of(^^simd::SimdIsa));
+    template for (constexpr auto isa_member : isas) {
+        constexpr simd::SimdIsa isa = [:isa_member:];
+        constexpr std::size_t expected_rows = simd::has_fixed_register_width(isa) ? 1U : 0U;
+        exact = exact && (simd_register_bits_rows_for_(isa) == expected_rows);
+    }
+    return exact;
+}
+
+// A pinned rung has a real vector register, and the scalar bottom has none.
+[[nodiscard]] consteval bool register_bits_match_the_rung_() noexcept {
+    bool matched = true;
+    for (const auto& row : simd_register_bits_table) {
+        const bool vector_width = row.second == 128 || row.second == 256 || row.second == 512;
+        matched = matched && (simd::is_trunk_pinned(row.first) ? vector_width : row.second == 0);
+    }
+    return matched;
+}
+
+template <simd::SimdIsa I>
+concept names_register_bits_ = requires { simd::register_bits_v<I>; };
+
 #pragma GCC diagnostic pop
+
+static_assert(register_bits_table_partitions_the_enum_(),
+              "fixy/atoms/Simd.h: every SimdIsa with a fixed register width must have exactly one row in "
+              "simd_register_bits_table, and every other SimdIsa none.");
+static_assert(register_bits_match_the_rung_(),
+              "fixy/atoms/Simd.h: a trunk-pinned ISA has a 128, 256 or 512-bit register, and Scalar has 0.");
+static_assert(simd::register_bits_v<simd::SimdIsa::Scalar> == 0);
+static_assert(simd::register_bits_v<simd::SimdIsa::Sse2> == 128);
+static_assert(simd::register_bits_v<simd::SimdIsa::Avx2> == 256);
+static_assert(simd::register_bits_v<simd::SimdIsa::Avx512Bw> == 512);
+static_assert(simd::register_bits_v<simd::SimdIsa::Neon> == 128);
+static_assert(names_register_bits_<simd::SimdIsa::Sse42>);
+static_assert(!names_register_bits_<simd::SimdIsa::Sve>);
+static_assert(!names_register_bits_<simd::SimdIsa::Sve2>);
+static_assert(!names_register_bits_<simd::SimdIsa::Portable>);
 
 static_assert(every_isa_has_exactly_one_atom_(),
               "fixy/atoms/Simd.h: every SimdIsa enumerator must be claimed by exactly one atom in "
