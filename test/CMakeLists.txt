@@ -154,6 +154,11 @@ crucible_test(test_safety)
 crucible_test(test_pre_post)
 crucible_test(test_decide)
 
+# A pin on the GCC 16.2.1 constant-evaluator defect in __builtin_memchr
+# and __builtin_strchr from an offset pointer.  The test passes while GCC
+# gives the wrong offset, and fails when an update changes it.
+crucible_test(test_gcc_memchr_fold)
+
 # ── FIXY-CLEAN Phase A — engagement-gate test corpus ────────────────
 #
 # Clean reimplementation per misc/16_05_2026_fixy.md §4 Phase A.  Three
