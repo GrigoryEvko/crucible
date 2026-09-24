@@ -82,38 +82,27 @@ inline constexpr std::size_t kMaxCpuCount = 8192;
 // is sorted, holds no duplicate, and has at most kMaxCpuCount entries
 // whatever the text repeats.
 //
-// The scan finds each separator with a loop over the characters, and not
-// with std::string_view::find.  GCC 16 in C++26 mode, with
-// -fimplicit-constexpr, folds a call whose text is a constant, and it folds
-// find(char) to a wrong position: "0,1,2,3" parsed to three ids.
-//
 // Pure: the answer reads only the bytes behind s, and it opens no file.
 // Complexity: linear in the length of s, times kMaxCpuCount / 64 per range.
-[[nodiscard, gnu::pure]] inline std::vector<int> parse_cpulist(std::string_view s) noexcept {
+[[nodiscard, gnu::pure]] constexpr std::vector<int> parse_cpulist(std::string_view s) noexcept {
     const auto parse_cpu_id = [](std::string_view digits, std::size_t& cpu) noexcept {
         const char* const end = digits.data() + digits.size();
         const auto [stop, error] = std::from_chars(digits.data(), end, cpu);
         return !digits.empty() && error == std::errc{} && stop == end && cpu < kMaxCpuCount;
     };
     const auto is_blank = [](char c) noexcept { return c == ' ' || c == '\t'; };
-    // The index of the first c in text, or the length of text.
-    const auto index_of = [](std::string_view text, char c) noexcept {
-        std::size_t index = 0;
-        while (index < text.size() && text[index] != c) ++index;
-        return index;
-    };
 
     std::bitset<kMaxCpuCount> named;
     const std::bitset<kMaxCpuCount> every_id = ~std::bitset<kMaxCpuCount>{};
     while (!s.empty()) {
-        const std::size_t comma = index_of(s, ',');
+        const std::size_t comma = s.find(',');
         std::string_view entry = s.substr(0, comma);
         s.remove_prefix(comma < s.size() ? comma + 1 : s.size());
         while (!entry.empty() && is_blank(entry.front())) entry.remove_prefix(1);
         while (!entry.empty() && is_blank(entry.back())) entry.remove_suffix(1);
         if (entry.empty()) continue;
 
-        const std::size_t dash = index_of(entry, '-');
+        const std::size_t dash = entry.find('-');
         std::size_t first_id = 0;
         std::size_t last_id = 0;
         if (!parse_cpu_id(entry.substr(0, dash), first_id)) return {};
@@ -136,14 +125,10 @@ inline constexpr std::size_t kMaxCpuCount = 8192;
 //
 // Pure: the caller hands in the already-read text, so this reads only
 // the bytes behind status and opens no file.
-//
-// The lines are split with a loop over the characters, for the reason that
-// parse_cpulist gives.
-[[nodiscard, gnu::pure]] inline std::vector<int> parse_cpus_allowed_list(std::string_view status) noexcept {
+[[nodiscard, gnu::pure]] constexpr std::vector<int> parse_cpus_allowed_list(std::string_view status) noexcept {
     constexpr std::string_view key = "Cpus_allowed_list:";
     while (!status.empty()) {
-        std::size_t line_end = 0;
-        while (line_end < status.size() && status[line_end] != '\n') ++line_end;
+        const std::size_t line_end = status.find('\n');
         const std::string_view line = status.substr(0, line_end);
         status.remove_prefix(line_end < status.size() ? line_end + 1 : status.size());
         if (line.starts_with(key)) return parse_cpulist(line.substr(key.size()));

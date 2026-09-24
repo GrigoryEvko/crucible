@@ -73,6 +73,13 @@ void test_topology_basic() {
 void test_cpulist_parser() {
     using namespace crucible::warden::detail;
 
+    // The same parse in a constant evaluation, where find(char) folds
+    // through __builtin_memchr.  A compiler without toolchain patch 0002
+    // gives a wrong offset there and fails these asserts.
+    static_assert(parse_cpulist("0,1,2,3") == std::vector<int>({0, 1, 2, 3}));
+    static_assert(parse_cpus_allowed_list("Name:\tx\nCpus_allowed_list:\t0,1,2,3\nMems:\t0\n")
+                  == std::vector<int>({0, 1, 2, 3}));
+
     CHECK(parse_cpulist("0-3").size() == 4, "range 0-3 → 4 elements");
     CHECK(parse_cpulist("0,1,2,3").size() == 4, "explicit list 0-3");
     CHECK(parse_cpulist("0-3,8-11").size() == 8, "two ranges");

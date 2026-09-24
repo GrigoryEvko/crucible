@@ -1401,7 +1401,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # default/tsan/analyzer presets fail on the 64-byte select() return.
     -Wno-psabi                          # 193b portable wide-vector facade
 
-    # ── 3.13  GCC hardening flags (10) ───────────────────────
+    # ── 3.13  GCC hardening flags (11) ───────────────────────
     ${_CRUCIBLE_CFI_FLAGS}              # 194  control-flow integrity (x86 CET / arm BTI+PAC)
     -fstack-clash-protection            # 195  stack clash guard pages
     -fharden-compares                   # 196  redundant compare checks
@@ -1410,7 +1410,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -fdiagnostics-color=always          # 199  colored output
     -ftemplate-backtrace-limit=0        # 200  full template errors
     -fconstexpr-ops-limit=100000000     # 201  generous constexpr
-    -fimplicit-constexpr                # 202  auto constexpr simple fn
     -fstrict-enums                      # 203  assume valid enum values
     -Wvolatile                          # 204  deprecated volatile use
     -Wvla-larger-than=0                 # 205  reject ALL VLAs
