@@ -87,6 +87,28 @@
         "CRUCIBLE_SANITIZE": "OFF",
         "CRUCIBLE_TSAN": "ON"
       }
+    },
+    {
+      "name": "ubsan-strict",
+      "inherits": "default",
+      "displayName": "GCC 16 + full UBSan on every target, signed overflow undefined",
+      "binaryDir": "${sourceDir}/build-ubsan-strict",
+      "cacheVariables": {
+        "CRUCIBLE_SANITIZE": "OFF",
+        "CRUCIBLE_TSAN": "OFF",
+        "CRUCIBLE_UBSAN_STRICT": "ON"
+      }
+    },
+    {
+      "name": "verify",
+      "inherits": "release",
+      "displayName": "GCC 16 Release code generation with the contract families armed",
+      "binaryDir": "${sourceDir}/build-verify",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-O1 -march=native -g",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3",
+        "CRUCIBLE_VERIFY": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -97,7 +119,9 @@
     { "name": "pgo-generate", "configurePreset": "pgo-generate", "jobs": 192 },
     { "name": "pgo",     "configurePreset": "pgo",   "jobs": 192 },
     { "name": "pgo-release", "configurePreset": "pgo-release", "jobs": 192 },
-    { "name": "tsan",    "configurePreset": "tsan", "jobs": 192 }
+    { "name": "tsan",    "configurePreset": "tsan", "jobs": 192 },
+    { "name": "ubsan-strict", "configurePreset": "ubsan-strict", "jobs": 192 },
+    { "name": "verify",  "configurePreset": "verify", "jobs": 192 }
   ],
   "testPresets": [
     {
@@ -133,6 +157,18 @@
     {
       "name": "tsan",
       "configurePreset": "tsan",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 192 }
+    },
+    {
+      "name": "ubsan-strict",
+      "configurePreset": "ubsan-strict",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 192 }
+    },
+    {
+      "name": "verify",
+      "configurePreset": "verify",
       "output": { "outputOnFailure": true },
       "execution": { "jobs": 192 }
     },

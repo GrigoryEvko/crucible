@@ -9,6 +9,12 @@ option(CRUCIBLE_TSAN "Enable ThreadSanitizer (AxRaceFree, mutually exclusive wit
 if(CRUCIBLE_TSAN AND CRUCIBLE_SANITIZE)
   message(FATAL_ERROR "CRUCIBLE_TSAN and CRUCIBLE_SANITIZE are mutually exclusive (TSan cannot coexist with ASan/UBSan)")
 endif()
+# The strict UBSan preset puts its checks on every target through
+# crucible_dialect (root CMakeLists.txt).  The test factory adds no
+# sanitizer of its own.
+if(CRUCIBLE_UBSAN_STRICT AND (CRUCIBLE_SANITIZE OR CRUCIBLE_TSAN))
+  message(FATAL_ERROR "CRUCIBLE_UBSAN_STRICT is its own preset: set CRUCIBLE_SANITIZE and CRUCIBLE_TSAN to OFF")
+endif()
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 8: Sanitizers — Debug test builds only
@@ -557,6 +563,15 @@ add_test(NAME no_throw_no_rtti
 set_tests_properties(no_throw_no_rtti PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
+# The gate reads the output of the optimizer.  In C++26, each libstdc++
+# allocate holds an inline `throw bad_alloc()`, after a length check that
+# makes the throw unreachable.  An optimized build finds that and deletes
+# the throw.  The strict UBSan checks stop that proof, and the throw stays
+# in the artifact.  The release, default, tsan and verify presets run the
+# gate.
+if(CRUCIBLE_UBSAN_STRICT)
+  set_tests_properties(no_throw_no_rtti PROPERTIES DISABLED TRUE)
+endif()
 
 # Every site that claims a lifetime bound carries the deleted overload
 # that enforces it.  CRUCIBLE_LIFETIMEBOUND expands to nothing on the

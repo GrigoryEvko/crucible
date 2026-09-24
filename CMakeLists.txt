@@ -1089,6 +1089,27 @@ if(CRUCIBLE_ANALYZER)
   message(STATUS "CRUCIBLE_ANALYZER=ON — GCC -fanalyzer enabled for crucible consumers")
 endif()
 
+# ── Strict UBSan and verify builds (test presets only) ─────────────
+#
+# CRUCIBLE_UBSAN_STRICT removes -fno-strict-overflow and puts the full
+# UBSan set on every target.  -fno-strict-overflow defines signed overflow
+# as wrapping.  In the other presets, the signed-integer-overflow check of
+# UBSan cannot find an overflow.  This preset finds each wrapping signed
+# add, and each report from it is a real defect.
+#
+# CRUCIBLE_VERIFY builds Release code with the contract families armed.
+# The P2900 clauses operate under `enforce`, and the preset removes NDEBUG,
+# which arms CRUCIBLE_PRE, CRUCIBLE_POST and CRUCIBLE_INVARIANT.  The TUs
+# of crucible_perf keep `ignore` for their link (refer to that block).  The
+# build shows how the optimizer changes a checked program.
+option(CRUCIBLE_UBSAN_STRICT
+  "Put the full UBSan set on every target, with signed overflow undefined (test preset)" OFF)
+option(CRUCIBLE_VERIFY
+  "Release code generation with the contract families armed (test preset)" OFF)
+if(CRUCIBLE_UBSAN_STRICT AND CRUCIBLE_ANALYZER)
+  message(FATAL_ERROR "CRUCIBLE_UBSAN_STRICT and CRUCIBLE_ANALYZER are separate presets")
+endif()
+
 # ── Asm dump (gitignored, opt-in) ──────────────────────────────────
 #
 # When -DCRUCIBLE_DUMP_ASM=ON, post-build steps for every test +
@@ -1250,7 +1271,7 @@ target_compile_options(crucible_dialect INTERFACE
   -fno-omit-frame-pointer              #  53  frame ptr for profiling
   -fstack-protector-strong             #  54  stack canaries
   -fno-common                          #  55  no tentative definitions
-  -fno-strict-overflow                 #  56  signed overflow is UB→defined
+  $<$<NOT:$<BOOL:${CRUCIBLE_UBSAN_STRICT}>>:-fno-strict-overflow>  #  56  signed overflow is UB→defined, but not under strict UBSan
   -fstrict-flex-arrays=3               #  57  strict flex array rules
   -fvisibility=hidden                  #  58  hide symbols by default
   -fvisibility-inlines-hidden          #  59  hide inline symbols
@@ -1633,10 +1654,33 @@ endif()
 #      production than it looks.
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE MATCHES "Release")
+  if(CRUCIBLE_VERIFY)
+    set(_crucible_release_contract_semantic enforce)
+  else()
+    set(_crucible_release_contract_semantic observe)
+  endif()
   target_compile_options(crucible_dialect INTERFACE
     -ftrivial-auto-var-init=zero        # 231  zero-fill (cheaper)
-    -fcontract-evaluation-semantic=observe  # 231a  evaluate + report; see SECTION 6
+    -fcontract-evaluation-semantic=${_crucible_release_contract_semantic}  # 231a  see SECTION 6
   )
+endif()
+
+# ── Strict UBSan: every target, signed overflow undefined ─────────
+#
+# This block puts the flags on crucible_dialect.  The checks then apply to
+# the static libraries and to the tests.  The -fsanitize=undefined set of
+# GCC does not include float-cast-overflow, float-divide-by-zero and
+# bounds-strict, and the block names them.  The first report stops the
+# process.
+if(CRUCIBLE_UBSAN_STRICT)
+  set(_crucible_ubsan_strict_checks
+    undefined,float-cast-overflow,float-divide-by-zero,bounds-strict)
+  target_compile_options(crucible_dialect INTERFACE
+    -fsanitize=${_crucible_ubsan_strict_checks}
+    -fno-sanitize-recover=all
+    -fno-omit-frame-pointer)
+  target_link_options(crucible_dialect INTERFACE
+    -fsanitize=${_crucible_ubsan_strict_checks})
 endif()
 
 # ═══════════════════════════════════════════════════════════════
