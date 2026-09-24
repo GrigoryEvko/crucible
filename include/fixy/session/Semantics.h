@@ -40,9 +40,10 @@
 //
 // [GR-Ctx-ii] asks every branch of an en-route prefix to take the label.
 // After p sends m_j only branch j can still run, but p acts only when
-// each branch lets it.  The configuration of p is branch j alone.  So
-// Theorem 4.20 fails as the paper states it when p acts before its
-// message arrives.  The walks here follow Figure 7 as written, and
+// each branch lets it.  The configuration of p is branch j alone.  In our
+// reading, Theorem 4.20 then has a gap when p acts before its message
+// arrives (misc/session_types_literature.md, section 5, item 12, gives
+// the derivation).  The walks here follow Figure 7 as written, and
 // test/fixy/test_session_semantics.cpp pins the global types that show
 // the gap on a ledger that can only shrink.
 //

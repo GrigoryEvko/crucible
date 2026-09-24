@@ -152,7 +152,7 @@ All three defects of this table are fixed. The table keeps them as a record of t
 
 ### 4.5 Crash, recovery and time
 
-- **[S] Barwell, Hou, Yoshida, Zhou.** CONCUR 2022, ECOOP 2023 and LMCS 2025. Reliable roles, a marker for an unavailable queue and a crash branch that runs only after detection. The published CONCUR 2022 Definition 17 does not have the clause that makes a crash-detection step fire. The technical report arXiv 2207.02015 got a revision on 2026-08-24. Compare it with the CONCUR text before you cite it.
+- **[S] Barwell, Hou, Yoshida, Zhou.** CONCUR 2022, ECOOP 2023 and LMCS 2025. Reliable roles, a marker for an unavailable queue and a crash branch that runs only after detection. The published CONCUR 2022 Definition 17 does not have the clause that makes a crash-detection step fire. The arXiv listing of the technical report 2207.02015 gives v3 of 2023-02-21 as its current version, with the comment "fixes a missing condition in fairness". Compare it with the CONCUR text before you cite it.
 - **[S] Peters, Nestmann, Wagner. FTMPST.** LMCS 2023. Reliability for each interaction. The types do not separate kinds of failure.
 - **[S] Mezzina, Tiezzi, Yoshida.** LMCS 2025. Commit, rollback and abort with a decidable compliance check.
 - **[S] Le Brun, Dardha, Fowler.** MAGπ (ESOP 2023), MAGπ! (2024), MPST with a Bang! (ESOP 2025). Message loss, delay, crash and timeout.
@@ -182,7 +182,7 @@ All three defects of this table are fixed. The table keeps them as a record of t
 9. **Links, effect handlers and linearity.** Handlers let a continuation that holds a linear channel break linearity. (Tang, Hillerström, Lindley and Morris, POPL 2024.)
 10. **Synthetic MPST, POPL 2026.** What it proves is progress, not liveness. (Pischke and Yoshida, OOPSLA 2026, page 24.)
 11. **Basu and Bultan synchronisability.** It is flawed. (Finkel and Lozes. Delpy et al.)
-12. **Barwell, Hou, Yoshida and Zhou, LMCS 2025, Theorem 4.20.** Completeness of association fails as the paper states it. After p sends m_j, rule [GR-Ctx-ii] asks every branch of p ⇝ q : j to take the next label of p. The configuration of p holds only branch j. For p → q : {m1.p → r : a.end, m2.p → r : b.end}, the configuration sends a after m1, and the global type cannot. Lemma A.20 (1)(b) leaves out the case where the role is the en-route sender. (Our correspondence test, `test/fixy/test_session_semantics.cpp`, found it.)
+12. **Barwell, Hou, Yoshida and Zhou, LMCS 2025 (arXiv 2311.11851v6), Theorem 4.20.** In our reading of Figure 7, completeness of association has a gap when an en-route sender acts before its message arrives. Take G = p → q : {m1.p → r : a.end, m2.p → r : b.end}, with every role reliable. The configuration of the projections sends p ⊕ q : m1, and [GR-⊕] gives G' = p ⇝ q : 1 {m1.p → r : a.end, m2.p → r : b.end}. The new configuration is associated with ⟨∅; G'⟩ (Definition 4.19, clauses A1 and A4 (iv)), and p now has the type r ⊕ {a.end}, so [Γ-⊕] gives p ⊕ r : a. For G', only [GR-Ctx-ii] can give that label. Its premise asks every branch to take the label, and no rule of Figure 7 lets the branch p → r : {b.end} take p ⊕ r : a. Lemma A.20 (1)(b) asks p ≠ s, and it names no case for the en-route sender. (Our correspondence test, `test/fixy/test_session_semantics.cpp`, found it.)
 
 ## 6. Corrections to our own design documents
 

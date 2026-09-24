@@ -312,10 +312,11 @@ static_assert(is_clean(kIndependent));
 // every branch of the prefix takes it.  After p sends m_j, the branches
 // other than j can never run, but the rule still asks them to move.  The
 // configuration of p is the projection of branch j alone, so it takes
-// the next action of p at once, and G cannot.  So Theorem 4.20 fails as
-// stated: p → q : {m1.p → r : a.end, m2.p → r : b.end} sends m1, and then
-// the configuration can send a while G cannot.  Lemma A.20 (1)(b) of the
-// paper leaves out the case that the role is the en-route sender.
+// the next action of p at once, and G cannot.  In our reading this is a
+// gap in Theorem 4.20: p → q : {m1.p → r : a.end, m2.p → r : b.end} sends
+// m1, and then the configuration can send a while G cannot.  Lemma A.20
+// (1)(b) of the paper names no case for the en-route sender.  Section 5,
+// item 12, of misc/session_types_literature.md gives the derivation.
 //
 // Each entry runs its walk, and the walk must still fail.  An entry
 // whose walk stops failing is stale and fails this test, so the ledger
