@@ -2,18 +2,20 @@
 // overflow, and return the plain result otherwise.  Every signed corner
 // case and both unsigned wrap directions appear below.
 //
-// These are the six groups of test/test_saturate.cpp that exercise the
-// three plain helpers, which are the three that live in foundation.
-// The groups over the wrapped forms are in test/fixy/test_saturate.cpp,
-// beside the header those forms live in.  The bodies are the old test's
-// with its assert spelled EXPECT, so one run reports every failure it
-// has rather than the first.
+// The first six groups are the groups of test/test_saturate.cpp that
+// exercise the three plain helpers, which are the three that live in
+// foundation.  The groups over the wrapped forms are in
+// test/fixy/test_saturate.cpp, beside the header those forms live in.
+// The bodies are the old test's with its assert spelled EXPECT, so one
+// run reports every failure it has rather than the first.  The seventh
+// group compares every 8-bit pair against the library.
 
 #include <foundation/Saturate.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <numeric>
 
 using foundation::sat::add_sat;
 using foundation::sat::mul_sat;
@@ -145,6 +147,28 @@ void test_mul_signed() {
     EXPECT(mul_sat<int32_t>(-2, MAX<int32_t>) == MIN<int32_t>);
 }
 
+// Each helper returns the exact result on its own path and calls the
+// library only on overflow.  Every pair of 8-bit operands, signed and
+// unsigned, must give the result the library gives, so neither path can
+// drift from P0543.  The sweep is 2 x 65536 pairs for each operation.
+template <typename T>
+void sweep_against_library() {
+    for (int lhs = MIN<T>; lhs <= MAX<T>; ++lhs) {
+        for (int rhs = MIN<T>; rhs <= MAX<T>; ++rhs) {
+            const T a = static_cast<T>(lhs);
+            const T b = static_cast<T>(rhs);
+            EXPECT(add_sat<T>(a, b) == std::saturating_add(a, b));
+            EXPECT(sub_sat<T>(a, b) == std::saturating_sub(a, b));
+            EXPECT(mul_sat<T>(a, b) == std::saturating_mul(a, b));
+        }
+    }
+}
+
+void test_sweep_8_bit() {
+    sweep_against_library<int8_t>();
+    sweep_against_library<uint8_t>();
+}
+
 // Every operation must be usable in a constant expression.
 static_assert(add_sat<uint32_t>(1u, 2u) == 3u);
 static_assert(sub_sat<uint32_t>(5u, 3u) == 2u);
@@ -162,10 +186,11 @@ int main() {
     test_sub_signed();
     test_mul_unsigned();
     test_mul_signed();
+    test_sweep_8_bit();
     if (g_failures != 0) {
         std::fprintf(stderr, "test_saturate: %d failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("test_saturate: all 6 groups passed\n");
+    std::printf("test_saturate: all 7 groups passed\n");
     return 0;
 }
