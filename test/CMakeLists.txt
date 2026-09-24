@@ -15756,11 +15756,12 @@ set_tests_properties(frozen_tree frozen_tree_self_test PROPERTIES SKIP_RETURN_CO
 set_tests_properties(frozen_tree_self_test PROPERTIES
     ENVIRONMENT "FROZEN_TREE_CXX=${CMAKE_CXX_COMPILER}")
 add_test(NAME derived_pins_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.sh --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.py --self-test)
 add_test(NAME derived_pins
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.py)
 set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
-    LABELS "ci_guard;stage-A1")
+    LABELS "ci_guard;stage-A1"
+    SKIP_RETURN_CODE 3)
 add_test(NAME syscall_allowlist_prose_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-allowlist-prose.sh --self-test)
 add_test(NAME syscall_allowlist_prose

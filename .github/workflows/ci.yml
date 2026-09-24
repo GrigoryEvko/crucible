@@ -322,8 +322,8 @@ jobs:
 
       - name: derived cardinality pins (self-test + scan)
         run: |
-          bash scripts/check-derived-pins.sh --self-test
-          bash scripts/check-derived-pins.sh
+          python3 scripts/check-derived-pins.py --self-test
+          python3 scripts/check-derived-pins.py
 
       - name: syscall allowlist prose (self-test + scan)
         run: |

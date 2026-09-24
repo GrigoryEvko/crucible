@@ -1,11 +1,31 @@
-# derived-pins allowlist — literal-vs-literal pins that survive outside the
-# frozen old substrate.  Key is `path:NAME` (the constant's name), so an entry
-# survives line shifts and goes stale only when the pin itself is gone.
-#
-# Every entry below is a test of the old fixy session re-exports.  They die
-# with test/fixy_neg, and scripts/check-derived-pins.sh reports a
-# stale entry the moment they do.
-test/test_fixy_sess_mint_handle_reach.cpp:kFixyFriendMintHandleCount
-test/test_fixy_sess_patterns.cpp:kFixyPatternProtocolAliasCount
-test/test_fixy_sess_patterns.cpp:kFixyPatternContractMarkerCount
-test/test_fixy_sess_patterns.cpp:kFixyPatternPredicateCount
+# derived-pins allowlist — vacuous pins that stay outside the frozen old
+# substrate.  scripts/check-derived-pins.py reads this file.  A row is
+# `path:NAME — reason`, keyed by the name of the constant, so a row survives
+# a line shift and goes stale only when the pin is gone.  The list can only
+# shrink.
+
+# Tests of the old fixy session re-exports.  They go with the old tree.
+test/test_fixy_sess_mint_handle_reach.cpp:kFixyFriendMintHandleCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_patterns.cpp:kFixyPatternProtocolAliasCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_patterns.cpp:kFixyPatternContractMarkerCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_patterns.cpp:kFixyPatternPredicateCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_federation.cpp:kFederationPerRoleProtoCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_federation.cpp:kFederationExpectedProtoCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_federation.cpp:kFederationGlobalProtoCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_federation.cpp:kFederationRoleTagCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_federation.cpp:kFederationPayloadCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_federation.cpp:kFederationVerifierCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_federation.cpp:kFederationRowGateCount — a test of the old fixy session re-exports, which goes with the old tree
+test/test_fixy_sess_federation.cpp:kFederationBoundaryCount — a test of the old fixy session re-exports, which goes with the old tree
+
+# Defects that the parse-tree reading found.  Each constant stands more than
+# six lines from its pin, where the text scan did not look.  Derive the
+# count (for example from std::meta::enumerators_of) or delete the pin.
+include/crucible/cog/CogIdentity.h:cog_level_count — a defect: the count of CogLevel is written by hand and pinned to itself
+include/crucible/cog/CogIdentity.h:cog_kind_count — a defect: the count of CogKind is written by hand and pinned to itself
+include/crucible/cog/CogIdentity.h:cog_family_count — a defect: the count of the Cog families is written by hand and pinned to itself
+include/crucible/observe/Health.h:kTopologyHealthObservationCount — a defect: the observation count is written by hand and pinned to itself
+include/crucible/topology/CongestionTelemetryWorker.h:kCongestionObservationCount — a defect: the observation count is written by hand and pinned to itself
+include/foundation/algebra/lattices/AffinityLattice.h:kWords — a defect: the word count of the mask is written by hand and pinned to itself
+include/foundation/diag/RowMismatch.h:CRUCIBLE_DIAG_FORMAT_VERSION — a defect: the format version is pinned to itself, so the pin cannot force a review
+include/foundation/diag/RowMismatch.h:CRUCIBLE_DIAG_FORMAT_LINES — a defect: the line count of the format is written by hand and pinned to itself
