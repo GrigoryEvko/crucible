@@ -820,6 +820,19 @@ add_test(NAME use_after_move
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-use-after-move.py)
 set_tests_properties(use_after_move use_after_move_self_test PROPERTIES
     LABELS "ci_guard")
+# A write past the end of a C array member lands in the next member of the
+# same object, where the address sanitizer sees valid memory, and no build
+# checks the subscript.  scripts/check-no-raw-array-member.py refuses a C
+# array data member and an alias of a C array type in include/foundation and
+# include/fixy.  The reviewed exceptions are in
+# scripts/raw-array-member-allowlist.txt, and a stale entry fails the gate.
+# Exit 3 (the pinned tree-sitter kit is absent) is a skip.
+add_test(NAME raw_array_member_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-array-member.py --self-test)
+add_test(NAME raw_array_member
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-array-member.py)
+set_tests_properties(raw_array_member raw_array_member_self_test PROPERTIES
+    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # FIXY-V-094 fast-math-family flag ban enforcement (CLAUDE.md §V "NEVER"
 # matrix + cmake/FpStrict.cmake floor).  scripts/check-no-ffast-math.sh
 # is the per-TU guard against `#pragma GCC optimize("fast-math")` or

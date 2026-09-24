@@ -264,7 +264,7 @@ public:
             return false;
         }
         if (!s.empty()) {
-            std::memcpy(data_ + size_, s.data(), s.size());
+            std::memcpy(data_.data() + size_, s.data(), s.size());
             size_ += s.size();
         }
         return true;
@@ -296,15 +296,18 @@ public:
         return append_json_string_field(*this, key, value, comma);
     }
 
-    bool flush(FILE* out) noexcept { return ok_ && out != nullptr && std::fwrite(data_, 1, size_, out) == size_; }
+    bool flush(FILE* out) noexcept {
+        return ok_ && out != nullptr && std::fwrite(data_.data(), 1, size_, out) == size_;
+    }
 
 private:
     // No initializer, deliberately.  Only data_[0, size_) is ever read,
     // and every byte in that range was written by append() or push()
     // first, so the tail is never observed.  Zero-filling it would put a
     // Capacity-byte memset on the emission path that bench_diag_emission
-    // measures, and buy nothing.
-    char data_[Capacity];
+    // measures, and buy nothing.  A standard array, so the subscript in
+    // push() is checked by the standard library's debug assertions.
+    std::array<char, Capacity> data_;
     std::size_t size_ = 0;
     bool ok_ = true;
 };

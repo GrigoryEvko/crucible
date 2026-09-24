@@ -11,6 +11,7 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <new>
@@ -124,22 +125,27 @@ public:
 
 template <typename T>
 class Lazy : ::foundation::Pinned<Lazy<T>> {
-    alignas(T) unsigned char storage_[sizeof(T)]{};
+    alignas(T) std::array<unsigned char, sizeof(T)> storage_{};
     Once once_{};
 
     // These bytes hold a T whose lifetime begins at the placement new
-    // inside get_or_init.  launder re-establishes that fact, which the
-    // optimizer cannot see: under strict aliasing it is otherwise free
-    // to assume the character array is still the live object.
+    // inside get_or_init.  The character array inside storage_ provides
+    // the storage, so every access goes through storage_.data(), never
+    // through the address of storage_ itself.  launder re-establishes
+    // the new object, which the optimizer cannot see: under strict
+    // aliasing it is otherwise free to assume the character array is
+    // still the live object.
     //
     // start_lifetime_as is the wrong tool here.  It would create a
     // fresh T at the address, ending the placement-new object's
     // lifetime and leaving the destructor below to run against a
     // different object.  It suits an implicit-lifetime T that is never
     // placement-new'd, and T here is arbitrary.
-    [[nodiscard]] T* storage_ptr_() noexcept { return std::launder(static_cast<T*>(static_cast<void*>(&storage_))); }
+    [[nodiscard]] T* storage_ptr_() noexcept {
+        return std::launder(static_cast<T*>(static_cast<void*>(storage_.data())));
+    }
     [[nodiscard]] const T* storage_ptr_() const noexcept {
-        return std::launder(static_cast<const T*>(static_cast<const void*>(&storage_)));
+        return std::launder(static_cast<const T*>(static_cast<const void*>(storage_.data())));
     }
 
 public:
@@ -163,7 +169,7 @@ public:
         // A derived one reads false for a lambda whose call operator is
         // not itself declared noexcept, and the warning that infers
         // from the body then flags the mismatch.
-        once_.call([&]() noexcept { ::new(&storage_) T(std::forward<F>(f)()); });
+        once_.call([&]() noexcept { ::new(static_cast<void*>(storage_.data())) T(std::forward<F>(f)()); });
         return *storage_ptr_();
     }
 

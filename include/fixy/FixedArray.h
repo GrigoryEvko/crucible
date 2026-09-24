@@ -68,7 +68,12 @@ public:
     using index_type = Refined<bounded_above<N - 1>, size_type>;
 
 private:
-    T data_[N]{};
+    // A standard array, not a C array, so every subscript below goes
+    // through its operator[], which the standard library's debug
+    // assertions check.  A subscript of a C array member is checked by
+    // no build, and an overflow of it lands in the next member, where
+    // the address sanitizer sees valid memory.
+    std::array<T, N> data_{};
 
 public:
     constexpr FixedArray() noexcept(std::is_nothrow_default_constructible_v<T>) = default;
@@ -129,12 +134,12 @@ public:
     [[nodiscard]] constexpr reference back() noexcept { return data_[N - 1]; }
     [[nodiscard]] constexpr const_reference back() const noexcept { return data_[N - 1]; }
 
-    [[nodiscard]] constexpr pointer data() noexcept { return data_; }
-    [[nodiscard]] constexpr const_pointer data() const noexcept { return data_; }
-    [[nodiscard]] constexpr iterator begin() noexcept { return data_; }
-    [[nodiscard]] constexpr const_iterator begin() const noexcept { return data_; }
-    [[nodiscard]] constexpr iterator end() noexcept { return data_ + N; }
-    [[nodiscard]] constexpr const_iterator end() const noexcept { return data_ + N; }
+    [[nodiscard]] constexpr pointer data() noexcept { return data_.data(); }
+    [[nodiscard]] constexpr const_pointer data() const noexcept { return data_.data(); }
+    [[nodiscard]] constexpr iterator begin() noexcept { return data_.data(); }
+    [[nodiscard]] constexpr const_iterator begin() const noexcept { return data_.data(); }
+    [[nodiscard]] constexpr iterator end() noexcept { return data_.data() + N; }
+    [[nodiscard]] constexpr const_iterator end() const noexcept { return data_.data() + N; }
 
     [[nodiscard]] constexpr size_type size() const noexcept { return N; }
     [[nodiscard]] constexpr bool empty() const noexcept { return false; }

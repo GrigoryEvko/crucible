@@ -52,6 +52,7 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/reflect/Instance.h>
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdlib>
@@ -586,7 +587,7 @@ static_assert(!std::is_constructible_v<OR_int_a, OR_int_a_branded const&>, "eras
 // type, or an aggregate that holds one, it gives a pointer to an object
 // whose lifetime never started, so the constraint refuses that type.
 class BumpArena {
-    alignas(std::max_align_t) unsigned char block_[4096]{};
+    alignas(std::max_align_t) std::array<unsigned char, 4096> block_{};
     std::size_t used_ = 0;
 
 public:
@@ -597,9 +598,9 @@ public:
         const std::size_t misalign = used_ % alignof(T);
         const std::size_t start = misalign == 0 ? used_ : used_ + (alignof(T) - misalign);
         const std::size_t nbytes = n * sizeof(T);
-        if (start + nbytes > sizeof(block_)) std::abort();
+        if (start + nbytes > block_.size()) std::abort();
         used_ = start + nbytes;
-        return ::foundation::lifetime::start_as_array<T>(block_ + start, n).data();
+        return ::foundation::lifetime::start_as_array<T>(block_.data() + start, n).data();
     }
 };
 struct HoldsPermission {
