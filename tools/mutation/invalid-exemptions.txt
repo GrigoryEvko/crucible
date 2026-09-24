@@ -10,3 +10,5 @@
 #   header | kind | entity | the gate text, whitespace squeezed | reason
 #
 # The gate text is the text the run reports, at most 200 characters.
+
+include/fixy/Qtt.h | requires | Qtt | detail::IsConsumeBound<Grade> | the forward declaration and the definition of Qtt both carry the gate, so a mutant of one site is a redeclaration with different constraints. With both sites weakened together, neg_qtt_grade_that_only_compares_equal compiles and test_qtt.cpp fails its static assertions

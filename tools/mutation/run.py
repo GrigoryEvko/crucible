@@ -320,23 +320,30 @@ def _build_and_run(batch: list[Candidate], jobs: int) -> list[tuple[Candidate, b
 
 
 PARSE_ERROR = re.compile(r"expected [^\n]* before|expected primary-expression|expected unqualified-id|stray ")
-# The refusals a check of the header itself makes.  A probe that fails
-# with none of them failed for another reason, such as a mutant that joined
-# two tokens into a name nobody declared, and it witnesses nothing.
+# The refusals a check of the header itself makes.  A probe whose first
+# error is none of them failed for another reason, and it witnesses
+# nothing.  Two examples: a mutant that joined two tokens into a name
+# nobody declared, and a mutant of one declaration whose redeclaration
+# still carries the gate, which the compiler refuses as a redeclaration
+# with different constraints.
 SELF_TEST_REFUSAL = re.compile(r"static assertion failed|non-constant condition for static assertion|"
                                r"constraints not satisfied|template constraint failure|use of deleted function|"
-                               r"no matching function for call|is private within this context|"
+                               r"no matching function for call|is ambiguous|is private within this context|"
                                r"is not a constant expression|call to non-.constexpr. function")
+FIRST_ERROR = re.compile(r"\berror: (.*)$", re.MULTILINE)
 
 
 def probe_verdict(output: str) -> str:
     """The verdict on a mutant whose header alone no longer compiles, read from the compiler's output.
 
-    A refusal by one of the header's own checks kills the mutant.  A parse
-    error, or an error that no check makes, says the mutant is malformed."""
-    if PARSE_ERROR.search(output) or not SELF_TEST_REFUSAL.search(output):
+    Only the first error decides, because each later error can follow
+    from it.  A refusal by one of the header's own checks kills the mutant.
+    A parse error anywhere, or a first error that no check makes, says the
+    mutant is malformed."""
+    first = FIRST_ERROR.search(output)
+    if first is None or PARSE_ERROR.search(output):
         return "invalid"
-    return "killed"
+    return "killed" if SELF_TEST_REFUSAL.search(first.group(1)) else "invalid"
 
 
 def _probe(header_abs: Path, flags_from: Candidate | None, compiler_argv: list[str] | None) -> tuple[bool, str]:
@@ -621,8 +628,11 @@ def cmd_selftest(args: argparse.Namespace) -> int:
             failures.append("an invalid outcome that an exemption names was still reported")
         # Only a refusal by a check of the header kills a mutant at the probe.
         probe_cases = {"planted.h:3:1: error: static assertion failed: small": "killed",
+                       "planted.h:3:1: error: call of overloaded 'take(int)' is ambiguous": "killed",
                        "planted.h:3:1: error: 'requirestrue' does not name a type": "invalid",
-                       "planted.h:3:1: error: expected ';' before '}' token": "invalid"}
+                       "planted.h:3:1: error: expected ';' before '}' token": "invalid",
+                       "planted.h:3:1: error: redeclaration of 'template<class T>  requires  true struct S' with "
+                       "different constraints\nplanted.h:9:1: error: static assertion failed": "invalid"}
         for text, verdict in probe_cases.items():
             if probe_verdict(text) != verdict:
                 failures.append(f"the probe output {text!r} must read as {verdict}, not {probe_verdict(text)}")
