@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Simd.h>
+#include <crucible/safety/_Simd.h>
 #include <crucible/safety/Workload.h>
 #include <crucible/safety/LocalityHint.h>
 

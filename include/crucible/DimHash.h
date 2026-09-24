@@ -13,7 +13,7 @@
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/fixy/Wrap.h>
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 
 #include <cstdint>
 #include <type_traits>
@@ -51,8 +51,8 @@ namespace crucible::detail {
 // The descriptor's dimension count must not exceed the lane count, which its
 // own layout already guarantees.
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
-    using simd::i64x8;
-    using simd::u64x8;
+    using ::foundation::simd::i64x8;
+    using ::foundation::simd::u64x8;
 
     // The full width is loaded even for a descriptor of lower rank. The read
     // stays in bounds because each block is exactly the lane count wide, and
@@ -64,13 +64,13 @@ namespace crucible::detail {
     // The load is the element-aligned form. The descriptor is aligned for
     // its element type and no further, so the vector-aligned form would be
     // unsound even though each array is a full vector wide.
-    auto sizes = simd::load<i64x8>(meta.sizes.raw_data());
-    auto strides = simd::load<i64x8>(meta.strides.raw_data());
+    auto sizes = ::foundation::simd::load<i64x8>(meta.sizes.raw_data());
+    auto strides = ::foundation::simd::load<i64x8>(meta.strides.raw_data());
 
     // The first half of the constant table is for extents and the second
     // half for strides. Element-aligned again: the table is a plain global.
-    auto mix_lo = simd::load<u64x8>(detail::kDimMix);
-    auto mix_hi = simd::load<u64x8>(detail::kDimMix + 8);
+    auto mix_lo = ::foundation::simd::load<u64x8>(detail::kDimMix);
+    auto mix_hi = ::foundation::simd::load<u64x8>(detail::kDimMix + 8);
 
     // Reinterpreted as unsigned to match the scalar routine's arithmetic.
     u64x8 sizes_u(sizes);
@@ -81,8 +81,8 @@ namespace crucible::detail {
     // Only the live lanes are folded. Zero is xor's identity, so the mask
     // and a select over zero would be equivalent, but the masked reduction
     // avoids materializing the intermediate.
-    auto valid_mask = simd::prefix_mask<u64x8>(static_cast<int>(meta.ndim));
-    return simd::reduce_xor(combined, valid_mask);
+    auto valid_mask = ::foundation::simd::prefix_mask<u64x8>(static_cast<int>(meta.ndim));
+    return ::foundation::simd::reduce_xor(combined, valid_mask);
 }
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE DimHashDet dim_hash_simd_det(const TensorMeta& meta) noexcept {

@@ -7,7 +7,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 #include <crucible/safety/_Tagged.h>
 
 #include <array>
@@ -142,7 +142,7 @@ inline constexpr std::size_t xxh_stripe_bytes = 32;
     return acc;
 }
 
-[[nodiscard]] CRUCIBLE_HOT ::crucible::simd::u64x4 load_stripe_le64(std::byte const* ptr) noexcept {
+[[nodiscard]] CRUCIBLE_HOT ::foundation::simd::u64x4 load_stripe_le64(std::byte const* ptr) noexcept {
     alignas(32) std::array<std::uint64_t, 4> lanes{};
     std::memcpy(lanes.data(), ptr, xxh_stripe_bytes);
     if constexpr (std::endian::native == std::endian::big) {
@@ -150,10 +150,10 @@ inline constexpr std::size_t xxh_stripe_bytes = 32;
             lane = std::byteswap(lane);
         }
     }
-    return ::crucible::simd::load_aligned<::crucible::simd::u64x4>(lanes.data());
+    return ::foundation::simd::load_aligned<::foundation::simd::u64x4>(lanes.data());
 }
 
-[[nodiscard, gnu::const]] CRUCIBLE_HOT ::crucible::simd::u64x4 rotl64(::crucible::simd::u64x4 value,
+[[nodiscard, gnu::const]] CRUCIBLE_HOT ::foundation::simd::u64x4 rotl64(::foundation::simd::u64x4 value,
                                                                       int bits) noexcept {
     return (value << bits) | (value >> (64 - bits));
 }
@@ -176,10 +176,10 @@ inline constexpr std::size_t xxh_stripe_bytes = 32;
 
 CRUCIBLE_HOT void process_stripe(std::byte const* ptr, std::uint64_t& v1, std::uint64_t& v2, std::uint64_t& v3,
                                  std::uint64_t& v4) noexcept {
-    using ::crucible::simd::u64x4;
+    using ::foundation::simd::u64x4;
 
     alignas(32) std::array<std::uint64_t, 4> acc_values{v1, v2, v3, v4};
-    auto acc = ::crucible::simd::load_aligned<u64x4>(acc_values.data());
+    auto acc = ::foundation::simd::load_aligned<u64x4>(acc_values.data());
 
     // The simd facade offers binary operators only, so these are written out
     // rather than as compound assignments.
@@ -187,7 +187,7 @@ CRUCIBLE_HOT void process_stripe(std::byte const* ptr, std::uint64_t& v1, std::u
     acc = rotl64(acc, 31);
     acc = acc * u64x4(xxh_prime64_1);
 
-    ::crucible::simd::store_aligned(acc, acc_values.data());
+    ::foundation::simd::store_aligned(acc, acc_values.data());
     v1 = acc_values[0];
     v2 = acc_values[1];
     v3 = acc_values[2];

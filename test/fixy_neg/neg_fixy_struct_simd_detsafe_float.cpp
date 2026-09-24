@@ -12,7 +12,7 @@
 // DetSafeSimd concept / std::integral.
 
 #include <crucible/fixy/Struct.h>
-#include <crucible/safety/Simd.h>
+#include <crucible/safety/_Simd.h>
 
 namespace fstr = crucible::fixy::struct_;
 

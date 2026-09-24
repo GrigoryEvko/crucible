@@ -35,7 +35,7 @@
 
 #include <crucible/Philox.h>
 #include <crucible/PhiloxSimd.h>
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 
 #include <array>
 #include <cstdint>
@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
             return inputs;
         },
         [](const auto& inputs) {
-            using simd::u32x8;
+            using foundation::simd::u32x8;
 
             // Build SoA inputs from the AoS octuple.  The generator
             // constructor is the only way to materialize a vec

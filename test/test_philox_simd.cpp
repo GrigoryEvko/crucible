@@ -6,7 +6,7 @@
 
 #include <crucible/Philox.h>
 #include <crucible/PhiloxSimd.h>
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 
 #include <array>
 #include "test_assert.h"
@@ -22,14 +22,14 @@ namespace {
 // lane cannot be assigned through it.  Building lane by lane goes
 // through the generator constructor instead, and the lane index it
 // passes is a compile-time constant.
-[[nodiscard]] simd::u32x8 vec8(std::array<uint32_t, 8> v) noexcept {
-    return simd::u32x8([&](auto lane) noexcept -> uint32_t { return v[decltype(lane)::value]; });
+[[nodiscard]] foundation::simd::u32x8 vec8(std::array<uint32_t, 8> v) noexcept {
+    return foundation::simd::u32x8([&](auto lane) noexcept -> uint32_t { return v[decltype(lane)::value]; });
 }
 
 // The lane index is taken as a size for parity with the arrays used
 // throughout the file, and narrowed at the subscript, which wants a
 // signed index.
-[[nodiscard]] uint32_t at(simd::u32x8 v, std::size_t lane) noexcept { return v[static_cast<int>(lane)]; }
+[[nodiscard]] uint32_t at(foundation::simd::u32x8 v, std::size_t lane) noexcept { return v[static_cast<int>(lane)]; }
 
 // Runs the scalar generator once per lane and compares the batch
 // result against it, lane by lane.

@@ -23,13 +23,13 @@
 #include <crucible/StorageNbytes.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 
 #include "bench_harness.h"
 
-using crucible::simd::i64x8;
-using crucible::simd::u64x8;
-using crucible::simd::u32x8;
+using foundation::simd::i64x8;
+using foundation::simd::u64x8;
+using foundation::simd::u32x8;
 using crucible::detail::dim_hash_simd;
 using crucible::detail::dim_hash_scalar;
 using crucible::detail::compute_storage_nbytes_simd;
@@ -63,7 +63,7 @@ int main() {
     // chosen at -march= time.  Print compile-time + runtime caps
     // so readers know exactly which SIMD path was exercised.
 
-    using namespace crucible::simd;
+    using namespace foundation::simd;
     std::printf("=== simd architecture ===\n");
     std::printf("  compile-time: avx512=%s avx2=%s sse42=%s neon=%s\n", kAvx512Available ? "yes" : "no",
                 kAvx2Available ? "yes" : "no", kSse42Available ? "yes" : "no", kNeonAvailable ? "yes" : "no");
@@ -91,7 +91,7 @@ int main() {
         0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL, 0xCAFEBABEDEADBEEFULL, 0x1111222233334444ULL,
         0x5555666677778888ULL, 0x9999AAAABBBBCCCCULL, 0xDDDDEEEEFFFF1234ULL, 0x6666777788889999ULL,
     };
-    auto load_u64x8 = []() { return crucible::simd::load_aligned<u64x8>(v_in); };
+    auto load_u64x8 = []() { return foundation::simd::load_aligned<u64x8>(v_in); };
 
     std::printf("=== simd ===\n\n");
 
@@ -99,28 +99,28 @@ int main() {
         // ─── Facade primitives ──────────────────────────────────────
         bench::run("iota_v<i64x8>()                    [const constructor]",
                    [&] {
-                       auto v = crucible::simd::iota_v<i64x8>();
+                       auto v = foundation::simd::iota_v<i64x8>();
                        bench::do_not_optimize(v);
                    }),
         bench::run("iota_v<u64x8>()",
                    [&] {
-                       auto v = crucible::simd::iota_v<u64x8>();
+                       auto v = foundation::simd::iota_v<u64x8>();
                        bench::do_not_optimize(v);
                    }),
 
         bench::run("prefix_mask<u64x8>(0)              [empty mask]",
                    [&] {
-                       auto m = crucible::simd::prefix_mask<u64x8>(v_count_0);
+                       auto m = foundation::simd::prefix_mask<u64x8>(v_count_0);
                        bench::do_not_optimize(m);
                    }),
         bench::run("prefix_mask<u64x8>(4)              [half mask]",
                    [&] {
-                       auto m = crucible::simd::prefix_mask<u64x8>(v_count_4);
+                       auto m = foundation::simd::prefix_mask<u64x8>(v_count_4);
                        bench::do_not_optimize(m);
                    }),
         bench::run("prefix_mask<u64x8>(8)              [full mask]",
                    [&] {
-                       auto m = crucible::simd::prefix_mask<u64x8>(v_count_8);
+                       auto m = foundation::simd::prefix_mask<u64x8>(v_count_8);
                        bench::do_not_optimize(m);
                    }),
 
@@ -128,32 +128,32 @@ int main() {
         bench::run("simd::reduce_xor(u64x8)            [unmasked]",
                    [&] {
                        auto v = load_u64x8();
-                       uint64_t r = crucible::simd::reduce_xor(v);
+                       uint64_t r = foundation::simd::reduce_xor(v);
                        bench::do_not_optimize(r);
                    }),
         bench::run("simd::reduce_add(u64x8)            [unmasked]",
                    [&] {
                        auto v = load_u64x8();
-                       uint64_t r = crucible::simd::reduce_add(v);
+                       uint64_t r = foundation::simd::reduce_add(v);
                        bench::do_not_optimize(r);
                    }),
         bench::run("simd::reduce_max(u64x8)",
                    [&] {
                        auto v = load_u64x8();
-                       uint64_t r = crucible::simd::reduce_max(v);
+                       uint64_t r = foundation::simd::reduce_max(v);
                        bench::do_not_optimize(r);
                    }),
         bench::run("simd::reduce_min(u64x8)",
                    [&] {
                        auto v = load_u64x8();
-                       uint64_t r = crucible::simd::reduce_min(v);
+                       uint64_t r = foundation::simd::reduce_min(v);
                        bench::do_not_optimize(r);
                    }),
         bench::run("simd::reduce_xor(u64x8, mask)      [masked half]",
                    [&] {
                        auto v = load_u64x8();
-                       auto m = crucible::simd::prefix_mask<u64x8>(v_count_4);
-                       uint64_t r = crucible::simd::reduce_xor(v, m);
+                       auto m = foundation::simd::prefix_mask<u64x8>(v_count_4);
+                       uint64_t r = foundation::simd::reduce_xor(v, m);
                        bench::do_not_optimize(r);
                    }),
 

@@ -25,7 +25,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/fixy/Wrap.h>
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 
 #include <cstdint>
 
@@ -110,32 +110,32 @@ compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
 // an input that is not safe is a defect.
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
-    using simd::i64x8;
+    using ::foundation::simd::i64x8;
     const TensorMeta& raw = meta.value();
 
     // The descriptor is aligned for its element type and no further, so the
     // load must not assume vector alignment.
-    auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
-    auto strides = simd::load<i64x8>(raw.strides.raw_data());
+    auto sizes = ::foundation::simd::load<i64x8>(raw.sizes.raw_data());
+    auto strides = ::foundation::simd::load<i64x8>(raw.strides.raw_data());
 
-    auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
+    auto valid_mask = ::foundation::simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
     // A size of zero would make this negative, but the caller returns before
     // reaching here in that case. Dead lanes go to zero so they cannot win
     // the reduction below.
-    auto sizes_minus_one = simd::select(valid_mask, sizes - i64x8(1), i64x8(0));
+    auto sizes_minus_one = ::foundation::simd::select(valid_mask, sizes - i64x8(1), i64x8(0));
 
     // Negating the most negative int64 does not produce a positive value, so
     // that one stride is mapped to the largest positive value instead, which
     // forces the screen to fail and the scalar routine to run.
     auto strides_neg = -strides;
-    auto strides_abs_raw = simd::select(strides >= i64x8(0), strides, strides_neg);
+    auto strides_abs_raw = ::foundation::simd::select(strides >= i64x8(0), strides, strides_neg);
     auto is_int64_min = (strides == i64x8(INT64_MIN));
-    auto strides_abs = simd::select(is_int64_min, i64x8(INT64_MAX), strides_abs_raw);
-    strides_abs = simd::select(valid_mask, strides_abs, i64x8(0));
+    auto strides_abs = ::foundation::simd::select(is_int64_min, i64x8(INT64_MAX), strides_abs_raw);
+    strides_abs = ::foundation::simd::select(valid_mask, strides_abs, i64x8(0));
 
-    const int64_t max_smo = simd::reduce_max(sizes_minus_one);
-    const int64_t max_str = simd::reduce_max(strides_abs);
+    const int64_t max_smo = ::foundation::simd::reduce_max(sizes_minus_one);
+    const int64_t max_str = ::foundation::simd::reduce_max(strides_abs);
 
     int64_t bound;
     return !__builtin_mul_overflow(max_smo, max_str, &bound);
@@ -149,13 +149,13 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
         return Sat{element_size(raw.dtype).raw()};
     }
 
-    using simd::i64x8;
+    using ::foundation::simd::i64x8;
 
     // The descriptor is aligned for its element type and no further.
-    auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
-    auto strides = simd::load<i64x8>(raw.strides.raw_data());
+    auto sizes = ::foundation::simd::load<i64x8>(raw.sizes.raw_data());
+    auto strides = ::foundation::simd::load<i64x8>(raw.strides.raw_data());
 
-    auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
+    auto valid_mask = ::foundation::simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
     auto zero_size_mask = (sizes == i64x8(0)) && valid_mask;
     if (any_of(zero_size_mask)) [[unlikely]] {
@@ -170,11 +170,11 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     // go to zero so they add nothing to either running offset.
     auto sizes_minus_one = sizes - i64x8(1);
     auto extents = sizes_minus_one * strides;
-    extents = simd::select(valid_mask, extents, i64x8(0));
+    extents = ::foundation::simd::select(valid_mask, extents, i64x8(0));
 
     // The store below is the aligned form, hence the explicit alignment.
     alignas(64) fixy::wrap::FixedArray<int64_t, 8> extents_buf{};
-    simd::store_aligned(extents, extents_buf.data());
+    ::foundation::simd::store_aligned(extents, extents_buf.data());
 
     int64_t max_offset = 0;
     int64_t min_offset = 0;

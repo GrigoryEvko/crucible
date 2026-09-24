@@ -9,7 +9,6 @@
 #include <crucible/effects/Concurrent.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/Simd.h>
 #include <crucible/fixy/Vendor.h>
 #include <crucible/fixy/Simd.h>
 #include <foundation/Lifetime.h>

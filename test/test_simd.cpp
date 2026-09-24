@@ -3,7 +3,7 @@
 // gated behind an x86 feature macro and compiles to nothing on the
 // other supported architecture.
 
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 #include <crucible/DimHash.h>
 #include <crucible/MerkleDag.h>
 
@@ -17,7 +17,7 @@
 #include <memory>
 #include <type_traits>
 
-namespace simd = crucible::simd;
+namespace simd = foundation::simd;
 
 static void test_type_aliases() {
     static_assert(simd::i64x8::size() == 8);

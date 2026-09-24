@@ -48,7 +48,7 @@
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_IsSecret.h>
-#include <crucible/safety/Simd.h>
+#include <crucible/safety/_Simd.h>
 #include <crucible/safety/_Saturated.h>
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/_IsStale.h>

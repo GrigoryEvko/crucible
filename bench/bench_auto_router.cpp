@@ -7,7 +7,7 @@
 
 #include <crucible/concurrent/AutoRouter.h>
 #include <crucible/concurrent/_Topology.h>
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 
 #include "bench_harness.h"
 
@@ -20,7 +20,7 @@
 #include <vector>
 
 namespace cc = crucible::concurrent;
-namespace csimd = crucible::simd;
+namespace csimd = foundation::simd;
 
 namespace {
 

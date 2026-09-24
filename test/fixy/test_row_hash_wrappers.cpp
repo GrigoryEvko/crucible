@@ -174,6 +174,7 @@
 #include <foundation/reflect/RawEscape.h>
 #include <foundation/reflect/Signature.h>
 #include <foundation/Saturate.h>
+#include <foundation/Simd.h>
 
 #include <array>
 #include <cstddef>

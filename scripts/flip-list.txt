@@ -70,7 +70,6 @@ bench/bench_permissioned_calendar_grid.cpp
 bench/bench_permissioned_session_handle.cpp
 bench/bench_permissioned_zero_cost.cpp
 bench/bench_phases.cpp
-bench/bench_philox.cpp
 bench/bench_pipeline_dispatch.cpp
 bench/bench_pool_allocator.cpp
 bench/bench_record_leaf.cpp
@@ -80,7 +79,6 @@ bench/bench_safety.cpp
 bench/bench_scheduler_policies.cpp
 bench/bench_serialize.cpp
 bench/bench_session_persistence.cpp
-bench/bench_simd.cpp
 bench/bench_spsc_session.cpp
 bench/bench_swmr_session.cpp
 fuzz/boundary/fuzz_serialize.cpp
@@ -94,7 +92,6 @@ fuzz/property/prop_intervals_cover_unit.cpp
 fuzz/property/prop_is_power_of_two_le.cpp
 fuzz/property/prop_memory_plan_no_overlap.cpp
 fuzz/property/prop_monotonic_predicates.cpp
-fuzz/property/prop_philox_simd_equivalence.cpp
 fuzz/property/prop_recipe_pool_intern.cpp
 fuzz/property/prop_recipe_registry_roundtrip.cpp
 fuzz/property/prop_trace_graph_csr.cpp
@@ -116,7 +113,6 @@ include/crucible/MerkleDag.h
 include/crucible/MetaLog.h
 include/crucible/NumericalRecipe.h
 include/crucible/Philox.h
-include/crucible/PhiloxSimd.h
 include/crucible/PoolAllocator.h
 include/crucible/RecipePool.h
 include/crucible/RecipeRegistry.h

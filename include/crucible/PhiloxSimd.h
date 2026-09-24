@@ -15,24 +15,24 @@
 
 #include <crucible/Philox.h>
 #include <crucible/Platform.h>
-#include <crucible/safety/Simd.h>
+#include <foundation/Simd.h>
 
 #include <cstdint>
 
 namespace crucible::detail {
 
 struct PhiloxBatch8 {
-    simd::u32x8 r0;
-    simd::u32x8 r1;
-    simd::u32x8 r2;
-    simd::u32x8 r3;
+    ::foundation::simd::u32x8 r0;
+    ::foundation::simd::u32x8 r1;
+    ::foundation::simd::u32x8 r2;
+    ::foundation::simd::u32x8 r3;
 };
 
-[[nodiscard, gnu::const]] CRUCIBLE_INLINE PhiloxBatch8 philox_batch8(simd::u32x8 ctr0, simd::u32x8 ctr1,
-                                                                     simd::u32x8 ctr2, simd::u32x8 ctr3,
-                                                                     simd::u32x8 key0, simd::u32x8 key1) noexcept {
-    using simd::u32x8;
-    using simd::u64x8;
+[[nodiscard, gnu::const]] CRUCIBLE_INLINE PhiloxBatch8
+philox_batch8(::foundation::simd::u32x8 ctr0, ::foundation::simd::u32x8 ctr1, ::foundation::simd::u32x8 ctr2,
+              ::foundation::simd::u32x8 ctr3, ::foundation::simd::u32x8 key0, ::foundation::simd::u32x8 key1) noexcept {
+    using ::foundation::simd::u32x8;
+    using ::foundation::simd::u64x8;
 
     const u32x8 m0(Philox::M0);
     const u32x8 m1(Philox::M1);

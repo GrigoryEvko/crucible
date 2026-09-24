@@ -9,7 +9,7 @@
 #include <crucible/safety/NotInherited.h>
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/safety/Simd.h>
+#include <crucible/safety/_Simd.h>
 #include <crucible/safety/Workload.h>
 
 #include <type_traits>
