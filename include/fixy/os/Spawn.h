@@ -286,10 +286,10 @@ concept JoinPolicyGrantsCoherent =
 namespace detail {
 
 template <typename Ctx, typename Parent, typename ChildrenTuple, typename CallablesTuple>
-struct ctx_fits_spawn_helper : std::false_type {};
+struct can_ctx_fit_spawn : std::false_type {};
 
 template <typename Ctx, typename Parent, typename... Children, typename... Callables>
-struct ctx_fits_spawn_helper<Ctx, Parent, std::tuple<Children...>, std::tuple<Callables...>>
+struct can_ctx_fit_spawn<Ctx, Parent, std::tuple<Children...>, std::tuple<Callables...>>
     : std::bool_constant<perm::CtxFitsPermissionFork<Ctx, Parent, Children...>
                          && perm::detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>,
                                                                           std::tuple<Callables...>>> {};
@@ -305,7 +305,7 @@ inline constexpr bool no_callable_throws_v =
 // The two substrate gates are folded into one concept so the declaration
 // below carries a single requires clause.
 template <typename Ctx, typename Parent, typename ChildrenTuple, typename CallablesTuple>
-concept CtxFitsSpawn = detail::ctx_fits_spawn_helper<Ctx, Parent, ChildrenTuple, CallablesTuple>::value;
+concept CtxFitsSpawn = detail::can_ctx_fit_spawn<Ctx, Parent, ChildrenTuple, CallablesTuple>::value;
 
 // The call returns once every child has joined.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>

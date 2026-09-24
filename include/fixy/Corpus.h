@@ -206,31 +206,31 @@ struct is_internal_<G>
     : std::bool_constant<::fixy::atom::security_class_of_v<G> == ::fixy::atom::SecurityClass::Internal> {};
 
 template <::foundation::effects::Effect E, class G>
-struct row_names_ : std::false_type {};
+struct row_has_effect_ : std::false_type {};
 template <::foundation::effects::Effect E, ::foundation::effects::Effect... Es>
-struct row_names_<E, ::fixy::atom::with<Es...>> : std::bool_constant<((Es == E) || ...)> {};
+struct row_has_effect_<E, ::fixy::atom::with<Es...>> : std::bool_constant<((Es == E) || ...)> {};
 
 // Which effects count as observable is decided where the effect atoms
 // are declared, not here.  Deferring keeps a newly added atom from
 // defaulting to unobservable, which would widen what ghost code is
 // allowed to request without anyone deciding to widen it.
 template <class G>
-struct row_observable_ : std::false_type {};
+struct is_row_observable_ : std::false_type {};
 template <::foundation::effects::Effect... Es>
-struct row_observable_<::fixy::atom::with<Es...>>
+struct is_row_observable_<::fixy::atom::with<Es...>>
     : std::bool_constant<(::foundation::effects::is_observable<Es>() || ...)> {};
 
-static_assert(!row_observable_<::fixy::atom::with_init>::value,
+static_assert(!is_row_observable_<::fixy::atom::with_init>::value,
               "Init must stay outside the observable set.  Moving it in rejects every ghost binding that "
               "participates in initialization, so it needs its own corpus entry naming the contradiction it "
               "catches.");
-static_assert(!row_observable_<::fixy::atom::with_test>::value,
+static_assert(!is_row_observable_<::fixy::atom::with_test>::value,
               "Test must stay outside the observable set.  A specification evaluated under a test harness is "
               "legitimate ghost code.");
-static_assert(row_observable_<::fixy::atom::with_alloc>::value, "Alloc must stay inside the observable set.");
-static_assert(row_observable_<::fixy::atom::with_io>::value, "IO must stay inside the observable set.");
-static_assert(row_observable_<::fixy::atom::with_block>::value, "Block must stay inside the observable set.");
-static_assert(row_observable_<::fixy::atom::with_bg>::value, "Bg must stay inside the observable set.");
+static_assert(is_row_observable_<::fixy::atom::with_alloc>::value, "Alloc must stay inside the observable set.");
+static_assert(is_row_observable_<::fixy::atom::with_io>::value, "IO must stay inside the observable set.");
+static_assert(is_row_observable_<::fixy::atom::with_block>::value, "Block must stay inside the observable set.");
+static_assert(is_row_observable_<::fixy::atom::with_bg>::value, "Bg must stay inside the observable set.");
 
 template <class G>
 struct is_stale_ : std::false_type {};
@@ -243,9 +243,9 @@ template <>
 struct is_ghost_<::fixy::atom::ghost> : std::true_type {};
 
 template <DischargeAxis X, class G>
-struct discharges_ : std::false_type {};
+struct can_discharge_ : std::false_type {};
 template <DischargeAxis X, class Policy>
-struct discharges_<X, ::fixy::atom::declassify<Policy>>
+struct can_discharge_<X, ::fixy::atom::declassify<Policy>>
     : std::bool_constant<discharge_axis_contains(axes_discharged_of_v<Policy>, X)> {};
 
 // The compile-time text search these self-tests read lives in
@@ -291,8 +291,8 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::grade_on<Axis::Effect, Atoms...>;
         const bool has_secret = detail::is_secret_carrier_<Security>::value;
-        const bool has_io = detail::row_names_<::foundation::effects::Effect::IO, Effects>::value;
-        const bool has_declassify = detail::discharges_<DischargeAxis::IO, Security>::value;
+        const bool has_io = detail::row_has_effect_<::foundation::effects::Effect::IO, Effects>::value;
+        const bool has_declassify = detail::can_discharge_<DischargeAxis::IO, Security>::value;
         return has_secret && has_io && !has_declassify;
     }
 
@@ -323,8 +323,8 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::grade_on<Axis::Effect, Atoms...>;
         const bool has_secret = detail::is_secret_carrier_<Security>::value;
-        const bool has_bg = detail::row_names_<::foundation::effects::Effect::Bg, Effects>::value;
-        const bool has_declassify = detail::discharges_<DischargeAxis::Bg, Security>::value;
+        const bool has_bg = detail::row_has_effect_<::foundation::effects::Effect::Bg, Effects>::value;
+        const bool has_declassify = detail::can_discharge_<DischargeAxis::Bg, Security>::value;
         return has_secret && has_bg && !has_declassify;
     }
 
@@ -356,7 +356,7 @@ struct staleness_secret_without_declassify final : ::foundation::diag::tag_base 
         using Staleness = detail::grade_on<Axis::Staleness, Atoms...>;
         const bool has_secret = detail::is_secret_grant_<Security>::value;
         const bool has_stale = detail::is_stale_<Staleness>::value;
-        const bool has_staleness_discharge = detail::discharges_<DischargeAxis::Staleness, Security>::value;
+        const bool has_staleness_discharge = detail::can_discharge_<DischargeAxis::Staleness, Security>::value;
         return has_secret && has_stale && !has_staleness_discharge;
     }
 
@@ -399,7 +399,7 @@ struct ghost_runtime_observable final : ::foundation::diag::tag_base {
         using Usage = detail::grade_on<Axis::Usage, Atoms...>;
         using Effects = detail::grade_on<Axis::Effect, Atoms...>;
         const bool has_ghost = detail::is_ghost_<Usage>::value;
-        const bool has_observable = detail::row_observable_<Effects>::value;
+        const bool has_observable = detail::is_row_observable_<Effects>::value;
         return has_ghost && has_observable;
     }
 
@@ -431,11 +431,11 @@ struct internal_io_without_declassify final : ::foundation::diag::tag_base {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::grade_on<Axis::Effect, Atoms...>;
         const bool has_internal = detail::is_internal_<Security>::value;
-        const bool has_io = detail::row_names_<::foundation::effects::Effect::IO, Effects>::value;
+        const bool has_io = detail::row_has_effect_<::foundation::effects::Effect::IO, Effects>::value;
         // The carrier arm reads is_internal_ directly.  That predicate
         // has no declassify specialization, so the two arms cannot be
         // satisfied by one grade the way they can above.
-        const bool has_declassify = detail::discharges_<DischargeAxis::IO, Security>::value;
+        const bool has_declassify = detail::can_discharge_<DischargeAxis::IO, Security>::value;
         return has_internal && has_io && !has_declassify;
     }
 
@@ -467,8 +467,8 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::grade_on<Axis::Effect, Atoms...>;
         const bool has_internal = detail::is_internal_<Security>::value;
-        const bool has_bg = detail::row_names_<::foundation::effects::Effect::Bg, Effects>::value;
-        const bool has_declassify = detail::discharges_<DischargeAxis::Bg, Security>::value;
+        const bool has_bg = detail::row_has_effect_<::foundation::effects::Effect::Bg, Effects>::value;
+        const bool has_declassify = detail::can_discharge_<DischargeAxis::Bg, Security>::value;
         return has_internal && has_bg && !has_declassify;
     }
 

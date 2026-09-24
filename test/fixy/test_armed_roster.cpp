@@ -87,6 +87,23 @@ using BgCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg>>;
 using BgIoCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::IO>>;
 using NvEnd = sess::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV, sess::End>;
 
+// A region split in two, and one nothrow body per half, for the spawn fit.
+struct SpawnWhole {
+    using permission_row = Row<>;
+};
+struct SpawnLeft {
+    using permission_row = Row<>;
+};
+struct SpawnRight {
+    using permission_row = Row<>;
+};
+struct LeftBody {
+    void operator()(fp::Permission<SpawnLeft>, BgCtx const&) const noexcept {}
+};
+struct RightBody {
+    void operator()(fp::Permission<SpawnRight>, BgCtx const&) const noexcept {}
+};
+
 // A machine with one edge, Idle to Busy, for the transition predicate.
 struct Idle {};
 struct Busy {};
@@ -97,6 +114,15 @@ inline constexpr ::foundation::fail_closed::edge<Idle, Busy> idle_to_busy{};
 using IdleMachine = ::fixy::Machine<Idle, ^^idle_edges>;
 
 }  // namespace armed_roster_witness
+
+// The split that the spawn fit reads, declared beside its tags.
+template <>
+struct foundation::permissions::splits_into_pack<armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft,
+                                                 armed_roster_witness::SpawnRight> : std::true_type {};
+template <>
+struct foundation::permissions::splits_into_pack_authoring_witness<
+    armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft, armed_roster_witness::SpawnRight>
+    : std::true_type {};
 
 namespace w = armed_roster_witness;
 
@@ -576,10 +602,65 @@ struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_ghost_> {
     using refuses = witnesses<int, at::copy>;
 };
 
+// The pole Row<> names no effect, and a type that is not a row names none.
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::corpus::detail::row_has_effect_> {
+    using accepts = witnesses<::fixy::corpus::detail::row_has_effect_<Effect::IO, at::with<Effect::IO>>,
+                              ::fixy::corpus::detail::row_has_effect_<Effect::Bg, at::with<Effect::IO, Effect::Bg>>>;
+    using refuses = witnesses<::fixy::corpus::detail::row_has_effect_<Effect::IO, at::with<Effect::Bg>>,
+                              ::fixy::corpus::detail::row_has_effect_<Effect::IO, Row<>>,
+                              ::fixy::corpus::detail::row_has_effect_<Effect::IO, int>>;
+};
+
+// Init and Test stay outside the observable set.
+template <>
+struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_row_observable_> {
+    using accepts = witnesses<at::with_io, at::with_alloc, at::with<Effect::Init, Effect::Block>>;
+    using refuses = witnesses<at::with_init, at::with_test, Row<>, int>;
+};
+
+// Only AuthorizedReplay discharges an axis, and it discharges staleness
+// alone.
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::corpus::detail::can_discharge_> {
+    using accepts = witnesses<::fixy::corpus::detail::can_discharge_<
+        ::fixy::corpus::DischargeAxis::Staleness, at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>>;
+    using refuses = witnesses<
+        ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::IO,
+                                               at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
+        ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::Staleness,
+                                               at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
+        ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::Staleness, int>>;
+};
+
 template <>
 struct foundation::contracts::armed_cell<::fixy::is_fn> {
     using accepts = witnesses<::fixy::fn<int>>;
     using refuses = witnesses<int, w::Plain>;
+};
+
+// A pack with two atoms on one axis is no accepted binding, and a type
+// that is not an fn is none.
+template <>
+struct foundation::contracts::armed_cell<::fixy::detail::role::is_accepted_fn> {
+    using accepts = witnesses<::fixy::fn<int>, ::fixy::fn<int, at::copy>>;
+    using refuses = witnesses<int, ::fixy::fn<int, at::copy, at::affine>, ::fixy::fn<void, at::copy>>;
+};
+
+// The spawn fit needs a context that owns Bg, a declared split, and one
+// nothrow body per child.
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::spawn::detail::can_ctx_fit_spawn> {
+    using accepts = witnesses<::fixy::spawn::detail::can_ctx_fit_spawn<
+        w::BgCtx, w::SpawnWhole, std::tuple<w::SpawnLeft, w::SpawnRight>, std::tuple<w::LeftBody, w::RightBody>>>;
+    using refuses = witnesses<
+        ::fixy::spawn::detail::can_ctx_fit_spawn<fe::ExecCtx<>, w::SpawnWhole, std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                 std::tuple<w::LeftBody, w::RightBody>>,
+        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                 std::tuple<w::LeftBody, w::LeftBody>>,
+        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, std::tuple<w::SpawnRight, w::SpawnLeft>,
+                                                 std::tuple<w::RightBody, w::LeftBody>>,
+        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, int, int>>;
 };
 
 template <>

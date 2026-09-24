@@ -72,10 +72,10 @@ inline constexpr bool is_fn_v = is_fn<std::remove_cvref_t<F>>::value;
 namespace detail::role {
 
 template <class F>
-struct accepted : std::false_type {};
+struct is_accepted_fn : std::false_type {};
 
 template <class T, class... Atoms>
-struct accepted<fn<T, Atoms...>> : std::bool_constant<IsAccepted<T, Atoms...>> {};
+struct is_accepted_fn<fn<T, Atoms...>> : std::bool_constant<IsAccepted<T, Atoms...>> {};
 
 }  // namespace detail::role
 
@@ -83,7 +83,7 @@ struct accepted<fn<T, Atoms...>> : std::bool_constant<IsAccepted<T, Atoms...>> {
 // fixy/Role.h.  The gate asks that the alias lands on an fn the
 // gate itself admits, so a role cannot smuggle a pack past the tiers.
 template <template <class> class Role, class T>
-concept IsRoleFor = is_fn_v<Role<T>> && detail::role::accepted<Role<T>>::value;
+concept IsRoleFor = is_fn_v<Role<T>> && detail::role::is_accepted_fn<Role<T>>::value;
 
 namespace detail::resolve {
 
