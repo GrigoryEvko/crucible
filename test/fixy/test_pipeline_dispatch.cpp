@@ -78,16 +78,16 @@ static_assert(cc::aggregate_per_call_ws_v<Large, Large, Large, Large, Large> == 
 namespace fixy::concurrent {
 
 template <>
-struct stage_inline_safe<pipeline_dispatch_test::SmallA> : std::true_type {};
+struct is_stage_inline_safe<pipeline_dispatch_test::SmallA> : std::true_type {};
 
 template <>
-struct stage_inline_safe<pipeline_dispatch_test::SmallB> : std::true_type {};
+struct is_stage_inline_safe<pipeline_dispatch_test::SmallB> : std::true_type {};
 
 template <>
-struct stage_inline_safe<pipeline_dispatch_test::SmallC> : std::true_type {};
+struct is_stage_inline_safe<pipeline_dispatch_test::SmallC> : std::true_type {};
 
 template <>
-struct stage_inline_safe<pipeline_dispatch_test::Large> : std::true_type {};
+struct is_stage_inline_safe<pipeline_dispatch_test::Large> : std::true_type {};
 
 }  // namespace fixy::concurrent
 

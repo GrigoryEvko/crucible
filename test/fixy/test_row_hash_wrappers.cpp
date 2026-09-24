@@ -1021,7 +1021,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::EdgePack, kGraphShape},
     {^^::fixy::concurrent::StageEdge, kGraphShape},
     {^^::fixy::concurrent::StageGraph, kGraphShape},
-    {^^::fixy::concurrent::stage_inline_safe, kMetafunction},
+    {^^::fixy::concurrent::is_stage_inline_safe, kMetafunction},
 
     {^^::fixy::handle::Once, kDescriptor},
 

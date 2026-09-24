@@ -32,7 +32,7 @@ using StageT = fixy::concurrent::Stage<&body, fixy::HotFgCtx>;
 namespace fixy::concurrent {
 
 template <>
-struct stage_inline_safe<StageT> : std::true_type {};
+struct is_stage_inline_safe<StageT> : std::true_type {};
 
 }  // namespace fixy::concurrent
 

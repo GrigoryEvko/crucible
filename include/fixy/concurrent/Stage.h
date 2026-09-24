@@ -122,10 +122,10 @@ consteval bool variadic_stage_rows_admitted() noexcept {
 }
 
 template <auto FnPtr, class Inputs, class Outputs>
-struct variadic_stage_handles_match : std::false_type {};
+struct can_variadic_stage_take_handles : std::false_type {};
 
 template <auto FnPtr, class... Inputs, class... Outputs>
-struct variadic_stage_handles_match<FnPtr, std::tuple<Inputs...>, std::tuple<Outputs...>> {
+struct can_variadic_stage_take_handles<FnPtr, std::tuple<Inputs...>, std::tuple<Outputs...>> {
 private:
     using extract = StageArity<FnPtr>;
 
@@ -185,7 +185,7 @@ concept CtxFitsVariadicStage = VariadicPipelineStage<FnPtr> && ::foundation::eff
                             && detail::variadic_stage_rows_admitted<FnPtr, Ctx>();
 
 template <auto FnPtr, class Inputs, class Outputs>
-concept VariadicStageHandlesMatch = detail::variadic_stage_handles_match<FnPtr, Inputs, Outputs>::value;
+concept VariadicStageHandlesMatch = detail::can_variadic_stage_take_handles<FnPtr, Inputs, Outputs>::value;
 
 template <auto FnPtr>
 concept SwmrPublishStageBody =

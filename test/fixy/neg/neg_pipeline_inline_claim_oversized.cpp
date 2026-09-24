@@ -44,7 +44,7 @@ using HeavyStage = cc::Stage<&heavy, fixy::HotFgCtx>;
 namespace fixy::concurrent {
 
 template <>
-struct stage_inline_safe<HeavyStage> : std::true_type {};
+struct is_stage_inline_safe<HeavyStage> : std::true_type {};
 
 }  // namespace fixy::concurrent
 

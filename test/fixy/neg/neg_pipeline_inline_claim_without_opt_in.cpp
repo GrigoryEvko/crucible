@@ -36,7 +36,7 @@ inline void tiny(TinyConsumer<128>&&, TinyProducer<128>&&) noexcept {}
 
 using TinyStage = cc::Stage<&tiny, fixy::HotFgCtx>;
 
-// Deliberately no stage_inline_safe specialisation for TinyStage.
+// Deliberately no is_stage_inline_safe specialisation for TinyStage.
 
 using TinyPipeline = cc::Pipeline<TinyStage, TinyStage, TinyStage>;
 

@@ -104,6 +104,10 @@ struct RightBody {
     void operator()(fp::Permission<SpawnRight>, BgCtx const&) const noexcept {}
 };
 
+// A stage type that claims to run inline, and one that makes no claim.
+struct InlineClaimed {};
+struct InlineUnclaimed {};
+
 // A machine with one edge, Idle to Busy, for the transition predicate.
 struct Idle {};
 struct Busy {};
@@ -123,6 +127,10 @@ template <>
 struct foundation::permissions::splits_into_pack_authoring_witness<
     armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft, armed_roster_witness::SpawnRight>
     : std::true_type {};
+
+// The inline claim is an opt-in that the stage's author writes.
+template <>
+struct fixy::concurrent::is_stage_inline_safe<armed_roster_witness::InlineClaimed> : std::true_type {};
 
 namespace w = armed_roster_witness;
 
@@ -645,6 +653,33 @@ template <>
 struct foundation::contracts::armed_cell<::fixy::detail::role::is_accepted_fn> {
     using accepts = witnesses<::fixy::fn<int>, ::fixy::fn<int, at::copy>>;
     using refuses = witnesses<int, ::fixy::fn<int, at::copy, at::affine>, ::fixy::fn<void, at::copy>>;
+};
+
+// A stage runs inline only when its author claims it.
+template <>
+struct foundation::contracts::armed_cell<::fixy::concurrent::is_stage_inline_safe> {
+    using accepts = witnesses<w::InlineClaimed>;
+    using refuses = witnesses<w::InlineUnclaimed, int>;
+};
+
+// The handles of a variadic stage match its parameters in count, order
+// and type.
+namespace stage_fakes = ::fixy::concurrent::detail::stage_self_test;
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::concurrent::detail::can_variadic_stage_take_handles> {
+    using accepts = witnesses<::fixy::concurrent::detail::can_variadic_stage_take_handles<
+        &stage_fakes::stage_fan_in_two,
+        std::tuple<stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<int>>,
+        std::tuple<stage_fakes::FakeProducer<int>>>>;
+    using refuses = witnesses<
+        ::fixy::concurrent::detail::can_variadic_stage_take_handles<&stage_fakes::stage_fan_in_two,
+                                                                    std::tuple<stage_fakes::FakeConsumer<int>>,
+                                                                    std::tuple<stage_fakes::FakeProducer<int>>>,
+        ::fixy::concurrent::detail::can_variadic_stage_take_handles<
+            &stage_fakes::stage_fan_in_two,
+            std::tuple<stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<float>>,
+            std::tuple<stage_fakes::FakeProducer<int>>>,
+        ::fixy::concurrent::detail::can_variadic_stage_take_handles<&stage_fakes::stage_fan_in_two, int, int>>;
 };
 
 // The spawn fit needs a context that owns Bg, a declared split, and one

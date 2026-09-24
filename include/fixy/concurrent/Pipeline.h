@@ -363,10 +363,10 @@ concept CtxFitsPipelineDag =
     && ::foundation::decide::row_subset<stage_graph_row_union_t<Graph>, typename Ctx::row_type>();
 
 template <class Stage>
-struct stage_inline_safe : std::false_type {};
+struct is_stage_inline_safe : std::false_type {};
 
 template <class Stage>
-inline constexpr bool stage_inline_safe_v = stage_inline_safe<std::remove_cvref_t<Stage>>::value;
+inline constexpr bool is_stage_inline_safe_v = is_stage_inline_safe<std::remove_cvref_t<Stage>>::value;
 
 namespace detail {
 
@@ -427,7 +427,7 @@ template <class... Stages>
 inline constexpr std::size_t aggregate_per_call_ws_v = detail::aggregate_stage_ws<std::remove_cvref_t<Stages>...>();
 
 template <class... Stages>
-inline constexpr bool pipeline_inline_safe_v = (stage_inline_safe_v<Stages> && ...);
+inline constexpr bool is_pipeline_inline_safe_v = (is_stage_inline_safe_v<Stages> && ...);
 
 enum class PipelineDispatchKind : std::uint8_t {
     Inline,
@@ -504,10 +504,10 @@ public:
     using row_discipline = ::fixy::row_discipline::pipeline;
     using row_payload = ::foundation::diag::row_payloads<Stages...>;
     static constexpr std::size_t aggregate_per_call_working_set = aggregate_per_call_ws_v<Stages...>;
-    static constexpr bool inline_safe = pipeline_inline_safe_v<Stages...>;
+    static constexpr bool inline_safe = is_pipeline_inline_safe_v<Stages...>;
     static constexpr bool aggregate_working_set_known = aggregate_per_call_ws_known_v<Stages...>;
 
-    static_assert(((!stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
+    static_assert(((!is_stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
                   "Pipeline inline opt-in requires both stage handles to expose "
                   "static constexpr per_call_working_set");
 
@@ -654,10 +654,10 @@ public:
     static constexpr std::size_t arity = sizeof...(Stages);
     static constexpr std::size_t edge_count = sizeof...(Edges);
     static constexpr std::size_t aggregate_per_call_working_set = aggregate_per_call_ws_v<Stages...>;
-    static constexpr bool inline_safe = pipeline_inline_safe_v<Stages...>;
+    static constexpr bool inline_safe = is_pipeline_inline_safe_v<Stages...>;
     static constexpr bool aggregate_working_set_known = aggregate_per_call_ws_known_v<Stages...>;
 
-    static_assert(((!stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
+    static_assert(((!is_stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
                   "PipelineDag inline opt-in requires every stage handle pack to "
                   "expose static constexpr per_call_working_set");
 
@@ -880,7 +880,7 @@ static_assert(stage_per_call_ws_known_v<S_int_to_int>);
 static_assert(stage_per_call_ws_v<S_int_to_int> == 128);
 static_assert(aggregate_per_call_ws_v<S_int_to_int, S_int_to_int> == 256);
 static_assert(P3::aggregate_per_call_working_set == 384);
-static_assert(!stage_inline_safe_v<S_int_to_int>);
+static_assert(!is_stage_inline_safe_v<S_int_to_int>);
 static_assert(!P3::inline_safe);
 
 static_assert(!std::is_copy_constructible_v<P1>);

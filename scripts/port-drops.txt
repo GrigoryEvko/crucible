@@ -374,8 +374,11 @@ crucible/safety/diag/_RowHashFold.h:Witness  → none  — Two forward declarati
 
 # ── concurrent: the ring predicates and the working-set trait ───────────
 #
-# Both rows are renames of a shape, not losses of a check. The new spelling
+# Each row is a rename of a shape, not a loss of a check. The new spelling
 # is read at every site the old one occupied, and the sentence names it.
+crucible/concurrent/_Pipeline.h:pipeline_inline_safe_v  — Renamed is_pipeline_inline_safe_v in fixy/concurrent/Pipeline.h, so the name asks its question, and both pipelines read the new name where they read the old one.
+crucible/concurrent/_Pipeline.h:stage_inline_safe  — Renamed is_stage_inline_safe in fixy/concurrent/Pipeline.h, so the armed roster walks it; a stage author opts in by specializing the new name.
+crucible/concurrent/_Pipeline.h:stage_inline_safe_v  — Renamed is_stage_inline_safe_v in fixy/concurrent/Pipeline.h, the value spelling of the renamed opt-in.
 crucible/concurrent/_SpscRing.h:SpscValue  — The old tree carried two textually identical predicates, this one and RingValue in _MpscRing.h, and the port unifies them under the single name RingValue in fixy/concurrent/RingValue.h, which both new rings constrain on.
 crucible/concurrent/_WorkingSet.h:has_static_per_call_working_set  — The class template and its one partial specialisation became the concept HasStaticPerCallWorkingSet in fixy/concurrent/WorkingSet.h:85, whose requires-expression is the same witness token for token; Stage.h and Pipeline.h read the concept at all three sites the trait occupied.
 crucible/concurrent/_WorkingSet.h:has_static_per_call_working_set_v  — The value spelling of that trait, gone with it, because a concept is used directly where the _v was read.
