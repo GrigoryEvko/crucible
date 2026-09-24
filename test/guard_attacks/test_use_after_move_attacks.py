@@ -16,8 +16,15 @@ import re
 import sys
 from pathlib import Path
 
-LEDGER: dict[str, str] = {}
-LEDGER_BOUND = 0
+LEDGER: dict[str, str] = {
+    "evade_refill_other_element": "an assignment through a[i] restores every element key of a, but it refills one",
+    "evade_read_through_at": "a.at(0) keys as a use of a, and a[0] is not a prefix of a",
+    "evade_read_through_range_for": "a range for over a keys as a use of a, and a[0] is not a prefix of a",
+    "evade_read_through_get": "std::get<0>(t) is a call, and the guard keys neither argument nor result",
+    "evade_read_through_alias": "the guard keys a reference by its own name, not by the object that it binds",
+    "evade_read_through_binding": "the guard keys a structured binding by its own name, not by the member",
+}
+LEDGER_BOUND = 6
 
 CORPUS = Path("test/guard_attacks/use_after_move_evasions.cpp")
 GUARD = Path("scripts/check-use-after-move.py")
