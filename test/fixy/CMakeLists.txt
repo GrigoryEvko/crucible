@@ -1975,6 +1975,71 @@ fixy_neg_compile_test(neg_sess_semantics_config_reliability_malformed
   "template constraint failure for .template<class Ctx, class Reliable>  requires"
   "the expression .is_reliability_v<Reliable> .with Reliable = <unnamed>::P.. evaluated to .false.")
 
+# CrashAssociation.h relates a configuration to a state under crash-stop
+# failures (Definition 4.19 of the crash-stop paper).  The test checks
+# each clause, and it walks the corpus with crashes to check operational
+# correspondence.
+fixy_test(test_session_crash_association)
+
+# Two fixtures for each fault of the gate.  Each fixture breaks one
+# clause and keeps the clauses before it.
+fixy_neg_compile_test(neg_sess_crash_assoc_malformed_context
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Malformed\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = fixy::session::TypingContext<fixy::session::RoleState<neg_sess_crash_assoc_malformed_context_types::P, fixy::session::OutQueue<>, fixy::session::Recv<int, fixy::session::End> > >")
+fixy_neg_compile_test(neg_sess_crash_assoc_malformed_reliability
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Malformed\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = fixy::session::TypingContext<>; S = .*; Reliable = fixy::session::global::Roles<neg_sess_crash_assoc_malformed_reliability_types::P>\\]")
+fixy_neg_compile_test(neg_sess_crash_assoc_reliable_role_crashed
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Not_Well_Annotated\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*; Reliable = fixy::session::ReliableSet<neg_sess_crash_assoc_reliable_role_crashed_types::P, neg_sess_crash_assoc_reliable_role_crashed_types::Q>\\]")
+fixy_neg_compile_test(neg_sess_crash_assoc_annotation_not_crashed
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Not_Well_Annotated\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*; S = fixy::session::global::State<fixy::session::global::Roles<>, fixy::session::global::EnRouteChoice<fixy::session::global::Crashed<")
+fixy_neg_compile_test(neg_sess_crash_assoc_not_balanced_plus
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Not_Balanced_Plus\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*; S = fixy::session::global::State<fixy::session::global::Roles<>, fixy::session::global::Comm<")
+fixy_neg_compile_test(neg_sess_crash_assoc_loop_starves_a_role
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Not_Balanced_Plus\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = fixy::session::TypingContext<>; S = fixy::session::global::State<fixy::session::global::Roles<>, fixy::session::global::Rec<")
+fixy_neg_compile_test(neg_sess_crash_assoc_stopped_but_live
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Crashed_Role_Mismatch\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*fixy::session::Stop.*; S = fixy::session::global::State<fixy::session::global::Roles<>,")
+fixy_neg_compile_test(neg_sess_crash_assoc_crashed_but_running
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Crashed_Role_Mismatch\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*; S = fixy::session::global::State<fixy::session::global::Roles<neg_sess_crash_assoc_crashed_but_running_types::P>,")
+fixy_neg_compile_test(neg_sess_crash_assoc_drops_crash_branch
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Live_Role_Mismatch\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*fixy::session::Recv<fixy::session::PeerMsg<neg_sess_crash_assoc_drops_crash_branch_types::P, neg_sess_crash_assoc_drops_crash_branch_types::M, int>, fixy::session::End> > >;")
+fixy_neg_compile_test(neg_sess_crash_assoc_live_role_missing
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Live_Role_Mismatch\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = fixy::session::TypingContext<fixy::session::RoleState<neg_sess_crash_assoc_live_role_missing_types::P, fixy::session::OutQueue<>, [^;]*> >;")
+fixy_neg_compile_test(neg_sess_crash_assoc_stray_role
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Unfinished_Role\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*fixy::session::RoleState<neg_sess_crash_assoc_stray_role_types::R,")
+fixy_neg_compile_test(neg_sess_crash_assoc_role_after_end
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Unfinished_Role\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*; S = fixy::session::global::State<fixy::session::global::Roles<>, fixy::session::global::End>;")
+fixy_neg_compile_test(neg_sess_crash_assoc_early_message
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Queue_Mismatch\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = fixy::session::TypingContext<fixy::session::RoleState<neg_sess_crash_assoc_early_message_types::P, fixy::session::OutQueue<fixy::session::Queued<")
+fixy_neg_compile_test(neg_sess_crash_assoc_message_to_crashed
+  "static assertion failed"
+  "fixy::session::diagnostic \\[Crash_Association_Queue_Mismatch\\]"
+  "ensure_crash_associated\\(\\) \\[with Ctx = .*fixy::session::Stop.*; S = fixy::session::global::State<fixy::session::global::Roles<neg_sess_crash_assoc_message_to_crashed_types::Q>,")
+
 # Two fixtures for each gate.  Each refused type satisfies each earlier
 # clause of its gate, so only the named clause can refuse it.
 fixy_neg_compile_test(neg_sess_global_self_communication
