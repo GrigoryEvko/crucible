@@ -961,22 +961,20 @@ add_test(NAME fullness_guard
 set_tests_properties(fullness_guard fullness_guard_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# #66 DetSafe discipline on the hardware-ledger hashing path.  A host
-# fingerprint decides whether a cached measurement verdict is still
-# valid, so anything that reaches the fold has to be deterministic:
-# one non-deterministic source and the fingerprint stops matching
-# itself across runs, which silently discards every cached verdict.
-# scripts/check-detsafe-ledger.sh walks the TRANSITIVE include closure
-# of the hashing-path roots, so a violation three headers down is
-# caught, and it catches the forward-declaration dodge.  No allowlist
-# by design — an exception here is a DetSafe violation with paperwork.
+# DetSafe on the hashing path.  A ledger verdict is a property of one
+# machine, so no header of content_hash, merkle_hash, the memory plan or
+# the BITEXACT recipe choice may reach the ledger.
+# scripts/check-detsafe-ledger.py walks the transitive include closure of
+# the hashing-path roots on the parse tree, and it also catches a name of
+# the ledger namespace without the include.  There is no allowlist.  Exit 3
+# when the kit is absent reports a skip.
 add_test(NAME detsafe_ledger_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.sh
-          --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.py --self-test)
 add_test(NAME detsafe_ledger
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.py)
 set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
-    LABELS "ci_guard;hw-66")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 
 # Formatting is not gated, and the absence is deliberate.  A clang_format
 # guard ran here and was removed.

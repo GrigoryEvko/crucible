@@ -31,7 +31,7 @@
 // any verdict this ledger could serve. CogMimic already excludes calibrated
 // throughput from its cache key for the same reason, and that exclusion is
 // preserved — the ledger folds the caps CLASS into its fingerprint, never
-// the other way round. scripts/check-detsafe-ledger.sh walks the include
+// the other way round. scripts/check-detsafe-ledger.py walks the include
 // closure of the hashing path and fails if a ledger header appears in it.
 
 #include <crucible/ledger/Competence.h>

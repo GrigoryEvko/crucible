@@ -32,7 +32,7 @@
 //
 // DetSafe (axiom 8): nothing in this header may reach the hashing path. A
 // fingerprint names the machine, never the computation. scripts/
-// check-detsafe-ledger.sh asserts the include closure stays disjoint.
+// check-detsafe-ledger.py asserts the include closure stays disjoint.
 
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/concurrent/_Topology.h>
