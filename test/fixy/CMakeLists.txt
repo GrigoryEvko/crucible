@@ -2109,6 +2109,21 @@ fixy_neg_compile_test(neg_sess_checkpoint_delegation_owned_handle
   "no matching function for call to .mint_checkpoint_session"
   "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<std::unique_ptr<fixy::session::SessionHandle<")
 
+# The checkpoint door opens the first checkpoint handle, and it builds a
+# plain handle at a position that a checkpoint handle names.  Its members
+# are private, and the class is final.  Only the mint and a checkpoint
+# handle call a member, and no class can use the door as a base to get
+# access to one.
+fixy_neg_compile_test(neg_sess_checkpoint_door_called_outside
+  "is private within this context"
+  "fixy::session::CheckpointDoor::open_")
+fixy_neg_compile_test(neg_sess_checkpoint_door_step_outside
+  "is private within this context"
+  "fixy::session::CheckpointDoor::step_")
+fixy_neg_compile_test(neg_sess_checkpoint_door_derived_look_alike
+  "cannot derive from .final. base"
+  "CheckpointDoor")
+
 # ── The event log and the recorder ────────────────────────────────────
 #
 # EventLog.h decodes bytes only through a check of every control byte,
