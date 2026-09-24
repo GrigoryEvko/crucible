@@ -11491,6 +11491,10 @@ crucible_neg_compile_multi_test(neg_vigil_output_ptr_unbranded_ctx
 crucible_neg_compile_multi_test(neg_vigil_mint_producer_context_const
   "passing .const crucible::Vigil. as .this. argument discards qualifiers"
   "neg_vigil_mint_producer_context_const.cpp:10")
+crucible_neg_compile_multi_test(neg_vigil_producer_context_to_unbranded_gate
+  "invalid initialization of reference of type .const fixy::HotFgCtx&."
+  "from expression of type .crucible::VigilFgCtx."
+  "neg_vigil_producer_context_to_unbranded_gate.cpp:17")
 
 # [FIXY-U-140] safety::Machine<> HS14 floor — first non-ScopedView
 # primitive to get neg-compile pair coverage (closes #146 A8-P2 slice).
