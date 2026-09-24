@@ -78,6 +78,7 @@ test/fixy/test_qtt_tracked.cpp:main:twice x2
 test/fixy/test_session_endpoint_transfer.cpp:take_from_a_consumed_handle:handle
 test/fixy/test_session_endpoint_transfer.cpp:transfer_keeps_the_record_live:handle
 test/fixy/test_session_handle.cpp:liveness_and_cancel_run:handle
+test/fixy/test_session_handle_attacks.cpp:close_twice:at_end
 test/fixy/test_session_handle_attacks.cpp:off_policy_use_after_move:handle
 test/fixy/test_session_handle_attacks.cpp:read_resource_after_move:handle
 test/fixy/test_session_handle_attacks.cpp:use_after_move:handle
@@ -94,8 +95,7 @@ test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_version:source
 test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_version:taken
 
 # Probe: a moved-from Senses reports no attachments after a move and after
-# a move assignment, and a self-move assignment keeps the state.
-test/test_perf_senses_smoke.cpp:main:assigned_into
+# a move assignment.
 test/test_perf_senses_smoke.cpp:main:reloaded
 test/test_perf_senses_smoke.cpp:main:s
 

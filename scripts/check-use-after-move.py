@@ -47,7 +47,11 @@ and (*this).m key as m.  A subscript by an integer literal is part of the
 key, so a[0] and a[1] are two keys.  A subscript by any other expression
 keys as a[*], which matches every element key of a.  A label that a later
 goto of its block targets is a loop head, so the walk passes the statements
-from it twice, as it does for a loop.  An assignment to a key, or reset, clear, emplace or assign
+from it twice, as it does for a loop.  An assignment through a[i] refills
+nothing, because it need not refill the spent element.  a.at(0) keys as a[0],
+a range for reads its range as a[*], and std::get<I>(t) keys as t[I].  A
+reference `T& r = x;` keys as x, so a move of r spends x, and a structured
+binding `auto& [b] = obj;` keys as obj.  An assignment to a key, or reset, clear, emplace or assign
 on it, restores it.  A declaration restores its name in the scope that
 declares it.  Uses in unevaluated operands (sizeof, alignof, decltype,
 noexcept, typeid, requires, static_assert) are not uses.
@@ -319,6 +323,9 @@ class Body:
         self.hold_moves = False
         # The join of the states at each goto of the current body, by label.
         self.goto_states: dict[str, State] = {}
+        # A reference or a structured binding in scope: name -> (the key of the
+        # object it names, True for a structured binding).
+        self.aliases: dict[str, tuple[str, bool]] = {}
 
     # ── helpers ──────────────────────────────────────────────────────
 
@@ -583,10 +590,69 @@ class Body:
         """Walk one function or lambda body.  Its labels and gotos are its own."""
         ctx: list[dict] = []
         outer, self.goto_states = self.goto_states, {}
+        outer_aliases = dict(self.aliases)
         try:
             return self.block(open_brace, close_brace, state, ctx)
         finally:
-            self.goto_states = outer
+            self.goto_states, self.aliases = outer, outer_aliases
+
+    def canon(self, path: str) -> str:
+        """Return the key of a path, with a reference or a structured binding replaced by the object it names."""
+        parts = SEGMENT.findall(path)
+        if not parts or parts[0].lstrip("*") not in self.aliases:
+            return path
+        target = self.aliases[parts[0].lstrip("*")][0] + "".join(parts[1:])
+        return "*" + target if parts[0].startswith("*") else target
+
+    def is_binding(self, path: str) -> bool:
+        """Whether a path starts with the name of a structured binding."""
+        parts = SEGMENT.findall(path)
+        return bool(parts) and self.aliases.get(parts[0].lstrip("*"), ("", False))[1]
+
+    def index_segment(self, open_paren: int) -> str:
+        """Return [N] for a call whose one argument is an integer literal N, and [*] for any other."""
+        close = self.partner[open_paren]
+        literal = close == open_paren + 2 and self.toks[open_paren + 1].kind == "num"
+        return f"[{self.t(open_paren + 1)}]" if literal else "[*]"
+
+    def get_element(self, k: int, hi: int) -> tuple[str, int] | None:
+        """For get<I>(t) with its name at k and t a plain path, return the key t[I] and the index after the call."""
+        if self.t(k + 1) != "<" or self.t(k - 1) in (".", "->"):
+            return None
+        m = self.skip_angle(k + 1, hi)
+        if self.t(m) != "(" or self.toks[m + 1].kind != "id" or self.t(m + 1) in KEYWORDS:
+            return None
+        close = self.partner[m]
+        path, end = self.path_at(m + 1, close)
+        if end != close:
+            return None
+        return f"{self.canon(path)}[{''.join(self.t(i) for i in range(k + 2, m - 1))}]", close + 1
+
+    def bind_aliases(self, lo: int, hi: int, names: list[tuple[str, int]]) -> None:
+        """Record the references and structured bindings that the declaration from lo to hi binds to a path.
+
+        `T& r = x;` makes r name x.  `auto& [a, b] = obj;` makes a and b name a
+        member of obj, and the walk keys each one as obj.  A copy is a new object
+        and binds nothing.
+        """
+        for name, _ in names:
+            self.aliases.pop(name, None)
+        for name, idx in names:
+            if self.t(idx - 1) in ("&", "&&") and self.t(idx + 1) == "=" and self.toks[idx + 2].kind == "id" \
+                    and self.t(idx + 2) not in KEYWORDS:
+                path, end = self.path_at(idx + 2, hi)
+                if end == hi:
+                    self.aliases[name] = (self.canon(path), False)
+        for i in range(lo, hi):
+            if self.t(i) == "[" and self.t(i - 1) in ("&", "&&") and self.t(i + 1) != "[":
+                close = self.partner[i]
+                if self.t(close + 1) == "=" and self.toks[close + 2].kind == "id" and self.t(close + 2) not in KEYWORDS:
+                    path, end = self.path_at(close + 2, hi)
+                    if end == hi:
+                        for m in range(i + 1, close):
+                            if self.toks[m].kind == "id":
+                                self.aliases[self.t(m)] = (self.canon(path), True)
+                break
 
     def label_at(self, k: int) -> str | None:
         """The name of the label that the statement at k declares, or None."""
@@ -617,6 +683,8 @@ class Body:
             k, state, scope = head
             while k < close_brace:
                 k, state = self.stmt(k, close_brace, state, ctx, scope)
+        for name in scope:
+            self.aliases.pop(name, None)
         return self.close_scope(state, scope)
 
     def close_scope(self, state: State, scope: dict[str, int | None]) -> State:
@@ -722,6 +790,7 @@ class Body:
         names = self.declared_names(k, end)
         state = self.eval(k, end, state, names)
         state = self.declare(state, scope, [n for n, _ in names])
+        self.bind_aliases(k, end, names)
         return end + 1, state
 
     def declared_names(self, lo: int, hi: int) -> list[tuple[str, int]]:
@@ -817,6 +886,13 @@ class Body:
         body_end, _ = self.sub_stmt_extent(body, hi)
         loop_names: list[str] = []
         if colon >= 0:
+            # A range for reads every element of its range, so a plain range path
+            # reads the key path[*], which matches any spent element key.
+            if state is not None and self.toks[colon + 1].kind == "id" and self.t(colon + 1) not in KEYWORDS:
+                range_path, range_end = self.path_at(colon + 1, close)
+                key = self.canon(range_path) + "[*]"
+                if range_end == close and (spent := spent_prefix(state, key)) is not None:
+                    self.report(colon + 1, key, "use after move", spent, state[spent])
             state = self.eval(colon + 1, close, state, [])
             loop_names = [n for n, _ in self.declared_names(paren + 1, colon)] or \
                 [self.t(i) for i in range(paren + 1, colon) if self.toks[i].kind == "id"][-1:]
@@ -988,9 +1064,18 @@ class Body:
             k = self.member_of_this(k)
         if self.toks[k].kind != "id" or self.t(k) in KEYWORDS:
             return None
+        callee = k
+        while self.t(callee + 1) == "::" or self.t(callee) == "::":
+            callee += 1
+        if not deref and self.t(callee) == "get" and (element := self.get_element(callee, close + 1)) is not None:
+            return element[0] if element[1] == close else None
         path, end = self.path_at(k, close)
+        path = self.canon(path)
         if end < close and self.t(end) == "[" and self.partner[end] == close - 1:
             path, end = path + "[*]", close
+        elif end < close and self.t(end) == "." and self.t(end + 1) == "at" and self.t(end + 2) == "(" \
+                and self.partner[end + 2] == close - 1:
+            path, end = path + self.index_segment(end + 2), close
         if end != close:
             return None
         return "*" + path if deref else path
@@ -1025,7 +1110,7 @@ class Body:
             if self.toks[k].kind != "id" or self.t(k) in KEYWORDS:
                 return None
             path, end = self.path_at(k, close)
-            paths.append(path)
+            paths.append(self.canon(path))
             if end < close and self.t(end) != ",":
                 return None
             k = end + 1
@@ -1186,6 +1271,14 @@ class Body:
                     exchange(state, *pair)
                     k = self.partner[k + 1] + 1
                     continue
+            if text == "get" and (element := self.get_element(k, hi)) is not None:
+                # std::get<I>(t) reads the element key t[I], whatever qualifies get.
+                key, after = element
+                spent = spent_prefix(state, key)
+                if spent is not None:
+                    self.report(k, key, "use after move", spent, state[spent])
+                k = after
+                continue
             if tok.kind == "id" and text not in KEYWORDS and k not in decl_at:
                 prev = "" if anchored else self.t(k - 1)
                 if prev in (".", "->", "::") or self.t(k + 1) == "::":
@@ -1195,6 +1288,8 @@ class Body:
                     k += 1
                     continue
                 path, end = self.path_at(k, hi)
+                through_binding = self.is_binding(path)
+                path = self.canon(path)
                 nxt = self.t(end)
                 # A unary * before the path, or a call of value() on it, reaches the object
                 # that the path holds, which is the key *path.
@@ -1213,12 +1308,23 @@ class Body:
                 if nxt == "[" and self.t(end + 1) != "[":
                     # A subscript that is not an integer literal can name any element,
                     # so it reads the key path[*].  An assignment through it refills
-                    # every element key of the array.
+                    # one element, which need not be the spent one, so it refills
+                    # nothing.
                     if self.t(self.partner[end] + 1) == "=":
-                        pending.append(path)
                         k = end
                         continue
                     path += "[*]"
+                if nxt == "." and self.t(end + 1) == "at" and self.t(end + 2) == "(":
+                    # a.at(0) is the element key a[0], and a.at(i) is a[*].
+                    path += self.index_segment(end + 2)
+                elif through_binding:
+                    # A structured binding names a member of its object, and the walk
+                    # does not know which one, so any spent key under the object counts.
+                    under = next((s for s in state if reaches(path, s)), None)
+                    if under is not None:
+                        self.report(k, path, "use after move", under, state[under])
+                        k = end
+                        continue
                 if nxt in (".", "->") and self.t(end + 1) in REINIT_METHODS and self.t(end + 2) == "(":
                     pending.append(path)
                     k = end + 2
@@ -1255,7 +1361,7 @@ class Body:
                 shadow.append(name)
                 state = self.eval(eq + 1, end, state, []) or {}
             elif len(part) == 1 and self.toks[k].kind == "id" and part[0] not in KEYWORDS:
-                spent = spent_prefix(state, part[0])
+                spent = spent_prefix(state, self.canon(part[0]))
                 if spent is not None:
                     self.report(k, part[0], "copy capture after move", spent, state[spent])
             k = end + 1
@@ -1460,6 +1566,15 @@ again:
 void must_catch_array_element(Token (&ts)[2]) { take(std::move(ts[0])); read(ts[0]); }
 void must_catch_array_any_index(Token (&ts)[2], int i) { take(std::move(ts[i])); read(ts[1]); }
 void must_catch_array_literal_then_any(Token (&ts)[2], int i) { take(std::move(ts[0])); read(ts[i]); }
+void must_catch_refill_through_any_index(Token (&ts)[2], int i) { take(std::move(ts[0])); ts[i] = Token{}; read(ts[0]); }
+void must_catch_read_through_at(Arr& ts) { take(std::move(ts[0])); read(ts.at(0)); }
+void must_catch_move_through_at(Arr& ts, int i) { take(std::move(ts.at(i))); read(ts[1]); }
+void must_catch_range_for(Arr& ts) { take(std::move(ts[0])); for (Token const& t : ts) read(t); }
+void must_catch_get_element(Tuple& p) { take(std::move(std::get<0>(p))); read(std::get<0>(p)); }
+void must_catch_through_reference(Token& token) { Token& alias = token; take(std::move(alias)); read(token); }
+void must_catch_reference_after_move(Token& token) { Token const& alias = token; take(std::move(token)); read(alias); }
+void must_catch_through_binding(Holder& h) { auto& [bound] = h; take(std::move(bound)); read(h.token); }
+void must_catch_binding_after_move(Holder& h) { auto& [bound] = h; take(std::move(h.token)); read(bound); }
 
 // Each must_accept function is correct, and a finding in it is a false alarm.
 void must_accept_reassign(Token t) { take(std::move(t)); t = Token{}; read(t); }
@@ -1514,7 +1629,11 @@ again:
 }
 void must_accept_goto_skips_move(Token t) { if (pick()) goto skip; take(std::move(t)); return; skip: read(t); }
 void must_accept_array_other_element(Token (&ts)[2]) { take(std::move(ts[0])); read(ts[1]); }
-void must_accept_array_refill(Token (&ts)[2], int i) { take(std::move(ts[i])); ts[i] = Token{}; read(ts[i]); }
+void must_accept_array_refill(Token (&ts)[2]) { take(std::move(ts[0])); ts[0] = Token{}; read(ts[0]); }
+void must_accept_at_other_element(Arr& ts) { take(std::move(ts[0])); read(ts.at(1)); }
+void must_accept_get_other_element(Tuple& p) { take(std::move(std::get<0>(p))); read(std::get<1>(p)); }
+void must_accept_copy_is_not_alias(Token& token) { Token copy = token; take(std::move(copy)); read(token); }
+void must_accept_by_value_binding(Holder h) { auto [bound] = h; take(std::move(bound)); read(h.token); }
 void must_accept_container_after_element(Vec& v, int i) { auto x = std::move(v[i]); v.erase(v.begin() + i); v.push_back(std::move(x)); }
 void must_accept_member_move_call(Mover m, Token t) { m.move(t); read(t); }
 void must_accept_algorithm_move(Token* first, Token* last, Token* out) { std::move(first, last, out); read(*first); }
