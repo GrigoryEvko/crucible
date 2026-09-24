@@ -674,9 +674,12 @@ def scan(root: Path, base: str, database: Path) -> int:
         if admitted:
             print(f"check-frozen-tree: ADMITTED macro unification: {path} — {notes[0]}.", file=sys.stderr)
             continue
-        print(f"FROZEN violation: {path} — {change} under a frozen path.  The old substrate only shrinks; put "
-              f"the change in the new tree.  The permitted edits are the _ marking of a ported file and of its "
-              f"includes, a file listed in {MIRROR_LEDGER}, and a macro unification.", file=sys.stderr)
+        print(f"FROZEN violation: {path} — {change} under a frozen path.  The old substrate only shrinks.  "
+              f"Admitted: the deletion of a whole file; the _ marking of a ported file (git mv dir/X.h "
+              f"dir/_X.h) and of each include of it; a file listed in {MIRROR_LEDGER}; a macro unification "
+              f"with its rows in {UNIFICATION_TABLE}.  To change what the file does, port it to "
+              f"include/foundation or include/fixy, move its consumers there, and mark the old file "
+              f"superseded.", file=sys.stderr)
         for note in notes[:3]:
             print(f"    not a macro unification: {note}", file=sys.stderr)
         if len(notes) > 3:
