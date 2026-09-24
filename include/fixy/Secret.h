@@ -26,6 +26,8 @@
 #include <foundation/diag/FailClosed.h>
 #include <foundation/reflect/Instance.h>
 
+#include <array>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdlib>
@@ -169,6 +171,46 @@ public:
     }
     ~Secret() = default;
 
+    // A classified value cannot steer a branch, an address or an order.
+    // Each of these turns the value into timing or into a memory access
+    // pattern, which is the leak that fixy::ct exists to prevent.  The
+    // operators are deleted, not absent, so a refusal gives its reason
+    // and a requires-expression reads false.
+    //
+    // operator bool takes the branch condition and the copy to bool.  The
+    // integral template takes an index, an offset added to a pointer and
+    // any other integer use: a subscript or a pointer sum converts its
+    // operand to std::ptrdiff_t or std::size_t, and the template matches
+    // that type exactly.  The comparison operators are hidden friends over
+    // any second operand, so `secret == x`, `x == secret`, `secret < x`
+    // and the rewritten forms all select them.
+    //
+    // Compare classified data with a fixy::ct primitive inside
+    // transform().  The mask it returns stays classified until
+    // declassify<HashForCompare>() releases it.
+    operator bool() const = delete("[Secret_BranchCondition] a classified value cannot be a branch condition. "
+                                   "Select with fixy::ct::select inside transform(), or release the value "
+                                   "with declassify<Policy>() first.");
+
+    template <std::integral I>
+        requires(!std::same_as<I, bool>)
+    operator I() const = delete("[Secret_IndexOrArithmetic] a classified value cannot become an integer, "
+                                "an index or a pointer offset, because the address then depends on the "
+                                "secret.  Derive with fixy::ct inside transform(), or release the value "
+                                "with declassify<Policy>() first.");
+
+    template <typename U>
+    friend constexpr bool operator==(Secret const&, U const&) =
+        delete("[Secret_Compare] a classified value cannot be compared with ==, because the compare "
+               "exits early.  Compare with fixy::ct::eq inside transform(), and release the mask "
+               "with declassify<HashForCompare>().");
+
+    template <typename U>
+    friend constexpr std::strong_ordering operator<=>(Secret const&, U const&) =
+        delete("[Secret_Order] a classified value cannot be ordered with <, <=, >, >= or <=>.  "
+               "Order with fixy::ct::less inside transform(), and release the mask with "
+               "declassify<HashForCompare>().");
+
     // This is not a way out of classification: it derives a different
     // classified value from the original.  The callable is trusted for
     // the duration of the call, so the intended use is a stateless
@@ -259,6 +301,32 @@ static_assert(!std::is_trivially_copyable_v<Secret<int>> && !std::is_trivially_c
               "std::bit_cast must not read a classified value out with no declassify<Policy>()");
 static_assert(std::is_trivially_move_constructible_v<Secret<int>> && std::is_trivially_destructible_v<Secret<int>>,
               "the move constructor stays trivial, so a Secret still passes in a register");
+
+// The deleted operators refuse each flow of a classified value into a
+// branch, an address or an order.  A requires-expression over each flow
+// reads false, so an operator that a later edit defines stops the build.
+namespace detail::secret_flow_lock {
+
+template <typename S>
+concept BranchesOn = requires(S const& s) { s ? 1 : 0; };
+template <typename S>
+concept IndexesWith = requires(S const& s, int (&table)[4]) { table[s]; };
+template <typename S>
+concept OffsetsPointerBy = requires(S const& s, int* p) { p + s; };
+template <typename S>
+concept IndexesContainerWith = requires(S const& s, std::array<int, 4>& table) { table[s]; };
+
+static_assert(!BranchesOn<Secret<int>> && !BranchesOn<Secret<bool>>);
+static_assert(!std::is_convertible_v<Secret<int>, bool> && !std::is_constructible_v<bool, Secret<int> const&>);
+static_assert(!IndexesWith<Secret<std::size_t>> && !IndexesWith<Secret<int>>);
+static_assert(!OffsetsPointerBy<Secret<std::size_t>> && !OffsetsPointerBy<Secret<int>>);
+static_assert(!IndexesContainerWith<Secret<std::size_t>>);
+static_assert(!std::is_convertible_v<Secret<std::size_t>, std::size_t>);
+static_assert(!std::equality_comparable<Secret<int>> && !std::equality_comparable_with<Secret<int>, int>);
+static_assert(!std::three_way_comparable<Secret<int>> && !std::totally_ordered<Secret<int>>);
+static_assert(!std::totally_ordered_with<Secret<int>, int>);
+
+}  // namespace detail::secret_flow_lock
 
 // The detection surface of the old IsSecret.h.  One reflection query
 // answers it, and the value type is read off the wrapper's own typedef,

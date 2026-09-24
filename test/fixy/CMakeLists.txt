@@ -889,6 +889,37 @@ fixy_neg_compile_test(neg_secret_copy
   "fixy::Secret<T>::Secret\\(const fixy::Secret<T>&\\)"
   "cannot be silently duplicated")
 
+# A classified value cannot steer a branch, an address or an order.  Each
+# flow has two fixtures.  The first regex names the deleted operator that
+# the compiler selects, and the second is the reason it gives.
+fixy_neg_compile_test(neg_secret_if_condition
+  "use of deleted function .fixy::Secret<T>::operator bool\\(\\) const .with T = bool"
+  "Secret_BranchCondition. a classified value cannot be a branch condition")
+fixy_neg_compile_test(neg_secret_logical_not
+  "use of deleted function .fixy::Secret<T>::operator bool\\(\\) const .with T = int"
+  "Secret_BranchCondition. a classified value cannot be a branch condition")
+fixy_neg_compile_test(neg_secret_array_index
+  "use of deleted function .fixy::Secret<T>::operator I\\(\\) const .with I = long int. T = long unsigned int"
+  "Secret_IndexOrArithmetic. a classified value cannot become an integer, an index or a pointer offset")
+fixy_neg_compile_test(neg_secret_pointer_offset
+  "use of deleted function .fixy::Secret<T>::operator I\\(\\) const .with I = long int. T = int"
+  "Secret_IndexOrArithmetic. a classified value cannot become an integer, an index or a pointer offset")
+fixy_neg_compile_test(neg_secret_container_index
+  "use of deleted function .fixy::Secret<T>::operator I\\(\\) const .with I = long unsigned int"
+  "Secret_IndexOrArithmetic. a classified value cannot become an integer, an index or a pointer offset")
+fixy_neg_compile_test(neg_secret_equal_secret
+  "use of deleted function .constexpr bool fixy::operator==\\(const Secret<T>&, const U&\\) .with U = Secret<int>"
+  "Secret_Compare. a classified value cannot be compared with ==")
+fixy_neg_compile_test(neg_secret_not_equal_value
+  "use of deleted function .constexpr bool fixy::operator==\\(const Secret<T>&, const U&\\) .with U = int"
+  "Secret_Compare. a classified value cannot be compared with ==")
+fixy_neg_compile_test(neg_secret_less_than
+  "use of deleted function .constexpr std::strong_ordering fixy::operator<=>\\(const Secret<T>&, const U&\\) .with U = Secret<unsigned int>"
+  "Secret_Order. a classified value cannot be ordered with <, <=, >, >= or <=>")
+fixy_neg_compile_test(neg_secret_three_way_value
+  "use of deleted function .constexpr std::strong_ordering fixy::operator<=>\\(const Secret<T>&, const U&\\) .with U = int"
+  "Secret_Order. a classified value cannot be ordered with <, <=, >, >= or <=>")
+
 # ── Stale, OwnedRegion, Borrowed, ScopedView, Machine ─────────────────
 #
 # The region test keeps the file name of the test it is ported from and
