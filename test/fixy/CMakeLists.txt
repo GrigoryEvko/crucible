@@ -2449,6 +2449,26 @@ fixy_neg_compile_test(neg_os_cpu_pinned_copied
   "use of deleted function"
   "a pin proof cannot be duplicated")
 
+# ── A thread-name witness comes only from mint_thread_name ──────────
+#
+# The witness was an aggregate.  Its one constructor is private now, the
+# mint is the sole friend, and the witness is neither copyable nor movable,
+# so it stays in the frame of the thread that it names.  GCC reports a
+# class whose copy and move are deleted as trivially copyable, so the
+# bit_cast route is refused by the deleted move, which the third fixture
+# keeps.
+fixy_neg_compile_test(neg_os_thread_named_forged
+  "is private within this context"
+  "fixy::ThreadNamed<Name>::ThreadNamed\\(\\)")
+
+fixy_neg_compile_test(neg_os_thread_named_moved
+  "use of deleted function"
+  "a move could carry it to a thread that carries no such name")
+
+fixy_neg_compile_test(neg_os_thread_named_bit_cast
+  "use of deleted function"
+  "a thread-name witness is bound to the thread that minted it")
+
 # ── The TSC reader recognises a pin by reflection ────────────────────
 #
 # IsSingletonCpuPin recognises a CpuPinned by the reflection query of

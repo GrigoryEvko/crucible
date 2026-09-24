@@ -119,6 +119,10 @@ fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2> | fixy/Ow
 
 # -- OS handles: the constructor is the syscall, or it consumes one ---
 fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0} | private | closed
+# A thread-name witness claims that pthread_setname_np named the calling
+# thread.  Its one constructor is private, and mint_thread_name, which
+# names the thread first, is the sole friend.
+fixy::ThreadNamed<"forged"> | fixy/os/ThreadName.h | fixy::ThreadNamed<"forged">{} | private | closed
 # A clock read on the replay-bound foreground path makes replay diverge,
 # so the reader's one door is mint_clock_reader, gated on a context that
 # owns Bg, Init or Test.

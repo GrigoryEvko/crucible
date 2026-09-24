@@ -8737,6 +8737,11 @@ crucible_neg_compile_test(neg_thread_name_too_long
   "TASK_COMM_LEN|static assertion|exceeds|too large")
 crucible_neg_compile_test(neg_thread_name_wrong_ctx
   "constraints not satisfied|no matching function|CtxIsInitPhase|mint_thread_name")
+# The witness was an aggregate, so `ThreadNamed<"x">{}` built it on a
+# thread nobody named.  Its one constructor is private now.
+crucible_neg_compile_multi_test(neg_thread_name_forged_witness
+  "is private within this context"
+  "crucible::safety::ThreadNamed<Name>::ThreadNamed\\(\\)")
 
 # ─── FIXY-V-268 + FIXY-FOUND-062 CollisionCatalog V401/V402 neg-compiles ──
 #

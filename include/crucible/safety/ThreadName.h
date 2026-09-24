@@ -39,14 +39,45 @@ struct ThreadNameLiteral {
     static constexpr std::size_t visible_length = N - 1;
 };
 
-// The witness carries the name in its type, so a consumer can demand proof that
-// a thread was named without reading /proc back.
 template <ThreadNameLiteral Name>
-struct [[nodiscard]] ThreadNamed {
+class ThreadNamed;
+
+// The right arm goes through the named capability lift rather than reading the
+// row inline, because the lift folds in the guard that keeps a row from being
+// named on a type that has none.
+template <typename Ctx>
+concept CtxIsInitPhase =
+    std::same_as<std::remove_cvref_t<Ctx>, ::crucible::effects::Init>
+    || ::crucible::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>, ::crucible::effects::Effect::Init>;
+
+template <ThreadNameLiteral Name, typename Ctx>
+    requires CtxIsInitPhase<Ctx>
+[[nodiscard]] inline ThreadNamed<Name> mint_thread_name(Ctx const&) noexcept;
+
+// The witness carries the name in its type, so a consumer can demand proof that
+// a thread was named without reading /proc back.  Its one constructor is
+// private, mint_thread_name is the sole friend, and the witness can be neither
+// copied nor moved, so it stays in the frame of the thread that it names.
+template <ThreadNameLiteral Name>
+class [[nodiscard]] ThreadNamed {
+public:
     static constexpr ThreadNameLiteral name = Name;
 
     [[nodiscard]] static constexpr const char* c_str() noexcept { return Name.c_str(); }
     [[nodiscard]] static constexpr std::size_t visible_length() noexcept { return Name.visible_length; }
+
+    ThreadNamed(const ThreadNamed&) = delete("a thread-name witness is bound to the thread that minted it");
+    ThreadNamed(ThreadNamed&&) = delete("a thread-name witness is bound to the thread that minted it");
+    ThreadNamed& operator=(const ThreadNamed&) = delete("a thread-name witness is not assignable");
+    ThreadNamed& operator=(ThreadNamed&&) = delete("a thread-name witness is not assignable");
+    ~ThreadNamed() = default;
+
+private:
+    constexpr ThreadNamed() noexcept {}
+
+    template <ThreadNameLiteral FriendName, typename FriendCtx>
+        requires CtxIsInitPhase<FriendCtx>
+    friend ThreadNamed<FriendName> mint_thread_name(FriendCtx const&) noexcept;
 };
 
 namespace detail::thread_name_extract {
@@ -61,14 +92,6 @@ inline constexpr bool is_thread_named_v<ThreadNamed<Name>> = true;
 template <typename T>
 concept IsThreadNamed = detail::thread_name_extract::is_thread_named_v<std::remove_cvref_t<T>>;
 
-// The right arm goes through the named capability lift rather than reading the
-// row inline, because the lift folds in the guard that keeps a row from being
-// named on a type that has none.
-template <typename Ctx>
-concept CtxIsInitPhase =
-    std::same_as<std::remove_cvref_t<Ctx>, ::crucible::effects::Init>
-    || ::crucible::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>, ::crucible::effects::Effect::Init>;
-
 // Not constexpr: the body performs a kernel side effect.
 // §XXI carve-out: cx=alloc — naming a thread is a kernel side effect.
 template <ThreadNameLiteral Name, typename Ctx>
@@ -81,6 +104,9 @@ template <ThreadNameLiteral Name, typename Ctx>
 }
 
 static_assert(sizeof(ThreadNamed<"x">) == 1, "ThreadNamed must be an empty witness");
+static_assert(!std::is_default_constructible_v<ThreadNamed<"x">> && !std::is_move_constructible_v<ThreadNamed<"x">>
+                  && !std::is_implicit_lifetime_v<ThreadNamed<"x">> && !std::is_aggregate_v<ThreadNamed<"x">>,
+              "a thread-name witness comes only from mint_thread_name");
 static_assert(ThreadNameLiteral<2>{"x"}.visible_length == 1);
 static_assert(ThreadNameLiteral<16>{"123456789012345"}.visible_length == 15);
 
