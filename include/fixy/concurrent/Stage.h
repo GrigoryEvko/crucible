@@ -12,10 +12,10 @@
 // and the next stage's input is a property of the chain, and belongs to
 // whatever assembles the chain.
 //
-// Old spelling: include/crucible/concurrent/Stage.h.  The two bridge
-// factories declared in detail below are defined by the endpoint bridge.
-// Until that bridge is ported, MpmcStage and SwmrStage have a door and
-// no caller.
+// Old spelling: include/crucible/concurrent/Stage.h.  MpmcStage and
+// SwmrStage have a private constructor and no friend, so no code can build
+// one.  The port of the endpoint bridge adds the factory for each, with its
+// definition and its mint.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -158,21 +158,6 @@ private:
 public:
     static constexpr bool value = compute();
 };
-
-// Declared here only so the class below can befriend it.  Its definition lives
-// in the bridge header that includes this one, and is the one place a stage of
-// this kind is built.
-template <auto FnPtr, class Ctx, class Tuple>
-[[nodiscard]] constexpr auto make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx, Tuple& endpoints) noexcept;
-
-// Same arrangement for the single-writer stage.  This one carries no
-// constraint of its own: the concept that gates it is declared in the bridge
-// header, which is included after this one, so the friend declaration below
-// could not name it.  The gate runs in the factory that calls this.
-template <auto FnPtr, class Ctx>
-[[nodiscard]] constexpr auto
-make_swmr_stage(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 0>>&& in,
-                std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 1>>&& writer) noexcept;
 
 }  // namespace detail
 
@@ -350,9 +335,6 @@ private:
                                                output_tuple_type&& outputs) noexcept
         : ctx_{ctx}, inputs_{std::move(inputs)}, outputs_{std::move(outputs)} {}
 
-    template <auto MintFnPtr, class MintCtx, class MintTuple>
-    friend constexpr auto detail::make_mpmc_stage_from_endpoint_tuple(MintCtx const&, MintTuple&) noexcept;
-
     template <std::size_t... Is, std::size_t... Os>
     void run_impl_(std::index_sequence<Is...>, std::index_sequence<Os...>) && noexcept {
         FnPtr(std::move(std::get<Is>(inputs_))..., std::move(std::get<Os>(outputs_))...);
@@ -416,13 +398,6 @@ private:
     [[nodiscard]] explicit constexpr SwmrStage(Ctx const& ctx, consumer_handle_type&& in,
                                                writer_handle_type&& writer) noexcept
         : ctx_{ctx}, in_{std::move(in)}, writer_{std::move(writer)} {}
-
-    // The befriended factory carries no constraint of its own.  The concept
-    // that gates it runs in the caller above it.
-    template <auto MintFnPtr, class MintCtx>
-    friend constexpr auto detail::make_swmr_stage(
-        MintCtx const&, std::remove_reference_t<::foundation::reflect::param_type_t<MintFnPtr, 0>>&&,
-        std::remove_reference_t<::foundation::reflect::param_type_t<MintFnPtr, 1>>&&) noexcept;
 
     [[no_unique_address]] Ctx ctx_;
     consumer_handle_type in_;
