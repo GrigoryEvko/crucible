@@ -84,11 +84,13 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SpscSession.h>
+#include <foundation/Platform.h>
 
 #include "bench_harness.h"
 
@@ -112,6 +114,17 @@ inline void drain_ring(Channel::ConsumerHandle& cons) noexcept {
     while (cons.try_pop()) {}
 }
 
+// The ring holds 2^20 items, and each body pops the item that it pushed, so
+// the ring never rejects a push.  After a rejected push the next pop finds an
+// empty ring, and the bench does not measure a round trip.  The bench stops
+// at the first rejected push.  The check is one branch, the same test that
+// blocking_push makes on each typed send.
+[[noreturn]] CRUCIBLE_COLD void stop_on_rejected_push(const char* bench_name) noexcept {
+    std::fprintf(stderr, "bench_spsc_session: %s: the ring rejected a push, so the round trip is not measured\n",
+                 bench_name);
+    std::abort();
+}
+
 // ── 2×2 round-trip benches ─────────────────────────────────────────
 //
 // Each body is push+pop, keeping ring depth at 0/1 across the full
@@ -123,7 +136,8 @@ bench::Report bench_bare_push_bare_pop(Channel::ProducerHandle& prod, Channel::C
     drain_ring(cons);
     Item i = 0;
     auto report = bench::run("round-trip: bare push + bare pop", [&] {
-        prod.try_push(++i);
+        if (!prod.try_push(++i)) [[unlikely]]
+            stop_on_rejected_push("round-trip: bare push + bare pop");
         // Extract from optional so do_not_optimize sees Item (8B),
         // matching the typed PSH.recv path which returns Item by
         // value via blocking_pop's optional::operator* deref.
@@ -171,7 +185,8 @@ bench::Report bench_bare_push_typed_recv(Channel::ProducerHandle& prod, Channel:
     auto psh = ses::mint_consumer_session<Channel>(::crucible::effects::HotFgCtx{}, cons);
     Item i = 0;
     auto report = bench::run("round-trip: bare push + typed PSH.recv", [&] {
-        prod.try_push(++i);
+        if (!prod.try_push(++i)) [[unlikely]]
+            stop_on_rejected_push("round-trip: bare push + typed PSH.recv");
         auto [v, h2] = std::move(psh).recv(ses::blocking_pop);
         bench::do_not_optimize(v);
         psh = std::move(h2);
