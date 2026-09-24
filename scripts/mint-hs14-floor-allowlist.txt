@@ -125,4 +125,3 @@ mint_permission_combine|include/foundation/permissions/Permission.h
 mint_permission_combine_n|include/foundation/permissions/Permission.h
 mint_permission_share|include/foundation/permissions/Permission.h
 mint_permission_split_n|include/foundation/permissions/Permission.h
-mint_permission_fork_inline|include/foundation/permissions/PermissionFork.h
