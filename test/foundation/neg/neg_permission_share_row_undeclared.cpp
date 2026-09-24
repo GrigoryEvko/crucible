@@ -15,8 +15,9 @@
 
 namespace {
 struct RowlessRegion {};
+struct HeldBrand {};
 
-[[maybe_unused]] void share_a_rowless_region(::foundation::permissions::Permission<RowlessRegion>&& token) {
+[[maybe_unused]] void share_a_rowless_region(::foundation::permissions::Permission<RowlessRegion, HeldBrand>&& token) {
     [[maybe_unused]] auto share = ::foundation::permissions::mint_permission_share(std::move(token));
 }
 }  // namespace

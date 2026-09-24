@@ -161,9 +161,11 @@ void test_permission_row_compile() {
     static_assert(!perm::CtxAdmitsPermission<UndeclaredTag, TestRunnerCtx>);
     // A token over such a tag can be named, and its row hash folds no row
     // rather than stopping the build, so the hash of a type that is only
-    // named needs no declared row.
-    static_assert(::foundation::diag::row_hash_contribution_v<perm::Permission<UndeclaredTag>>
-                  != ::foundation::diag::row_hash_contribution_v<perm::Permission<HugePage>>);
+    // named needs no declared row.  The hash folds no brand, so the brand
+    // here is any empty class.
+    struct NamedOnlyBrand {};
+    static_assert(::foundation::diag::row_hash_contribution_v<perm::Permission<UndeclaredTag, NamedOnlyBrand>>
+                  != ::foundation::diag::row_hash_contribution_v<perm::Permission<HugePage, NamedOnlyBrand>>);
     static_assert(perm::CtxAdmitsPermission<HugePage, BgCompileCtx>);
     static_assert(!perm::CtxAdmitsPermission<HugePage, HotFgCtx>);
     static_assert(!perm::CtxAdmitsPermission<HugePage, BgDrainCtx>);
