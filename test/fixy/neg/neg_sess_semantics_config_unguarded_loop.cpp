@@ -4,7 +4,7 @@
 
 #include <fixy/session/Semantics.h>
 
-namespace {
+namespace neg_sess_semantics_config_unguarded_loop_types {
 
 struct P {};
 struct Q {};
@@ -16,6 +16,6 @@ namespace s = ::fixy::session;
 using Spins = s::TypingContext<s::RoleState<P, s::OutQueue<>, s::Loop<s::Continue>>>;
 using Next = s::config::step_t<Spins, g::SendAction<P, Q, M, int>, s::EveryRoleReliable>;
 
-}  // namespace
+}  // namespace neg_sess_semantics_config_unguarded_loop_types
 
 int main() { return 0; }

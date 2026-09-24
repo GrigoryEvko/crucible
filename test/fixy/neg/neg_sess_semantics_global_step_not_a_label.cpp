@@ -3,12 +3,12 @@
 
 #include <fixy/session/Semantics.h>
 
-namespace {
+namespace neg_sess_semantics_global_step_not_a_label_types {
 
 namespace g = ::fixy::session::global;
 
 using Next = g::state_step_t<g::State<g::Roles<>, g::End>, int, ::fixy::session::EveryRoleReliable>;
 
-}  // namespace
+}  // namespace neg_sess_semantics_global_step_not_a_label_types
 
 int main() { return 0; }

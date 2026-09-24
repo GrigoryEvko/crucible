@@ -4,13 +4,13 @@
 
 #include <fixy/session/Semantics.h>
 
-namespace {
+namespace neg_sess_semantics_config_step_not_a_label_types {
 
 namespace g = ::fixy::session::global;
 namespace s = ::fixy::session;
 
 using Next = s::config::step_t<s::TypingContext<>, g::Actions<>, s::EveryRoleReliable>;
 
-}  // namespace
+}  // namespace neg_sess_semantics_config_step_not_a_label_types
 
 int main() { return 0; }

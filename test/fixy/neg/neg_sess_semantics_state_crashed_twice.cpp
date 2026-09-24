@@ -3,7 +3,7 @@
 
 #include <fixy/session/Semantics.h>
 
-namespace {
+namespace neg_sess_semantics_state_crashed_twice_types {
 
 struct P {};
 struct Q {};
@@ -14,6 +14,6 @@ namespace g = ::fixy::session::global;
 using Twice = g::State<g::Roles<P, P>, g::Msg<Q, P, M, int, g::End>>;
 using Next = g::state_step_t<Twice, g::SendAction<Q, P, M, int>, ::fixy::session::ReliableSet<>>;
 
-}  // namespace
+}  // namespace neg_sess_semantics_state_crashed_twice_types
 
 int main() { return 0; }

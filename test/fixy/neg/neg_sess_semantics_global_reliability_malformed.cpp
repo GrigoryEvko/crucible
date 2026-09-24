@@ -4,7 +4,7 @@
 
 #include <fixy/session/Semantics.h>
 
-namespace {
+namespace neg_sess_semantics_global_reliability_malformed_types {
 
 struct P {};
 
@@ -12,6 +12,6 @@ namespace g = ::fixy::session::global;
 
 using Labels = g::state_enabled_t<g::State<g::Roles<>, g::End>, g::Roles<P>>;
 
-}  // namespace
+}  // namespace neg_sess_semantics_global_reliability_malformed_types
 
 int main() { return 0; }
