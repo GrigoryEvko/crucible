@@ -32,46 +32,78 @@ finds no template, skips the axis, and `mint_federation_admittance` passes with
 no `requires` clause at all.  The window fails open.  The enclosing
 `template_declaration` answers the same question exactly, at any distance.
 
-That cost runs the other way too.  A comment at `FederationPermission.h:301`
-states that its `[[nodiscard]]` sits on its own line "because the source scanner
-that audits mint factories reads a fixed qualifier window ahead of the
-signature".  The scanner's limit reached into how the source is formatted.
+THE CONSTEXPR AXIS HAS TWO EXCEPTIONS.  §XXI drops `constexpr` from a factory
+that genuinely allocates, and from a factory whose body can never be constant
+evaluated because it reads runtime state: an atomic, a thread identity or a
+system call.  The build refuses `constexpr` on the second kind through
+-Winvalid-constexpr.  This gate cannot see which kind a body is, so each
+exception is stated, and the statement is the exemption.
 
-THREE EXEMPTION MECHANISMS.  The tree carries all three at once, and this gate
-reads every one so its verdict matches the old guard:
+THREE EXEMPTION MECHANISMS, EACH FOR NAMED AXES:
 
-  * `scripts/mint-pattern-allowlist.txt`, keyed `path:name:axis-ok`
-  * a `// §XXI carve-out: cx=alloc` or `rq=pre` comment above the signature
-  * a `// MINT-PATTERN-OK: <reason>` marker on the signature line
+  * a row `path:mint_name:axis-ok` in `scripts/mint-pattern-allowlist.txt`.
+    A row names the mint, never a line, and it exempts one axis for every
+    overload of that name in that file.  A row can exempt any axis.
+  * a `// §XXI carve-out: cx=alloc` or `rq=pre` comment in the comment run
+    directly above the signature.  cx=alloc exempts constexpr, and rq=pre
+    exempts requires.
+  * a `// MINT-PATTERN-OK: <reason>` marker on the line that names the mint.
+    It exempts constexpr and no other axis.  §XXI admits no exemption from
+    noexcept, and a soundness axis (requires, ctxfit) takes a reviewed row.
 
-Measured 2026-09-21: the allowlist opened the day at 138 entries and closed it at
-75, against 39 carve-out comments and 9 inline markers.  Fifty of the entries it
-shed were not exemptions — they recorded a constraint the scanner could not read.
+AN EXEMPTION THAT EXEMPTS NOTHING FAILS, so a dead one cannot come to hide a
+later regression:
 
-SUPERSEDED HEADERS ARE OUT OF SCOPE, and that is a change.  The bash guard scans
+  * a row whose mint does not fall short on its axis is stale
+  * a row whose every short site carries its own marker is redundant
+  * a marker on a site that a row already covers is redundant
+  * a marker on a mint that meets its axis is dead
+  * a marker that sits on no mint signature is dangling, because the model
+    never reads it
+  * a row that does not parse, names an unknown axis, names a line, or
+    repeats another row is malformed
+
+A marker in a file under a prefix of `scripts/frozen-paths.txt` is not held to
+the last three rules.  A frozen file cannot change, so its mints cannot lose a
+flag, and its dead marker leaves with the old tree.  A redundant row that names
+a frozen file still fails, because the row is the half that can be removed.
+
+SUPERSEDED HEADERS ARE OUT OF SCOPE.  The bash guard scanned
 `include/crucible/**/_*.h`, the ported old-substrate headers, and 24 allowlist
-entries exist only to exempt them.  Those files are frozen, so a shortfall there
-cannot be repaired, and they go with the old tree.  Enforcing §XXI on them buys
-nothing and keeps 24 ledger entries alive.  The inventory generator already
-excludes them.
+entries existed only to exempt them.  Those files are frozen, so a shortfall
+there cannot be repaired, and they go with the old tree.  The inventory
+generator excludes them too.
+
+A FILE THE PARSER CANNOT READ FAILS.  Its mints are unknown, so a clean verdict
+over it would be a guess.  `tsast.UNPARSEABLE` names the files that are not C++.
 
 EXIT CODES
-    0  every mint meets the four axes, or a stated mechanism exempts it
-    2  a mint falls short with nothing exempting it, or an entry went stale
+    0  every mint meets the five axes, or one stated mechanism exempts it
+    1  a mint falls short with nothing exempting it, or a file does not parse
+    2  a row is stale, redundant or malformed, or a marker is dead, redundant
+       or dangling, or the self-test fails
     3  the pinned tree-sitter kit is not installed
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
+import re
 import sys
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import mintmodel  # noqa: E402  (the path insert above has to come first)
+import cxx_lex  # noqa: E402  (the path insert above has to come first)
+import mintmodel  # noqa: E402
 import tsast  # noqa: E402
 
 ALLOWLIST = tsast.REPO_ROOT / "scripts" / "mint-pattern-allowlist.txt"
+FROZEN_PATHS = tsast.REPO_ROOT / "scripts" / "frozen-paths.txt"
 
 # The axes, each with the allowlist suffix that exempts it.  `requires` asks only
 # whether a constraint is PRESENT; `ctxfit` asks the separate question of whether
@@ -81,33 +113,117 @@ ALLOWLIST = tsast.REPO_ROOT / "scripts" / "mint-pattern-allowlist.txt"
 # some other parameter.
 AXES = ("nodiscard", "constexpr", "noexcept", "requires", "ctxfit")
 
+# The in-source markers, each with the one axis it exempts.
+MARKERS = {
+    "inline": (mintmodel.INLINE_OK, "constexpr"),
+    "cx": (mintmodel.CARVE_OUT_CX, "constexpr"),
+    "rq": (mintmodel.CARVE_OUT_RQ, "requires"),
+}
+MINT_NAME = re.compile(r"mint_[A-Za-z0-9_]*[A-Za-z0-9]")
 
-def read_allowlist(path: Path = ALLOWLIST) -> set[tuple[str, str, str]]:
-    """Return the allowlist as a set of (path, mint name, axis) triples.
+Row = tuple[str, str, str]
 
-    The key is content, never a line number, so an edit above a site cannot
-    drift it.
+
+@dataclass(frozen=True)
+class Marker:
+    """One in-source exemption marker, at the line that holds its text."""
+
+    path: str
+    line: int
+    kind: str
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One result of the gate.
+
+    Attributes:
+        kind: `violation` or `parse` exit 1, every other kind exits 2
+        where: `path:line`, or the row text for a row finding
+        name: The mint the finding names, or the marker kind for a dangling one
+        text: The report line
+    """
+
+    kind: str
+    where: str
+    name: str
+    text: str
+
+
+FAILING_KINDS = frozenset({"violation", "parse"})
+
+
+def read_allowlist(path: Path = ALLOWLIST) -> tuple[set[Row], list[Finding]]:
+    """Return the rows of the allowlist and one finding for each malformed row.
+
+    A row is `path:mint_name:axis-ok`.  The key is content, never a line
+    number, so an edit above a site cannot drift it.
+
+    Complexity: linear in the length of the file.
 
     Args:
         path: The allowlist file
 
     Returns:
-        One triple for each live entry
+        The rows as (path, mint name, axis) triples, and the malformed rows
     """
+    rows: set[Row] = set()
+    problems: list[Finding] = []
     if not path.is_file():
-        return set()
-    found: set[tuple[str, str, str]] = set()
-    for raw in path.read_text(encoding="utf-8").splitlines():
+        return rows, problems
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+        where = f"{path.name}:{number}"
         parts = line.split(":")
-        if len(parts) < 3:
+        reason = ""
+        if len(parts) != 3 or not parts[0] or any(ch.isspace() for ch in line):
+            reason = "a row is `path:mint_name:axis-ok`, with no space"
+        elif parts[1].isdigit():
+            reason = "a row names the mint, never a line"
+        elif MINT_NAME.fullmatch(parts[1]) is None:
+            reason = f"`{parts[1]}` is not the name of a mint"
+        elif not parts[2].endswith("-ok") or parts[2].removesuffix("-ok") not in AXES:
+            reason = f"`{parts[2]}` names no axis; the axes are {', '.join(a + '-ok' for a in AXES)}"
+        if reason:
+            problems.append(Finding("malformed", where, line, f"MINT-PATTERN malformed row {where}: {line} — {reason}."))
             continue
-        axis = parts[2].removesuffix("-ok")
-        if axis in AXES:
-            found.add((parts[0], parts[1], axis))
-    return found
+        row = (parts[0], parts[1], parts[2].removesuffix("-ok"))
+        if row in rows:
+            problems.append(Finding("malformed", where, line,
+                                    f"MINT-PATTERN malformed row {where}: {line} — a row before this one says the same."))
+            continue
+        rows.add(row)
+    return rows, problems
+
+
+def read_frozen(path: Path = FROZEN_PATHS) -> tuple[str, ...]:
+    """Return the frozen path prefixes.
+
+    Args:
+        path: The list that the frozen-tree guard also reads
+
+    Returns:
+        One prefix for each live line
+    """
+    if not path.is_file():
+        return ()
+    return tuple(line.strip() for line in path.read_text(encoding="utf-8").splitlines()
+                 if line.strip() and not line.strip().startswith("#"))
+
+
+def is_frozen(path: str, prefixes: tuple[str, ...]) -> bool:
+    """Report whether a path lies under a frozen prefix.
+
+    Args:
+        path: The path of a scanned file
+        prefixes: The frozen prefixes
+
+    Returns:
+        True when one prefix starts the path
+    """
+    return any(path.startswith(prefix) for prefix in prefixes)
 
 
 def shortfalls(mint: mintmodel.Mint) -> list[str]:
@@ -141,106 +257,245 @@ def shortfalls(mint: mintmodel.Mint) -> list[str]:
     return missing
 
 
-def exempted(mint: mintmodel.Mint, axis: str, allowlist: set[tuple[str, str, str]]) -> bool:
+def marker_kinds(mint: mintmodel.Mint) -> list[str]:
+    """Return the kinds of in-source marker that the model reads on this mint.
+
+    Args:
+        mint: The mint in question
+
+    Returns:
+        A subset of `inline`, `cx` and `rq`, in that order
+    """
+    flags = {"inline": mint.inline_ok, "cx": mint.carve_out_cx, "rq": mint.carve_out_rq}
+    return [kind for kind, present in flags.items() if present]
+
+
+def marker_axes(mint: mintmodel.Mint) -> set[str]:
+    """Return the axes that an in-source marker exempts on this mint.
+
+    Args:
+        mint: The mint in question
+
+    Returns:
+        The exempted axes
+    """
+    return {MARKERS[kind][1] for kind in marker_kinds(mint)}
+
+
+def exempted(mint: mintmodel.Mint, axis: str, rows: set[Row]) -> bool:
     """Report whether a stated mechanism exempts this mint on this axis.
 
     Args:
         mint: The mint in question
-        axis: One of the four axis names
-        allowlist: The allowlist triples
+        axis: One of the five axis names
+        rows: The allowlist rows
 
     Returns:
-        True when the allowlist, a carve-out comment or an inline marker covers it
+        True when a row or a marker for that axis covers it
     """
-    if (mint.path, mint.name, axis) in allowlist:
-        return True
-    if mint.inline_ok:
-        return True
-    if axis == "constexpr" and mint.carve_out_cx:
-        return True
-    if axis == "requires" and mint.carve_out_rq:
-        return True
-    return False
+    return (mint.path, mint.name, axis) in rows or axis in marker_axes(mint)
 
 
-def scan() -> int:
-    """Report every unexempted shortfall and every stale allowlist entry.
+def find_markers(tree: tsast.Tree, sites: list[mintmodel.Mint]) -> list[Marker]:
+    """Return every marker of one file that attaches to no mint signature.
+
+    An inline marker attaches when its comment sits on the line that names a
+    mint.  A carve-out attaches when it sits in the comment run directly above
+    such a line.  Those are the two places the model reads, so a marker
+    anywhere else exempts nothing.  A marker inside a string literal is no
+    marker.
+
+    Complexity: linear in the length of the file.
+
+    Args:
+        tree: The parsed file
+        sites: The mint sites of the file, declarations included
 
     Returns:
-        0 when clean, 2 on a finding, 3 when the pinned kit is absent
+        The dangling markers, in source order
     """
-    try:
-        mints = mintmodel.collect(mintmodel.surface_files())
-    except tsast.KitMissing as exc:
-        print(f"check-mint-pattern: {exc}", file=sys.stderr)
-        return 3
-
-    allowlist = read_allowlist()
-    findings: list[str] = []
-    live: set[tuple[str, str, str]] = set()
-
-    for mint in sorted(mints, key=lambda m: (m.path, m.line)):
-        for axis in shortfalls(mint):
-            live.add((mint.path, mint.name, axis))
-            if exempted(mint, axis, allowlist):
+    text = tree.source.decode("utf-8", "replace")
+    named = {site.line for site in sites}
+    above = {number for site in sites for number in site.carve_lines}
+    dangling: list[Marker] = []
+    for offset, comment in cxx_lex.comments(text):
+        for kind, (needle, _axis) in MARKERS.items():
+            at = comment.find(needle)
+            if at < 0:
                 continue
-            if axis == "ctxfit":
-                lack = (
-                    f"takes a context ({mint.ctx_token}) that no constraint gates. "
-                    f"It accepts every context in the tree. Write a "
-                    f"`CtxFits...<..., {mint.ctx_token}>` conjunct into its "
-                    f"constraint, or state the reason"
-                )
-            else:
-                lack = f"is missing {axis}. Add it to the signature, or state the reason"
-            findings.append(
-                f"MINT-PATTERN violation: {mint.path}:{mint.line} — {mint.name} "
-                f"{lack}: an inline `// MINT-PATTERN-OK: <reason>` on the signature "
-                f"line, or an entry `{mint.path}:{mint.name}:{axis}-ok` in "
-                f"scripts/mint-pattern-allowlist.txt."
-            )
+            line = text.count("\n", 0, offset + at) + 1
+            attached = line in named if kind == "inline" else line in above
+            if not attached:
+                dangling.append(Marker(str(tree.path), line, kind))
+    return dangling
 
-    for entry in sorted(allowlist - live):
-        path, name, axis = entry
-        findings.append(
-            f"MINT-PATTERN stale: {path}:{name}:{axis}-ok — no live {axis} "
-            f"shortfall for this mint. It was fixed, renamed, moved, or its file "
-            f"is a superseded `_*.h` header this gate no longer scans. Remove the "
-            f"entry so the gate keeps its drift coverage."
+
+def violation_text(mint: mintmodel.Mint, axis: str) -> str:
+    """Return the report line for an unexempted shortfall.
+
+    Args:
+        mint: The mint that falls short
+        axis: The axis it falls short on
+
+    Returns:
+        The report line, with each way to state an exemption for that axis
+    """
+    if axis == "ctxfit":
+        lack = (
+            f"takes a context ({mint.ctx_token}) that no constraint gates. "
+            f"It accepts every context in the tree. Write a "
+            f"`CtxFits...<..., {mint.ctx_token}>` conjunct into its "
+            f"constraint, or state the reason"
         )
+    else:
+        lack = f"is missing {axis}. Add it to the signature, or state the reason"
+    row = f"a row `{mint.path}:{mint.name}:{axis}-ok` in scripts/mint-pattern-allowlist.txt"
+    ways = f"an inline `// MINT-PATTERN-OK: <reason>` on the signature line, or {row}" \
+        if axis == "constexpr" else row
+    return f"MINT-PATTERN violation: {mint.path}:{mint.line} — {mint.name} {lack}: {ways}."
 
-    for message in findings:
-        print(message, file=sys.stderr)
+
+def evaluate(
+    mints: list[mintmodel.Mint],
+    rows: set[Row],
+    frozen: tuple[str, ...],
+    dangling: list[Marker],
+) -> list[Finding]:
+    """Judge every mint, every row and every marker.
+
+    Complexity: O(m + r) in the mint count and the row count.
+
+    Args:
+        mints: The merged mints of the surface
+        rows: The allowlist rows
+        frozen: The frozen path prefixes
+        dangling: The markers that attach to no mint signature
+
+    Returns:
+        Every finding, in a stable order
+    """
+    findings: list[Finding] = []
+    covered: dict[Row, list[mintmodel.Mint]] = {}
+    for mint in sorted(mints, key=lambda m: (m.path, m.line, m.name)):
+        where = f"{mint.path}:{mint.line}"
+        short = shortfalls(mint)
+        for axis in short:
+            row = (mint.path, mint.name, axis)
+            if row in rows:
+                covered.setdefault(row, []).append(mint)
+            elif not exempted(mint, axis, rows):
+                findings.append(Finding("violation", where, mint.name, violation_text(mint, axis)))
+        if is_frozen(mint.path, frozen):
+            continue
+        kinds = marker_kinds(mint)
+        for kind in kinds:
+            axis = MARKERS[kind][1]
+            if axis not in short:
+                findings.append(Finding(
+                    "dead-marker", where, mint.name,
+                    f"MINT-PATTERN dead marker: {where} — the `{MARKERS[kind][0]}` marker on {mint.name} "
+                    f"exempts {axis}, and the mint meets {axis}. Delete the marker."))
+        if "inline" in kinds and "cx" in kinds and "constexpr" in short:
+            findings.append(Finding(
+                "redundant-marker", where, mint.name,
+                f"MINT-PATTERN redundant marker: {where} — {mint.name} carries an inline marker and a cx=alloc "
+                f"carve-out, and each exempts constexpr. Delete one of them."))
+
+    for row in sorted(rows):
+        path, name, axis = row
+        sites = covered.get(row, [])
+        text = f"{path}:{name}:{axis}-ok"
+        if not sites:
+            findings.append(Finding(
+                "stale-row", text, name,
+                f"MINT-PATTERN stale row: {text} — no live {axis} shortfall for this mint. It was fixed, "
+                f"renamed, moved, or its file is a superseded `_*.h` header this gate does not scan. "
+                f"Delete the row."))
+        elif all(axis in marker_axes(site) for site in sites):
+            findings.append(Finding(
+                "redundant-row", text, name,
+                f"MINT-PATTERN redundant row: {text} — every site it covers carries its own marker for "
+                f"{axis}, so the row exempts nothing. Delete the row, or delete the markers."))
+        else:
+            for site in sites:
+                if axis in marker_axes(site) and not is_frozen(site.path, frozen):
+                    findings.append(Finding(
+                        "redundant-marker", f"{site.path}:{site.line}", name,
+                        f"MINT-PATTERN redundant marker: {site.path}:{site.line} — the row {text} already "
+                        f"exempts {name} on {axis}. Delete the marker."))
+
+    for marker in dangling:
+        if is_frozen(marker.path, frozen):
+            continue
+        needle = MARKERS[marker.kind][0]
+        findings.append(Finding(
+            "dangling-marker", f"{marker.path}:{marker.line}", marker.kind,
+            f"MINT-PATTERN dangling marker: {marker.path}:{marker.line} — the `{needle}` marker sits on no "
+            f"mint signature, so it exempts nothing. Delete it, or move it to the line that names the mint."))
+    return findings
+
+
+def run(files: list[Path], allowlist: Path, frozen: tuple[str, ...]) -> int:
+    """Scan the files, print every finding, and return the exit code.
+
+    Args:
+        files: The surface to scan
+        allowlist: The allowlist file
+        frozen: The frozen path prefixes
+
+    Returns:
+        0 when clean, 1 on a violation or a parse failure, 2 on any other finding
+
+    Raises:
+        tsast.KitMissing: If the pinned kit is not installed
+    """
+    findings: list[Finding] = []
+    dangling: list[Marker] = []
+
+    def on_tree(tree: tsast.Tree, sites: list[mintmodel.Mint]) -> None:
+        """Record a parse failure and the dangling markers of one file."""
+        if tree.diagnostic is not None and str(tree.path) not in tsast.UNPARSEABLE:
+            findings.append(Finding(
+                "parse", str(tree.path), "",
+                f"MINT-PATTERN parse failure: {tree.path} — the parser cannot read this file, so its mints "
+                f"are unknown.\n  {tree.diagnostic}"))
+        dangling.extend(find_markers(tree, sites))
+
+    mints = mintmodel.collect(files, on_tree=on_tree)
+    rows, malformed = read_allowlist(allowlist)
+    findings += malformed + evaluate(mints, rows, frozen, dangling)
+    for finding in findings:
+        print(finding.text, file=sys.stderr)
+    failing = sum(finding.kind in FAILING_KINDS for finding in findings)
     if findings:
-        print(
-            f"\ncheck-mint-pattern: {len(findings)} finding(s) across {len(mints)} "
-            f"mint sites on the {len(AXES)} §XXI axes.",
-            file=sys.stderr,
-        )
-        return 2
-    print(
-        f"check-mint-pattern: clean — {len(mints)} mint sites meet the {len(AXES)} "
-        f"§XXI axes or carry a stated exemption, and no entry is stale.",
-        file=sys.stderr,
-    )
+        print(f"\ncheck-mint-pattern: {len(findings)} finding(s) across {len(mints)} mint sites: {failing} "
+              f"violation(s) or parse failure(s), {len(findings) - failing} dead or malformed exemption(s).",
+              file=sys.stderr)
+        return 1 if failing else 2
+    print(f"check-mint-pattern: clean — {len(mints)} mint sites meet the {len(AXES)} §XXI axes or carry one "
+          f"stated exemption, and every exemption exempts something.", file=sys.stderr)
     return 0
 
 
 def self_test() -> int:
-    """Exercise the axis and exemption logic, positive and negative.
+    """Exercise the axis, row and marker logic, positive and negative.
 
     Returns:
         0 when every case holds, 2 otherwise
     """
     failures: list[str] = []
+    negatives = 0
 
-    def check(name: str, ok: bool) -> None:
+    def check(name: str, ok: bool, negative: bool = False) -> None:
         """Record one case result and print it.
 
         Args:
             name: What the case asserts
             ok: Whether it held
+            negative: Whether the case plants something the gate must refuse
         """
+        nonlocal negatives
+        negatives += negative
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
         if not ok:
             failures.append(name)
@@ -267,119 +522,233 @@ def self_test() -> int:
     print("check-mint-pattern --self-test")
 
     check("a compliant mint has no shortfall", shortfalls(make()) == [])
-    check("a missing nodiscard is a shortfall", shortfalls(make(nodiscard=False)) == ["nodiscard"])
-    check("a missing noexcept is a shortfall", shortfalls(make(noexcept_=False)) == ["noexcept"])
+    check("a missing nodiscard is a shortfall", shortfalls(make(nodiscard=False)) == ["nodiscard"], True)
+    check("a missing noexcept is a shortfall", shortfalls(make(noexcept_=False)) == ["noexcept"], True)
     check(
         "all five can fall short at once",
-        shortfalls(make(nodiscard=False, constexpr=False, noexcept_=False,
-                        requires_=False, ctx_gated=False))
+        shortfalls(make(nodiscard=False, constexpr=False, noexcept_=False, requires_=False, ctx_gated=False))
         == ["nodiscard", "constexpr", "noexcept", "requires", "ctxfit"],
+        True,
     )
     # The rule the bash window got wrong: requires applies only to a template.
-    check(
-        "a templated mint with no constraint falls short",
-        shortfalls(make(requires_=False, templated=True)) == ["requires"],
-    )
-    check(
-        "a non-template with no clause does NOT fall short",
-        shortfalls(make(requires_=False, templated=False)) == [],
-    )
-    # A constraint on a template parameter satisfies the presence axis.
-    check(
-        "a constrained template parameter satisfies requires",
-        shortfalls(make(requires_=False, constraint_concepts=frozenset({"Surface"})))
-        == [],
-    )
-    # Negative control: the presence axis is not the context axis.  A mint
-    # constrained on another parameter still has to gate its context.
-    check(
-        "a parameter constraint does NOT satisfy the context axis",
-        shortfalls(make(requires_=False, ctx_gated=False,
-                        constraint_concepts=frozenset({"Surface"})))
-        == ["ctxfit"],
-    )
-    check(
-        "an ungated context is a shortfall",
-        shortfalls(make(ctx_gated=False)) == ["ctxfit"],
-    )
-    # Negative control: a token mint holds no context, so the axis is silent.
-    check(
-        "a token mint is not asked to gate a context",
-        shortfalls(make(shape="token", ctx_token=None, ctx_gated=False)) == [],
-    )
-    check(
-        "a member mint is not asked to gate a context",
-        shortfalls(make(shape="member", ctx_token=None, ctx_gated=False)) == [],
-    )
+    check("a templated mint with no constraint falls short",
+          shortfalls(make(requires_=False, templated=True)) == ["requires"], True)
+    check("a non-template with no clause does NOT fall short",
+          shortfalls(make(requires_=False, templated=False)) == [])
+    check("a constrained template parameter satisfies requires",
+          shortfalls(make(requires_=False, constraint_concepts=frozenset({"Surface"}))) == [])
+    # The presence axis is not the context axis.
+    check("a parameter constraint does NOT satisfy the context axis",
+          shortfalls(make(requires_=False, ctx_gated=False, constraint_concepts=frozenset({"Surface"})))
+          == ["ctxfit"], True)
+    check("a token mint is not asked to gate a context",
+          shortfalls(make(shape="token", ctx_token=None, ctx_gated=False)) == [])
+    check("a member mint is not asked to gate a context",
+          shortfalls(make(shape="member", ctx_token=None, ctx_gated=False)) == [])
+    check("a borrow projection is not asked for constexpr",
+          shortfalls(make(constexpr=False, borrow_projection=True)) == [])
+    check("a borrow projection is still held to its other axes",
+          shortfalls(make(nodiscard=False, requires_=False, borrow_projection=True)) == ["nodiscard", "requires"],
+          True)
 
-    # Each of the three exemption mechanisms covers, and covers only its own axis.
-    allow = {("p.h", "mint_probe", "constexpr")}
-    check(
-        "an allowlist entry exempts its axis",
-        exempted(make(constexpr=False), "constexpr", allow),
-    )
-    check(
-        "an allowlist entry does not exempt another axis",
-        not exempted(make(noexcept_=False), "noexcept", allow),
-    )
-    check(
-        "a cx carve-out comment exempts constexpr",
-        exempted(make(constexpr=False, carve_out_cx=True), "constexpr", set()),
-    )
-    check(
-        "a cx carve-out does not exempt requires",
-        not exempted(make(requires_=False, carve_out_cx=True), "requires", set()),
-    )
-    check(
-        "an rq carve-out comment exempts requires",
-        exempted(make(requires_=False, carve_out_rq=True), "requires", set()),
-    )
-    # Negative control: an rq carve-out documents an absent CLAUSE.  It says
-    # nothing about the context, so it must not reach the context axis.
-    check(
-        "an rq carve-out does not exempt ctxfit",
-        not exempted(make(ctx_gated=False, carve_out_rq=True), "ctxfit", set()),
-    )
-    check(
-        "a ctxfit allowlist entry exempts the context axis",
-        exempted(make(ctx_gated=False), "ctxfit", {("p.h", "mint_probe", "ctxfit")}),
-    )
-    check(
-        "an inline MINT-PATTERN-OK marker exempts the site",
-        exempted(make(constexpr=False, inline_ok=True), "constexpr", set()),
-    )
-    check(
-        "nothing exempts a bare shortfall",
-        not exempted(make(constexpr=False), "constexpr", set()),
-    )
+    # Each mechanism exempts its own axes and no other.
+    row = {("p.h", "mint_probe", "constexpr")}
+    check("a row exempts its axis", exempted(make(constexpr=False), "constexpr", row))
+    check("a row does not exempt another axis", not exempted(make(noexcept_=False), "noexcept", row), True)
+    check("a row keyed to another file does not exempt",
+          not exempted(make(path="q.h", constexpr=False), "constexpr", row), True)
+    check("a cx carve-out exempts constexpr", exempted(make(constexpr=False, carve_out_cx=True), "constexpr", set()))
+    check("a cx carve-out does not exempt requires",
+          not exempted(make(requires_=False, carve_out_cx=True), "requires", set()), True)
+    check("an rq carve-out exempts requires", exempted(make(requires_=False, carve_out_rq=True), "requires", set()))
+    check("an rq carve-out does not exempt ctxfit",
+          not exempted(make(ctx_gated=False, carve_out_rq=True), "ctxfit", set()), True)
+    check("an inline marker exempts constexpr", exempted(make(constexpr=False, inline_ok=True), "constexpr", set()))
+    for axis, field in (("noexcept", "noexcept_"), ("nodiscard", "nodiscard"), ("requires", "requires_"),
+                        ("ctxfit", "ctx_gated")):
+        check(f"an inline marker does not exempt {axis}",
+              not exempted(make(inline_ok=True, **{field: False}), axis, set()), True)
+    check("nothing exempts a bare shortfall", not exempted(make(constexpr=False), "constexpr", set()), True)
 
-    # The cosmetic axis: a borrow projection hands out a view over its own
-    # carrier, so constexpr could never carry meaning there.
-    check(
-        "a borrow projection is not asked for constexpr",
-        shortfalls(make(constexpr=False, borrow_projection=True)) == [],
-    )
-    # Negative control: the same absence IS a shortfall for a real factory.
-    check(
-        "a real factory with no constexpr still falls short",
-        shortfalls(make(constexpr=False, borrow_projection=False)) == ["constexpr"],
-    )
-    # Negative control: the exemption is cosmetic only and must not reach a
-    # soundness axis.
-    check(
-        "a borrow projection is still held to its other axes",
-        shortfalls(make(nodiscard=False, requires_=False, borrow_projection=True))
-        == ["nodiscard", "requires"],
-    )
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        allow = root / "allow.txt"
+
+        # The grammar of a row.
+        allow.write_text(
+            "# a comment\n\n"
+            "a.h:mint_good:constexpr-ok\n"
+            "a.h:mint_bare\n"
+            "a.h:120:constexpr-ok\n"
+            "a.h:mint_typo:constexr-ok\n"
+            "a.h:mint_good:constexpr-ok\n"
+            "a.h:helper:constexpr-ok\n"
+            "a.h:mint_space:constexpr-ok  trailing\n",
+            encoding="utf-8",
+        )
+        rows, malformed = read_allowlist(allow)
+        texts = " ".join(finding.text for finding in malformed)
+        check("a well-formed row is read", rows == {("a.h", "mint_good", "constexpr")})
+        check("a bare key with no axis is malformed", "a.h:mint_bare —" in texts, True)
+        check("a row keyed by a line is malformed", "names the mint, never a line" in texts, True)
+        check("a row with an unknown axis is malformed", "`constexr-ok` names no axis" in texts, True)
+        check("a second copy of a row is malformed", "a row before this one says the same" in texts, True)
+        check("a row that names no mint is malformed", "`helper` is not the name of a mint" in texts, True)
+        check("a row with a space is malformed", "mint_space" in texts, True)
+
+        # The whole scan, over a planted surface.
+        live = root / "live.h"
+        live.write_text(
+            "#pragma once\n"
+            "#include <atomic>\n"
+            "namespace probe {\n"
+            "inline std::atomic<int> seal{0};\n"
+            "// The body reads an atomic, so no constant evaluation can run it.\n"
+            "[[nodiscard]] inline int mint_runtime_read() noexcept { return seal.load(); }\n"
+            "[[nodiscard]] inline int mint_forgot_constexpr() noexcept { return 42; }\n"
+            "[[nodiscard]] constexpr int mint_compliant() noexcept { return 7; }\n"
+            "// §XXI carve-out: cx=alloc — dead, because the mint is constexpr.\n"
+            "[[nodiscard]] constexpr int mint_dead_carve_out() noexcept { return 1; }\n"
+            "[[nodiscard]] constexpr int mint_dead_inline() noexcept { return 2; }  // MINT-PATTERN-OK: dead\n"
+            "[[nodiscard]] inline int mint_inline_short(int value) { return value; }  // MINT-PATTERN-OK: runtime\n"
+            "// §XXI carve-out: cx=alloc — this one allocates.\n"
+            "[[nodiscard]] inline int* mint_marked_alloc() noexcept { return new int{0}; }\n"
+            "[[nodiscard]] inline int* mint_marked_twice() noexcept { return new int{0}; }  // MINT-PATTERN-OK: x\n"
+            "[[nodiscard]] inline int mint_overload(int value) noexcept { return value; }  // MINT-PATTERN-OK: x\n"
+            "[[nodiscard]] inline int mint_overload(long value) noexcept { return static_cast<int>(value); }\n"
+            "inline int not_a_mint = 0;  // MINT-PATTERN-OK: this marker sits on no mint\n"
+            "/* §XXI carve-out: cx=alloc — a block comment, which the model does not read */\n"
+            "[[nodiscard]] constexpr int mint_after_block() noexcept { return 3; }\n"
+            'inline const char* text = "// MINT-PATTERN-OK: inside a string";\n'
+            "// §XXI carve-out: cx=alloc — two markers for one axis.\n"
+            "[[nodiscard]] inline int* mint_two_markers() noexcept { return new int{0}; }  // MINT-PATTERN-OK: x\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        frozen_dir = root / "frozen"
+        frozen_dir.mkdir()
+        old = frozen_dir / "old.h"
+        old.write_text(
+            "#pragma once\n"
+            "namespace probe_old {\n"
+            "// §XXI carve-out: cx=alloc — dead, but the file is frozen.\n"
+            "[[nodiscard]] constexpr int mint_frozen_dead() noexcept { return 1; }\n"
+            "// §XXI carve-out: cx=alloc — this one allocates.\n"
+            "[[nodiscard]] inline int* mint_frozen_twice() noexcept { return new int{0}; }\n"
+            "inline int frozen_stray = 0;  // MINT-PATTERN-OK: dangling, but frozen\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        frozen = (str(frozen_dir) + "/",)
+        allow.write_text(
+            f"{live}:mint_runtime_read:constexpr-ok\n"
+            f"{live}:mint_marked_twice:constexpr-ok\n"
+            f"{live}:mint_overload:constexpr-ok\n"
+            f"{live}:mint_compliant:constexpr-ok\n"
+            f"{old}:mint_frozen_twice:constexpr-ok\n",
+            encoding="utf-8",
+        )
+        dangling: list[Marker] = []
+        mints = mintmodel.collect([live, old], on_tree=lambda tree, sites: dangling.extend(find_markers(tree, sites)))
+        rows, malformed = read_allowlist(allow)
+        found = evaluate(mints, rows, frozen, dangling)
+
+        def has(kind: str, name: str) -> bool:
+            """Report whether a finding of one kind names one mint."""
+            return any(f.kind == kind and f.name == name for f in found)
+
+        def mentions(kind: str, text: str) -> bool:
+            """Report whether a finding of one kind holds a text."""
+            return any(f.kind == kind and text in f.text for f in found)
+
+        check("the planted rows parse", not malformed)
+        check("a runtime-only mint is admitted by its row",
+              not any(f.name == "mint_runtime_read" for f in found))
+        check("a constexpr-able mint that lacks constexpr is refused", has("violation", "mint_forgot_constexpr"), True)
+        check("a row on a mint that has constexpr is stale", has("stale-row", "mint_compliant"), True)
+        check("a cx carve-out admits its mint", not any(f.name == "mint_marked_alloc" for f in found))
+        check("an inline marker does not exempt a missing noexcept",
+              mentions("violation", "mint_inline_short is missing noexcept"), True)
+        check("an inline marker still exempts constexpr",
+              not mentions("violation", "mint_inline_short is missing constexpr"))
+        check("a cx carve-out on a constexpr mint is dead", has("dead-marker", "mint_dead_carve_out"), True)
+        check("an inline marker on a constexpr mint is dead", has("dead-marker", "mint_dead_inline"), True)
+        check("a row whose every site carries a marker is redundant", has("redundant-row", "mint_marked_twice"), True)
+        check("a marker on a site that a needed row covers is redundant",
+              has("redundant-marker", "mint_overload") and not has("redundant-row", "mint_overload"), True)
+        check("two markers for one axis on one mint are redundant", has("redundant-marker", "mint_two_markers"), True)
+        check("a marker on no signature is dangling", mentions("dangling-marker", f"{live}:18"), True)
+        check("a carve-out in a block comment is dangling", mentions("dangling-marker", f"{live}:19"), True)
+        check("a marker inside a string literal is no marker", not mentions("dangling-marker", f"{live}:21"))
+        check("a dead marker in a frozen file is not reported", not has("dead-marker", "mint_frozen_dead"))
+        check("a dangling marker in a frozen file is not reported", not mentions("dangling-marker", str(old)))
+        check("a redundant row that names a frozen file still fails", has("redundant-row", "mint_frozen_twice"), True)
+
+        def captured(action) -> tuple[int, str]:
+            """Run an action and return its code and its stderr."""
+            buffer = io.StringIO()
+            with contextlib.redirect_stderr(buffer):
+                code = action()
+            return code, buffer.getvalue()
+
+        clean = root / "clean.h"
+        clean.write_text(
+            "#pragma once\n#include <atomic>\nnamespace probe_clean {\n"
+            "inline std::atomic<int> seal{0};\n"
+            "[[nodiscard]] inline int mint_runtime_read() noexcept { return seal.load(); }\n"
+            "[[nodiscard]] constexpr int mint_compliant() noexcept { return 7; }\n}\n",
+            encoding="utf-8",
+        )
+        allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n", encoding="utf-8")
+        check("a clean surface exits 0", captured(lambda: run([clean], allow, ()))[0] == 0)
+        previous = Path.cwd()
+        os.chdir("/")
+        try:
+            from_slash = captured(lambda: run([clean], allow, ()))
+        finally:
+            os.chdir(previous)
+        check("the report from / equals the report from the repository", from_slash == captured(
+            lambda: run([clean], allow, ())))
+        allow.write_text("", encoding="utf-8")
+        check("a runtime-only mint with no row exits 1", captured(lambda: run([clean], allow, ()))[0] == 1, True)
+        allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n{clean}:mint_compliant:constexpr-ok\n",
+                         encoding="utf-8")
+        check("a stale row exits 2", captured(lambda: run([clean], allow, ()))[0] == 2, True)
+        allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n{clean}:mint_extra\n", encoding="utf-8")
+        check("a malformed row exits 2", captured(lambda: run([clean], allow, ()))[0] == 2, True)
+        broken = root / "broken.h"
+        broken.write_text("void f() { g(1) { } }\n", encoding="utf-8")
+        allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n", encoding="utf-8")
+        code, report = captured(lambda: run([clean, broken], allow, ()))
+        check("a file the parser cannot read exits 1", code == 1 and "parse failure" in report, True)
 
     if failures:
         print(f"check-mint-pattern --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("check-mint-pattern --self-test: 23 cases pass, 10 of them negative controls.")
+    print(f"check-mint-pattern --self-test: every case passes, {negatives} of them negative controls.")
     return 0
 
 
+def main(argv: list[str]) -> int:
+    """Run one mode.
+
+    Args:
+        argv: The arguments after the script name
+
+    Returns:
+        The exit code
+    """
+    try:
+        if argv == ["--self-test"]:
+            return self_test()
+        if argv == []:
+            return run(mintmodel.surface_files(), ALLOWLIST, read_frozen())
+    except tsast.KitMissing as exc:
+        print(f"check-mint-pattern: {exc}", file=sys.stderr)
+        return 3
+    print("usage: check-mint-pattern.py [--self-test]", file=sys.stderr)
+    return 2
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
-        sys.exit(self_test())
-    sys.exit(scan())
+    sys.exit(main(sys.argv[1:]))

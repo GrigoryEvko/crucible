@@ -1,37 +1,29 @@
-# scripts/mint-pattern-allowlist.txt — §XXI scanner grandfather list.
+# scripts/mint-pattern-allowlist.txt — the reviewed exemptions of
+# scripts/check-mint-pattern.py from the five §XXI axes.
 #
-# Two interchangeable entry grammars are honoured:
+# A row is `path:mint_name:axis-ok`, with no space, where the axis is one
+# of nodiscard, noexcept, constexpr, requires and ctxfit.  A line that
+# starts with '#' is a comment, and the comment run above a group of rows
+# states the reason of each row in the group.
 #
-#   NAME-KEYED  path:mint_name[:check-ok]   (PREFERRED — drift-proof)
-#   LINE-KEYED  path:line[:check-ok]        (legacy — fragile)
+# A row names the mint, never a line, so an edit above the mint cannot
+# drift it.  `path` is the file of the mint exactly.  One row covers every
+# overload of that name in that file, because an overload set is one §XXI
+# factory with one reason.
 #
-# where <check> ∈ {nodiscard, noexcept, constexpr, requires, ctxfit}.
-# Lines beginning with '#' are comments.  A bare key (no `:check-ok`
-# suffix) exempts every check for that key.
+# The guard refuses a row that exempts nothing, and a row it cannot read:
+#   * a row whose mint meets the axis, or names no live mint, is stale
+#   * a row whose every site carries its own marker for the axis is
+#     redundant, because the marker already exempts it
+#   * a row with no axis, an unknown axis, a line in place of a name, a
+#     name that is no mint, or a copy of an earlier row is malformed
+# So this file can only shrink while the tree stays the same.
 #
-# ── Why name-keyed is the default ────────────────────────────────────
-#
-# A LINE-KEYED entry pins an exemption to a source LINE NUMBER.  Any
-# edit above the mint — a concurrent edit inserting a member, a new
-# `#include`, a reflowed comment — shifts the line and silently
-# invalidates the entry: the real mint reads as an un-suppressed
-# violation AND the now-dangling entry trips the stale-entry gate.  That
-# is the exact failure mode this file kept hitting (one line-collapse
-# sweep stranded 7 entries; later sweeps stranded more).
-#
-# A NAME-KEYED entry pins the exemption to the mint's IDENTIFIER (the
-# `mint_<noun>` token on the candidate line).  The identifier is stable
-# across line shifts, so a name-keyed exemption keeps tracking the same
-# factory no matter how the file above it churns.  This is the content
-# key of the reserve guard, applied to the mint guard: it eliminates the
-# line number as the drift vector.  Every entry below is name-keyed.
-#
-# Name-keyed semantics: `path` must match the candidate's file exactly;
-# the name segment matches the `mint_<noun>` identifier.  An overload
-# SET sharing one name in one file collapses to a single entry — that is
-# intentional: an overload set is one §XXI factory with one carve-out
-# rationale (e.g. `mint_persisted_session` has three live overloads, all
-# allocating, one `:constexpr-ok` entry covers them).
+# An in-source marker is the other way to exempt: a `§XXI carve-out:
+# cx=alloc` or `rq=pre` comment directly above the declaration, or a
+# `MINT-PATTERN-OK: <reason>` comment on the line that names the mint.
+# A marker exempts constexpr (cx=alloc, MINT-PATTERN-OK) or requires
+# (rq=pre), and no other axis.  One exemption lives in one place.
 #
 # ── Trim discipline ──────────────────────────────────────────────────
 #
@@ -163,46 +155,11 @@ include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok
 include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
 
 # ── fixy/ syscall / resource mints ───────────────────────────────────
-include/crucible/fixy/Sched.h:mint_affinity:constexpr-ok
-include/crucible/fixy/Sched.h:mint_priority:constexpr-ok
-include/crucible/fixy/Sched.h:mint_scheduler_policy:constexpr-ok
-
-# ── fixy/os/Sched.h — the ported copies of the three entries above.
-# The carve-out is the same one and for the same reason: each body
-# issues a scheduling syscall, so the factory cannot be constexpr.
-# Both sets stand until the old tree is deleted.
-include/fixy/os/Sched.h:mint_affinity:constexpr-ok
-include/fixy/os/Sched.h:mint_priority:constexpr-ok
-include/fixy/os/Sched.h:mint_scheduler_policy:constexpr-ok
-
-# ── fixy/os/{Mmap,Io}.h — the ported copies of the mmap and io entries
-# above.  The carve-out is the same one and for the same reason: each
-# body issues mmap, madvise, io_uring_setup, sendfile or
-# copy_file_range, so the factory cannot be constexpr.
-include/fixy/os/Mmap.h:mint_mmap:constexpr-ok
-include/fixy/os/Mmap.h:mint_mmap_anon:constexpr-ok
-include/fixy/os/Io.h:mint_io_uring_ring:constexpr-ok
-include/fixy/os/Io.h:mint_zerocopy_transfer:constexpr-ok
-
-# ── fixy/os/{Fs,CipherDurable}.h — the ported copies of the fs and
-# durable entries above.  Each body opens a file, so the factory cannot
-# be constexpr.  The two durable mints carried a `requires-ok` entry in
-# the old tree because they had no requires-clause of their own; they
-# have one now, so only the constexpr carve-out remains.
-include/fixy/os/Fs.h:mint_file:constexpr-ok
-include/fixy/os/Fs.h:mint_durable_append_file:constexpr-ok
-include/fixy/os/Fs.h:mint_durable_truncate_file:constexpr-ok
-include/fixy/os/CipherDurable.h:mint_warm_writer:constexpr-ok
-include/fixy/os/CipherDurable.h:mint_cold_writer:constexpr-ok
-include/fixy/os/CipherDurable.h:mint_head_advancer:constexpr-ok
-
-# A mint declared before the class that befriends it and defined after
-# that class is one function.  The guard reads a forward declaration and
-# its definition as one site, keyed at the definition, so one entry at
-# the defining header covers it: mint_io_uring_ring, the three
-# CipherDurable writers, and mint_affinity (declared in
-# fixy/os/CpuPinned.h, defined in fixy/os/Sched.h).
-# The ported pair, §XXI carve-out cx=thread.  Neither can be constexpr and
+# The scheduling, mmap, io, file and durable-writer mints of the old tree
+# and of fixy/os each carry a `§XXI carve-out: cx=alloc` marker above the
+# declaration, so no row names them.
+#
+# fixy/os/Spawn.h: neither mint of the ported pair can be constexpr and
 # mean it: mint_spawn starts one jthread per child, and mint_parallel_for
 # does the same for every shard but the single-shard case.  A constexpr on
 # either would claim a compile-time cost for a call that schedules threads.
@@ -231,15 +188,6 @@ include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:require
 # entries the old overload pairs needed are gone.  The spawning fork arm
 # starts threads, so it is not constexpr; the inline arm is.
 include/foundation/permissions/PermissionFork.h:mint_permission_fork:constexpr-ok
-
-# ── safety/ concept-constrained view + syscall mints ─────────────────
-include/crucible/safety/ThreadName.h:mint_thread_name:constexpr-ok
-
-# ── fixy/os/ThreadName.h — the ported copy of the mint above.  The
-# carve-out is the same one and for the same reason: the body calls
-# pthread_setname_np, so the factory cannot be constexpr.  Both entries
-# stand until the old tree is deleted.
-include/fixy/os/ThreadName.h:mint_thread_name:constexpr-ok
 
 # ── sessions/ allocating endpoint mints ──────────────────────────────
 # The forty-two `requires-ok` entries that stood here are gone.  Each one

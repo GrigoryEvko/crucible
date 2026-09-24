@@ -9,8 +9,10 @@ authorization shape into `misc/mint-inventory.md`.  Both read this one model,
 so the guard and the inventory cannot disagree about which sites are mints.
 
 A site is a `function_declarator` whose `declarator` field names an identifier
-that starts with `mint_`.  Four rules then exclude what is not a live mint, and
-each one is a node type rather than a heuristic:
+that starts with `mint_`.  A mint that returns a pointer or a reference nests
+its function declarator in a pointer or reference declarator, so the site is
+the first node above those.  Four rules then exclude what is not a live mint,
+and each one is a node type rather than a heuristic:
 
   * a `friend_declaration` ancestor — a friend re-declares a mint defined
     elsewhere, so the canonical site is the definition
@@ -37,6 +39,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -94,6 +97,8 @@ class Mint:
         static_member: Whether the site is a static member of its owner
         defines: Whether the site is a definition, not a forward declaration
         signature: The parameter types, normalized, with no parameter names
+        carve_lines: The comment lines where a carve-out marker of this site
+            is read, so a guard can tell an attached marker from a stray one
     """
 
     name: str
@@ -117,6 +122,7 @@ class Mint:
     static_member: bool = False
     defines: bool = True
     signature: str = ""
+    carve_lines: tuple[int, ...] = ()
 
     @property
     def key(self) -> tuple[str, str, int]:
@@ -763,40 +769,56 @@ def fixture_counts(paths: list[Path]) -> dict[str, int]:
     return counts
 
 
-def _carve_outs(tree: tsast.Tree, line: int) -> tuple[bool, bool]:
-    """Return the two §XXI carve-out markers above a signature.
+def declaration_start(site: tsast.Node) -> int:
+    """Return the one-based first line of the declaration that holds a mint.
 
-    A marker belongs to the comment block that sits IMMEDIATELY above its own
-    signature.  So the walk goes up from the signature, steps over the template,
-    requires and attribute lines that are part of the same declaration, collects
-    the contiguous comment run, and stops at the first line that is neither.
+    A template declaration holds its function, and a member template can sit
+    in a second one, so the start is the start of the outermost of them.
+
+    Args:
+        site: The declaration or definition node of the mint
+
+    Returns:
+        The line of the first token of the declaration
+    """
+    outer = site
+    while outer.parent is not None and outer.parent.type == "template_declaration":
+        outer = outer.parent
+    return outer.line
+
+
+def carve_out_block(lines: list[str], first: int, line: int) -> list[int]:
+    """Return the comment lines that belong to one mint declaration.
+
+    A marker belongs to its own declaration, in one of two places: a comment
+    line inside the declaration above the line that names the mint, or the
+    contiguous run of comment lines directly above the first line of the
+    declaration.  The run stops at the first line that is not a comment.
 
     A fixed-size window cannot do this.  `mint_chaselev_thief` has two
     overloads eight lines apart, the first carries a `cx=alloc` marker and the
     second carries only a prose comment.  A ten-line window reaches past the
-    first overload's body and reports its marker on the second one.
+    first overload's body and reports its marker on the second one.  A walk
+    that steps over each line that starts with `[[` fails the same way: a
+    one-line definition above the signature starts with its attribute, so the
+    walk went on through it into the comments of that other mint.
+
+    Complexity: linear in the length of the declaration and of the run.
 
     Args:
-        tree: The parsed file
+        lines: The lines of the file
+        first: The one-based first line of the declaration
         line: The one-based line of the mint identifier
 
     Returns:
-        Whether the `cx=alloc` marker is present, and whether `rq=pre` is
+        The one-based numbers of the comment lines, from the nearest upwards
     """
-    lines = tree.source.decode("utf-8", "replace").splitlines()
-    block: list[str] = []
-    index = line - 2  # zero-based, the line directly above the signature
-    while index >= 0:
-        stripped = lines[index].strip()
-        if stripped.startswith("//"):
-            block.append(stripped)
-        elif stripped.startswith(("template", "requires", "[[")):
-            pass  # still the same declaration, keep walking up
-        else:
-            break
+    block = [number for number in range(line - 1, first - 1, -1) if lines[number - 1].strip().startswith("//")]
+    index = first - 2  # zero-based, the line directly above the declaration
+    while index >= 0 and lines[index].strip().startswith("//"):
+        block.append(index + 1)
         index -= 1
-    text = "\n".join(block)
-    return (CARVE_OUT_CX in text, CARVE_OUT_RQ in text)
+    return block
 
 
 def extract(tree: tsast.Tree) -> list[Mint]:
@@ -823,6 +845,8 @@ def extract(tree: tsast.Tree) -> list[Mint]:
         if node.ancestor_of_type("friend_declaration") is not None:
             continue
         site = declarator.parent
+        while site is not None and site.type in ("pointer_declarator", "reference_declarator"):
+            site = site.parent
         if site is None:
             continue
         if site.children_of_type("delete_method_clause"):
@@ -833,7 +857,9 @@ def extract(tree: tsast.Tree) -> list[Mint]:
         owner = _owner_of(site)
         static_member = owner is not None and _has_qualifier(site, "static")
 
-        carve_cx, carve_rq = _carve_outs(tree, node.line)
+        lines = tree.source.decode("utf-8", "replace").splitlines()
+        carve_lines = tuple(carve_out_block(lines, declaration_start(site), node.line))
+        carve_text = "\n".join(lines[number - 1] for number in carve_lines)
         shape = _shape(site, declarator, owner, static_member)
         token = _ctx_token(declarator) if shape == "ctx" else None
         mints.append(
@@ -854,11 +880,12 @@ def extract(tree: tsast.Tree) -> list[Mint]:
                 ctx_gated=_ctx_gated(site, declarator, token),
                 shape=shape,
                 templated=site.parent is not None and site.parent.type == "template_declaration",
-                carve_out_cx=carve_cx,
-                carve_out_rq=carve_rq,
+                carve_out_cx=CARVE_OUT_CX in carve_text,
+                carve_out_rq=CARVE_OUT_RQ in carve_text,
                 static_member=static_member,
                 defines=site.type == "function_definition",
                 signature=_signature(declarator),
+                carve_lines=carve_lines,
             )
         )
     return mints
@@ -886,7 +913,10 @@ def concept_names(tree: tsast.Tree) -> set[str]:
     return found
 
 
-def collect(paths: list[Path] | None = None) -> list[Mint]:
+def collect(
+    paths: list[Path] | None = None,
+    on_tree: Callable[[tsast.Tree, list[Mint]], None] | None = None,
+) -> list[Mint]:
     """Return every live §XXI mint across the scanned surface, in sorted order.
 
     A constraining type name is resolved against the concept roster of the WHOLE
@@ -899,6 +929,8 @@ def collect(paths: list[Path] | None = None) -> list[Mint]:
 
     Args:
         paths: The files to scan, or None to scan the whole §XXI surface
+        on_tree: Called with each parsed file and the sites found in it, before
+            the declarations merge, so a caller reads each file in the same pass
 
     Returns:
         Every mint, sorted by name then path then line
@@ -907,7 +939,10 @@ def collect(paths: list[Path] | None = None) -> list[Mint]:
     raw: list[Mint] = []
     roster: set[str] = set()
     for tree in tsast.parse(files, strict=False):
-        raw += extract(tree)
+        sites = extract(tree)
+        if on_tree is not None:
+            on_tree(tree, sites)
+        raw += sites
         roster |= concept_names(tree)
     mints = [replace(m, constraint_concepts=m.constraint_concepts & roster) for m in raw]
     return sorted(merge_declarations(mints), key=lambda m: (m.name, m.path, m.line))
@@ -1073,6 +1108,20 @@ template <IsExecCtx C>
     requires CtxFitsProbe<C>
 [[nodiscard]] constexpr Thing mint_declared_first(C const&, Thing) noexcept { return {}; }
 
+// A mint that returns a pointer or a reference is a mint too.
+[[nodiscard]] inline Thing* mint_pointer(Thing& thing) noexcept { return &thing; }
+[[nodiscard]] inline Thing& mint_reference(Thing& thing) noexcept { return thing; }
+
+// §XXI carve-out: cx=alloc — this one-line mint allocates.
+[[nodiscard]] Thing mint_one_line(Thing) noexcept { return {}; }
+[[nodiscard]] Thing mint_below_one_line(Thing) noexcept { return {}; }
+
+// §XXI carve-out: cx=alloc — the clause below runs over two lines.
+template <IsExecCtx C>
+    requires CtxFitsProbe<C>
+             && Scalar<C>
+[[nodiscard]] Thing mint_long_clause(C const&) noexcept { return {}; }
+
 }  // namespace probe
 """
     with tempfile.TemporaryDirectory() as work:
@@ -1083,14 +1132,33 @@ template <IsExecCtx C>
 
         # Positive control: every live mint is found, and only those.
         check(
-            "finds exactly the fifteen live mint names",
+            "finds exactly the twenty live mint names",
             sorted(by_name) == [
-                "mint_allocating", "mint_bare", "mint_compliant",
+                "mint_allocating", "mint_bare", "mint_below_one_line", "mint_compliant",
                 "mint_ctx_in_clause", "mint_ctx_in_parameter", "mint_declared_first",
-                "mint_from_image", "mint_member", "mint_param_constrained",
-                "mint_plain_ctx", "mint_shape_only", "mint_sized",
-                "mint_surface_only", "mint_templated_member", "mint_token",
+                "mint_from_image", "mint_long_clause", "mint_member", "mint_one_line",
+                "mint_param_constrained", "mint_plain_ctx", "mint_pointer", "mint_reference",
+                "mint_shape_only", "mint_sized", "mint_surface_only", "mint_templated_member",
+                "mint_token",
             ],
+        )
+        check(
+            "models a mint that returns a pointer or a reference, with its flags",
+            all(by_name.get(name) is not None and by_name[name].nodiscard and by_name[name].noexcept_
+                and not by_name[name].constexpr and by_name[name].shape == "token"
+                for name in ("mint_pointer", "mint_reference")),
+        )
+        check(
+            "reads a carve-out above a clause that runs over two lines",
+            by_name.get("mint_long_clause") is not None and by_name["mint_long_clause"].carve_out_cx,
+        )
+        # Negative control: a one-line definition starts with its attribute, and
+        # the carve-out above it does not reach the mint below it.
+        check(
+            "does not carry a carve-out past a one-line definition",
+            by_name.get("mint_one_line") is not None and by_name["mint_one_line"].carve_out_cx
+            and by_name.get("mint_below_one_line") is not None
+            and not by_name["mint_below_one_line"].carve_out_cx,
         )
         image = by_name.get("mint_from_image")
         check(
@@ -1223,7 +1291,7 @@ template <IsExecCtx C>
     if failures:
         print(f"mintmodel --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("mintmodel --self-test: 26 cases pass, 10 of them negative controls.")
+    print("mintmodel --self-test: 29 cases pass, 11 of them negative controls.")
     return 0
 
 

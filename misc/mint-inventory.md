@@ -390,17 +390,17 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_affinity` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
+| `mint_affinity` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
 | `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
 | `mint_cold_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
+| `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
+| `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_head_advancer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
-| `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
-| `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
+| `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
+| `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_parallel_for` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |

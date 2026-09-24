@@ -246,7 +246,7 @@ template <typename UBorrow, typename Proto, typename Resource, typename LoopCtx,
     requires IsBorrowed<UBorrow>
 [[nodiscard]] constexpr Witnessed<UBorrow, witness::AtProtocol<Proto>>
 mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy> const& handle CRUCIBLE_LIFETIMEBOUND,
-                  UBorrow borrow) noexcept {  // MINT-PATTERN-OK: the witness is the handle's position, not a context
+                  UBorrow borrow) noexcept {
     (void)handle;
     return Witnessed<UBorrow, witness::AtProtocol<Proto>>{detail::witnessed_mint_t{}, borrow};
 }
@@ -267,7 +267,7 @@ constexpr auto mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource,
 template <typename UBorrow>
     requires(IsBorrowed<UBorrow> && ::foundation::permissions::has_permission_row_v<typename UBorrow::source_type>)
 [[nodiscard]] constexpr Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>
-mint_witnessed_under(UBorrow borrow) noexcept {  // MINT-PATTERN-OK: the witness is read off the borrow's own tag
+mint_witnessed_under(UBorrow borrow) noexcept {
     return Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>{detail::witnessed_mint_t{}, borrow};
 }
 

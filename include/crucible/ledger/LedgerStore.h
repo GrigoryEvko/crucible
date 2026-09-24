@@ -663,8 +663,8 @@ namespace store_detail {
 
 }  // namespace store_detail
 
-// §XXI carve-out: cx=alloc — reading a file invokes the kernel, so this
-// cannot be constexpr and is not marked so.
+// Reading a file invokes the kernel, so this cannot be constexpr and is
+// not marked so.
 template <effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
 [[nodiscard]] inline std::expected<Ledger, LedgerError> load_ledger(Ctx const& /* ctx */,
@@ -709,7 +709,7 @@ template <effects::IsExecCtx Ctx>
     return parsed;
 }
 
-// §XXI carve-out: cx=alloc — writing a file invokes the kernel.
+// Writing a file invokes the kernel, so this cannot be constexpr.
 template <effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
 [[nodiscard]] inline std::expected<void, LedgerError> commit_ledger(Ctx const& /* ctx */,

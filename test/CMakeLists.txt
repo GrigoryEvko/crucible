@@ -688,7 +688,7 @@ add_test(NAME mint_pattern
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.py)
 set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES
   LABELS "ci_guard;ast")
-set_tests_properties(mint_pattern PROPERTIES SKIP_RETURN_CODE 3)
+set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES SKIP_RETURN_CODE 3)
 # The witness roster.  Every type that attests to a fact it cannot see
 # — a pin, a mapping, a descriptor, a permission, a context — is named
 # in scripts/witness-roster.txt with the expression a forger would
