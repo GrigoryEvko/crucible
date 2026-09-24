@@ -931,6 +931,9 @@ fixy_test(test_versioned_budgeted_attacks)
 # Legal C++ that tries to make a payload claim a version no source vouched
 # for.  An attack that still succeeds is a row of the shrink-only ledger.
 fixy_test(test_version_attacks)
+# Legal C++ that writes the private state of a proof through a splice.
+# An attack that still succeeds is a row of the shrink-only ledger.
+fixy_test(test_splice_access_attacks)
 fixy_test(test_owned_region_fixy test_owned_region.cpp)
 fixy_test(test_borrowed)
 fixy_test(test_scoped_view)
