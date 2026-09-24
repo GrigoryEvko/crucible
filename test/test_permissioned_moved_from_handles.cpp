@@ -12,12 +12,12 @@
 // binding which broke every handle would not pass as a fix.
 
 #include <crucible/MetaLog.h>
+#include <crucible/PermissionedMetaLog.h>
 #include <crucible/Types.h>
 #include <crucible/concurrent/ChainEdge.h>
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedChainEdge.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/concurrent/PermissionedMetaLog.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
@@ -75,7 +75,7 @@ using Calendar = cc::PermissionedCalendarGrid<std::uint64_t, 2, 8, 4, IdentityKe
 using ShardedCalendar = cc::PermissionedShardedCalendarGrid<std::uint64_t, 2, 8, 4, IdentityKey, 1, ShardedCalendarTag>;
 using Deque = cc::PermissionedChaseLevDeque<int, 16, DequeTag>;
 using Edge = cc::PermissionedChainEdge<cc::VendorBackend::CPU, EdgeTag>;
-using Log = cc::PermissionedMetaLog<LogTag>;
+using Log = crucible::PermissionedMetaLog<LogTag>;
 using SpscQueue = cc::Queue<int, cc::kind::spsc<8>>;
 using MpscQueue = cc::Queue<int, cc::kind::mpsc<8>>;
 
@@ -123,8 +123,9 @@ static_assert(sizeof(Snapshot::WriterHandle) == sizeof(void*));
 }
 
 [[nodiscard]] auto log_handles(Log& log) {
-    auto whole = cs::mint_permission_root<Log::whole_tag>();
-    auto [producer, consumer] = cs::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(whole));
+    namespace fp = ::foundation::permissions;
+    auto whole = fp::mint_permission_root<Log::whole_tag>();
+    auto [producer, consumer] = fp::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(whole));
     return std::pair{log.producer(std::move(producer)), log.consumer(std::move(consumer))};
 }
 

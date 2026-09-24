@@ -1,10 +1,9 @@
-// GAPS-061 MetaLogSession microbench.
+// MetaLogSession microbench.
 //
-// Load-bearing evidence is structural: PermissionedMetaLog handles stay
-// pointer-sized and PermissionedSessionHandle over Handle* stays the same
-// size as the bare SessionHandle.  Timed results are emitted for drift
-// tracking only; each body performs one append plus one drain to keep the
-// fixed-size MetaLog ring at depth 0/1 across the auto-batched harness.
+// The load-bearing evidence is structural: the PermissionedMetaLog handles
+// stay pointer-sized.  The timed results are for drift tracking only.  Each
+// body does one append and one drain, so the fixed-size MetaLog ring stays
+// at depth 0 or 1 across the auto-batched harness.
 
 #include <cstdint>
 #include <cstdio>
@@ -13,16 +12,18 @@
 #include <utility>
 
 #include <crucible/MetaLog.h>
-#include <crucible/concurrent/PermissionedMetaLog.h>
-#include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/MetaLogSession.h>
+#include <crucible/MetaLogSession.h>
+#include <crucible/PermissionedMetaLog.h>
+
+#include <foundation/effects/Ctx.h>
+#include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
 
 namespace {
 
 struct BenchTag {};
-using PermissionedLog = ::crucible::concurrent::PermissionedMetaLog<BenchTag>;
+using PermissionedLog = ::crucible::PermissionedMetaLog<BenchTag>;
 
 [[nodiscard]] ::crucible::TensorMeta make_meta(std::uint32_t id) {
     ::crucible::TensorMeta meta{};
@@ -78,24 +79,26 @@ bench::Report bench_permissioned_append_drain(PermissionedLog::ProducerHandle& p
     return report;
 }
 
-bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle& producer,
-                                    PermissionedLog::ConsumerHandle& consumer, ::crucible::MetaLog& log) {
-    namespace ses = ::crucible::safety::proto::metalog_session;
-    using ::crucible::safety::proto::detach_reason::TestInstrumentation;
+// Each session owns its handle for the run and gives it back at End.  A
+// MetaLog handle refuses move-assignment, so each step puts the next
+// session in place of the last one with emplace.
+bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
+                                    PermissionedLog::ConsumerHandle&& consumer, ::crucible::MetaLog& log) {
+    namespace ses = ::crucible::metalog_session;
+    const auto ctx = ::foundation::effects::testing::foreground();
 
     reset_log(log);
-    auto prod_psh = ses::mint_metalog_producer_session<PermissionedLog>(::crucible::effects::HotFgCtx{}, producer);
-    auto cons_psh = ses::mint_metalog_consumer_session<PermissionedLog>(::crucible::effects::HotFgCtx{}, consumer);
+    std::optional prod{ses::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(producer))};
+    std::optional cons{ses::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(consumer))};
     std::uint32_t i = 0;
-    auto report = bench::run("round-trip: typed PSH.send + PSH.recv", [&] {
-        auto p2 = std::move(prod_psh).send(make_meta(++i), ses::blocking_append);
-        prod_psh = std::move(p2);
-        auto [meta, c2] = std::move(cons_psh).recv(ses::blocking_drain);
+    auto report = bench::run("round-trip: typed session send + recv", [&] {
+        prod.emplace(std::move(*prod).select_local<0>().send(make_meta(++i), ses::append_one));
+        auto [meta, next] = std::move(*cons).select_local<0>().recv(ses::drain_one);
         bench::do_not_optimize(meta.version);
-        cons_psh = std::move(c2);
+        cons.emplace(std::move(next));
     });
-    std::move(prod_psh).detach(TestInstrumentation{});
-    std::move(cons_psh).detach(TestInstrumentation{});
+    (void)std::move(*prod).select_local<1>().close();
+    (void)std::move(*cons).select_local<1>().close();
     reset_log(log);
     return report;
 }
@@ -105,31 +108,26 @@ bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle& producer,
 int main(int argc, char** argv) {
     const char* json = (argc > 1) ? argv[1] : nullptr;
 
-    namespace proto = ::crucible::safety::proto;
     static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(::crucible::MetaLog*));
     static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(::crucible::MetaLog*));
-    static_assert(
-        sizeof(proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, PermissionedLog::ProducerHandle*>)
-        == sizeof(proto::SessionHandle<proto::End, PermissionedLog::ProducerHandle*>));
-    static_assert(
-        sizeof(proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, PermissionedLog::ConsumerHandle*>)
-        == sizeof(proto::SessionHandle<proto::End, PermissionedLog::ConsumerHandle*>));
 
     auto raw_owner = std::make_unique<::crucible::MetaLog>();
     ::crucible::MetaLog& raw = *raw_owner;
     PermissionedLog log{raw};
 
-    auto whole = ::crucible::safety::mint_permission_root<PermissionedLog::whole_tag>();
+    namespace fp = ::foundation::permissions;
+    auto whole = fp::mint_permission_root<PermissionedLog::whole_tag>();
     auto [pp, cp] =
-        ::crucible::safety::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(
-            std::move(whole));
+        fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(std::move(whole));
     auto producer = log.producer(std::move(pp));
     auto consumer = log.consumer(std::move(cp));
 
+    // A braced list runs its initializers in order, so the typed run takes
+    // the handles only after the permissioned run is done with them.
     bench::Report reports[] = {
         bench_raw_append_raw_drain(raw),
         bench_permissioned_append_drain(producer, consumer, raw),
-        bench_typed_send_recv(producer, consumer, raw),
+        bench_typed_send_recv(std::move(producer), std::move(consumer), raw),
     };
 
     bench::emit_reports_text(reports);
@@ -144,7 +142,6 @@ int main(int argc, char** argv) {
 
     std::printf("\n=== verdict (TIER A — structural) ===\n");
     std::printf("  PermissionedMetaLog handles are pointer-sized.\n");
-    std::printf("  PSH<End, EmptyPermSet, Handle*> equals bare SessionHandle size.\n");
     std::printf("  Timed MetaLog deltas above are informational; the bodies copy a\n");
     std::printf("  168-byte TensorMeta and are sensitive to harness layout.\n");
 

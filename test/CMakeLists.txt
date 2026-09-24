@@ -1658,9 +1658,9 @@ crucible_test(test_permissioned_session_handle)
 # the framework's first wired-in end-to-end exercise.
 crucible_test(test_spsc_session)
 
-# MetaLogSession.h (GAPS-061) — typed-session facade over the production
-# MetaLog TensorMeta side-channel.  Covers permissioned producer/consumer
-# endpoints, typed-session round-trip, and immediate detach.
+# MetaLogSession.h — the typed-session facade over the production MetaLog
+# TensorMeta side channel.  Covers the permissioned endpoints, a session
+# round trip, and the handle that a session gives back at End.
 crucible_test(test_metalog_session)
 
 # ChainEdgeSession.h (GAPS-062) — one-shot semaphore signal/wait facade
@@ -12938,6 +12938,27 @@ crucible_neg_compile_test(neg_metalog_producer_drain
 
 crucible_neg_compile_test(neg_metalog_consumer_append
     "has no member named.*try_append")
+
+# HS14 for the two MetaLog session mints.  Each gate is one concept, and
+# each fixture fails one clause of it: the context, the handle passed as
+# an lvalue, a type that is not a permissioned log, and the handle of the
+# other role.
+crucible_neg_compile_multi_test(neg_metalog_session_producer_not_a_context
+    "no matching function for call to .mint_metalog_producer_session<"
+    "satisfaction of .IsExecCtx<Ctx>. .with Ctx = int."
+    "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
+crucible_neg_compile_multi_test(neg_metalog_session_producer_lvalue_handle
+    "no matching function for call to .mint_metalog_producer_session<"
+    "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_lvalue_fixture::Tag>::ProducerHandle&"
+    "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
+crucible_neg_compile_multi_test(neg_metalog_session_consumer_not_a_log
+    "no matching function for call to .mint_metalog_consumer_session<int>"
+    "satisfaction of .MetaLogSessionSurface<Log>. .with Log = int."
+    "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
+crucible_neg_compile_multi_test(neg_metalog_session_consumer_wrong_role
+    "no matching function for call to .mint_metalog_consumer_session<"
+    "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_wrong_role_fixture::Tag>::ProducerHandle"
+    "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
 
 # ── GAPS-062 — PermissionedChainEdge role-discrimination tests ─────
 crucible_neg_compile_test(neg_chainedge_signaler_wait
