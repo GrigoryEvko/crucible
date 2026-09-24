@@ -12,10 +12,10 @@
 #include <crucible/Cipher.h>
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/EndpointMint.h>
-#include <crucible/bridges/MachineSessionBridge.h>
+#include <crucible/bridges/_MachineSessionBridge.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/bridges/SessionPersistence.h>
-#include <crucible/bridges/VigilModeHandle.h>
+#include <crucible/bridges/_VigilModeHandle.h>
 #include <crucible/fixy/Handle.h>
 #include <crucible/permissions/PermissionInherit.h>
 #include <crucible/safety/EpochVersioned.h>

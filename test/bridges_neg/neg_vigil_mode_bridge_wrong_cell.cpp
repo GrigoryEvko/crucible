@@ -2,7 +2,7 @@
 //
 // FIXY-V-020 fixture for the CanMintVigilModeBridge concept gate.
 // mint_vigil_mode_bridge is now a function template gated on
-// `requires CanMintVigilModeBridge<Cell>` (VigilModeHandle.h §XXI).
+// `requires CanMintVigilModeBridge<Cell>` (_VigilModeHandle.h §XXI).
 // Calling with a non-ModeCell type (here a bare uint64_t standing in
 // for some other AtomicMachineCell-shaped storage) must trip the
 // concept's `std::same_as<std::remove_cvref_t<Cell>, ModeCell>`
@@ -11,7 +11,7 @@
 // Expected diagnostic: "constraints not satisfied" /
 // "CanMintVigilModeBridge" / "same_as" / "ModeCell" / "uint64_t".
 
-#include <crucible/bridges/VigilModeHandle.h>
+#include <crucible/bridges/_VigilModeHandle.h>
 
 namespace vm = crucible::vigil_mode;
 

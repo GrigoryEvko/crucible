@@ -8,7 +8,7 @@
 // closure to name it.  The hub keeps aliases, so the nested spellings still
 // resolve.
 
-#include <crucible/bridges/MachineSessionBridge.h>
+#include <crucible/bridges/_MachineSessionBridge.h>
 #include <crucible/sessions/Session.h>
 
 #include <atomic>

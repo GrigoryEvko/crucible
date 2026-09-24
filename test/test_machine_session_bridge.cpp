@@ -4,7 +4,7 @@
 // checks is that the two views stay in agreement, whichever of them a
 // change went through.
 
-#include <crucible/bridges/MachineSessionBridge.h>
+#include <crucible/bridges/_MachineSessionBridge.h>
 
 #include <cstdint>
 #include <cstdio>

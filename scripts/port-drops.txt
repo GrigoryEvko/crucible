@@ -417,3 +417,7 @@ crucible/safety/_SignatureTraits.h:signature_traits_smoke_test  — An inline sm
 # into the one abort of that buffer.
 crucible/safety/_HugePageBuffer.h:HugePageBuffer  → include/foundation/AlignedBuffer.h  — Folded into AlignedBuffer<T, huge_page_bytes>, which rounds to the same page, keeps the same abort, and starts each element's lifetime where the old buffer cast raw storage.
 crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → include/foundation/AlignedBuffer.h  — Folded into detail::aligned_allocation_failed_abort_, which prints the HugePageAllocationFailed diagnostic at huge-page alignment.
+
+# ── bridges: the machine bridge and the Vigil mode cell ─────────────────
+crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
+crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.

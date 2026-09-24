@@ -10,7 +10,7 @@
 // a nested type, and every consumer of the mode bridge would compile
 // the whole runtime hub and its dependency closure to name it.
 //
-// Old spelling: include/crucible/bridges/VigilModeHandle.h.
+// Old spelling: include/crucible/bridges/_VigilModeHandle.h.
 
 #include <fixy/session/MachineBridge.h>
 

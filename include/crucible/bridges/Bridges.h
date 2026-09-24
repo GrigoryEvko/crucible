@@ -5,6 +5,6 @@
 // consumers of SessionPersistence.h skip the heavy transitive.
 #include <crucible/Cipher.h>
 #include <crucible/bridges/CrashTransport.h>
-#include <crucible/bridges/MachineSessionBridge.h>
+#include <crucible/bridges/_MachineSessionBridge.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/bridges/SessionPersistence.h>

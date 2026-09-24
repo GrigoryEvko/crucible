@@ -9,7 +9,7 @@
 // Expected diagnostic:
 //   "no matching function for call to 'mint_atomic_session'"
 
-#include <crucible/bridges/MachineSessionBridge.h>
+#include <crucible/bridges/_MachineSessionBridge.h>
 #include <crucible/sessions/Session.h>
 
 namespace safety = ::crucible::safety;

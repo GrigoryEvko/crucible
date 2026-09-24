@@ -36,8 +36,8 @@
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
-#include <crucible/bridges/MachineSessionBridge.h>
-#include <crucible/bridges/VigilModeHandle.h>
+#include <crucible/bridges/_MachineSessionBridge.h>
+#include <crucible/bridges/_VigilModeHandle.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_FxAliases.h>
 #include <crucible/handles/PublishOnce.h>

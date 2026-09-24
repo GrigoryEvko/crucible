@@ -63,7 +63,6 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_atomic_session` | `include/crucible/bridges/MachineSessionBridge.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Bridge.h:57` | HS14: 4 |
 | `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Bridge.h:53` | HS14: 4 |
 | `mint_crash_watched_session(PermissionedSessionHandle<Proto,PS,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Bridge.h:31` | HS14: 3 |
 | `mint_crash_watched_session(SessionHandle<Proto,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Bridge.h:31` | HS14: 3 |
@@ -74,7 +73,6 @@ apply to the row.
 | `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Bridge.h:28` | HS14: 14 |
 | `mint_recording_session(CrashWatchedHandle<Proto,Resource,PeerTag,C,LoopCtx,PS>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Bridge.h:28` | HS14: 14 |
 | `mint_recording_session(SessionHandle<Proto,Resource,LoopCtx>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Bridge.h:28` | HS14: 14 |
-| `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 4 |
 
 ## include/crucible/canopy/
 
@@ -475,5 +473,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 206 | 101 | 96 | 9 | 0 | 84 | 41 |
+| old (`include/crucible/`) | 204 | 101 | 94 | 9 | 0 | 83 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 94 | 37 | 56 | 1 | 0 | · | 22 |
