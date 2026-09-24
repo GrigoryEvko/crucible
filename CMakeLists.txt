@@ -371,7 +371,7 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # the atoms, the gate and the OS leaves.  Neither names crucible:: —
 # scripts/check-layer-boundary.sh enforces the order foundation < fixy <
 # crucible, and scripts/check-frozen-tree.py freezes the old substrate under
-# include/crucible/ until Stage D deletes it.
+# include/crucible/ until the old tree is deleted.
 #
 # `foundation` is a static library for one reason: it owns the weak contract
 # handler and the CRUCIBLE_PRE / CRUCIBLE_POST failure arm for every binary
@@ -520,7 +520,7 @@ target_compile_options(crucible_dialect INTERFACE
   -fcontracts
 )
 
-# FIXY-V-094 — crucible_fp_strict INTERFACE library defines THE FLOOR
+# The crucible_fp_strict INTERFACE library defines THE FLOOR
 # for FP discipline across every consumer of `crucible`.  PUBLIC link
 # propagates the strict-IEEE-754 flag pack to every test / bench /
 # vessel / tool / example TU.  See cmake/FpStrict.cmake for the
@@ -536,7 +536,7 @@ add_executable(crucible_diag_lsp
 )
 target_link_libraries(crucible_diag_lsp PRIVATE crucible)
 
-# FIXY-FOUND-052 — Cross-build row_hash determinism witness.
+# The cross-build row_hash determinism witness.
 # Emits every row_hash_contribution<W>::value as labeled hex lines to
 # stdout; CI diffs against tools/row_hash_golden.txt to catch silent
 # TU-context-fragility regressions in display_string_of (the upstream
@@ -565,7 +565,7 @@ add_executable(dump_row_hashes_foundation
 )
 target_link_libraries(dump_row_hashes_foundation PRIVATE fixy)
 
-# #66 — the one-shot writer for the hardware-capability ledger.
+# The one-shot writer for the hardware-capability ledger.
 #
 # Fingerprints the host, judges whether the host is fit to measure
 # anything, measures whatever the ledger is missing or has let go stale,
@@ -588,7 +588,7 @@ set_target_properties(crucible_hwprobe PROPERTIES OUTPUT_NAME crucible-hwprobe)
 
 # ── eBPF observability substrate (crucible::perf::SenseHub etc.) ────
 #
-# Promoted from bench/ on 2026-05-03 (GAPS-004a).  When libbpf + a
+# Promoted from bench/ on 2026-05-03.  When libbpf + a
 # BPF-capable clang are available, we compile the kernel-side BPF
 # programs under include/crucible/perf/bpf/, embed each as a C array
 # via xxd, and bundle them with their userspace loaders into a
@@ -613,7 +613,7 @@ crucible_bpf_program(pmu_sample       include/crucible/perf/bpf/pmu_sample.bpf.c
 crucible_bpf_program(lock_contention  include/crucible/perf/bpf/lock_contention.bpf.c)
 crucible_bpf_program(syscall_latency  include/crucible/perf/bpf/syscall_latency.bpf.c)
 
-# ─── BTF-typed tracepoint variants (GAPS-004f, shipped 2026-05-04) ────
+# ─── BTF-typed tracepoint variants (shipped 2026-05-04) ───────────────
 #
 # tp_btf/sched_switch + tp_btf/sys_enter + tp_btf/sys_exit programs.
 # Wire-equivalent to their legacy `tracepoint/...` siblings: same
@@ -625,11 +625,11 @@ crucible_bpf_program(syscall_latency  include/crucible/perf/bpf/syscall_latency.
 #     per-event cost (skip tracepoint format-string parse).  Requires
 #     CONFIG_DEBUG_INFO_BTF=y AND kernel ≥ 5.5.
 #
-#   • Audit-1 cost-discipline fixes carried forward at GAPS-004f-AUDIT
+#   • The cost-discipline fixes of the first audit carry forward
 #     (2026-05-04): BPF_MAP_TYPE_LRU_HASH (not HASH) for in-flight
 #     maps, single bpf_ktime_get_ns() per event, compiler barrier
 #     before the ts_ns completion-marker store.  Same as
-#     SchedSwitch GAPS-004b-AUDIT and SyscallLatency GAPS-004e.
+#     SchedSwitch and SyscallLatency.
 #
 # Userspace facades: include/crucible/perf/SchedTpBtf.h and
 # SyscallTpBtf.h (mirror SchedSwitch.h and SyscallLatency.h surfaces).
@@ -861,12 +861,12 @@ else()
   target_compile_definitions(crucible PUBLIC CRUCIBLE_FIXY_STRICT=0)
 endif()
 
-# ── FIXY-V-072: CRUCIBLE_FIXY_ONLY band-3 path registry ────────────
+# ── CRUCIBLE_FIXY_ONLY band-3 path registry ─────────────────────────
 #
 # Authoritative list of directories where fixy:: discipline is
 # enforced: the safety::fn::Fn< reach-past-the-umbrella check in
-# scripts/check-fixy-discipline.sh scans EXACTLY these paths.  V-070
-# shipped the shell-side mirror; V-072 promotes the CMake side to
+# scripts/check-fixy-discipline.sh scans EXACTLY these paths.  The
+# shell script carries a mirror of the list, and this CMake list is the
 # single source of truth.
 #
 # Mechanism:
@@ -880,8 +880,8 @@ endif()
 #      fall back to the script's baked-in list, which is drift-checked
 #      against the CMake-side list at configure time.
 #   4. A `set_property(... PROPERTIES CRUCIBLE_FIXY_ONLY ON)` discipline
-#      MAY be applied to per-source-file or per-target later (FIXY-V-073
-#      grandfather-list ship); the global property is the cross-cutting
+#      MAY be applied to per-source-file or per-target later, when the
+#      grandfather list ships; the global property is the cross-cutting
 #      authority that the CI guard consumes.
 #
 # Discipline note: `set_property(GLOBAL APPEND ...)` is read ONCE at
@@ -894,7 +894,7 @@ define_property(GLOBAL PROPERTY CRUCIBLE_FIXY_ONLY_PATHS
     BRIEF_DOCS "Repo-relative paths where fixy:: umbrella discipline is enforced."
     FULL_DOCS  "Each entry is a repo-relative directory; check-fixy-discipline.sh "
                "scans these paths for raw safety::fn::Fn< reach-past-the-umbrella "
-               "references.  See FIXY-V-070 + FIXY-V-072.")
+               "references.")
 
 function(crucible_register_fixy_only_directory rel_path)
     set_property(GLOBAL APPEND PROPERTY CRUCIBLE_FIXY_ONLY_PATHS "${rel_path}")
@@ -928,7 +928,7 @@ crucible_register_fixy_only_directory(src/warden)
 get_property(_fixy_only_paths GLOBAL PROPERTY CRUCIBLE_FIXY_ONLY_PATHS)
 string(REPLACE ";" "\n" _fixy_only_paths_lines "${_fixy_only_paths}")
 file(WRITE "${CMAKE_BINARY_DIR}/fixy-only-paths.txt"
-    "# Generated by CMakeLists.txt FIXY-V-072 — DO NOT EDIT.\n"
+    "# Generated by CMakeLists.txt from CRUCIBLE_FIXY_ONLY_PATHS — DO NOT EDIT.\n"
     "# Source of truth: GLOBAL property CRUCIBLE_FIXY_ONLY_PATHS.\n"
     "# Each line is a repo-relative directory under fixy:: discipline.\n"
     "${_fixy_only_paths_lines}\n")
@@ -964,7 +964,7 @@ if(EXISTS "${_fixy_script_path}")
         list(SORT _script_sorted)
         if(NOT "${_cmake_sorted}" STREQUAL "${_script_sorted}")
             message(WARNING
-                "FIXY-V-072: CMake CRUCIBLE_FIXY_ONLY_PATHS and "
+                "CMake CRUCIBLE_FIXY_ONLY_PATHS and "
                 "scripts/check-fixy-discipline.sh CRUCIBLE_FIXY_ONLY_PATHS=() "
                 "have diverged.  Mirror them.\n"
                 "  CMake side  : ${_cmake_sorted}\n"
@@ -984,9 +984,9 @@ unset(_line)
 unset(_cmake_sorted)
 unset(_script_sorted)
 
-# ── FIXY-V-210: CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS opt-in registry ──
+# ── CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS opt-in registry ──────────────
 #
-# Companion to FIXY-V-072 (fixy:: umbrella discipline) for the
+# Companion to the CRUCIBLE_FIXY_ONLY registry above for the
 # process-spawn surface: any directory registered here is exempt
 # from scripts/check-fixy-spawn-discipline.sh's ban on raw fork() /
 # vfork() / execve() / posix_spawn() / system() / popen() / clone() /
@@ -996,7 +996,7 @@ unset(_script_sorted)
 # rows do not survive a fork()/exec() boundary, so the substrate has
 # no way to type-check the child's behavior.
 #
-# Mechanism mirrors FIXY-V-072 verbatim: GLOBAL property +
+# The mechanism is the one of that registry: GLOBAL property +
 # materialized-to-disk + drift-checked bash mirror.  Initial set is
 # empty — zero production sites need OS process spawn today (verified
 # via scripts/check-fixy-spawn-discipline.sh against the full tree).
@@ -1009,7 +1009,7 @@ define_property(GLOBAL PROPERTY CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS
                "under these paths from the fork/exec/posix_spawn/system/"
                "popen ban.  Per-directory opt-in is preferred because "
                "process-spawn is usually a cluster of related calls "
-               "(spawn + setup + wait).  See FIXY-V-210.")
+               "(spawn + setup + wait).")
 
 function(crucible_register_spawn_process_path rel_path)
     set_property(GLOBAL APPEND PROPERTY
@@ -1017,7 +1017,7 @@ function(crucible_register_spawn_process_path rel_path)
 endfunction()
 
 # (Empty — register opt-ins here as the need arises.  No production
-# site needs OS process spawn at FIXY-V-210 ship time.)
+# site needs OS process spawn.)
 
 get_property(_spawn_allow_paths GLOBAL PROPERTY
     CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS)
@@ -1027,7 +1027,7 @@ else()
     set(_spawn_allow_paths_lines "")
 endif()
 file(WRITE "${CMAKE_BINARY_DIR}/spawn-allow-process-paths.txt"
-    "# Generated by CMakeLists.txt FIXY-V-210 — DO NOT EDIT.\n"
+    "# Generated by CMakeLists.txt from CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS — DO NOT EDIT.\n"
     "# Source of truth: GLOBAL property CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS.\n"
     "# Each line is a repo-relative directory exempt from spawn ban.\n"
     "${_spawn_allow_paths_lines}\n")
@@ -1058,7 +1058,7 @@ if(EXISTS "${_spawn_script_path}")
         list(SORT _script_sorted)
         if(NOT "${_cmake_sorted}" STREQUAL "${_script_sorted}")
             message(WARNING
-                "FIXY-V-210: CMake CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS and "
+                "CMake CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS and "
                 "scripts/check-fixy-spawn-discipline.sh "
                 "CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS=() have diverged.\n"
                 "  CMake side  : ${_cmake_sorted}\n"

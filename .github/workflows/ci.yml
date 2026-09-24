@@ -290,7 +290,7 @@ jobs:
           bash scripts/check-ci-guard-labels.sh
 
   # ---------------------------------------------------------------------------
-  # The sibling-substrate guards (Stage A1). Same free runner, no compiler.
+  # The sibling-substrate guards. Same free runner, no compiler.
   # The frozen-tree scan preprocesses each unified frozen header on the flags
   # of a compile database, so it runs in the build legs through ctest.  Only
   # its self-test runs here, on the system c++ of the runner.

@@ -44,8 +44,18 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # The trees that obey the rule.  The old tree under include/crucible is
-# frozen, so the guard does not scan it.
+# frozen, so the guard does not scan it.  test/fixy and test/foundation
+# include their CMakeLists.txt.
 SCAN_DIRS=(include/foundation include/fixy test/foundation test/fixy scripts vessel)
+
+# The build files outside those trees that obey the rule.
+#
+# test/CMakeLists.txt is not here.  About a thousand of its comment lines
+# carry a breadcrumb, and most of them sit on the registrations of the old
+# tests, which leave with the old tree.  A sweep now would conflict with
+# each agent that registers a test there, and it would mostly edit lines
+# that go away.  The file joins this list after the old tests are deleted.
+SCAN_FILES=(CMakeLists.txt .github/workflows/ci.yml)
 
 # This file plants breadcrumbs in its self-test, so the scan skips it.
 SELF_PATH='scripts/check-no-coordination-refs.sh'
@@ -88,6 +98,7 @@ Usage:
 
 Scope:
   include/foundation include/fixy test/foundation test/fixy scripts vessel
+  CMakeLists.txt .github/workflows/ci.yml
 USAGE
 }
 
@@ -100,6 +111,9 @@ scan() {
     local d
     for d in "${SCAN_DIRS[@]}"; do
         [[ -d "$scan_root/$d" ]] && dirs+=("$d")
+    done
+    for d in "${SCAN_FILES[@]}"; do
+        [[ -f "$scan_root/$d" ]] && dirs+=("$d")
     done
     hits=0
     [[ ${#dirs[@]} -eq 0 ]] && return 0
@@ -173,6 +187,13 @@ SHELL
     # report this line.
     printf '// Folded at #147.\n' >"$tmp_root/include/crucible/PlantedOld.h"
 
+    # The build files.  The root CMakeLists.txt and the CI workflow are in
+    # scope, and test/CMakeLists.txt is out of scope until the old tests go.
+    mkdir -p "$tmp_root/.github/workflows" "$tmp_root/test"
+    printf '# Tracked as FIXY-V-264.\n' >"$tmp_root/CMakeLists.txt"
+    printf '  # The sibling guards (Stage A1).\n' >"$tmp_root/.github/workflows/ci.yml"
+    printf '# Filed as #1519.\n' >"$tmp_root/test/CMakeLists.txt"
+
     local rc=0
     CRUCIBLE_COORD_REFS_TEST_ROOT="$tmp_root" bash "${BASH_SOURCE[0]}" >"$out" 2>/dev/null || rc=$?
     if (( rc != 1 )); then
@@ -195,15 +216,21 @@ SHELL
         cat "$out" >&2
         return 2
     fi
-    if rg -q -F -e 'PlantedClean.h' -e 'planted_clean.sh' -e 'PlantedOld.h' "$out"; then
+    if rg -q -F -e 'PlantedClean.h' -e 'planted_clean.sh' -e 'PlantedOld.h' "$out" \
+       || rg -q '^test/CMakeLists\.txt:' "$out"; then
         printf 'check-no-coordination-refs --self-test: FAIL — a clean look-alike or an out-of-scope file was reported.\n' >&2
         cat "$out" >&2
         return 2
     fi
-    printf 'check-no-coordination-refs --self-test: all %d planted references reported, as expected.\n' "$planted_count"
+    if ! rg -q '^CMakeLists\.txt:1:' "$out" || ! rg -q '^\.github/workflows/ci\.yml:1:' "$out"; then
+        printf 'check-no-coordination-refs --self-test: FAIL — a breadcrumb in the root CMakeLists.txt or in the CI workflow was not reported.\n' >&2
+        cat "$out" >&2
+        return 2
+    fi
+    printf 'check-no-coordination-refs --self-test: all %d planted references and both build-file references reported, as expected.\n' "$planted_count"
 
     # The clean arm.  Without the breadcrumbs the same tree scans clean.
-    rm -f "$tmp_root/include/fixy/PlantedBreadcrumbs.h"
+    rm -f "$tmp_root/include/fixy/PlantedBreadcrumbs.h" "$tmp_root/CMakeLists.txt" "$tmp_root/.github/workflows/ci.yml"
     rc=0
     CRUCIBLE_COORD_REFS_TEST_ROOT="$tmp_root" bash "${BASH_SOURCE[0]}" >"$out" 2>/dev/null || rc=$?
     if (( rc != 0 )); then
@@ -254,5 +281,5 @@ HINT
     exit 1
 fi
 
-printf 'check-no-coordination-refs: clean — no task, stage or tracker references in %s.\n' "${SCAN_DIRS[*]}" >&2
+printf 'check-no-coordination-refs: clean — no task, stage or tracker references in %s.\n' "${SCAN_DIRS[*]} ${SCAN_FILES[*]}" >&2
 exit 0
