@@ -28,6 +28,13 @@ FAILURE
     so the next run tries it again.  A guard refuses its run on a failure,
     because a unit that it cannot read can hold a use.
 
+STAGED LAYER ROOTS
+    A directory on the include path whose entries are all links into the
+    include directory of the repository is a staged layer root of
+    test/layer.  The pass replaces it with the include directory, because a
+    layer fixture exists to fail under its root, and what it holds is still
+    worth reading.  A directory that holds anything else is left alone.
+
 Complexity: a cold run is linear in the total size of the preprocessed
 output.  A warm run reads one manifest for each unit and one hash for each
 file under the root.
@@ -102,6 +109,62 @@ def preprocess_argv(argv: list[str]) -> list[str]:
             out.append(flag)
             index += 1
     return out + ["-E"]
+
+
+def is_staged_root(directory: Path, include: Path) -> bool:
+    """Return True for a staged layer root: a directory whose entries are all links into the include directory.
+
+    test/layer stages one include root per layer, which links only to the
+    include directories of the layers below it.  A negative fixture of that
+    directory includes a higher layer on purpose and fails under its root.
+
+    Args:
+        directory: A directory on an include path
+        include: The include directory of the repository
+
+    Returns:
+        Whether each entry is a symbolic link to the directory of the same
+        name in the include directory, and there is at least one
+    """
+    if not directory.is_dir():
+        return False
+    entries = list(directory.iterdir())
+    return bool(entries) and all(entry.is_symlink() and entry.resolve() == (include / entry.name).resolve()
+                                 for entry in entries)
+
+
+def widen_staged_roots(argv: list[str], directory: str, root: Path) -> list[str]:
+    """Replace each staged layer root on the include path with the include directory of the repository.
+
+    The preprocessed pass reads what a unit holds.  A layer fixture exists to
+    fail under its staged root, and a route in it is still worth reading, so
+    the pass gives it the include path that every other unit gets.
+
+    Args:
+        argv: The compile command of one database entry
+        directory: The directory the command runs in
+        root: The repository root
+
+    Returns:
+        The command with each staged root replaced
+    """
+    include = root / "include"
+    out: list[str] = []
+    index = 0
+    while index < len(argv):
+        flag = argv[index]
+        if flag == "-I" and index + 1 < len(argv):
+            value, step = argv[index + 1], 2
+        elif flag.startswith("-I") and len(flag) > 2:
+            value, step = flag[2:], 1
+        else:
+            out.append(flag)
+            index += 1
+            continue
+        target = Path(directory) / value
+        out.append("-I" + (str(include) if is_staged_root(target, include) else value))
+        index += step
+    return out
 
 
 def compiler_identity(argv: list[str], directory: str) -> list:
@@ -270,7 +333,7 @@ class Store:
         """
         argv = entry["arguments"] if "arguments" in entry else shlex.split(entry["command"])
         directory = entry["directory"]
-        run_argv = preprocess_argv(argv)
+        run_argv = preprocess_argv(widen_staged_roots(argv, directory, self.root))
         identity = json.dumps([STORE_VERSION, run_argv, directory, compiler_identity(argv, directory)])
         manifest = self.directory / "units" / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
         if (chunks := self._cached(manifest)) is not None:
@@ -420,6 +483,26 @@ def self_test() -> int:
         expect("a unit the preprocessor rejects gives a failure", broken[1].failure is not None)
         again = list(Store(database, root).units())
         expect("a rejected unit is tried again", again[1].failure is not None and not again[1].from_cache)
+        for layer in ("lower", "upper"):
+            (root / "include" / layer).mkdir(parents=True)
+            (root / "include" / layer / f"{layer}.h").write_text(f"#pragma once\nint {layer}_name;\n")
+        stage = root / "build" / "stage"
+        stage.mkdir()
+        (stage / "lower").symlink_to(root / "include" / "lower")
+        real = root / "build" / "real"
+        (real / "lower").mkdir(parents=True)
+        (real / "lower" / "lower.h").write_text("#pragma once\nint lower_copy;\n")
+        (root / "fixture.cpp").write_text("#include <lower/lower.h>\n#include <upper/upper.h>\n")
+        database.write_text(json.dumps([
+            {"directory": str(root), "file": "fixture.cpp",
+             "command": f"{compiler} -std=c++20 -Ibuild/stage -c fixture.cpp -o fixture.o"},
+            {"directory": str(root), "file": "fixture.cpp",
+             "command": f"{compiler} -std=c++20 -I build/real -c fixture.cpp -o fixture.o"}]))
+        staged, plain = list(Store(database, root).units())
+        expect("a staged layer root reads with the include directory, so a layer fixture is read",
+               staged.failure is None and any(c.path == "include/upper/upper.h" for c in staged.chunks))
+        expect("a directory that holds a file is not a staged root, and keeps its include path",
+               plain.failure is not None)
     if failures:
         print(f"preprocessed --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

@@ -90,6 +90,13 @@ of the file's chunk list, so a header that many units expand the same way
 is read one time.  For each key the count is the larger count of the two
 passes.  A preprocessor failure refuses the run.
 
+A negative fixture of test/layer compiles against a staged layer root, an
+include directory that links only to the layers below it, and one of them
+includes a higher layer so that it fails there.  The store reads such a
+unit with the include directory of the repository instead of the staged
+root, so the fixture is read like any other unit and a route in it counts.
+The directory is not skipped.
+
 Out of scope, stated rather than implied
 ----------------------------------------
 - A negative-compile fixture, a file under a test directory named neg or
@@ -119,8 +126,9 @@ Exit codes
   1  a site with no entry, or more sites than its entry admits
   2  a stale entry, a preprocessor failure, a header the parser cannot
      read, a bad invocation, or a failed self-test
-  3  the pinned tree-sitter kit is not installed, which ctest reports as a
-     skip
+  3  the pinned tree-sitter kit is not installed, or the proof-name binary
+     or the compile database that the arguments name is not built, which
+     ctest reports as a skip
 
 Usage
   check-proof-routes.py [--compile-db PATH] [--proof-names-binary PATH]
@@ -828,6 +836,28 @@ def self_test() -> int:
                 failures.append("the preprocessed pass wrote no cache entry")
             if not any((root / "preprocessed-cache" / "units").glob("*.json")):
                 failures.append("the preprocessed pass did not use the shared store")
+            # A layer fixture compiles against a staged root that links only to
+            # a lower layer, and it includes a higher one.  The pass reads it
+            # with the include directory, so the union that its macro forms is
+            # found and no preprocessor failure refuses the run.
+            (root / "include" / "lower").mkdir(parents=True, exist_ok=True)
+            (root / "include" / "upper").mkdir()
+            (root / "include" / "upper" / "Up.h").write_text("#pragma once\n#define GLUE(a, b) a##b\n")
+            (root / "layer-stage").mkdir()
+            (root / "layer-stage" / "lower").symlink_to(root / "include" / "lower")
+            (root / "fixture.cpp").write_text("#include <upper/Up.h>\nGLUE(uni, on) Staged { int x; };\n")
+            database.write_text(json.dumps([{"directory": str(root), "file": "fixture.cpp",
+                                             "command": f"{compiler} -std=c++20 -Ilayer-stage -c fixture.cpp "
+                                                        f"-o fixture.o"}]))
+            report = subprocess.run([sys.executable, __file__, "--scan-root", str(root), "--compile-db",
+                                     str(database), "--allowlist", str(allow)], capture_output=True, text=True)
+            if "fixture.cpp:union:Staged" not in report.stderr or "PROOF-ROUTE preprocessor failure" in report.stderr:
+                failures.append(f"a layer fixture under a staged root was not read with the include directory:\n"
+                                f"{report.stderr}")
+        missing = subprocess.run([sys.executable, __file__, "--scan-root", str(root), "--proof-names-binary",
+                                  str(root / "not-built"), "--allowlist", str(allow)], capture_output=True, text=True)
+        if missing.returncode != 3 or "is not built" not in missing.stderr:
+            failures.append(f"a proof-name binary that is not built did not skip with exit 3:\n{missing.stderr}")
     for failure in failures:
         print(f"check-proof-routes: SELF-TEST FAILED: {failure}", file=sys.stderr)
     if failures:
@@ -870,6 +900,11 @@ def run(argv: list[str]) -> int:
         else:
             print(__doc__, file=sys.stderr)
             return 2
+    for named, what in ((binary, "the proof-name binary"), (compile_db, "the compile database")):
+        if named is not None and not Path(named).is_file():
+            print(f"check-proof-routes: {what} {named} is not built, so the guard cannot run.  Build the tree "
+                  f"first.", file=sys.stderr)
+            return 3
     return scan(root, compile_db, binary, allowlist or root / "scripts" / "proof-routes-allowlist.txt", mode)
 
 
