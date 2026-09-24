@@ -1,11 +1,14 @@
 // The ctgrind check of the old-tree constant-time surface, which the
 // production session wiring still calls: every crucible::safety::ct
 // primitive at every unsigned width, the byte comparison at several
-// lengths, and the constant-time session carrier.  The checks are the
-// ones the new-tree test runs, through the shared header.
+// lengths, the constant-time session carrier, and the admission of the
+// mTLS private key, the one key that the production tree holds.  The
+// primitive checks are the ones the new-tree test runs, through the
+// shared header.
 
 #include "checks.h"
 
+#include <crucible/cntp/MtlsTransport.h>
 #include <crucible/safety/_ConstantTime.h>
 #include <crucible/sessions/SessionCT.h>
 
@@ -75,6 +78,25 @@ void check_session_payload(Tally& tally) noexcept {
     }
 }
 
+// The mTLS private key is the one key the production tree holds.  Its
+// admission copies the secret bytes into the key buffer, the key moves
+// into the Secret, and the destructor zeroizes each copy.  The length of
+// the key is public, so only the bytes are secret.
+void check_mtls_private_key(Tally& tally) noexcept {
+    using ::crucible::cntp::MtlsKeyAlgorithm;
+    std::array<std::byte, 64> pem{};
+    for (std::size_t i = 0; i < pem.size(); ++i) pem[i] = static_cast<std::byte>(opaque(static_cast<unsigned>(i * 13u + 5u)));
+    ct_taint::make_secret_bytes(pem.data(), pem.size());
+    {
+        auto admitted =
+            ::crucible::cntp::admit_private_key_pem<MtlsKeyAlgorithm::Ed25519>(std::span<const std::byte>{pem});
+        tally.expect(admitted.has_value(), "mTLS private key admission");
+        auto key = std::move(admitted).value();
+        auto moved = std::move(key);
+        tally.expect(moved.size() == pem.size(), "mTLS private key length");
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -82,5 +104,6 @@ int main(int argc, char** argv) {
         ct_taint::check_scalars<SafetyCt>(tally);
         ct_taint::check_eq<SafetyCt>(tally);
         check_session_payload(tally);
+        check_mtls_private_key(tally);
     });
 }
