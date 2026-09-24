@@ -115,8 +115,23 @@ concept CtxFitsAsyncPipeline =
     AsyncPipelineSlotHandle<Handle> && (Bytes == static_cast<std::size_t>(Handle::slot_bytes))
     && mem_scope_is_accel(Handle::scope);
 
+// A session over the slot handle also needs a context that admits its
+// protocol, with the permission set the mint starts from: the producer holds
+// the slot permission, and the consumer holds nothing until the first fill.
+
+template <std::size_t Bytes, typename Handle, typename Ctx>
+concept CtxFitsAsyncPipelineProducer =
+    CtxFitsAsyncPipeline<Bytes, Handle>
+    && CtxFitsPermissionedProtocol<ProducerProto<typename Handle::slot_tag, Bytes>, Ctx,
+                                   PermSet<typename Handle::slot_tag>>;
+
+template <std::size_t Bytes, typename Handle, typename Ctx>
+concept CtxFitsAsyncPipelineConsumer =
+    CtxFitsAsyncPipeline<Bytes, Handle>
+    && CtxFitsPermissionedProtocol<ConsumerProto<typename Handle::slot_tag, Bytes>, Ctx, EmptyPermSet>;
+
 template <std::size_t Bytes, typename Handle, ::crucible::effects::IsExecCtx Ctx>
-    requires CtxFitsAsyncPipeline<Bytes, Handle>
+    requires CtxFitsAsyncPipelineProducer<Bytes, Handle, Ctx>
 [[nodiscard]] constexpr auto
 mint_async_pipeline_producer_session(Ctx const& ctx, Handle& handle,
                                      ::crucible::safety::Permission<typename Handle::slot_tag>&& slot_perm) noexcept {
@@ -125,7 +140,7 @@ mint_async_pipeline_producer_session(Ctx const& ctx, Handle& handle,
 }
 
 template <std::size_t Bytes, typename Handle, ::crucible::effects::IsExecCtx Ctx>
-    requires CtxFitsAsyncPipeline<Bytes, Handle>
+    requires CtxFitsAsyncPipelineConsumer<Bytes, Handle, Ctx>
 [[nodiscard]] constexpr auto mint_async_pipeline_consumer_session(Ctx const& ctx, Handle& handle) noexcept {
     using SlotTag = typename Handle::slot_tag;
     return mint_permissioned_session<ConsumerProto<SlotTag, Bytes>>(ctx, &handle);

@@ -102,8 +102,11 @@ template <std::size_t Bytes>
     return ::crucible::safety::mint_refined<equals_slot_size<Bytes>, std::uint64_t>(planned);
 }
 
+// The pair holds both endpoints under one context, so the context must admit
+// each endpoint's protocol.
 template <std::size_t Bytes, typename Handle, typename Ctx>
-concept CtxFitsAsyncPipelineMint = aps::CtxFitsAsyncPipeline<Bytes, Handle> && ::crucible::effects::IsExecCtx<Ctx>
+concept CtxFitsAsyncPipelineMint = aps::CtxFitsAsyncPipelineProducer<Bytes, Handle, Ctx>
+                                && aps::CtxFitsAsyncPipelineConsumer<Bytes, Handle, Ctx>
                                 && (static_cast<std::size_t>(Handle::stages) <= kMaxPipelineStages);
 
 template <std::size_t Bytes, typename Handle, typename Ctx>

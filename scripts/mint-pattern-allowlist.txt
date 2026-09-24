@@ -106,14 +106,14 @@
 # deleted the entry.  §XXI admits no noexcept exemption, so this category
 # is expected to stay empty.
 #
-# The 26 `ctxfit-ok` entries ARE the open-defect list now.  Each one is a
-# ctx-bound mint that gates no context, and each needs a real conjunct
-# rather than an entry.  They sit in their own section below with the
-# remediation stated once for the set.  All 26 are in the frozen old
-# substrate; the only new-tree entry, `mint_pipeline`, was repaired
-# rather than excused.
+# No `ctxfit-ok` entry remains.  The 26 endpoint session mints that
+# stood here each state the gate of mint_permissioned_session in their
+# own clause, so a caller can probe it and a refusal names the mint.
+# test_session_endpoint_ctx_gate asks each of them whether a context
+# fits.  A new entry in this category is a defect, not an exemption.
 #
-# An earlier revision of this file attributed that entry, and a further
+# An earlier revision of this file attributed the `mint_pipeline` entry,
+# and a further
 # eleven entries under canopy/ and cntp/, to those trees being
 # "edit-banned".  No such ban is declared in CLAUDE.md, in AGENTS.md, in
 # any guard script, or in any commit message — this file was the only
@@ -246,63 +246,6 @@ include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_producer_endpoint:const
 include/crucible/sessions/SnapshotSession.h:mint_snapshot_reader:constexpr-ok
 include/crucible/sessions/SwmrSession.h:mint_swmr_reader:constexpr-ok
 include/crucible/sessions/FederationProtocol.h:mint_federation_pool:requires-ok
-
-# ── ctxfit: ctx-bound mints that gate no context ──────────────────────
-#
-# Every entry below is an OPEN GAP, not a structural exemption, and each
-# one needs the same repair: a `CtxFits...<..., Ctx>` conjunct plus the two
-# HS14 negative-compile fixtures proving it fires.  They are listed so the
-# gap has a name and a count.
-#
-# WHAT THE OLD LEDGER SAID INSTEAD.  These sites used to carry a
-# `requires-ok` entry, which reads as "the gate is a constrained parameter
-# the scanner cannot see".  For the surface parameter that was true.  For
-# the CONTEXT it was not: a mint constrained only on its channel surface
-# takes `HotFgCtx`, `ColdInitCtx` and every other context equally, and
-# §XXI's whole claim for a ctx-bound mint is that the requires clause
-# verifies a CROSS-TIER FIT.  The entry named the wrong axis, so fixing the
-# scanner's blind spot would have retired the entry and left the gap with
-# no record anywhere.  That is why this category exists.
-#
-# Every entry below sits in the frozen old substrate; the port carries
-# the gate.
-#
-# There WAS one new-tree entry, `include/fixy/concurrent/Pipeline.h`'s
-# `mint_pipeline`, and it was repaired rather than excused.  It enforced
-# the fit with an in-body `static_assert` producing `EffectRowMismatch`,
-# which is a HARD error rather than a constraint, so
-# `requires { mint_pipeline(bad_ctx, ...) }` answered true and no caller
-# could probe it — the same defect the view mints carried until 0a14fa5c.
-# The repair was one line: its clause already had a correct concept,
-# `CtxFitsPipeline`, sitting unused in the same header.  The body
-# assertion stayed, because deleting the concept's row conjunct was
-# measured to make it fire on the same call.
-include/crucible/fixy/Substr.h:mint_mpsc_consumer_session:ctxfit-ok
-include/crucible/fixy/Substr.h:mint_mpsc_producer_session:ctxfit-ok
-include/crucible/sessions/AsyncPipelineSession.h:mint_async_pipeline_consumer_session:ctxfit-ok
-include/crucible/sessions/AsyncPipelineSession.h:mint_async_pipeline_producer_session:ctxfit-ok
-include/crucible/sessions/CalendarGridSession.h:mint_consumer_session:ctxfit-ok
-include/crucible/sessions/CalendarGridSession.h:mint_producer_session:ctxfit-ok
-include/crucible/sessions/ChainEdgeSession.h:mint_chainedge_signaler_session:ctxfit-ok
-include/crucible/sessions/ChainEdgeSession.h:mint_chainedge_waiter_session:ctxfit-ok
-include/crucible/sessions/ChaseLevDequeSession.h:mint_owner_session:ctxfit-ok
-include/crucible/sessions/ChaseLevDequeSession.h:mint_thief_session:ctxfit-ok
-include/crucible/sessions/MetaLogSession.h:mint_metalog_consumer_session:ctxfit-ok
-include/crucible/sessions/MetaLogSession.h:mint_metalog_producer_session:ctxfit-ok
-include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_consumer_session:ctxfit-ok
-include/crucible/sessions/MpmcChannelSession.h:mint_mpmc_producer_session:ctxfit-ok
-include/crucible/sessions/ShardedCalendarGridSession.h:mint_consumer_session:ctxfit-ok
-include/crucible/sessions/ShardedCalendarGridSession.h:mint_producer_session:ctxfit-ok
-include/crucible/sessions/ShardedGridSession.h:mint_consumer_session:ctxfit-ok
-include/crucible/sessions/ShardedGridSession.h:mint_producer_session:ctxfit-ok
-include/crucible/sessions/SnapshotSession.h:mint_snapshot_reader_session:ctxfit-ok
-include/crucible/sessions/SnapshotSession.h:mint_snapshot_writer_session:ctxfit-ok
-include/crucible/sessions/SpscSession.h:mint_consumer_session:ctxfit-ok
-include/crucible/sessions/SpscSession.h:mint_producer_session:ctxfit-ok
-include/crucible/sessions/SwmrSession.h:mint_reader_runtime_session:ctxfit-ok
-include/crucible/sessions/SwmrSession.h:mint_reader_session:ctxfit-ok
-include/crucible/sessions/SwmrSession.h:mint_writer_runtime_session:ctxfit-ok
-include/crucible/sessions/SwmrSession.h:mint_writer_session:ctxfit-ok
 
 # ── topology/ + warden/ allocating mints ─────────────────────────────
 include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok

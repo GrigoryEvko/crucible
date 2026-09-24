@@ -54,13 +54,18 @@ mint_metalog_consumer(Log& log, ::crucible::safety::Permission<typename Log::con
     return log.consumer(std::move(perm));
 }
 
+// Each clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.
+
 template <MetaLogSessionSurface Log, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ProducerProto, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_metalog_producer_session(Ctx const& ctx,
                                                            typename Log::ProducerHandle& handle) noexcept {
     return mint_permissioned_session<ProducerProto>(ctx, &handle);
 }
 
 template <MetaLogSessionSurface Log, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ConsumerProto, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_metalog_consumer_session(Ctx const& ctx,
                                                            typename Log::ConsumerHandle& handle) noexcept {
     return mint_permissioned_session<ConsumerProto>(ctx, &handle);

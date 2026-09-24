@@ -171,25 +171,33 @@ template <SwmrSessionSurface Swmr>
     return session.reader();
 }
 
+// Each clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.
+
 template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<WriterProto<typename Swmr::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_writer_session(Ctx const& ctx, typename Swmr::WriterHandle& handle) noexcept {
     using T = typename Swmr::value_type;
     return mint_permissioned_session<WriterProto<T>>(ctx, &handle);
 }
 
 template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ReaderProto<typename Swmr::value_type, typename Swmr::reader_tag>, Ctx,
+                                         EmptyPermSet>
 [[nodiscard]] constexpr auto mint_reader_session(Ctx const& ctx, typename Swmr::ReaderHandle& handle) noexcept {
     using T = typename Swmr::value_type;
     return mint_permissioned_session<ReaderProto<T, typename Swmr::reader_tag>>(ctx, &handle);
 }
 
 template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<WriterRuntimeProto<typename Swmr::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_writer_runtime_session(Ctx const& ctx, typename Swmr::WriterHandle& handle) noexcept {
     using T = typename Swmr::value_type;
     return mint_permissioned_session<WriterRuntimeProto<T>>(ctx, &handle);
 }
 
 template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ReaderRuntimeProto<typename Swmr::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_reader_runtime_session(Ctx const& ctx, typename Swmr::ReaderHandle& handle) noexcept {
     using T = typename Swmr::value_type;
     return mint_permissioned_session<ReaderRuntimeProto<T>>(ctx, &handle);

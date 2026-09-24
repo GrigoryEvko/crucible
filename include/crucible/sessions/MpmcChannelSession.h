@@ -62,7 +62,11 @@ template <MpmcChannelSessionSurface Channel>
 // The session stores the address of the handle rather than the handle. The
 // handle outlives the session it is bound to.
 
+// Each clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.
+
 template <MpmcChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ProducerProto<typename Channel::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_mpmc_producer_session(Ctx const& ctx,
                                                         typename Channel::ProducerHandle& handle) noexcept {
     using T = typename Channel::value_type;
@@ -70,6 +74,7 @@ template <MpmcChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx>
 }
 
 template <MpmcChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ConsumerProto<typename Channel::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_mpmc_consumer_session(Ctx const& ctx,
                                                         typename Channel::ConsumerHandle& handle) noexcept {
     using T = typename Channel::value_type;

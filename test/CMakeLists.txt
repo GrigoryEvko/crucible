@@ -13252,6 +13252,67 @@ crucible_neg_compile_session_test(neg_mpmc_session_handle_copy
     "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "ProducerHandle owns a producer-pool refcount share")
 
+# Each endpoint session mint states its context gate in its clause: the
+# context must admit the protocol with no permission in hand.  The test asks
+# every mint whether a context fits.  Each fixture proves the mint itself
+# refuses a foreground context for a payload that carries the background row,
+# one on the send side and one on the receive side of each channel family.
+crucible_test(test_session_endpoint_ctx_gate)
+crucible_neg_compile_session_test(neg_endpoint_gate_spsc_producer_bg_row
+    "no matching function for call to .mint_producer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_spsc_consumer_bg_row
+    "no matching function for call to .mint_consumer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_mpsc_producer_bg_row
+    "no matching function for call to .mint_mpsc_producer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_mpsc_consumer_bg_row
+    "no matching function for call to .mint_mpsc_consumer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_mpmc_producer_bg_row
+    "no matching function for call to .mint_mpmc_producer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_mpmc_consumer_bg_row
+    "no matching function for call to .mint_mpmc_consumer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_snapshot_writer_bg_row
+    "no matching function for call to .mint_snapshot_writer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_snapshot_reader_bg_row
+    "no matching function for call to .mint_snapshot_reader_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_swmr_writer_bg_row
+    "no matching function for call to .mint_writer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_swmr_reader_bg_row
+    "no matching function for call to .mint_reader_runtime_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_deque_owner_bg_row
+    "no matching function for call to .mint_owner_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_deque_thief_bg_row
+    "no matching function for call to .mint_thief_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_sharded_grid_producer_bg_row
+    "no matching function for call to .mint_producer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_sharded_grid_consumer_bg_row
+    "no matching function for call to .mint_consumer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_calendar_producer_bg_row
+    "no matching function for call to .mint_producer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_calendar_consumer_bg_row
+    "no matching function for call to .mint_consumer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_sharded_calendar_producer_bg_row
+    "no matching function for call to .mint_producer_session<"
+    "proto_row_admitted_by")
+crucible_neg_compile_session_test(neg_endpoint_gate_sharded_calendar_consumer_bg_row
+    "no matching function for call to .mint_consumer_session<"
+    "proto_row_admitted_by")
+
 # ─── HS14 fixtures #1 + #2 for safety::PublishCommitCell ────────────
 #
 # GAPS-FLUSH-RACE harness — see safety/PublishCommit.h.  The cell's

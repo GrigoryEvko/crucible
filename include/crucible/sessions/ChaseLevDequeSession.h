@@ -71,13 +71,19 @@ template <ChaseLevSessionSurface Deque>
     return deque.thief();
 }
 
+// Each clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.
+
 template <ChaseLevSessionSurface Deque, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<OwnerProto<typename Deque::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_owner_session(Ctx const& ctx, typename Deque::OwnerHandle& handle) noexcept {
     using T = typename Deque::value_type;
     return mint_permissioned_session<OwnerProto<T>>(ctx, &handle);
 }
 
 template <ChaseLevSessionSurface Deque, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ThiefProto<typename Deque::value_type, typename Deque::thief_tag>, Ctx,
+                                         EmptyPermSet>
 [[nodiscard]] constexpr auto mint_thief_session(Ctx const& ctx, typename Deque::ThiefHandle& handle) noexcept {
     using T = typename Deque::value_type;
     using Tag = typename Deque::thief_tag;

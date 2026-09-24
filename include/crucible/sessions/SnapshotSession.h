@@ -50,7 +50,11 @@ template <SnapshotSessionSurface Snap>
     return snap.reader();
 }
 
+// Each clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.
+
 template <SnapshotSessionSurface Snap, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<WriterProto<typename Snap::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_snapshot_writer_session(Ctx const& ctx,
                                                           typename Snap::WriterHandle& handle) noexcept {
     using T = typename Snap::value_type;
@@ -58,6 +62,7 @@ template <SnapshotSessionSurface Snap, ::crucible::effects::IsExecCtx Ctx>
 }
 
 template <SnapshotSessionSurface Snap, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ReaderProto<typename Snap::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_snapshot_reader_session(Ctx const& ctx,
                                                           typename Snap::ReaderHandle& handle) noexcept {
     using T = typename Snap::value_type;

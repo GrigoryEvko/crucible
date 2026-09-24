@@ -53,7 +53,11 @@ template <CalendarGridSessionSurface Grid>
     return grid.consumer(std::move(perm));
 }
 
+// Each clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.
+
 template <CalendarGridSessionSurface Grid, std::size_t P, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ProducerProto<typename Grid::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_producer_session(Ctx const& ctx,
                                                    typename Grid::template ProducerHandle<P>& handle) noexcept {
     using T = typename Grid::value_type;
@@ -61,6 +65,7 @@ template <CalendarGridSessionSurface Grid, std::size_t P, ::crucible::effects::I
 }
 
 template <CalendarGridSessionSurface Grid, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ConsumerProto<typename Grid::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_consumer_session(Ctx const& ctx, typename Grid::ConsumerHandle& handle) noexcept {
     using T = typename Grid::value_type;
     return mint_permissioned_session<ConsumerProto<T>>(ctx, &handle);

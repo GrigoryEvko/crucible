@@ -47,7 +47,11 @@ template <ShardedGridSessionSurface Grid, std::size_t J>
     return grid.template consumer<J>(std::move(perm));
 }
 
+// Each clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.
+
 template <ShardedGridSessionSurface Grid, std::size_t I, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ProducerProto<typename Grid::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_producer_session(Ctx const& ctx,
                                                    typename Grid::template ProducerHandle<I>& handle) noexcept {
     using T = typename Grid::value_type;
@@ -55,6 +59,7 @@ template <ShardedGridSessionSurface Grid, std::size_t I, ::crucible::effects::Is
 }
 
 template <ShardedGridSessionSurface Grid, std::size_t J, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ConsumerProto<typename Grid::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_consumer_session(Ctx const& ctx,
                                                    typename Grid::template ConsumerHandle<J>& handle) noexcept {
     using T = typename Grid::value_type;

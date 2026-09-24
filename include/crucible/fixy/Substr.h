@@ -445,9 +445,12 @@ mint_mpsc_consumer_endpoint(Channel& ch, ::crucible::safety::Permission<typename
 // These take the handle by reference and forward its address as the
 // session resource.  The permission set is empty: producer and consumer
 // authority already lives on the handle itself, so nothing travels over
-// the wire.
+// the wire.  Each clause states the gate of mint_permissioned_session: the
+// context must admit the protocol with no permission in hand.
 
 template <MpscChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx>
+    requires ::crucible::safety::proto::CtxFitsPermissionedProtocol<ProducerProto<typename Channel::value_type>, Ctx,
+                                                                    ::crucible::safety::proto::EmptyPermSet>
 [[nodiscard]] constexpr auto mint_mpsc_producer_session(Ctx const& ctx,
                                                         typename Channel::ProducerHandle& handle) noexcept {
     using T = typename Channel::value_type;
@@ -455,6 +458,8 @@ template <MpscChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx>
 }
 
 template <MpscChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx>
+    requires ::crucible::safety::proto::CtxFitsPermissionedProtocol<ConsumerProto<typename Channel::value_type>, Ctx,
+                                                                    ::crucible::safety::proto::EmptyPermSet>
 [[nodiscard]] constexpr auto mint_mpsc_consumer_session(Ctx const& ctx,
                                                         typename Channel::ConsumerHandle& handle) noexcept {
     using T = typename Channel::value_type;

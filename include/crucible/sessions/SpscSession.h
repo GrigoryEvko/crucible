@@ -24,14 +24,20 @@ using ConsumerProto = Loop<Recv<T, Continue>>;
 // by-value resource would need move-assignment, which the handle deletes, and a
 // reference resource would need a pinned type, which the handle is not. The
 // handle outlives the session it is bound to.
+//
+// The clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.  A caller can probe it, and a
+// refusal names this mint.
 
 template <typename Channel, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ProducerProto<typename Channel::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_producer_session(Ctx const& ctx, typename Channel::ProducerHandle& handle) noexcept {
     using T = typename Channel::value_type;
     return mint_permissioned_session<ProducerProto<T>>(ctx, &handle);
 }
 
 template <typename Channel, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<ConsumerProto<typename Channel::value_type>, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_consumer_session(Ctx const& ctx, typename Channel::ConsumerHandle& handle) noexcept {
     using T = typename Channel::value_type;
     return mint_permissioned_session<ConsumerProto<T>>(ctx, &handle);

@@ -55,13 +55,18 @@ mint_chainedge_waiter(Edge& edge, ::crucible::safety::Permission<typename Edge::
     return edge.waiter(std::move(perm));
 }
 
+// Each clause states the gate of mint_permissioned_session: the context must
+// admit the protocol with no permission in hand.
+
 template <ChainEdgeSessionSurface Edge, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<SignalerProto, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_chainedge_signaler_session(Ctx const& ctx,
                                                              typename Edge::SignalerHandle& handle) noexcept {
     return mint_permissioned_session<SignalerProto>(ctx, &handle);
 }
 
 template <ChainEdgeSessionSurface Edge, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsPermissionedProtocol<WaiterProto, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_chainedge_waiter_session(Ctx const& ctx,
                                                            typename Edge::WaiterHandle& handle) noexcept {
     return mint_permissioned_session<WaiterProto>(ctx, &handle);
