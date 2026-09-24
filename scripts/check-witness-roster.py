@@ -400,7 +400,7 @@ def class_shapes(node: tsast.Node, name: str) -> Shapes:
 
 
 def walk_witnesses(roots: list[Path]) -> tuple[dict[str, str], list[str]]:
-    """Return each class that shows a door shape, as qualified name to file:line, and each header the parser cannot read.
+    """Return each class with a door shape, as qualified name to file:line, and each header the parser cannot read.
 
     Complexity: linear in the node count of the headers under the roots.
 
@@ -494,19 +494,44 @@ def check(entries: list[Entry], fixture_dir: Path, roots: list[Path]) -> int:
     return 0
 
 
-def newest_build_dir() -> Path | None:
-    """Return the configured build tree whose test registration is newest, or None.
+def build_source(build_dir: Path) -> Path | None:
+    """Return the source tree that a build tree was configured from, or None when its cache does not say.
 
-    A shared worktree carries several build trees, and one configured before
-    the last roster entry registers a fixture set that no longer matches the
-    disk.  The newest wins, and the registration arm names staleness when
-    even the newest lags.
+    Args:
+        build_dir: A configured CMake build tree
+
+    Returns:
+        The resolved CMAKE_HOME_DIRECTORY of its CMakeCache.txt, or None
+    """
+    cache = build_dir / "CMakeCache.txt"
+    if not cache.is_file():
+        return None
+    for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("CMAKE_HOME_DIRECTORY:"):
+            return Path(line.split("=", 1)[1]).resolve()
+    return None
+
+
+def newest_build_dir(root: Path = REPO) -> Path | None:
+    """Return the configured build tree of this repository whose test registration is newest, or None.
+
+    A shared worktree carries several build trees.  A tree configured from
+    another source copy passes that copy on its -I flags, so its fixture
+    compile reads headers that are not this repository's, and it is skipped.
+    A tree configured before the last roster entry registers a fixture set
+    that no longer matches the disk.  The newest wins, and the registration
+    arm names staleness when even the newest lags.
+
+    Args:
+        root: The directory that holds the build trees, the repository
+            except in the self-test
     """
     best: Path | None = None
     best_stamp = -1.0
-    for candidate in sorted(REPO.glob("build*")):
+    for candidate in sorted(root.glob("build*")):
         stamp = candidate / "test" / "fixy" / "CTestTestfile.cmake"
-        if (candidate / "compile_commands.json").is_file() and stamp.is_file() and stamp.stat().st_mtime > best_stamp:
+        if (candidate / "compile_commands.json").is_file() and stamp.is_file() \
+                and build_source(candidate) == REPO.resolve() and stamp.stat().st_mtime > best_stamp:
             best, best_stamp = candidate, stamp.stat().st_mtime
     return best
 
@@ -556,6 +581,20 @@ def self_test() -> int:
         return code, buffer.getvalue()
 
     print("check-witness-roster --self-test")
+    with tempfile.TemporaryDirectory() as work:
+        trees = Path(work)
+        for name, source, stamp in (("build-this", REPO, 1_000), ("build-other", Path(work) / "copy", 2_000),
+                                    ("build-nocache", None, 3_000)):
+            (trees / name / "test" / "fixy").mkdir(parents=True)
+            (trees / name / "compile_commands.json").write_text("[]", encoding="utf-8")
+            registration = trees / name / "test" / "fixy" / "CTestTestfile.cmake"
+            registration.write_text("", encoding="utf-8")
+            os.utime(registration, (stamp, stamp))
+            if source is not None:
+                (trees / name / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
+                                                             encoding="utf-8")
+        expect("a newer build tree of another source copy, or one with no cache, is not picked",
+               newest_build_dir(trees) == trees / "build-this")
     entries = parse_roster(ROSTER, INCLUDE)
     roots = [INCLUDE / root for root in WALK_ROOTS]
     code, report = captured(lambda: check(entries, FIXTURE_DIR, roots))
@@ -716,6 +755,9 @@ def self_test() -> int:
             else newest_build_dir()
         if build_dir is None or not (build_dir / "compile_commands.json").is_file():
             expect("a configured build tree supplies the compile flags (set WITNESS_BUILD_DIR)", False)
+        elif build_source(build_dir) != REPO.resolve():
+            print(f"       {build_dir} was configured from {build_source(build_dir)}, not from {REPO}")
+            expect("the build tree that supplies the compile flags is configured from this repository", False)
         else:
             command = compile_command(build_dir)
             opened = subprocess.run([*command, f"-I{scratch / 'inc'}", "-fdiagnostics-color=never", "-fsyntax-only",
