@@ -121,11 +121,17 @@ class LChoice:
     ``"v"`` for a plain value message, or the index k of Label<k>.  A
     full merge can put the two kinds of label into one Offer, which the
     oracle's local types cannot express.
+
+    ``step`` is true when the choice has one branch and is spelled as a
+    plain Send or Recv of its message, as fixy's projection writes a
+    choice with one branch.  A run reads a step as a choice of one
+    branch: its label is on the wire.
     """
 
     send: bool
     channel: int
     branches: tuple[tuple[str | int, str, "Local"], ...]
+    step: bool = False
 
 
 Local = Union[LEnd, LVar, LRec, LMsg, LBranch, LChoice]
@@ -308,6 +314,50 @@ def generate_adversarial(seed: int, count: int, roles: int, max_depth: int) -> l
             raise RuntimeError(
                 f"generate_adversarial: only {len(out)} distinct types in {draws} draws")
         g = _gen_adversarial(rng, roles, rng.randrange(1, max_depth + 1), 0, False)
+        if g in seen:
+            continue
+        seen.add(g)
+        out.append(g)
+    return out
+
+
+def _prefix(rng: random.Random, roles: int, cont: Global, count: int) -> Global:
+    """Put ``count`` messages of random pairs of roles before ``cont``."""
+    for _ in range(count):
+        frm, to = _pair(rng, roles)
+        cont = GMsg(frm, to, rng.choice(SORTS), cont)
+    return cont
+
+
+def generate_outer(seed: int, count: int, roles: int) -> list[Global]:
+    """Return ``count`` distinct global types whose inner loop jumps to an outer binder.
+
+    Each type is mu X. a. mu Y. choice(b. X, c. Y, [d. end]): the inner
+    loop has a branch that continues the outer loop, which is Tirore,
+    Bengtson and Carbone (ITP 2023), equation (7), with random roles and
+    prefixes.  Var_G and Continue name only the nearest binder, so our
+    DSLs cannot spell these types, and the rows record the oracle's answer
+    and the run of its projection.  Every variable is guarded, so each type
+    is contractive.  Deterministic in the arguments.  O(count).
+    """
+    if roles < 2:
+        raise ValueError(f"generate_outer: a global type needs two roles, got {roles}")
+    rng = random.Random(seed)
+    seen: set[Global] = set()
+    out: list[Global] = []
+    draws = 0
+    while len(out) < count:
+        draws += 1
+        if draws > 50 * count:
+            raise RuntimeError(f"generate_outer: only {len(out)} distinct types in {draws} draws")
+        frm, to = _pair(rng, roles)
+        branches = [_prefix(rng, roles, GVar(1), rng.randrange(1, 3)),
+                    _prefix(rng, roles, GVar(0), rng.randrange(1, 3))]
+        if rng.random() < 0.5:
+            branches.append(_prefix(rng, roles, GEnd(), rng.randrange(0, 2)))
+        rng.shuffle(branches)
+        inner = GRec(GBranch(frm, to, tuple(branches)))
+        g = GRec(_prefix(rng, roles, inner, rng.randrange(1, 3)))
         if g in seen:
             continue
         seen.add(g)
@@ -548,6 +598,19 @@ def has_empty_choice(e: Local) -> bool:
     return not e.branches or any(has_empty_choice(b) for b in e.branches)
 
 
+def has_step(e: Local) -> bool:
+    """Return true when ``e`` holds a labelled choice spelled as a step (LChoice.step).  O(size)."""
+    if isinstance(e, (LEnd, LVar)):
+        return False
+    if isinstance(e, LRec):
+        return has_step(e.body)
+    if isinstance(e, LMsg):
+        return has_step(e.cont)
+    if isinstance(e, LChoice):
+        return e.step or any(has_step(k) for _, _, k in e.branches)
+    return any(has_step(b) for b in e.branches)
+
+
 def local_contractive(e: Local) -> bool:
     """Return true when each Loop of ``e`` acts before it reaches its Continue.  O(size²)."""
     def guarded(x: Local, depth: int) -> bool:
@@ -582,7 +645,7 @@ def dual_local(e: Local) -> Local:
         return LMsg(not e.send, e.channel, e.sort, dual_local(e.cont))
     if isinstance(e, LChoice):
         return LChoice(not e.send, e.channel,
-                       tuple((lab, sort, dual_local(k)) for lab, sort, k in e.branches))
+                       tuple((lab, sort, dual_local(k)) for lab, sort, k in e.branches), e.step)
     return LBranch(not e.send, e.channel, tuple(dual_local(b) for b in e.branches))
 
 
@@ -713,7 +776,8 @@ def show_local(e: Local | None) -> str:
     if isinstance(e, LChoice):
         inner = ",".join(f"{'v' if lab == 'v' else f'l{lab}'}:{sort}:{show_local(k)}"
                          for lab, sort, k in e.branches)
-        return f"{'sel' if e.send else 'off'}({e.channel},[{inner}])"
+        kind = ("ssend" if e.send else "srecv") if e.step else ("sel" if e.send else "off")
+        return f"{kind}({e.channel},[{inner}])"
     if isinstance(e, LMsg):
         return f"{tag}({e.channel},{e.sort},{show_local(e.cont)})"
     inner = ",".join(show_local(b) for b in e.branches)

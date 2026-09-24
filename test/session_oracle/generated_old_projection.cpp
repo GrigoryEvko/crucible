@@ -1989,6 +1989,15 @@ static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Offer<pr:
 static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case h4: agree");
 }  // namespace c_h4
 
+// branch(0,1,[branch(1,2,[msg(2,0,nat,end),msg(2,0,nat,end)]),branch(1,2,[msg(2,0,nat,end),msg(2,0,nat,end)])])
+namespace c_h5 {
+using G = pr::Choice<session_oracle::R0, session_oracle::R1, pr::BranchG<session_oracle::Label<0>, pr::Choice<session_oracle::R1, session_oracle::R2, pr::BranchG<session_oracle::Label<0>, pr::Transmission<session_oracle::R2, session_oracle::R0, session_oracle::Nat, pr::End_G> >, pr::BranchG<session_oracle::Label<1>, pr::Transmission<session_oracle::R2, session_oracle::R0, session_oracle::Nat, pr::End_G> > > >, pr::BranchG<session_oracle::Label<1>, pr::Choice<session_oracle::R1, session_oracle::R2, pr::BranchG<session_oracle::Label<0>, pr::Transmission<session_oracle::R2, session_oracle::R0, session_oracle::Nat, pr::End_G> >, pr::BranchG<session_oracle::Label<1>, pr::Transmission<session_oracle::R2, session_oracle::R0, session_oracle::Nat, pr::End_G> > > > >;
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R0>, pr::Select<pr::Send<session_oracle::Label<0>, pr::Recv<session_oracle::Nat, pr::End> >, pr::Send<session_oracle::Label<1>, pr::Recv<session_oracle::Nat, pr::End> > > >, "session_oracle old.projection case h5 role 0: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Offer<pr::Recv<session_oracle::Label<0>, pr::Select<pr::Send<session_oracle::Label<0>, pr::End>, pr::Send<session_oracle::Label<1>, pr::End> > >, pr::Recv<session_oracle::Label<1>, pr::Select<pr::Send<session_oracle::Label<0>, pr::End>, pr::Send<session_oracle::Label<1>, pr::End> > > > >, "session_oracle old.projection case h5 role 1: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R2>, pr::Offer<pr::Recv<session_oracle::Label<0>, pr::Send<session_oracle::Nat, pr::End> >, pr::Recv<session_oracle::Label<1>, pr::Send<session_oracle::Nat, pr::End> > > >, "session_oracle old.projection case h5 role 2: agree");
+static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case h5: agree");
+}  // namespace c_h5
+
 // branch(0,1,[msg(1,2,bool,end),msg(0,2,bool,end)])
 namespace c_p_ecoop25_eq1 {
 using G = pr::Choice<session_oracle::R0, session_oracle::R1, pr::BranchG<session_oracle::Label<0>, pr::Transmission<session_oracle::R1, session_oracle::R2, session_oracle::Bool, pr::End_G> >, pr::BranchG<session_oracle::Label<1>, pr::Transmission<session_oracle::R0, session_oracle::R2, session_oracle::Bool, pr::End_G> > >;
@@ -2182,6 +2191,15 @@ static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Offer<pr:
 // role 2: our projection rejects (Merge_Branches_Diverge); oracle none
 static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case m10: divergence");
 }  // namespace c_m10
+
+// branch(0,1,[branch(1,2,[msg(2,0,nat,end),msg(2,0,nat,end)]),branch(1,2,[msg(2,0,nat,end),msg(2,0,nat,end)])])
+namespace c_m11 {
+using G = pr::Choice<session_oracle::R0, session_oracle::R1, pr::BranchG<session_oracle::Label<0>, pr::Choice<session_oracle::R1, session_oracle::R2, pr::BranchG<session_oracle::Label<0>, pr::Transmission<session_oracle::R2, session_oracle::R0, session_oracle::Nat, pr::End_G> >, pr::BranchG<session_oracle::Label<1>, pr::Transmission<session_oracle::R2, session_oracle::R0, session_oracle::Nat, pr::End_G> > > >, pr::BranchG<session_oracle::Label<1>, pr::Choice<session_oracle::R1, session_oracle::R2, pr::BranchG<session_oracle::Label<0>, pr::Transmission<session_oracle::R2, session_oracle::R0, session_oracle::Nat, pr::End_G> >, pr::BranchG<session_oracle::Label<1>, pr::Transmission<session_oracle::R2, session_oracle::R0, session_oracle::Nat, pr::End_G> > > > >;
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R0>, pr::Select<pr::Send<session_oracle::Label<0>, pr::Recv<session_oracle::Nat, pr::End> >, pr::Send<session_oracle::Label<1>, pr::Recv<session_oracle::Nat, pr::End> > > >, "session_oracle old.projection case m11 role 0: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Offer<pr::Recv<session_oracle::Label<0>, pr::Select<pr::Send<session_oracle::Label<0>, pr::End>, pr::Send<session_oracle::Label<1>, pr::End> > >, pr::Recv<session_oracle::Label<1>, pr::Select<pr::Send<session_oracle::Label<0>, pr::End>, pr::Send<session_oracle::Label<1>, pr::End> > > > >, "session_oracle old.projection case m11 role 1: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R2>, pr::Offer<pr::Recv<session_oracle::Label<0>, pr::Send<session_oracle::Nat, pr::End> >, pr::Recv<session_oracle::Label<1>, pr::Send<session_oracle::Nat, pr::End> > > >, "session_oracle old.projection case m11 role 2: agree");
+static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case m11: agree");
+}  // namespace c_m11
 
 }  // namespace session_oracle::old_projection
 

@@ -59,6 +59,8 @@ HEADS = {
     "multi": "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n"
              "#include <type_traits>\n",
     "subtype": "#include <fixy/session/Subtype.h>\n#include <type_traits>\n",
+    "keyed": "#include <fixy/session/Projection.h>\n#include <fixy/session/Subtype.h>\n"
+             "#include <type_traits>\n",
 }
 # The constexpr budget is the one that the project build passes (CMakeLists.txt),
 # so a probe answers where the build answers.
@@ -196,6 +198,8 @@ def _role_of(spelling: str) -> int:
 def _label_of(spelling: str) -> str | int:
     if spelling == f"{PRELUDE_NS}::Val":
         return "v"
+    if spelling == f"{FIXY_NS}::global::CrashLabel":
+        return "crash"
     name, args = _split(spelling)
     if name != f"{PRELUDE_NS}::Label" or len(args) != 1 or not args[0].rstrip("u").isdigit():
         raise SpellingError(f"unknown label {spelling!r}")
@@ -205,23 +209,48 @@ def _label_of(spelling: str) -> str | int:
 def _payload_of(spelling: str) -> str:
     if spelling == f"{PRELUDE_NS}::Unit":
         return "unit"
+    if spelling == "void":
+        return "void"
     return _sort_of(spelling)
 
 
 def read_fixy_projection(spelling: str, role: int) -> Local | str:
-    """Parse the spelling of fixy::session::project_t<G, R>.
+    """Parse the spelling of fixy::session::project_t<G, R> for a static global type.
 
     Returns the local type with the peer of each action encoded as the
     channel (model.channel_of), or the name of the projection failure.
+    A static global type has no message en route, so the queue must be
+    empty.
+    """
+    local, queue = read_fixy_projection_with_queue(spelling, role)
+    if queue:
+        raise SpellingError(f"a static type has an empty queue, not {queue!r}")
+    return local
+
+
+def read_fixy_projection_with_queue(spelling: str, role: int) -> tuple[Local | str, tuple]:
+    """Parse the spelling of fixy::session::project_t<G, R> for a runtime global type.
+
+    Returns the local type (or the name of the projection failure) and
+    the queue of the role as messages in flight: tuples (channel, sender,
+    receiver, label, sort) in the form of execution.explore.
     """
     name, args = _split(spelling)
     if name == f"{FIXY_NS}::NotProjectable":
-        return args[0].rsplit("::", 1)[-1]
+        return args[0].rsplit("::", 1)[-1], ()
     if name != f"{FIXY_NS}::Projected" or len(args) != 2:
         raise SpellingError(f"not a projection: {spelling!r}")
-    if args[0] != f"{FIXY_NS}::OutQueue<>":
-        raise SpellingError(f"a static type has an empty queue, not {args[0]!r}")
-    return read_fixy_peer_local(args[1], role)
+    qname, qargs = _split(args[0])
+    if qname != f"{FIXY_NS}::OutQueue":
+        raise SpellingError(f"not a queue: {args[0]!r}")
+    queue = []
+    for item in qargs:
+        iname, iargs = _split(item)
+        if iname != f"{FIXY_NS}::Queued" or len(iargs) != 3:
+            raise SpellingError(f"not a queued message: {item!r}")
+        to = _role_of(iargs[0])
+        queue.append((role * 8 + to, role, to, _label_of(iargs[1]), _payload_of(iargs[2])))
+    return read_fixy_peer_local(args[1], role), tuple(queue)
 
 
 def read_fixy_peer_local(spelling: str, role: int) -> Local:
@@ -249,7 +278,7 @@ def read_fixy_peer_local(spelling: str, role: int) -> Local:
     if short in ("Send", "Recv"):
         peer, branch = arm(spelling, short)
         send = short == "Send"
-        return LChoice(send, role * 8 + peer if send else peer * 8 + role, (branch,))
+        return LChoice(send, role * 8 + peer if send else peer * 8 + role, (branch,), True)
     if short in ("Select", "Offer"):
         send = short == "Select"
         items = args if send else args[1:]

@@ -1,14 +1,38 @@
 #!/usr/bin/env bash
 # session-oracle.sh — differential tests of the session relations against
-# a published mechanisation.
+# published mechanisations.
 #
-# The relations in include/fixy/session/Protocol.h and in the frozen
-# include/crucible/sessions/SessionGlobal.h are decision procedures.  This
-# script compares their answers with the computable projection of
-# Tirore, Bengtson and Carbone (ITP 2023).  The authors proved it sound
-# and complete in Coq.  The comparison is in tools/session_oracle/.  Its
-# results are in test/session_oracle/golden.csv, and the C++ tests that
-# assert them are emitted from that file.
+# The relations in include/fixy/session and in the frozen
+# include/crucible/sessions/SessionGlobal.h are decision procedures.  The
+# comparison in tools/session_oracle/ gives each one a reference that
+# does not share its code:
+#
+#   projection         the computable projection of Tirore, Bengtson and
+#                      Carbone (ITP 2023), github.com/Tirore96/projection.
+#                      No licence.
+#   subject reduction  the labelled projection and the linearity check of
+#                      Tirore, Bengtson and Carbone (ECOOP 2025), branch
+#                      ECOOP2025 of github.com/Tirore96/subject_reduction.
+#                      MIT licence.
+#   subtyping          the coinductive relation subtypeC of Ekici (ITP
+#                      2025), github.com/Apiros3/smpst-sr-smer.  No
+#                      licence.  coqc checks a proof or a refutation of
+#                      each pair against the development's own definition.
+#   crash-stop         mpstk-crash-stop of Barwell, Scalas, Yoshida and
+#                      Zhou (CONCUR 2022), github.com/alcestes/mpstk-crash-stop.
+#                      MIT licence.  It model-checks the context of each
+#                      crash-stop projection with mCRL2.
+#   runs               a breadth-first run of each typing context in
+#                      tools/session_oracle/execution.py, with the label
+#                      word of a keyed choice on the wire.
+#
+# Each oracle downloads a pinned commit as a tarball into
+# ~/.cache/crucible/session_oracle and builds it there.  SESSION_ORACLE_CACHE
+# changes the directory.  No part of a repository goes into this tree.
+# Only our code and the verdicts go into it.  The verdicts are in
+# test/session_oracle/golden.csv, with the commit of each oracle and the
+# commit of the measured headers.  The C++ tests that assert them are
+# emitted from that file.
 #
 # Modes:
 #
@@ -22,40 +46,54 @@
 #                  change.  Give the compiler as the second argument.
 #   --emit         Write the emitted tests from golden.csv.  Use it after
 #                  a note in golden.csv changes.
-#   --regenerate   Run the oracle and the probes, shrink every divergence,
+#   --regenerate   Run the oracles and the probes, shrink every divergence,
 #                  and write golden.csv and the emitted tests.  Give the
 #                  compiler as the second argument.  CI does not run it.
 #
-# How to install the oracle toolchain.  Do this one time, in your home
+# --self-test and --regenerate take a commit as an optional third
+# argument, for example HEAD.  The tool then measures the include tree of
+# that commit, which it takes with git archive into a temporary directory,
+# and golden.csv names the full commit.  Without it, the tool measures the
+# working tree and names HEAD and any edits in the session headers.  Give
+# a commit when the working tree holds edits that do not compile.
+#
+# How to install the toolchains.  Do this one time, in your home
 # directory.  Nothing goes into the repository.
 #
-#   1. Install opam, then make a switch with OCaml 4.14:
+#   1. The projection and the subject-reduction oracles need Coq 8.15.
+#      Install opam, then make a switch with OCaml 4.14, pin Coq before
+#      you install a library, and install the libraries:
 #        opam switch create sessoracle ocaml-base-compiler.4.14.2
-#   2. Pin Coq to 8.15.2 before you install a library.  A later Coq
-#      cannot build the pinned oracle, and coq-deriving installs the
-#      latest Coq when Coq is not pinned:
 #        opam pin add -n --switch=sessoracle coq 8.15.2
-#   3. Add the Coq repository and install the libraries:
 #        opam repo add --switch=sessoracle coq-released https://coq.inria.fr/opam/released
 #        opam install --switch=sessoracle coq coq-mathcomp-ssreflect.1.17.0 \
 #            coq-equations coq-paco coq-deriving coq-mathcomp-zify
-#
-# How to download the oracle.  --regenerate does it.  It downloads the pinned
-# commit of github.com/Tirore96/projection as a tarball into
-# ~/.cache/crucible/session_oracle, and it compiles the development there.
-# SESSION_ORACLE_CACHE changes the directory.  The repository has no
-# licence, so no part of it goes into this tree.  Only our code and the
-# verdicts go into the tree.
+#      A later Coq cannot build the two pinned commits, and coq-deriving
+#      installs the latest Coq when Coq is not pinned.
+#   2. The subtyping oracle needs Coq 8.20 with mathcomp-ssreflect 2 and
+#      paco.  Make a second switch:
+#        opam switch create sessoracle20 ocaml-base-compiler.4.14.2
+#        opam pin add -n --switch=sessoracle20 coq 8.20.1
+#        opam repo add --switch=sessoracle20 coq-released https://coq.inria.fr/opam/released
+#        opam install --switch=sessoracle20 coq coq-mathcomp-ssreflect.2.3.0 coq-paco
+#      SESSION_ORACLE_COQC20 names a different coqc command.
+#   3. The crash-stop oracle needs a Java 17 runtime, sbt (the build of
+#      the pinned commit asks for sbt 1.6.1 and downloads it), and the
+#      mCRL2 tools mcrl22lps, lps2pbes and pbes2bool.  Put the three on
+#      PATH before --regenerate.
 #
 # How to regenerate after a relation changes:
 #
-#   scripts/session-oracle.sh --regenerate "$HOME/.local/gcc16-patched/usr/bin/g++-16p"
+#   scripts/session-oracle.sh --regenerate "$HOME/.local/gcc16-patched/usr/bin/g++-16p" HEAD
 #
 # The script activates the opam switch "sessoracle" when opam is on PATH or
-# in ~/.local/bin.  A run takes some minutes, because the shrinker makes
-# every divergence as small as possible.  Read the diff of golden.csv
-# before you commit it: a row that changes from divergence to agree is a
-# repair, and a row that changes the other way is a regression.
+# in ~/.local/bin.  The subtyping oracle runs its own switch.  A run takes
+# some minutes, because the shrinker makes every divergence as small as
+# possible.  Each oracle keeps its answers in a cache whose file name
+# carries its commit, so a second run asks only the new queries.  Read the
+# diff of golden.csv before you commit it: a row that changes from
+# divergence to agree is a repair, and a row that changes the other way is
+# a regression.
 #
 # Exit status:
 #   0 — success
@@ -73,9 +111,9 @@ session-oracle.sh — differential tests of the session relations.
 
 Usage:
   session-oracle.sh --check
-  session-oracle.sh --self-test CXX
+  session-oracle.sh --self-test CXX [COMMIT]
   session-oracle.sh --emit
-  session-oracle.sh --regenerate CXX
+  session-oracle.sh --regenerate CXX [COMMIT]
   session-oracle.sh -h | --help
 USAGE
 }
@@ -108,6 +146,18 @@ need_cxx() {
     fi
 }
 
+# Print the --at option for an optional commit, or nothing.
+at_option() {
+    if [[ $# -lt 1 || -z "$1" ]]; then
+        return 0
+    fi
+    if ! git -C "$root" rev-parse --verify --quiet "$1^{commit}" >/dev/null; then
+        echo "session-oracle.sh: '$1' names no commit of this repository." >&2
+        exit 2
+    fi
+    printf '%s\n' "--at=$1"
+}
+
 case "${1:-}" in
     --check)
         exec python3 "$driver" check ;;
@@ -116,12 +166,14 @@ case "${1:-}" in
     --self-test)
         shift
         need_cxx "${1:-}"
-        exec python3 "$driver" self-test --cxx "$1" ;;
+        at="$(at_option "${2:-}")" || exit 2
+        exec python3 "$driver" self-test --cxx "$1" ${at:+"$at"} ;;
     --regenerate)
         shift
         need_cxx "${1:-}"
+        at="$(at_option "${2:-}")" || exit 2
         activate_opam
-        exec python3 "$driver" regenerate --cxx "$1" ;;
+        exec python3 "$driver" regenerate --cxx "$1" ${at:+"$at"} ;;
     -h|--help)
         usage
         exit 0 ;;

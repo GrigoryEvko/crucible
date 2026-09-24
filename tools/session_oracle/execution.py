@@ -85,7 +85,7 @@ def _subst(e: Local, value: Local, depth: int = 0) -> Local:
         return LMsg(e.send, e.channel, e.sort, _subst(e.cont, value, depth))
     if isinstance(e, LChoice):
         return LChoice(e.send, e.channel, tuple((lab, sort, _subst(k, value, depth))
-                                                 for lab, sort, k in e.branches))
+                                                 for lab, sort, k in e.branches), e.step)
     return LBranch(e.send, e.channel, tuple(_subst(b, value, depth) for b in e.branches))
 
 
@@ -183,20 +183,23 @@ def _enabled(e: Local, me: int, flight: tuple) -> bool:
     return e.send or _match(e, me, flight) is not None
 
 
-def explore(system: dict[int, Local], liveness: bool = True, graph_out: dict | None = None) -> Verdict:
+def explore(system: dict[int, Local], liveness: bool = True, graph_out: dict | None = None,
+            flight: tuple = ()) -> Verdict:
     """Explore every interleaving of ``system``.  Return the first bad state.
 
     ``system`` maps each role to its local type.  A state is the local
     type of each role and the ordered list of messages in flight, each a
-    tuple (channel, sender, receiver, label, sort).  Breadth first, so a
-    returned trace is a shortest one.  When no state is bad and
-    ``liveness`` is true, the state graph is searched for starvation
-    (see _starvation).  When ``graph_out`` is a dict and no state is bad,
-    it receives the states under "states" and the edges under "edges".
+    tuple (channel, sender, receiver, label, sort).  ``flight`` holds the
+    messages in flight at the start, for a runtime global type whose
+    messages are en route.  Breadth first, so a returned trace is a
+    shortest one.  When no state is bad and ``liveness`` is true, the
+    state graph is searched for starvation (see _starvation).  When
+    ``graph_out`` is a dict and no state is bad, it receives the states
+    under "states" and the edges under "edges".
     O(states × roles × messages).
     """
     roles = sorted(system)
-    start = (tuple(head(system[r]) for r in roles), ())
+    start = (tuple(head(system[r]) for r in roles), tuple(flight))
     parent: dict[tuple, tuple[tuple | None, str]] = {start: (None, "")}
     edges: list[tuple[tuple, tuple, int]] = []
     frontier: deque[tuple] = deque([start])

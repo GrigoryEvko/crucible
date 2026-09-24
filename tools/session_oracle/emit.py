@@ -41,18 +41,20 @@ import io
 from dataclasses import dataclass
 from pathlib import Path
 
-from model import (cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local, cpp_old_global,
-                   cpp_old_local, cpp_prelude, cpp_role, local_of, mutations, read_global,
+import labelled
+from model import (Local, cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local, cpp_old_global,
+                   cpp_old_local, cpp_prelude, cpp_role, dual_local, local_of, mutations, read_global,
                    read_local, show_global)
 
 COLUMNS = ("family", "case", "role", "global", "oracle", "ours", "status", "class", "note")
 
 # The corpora, in the order of the golden file.  For the frozen tree: r
-# random, a adversarial, h hand-written review cases, m minimal forms of
-# the divergences that the shrinker found.  p holds the paper examples
-# of the two trees.  fr, fa, fh and fm are the random, adversarial,
-# hand-written and minimal corpora of the fixy tree.
-CORPORA = ("r", "a", "h", "p", "m", "fr", "fa", "fh", "fm")
+# random, a adversarial, o types whose inner loop jumps to an outer
+# binder, h hand-written review cases, m minimal forms of the divergences
+# that the shrinker found.  p holds the paper examples of the two trees.
+# fr, fa, fh and fm are the random, adversarial, hand-written and minimal
+# corpora of the fixy tree.
+CORPORA = ("r", "a", "o", "h", "p", "m", "fr", "fa", "fh", "fm")
 
 FIXY_FAMILIES = ("fixy.dual", "fixy.is_dual", "fixy.involution", "fixy.involutive_flag",
                  "fixy.well_formed", "fixy.accepts")
@@ -73,11 +75,47 @@ def subtype_channel_decl() -> str:
             f"struct {SUBTYPE_CHANNEL} {{\n"
             f"    static constexpr unsigned channel_capacity = {SUBTYPE_CAPACITY};\n"
             f"}};\n")
+
+
 OLD_FAMILIES = ("old.projection", "old.well_formed")
+# Keyed choices: pairs of keyed binary protocols, and multiparty global
+# types whose choices carry labels in an order that depends on the path.
+# The golden file stores the global type of a keyed multiparty row in the
+# labelled compact form of labelled.py.
+KEYED_SUBTYPE_FAMILIES = ("fixy.keyed_subtype_sync", "fixy.keyed_subtype_async")
+KEYED_MULTI_FAMILIES = ("fixy.keyed_projection", "fixy.keyed_live")
+# Crash-stop variants of the multiparty cases.  The role of a row is
+# "<kind>.u<unreliable roles>", and "/<role>" for a projection.
+CRASH_FAMILIES = ("fixy.crash_projection", "fixy.crash_live")
+# Runtime global types that the first send of a multiparty case reaches.
+# The role of a row is the variant tag ("e", "e<k>"), and "/<role>" for a
+# projection.  The oracle column of an association row holds the C++
+# context that the send reaches.
+ENROUTE_FAMILIES = ("fixy.enroute_projection", "fixy.enroute_live", "fixy.enroute_association")
+# A keyed pair (T, U) whose synchronous run is safe, run end to end: the
+# handle of T against the handle of the dual of U, over one queue of
+# words (test/session_oracle/wire_driver.h).  The role of a row is
+# "<pair role>/<spelling>/s<seed>", and the ours column is the outcome.
+WIRE_FAMILIES = ("fixy.wire",)
+WIRE_SEEDS = (0, 1)
 # Families that no C++ test can assert: the execution verdict of the
-# frozen tree's projection, and the run of the oracle's own projection.
-RECORD_FAMILIES = ("old.execution", "oracle.safety")
-FAMILIES = FIXY_FAMILIES + MULTI_FAMILIES + SUBTYPE_FAMILIES + OLD_FAMILIES + RECORD_FAMILIES
+# frozen tree's projection, the run of the oracle's own projection, the
+# run of the subject-reduction development's projection, mpstk's model
+# check of fixy's crash-stop context, and the coqc-checked verdict of the
+# ITP 2025 subtyping relation on each synchronous subtyping pair.
+RECORD_FAMILIES = ("old.execution", "oracle.safety", "sr.safety", "mpstk.crash", "ekici.subtype")
+FAMILIES = (FIXY_FAMILIES + MULTI_FAMILIES + SUBTYPE_FAMILIES + KEYED_SUBTYPE_FAMILIES + KEYED_MULTI_FAMILIES
+            + CRASH_FAMILIES + ENROUTE_FAMILIES + WIRE_FAMILIES + OLD_FAMILIES + RECORD_FAMILIES)
+# The roles that a multiparty case is projected onto: every role it names,
+# and at least three.
+MIN_ROLES = 3
+
+
+def multiparty_roles(named: set[int]) -> list[int]:
+    """Return the roles that a multiparty case is projected onto."""
+    return list(range(max(MIN_ROLES, max(named, default=-1) + 1)))
+
+
 STATUSES = ("agree", "divergence", "gap")
 
 GENERATED_NOTICE = (
@@ -149,7 +187,11 @@ def read_golden(path: Path) -> tuple[list[str], list[Row]]:
             raise GoldenError(f"{path}:{lineno}: a {row.status} must carry a class and a note")
         if row.status == "agree" and row.ours.startswith("reject:") and row.oracle != "none":
             raise GoldenError(f"{path}:{lineno}: a rejection agrees only with oracle 'none'")
-        show_global(read_global(row.global_text))
+        if labelled.is_labelled_text(row.global_text):
+            if labelled.show(labelled.read(row.global_text)) != row.global_text:
+                raise GoldenError(f"{path}:{lineno}: the labelled global type is not in canonical form")
+        else:
+            show_global(read_global(row.global_text))
         rows.append(row)
     return meta, rows
 
@@ -391,6 +433,246 @@ def emit_subtype(rows: list[Row]) -> str:
     return "".join(out)
 
 
+def keyed_subtype_locals(g_text: str, role: str) -> tuple[Local, Local]:
+    """Return T and U of a keyed subtyping row.
+
+    ``role`` is ``kK+name`` for the pair (keyed change K of U, U) and
+    ``kK-name`` for the pair (U, keyed change K of U), where U is the keyed
+    binary view of the global type onto role 0 with the labels 3k+1
+    (labelled.keyed_local_of and labelled.sparse_scheme).
+    """
+    u = labelled.keyed_local_of(labelled.from_positional(read_global(g_text), labelled.sparse_scheme), 0)
+    if not role.startswith("k"):
+        raise GoldenError(f"keyed subtype row {g_text} {role}: the role must start with k")
+    sep = "+" if "+" in role else "-"
+    index, _, name = role[1:].partition(sep)
+    found = labelled.keyed_mutations(u)
+    k = int(index)
+    if k >= len(found) or found[k][0] != name:
+        raise GoldenError(f"keyed subtype row {g_text} {role}: no keyed change {name} at index {k}")
+    t = found[k][1]
+    return (t, u) if sep == "+" else (u, t)
+
+
+def keyed_subtype_pair(g_text: str, role: str) -> tuple[str, str]:
+    """Return the C++ spellings of T and U for a keyed subtyping row."""
+    t, u = keyed_subtype_locals(g_text, role)
+    return labelled.cpp_fixy_keyed_local(t), labelled.cpp_fixy_keyed_local(u)
+
+
+def wire_pair(g_text: str, role: str) -> tuple[str, str, int]:
+    """Return the two endpoint protocols and the seed of a wire row.
+
+    ``role`` is ``<keyed pair role>/<spelling>/s<seed>``.  The endpoints
+    are T and the dual of U of the keyed pair.  The spelling ``view`` is
+    the binary view (Labelled), and ``peer`` is the form that projection
+    writes (PeerMsg, with the peer of T role 1 and of the dual role 0).
+    """
+    pair_role, spelling, seed = role.split("/")
+    t, u = keyed_subtype_locals(g_text, pair_role)
+    d = dual_local(u)
+    if spelling == "view":
+        return labelled.cpp_fixy_keyed_local(t), labelled.cpp_fixy_keyed_local(d), int(seed[1:])
+    if spelling == "peer":
+        return (labelled.cpp_fixy_peer_keyed_local(t, 0), labelled.cpp_fixy_peer_keyed_local(d, 1),
+                int(seed[1:]))
+    raise GoldenError(f"wire row {g_text} {role}: no spelling {spelling!r}")
+
+
+def emit_keyed_subtype(rows: list[Row]) -> str:
+    """Return the keyed subtyping test translation unit.  O(rows)."""
+    cases: dict[str, list[Row]] = {}
+    for row in rows:
+        if row.family in KEYED_SUBTYPE_FAMILIES and row.status != "gap" and not _hard_error(row):
+            cases.setdefault(row.case, []).append(row)
+    out = [GENERATED_NOTICE, "//\n",
+           "// Subtyping of keyed choices against runs of each pair.  A keyed branch sends\n",
+           "// Labelled<Label<n>, Unit>, the handle puts the label word of Label<n> on the wire,\n",
+           "// and a run matches each message to the branch of its label.  Each U is the keyed\n",
+           "// reading of a global type, and each T one keyed change of U: its branches in\n",
+           "// another order, one branch fewer, one branch more, one branch under a new label,\n",
+           "// or one choice written positionally.\n\n",
+           "#include <fixy/session/Projection.h>\n#include <fixy/session/Subtype.h>\n\n#include <type_traits>\n\n",
+           cpp_prelude(), "\nnamespace fs = ::fixy::session;\n\n", subtype_channel_decl(), "\n",
+           "namespace session_oracle::fixy_keyed_subtype {\n\n"]
+    for case in sorted(cases, key=case_key):
+        group = sorted(cases[case], key=lambda r: (r.role, KEYED_SUBTYPE_FAMILIES.index(r.family)))
+        out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
+        current = ""
+        for row in group:
+            index = row.role[1:].split("+")[0].split("-")[0]
+            ns = "m" + index + ("f" if "+" in row.role else "r")
+            if ns != current:
+                if current:
+                    out.append(f"}}  // namespace {current}\n")
+                current = ns
+                t, u = keyed_subtype_pair(row.global_text, row.role)
+                out.append(f"namespace {ns} {{\n// {row.role}\nusing T = {t};\nusing U = {u};\n")
+            expr = ("fs::is_subtype_sync_v<T, U>" if row.family == "fixy.keyed_subtype_sync"
+                    else f"fs::is_subtype_async_v<T, U, ::{SUBTYPE_CHANNEL}>")
+            out.append(f"static_assert({expr} == {row.ours}, \"{_message(row)}\");\n")
+        if current:
+            out.append(f"}}  // namespace {current}\n")
+        out.append(f"}}  // namespace {_namespace(case)}\n\n")
+    out.append("}  // namespace session_oracle::fixy_keyed_subtype\n\nint main() { return 0; }\n")
+    return "".join(out)
+
+
+def emit_keyed_multi(rows: list[Row]) -> str:
+    """Return the keyed multiparty test translation unit.  O(rows)."""
+    cases: dict[str, list[Row]] = {}
+    for row in rows:
+        if row.family in KEYED_MULTI_FAMILIES and row.status != "gap" and not _hard_error(row):
+            cases.setdefault(row.case, []).append(row)
+    out = [GENERATED_NOTICE, "//\n",
+           "// Projection and liveness of global types whose choices carry the labels 3k+1\n",
+           "// in an order that depends on the path.  Each row pins fixy's answer.  The\n",
+           "// golden file records how it compares with the projection of the\n",
+           "// subject-reduction development, whose branches carry labels too.\n\n",
+           "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n\n",
+           "#include <type_traits>\n\n",
+           cpp_prelude(), "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
+           "namespace session_oracle::fixy_keyed_projection {\n\n"]
+    for case in sorted(cases, key=case_key):
+        group = sorted(cases[case], key=lambda r: (KEYED_MULTI_FAMILIES.index(r.family), r.role))
+        g = labelled.read(group[0].global_text)
+        out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
+        out.append(f"using G = {labelled.cpp_fixy_global(g)};\n")
+        for row in group:
+            msg = _message(row)
+            if row.family == "fixy.keyed_live" and row.ours.startswith("well_formed "):
+                out.append(f"static_assert(fg::is_global_well_formed_v<G> == {row.ours.split()[1]}, \"{msg}\");\n")
+            elif row.family == "fixy.keyed_live":
+                out.append(f"static_assert(fs::is_live_by_construction_v<G> == {row.ours}, \"{msg}\");\n")
+            else:
+                out.append(f"static_assert(std::is_same_v<fs::project_t<G, {cpp_role(int(row.role))}>, "
+                           f"{_pin(row.ours)}>, \"{msg}\");\n")
+        out.append(f"}}  // namespace {_namespace(case)}\n\n")
+    out.append("}  // namespace session_oracle::fixy_keyed_projection\n\nint main() { return 0; }\n")
+    return "".join(out)
+
+
+def crash_reliable_set(roles: list[int], prefix: str) -> str:
+    """Return the C++ reliable set of a crash row whose role starts with ``prefix``."""
+    unreliable = {int(ch) for ch in prefix.split(".u", 1)[1]}
+    return f"fs::ReliableSet<{', '.join(cpp_role(r) for r in roles if r not in unreliable)}>"
+
+
+def emit_crash(rows: list[Row]) -> str:
+    """Return the crash-stop test translation unit.  O(rows)."""
+    groups: dict[tuple[str, str], list[Row]] = {}
+    for row in rows:
+        if row.family in CRASH_FAMILIES and row.status != "gap" and not _hard_error(row):
+            groups.setdefault((row.case, row.role.split("/")[0]), []).append(row)
+    out = [GENERATED_NOTICE, "//\n",
+           "// Crash-stop projection and liveness of fixy/session.  Each global type is a\n",
+           "// multiparty case with a crash branch on each transmission of an unreliable\n",
+           "// sender.  Each row pins fixy's answer.  The golden file records how mpstk\n",
+           "// judges the context of these projections when the unreliable roles crash.\n\n",
+           "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n\n",
+           "#include <type_traits>\n\n",
+           cpp_prelude(), "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
+           "namespace session_oracle::fixy_crash {\n\n"]
+    for (case, prefix) in sorted(groups, key=lambda k: (case_key(k[0]), k[1])):
+        group = sorted(groups[(case, prefix)], key=lambda r: (CRASH_FAMILIES.index(r.family), r.role))
+        g = labelled.read(group[0].global_text)
+        roles = multiparty_roles(labelled.roles_of(g))
+        ns = f"{_namespace(case)}_{prefix.replace('.', '_')}"
+        out.append(f"// {group[0].global_text}\nnamespace {ns} {{\n")
+        out.append(f"using G = {labelled.cpp_fixy_global(g)};\nusing RS = {crash_reliable_set(roles, prefix)};\n")
+        for row in group:
+            msg = _message(row)
+            if row.family == "fixy.crash_live":
+                out.append(f"static_assert(fs::crash_live_by_construction_v<G, RS> == {row.ours}, \"{msg}\");\n")
+            else:
+                role = int(row.role.split("/")[1])
+                out.append(f"static_assert(std::is_same_v<fs::project_crash_t<G, {cpp_role(role)}, RS>, "
+                           f"{_pin(row.ours)}>, \"{msg}\");\n")
+        out.append(f"}}  // namespace {ns}\n\n")
+    out.append("}  // namespace session_oracle::fixy_crash\n\nint main() { return 0; }\n")
+    return "".join(out)
+
+
+def emit_enroute(rows: list[Row]) -> str:
+    """Return the runtime global type test translation unit.  O(rows)."""
+    groups: dict[tuple[str, str], list[Row]] = {}
+    for row in rows:
+        if row.family in ENROUTE_FAMILIES and row.status != "gap" and not _hard_error(row):
+            groups.setdefault((row.case, row.role.split("/")[0]), []).append(row)
+    out = [GENERATED_NOTICE, "//\n",
+           "// Runtime global types: the first send of a multiparty case puts its\n",
+           "// transmission en route, with every branch or with the chosen branch only.\n",
+           "// Each row pins fixy's projection, its liveness claim, and whether the context\n",
+           "// that the send reaches from the static projection associates with the runtime\n",
+           "// type.\n\n",
+           "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n\n",
+           "#include <type_traits>\n\n",
+           cpp_prelude(), "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
+           "namespace session_oracle::fixy_enroute {\n\n"]
+    for (case, tag) in sorted(groups, key=lambda k: (case_key(k[0]), k[1])):
+        group = sorted(groups[(case, tag)], key=lambda r: (ENROUTE_FAMILIES.index(r.family), r.role))
+        g = labelled.read(group[0].global_text)
+        ns = f"{_namespace(case)}_{tag}"
+        out.append(f"// {group[0].global_text}\nnamespace {ns} {{\nusing G = {labelled.cpp_fixy_global(g)};\n")
+        for row in group:
+            msg = _message(row)
+            if row.family == "fixy.enroute_live":
+                out.append(f"static_assert(fs::is_live_by_construction_v<G> == {row.ours}, \"{msg}\");\n")
+            elif row.family == "fixy.enroute_association":
+                out.append(f"static_assert(fs::association_holds_v<{row.oracle}, G> == {row.ours}, \"{msg}\");\n")
+            else:
+                role = int(row.role.split("/")[1])
+                out.append(f"static_assert(std::is_same_v<fs::project_t<G, {cpp_role(role)}>, {_pin(row.ours)}>, "
+                           f"\"{msg}\");\n")
+        out.append(f"}}  // namespace {ns}\n\n")
+    out.append("}  // namespace session_oracle::fixy_enroute\n\nint main() { return 0; }\n")
+    return "".join(out)
+
+
+def wire_label(case: str, role: str) -> str:
+    """Return the text that the wire test prints before the outcome of a row."""
+    return f"session_oracle fixy.wire case {case} role {role}:"
+
+
+def wire_source(entries: list[tuple[str, str, str, int, str]]) -> str:
+    """Return a wire test for rows (label, endpoint A, endpoint B, seed, pinned outcome).
+
+    Run with --measure, the program prints the outcome of each row.
+    Otherwise it compares each outcome with the pinned one.  O(entries).
+    """
+    out = [GENERATED_NOTICE, "//\n",
+           "// End-to-end runs of keyed pairs over the session handle: the handle of T\n",
+           "// against the handle of the dual of U, over one queue of words, for pairs\n",
+           "// whose synchronous run is safe.  Each row pins the outcome of one run.\n\n",
+           "#include \"wire_driver.h\"\n\n#include <fixy/session/Projection.h>\n\n",
+           cpp_prelude(), "\nnamespace fs = ::fixy::session;\n\n",
+           "namespace session_oracle::fixy_wire {\n\n"]
+    rows = []
+    for n, (label, a, b, seed, pinned) in enumerate(entries):
+        out.append(f"// {label}\nnamespace r{n} {{\nusing A = {a};\nusing B = {b};\n}}  // namespace r{n}\n")
+        rows.append(f"    {{\"{label}\", &::session_oracle::wire::run_pair<r{n}::A, r{n}::B, {seed}>, \"{pinned}\"}},\n")
+    out.append("\ninline constexpr ::session_oracle::wire::Row rows[] = {\n")
+    out.extend(rows or ["    {\"\", nullptr, \"\"},\n"])
+    out.append("};\n\n}  // namespace session_oracle::fixy_wire\n\n"
+               "int main(int argc, char** argv) {\n")
+    if rows:
+        out.append("    return ::session_oracle::wire::check_all(::session_oracle::fixy_wire::rows, argc, argv);\n")
+    else:
+        out.append("    (void)argc;\n    (void)argv;\n    return 0;\n")
+    out.append("}\n")
+    return "".join(out)
+
+
+def emit_wire(rows: list[Row]) -> str:
+    """Return the wire test translation unit.  O(rows)."""
+    entries = []
+    for row in sorted((r for r in rows if r.family in WIRE_FAMILIES and r.status != "gap"),
+                      key=lambda r: (case_key(r.case), r.role)):
+        a, b, seed = wire_pair(row.global_text, row.role)
+        entries.append((wire_label(row.case, row.role), a, b, seed, row.ours))
+    return wire_source(entries)
+
+
 def _split_closers(text: str) -> str:
     """Write each run of closing angle brackets as separate tokens.
 
@@ -410,4 +692,9 @@ def emit_all(rows: list[Row]) -> dict[str, str]:
         ("generated_fixy_duality.cpp", emit_fixy(rows)),
         ("generated_fixy_projection.cpp", emit_multi(rows)),
         ("generated_fixy_subtype.cpp", emit_subtype(rows)),
+        ("generated_fixy_keyed_subtype.cpp", emit_keyed_subtype(rows)),
+        ("generated_fixy_keyed_projection.cpp", emit_keyed_multi(rows)),
+        ("generated_fixy_crash.cpp", emit_crash(rows)),
+        ("generated_fixy_enroute.cpp", emit_enroute(rows)),
+        ("generated_fixy_wire.cpp", emit_wire(rows)),
         ("generated_old_projection.cpp", emit_old(rows)))}
