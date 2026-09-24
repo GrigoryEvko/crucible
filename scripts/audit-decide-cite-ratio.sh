@@ -202,21 +202,38 @@ ANCHOR
             old_day="$(date -d '400 days ago' +%Y-%m-%d)"
             new_day="$(date +%Y-%m-%d)"
 
+            # A repository variable in the caller's environment wins over
+            # `git -C`.  On 2026-09-24 an exported GIT_DIR sent the two
+            # fixture commits into the real repository and emptied its main
+            # branch.  Clear every such variable, name the fixture repository
+            # on each call, and stop before the first commit unless git
+            # resolves the fixture repository.
+            unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR \
+                  GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
+                  GIT_NAMESPACE GIT_CEILING_DIRECTORIES
+            selftest_git=(git --git-dir="$tmp_root/.git" --work-tree="$tmp_root")
+
             if ! git init -q -b selftest "$tmp_root" >/dev/null 2>&1; then
                 printf 'audit-decide-cite-ratio: SELF-TEST FAILED — git init failed.\n' >&2
                 exit 2
             fi
-            git -C "$tmp_root" add -A >/dev/null 2>&1
+            selftest_git_dir="$("${selftest_git[@]}" rev-parse --absolute-git-dir 2>/dev/null || true)"
+            if [[ "$selftest_git_dir" != "$(cd "$tmp_root" && pwd -P)/.git" ]]; then
+                printf 'audit-decide-cite-ratio: SELF-TEST FAILED — git resolves %s, not the fixture repository %s/.git. No commit is made.\n' \
+                    "${selftest_git_dir:-nothing}" "$tmp_root" >&2
+                exit 2
+            fi
+            "${selftest_git[@]}" add -A >/dev/null 2>&1
             GIT_AUTHOR_DATE="${old_day}T12:00:00" \
             GIT_COMMITTER_DATE="${old_day}T12:00:00" \
-                git -C "$tmp_root" commit -q -m "selftest: introduce ${violation_proc}" \
+                "${selftest_git[@]}" commit -q -m "selftest: introduce ${violation_proc}" \
                 >/dev/null 2>&1
 
             printf '//   decide::%s\n' "$grace_proc" >>"$selftest_decide_h"
-            git -C "$tmp_root" add -A >/dev/null 2>&1
+            "${selftest_git[@]}" add -A >/dev/null 2>&1
             GIT_AUTHOR_DATE="${new_day}T12:00:00" \
             GIT_COMMITTER_DATE="${new_day}T12:00:00" \
-                git -C "$tmp_root" commit -q -m "selftest: introduce ${grace_proc}" \
+                "${selftest_git[@]}" commit -q -m "selftest: introduce ${grace_proc}" \
                 >/dev/null 2>&1
 
             selftest_env=(CRUCIBLE_DECIDE_CITE_TEST_ROOT="$tmp_root"
