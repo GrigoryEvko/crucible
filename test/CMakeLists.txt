@@ -10691,39 +10691,39 @@ crucible_neg_compile_test(neg_metalog_try_append_pure_full_row
 # matrix above.  16 fixtures = 8 per direction (per-axis × 6 atoms +
 # multi-atom + saturation).  Pins both directions of the SPSC ring.
 # Producer side:
-crucible_neg_compile_test(neg_tracering_try_append_pure_alloc
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_try_append_pure_io
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_try_append_pure_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_try_append_pure_bg
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_try_append_pure_init
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_try_append_pure_test
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_try_append_pure_io_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_try_append_pure_full_row
-  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_multi_test(neg_tracering_try_append_pure_alloc
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_try_append_pure_io
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_try_append_pure_block
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_try_append_pure_bg
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_try_append_pure_init
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_try_append_pure_test
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_try_append_pure_io_block
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_try_append_pure_full_row
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
 # Consumer side:
-crucible_neg_compile_test(neg_tracering_drain_pure_alloc
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_drain_pure_io
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_drain_pure_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_drain_pure_bg
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_drain_pure_init
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_drain_pure_test
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_drain_pure_io_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_tracering_drain_pure_full_row
-  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_multi_test(neg_tracering_drain_pure_alloc
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_drain_pure_io
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_drain_pure_block
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_drain_pure_bg
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_drain_pure_init
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_drain_pure_test
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_drain_pure_io_block
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+crucible_neg_compile_multi_test(neg_tracering_drain_pure_full_row
+  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
 
 # ─── FOUND-I19 Vigil::dispatch_op row-fence ─────────────────────────
 # Vigil::dispatch_op_pure<CallerRow> requires IsPure<CallerRow>.

@@ -17,10 +17,9 @@
 // IsPure<Row<Effect::IO, Effect::Block>>.
 
 #include <crucible/TraceRing.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <fixy/Aliases.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::fixy;
 
 int main() {
     crucible::TraceRing ring;

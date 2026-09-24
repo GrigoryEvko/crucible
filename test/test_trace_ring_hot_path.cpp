@@ -3,10 +3,14 @@
 // it will accept.  A value may be relaxed toward a weaker tier and
 // never tightened toward a stronger one, which is what keeps a value
 // produced off the hot path out of a hot-path consumer.
+//
+// The ring's tier is the fixy band.  The metadata log still returns the
+// band of the old substrate, so its cases read that spelling.
 
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
 #include <crucible/safety/_HotPath.h>
+#include <fixy/Bands.h>
 #include "test_assert.h"
 
 #include <cstdio>
@@ -24,8 +28,8 @@ using crucible::ShapeHash;
 using crucible::OpIndex;
 using crucible::ScopeHash;
 using crucible::CallsiteHash;
-using crucible::safety::HotPath;
-using crucible::safety::HotPathTier_v;
+using ::fixy::HotPath;
+using ::fixy::HotPathTier_v;
 
 // An entry carries no operation index of its own: its slot in the
 // ring is that index.  Only the two hashes need seeding here.
@@ -59,7 +63,7 @@ static void test_try_append_pinned_type_identity() {
     using Got = decltype(ring->try_append_pinned(e));
     using Want = HotPath<HotPathTier_v::Hot, bool>;
     static_assert(std::is_same_v<Got, Want>, "try_append_pinned must return HotPath<Hot, bool>");
-    static_assert(Got::tier == HotPathTier_v::Hot);
+    static_assert(::fixy::band_tier_v<Got> == HotPathTier_v::Hot);
 
     auto p = ring->try_append_pinned(e);
     (void)std::move(p).consume();
@@ -71,16 +75,17 @@ static void test_drain_pinned_type_identity() {
     using Got = decltype(ring->drain_pinned(nullptr, 0u));
     using Want = HotPath<HotPathTier_v::Warm, uint32_t>;
     static_assert(std::is_same_v<Got, Want>, "drain_pinned must return HotPath<Warm, uint32_t>");
-    static_assert(Got::tier == HotPathTier_v::Warm);
+    static_assert(::fixy::band_tier_v<Got> == HotPathTier_v::Warm);
 }
 
 static void test_metalog_try_append_pinned_type_identity() {
     auto log = std::make_unique<MetaLog>();
 
+    using OldTier = ::crucible::safety::HotPathTier_v;
     using Got = decltype(log->try_append_pinned(static_cast<const TensorMeta*>(nullptr), 0u));
-    using Want = HotPath<HotPathTier_v::Hot, MetaIndex>;
+    using Want = ::crucible::safety::HotPath<OldTier::Hot, MetaIndex>;
     static_assert(std::is_same_v<Got, Want>, "MetaLog::try_append_pinned must return HotPath<Hot, MetaIndex>");
-    static_assert(Got::tier == HotPathTier_v::Hot);
+    static_assert(Got::tier == OldTier::Hot);
 
     TensorMeta meta{};
     meta.ndim = 1;
@@ -94,25 +99,25 @@ static void test_metalog_try_append_pinned_type_identity() {
 
 static void test_hot_satisfies_weaker_tiers() {
     using Hot = HotPath<HotPathTier_v::Hot, bool>;
-    static_assert(Hot::satisfies<HotPathTier_v::Hot>);
-    static_assert(Hot::satisfies<HotPathTier_v::Warm>);
-    static_assert(Hot::satisfies<HotPathTier_v::Cold>);
+    static_assert(::fixy::satisfies_v<Hot, HotPathTier_v::Hot>);
+    static_assert(::fixy::satisfies_v<Hot, HotPathTier_v::Warm>);
+    static_assert(::fixy::satisfies_v<Hot, HotPathTier_v::Cold>);
 }
 
 static void test_warm_rejected_at_hot_fence() {
     using Warm = HotPath<HotPathTier_v::Warm, uint32_t>;
-    static_assert(Warm::satisfies<HotPathTier_v::Warm>);
-    static_assert(Warm::satisfies<HotPathTier_v::Cold>);
-    static_assert(!Warm::satisfies<HotPathTier_v::Hot>, "A warm value must not satisfy a hot fence.  That rejection is "
-                                                        "what keeps off-hot-path work out of the per-operation "
-                                                        "recording site.");
+    static_assert(::fixy::satisfies_v<Warm, HotPathTier_v::Warm>);
+    static_assert(::fixy::satisfies_v<Warm, HotPathTier_v::Cold>);
+    static_assert(!::fixy::satisfies_v<Warm, HotPathTier_v::Hot>,
+                  "A warm value must not satisfy a hot fence.  That rejection is what keeps off-hot-path work out "
+                  "of the per-operation recording site.");
 }
 
 static void test_cold_rejected_at_higher_fences() {
     using Cold = HotPath<HotPathTier_v::Cold, int>;
-    static_assert(Cold::satisfies<HotPathTier_v::Cold>);
-    static_assert(!Cold::satisfies<HotPathTier_v::Warm>);
-    static_assert(!Cold::satisfies<HotPathTier_v::Hot>);
+    static_assert(::fixy::satisfies_v<Cold, HotPathTier_v::Cold>);
+    static_assert(!::fixy::satisfies_v<Cold, HotPathTier_v::Warm>);
+    static_assert(!::fixy::satisfies_v<Cold, HotPathTier_v::Hot>);
 }
 
 static void test_relax_to_weaker_tiers() {
@@ -120,10 +125,10 @@ static void test_relax_to_weaker_tiers() {
     auto e = make_entry(8);
 
     auto hot = ring->try_append_pinned(e);
-    auto warm = std::move(hot).relax<HotPathTier_v::Warm>();
+    auto warm = ::fixy::relax<HotPathTier_v::Warm>(std::move(hot));
     static_assert(std::is_same_v<decltype(warm), HotPath<HotPathTier_v::Warm, bool>>);
 
-    auto cold = std::move(warm).relax<HotPathTier_v::Cold>();
+    auto cold = ::fixy::relax<HotPathTier_v::Cold>(std::move(warm));
     static_assert(std::is_same_v<decltype(cold), HotPath<HotPathTier_v::Cold, bool>>);
 
     bool ok = std::move(cold).consume();
@@ -139,7 +144,7 @@ static void test_layout_invariant() {
 // A consumer shaped like the per-operation recording site, which
 // admits a hot-tier value and nothing weaker.
 template <typename W>
-    requires(W::template satisfies<HotPathTier_v::Hot>)
+    requires(::fixy::satisfies_v<W, HotPathTier_v::Hot>)
 static bool fg_recording_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }
@@ -154,7 +159,7 @@ static void test_e2e_hot_fence_consumer() {
 }
 
 template <typename W>
-    requires(W::template satisfies<HotPathTier_v::Warm>)
+    requires(::fixy::satisfies_v<W, HotPathTier_v::Warm>)
 static bool warm_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume() != 0;  // accepts either payload type
 }
@@ -177,7 +182,7 @@ static void test_full_ring_type_pin_survives_failure() {
     auto ring = std::make_unique<TraceRing>();
 
     using FullPathT = HotPath<HotPathTier_v::Hot, bool>;
-    FullPathT failure_value{false};
+    FullPathT failure_value{false, {}};
     static_assert(std::is_same_v<decltype(ring->try_append_pinned(make_entry(0))), FullPathT>);
     bool was_full = !std::move(failure_value).consume();
     assert(was_full);
@@ -192,7 +197,7 @@ static void test_metalog_full_buffer_type_pin_survives_failure() {
     meta.sizes[0] = ::crucible::tensor_dim(1);
     meta.strides[0] = ::crucible::tensor_dim(1);
 
-    using NonePathT = HotPath<HotPathTier_v::Hot, MetaIndex>;
+    using NonePathT = ::crucible::safety::HotPath<::crucible::safety::HotPathTier_v::Hot, MetaIndex>;
     NonePathT none_path{MetaIndex::none()};
     static_assert(std::is_same_v<decltype(log->try_append_pinned(&meta, 1)), NonePathT>);
     MetaIndex idx = std::move(none_path).consume();
@@ -209,7 +214,7 @@ static void test_drain_pinned_empty_ring() {
 
 template <typename W, HotPathTier_v T_target>
 concept can_tighten = requires(W&& w) {
-    { std::move(w).template relax<T_target>() };
+    { ::fixy::relax<T_target>(std::move(w)) };
 };
 
 static void test_cannot_tighten_to_stronger_tier() {

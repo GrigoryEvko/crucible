@@ -1,8 +1,6 @@
 #include <crucible/Platform.h>
 #include <crucible/TraceRing.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_FxAliases.h>
+#include <fixy/Aliases.h>
 
 #include <atomic>
 #include "test_assert.h"
@@ -15,7 +13,7 @@ using crucible::ShapeHash;
 using crucible::ScopeHash;
 using crucible::CallsiteHash;
 using crucible::MetaIndex;
-namespace eff = ::crucible::effects;
+namespace eff = ::fixy;
 
 int main() {
     auto* ring = new crucible::TraceRing();

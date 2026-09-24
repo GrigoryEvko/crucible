@@ -79,7 +79,7 @@ inline void flush_and_wait_region_published(Vigil& vigil) {
 // adapter. This is for the tests that drive the Vigil directly.
 [[nodiscard]] inline TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry& entry
                                                                           CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return TraceRing::ValidatedEntryPtr{&entry};
+    return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
 }
 
 }  // namespace crucible::test

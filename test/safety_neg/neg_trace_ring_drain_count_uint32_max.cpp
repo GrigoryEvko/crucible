@@ -5,7 +5,7 @@
 // TraceRing drain max-count cap.
 //
 // Per WRAP-TraceRing-3 (#1055), ValidDrainCount is
-// safety::Refined<safety::bounded_above<TraceRing::CAPACITY>, uint32_t>
+// fixy::Refined<fixy::bounded_above<TraceRing::CAPACITY>, uint32_t>
 // with TraceRing::CAPACITY == (1u << 16) == 65'536.  UINT32_MAX is
 // 65 537× the cap.  Without the gate, a caller that loaded a uint32_t
 // max_count from disk / env / FFI without bounds-checking would
@@ -32,12 +32,13 @@
 #include <cstdint>
 
 int main() {
-    // Constant evaluation forces the Refined ctor's pre clause
+    // Constant evaluation forces the pre clause of mint_refined
     // (`bounded_above<TraceRing::CAPACITY>(v)`) to be exercised at
     // compile time.  v == UINT32_MAX → CAPACITY < UINT32_MAX →
     // predicate(v) == false → contract violation → not a constant
     // expression → ill-formed.
-    constexpr crucible::ValidDrainCount bad{uint32_t{UINT32_MAX}};
+    constexpr crucible::ValidDrainCount bad =
+        ::fixy::mint_refined<crucible::ValidDrainCount::predicate_type{}, uint32_t>(uint32_t{UINT32_MAX});
     (void)bad;
     return 0;
 }

@@ -34,40 +34,29 @@
 // vessel/torch/crucible_native.py.
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_FxAliases.h>
 #include <crucible/warden/Registry.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_FixedArray.h>
-#include <crucible/safety/_HotPath.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Stale.h>
-#include <crucible/safety/_Tagged.h>
-#include <crucible/fixy/Hw.h>
-#include <crucible/fixy/Dim.h>
 
-namespace crucible::fixy::wrap {
-using ::crucible::safety::AtomicMonotonic;
-using ::crucible::safety::bounded_above;
-using ::crucible::safety::FixedArray;
-using ::crucible::safety::HotPath;
-using ::crucible::safety::HotPathTier_v;
-using ::crucible::safety::Monotonic;
-using ::crucible::safety::Refined;
-using ::crucible::safety::Stale;
-using ::crucible::safety::Tagged;
-}  // namespace crucible::fixy::wrap
-namespace crucible::fixy::tags {
-namespace vessel_trust = ::crucible::safety::vessel_trust;
-}  // namespace crucible::fixy::tags
+#include <fixy/Aliases.h>
+#include <fixy/Axis.h>
+#include <fixy/Bands.h>
+#include <fixy/FixedArray.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/Stale.h>
+#include <fixy/Tagged.h>
+#include <fixy/atoms/Hw.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/effects/Row.h>
 
 namespace crucible {
 
@@ -103,24 +92,25 @@ enum class ScalarType2 : uint8_t {
 
 namespace tracering_hw {
 
-namespace fh = ::crucible::fixy::hw;
-namespace fgh = ::crucible::fixy::grant::hw;
-
-// One source of truth: this value parameterises both the grant tag below and
-// the third argument of every prefetch builtin in try_append, so editing it
-// edits the emitted instruction rather than a description of it.
+// One source of truth: this value is the third argument of every prefetch
+// builtin in try_append, so editing it edits the emitted instruction rather
+// than a description of it.
 inline constexpr int kPrefetchLocality = 3;
-
-using ActiveCacheGrant = fgh::cache<fh::CacheOp::Prefetch, kPrefetchLocality>;
-
-static_assert(::crucible::fixy::grant::IsGrantTag<ActiveCacheGrant>,
-              "the active cache grant must be a well-formed grant tag");
-static_assert(::crucible::fixy::grant::which_dim_v<ActiveCacheGrant>
-                  == ::crucible::fixy::dim::DimensionAxis::HwInstruction,
-              "grant::hw::cache routes to the HwInstruction axis");
 
 static_assert(kPrefetchLocality >= 0 && kPrefetchLocality <= 3, "prefetch locality must be in [0, 3], the "
                                                                 "__builtin_prefetch third-argument domain");
+
+// The widest instruction class the ring issues: loads, stores and a prefetch
+// hint, all scalar.  A change that adds a timestamp read or a privileged
+// instruction to the append must raise this tier, and the hot path refuses
+// every tier from the timestamp read upwards.
+using InstructionTier = ::fixy::atom::hw::scalar;
+
+static_assert(::fixy::atom::IsAtom<InstructionTier> && InstructionTier::axis == ::fixy::Axis::HwInstruction,
+              "the ring's instruction tier is a shipped atom of the HwInstruction axis");
+static_assert(!::fixy::atom::hw::at_or_above(InstructionTier::tier,
+                                             ::fixy::atom::hw::HwInstruction::NonDeterministicTsc),
+              "the append runs on the hot path, which refuses the timestamp and privileged tiers");
 
 }  // namespace tracering_hw
 
@@ -139,10 +129,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         uint8_t scalar_types = 0;  // a two-bit tag for each of slots 0 to 3, with slot 4 in op_flags
         uint8_t op_flags = 0;
         // Zero-initialised so the content hash never sees indeterminate bytes.
-        ::crucible::fixy::wrap::FixedArray<int64_t, 5> scalar_values{};
+        ::fixy::FixedArray<int64_t, 5> scalar_values{};
 
         [[nodiscard, gnu::pure]] ScalarType2 get_scalar_type(uint32_t i) const noexcept
-            pre(::crucible::decide::in_range<uint32_t>(i, 0u, 4u)) {
+            pre(::foundation::decide::in_range<uint32_t>(i, 0u, 4u)) {
             if (i < 4) {
                 return static_cast<ScalarType2>((scalar_types >> (i * 2)) & 0x3);
             }
@@ -150,7 +140,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         }
 
         void set_scalar_type(uint32_t i, ScalarType2 t) noexcept
-            pre(::crucible::decide::in_range<uint32_t>(i, 0u, 4u)) {
+            pre(::foundation::decide::in_range<uint32_t>(i, 0u, 4u)) {
             const uint8_t bits = static_cast<uint8_t>(t) & 0x3;
             if (i < 4) {
                 const uint8_t shift = static_cast<uint8_t>(i * 2);
@@ -164,6 +154,12 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
     static_assert(sizeof(Entry) == 64, "Entry must be exactly one cache line");
     static_assert(alignof(Entry) == 64);
+    static_assert(std::is_standard_layout_v<Entry>);
+    static_assert(offsetof(Entry, schema_hash) == 0 && offsetof(Entry, shape_hash) == 8
+                      && offsetof(Entry, num_inputs) == 16 && offsetof(Entry, num_outputs) == 18
+                      && offsetof(Entry, num_scalar_args) == 20 && offsetof(Entry, scalar_types) == 22
+                      && offsetof(Entry, op_flags) == 23 && offsetof(Entry, scalar_values) == 24,
+                  "Entry is bit-copied into the trace file, so each field offset is part of a persisted format");
     CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Entry);
 
     // An Entry built straight from foreign-runtime input carries the first
@@ -171,9 +167,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // it internally where every field is certified by construction, produces
     // the second tag. Tagging the pointer rather than the Entry keeps the
     // 64-byte payload where the caller put it.
-    using FromPytorchEntryPtr =
-        crucible::fixy::wrap::Tagged<const Entry*, crucible::fixy::tags::vessel_trust::FromPytorch>;
-    using ValidatedEntryPtr = crucible::fixy::wrap::Tagged<const Entry*, crucible::fixy::tags::vessel_trust::Validated>;
+    using FromPytorchEntryPtr = ::fixy::Tagged<const Entry*, ::fixy::tags::vessel_trust::FromPytorch>;
+    using ValidatedEntryPtr = ::fixy::Tagged<const Entry*, ::fixy::tags::vessel_trust::Validated>;
 
     static constexpr uint32_t CAPACITY = 1u << 16;
     static constexpr uint32_t MASK = CAPACITY - 1;
@@ -185,9 +180,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // publishes with release and get() reads with acquire, which is the edge
     // that makes the slot writes visible across the pair. A thread reading its
     // own counter uses peek_relaxed and needs no ordering.
-    alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint64_t> head{0};
+    alignas(64) ::fixy::AtomicMonotonic<uint64_t> head = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
-    alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint64_t> tail{0};
+    alignas(64) ::fixy::AtomicMonotonic<uint64_t> tail = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
     // The consumer is the only party that reads or writes this, so drains
     // track their position here and publish to tail only once the copies are
@@ -211,12 +206,12 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // which costs a real reload of tail and never an overwrite of a slot the
     // consumer has not read. Monotonic enforces the direction: tail only ever
     // advances, so an observation that moved backwards is a lost acquire.
-    alignas(64) crucible::fixy::wrap::Monotonic<uint64_t> cached_tail_{0};
+    alignas(64) ::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
 
-    alignas(64) Entry entries[CAPACITY]{};
-    MetaIndex meta_starts[CAPACITY]{};
-    ScopeHash scope_hashes[CAPACITY]{};
-    CallsiteHash callsite_hashes[CAPACITY]{};
+    alignas(64) std::array<Entry, CAPACITY> entries{};
+    std::array<MetaIndex, CAPACITY> meta_starts{};
+    std::array<ScopeHash, CAPACITY> scope_hashes{};
+    std::array<CallsiteHash, CAPACITY> callsite_hashes{};
 
     TraceRing() noexcept {
         crucible::warden::register_hot_region(this, sizeof(*this),
@@ -271,11 +266,11 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // try_append that made it unfit for the hot path would have to weaken the
     // tier here, and every fenced consumer would then reject the call.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot, gnu::flatten]]
-    CRUCIBLE_INLINE crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Hot, bool>
+    CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>
     try_append_pinned(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                       CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Hot, bool>{
-            try_append(e, meta_start, scope_hash, callsite_hash)};
+        return ::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>{try_append(e, meta_start, scope_hash, callsite_hash),
+                                                                 {}};
     }
 
     // Preferred at new call sites: appending touches memory only, so the
@@ -283,8 +278,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // performs I/O, or runs at init or test time is rejected here rather than
     // discovered later. The plain try_append remains for callers that cannot
     // name their row.
-    template <typename CallerRow = ::crucible::effects::Row<>>
-        requires ::crucible::effects::IsPure<CallerRow>
+    template <typename CallerRow = ::foundation::effects::Row<>>
+        requires ::fixy::IsPure<CallerRow>
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
     try_append_pure(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                     CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
@@ -295,9 +290,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
     drain(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr, ScopeHash* out_scope_hashes = nullptr,
           CallsiteHash* out_callsite_hashes = nullptr) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
                                                                                   CAPACITY))
-            pre(::crucible::decide::valid_span(max_count, out)) {
+            pre(::foundation::decide::valid_span(max_count, out)) {
         if (max_count == 0) [[unlikely]]
             return 0;
 
@@ -341,27 +336,27 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // Warm rather than hot: the caller may allocate and copies large buffers,
     // so a consumer fenced to the hot tier rejects a value from here.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]]
-    crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Warm, uint32_t>
+    ::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>
     drain_pinned(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr,
                  ScopeHash* out_scope_hashes = nullptr, CallsiteHash* out_callsite_hashes = nullptr) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
                                                                                   CAPACITY))
-            pre(::crucible::decide::valid_span(max_count, out)) {
-        return crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Warm, uint32_t>{
-            drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes)};
+            pre(::foundation::decide::valid_span(max_count, out)) {
+        return ::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>{
+            drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes), {}};
     }
 
     // The consumer counterpart of try_append_pure. A drain touches memory
     // only, so the caller's row must be empty. The thread that owns the
     // consumer side declares its own context separately from this call.
-    template <typename CallerRow = ::crucible::effects::Row<>>
-        requires ::crucible::effects::IsPure<CallerRow>
+    template <typename CallerRow = ::foundation::effects::Row<>>
+        requires ::fixy::IsPure<CallerRow>
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
     drain_pure(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr,
                ScopeHash* out_scope_hashes = nullptr, CallsiteHash* out_callsite_hashes = nullptr) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
                                                                                   CAPACITY))
-            pre(::crucible::decide::valid_span(max_count, out)) {
+            pre(::foundation::decide::valid_span(max_count, out)) {
         return drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes);
     }
 
@@ -372,7 +367,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
     try_pop_batch(Entry* out_entries, MetaIndex* out_meta_starts, ScopeHash* out_scope_hashes,
                   CallsiteHash* out_callsite_hashes, uint32_t max_count) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
                                                                                   CAPACITY))
             pre(max_count == 0
                 || (out_entries != nullptr && out_meta_starts != nullptr && out_scope_hashes != nullptr
@@ -415,8 +410,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // head and tail are read at different instants while both threads run, so
     // the difference is a snapshot of a value that was never simultaneously
     // true. The return type says so and forces the caller to acknowledge it.
-    [[nodiscard, gnu::pure]] crucible::fixy::wrap::Stale<uint32_t> size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return crucible::fixy::wrap::Stale<uint32_t>::at_infinity(static_cast<uint32_t>(head.get() - tail.get()));
+    [[nodiscard, gnu::pure]] ::fixy::Stale<uint32_t> size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return ::fixy::Stale<uint32_t>::at_infinity(static_cast<uint32_t>(head.get() - tail.get()));
     }
 
     // The acquire in get() means the returned bound also implies visibility of
@@ -439,13 +434,21 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 static_assert(sizeof(TraceRing) >= (5u * 1024u * 1024u) && sizeof(TraceRing) <= (6u * 1024u * 1024u),
               "TraceRing footprint must stay inside the 5-6 MB envelope");
 
+// Each counter owns its cache line and the four arrays follow in order, so a
+// wrapper change that moves a field shows here and not as a slowdown.
+static_assert(std::is_standard_layout_v<TraceRing>);
+static_assert(offsetof(TraceRing, head) == 0 && offsetof(TraceRing, tail) == 64
+                  && offsetof(TraceRing, consumer_tail_) == 128 && offsetof(TraceRing, cached_tail_) == 192
+                  && offsetof(TraceRing, entries) == 256
+                  && offsetof(TraceRing, meta_starts) == 256 + sizeof(TraceRing::Entry) * TraceRing::CAPACITY,
+              "the counters sit on separate cache lines ahead of the arrays");
+
 // A drain count that has already been checked against the ring capacity, for
 // callers that want to establish the bound once and carry the witness. Asking
 // for more than the ring holds is silently clamped inside the drain, which
 // hides both a caller that never bounded a value it read from outside and a
 // caller whose output buffer is smaller than the count it passed.
-using ValidDrainCount =
-    ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<TraceRing::CAPACITY>, uint32_t>;
+using ValidDrainCount = ::fixy::Refined<::fixy::bounded_above<TraceRing::CAPACITY>, uint32_t>;
 
 [[nodiscard, gnu::const]] inline constexpr uint32_t make_drain_count(ValidDrainCount raw) noexcept {
     return raw.value();
@@ -462,7 +465,7 @@ using ValidDrainCount =
 // while reading like a certification.
 [[nodiscard]] CRUCIBLE_INLINE constexpr TraceRing::FromPytorchEntryPtr mint_ffi_entry(const TraceRing::Entry& e
                                                                                       CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return TraceRing::FromPytorchEntryPtr{&e};
+    return ::fixy::mint_tagged<::fixy::tags::vessel_trust::FromPytorch>(&e);
 }
 
 }  // namespace crucible

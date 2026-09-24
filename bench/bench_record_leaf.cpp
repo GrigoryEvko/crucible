@@ -68,7 +68,7 @@ namespace {
 // there is nothing shorter for an adapter to reach for.
 [[nodiscard]] TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry& entry
                                                                    CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return TraceRing::ValidatedEntryPtr{&entry};
+    return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
 }
 
 // ── Shape of the traced op ─────────────────────────────────────────

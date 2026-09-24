@@ -125,7 +125,6 @@ include/crucible/SwissTable.h
 include/crucible/SymbolTable.h
 include/crucible/TraceGraph.h
 include/crucible/TraceLoader.h
-include/crucible/TraceRing.h
 include/crucible/Transaction.h
 include/crucible/Vigil.h
 include/crucible/_Saturate.h
