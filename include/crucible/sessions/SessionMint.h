@@ -11,9 +11,12 @@
 // effect row, so it is admitted on its own axis instead of through the row
 // check.
 
+#include <crucible/Platform.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
+#include <crucible/permissions/_Permission.h>
 #include <crucible/safety/IsVendor.h>
+#include <crucible/safety/_Pinned.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
@@ -21,14 +24,121 @@
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <source_location>
 #include <type_traits>
 #include <utility>
 
 namespace crucible::safety::proto {
 
+// The one authority over the session epoch.  Its root permission is minted
+// one time, and the source below consumes it.
+struct SessionEpochAuthority {};
+
+class SessionEpochSource;
+
+namespace detail::session_epoch {
+
+// The address of the source that lives, or null.  A second live source would
+// be a second authority that could state any epoch, so its construction is
+// refused.  A wrapper whose source is not this one holds no live claim.
+inline std::atomic<SessionEpochSource const*> live_source{nullptr};
+
+[[noreturn]] CRUCIBLE_COLD inline void refuse(const char* reason) noexcept {
+    std::fprintf(stderr, "crucible session epoch: %s\n", reason);
+    std::abort();
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void refuse_claim(std::uint64_t epoch, std::uint64_t generation) noexcept {
+    std::fprintf(stderr,
+                 "crucible session epoch: the source does not hold epoch %llu generation %llu, so a context "
+                 "cannot claim it.  Build the wrapper with the coordinate the source holds now.\n",
+                 static_cast<unsigned long long>(epoch), static_cast<unsigned long long>(generation));
+    std::abort();
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void refuse_stale(std::uint64_t epoch, std::uint64_t generation) noexcept {
+    std::fprintf(stderr,
+                 "crucible session epoch: a context claims epoch %llu generation %llu, and the live source no "
+                 "longer holds it.  Build a new wrapper from the source before the mint.\n",
+                 static_cast<unsigned long long>(epoch), static_cast<unsigned long long>(generation));
+    std::abort();
+}
+
+}  // namespace detail::session_epoch
+
+// The live source of the session epoch and generation, and the only thing
+// that advances them.  The source consumes the root permission of the epoch
+// authority, and one source at most lives in a process.  A reader gets a
+// const reference, which can only ask whether the source holds a coordinate.
+// The two counters advance independently and never decrease, which is the
+// order the epoch thresholds compare in.
+//
+// One owner writes, and any number of threads read.  A reader takes the pair
+// under a sequence lock, so it never sees an epoch from one advance with a
+// generation from another.
+class SessionEpochSource : public ::crucible::safety::Pinned<SessionEpochSource> {
+public:
+    explicit SessionEpochSource(::crucible::safety::Permission<SessionEpochAuthority>&& authority) noexcept
+        : authority_{std::move(authority)} {
+        SessionEpochSource const* expected = nullptr;
+        if (!detail::session_epoch::live_source.compare_exchange_strong(expected, this, std::memory_order_acq_rel))
+            [[unlikely]] {
+            detail::session_epoch::refuse("a second epoch source was built while one lives");
+        }
+    }
+
+    ~SessionEpochSource() { detail::session_epoch::live_source.store(nullptr, std::memory_order_release); }
+
+    void advance_epoch() noexcept { advance_(epoch_); }
+    void advance_generation() noexcept { advance_(generation_); }
+
+    // True when the source holds exactly this coordinate at the moment of
+    // the read.
+    [[nodiscard]] bool holds(std::uint64_t epoch, std::uint64_t generation) const noexcept {
+        for (;;) {
+            const std::uint64_t before = sequence_.load(std::memory_order_acquire);
+            if ((before & 1U) != 0U) {
+                CRUCIBLE_SPIN_PAUSE;
+                continue;
+            }
+            const std::uint64_t seen_epoch = epoch_.load(std::memory_order_acquire);
+            const std::uint64_t seen_generation = generation_.load(std::memory_order_acquire);
+            if (sequence_.load(std::memory_order_acquire) == before) {
+                return seen_epoch == epoch && seen_generation == generation;
+            }
+        }
+    }
+
+private:
+    void advance_(std::atomic<std::uint64_t>& counter) noexcept {
+        const std::uint64_t sequence = sequence_.load(std::memory_order_acquire);
+        const std::uint64_t value = counter.load(std::memory_order_acquire);
+        if (value == UINT64_MAX) [[unlikely]] {
+            detail::session_epoch::refuse("a session epoch counter would wrap");
+        }
+        sequence_.store(sequence + 1, std::memory_order_release);
+        counter.store(value + 1, std::memory_order_release);
+        sequence_.store(sequence + 2, std::memory_order_release);
+    }
+
+    [[no_unique_address]] ::crucible::safety::Permission<SessionEpochAuthority> authority_;
+    std::atomic<std::uint64_t> sequence_{0};
+    std::atomic<std::uint64_t> epoch_{0};
+    std::atomic<std::uint64_t> generation_{0};
+};
+
+// A context with a claim about the session epoch.  Its one door checks the
+// claim against the live source, so no caller states an epoch that the source
+// does not hold.  The wrapper keeps the address of its source, and every mint
+// that reads the claim asks the source again, so a wrapper made stale by a
+// later advance fails at the mint.  The source must outlive its wrappers.  The
+// wrapper is not trivially copyable, so std::bit_cast and
+// std::start_lifetime_as cannot build one from bytes.
 template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, ::crucible::effects::IsExecCtx InnerCtx>
 struct [[nodiscard]] EpochExecCtx {
     using inner_ctx = InnerCtx;
@@ -43,26 +153,67 @@ struct [[nodiscard]] EpochExecCtx {
     static constexpr std::uint64_t current_epoch = CurrentEpoch;
     static constexpr std::uint64_t current_generation = CurrentGeneration;
 
-    // A wrapper over the foreground context claims nothing, so any caller
-    // can build it.  Every other wrapper takes the context it wraps, which
-    // is the evidence.  The wrapper is not an aggregate.  An aggregate is an
-    // implicit-lifetime type, and std::start_lifetime_as then builds a
-    // wrapper over a background context from a buffer, with no context in
-    // hand.
-    constexpr EpochExecCtx() noexcept
-        requires std::is_same_v<cap_type, ::crucible::effects::ctx_cap::Fg>
-    = default;
-    constexpr explicit EpochExecCtx(InnerCtx wrapped_ctx) noexcept : inner{wrapped_ctx} {}
+    constexpr EpochExecCtx(EpochExecCtx const& other) noexcept : inner{other.inner}, source_{other.source_} {}
+    constexpr EpochExecCtx& operator=(EpochExecCtx const& other) noexcept {
+        inner = other.inner;
+        source_ = other.source_;
+        return *this;
+    }
 
-    [[no_unique_address]] InnerCtx inner{};
+    // The one door.  The claim must be the coordinate the source holds now,
+    // in every build mode: a false claim ends the process.
+    [[nodiscard]] static EpochExecCtx claim(InnerCtx const& ctx, SessionEpochSource const& source) noexcept {
+        if (!source.holds(CurrentEpoch, CurrentGeneration)) [[unlikely]] {
+            detail::session_epoch::refuse_claim(CurrentEpoch, CurrentGeneration);
+        }
+        return EpochExecCtx{ctx, source};
+    }
+
+    // True while the source that built the wrapper lives and still holds the
+    // claimed coordinate.
+    [[nodiscard]] bool is_claim_live() const noexcept {
+        return source_ == detail::session_epoch::live_source.load(std::memory_order_acquire)
+               && source_->holds(CurrentEpoch, CurrentGeneration);
+    }
+
+    [[no_unique_address]] InnerCtx inner;
+
+private:
+    constexpr EpochExecCtx(InnerCtx wrapped_ctx, SessionEpochSource const& source) noexcept
+        : inner{wrapped_ctx}, source_{&source} {}
+
+    SessionEpochSource const* source_;
 };
 
+namespace detail::session_epoch {
+
+template <class Ctx>
+struct is_epoch_exec_ctx : std::false_type {};
+
+template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, class InnerCtx>
+struct is_epoch_exec_ctx<EpochExecCtx<CurrentEpoch, CurrentGeneration, InnerCtx>> : std::true_type {};
+
+// Asks the source again at the mint.  A context with no epoch claim passes,
+// and a claim the source no longer holds ends the process.
+template <class Ctx>
+constexpr void require_live_claim([[maybe_unused]] Ctx const& ctx) noexcept {
+    if constexpr (is_epoch_exec_ctx<Ctx>::value) {
+        if (!ctx.is_claim_live()) [[unlikely]] {
+            refuse_stale(Ctx::current_epoch, Ctx::current_generation);
+        }
+    }
+}
+
+}  // namespace detail::session_epoch
+
 // The wrapper carries the context it is handed, so the result holds no more
-// authority than the argument.
+// authority than the argument.  The claim is the coordinate the source holds
+// when the wrapper is built.  A wrapper built before the source advances keeps
+// the older claim, which the protocol thresholds then compare as they stand.
 template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, ::crucible::effects::IsExecCtx InnerCtx>
-[[nodiscard]] constexpr auto with_session_epoch(InnerCtx const& ctx) noexcept
+[[nodiscard]] auto with_session_epoch(InnerCtx const& ctx, SessionEpochSource const& source) noexcept
     -> EpochExecCtx<CurrentEpoch, CurrentGeneration, InnerCtx> {
-    return EpochExecCtx<CurrentEpoch, CurrentGeneration, InnerCtx>{ctx};
+    return EpochExecCtx<CurrentEpoch, CurrentGeneration, InnerCtx>::claim(ctx, source);
 }
 
 }  // namespace crucible::safety::proto
@@ -644,11 +795,12 @@ concept CtxFitsChannel =
 
 template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource, class... InitPerms>
     requires CtxFitsPermissionedProtocol<Proto, Ctx, PermSet<InitPerms...>>
-[[nodiscard]] constexpr auto mint_permissioned_session(Ctx const&, Resource&& resource,
+[[nodiscard]] constexpr auto mint_permissioned_session(Ctx const& ctx, Resource&& resource,
                                                        ::crucible::safety::Permission<InitPerms>&&... perms) noexcept {
     using InitialPS = PermSet<InitPerms...>;
     using LoopCtx = detail::session_mint::loop_ctx_from_exec_ctx_t<Ctx>;
     ((void)perms, ...);
+    detail::session_epoch::require_live_claim(ctx);
 
     return detail::permissioned_session_with_loc_<Proto, InitialPS, Resource, LoopCtx>(std::forward<Resource>(resource),
                                                                                        std::source_location::current());
@@ -674,8 +826,8 @@ template <class Proto, ::crucible::effects::IsExecCtx CtxA, ::crucible::effects:
 [[nodiscard]] constexpr auto mint_channel(CtxA const& ctx_a, CtxB const& ctx_b, ResourceA&& resource_a,
                                           ResourceB&& resource_b,
                                           std::source_location loc = std::source_location::current()) noexcept {
-    static_cast<void>(ctx_a);
-    static_cast<void>(ctx_b);
+    detail::session_epoch::require_live_claim(ctx_a);
+    detail::session_epoch::require_live_claim(ctx_b);
 
     using StoredResourceA = std::remove_cvref_t<ResourceA>;
     using StoredResourceB = std::remove_cvref_t<ResourceB>;
@@ -844,7 +996,8 @@ using EpochFgCtx = EpochExecCtx<5, 3, eff::HotFgCtx>;
 using FreshEpochDelegate = EpochedDelegate<DelegatedSession<End, EmptyPermSet>, End, 5, 3>;
 using WeakenedGenerationDelegate = EpochedDelegate<DelegatedSession<End, EmptyPermSet>, End, 5, 2>;
 static_assert(::crucible::effects::IsExecCtx<EpochFgCtx>);
-static_assert(sizeof(EpochFgCtx) == sizeof(eff::HotFgCtx));
+// The wrapper carries the address of its source and nothing else.
+static_assert(sizeof(EpochFgCtx) == sizeof(SessionEpochSource const*));
 static_assert(ProtocolEpochAdmittedByLoopCtx<FreshEpochDelegate, EpochCtx<5, 3>>);
 static_assert(!ProtocolEpochAdmittedByLoopCtx<FreshEpochDelegate, EpochCtx<4, 3>>);
 static_assert(!ProtocolEpochAdmittedByLoopCtx<WeakenedGenerationDelegate, EpochCtx<5, 3>>);

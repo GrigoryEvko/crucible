@@ -1239,7 +1239,11 @@ int run_recording_psh_epoched_delegate_accept_fidelity() {
     using AcceptCarrier = EpochedAccept<Delegated, End, kEpoch, kGeneration>;
     using Ctx = EpochExecCtx<kEpoch, kGeneration, eff::HotFgCtx>;
 
-    const Ctx ctx{};
+    // The context claims the coordinate the live source holds.
+    SessionEpochSource epoch_source{::crucible::safety::mint_permission_root<SessionEpochAuthority>()};
+    for (std::uint64_t step = 0; step < kEpoch; ++step) epoch_source.advance_epoch();
+    for (std::uint64_t step = 0; step < kGeneration; ++step) epoch_source.advance_generation();
+    const Ctx ctx = with_session_epoch<kEpoch, kGeneration>(eff::HotFgCtx{}, epoch_source);
     SessionEventLog log{SessionTagId{4343}};
 
     auto delegate_psh = mint_permissioned_session<DelegateCarrier>(ctx, CarrierChannel{});

@@ -17,7 +17,8 @@ int main() {
     using StaleSenderCtx = proto::EpochExecCtx<4, 3, eff::HotFgCtx>;
     using Proto = proto::EpochedDelegate<proto::DelegatedSession<proto::End, proto::EmptyPermSet>, proto::End, 5, 3>;
 
-    StaleSenderCtx ctx{};
+    proto::SessionEpochSource source{::crucible::safety::mint_permission_root<proto::SessionEpochAuthority>()};
+    const StaleSenderCtx ctx = proto::with_session_epoch<4, 3>(eff::HotFgCtx{}, source);
     [[maybe_unused]] auto h = proto::mint_permissioned_session<Proto>(ctx, FakeChannel{});
     return 0;
 }

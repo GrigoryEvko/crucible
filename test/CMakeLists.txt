@@ -4960,7 +4960,10 @@ crucible_neg_compile_effects_test(neg_effects_cold_init_ctx_default_constructed
     "is_same_v<Cap, crucible::effects::ctx_cap::Fg> .with Cap = crucible::effects::Init.* evaluated to .false.")
 crucible_neg_compile_effects_test(neg_effects_epoch_ctx_over_bg_default_constructed
     "no matching function for call to .crucible::safety::proto::EpochExecCtx<1, 1, crucible::effects::ExecCtx<crucible::effects::Bg, "
-    "is_same_v<typename InnerCtx::cap_type, crucible::effects::ctx_cap::Fg> .with InnerCtx = crucible::effects::ExecCtx<crucible::effects::Bg, .* evaluated to .false.")
+    "candidate expects 2 arguments, 0 provided")
+crucible_neg_compile_effects_test(neg_effects_epoch_ctx_over_fg_default_constructed
+    "no matching function for call to .crucible::safety::proto::EpochExecCtx<7, 3, crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg, "
+    "candidate expects 2 arguments, 0 provided")
 crucible_neg_compile_effects_test(neg_effects_with_cap_bg_by_type_only
     "no matching function for call to .crucible::effects::ExecCtx<>::with_cap<crucible::effects::Bg>"
     "candidate expects 1 argument, 0 provided")
@@ -13367,6 +13370,18 @@ crucible_neg_compile_session_test(neg_endpoint_gate_sharded_calendar_producer_bg
 crucible_neg_compile_session_test(neg_endpoint_gate_sharded_calendar_consumer_bg_row
     "no matching function for call to .mint_consumer_session<"
     "proto_row_admitted_by")
+
+# A context that claims a session epoch takes the claim from the one live
+# epoch source.  The test proves a true claim is admitted, and a false, stale
+# or orphaned claim and a second live source end the process.  The two
+# fixtures prove the wrapper cannot come from bytes.
+crucible_test(test_session_epoch_source)
+crucible_neg_compile_effects_test(neg_effects_epoch_ctx_over_fg_forged_by_bit_cast
+    "no matching function for call to .bit_cast"
+    "is_trivially_copyable|__is_trivially_copyable")
+crucible_neg_compile_effects_test(neg_effects_epoch_ctx_over_fg_forged_by_checked_start
+    "no matching function for call to .start_as_array"
+    "ImplicitLifetimeThroughout")
 
 # ─── HS14 fixtures #1 + #2 for safety::PublishCommitCell ────────────
 #

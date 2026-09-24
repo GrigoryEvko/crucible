@@ -67,7 +67,8 @@ static void void_returning_transport(CarrierChannel&) noexcept {}
 int main() {
     using namespace neg_mint_recording_session_psh_epoched_accept_transport_returns_void;
 
-    EpochCtxType ctx{};
+    proto::SessionEpochSource source{::crucible::safety::mint_permission_root<proto::SessionEpochAuthority>()};
+    const EpochCtxType ctx = proto::with_session_epoch<7, 2>(eff::HotFgCtx{}, source);
     proto::SessionEventLog log{};
     proto::RoleTagId self{1};
     proto::RoleTagId peer{2};

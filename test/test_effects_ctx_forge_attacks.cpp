@@ -175,14 +175,8 @@ inline constexpr KnownRoute kLedger[] = {
      "the same pointer. A read through it is undefined behavior, and no property of the type refuses it: a union "
      "may hold any object type, and a static_cast from void to an object pointer is always well-formed. "
      "test/fixy/test_forgeable_proofs.cpp pins the same two routes for the new tree."},
-    {"an epoch wrapper states any epoch",
-     "with_session_epoch and EpochExecCtx take the epoch and the generation as template arguments and check them "
-     "against nothing, so the wrapper admits a hand-off at an epoch no one reached. The epoch is a type-level claim, "
-     "and a runtime epoch can back it only through an epoch authority that the tree does not have. The frozen tree "
-     "admits a soundness mirror only of a fix that the new tree holds, and the new tree has no epoched delegation. "
-     "No code that ships builds the wrapper, and it raises no capability."},
 };
-static_assert(std::size(kLedger) <= 3, "the ledger only shrinks");
+static_assert(std::size(kLedger) <= 2, "the ledger only shrinks");
 
 // The reproducers.  Each returns true while its route stays open.
 [[nodiscard]] inline bool reproduces_host_class_route() noexcept {
@@ -199,19 +193,22 @@ static_assert(std::size(kLedger) <= 3, "the ledger only shrinks");
     return from_union != nullptr && from_void != nullptr;
 }
 
-[[nodiscard]] inline bool reproduces_epoch_claim_route() noexcept {
-    const auto wrapped = proto::with_session_epoch<999, 999>(eff::HotFgCtx{});
-    const proto::EpochExecCtx<999, 999, eff::HotFgCtx> stated{};
-    return decltype(wrapped)::current_epoch == 999 && decltype(wrapped)::current_generation == 999
-           && decltype(stated)::current_epoch == 999;
-}
+// The epoch wrapper left the ledger.  Its one door checks the claim against
+// the live epoch source, so a caller cannot state an epoch.  Neither empty
+// braces nor the old one-argument door builds a wrapper any more, and
+// test_session_epoch_source proves a false claim ends the process.
+template <class Ctx>
+concept builds_epoch_wrapper_without_a_source = requires(Ctx const& ctx) {
+    proto::with_session_epoch<999, 999>(ctx);
+};
+static_assert(!std::is_default_constructible_v<proto::EpochExecCtx<999, 999, eff::HotFgCtx>>);
+static_assert(!builds_epoch_wrapper_without_a_source<eff::HotFgCtx>);
 
 }  // namespace ctx_forge_attacks
 
 int main() {
     namespace cfa = ctx_forge_attacks;
-    const bool open[] = {cfa::reproduces_host_class_route(), cfa::reproduces_union_and_void_routes(),
-                         cfa::reproduces_epoch_claim_route()};
+    const bool open[] = {cfa::reproduces_host_class_route(), cfa::reproduces_union_and_void_routes()};
     static_assert(std::size(open) == std::size(cfa::kLedger), "each ledger entry has one reproducer");
     for (std::size_t index = 0; index < std::size(open); ++index) {
         if (!open[index]) {

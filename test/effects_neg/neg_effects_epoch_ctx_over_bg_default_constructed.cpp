@@ -2,8 +2,9 @@
 //
 // An epoch wrapper over a background context, built with no context to
 // wrap.  The wrapper is an execution context of its own, so a default
-// wrapper admits every gate that admits Bg.  The wrapper takes a
-// default constructor only over the foreground context.
+// wrapper admits every gate that admits Bg.  The wrapper has no default
+// constructor.  The one route to a wrapper is the claim door, which
+// reads the live epoch source.
 
 #include <crucible/sessions/SessionMint.h>
 

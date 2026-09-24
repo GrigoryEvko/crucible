@@ -349,7 +349,12 @@ int run_epoched_delegate_mint_reshard() {
         return 1;
     }
 
-    Epoch6Ctx epoch6{};
+    // The context claims epoch 6 generation 3, so the live source must hold
+    // that coordinate when the wrapper is built.
+    SessionEpochSource epoch_source{::crucible::safety::mint_permission_root<SessionEpochAuthority>()};
+    for (int step = 0; step < 6; ++step) epoch_source.advance_epoch();
+    for (int step = 0; step < 3; ++step) epoch_source.advance_generation();
+    const Epoch6Ctx epoch6 = with_session_epoch<6, 3>(::crucible::effects::HotFgCtx{}, epoch_source);
     std::deque<std::string> wire;
 
     auto sender = mint_permissioned_session<EpochedReshardDelegatePsh>(

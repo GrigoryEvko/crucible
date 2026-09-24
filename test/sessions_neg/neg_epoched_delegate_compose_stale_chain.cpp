@@ -21,7 +21,8 @@ int main() {
     using StaleContinuation = proto::EpochedDelegate<Payload, proto::End, 5, 3>;
     using Composed = proto::compose_t<Fresh, StaleContinuation>;
 
-    CurrentCtx ctx{};
+    proto::SessionEpochSource source{::crucible::safety::mint_permission_root<proto::SessionEpochAuthority>()};
+    const CurrentCtx ctx = proto::with_session_epoch<6, 3>(eff::HotFgCtx{}, source);
     [[maybe_unused]] auto h = proto::mint_permissioned_session<Composed>(ctx, FakeChannel{});
     return 0;
 }
