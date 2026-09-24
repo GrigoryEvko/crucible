@@ -387,6 +387,14 @@ jobs:
           libasan libubsan libtsan liblsan
           curl tar coreutils
 
+      # valgrind runs the constant-time taint tests in test/ct.  The tests
+      # target x86-64-v3, so only the x86_64 legs install it.
+      - name: Install valgrind (x86_64)
+        if: ${{ matrix.arch == 'x86_64' }}
+        run: >
+          dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
+          valgrind valgrind-devel
+
       # Split restore/save: the combined actions/cache@v4 only saves in its
       # post-step on JOB SUCCESS, so a failing preset never persists its
       # ccache and restarts cold every run (perpetual 0% hits). restore@v4
@@ -432,11 +440,15 @@ jobs:
 
       # Presets carry the sanitizer/build-type choice; no -DCRUCIBLE_* overrides
       # except the ccache launchers (which compose with cmake/Toolchain-gcc16.cmake).
+      # The x86_64 default leg also sets CRUCIBLE_REQUIRE_CT_TAINT.  The
+      # configure step then fails when valgrind is missing, and the taint tests
+      # cannot become disabled in silence.
       - name: Configure (${{ matrix.preset }}, stock gcc-16, BPF on, ccache)
         run: >
           cmake --preset ${{ matrix.preset }}
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ${{ matrix.arch == 'x86_64' && matrix.preset == 'default' && '-DCRUCIBLE_REQUIRE_CT_TAINT=ON' || '' }}
 
       - name: Reset ccache stats
         run: ccache -z
