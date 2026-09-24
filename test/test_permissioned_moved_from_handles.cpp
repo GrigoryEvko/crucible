@@ -149,26 +149,36 @@ template <typename Queue, typename UserTag>
 }
 
 // ── The attacks: each uses a handle after moving it ──────────────────
+//
+// Each attack reaches the moved-from handle through a call that the
+// optimizer cannot see into.  Inlined, the empty binding is visible at
+// compile time, and -Wstringop-overflow refuses the null access that the
+// attack makes on purpose.
+
+template <typename Handle>
+[[gnu::noipa]] Handle& opaque_ref(Handle& handle) {
+    return handle;
+}
 
 void spsc_producer() {
     Spsc channel{};
     auto [producer, consumer] = spsc_handles(channel);
     [[maybe_unused]] auto moved = std::move(producer);
-    (void)producer.try_push(1);
+    (void)opaque_ref(producer).try_push(1);
 }
 
 void spsc_consumer() {
     Spsc channel{};
     auto [producer, consumer] = spsc_handles(channel);
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_pop();
+    (void)opaque_ref(consumer).try_pop();
 }
 
 void mpsc_producer() {
     Mpsc channel{};
     auto producer = channel.producer();
     [[maybe_unused]] auto moved = std::move(*producer);
-    (void)producer->try_push(1);
+    (void)opaque_ref(*producer).try_push(1);
 }
 
 // The moved-from producer holds no pool share, so the drained window runs.
@@ -177,49 +187,49 @@ void mpsc_producer_in_drained_window() {
     Mpsc channel{};
     auto producer = channel.producer();
     { auto moved = std::move(*producer); }
-    (void)channel.with_drained_access([&producer] { (void)producer->try_push(1); });
+    (void)channel.with_drained_access([&producer] { (void)opaque_ref(*producer).try_push(1); });
 }
 
 void mpsc_consumer() {
     Mpsc channel{};
     auto consumer = channel.consumer(cs::mint_permission_root<Mpsc::consumer_tag>());
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_pop();
+    (void)opaque_ref(consumer).try_pop();
 }
 
 void mpmc_producer() {
     Mpmc channel{};
     auto producer = channel.producer();
     [[maybe_unused]] auto moved = std::move(*producer);
-    (void)producer->try_push(1);
+    (void)opaque_ref(*producer).try_push(1);
 }
 
 void mpmc_consumer() {
     Mpmc channel{};
     auto consumer = channel.consumer();
     [[maybe_unused]] auto moved = std::move(*consumer);
-    (void)consumer->try_pop();
+    (void)opaque_ref(*consumer).try_pop();
 }
 
 void mpmc_producer_after_close() {
     Mpmc channel{};
     auto producer = channel.producer();
     auto closed = std::move(*producer).close();
-    (void)producer->try_push(1);
+    (void)opaque_ref(*producer).try_push(1);
 }
 
 void mpmc_consumer_after_close() {
     Mpmc channel{};
     auto consumer = channel.consumer();
     auto closed = std::move(*consumer).close();
-    (void)consumer->try_pop();
+    (void)opaque_ref(*consumer).try_pop();
 }
 
 void snapshot_writer() {
     Snapshot snapshot{};
     auto writer = snapshot.writer(cs::mint_permission_root<cc::snapshot_tag::Writer<SnapshotTag>>());
     [[maybe_unused]] auto moved = std::move(writer);
-    writer.publish(Sample{1});
+    opaque_ref(writer).publish(Sample{1});
 }
 
 void snapshot_writer_after_release() {
@@ -227,84 +237,84 @@ void snapshot_writer_after_release() {
     auto writer = snapshot.writer(cs::mint_permission_root<cc::snapshot_tag::Writer<SnapshotTag>>());
     auto permission = std::move(writer).release_permission();
     (void)permission;
-    writer.publish(Sample{1});
+    opaque_ref(writer).publish(Sample{1});
 }
 
 void snapshot_reader() {
     Snapshot snapshot{};
     auto reader = snapshot.reader();
     [[maybe_unused]] auto moved = std::move(*reader);
-    (void)reader->load();
+    (void)opaque_ref(*reader).load();
 }
 
 void grid_producer() {
     Grid grid{};
     auto [producer, consumer] = grid_handles(grid);
     [[maybe_unused]] auto moved = std::move(producer);
-    (void)producer.try_push(1);
+    (void)opaque_ref(producer).try_push(1);
 }
 
 void grid_consumer() {
     Grid grid{};
     auto [producer, consumer] = grid_handles(grid);
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_pop();
+    (void)opaque_ref(consumer).try_pop();
 }
 
 void calendar_producer() {
     Calendar grid{};
     auto [producer, consumer] = calendar_handles(grid);
     [[maybe_unused]] auto moved = std::move(producer);
-    (void)producer.try_push(1);
+    (void)opaque_ref(producer).try_push(1);
 }
 
 void calendar_consumer() {
     Calendar grid{};
     auto [producer, consumer] = calendar_handles(grid);
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_pop();
+    (void)opaque_ref(consumer).try_pop();
 }
 
 void sharded_calendar_producer() {
     ShardedCalendar grid{};
     auto [producer, consumer] = sharded_calendar_handles(grid);
     [[maybe_unused]] auto moved = std::move(producer);
-    (void)producer.try_push(1);
+    (void)opaque_ref(producer).try_push(1);
 }
 
 void sharded_calendar_consumer() {
     ShardedCalendar grid{};
     auto [producer, consumer] = sharded_calendar_handles(grid);
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_pop();
+    (void)opaque_ref(consumer).try_pop();
 }
 
 void deque_owner() {
     Deque deque{};
     auto owner = deque.owner(cs::mint_permission_root<Deque::owner_tag>());
     [[maybe_unused]] auto moved = std::move(owner);
-    (void)owner.try_push(1);
+    (void)opaque_ref(owner).try_push(1);
 }
 
 void deque_thief() {
     Deque deque{};
     auto thief = deque.thief();
     [[maybe_unused]] auto moved = std::move(*thief);
-    (void)thief->try_steal();
+    (void)opaque_ref(*thief).try_steal();
 }
 
 void edge_signaler() {
     Edge edge{cc::PlanId{1}, cc::PlanId{2}, cc::ChainEdgeId{3}, 1};
     auto [signaler, waiter] = edge_handles(edge);
     [[maybe_unused]] auto moved = std::move(signaler);
-    (void)signaler.signal();
+    (void)opaque_ref(signaler).signal();
 }
 
 void edge_waiter() {
     Edge edge{cc::PlanId{1}, cc::PlanId{2}, cc::ChainEdgeId{3}, 1};
     auto [signaler, waiter] = edge_handles(edge);
     [[maybe_unused]] auto moved = std::move(waiter);
-    (void)waiter.try_wait(moved.expected_signal());
+    (void)opaque_ref(waiter).try_wait(moved.expected_signal());
 }
 
 void log_producer() {
@@ -312,7 +322,7 @@ void log_producer() {
     Log log{*raw_log};
     auto [producer, consumer] = log_handles(log);
     [[maybe_unused]] auto moved = std::move(producer);
-    (void)producer.try_append_one(sample_meta());
+    (void)opaque_ref(producer).try_append_one(sample_meta());
 }
 
 void log_consumer() {
@@ -320,21 +330,21 @@ void log_consumer() {
     Log log{*raw_log};
     auto [producer, consumer] = log_handles(log);
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_drain_one();
+    (void)opaque_ref(consumer).try_drain_one();
 }
 
 void queue_spsc_producer() {
     SpscQueue queue{};
     auto [producer, consumer] = queue_handles<SpscQueue, QueueSpscTag>(queue);
     [[maybe_unused]] auto moved = std::move(producer);
-    (void)producer.try_push(1);
+    (void)opaque_ref(producer).try_push(1);
 }
 
 void queue_mpsc_consumer() {
     MpscQueue queue{};
     auto [producer, consumer] = queue_handles<MpscQueue, QueueMpscTag>(queue);
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_pop();
+    (void)opaque_ref(consumer).try_pop();
 }
 
 struct Attack {

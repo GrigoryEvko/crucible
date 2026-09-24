@@ -69,25 +69,34 @@ static_assert(!std::is_move_assignable_v<Mpsc::ConsumerHandle>);
     return std::pair{channel.producer(std::move(producer)), channel.consumer(std::move(consumer))};
 }
 
+// Each attack reaches the moved-from handle through a call that the
+// optimizer cannot see into.  Inlined, the empty binding is visible at
+// compile time, and -Wstringop-overflow refuses the null access that the
+// attack makes on purpose.
+template <typename Handle>
+[[gnu::noipa]] Handle& opaque_ref(Handle& handle) {
+    return handle;
+}
+
 void spsc_producer() {
     Spsc channel{};
     auto [producer, consumer] = spsc_handles(channel);
     [[maybe_unused]] auto moved = std::move(producer);
-    (void)producer.try_push(1);
+    (void)opaque_ref(producer).try_push(1);
 }
 
 void spsc_consumer() {
     Spsc channel{};
     auto [producer, consumer] = spsc_handles(channel);
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_pop();
+    (void)opaque_ref(consumer).try_pop();
 }
 
 void mpsc_producer() {
     Mpsc channel{};
     auto producer = channel.producer();
     [[maybe_unused]] auto moved = std::move(*producer);
-    (void)producer->try_push(1);
+    (void)opaque_ref(*producer).try_push(1);
 }
 
 // The moved-from producer holds no pool share, so the drained window opens.
@@ -96,21 +105,21 @@ void mpsc_producer_in_drained_window() {
     Mpsc channel{};
     auto producer = channel.producer();
     { [[maybe_unused]] auto moved = std::move(*producer); }
-    (void)channel.with_drained_access([&producer] { (void)producer->try_push(1); });
+    (void)channel.with_drained_access([&producer] { (void)opaque_ref(*producer).try_push(1); });
 }
 
 void mpsc_consumer() {
     Mpsc channel{};
     auto consumer = channel.consumer(perm::mint_permission_root<Mpsc::consumer_tag>());
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)consumer.try_pop();
+    (void)opaque_ref(consumer).try_pop();
 }
 
 void binding_after_move() {
     int target = 5;
     foundation::ChannelBinding<int> first{target};
     [[maybe_unused]] foundation::ChannelBinding<int> second{std::move(first)};
-    (void)*first;
+    (void)*opaque_ref(first);
 }
 
 struct Attack {
