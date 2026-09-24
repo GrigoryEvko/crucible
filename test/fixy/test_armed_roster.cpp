@@ -783,6 +783,16 @@ struct foundation::contracts::armed_cell<gd::has_en_route> {
     using refuses = witnesses<w::gl::End, w::OneMsg, w::LoopPQ>;
 };
 
+// The crash pseudo-message of a crashed sender is no live en-route node.
+template <>
+struct foundation::contracts::armed_cell<gd::has_live_en_route> {
+    using accepts = witnesses<w::EnRoutePQ, w::EnRouteAfterMsg>;
+    using refuses = witnesses<
+        w::gl::End, w::OneMsg, w::LoopPQ,
+        w::gl::EnRouteChoice<w::gl::Crashed<w::RoleP>, w::RoleQ, w::gl::CrashLabel,
+                             w::gl::Branch<w::LabelA, int, w::gl::End>, w::gl::Branch<w::gl::CrashLabel, void, w::gl::End>>>;
+};
+
 // A Rec body is guarded when its first node is a communication.
 template <>
 struct foundation::contracts::armed_cell<gd::is_rec_guarded> {

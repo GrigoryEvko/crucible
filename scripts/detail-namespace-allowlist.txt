@@ -19,7 +19,7 @@ test/fixy/test_armed_roster.cpp ::fixy::corpus::detail x17 — names each armed 
 test/fixy/test_armed_roster.cpp ::fixy::detail x2 — names each armed predicate of the fixy root
 test/fixy/test_armed_roster.cpp ::fixy::mach::detail x6 — names each armed predicate of the machine transitions
 test/fixy/test_armed_roster.cpp ::fixy::session::detail x43 — names each armed predicate of the session core and the crash walk
-test/fixy/test_armed_roster.cpp ::fixy::session::global::detail x23 — names each armed predicate of the global types
+test/fixy/test_armed_roster.cpp ::fixy::session::global::detail x24 — names each armed predicate of the global types, the live en-route walk too
 test/fixy/test_armed_roster.cpp ::fixy::spawn::detail x6 — names each armed predicate of the spawn fit
 test/fixy/test_armed_roster.cpp ::foundation::effects::detail x5 — names each armed predicate of the effects layer
 test/fixy/test_armed_roster.cpp ::foundation::permissions::detail x17 — names each armed predicate of the permissions layer

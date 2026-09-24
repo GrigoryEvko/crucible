@@ -62,6 +62,37 @@ using DetectedState = g::state_step_t<PCrashedState, g::DetectAction<Q, P>, Only
 using DetectedCtx = c::step_t<PCrashedCtx, g::DetectAction<Q, P>, OnlyQ>;
 static_assert(c::crash_association_holds_v<DetectedCtx, DetectedState, OnlyQ>);
 
+// A crashed sender inside a loop.  The removal of P leaves the crash
+// pseudo-message under the Rec (Definition 4.10), where it recurs at each
+// unfolding.  Projection admits it, so the association holds after the
+// crash, and Q keeps the loop that it had before.  R is reliable and has
+// no part in the loop, so it projects to End.
+using Looping = g::Rec<g::Comm<P, Q, g::Branch<M, int, g::Var>, g::Branch<Crash, void, g::Var>>>;
+using OnlyQR = s::ReliableSet<Q, R>;
+using LoopCtx0 = c::crash_projected_context_t<Looping, OnlyQR>;
+static_assert(c::crash_association_holds_v<LoopCtx0, Start<Looping>, OnlyQR>);
+using LoopCrashedState = g::state_step_t<Start<Looping>, g::CrashAction<P>, OnlyQR>;
+using LoopCrashedCtx = c::step_t<LoopCtx0, g::CrashAction<P>, OnlyQR>;
+static_assert(c::crash_association_holds_v<LoopCrashedCtx, LoopCrashedState, OnlyQR>);
+using TakesMForEver = s::Loop<s::Offer<s::Sender<P>, s::Recv<s::PeerMsg<P, M, int>, s::Continue>,
+                                       s::Recv<s::PeerMsg<P, Crash, void>, s::Continue>>>;
+static_assert(std::is_same_v<s::project_crash_t<Looping, Q, OnlyQR>, s::Projected<s::OutQueue<>, TakesMForEver>>);
+// The crash unfolds the loop one time: the pseudo-message stands at the
+// top, and each of its branches goes back to the loop.
+using TakesMThenLoop = s::Offer<s::Sender<P>, s::Recv<s::PeerMsg<P, M, int>, TakesMForEver>,
+                                s::Recv<s::PeerMsg<P, Crash, void>, TakesMForEver>>;
+static_assert(std::is_same_v<s::project_crash_t<typename LoopCrashedState::type, Q, OnlyQR>,
+                             s::Projected<s::OutQueue<>, TakesMThenLoop>>);
+static_assert(std::is_same_v<s::project_crash_t<typename LoopCrashedState::type, R, OnlyQR>,
+                             s::Projected<s::OutQueue<>, s::End>>);
+// A live sender's message in flight under a looping Rec is still refused:
+// an unfolding would send it a second time.
+using LiveInFlight = g::Rec<g::EnRouteChoice<P, Q, M, g::Branch<M, int, g::Var>, g::Branch<Crash, void, g::Var>>>;
+static_assert(std::is_same_v<s::project_crash_t<LiveInFlight, Q, OnlyQR>,
+                             s::NotProjectable<s::projection_failure::EnRouteUnderRecursion>>);
+static_assert(std::is_same_v<s::project_crash_t<LiveInFlight, R, OnlyQR>,
+                             s::NotProjectable<s::projection_failure::EnRouteUnderRecursion>>);
+
 // A2: the entries at Stop are the crashed roles, no more and no fewer.
 static_assert(c::crash_association_fault_v<Ctx0, PCrashedState, OnlyQ> == F::CrashedRoleMismatch);
 static_assert(c::crash_association_fault_v<PCrashedCtx, Start<Guarded>, OnlyQ> == F::CrashedRoleMismatch);

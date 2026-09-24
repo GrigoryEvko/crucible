@@ -593,12 +593,24 @@ struct merge_all<Fuel, T1, T2, Rest...> : merge_all<Fuel, typename merge2<T1, T2
 template <typename G, typename R, typename Reliable>
 struct proj_walk;
 
+// A looping Rec refuses an en-route node whose sender is live.  That node
+// is a message in flight, a state that occurs one time, and an unfolding
+// of the loop must not make it again.  The crash pseudo-message of a
+// crashed sender, EnRouteChoice<Crashed<P>, ...>, is admitted: removal of
+// P puts it under the Rec by definition, (mu t.G) without p is
+// mu t.(G without p) (Definition 4.10 of the crash-stop paper), so it
+// recurs at each unfolding, and Definition 4.3 projects it at any depth.
+// The Crashed marker of the sender decides, not the label.  Removal keeps
+// each binder where it was, so the pseudo-message loops back to the Rec
+// that the transmission it replaces looped back to.  The limit of
+// nearest-binder recursion, stated at the head of this header, is then
+// the same for the state after a crash as for the type before it.
 template <typename B, typename R, typename Reliable>
 consteval auto proj_rec() {
     if constexpr (!g::holds_free_var_v<B>) {
         // A Rec whose body never loops back is its body.
         return std::type_identity<typename proj_walk<B, R, Reliable>::type>{};
-    } else if constexpr (g::holds_en_route_v<B>) {
+    } else if constexpr (g::holds_live_en_route_v<B>) {
         return std::type_identity<NotProjectable<projection_failure::EnRouteUnderRecursion>>{};
     } else if constexpr (!g::role_in_v<R, g::active_roles_t<B>>) {
         // P-END: no unfolding of the loop activates R.

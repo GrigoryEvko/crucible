@@ -494,6 +494,31 @@ template <typename From, typename To, typename... Ls, typename... Ps, typename..
 struct has_en_route<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
     : std::bool_constant<(has_en_route<Cs>::value || ...)> {};
 
+// True when G holds an en-route node whose sender is live.  The crash
+// pseudo-message of a crashed sender, EnRouteChoice<Crashed<P>, ...>,
+// does not count, but the walk reads its branches.
+template <typename G>
+struct has_live_en_route;
+template <>
+struct has_live_en_route<End> : std::false_type {};
+template <>
+struct has_live_en_route<Var> : std::false_type {};
+template <typename Body>
+struct has_live_en_route<Rec<Body>> : has_live_en_route<Body> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<To>)
+struct has_live_en_route<Comm<From, To, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(has_live_en_route<Cs>::value || ...)> {};
+template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
+struct has_live_en_route<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(has_live_en_route<Cs>::value || ...)> {};
+template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
+    requires(!detail::is_crashed_v<From>)
+struct has_live_en_route<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>> : std::true_type {};
+template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
+struct has_live_en_route<EnRouteChoice<Crashed<From>, To, Chosen, Branch<Ls, Ps, Cs>...>>
+    : std::bool_constant<(has_live_en_route<Cs>::value || ...)> {};
+
 }  // namespace detail
 
 template <typename G>
@@ -510,6 +535,9 @@ inline constexpr bool holds_free_var_v = detail::has_free_var<G>::value;
 
 template <typename G>
 inline constexpr bool holds_en_route_v = detail::has_en_route<G>::value;
+
+template <typename G>
+inline constexpr bool holds_live_en_route_v = detail::has_live_en_route<G>::value;
 
 template <typename G>
 using crashed_roles_t = typename detail::crashed_role_walk<G>::type;
