@@ -119,6 +119,15 @@
 #include <type_traits>
 #include <utility>
 
+// The row-hash identity of a crash-watched handle, declared and never
+// defined.  foundation/diag/RowHash.h folds it with the inner handle, so
+// a crash-watched handle and the plain handle that it wraps take two
+// cache slots.
+namespace fixy::row_discipline {
+template <typename Self, typename Peer, typename Reliable, typename Position>
+struct crash_watched;
+}  // namespace fixy::row_discipline
+
 namespace fixy::session {
 
 // ── The crash detector cell ──────────────────────────────────────────
@@ -573,6 +582,12 @@ public:
     using self_role = Self;
     using peer_role = Peer;
     using reliable_set = Reliable;
+
+    // The row-hash shape of a discipline carrier.  The identity names the
+    // roles, the reliable set and the position inside a message, and the
+    // inner handle folds its protocol and its Resource.
+    using row_discipline = ::fixy::row_discipline::crash_watched<Self, Peer, Reliable, Position>;
+    using row_payload = Handle;
 
     constexpr CrashWatched(CrashWatched&&) noexcept = default;
     constexpr CrashWatched& operator=(CrashWatched&&) noexcept = default;

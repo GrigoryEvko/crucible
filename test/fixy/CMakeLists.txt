@@ -3947,7 +3947,40 @@ fixy_neg_compile_test(neg_disjoint_split_refuses_spelled_name
 # graded_facade, and a fold that read the template rather than the shape
 # would hand the class half a zero.  The cell lives here rather than in
 # test/foundation because foundation must not depend on fixy.
+#
+# The census reads the classes that its translation unit can see, so it
+# includes every public header of include/fixy and include/foundation.
+# The list comes from the tree and not from a hand, because a hand-kept
+# list did not reach 16 headers of the session layer, and the census never
+# saw the decorators, doors and queries that they declare.  The build does
+# the glob again, so a header that a later commit adds joins the census,
+# and a carrier in it with no row fails the census.  A superseded _Name.h
+# header is not public.
 fixy_test(test_row_hash_wrappers)
+file(GLOB_RECURSE _census_public_headers CONFIGURE_DEPENDS RELATIVE "${CMAKE_SOURCE_DIR}/include"
+  "${CMAKE_SOURCE_DIR}/include/fixy/*.h" "${CMAKE_SOURCE_DIR}/include/foundation/*.h")
+list(FILTER _census_public_headers EXCLUDE REGEX "(^|/)_[^/]*\\.h$")
+list(SORT _census_public_headers)
+list(LENGTH _census_public_headers _census_public_header_count)
+if(_census_public_header_count EQUAL 0)
+  message(FATAL_ERROR "test_row_hash_wrappers: the glob found no public header under include/fixy or "
+                      "include/foundation, so the census would prove nothing")
+endif()
+set(_census_text "// Written by test/fixy/CMakeLists.txt: each public header of include/fixy and\n")
+string(APPEND _census_text "// include/foundation, for the row-hash census of test_row_hash_wrappers.cpp.\n")
+string(APPEND _census_text "#pragma once\n")
+string(APPEND _census_text "#define CRUCIBLE_CENSUS_PUBLIC_HEADER_COUNT ${_census_public_header_count}\n")
+foreach(_census_header IN LISTS _census_public_headers)
+  string(APPEND _census_text "#include <${_census_header}>\n")
+endforeach()
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/census/census_public_headers.h" CONTENT "${_census_text}" @ONLY)
+target_include_directories(test_row_hash_wrappers PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/census")
+# A class in a censused namespace with no row fails the census.  The
+# fixture declares one and then compiles the census file.
+fixy_neg_compile_test(neg_row_hash_census_undisposed_carrier
+  "static assertion failed: a carrier in a censused namespace is unproven"
+  "the comparison reduces to .\\(([0-9]+) == ([0-9]+)\\).")
+target_include_directories(neg_row_hash_census_undisposed_carrier PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/census")
 
 # A row hash is a function of the type alone, so two translation units
 # of one build compute one hash for one type.  The second unit declares

@@ -67,6 +67,13 @@
 #include <type_traits>
 #include <utility>
 
+// The row-hash identity of a recorded handle, declared and never defined.
+// foundation/diag/RowHash.h folds it with the inner handle, so a recorded
+// handle and the handle that it wraps take two cache slots.
+namespace fixy::row_discipline {
+struct recorded;
+}  // namespace fixy::row_discipline
+
 namespace fixy::session {
 
 template <typename Inner>
@@ -242,6 +249,12 @@ public:
     using inner_type = Inner;
     using protocol = typename Inner::protocol;
     using resource_type = typename Inner::resource_type;
+
+    // The row-hash shape of a discipline carrier.  The inner handle folds
+    // its own claim, so a recorder over a crash-watched handle keeps the
+    // crash claim in its hash.
+    using row_discipline = ::fixy::row_discipline::recorded;
+    using row_payload = Inner;
 
     constexpr Recorded(Recorded&&) noexcept = default;
     constexpr Recorded& operator=(Recorded&&) noexcept = default;

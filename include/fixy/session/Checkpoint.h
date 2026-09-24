@@ -99,6 +99,15 @@
 #include <utility>
 #include <vector>
 
+// The row-hash identity of a checkpoint handle, declared and never
+// defined.  foundation/diag/RowHash.h folds it with the inner handle, so a
+// checkpoint handle and the plain handle over the erased protocol take two
+// cache slots.
+namespace fixy::row_discipline {
+template <typename Head, typename HeadLoop, typename Frame>
+struct checkpoint_handle;
+}  // namespace fixy::row_discipline
+
 namespace fixy::session {
 
 // ── The three primitives ────────────────────────────────────────────
@@ -695,6 +704,13 @@ public:
     using resource_type = resource_t;
     using abandonment_policy = policy_t;
     using frame = Frame;
+
+    // The row-hash shape of a discipline carrier.  The identity names the
+    // original protocol at the head, its loop context and the checkpoint
+    // state, and the inner handle over the erased protocol folds its own
+    // claim.
+    using row_discipline = ::fixy::row_discipline::checkpoint_handle<Head, HeadLoop, Frame>;
+    using row_payload = Inner;
 
     constexpr CheckpointHandle(CheckpointHandle&&) noexcept = default;
     constexpr CheckpointHandle& operator=(CheckpointHandle&&) noexcept = default;

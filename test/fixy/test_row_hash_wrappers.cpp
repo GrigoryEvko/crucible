@@ -183,6 +183,10 @@
 #include <foundation/SwissTableBuffer.h>
 #include <foundation/ThreadLocalRef.h>
 
+// The build writes this header from the tree: it includes each public
+// header of include/fixy and include/foundation (test/fixy/CMakeLists.txt).
+#include <census_public_headers.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -424,9 +428,15 @@ static_assert(row_hash_contribution_v<UnverifiedInt> != row_hash_contribution_v<
 // censused or named as vocabulary with a reason.  A new namespace is
 // therefore a red build until someone decides which it is.
 //
-// The census sees what this translation unit includes, which is every
-// public header of both layers.  A header left out of that list is the
-// one gap, and the include block above is where to close it.
+// The census sees what this translation unit includes.  The include list
+// above names the headers whose types the cells below name.  The build
+// also writes census_public_headers.h from the tree, and that header
+// includes each public header of both layers.  A hand-kept list did not
+// reach 16 headers of the session layer, so the census never saw a
+// decorator, a door or a query that they declare.  With the list from the
+// tree, a header that a later commit adds joins the census at once, and a
+// carrier in it with no disposition fails the census
+// (neg_row_hash_census_undisposed_carrier).
 //
 // The census stands outside the unnamed namespace, because its witness
 // tags reach a row hash, and a stable id refuses a type with internal
@@ -671,6 +681,11 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::session::detach_reason, kGradeVocabulary},
     {^^::fixy::session::position, "protocol positions that a view names; a view carries no claim to fold"},
     {^^::fixy::session::watch, "the runtime watch over live sessions: its records are process state, not a claim"},
+    {^^::fixy::session::global, "global types, their labels and their reductions: the projection reads them at "
+                                "compile time, and none of them is a value in a signature"},
+    {^^::fixy::session::config, "configurations of the reduction semantics: a model of a running system that the "
+                                "compiler reduces, and never a value in a signature"},
+    {^^::fixy::session::projection_failure, "the reasons that a projection refuses, as types that a diagnostic names"},
     {^^::fixy::refined, kMachinery},
     {^^::fixy::refined::admitted_implications, kMachinery},
     {^^::fixy::refined_algebra, "refinement predicate combinators, which are grade vocabulary"},
@@ -781,8 +796,22 @@ struct SplitSiteName {};
 
 struct MachineState {};
 
+struct SelfRole {};
+
+struct PeerRole {};
+
 using PureDet = fa::lattices::DetSafeLattice::At<fa::lattices::DetSafeTier::Pure>;
 using BorrowedInt = ::fixy::Borrowed<int, PureRegionTag>;
+
+// The decorators of a session handle, each over one plain handle at End.
+using PlainHandle = ::fixy::session::SessionHandle<::fixy::session::End, int>;
+using CrashWatchedHandle =
+    ::fixy::session::CrashWatched<PlainHandle, SelfRole, PeerRole, ::fixy::session::ReliableSet<>>;
+using RecordedHandle = ::fixy::session::Recorded<PlainHandle>;
+using RecordedCrashWatchedHandle = ::fixy::session::Recorded<CrashWatchedHandle>;
+using CheckpointAtEnd =
+    ::fixy::session::CheckpointHandle<PlainHandle, ::fixy::session::End, void,
+                                      ::fixy::session::CheckpointFrame<::fixy::session::End, ::fixy::session::End, void>>;
 
 namespace stage_probe = ::fixy::concurrent::detail::stage_self_test;
 namespace pipeline_probe = ::fixy::concurrent::detail::pipeline_self_test;
@@ -844,6 +873,9 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::session::SessionHandle, ^^::fixy::session::SessionHandle<::fixy::session::End, int>},
     {^^::fixy::session::SessionFromMachine,
      ^^::fixy::session::SessionFromMachine<MachineState, ::fixy::session::End>},
+    {^^::fixy::session::CrashWatched, ^^CrashWatchedHandle},
+    {^^::fixy::session::Recorded, ^^RecordedHandle},
+    {^^::fixy::session::CheckpointHandle, ^^CheckpointAtEnd},
 
     {^^::fixy::concurrent::ChaseLevDeque, ^^::fixy::concurrent::ChaseLevDeque<int, 8>},
     {^^::fixy::concurrent::MpscRing, ^^::fixy::concurrent::MpscRing<int, 8>},
@@ -889,6 +921,16 @@ inline constexpr std::string_view kGraphShape =
 inline constexpr std::string_view kMessageMarker =
     "a message marker of a session protocol: it names the permission one message moves, it is the payload of a "
     "Send or a Recv, and the handle that steps through the protocol folds it";
+inline constexpr std::string_view kQuery =
+    "a question as one type, so that a predicate of one argument can hold an armed cell: it has no member, and it "
+    "is never a value";
+inline constexpr std::string_view kVerdictType =
+    "the reason of a subtype verdict as a type, which a diagnostic names: it is never a value in a signature";
+inline constexpr std::string_view kProjectionModel =
+    "a type of the projection of a global type or of its typing context: the projection computes it at compile "
+    "time, and it is never a value in a signature";
+inline constexpr std::string_view kDoor =
+    "a door of a session mint: it has static members only, no object of it exists, and it is never a value";
 
 inline constexpr StatedZero kZeros[] = {
     {^^::foundation::Pinned, "a CRTP marker base: it forbids moves on its deriver and is never a value"},
@@ -1056,6 +1098,78 @@ inline constexpr StatedZero kZeros[] = {
      "an empty member that deletes the copy of a session Resource: it holds nothing, makes no claim, and is "
      "never a value in a signature"},
 
+    {^^::fixy::session::SubtypeQuery, kQuery},
+    {^^::fixy::session::is_sync_subtype, kMetafunction},
+    {^^::fixy::session::SubtypeOk, kVerdictType},
+    {^^::fixy::session::SubtypeRejection, kVerdictType},
+    {^^::fixy::session::AsyncSubtypeQuery, kQuery},
+    {^^::fixy::session::is_async_subtype, kMetafunction},
+
+    {^^::fixy::session::Stop, kProtocol},
+    {^^::fixy::session::is_stop, kMetafunction},
+    {^^::fixy::session::is_crash_payload, kMetafunction},
+    {^^::fixy::session::is_crash_branch, kMetafunction},
+    {^^::fixy::session::ReliableSet, kVocabulary},
+    {^^::fixy::session::is_reliable_set, kMetafunction},
+    {^^::fixy::session::UnavailableQueue, kVocabulary},
+    {^^::fixy::session::is_unavailable_queue, kMetafunction},
+    {^^::fixy::session::is_crash_well_formed, kMetafunction},
+    {^^::fixy::session::CrashCoverage, kQuery},
+    {^^::fixy::session::is_crash_covered, kMetafunction},
+    {^^::fixy::session::CrashRefinement, kQuery},
+    {^^::fixy::session::is_crash_refinement_admissible, kMetafunction},
+
+    {^^::fixy::session::Commit, kProtocol},
+    {^^::fixy::session::Roll, kProtocol},
+    {^^::fixy::session::Abort, kProtocol},
+    {^^::fixy::session::is_checkpoint_primitive, kMetafunction},
+    {^^::fixy::session::CheckpointPair, kQuery},
+    {^^::fixy::session::is_checkpoint_compliant, kMetafunction},
+    {^^::fixy::session::CheckpointFrame, kVocabulary},
+
+    {^^::fixy::session::Queued, kProjectionModel},
+    {^^::fixy::session::OutQueue, kProjectionModel},
+    {^^::fixy::session::Projected, kProjectionModel},
+    {^^::fixy::session::NotProjectable, kProjectionModel},
+    {^^::fixy::session::EveryRoleReliable, kVocabulary},
+    {^^::fixy::session::is_projection_failure, kMetafunction},
+    {^^::fixy::session::RoleState, kProjectionModel},
+    {^^::fixy::session::TypingContext, kProjectionModel},
+    {^^::fixy::session::CrashLiveness, kQuery},
+    {^^::fixy::session::is_crash_live_by_construction, kMetafunction},
+    {^^::fixy::session::is_live_by_construction, kMetafunction},
+    {^^::fixy::session::has_session_network, kMetafunction},
+    {^^::fixy::session::Implementability, kQuery},
+    {^^::fixy::session::is_implementable_on, kMetafunction},
+
+    {^^::fixy::session::CrashWitness, kPayload},
+    {^^::fixy::session::CrashReporter,
+     "the one author of the reports of one crash cell: it holds a pointer to the cell, a report consumes it, and "
+     "it is never a template argument of a kernel signature"},
+    {^^::fixy::session::PeerCrashCell, kDescriptor},
+    {^^::fixy::session::CrashSession, kQuery},
+    {^^::fixy::session::is_crash_session_admissible, kMetafunction},
+    {^^::fixy::session::CrashSend,
+     "the result of a crash-watched send, destructured at the call site: the handle in it folds on its own, and "
+     "the payload that it can hold back is a bare payload"},
+    {^^::fixy::session::CrashSessionDoor, kDoor},
+
+    {^^::fixy::session::SessionTagId, kPayload},
+    {^^::fixy::session::RoleTagId, kPayload},
+    {^^::fixy::session::SchemaHash, kPayload},
+    {^^::fixy::session::PayloadHash, kPayload},
+    {^^::fixy::session::RecoveryPathHash, kPayload},
+    {^^::fixy::session::StateHash, kPayload},
+    {^^::fixy::session::InnerPermSetHash, kPayload},
+    {^^::fixy::session::LabelWord, kPayload},
+    {^^::fixy::session::StepId, kPayload},
+    {^^::fixy::session::SessionEvent,
+     "one record of a session event log: it holds the fields of one step, and it makes no claim about a value"},
+    {^^::fixy::session::SessionEventLog, kDescriptor},
+    {^^::fixy::session::EventLogDecodeFailure, kPayload},
+
+    {^^::fixy::session::RecordingDoor, kDoor},
+
     {^^::fixy::session::vigil_mode::mode_tag, kVocabulary},
     {^^::fixy::session::vigil_mode::ModeTransition, kProtocol},
     {^^::fixy::session::vigil_mode::ModeCell, kDescriptor},
@@ -1165,6 +1279,21 @@ static_assert(::foundation::diag::PublishesGradedMember<::fixy::session::Session
                   && !::foundation::diag::SteppingShaped<::fixy::session::SessionHandleBase<::fixy::session::End>>,
               "the handle base publishes part of the Stepping contract, which is exactly what the primary "
               "template's hard error exists to catch");
+
+// A decorator makes a claim that the handle it wraps does not make.  A
+// crash-watched handle can meet a crashed peer, a recorded handle writes
+// each step to a log, and a checkpoint handle can roll back.  So each
+// takes a slot apart from its inner handle, and a stack keeps the claim
+// of each layer.
+static_assert(row_hash_contribution_v<CrashWatchedHandle> != row_hash_contribution_v<PlainHandle>,
+              "a crash-watched handle and the plain handle that it wraps take one slot");
+static_assert(row_hash_contribution_v<RecordedHandle> != row_hash_contribution_v<PlainHandle>,
+              "a recorded handle and the plain handle that it wraps take one slot");
+static_assert(row_hash_contribution_v<CheckpointAtEnd> != row_hash_contribution_v<PlainHandle>,
+              "a checkpoint handle and the plain handle that it wraps take one slot");
+static_assert(row_hash_contribution_v<RecordedCrashWatchedHandle> != row_hash_contribution_v<RecordedHandle>,
+              "a recorder over a crash-watched handle and a recorder over a plain handle take one slot");
+static_assert(row_hash_contribution_v<RecordedCrashWatchedHandle> != row_hash_contribution_v<CrashWatchedHandle>);
 
 // Contexts, execution contexts and capabilities each read the row they
 // carry.
@@ -1289,8 +1418,9 @@ void test_every_role_is_off_the_zero_slot() {
 void test_every_carrier_is_off_the_zero_slot() {
     std::size_t const roster = census::kVerdict.roster;
     std::size_t const proven = census::kVerdict.proven;
-    std::fprintf(stderr, "(%zu carriers and stated zeros across %zu class-declaring namespaces) ", roster,
-                 census::kNamespaceVerdict.declaring);
+    std::fprintf(stderr, "(%zu carriers and stated zeros across %zu class-declaring namespaces, from %d public headers) ",
+                 roster, census::kNamespaceVerdict.declaring, CRUCIBLE_CENSUS_PUBLIC_HEADER_COUNT);
+    check(CRUCIBLE_CENSUS_PUBLIC_HEADER_COUNT > 0, "the census includes no public header, so it proves nothing");
     check(roster > 0, "the reflected carrier roster is empty, so the census proves nothing");
     check(proven == roster, "a carrier in a censused namespace is unproven at run time");
     check(census::kStandinVerdict.proven == 3 && census::kStandinVerdict.roster == 5,
