@@ -1127,9 +1127,15 @@ def scan_file(path: str, root: str) -> list[Finding]:
     return Body(path, text).run()
 
 
-def tracked_sources(root: Path) -> list[str]:
-    listed = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard",
-                             "--", *SCAN_ROOTS], capture_output=True, text=True, check=True).stdout.split("\n")
+def tracked_sources(root: Path) -> list[str] | None:
+    """The source files under SCAN_ROOTS that git tracks or does not ignore, or None outside a checkout."""
+    result = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard",
+                             "--", *SCAN_ROOTS], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"check-use-after-move: git ls-files failed in {root}, so the guard cannot list the tree.  "
+              f"Run it in a git checkout, or name the files.\n{result.stderr.strip()}", file=sys.stderr)
+        return None
+    listed = result.stdout.split("\n")
     out = []
     for rel in listed:
         if not rel or Path(rel).suffix not in SOURCE_SUFFIXES:
@@ -1343,6 +1349,8 @@ def main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 2
     files = rest or tracked_sources(root)
+    if files is None:
+        return 2
     findings = scan_tree(root, files)
     admitted, errors = read_allowlist(root / ALLOWLIST)
     if rest:
