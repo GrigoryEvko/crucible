@@ -52,7 +52,7 @@ The proof names
 The pointer-cast, allocator and raw-allocation rules need the names of
 the proof types.  They come from two sources, and the guard uses their
 union.  scripts/witness-roster.txt names each type that attests to a fact
-it cannot see, and check-witness-roster.sh refuses a door that the roster
+it cannot see, and check-witness-roster.py refuses a door that the roster
 does not name.  test_forgeable_proofs --proof-names prints each class that
 the reflection walk of that test finds to have the shape of a proof, and
 each template in its witness list: one line each, the name that a source

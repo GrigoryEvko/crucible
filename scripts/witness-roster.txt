@@ -1,7 +1,7 @@
 # scripts/witness-roster.txt -- every type in the new tree that attests
 # to a fact it cannot see, and the door it keeps.
 #
-# Read by scripts/check-witness-roster.sh (the walk, the generator and
+# Read by scripts/check-witness-roster.py (the walk, the generator and
 # the drift check) and by test/fixy/CMakeLists.txt (one negative-compile
 # test per closed line).  This file is the only place a witness is
 # named.
@@ -38,6 +38,11 @@ foundation::effects::ctx_cap::BrandedFg<int> | foundation/effects/Ctx.h | founda
 foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>> | foundation/effects/Ctx.h | foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg>>{} | no-match | closed
 foundation::effects::cap_mint_key | foundation/effects/Capability.h | foundation::effects::cap_mint_key{} | private | closed
 foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Bg> | foundation/effects/Capability.h | foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Bg>{} | no-match | closed
+# The base of each context befriends the context that derives from it,
+# and a producer claim befriends the one state that holds it.  Each keeps
+# every constructor private.
+foundation::effects::detail::ContextBase<forge::brand, foundation::effects::detail::ctx_mint::bg_key, foundation::effects::Effect::Bg> | foundation/effects/Effect.h | foundation::effects::detail::ContextBase<forge::brand, foundation::effects::detail::ctx_mint::bg_key, foundation::effects::Effect::Bg>{} | private | closed
+foundation::effects::host::ProducerClaim<forge::brand> | foundation/effects/Ctx.h | foundation::effects::host::ProducerClaim<forge::brand>{} | private | closed
 
 # -- Permissions -----------------------------------------------------
 foundation::permissions::perm_mint_key | foundation/permissions/Permission.h | foundation::permissions::perm_mint_key{} | private | closed

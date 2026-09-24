@@ -683,20 +683,21 @@ set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES SKIP_RETURN_
 # write, and test/fixy/CMakeLists.txt stands one generated fixture on
 # each closed line.  --check walks include/fixy and include/foundation
 # and fails when a class showing a door shape — a mint_ friend, a
-# passkey, a static factory, a named friend or a friend class beside a
+# passkey, a static factory, a named friend or a friend type beside a
 # closed constructor — is absent from the roster, and fails when a
-# fixture on disk is not what its roster line produces.  The self-test compiles a
-# planted public-constructor witness with this build's flags and must
-# see it COMPILE, which is the red the guard exists to raise.
+# fixture on disk is not what its roster line produces.  The walk reads
+# the parse tree.  The self-test compiles a planted public-constructor
+# witness with this build's flags and must see it COMPILE, which is the
+# red the guard exists to raise.  Exit 3 when the kit is absent reports a
+# skip.
 add_test(NAME witness_roster_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.sh
-          --self-test)
-set_tests_properties(witness_roster_self_test PROPERTIES
-  ENVIRONMENT "WITNESS_BUILD_DIR=${CMAKE_BINARY_DIR}")
+  COMMAND ${CMAKE_COMMAND} -E env WITNESS_BUILD_DIR=${CMAKE_BINARY_DIR}
+          python3 ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.py --self-test)
 add_test(NAME witness_roster
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.sh --check)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.py --check)
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
 # fixy-L-03 #1519 — Permission<Tag> long-lived-struct antipattern
 # guard (Permission.h:144-148 doc-block, CLAUDE.md §IX).  Every
 # Permission<*> declared as a class/struct member MUST be on a line

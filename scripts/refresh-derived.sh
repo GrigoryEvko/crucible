@@ -87,7 +87,7 @@ run_() {
 if [ "$MODE" = refresh ]; then
     printf 'refresh-derived: regenerating\n' >&2
     run_ 'mint inventory'            python3 scripts/gen-mint-inventory.py --write
-    run_ 'witness roster fixtures'   bash scripts/check-witness-roster.sh --gen
+    run_ 'witness roster fixtures'   python3 scripts/check-witness-roster.py --gen
 fi
 
 # ── The re-check half ────────────────────────────────────────────────
@@ -100,7 +100,7 @@ run_ 'frozen tree'                   python3 scripts/check-frozen-tree.py
 run_ 'allowlist keys and prose'      bash scripts/check-allowlist-keys.sh
 run_ 'port completeness'             bash scripts/check-port-completeness.sh
 run_ 'mint inventory'                python3 scripts/gen-mint-inventory.py --check
-run_ 'witness roster'                bash scripts/check-witness-roster.sh --check
+run_ 'witness roster'                python3 scripts/check-witness-roster.py --check
 
 # ── What the marking moved ───────────────────────────────────────────
 if [ "$MODE" = refresh ]; then

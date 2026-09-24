@@ -3318,7 +3318,7 @@ fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_extras_engage_atomic_w
 # ── The witness roster: one fixture per closed line ──────────────────
 #
 # scripts/witness-roster.txt names every type that attests to a fact it
-# cannot see, and scripts/check-witness-roster.sh --gen writes
+# cannot see, and scripts/check-witness-roster.py --gen writes
 # neg/neg_witness_<slug>_direct_construction.cpp for each closed line.
 # This loop reads the same roster and registers each fixture with the
 # two regexes the roster implies: the refusal reason it states, and the
