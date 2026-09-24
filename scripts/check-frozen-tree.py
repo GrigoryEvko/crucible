@@ -16,17 +16,29 @@ HOW THE CHANGE SET IS READ
     and untracked file that git does not ignore.  A file that is missing from
     the index still counts, so a stale index cannot hide an edit.
 
-THREE CHANGES ARE ADMITTED
+FOUR CHANGES ARE ADMITTED
     1. The superseded marking.  A port renames an old header dir/Name.h to
        dir/_Name.h.  A file whose content equals its base twin, once each
        include of the old tree has the leading underscore stripped, passes.
-    2. A soundness mirror.  scripts/frozen-soundness-mirrors.txt lists a
-       frozen file that holds a live bug the new tree already fixed, in the
-       shape `path — new-tree fix — reason`.  A listed file passes when the
-       base holds it or its base twin, and a note names the reason.  The
-       ledger fails closed: an entry that names a path outside every frozen
-       prefix, or a path that does not exist, fails the guard.
-    3. A macro unification.  A frozen header drops macro definitions, and
+    2. An include removal.  A hunk that only removes lines, where each line
+       is an `#include <X>` that the parser reads and nothing else, and X is
+       a header that the base holds and the disk does not.  The change set
+       is the difference between the base and the disk, so the change that
+       removes the include also deletes X, or marks it _X.
+    3. A reviewed hunk.  scripts/frozen-soundness-mirrors.txt admits reviewed
+       changes to a frozen file, one row for each change, in the shape
+       `path — keys — new-tree fix — reason`.  A key pins the exact text of
+       one hunk of the line diff between the base twin and the file: the
+       first 16 hex digits of the SHA-256 of its removed lines prefixed `-`
+       and its added lines prefixed `+`.  A row can key several hunks of one
+       file.  A row admits its hunks and nothing else, so a second edit to
+       the file makes a hunk that no row keys, and fails.  An edit next to a
+       keyed hunk changes the text of that hunk, and fails too.
+       `--mirror-hunks PATH` prints the hunks of a frozen file with their
+       keys.  The ledger fails closed: a row that names a path outside every
+       frozen prefix, a path that does not exist, a malformed key, or a key
+       that matches no hunk which needs a row fails the guard.
+    4. A macro unification.  A frozen header drops macro definitions, and
        adds includes of foundation headers that define the same macros.  All
        four conditions that follow are necessary:
        a. Against the base twin, each removed line is part of a whole macro
@@ -44,6 +56,15 @@ THREE CHANGES ARE ADMITTED
           removed name is defined, its definition comes from a header that the
           added includes pull in, and the active old body and the active new
           body are equal or form a row of the table.
+
+NO ONE CHECK ADMITS A FILE
+    The diff of a changed file against its base twin splits into hunks, and
+    each hunk needs exactly one admission.  The include-removal kind reads
+    each hunk first.  A ledger key then admits one hunk that the kind does
+    not admit, so a key for a hunk that the kind admits matches nothing and
+    fails as stale.  The unification check reads only the hunks that are
+    still open, and it must explain every one of them.  A file passes when
+    no hunk is open, so no admission reaches a hunk beside its own.
 
 WHAT THE PARSER READS
     A macro definition and an include are nodes of the pinned tree-sitter
@@ -70,6 +91,7 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+import hashlib
 import io
 import json
 import os
@@ -93,6 +115,8 @@ UNIFICATION_TABLE = "scripts/frozen-macro-unifications.txt"
 DEFAULT_COMPILE_DB = "build/compile_commands.json"
 # An include of the old tree whose last path component carries the marking.
 MARKED_INCLUDE = re.compile(r"^(\s*#\s*include\s*<crucible/(?:[^>]*/)?)_([^/>]+>.*)$")
+# A line that holds one angle include and nothing else.
+INCLUDE_LINE = re.compile(r"^\s*#\s*include\s*<([^<>\s]+)>\s*$")
 DEFINITIONS = ("preproc_def", "preproc_function_def")
 DEFINE_HEAD = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)(\()?")
 UNDEF_HEAD = re.compile(r"^\s*#\s*undef\s+([A-Za-z_]\w*)")
@@ -100,6 +124,7 @@ UNDEF_HEAD = re.compile(r"^\s*#\s*undef\s+([A-Za-z_]\w*)")
 PUNCTUATOR = re.compile(r">>=|<<=|<=>|->\*|\.\.\.|::|##|->|\+\+|--|<<|>>|<=|>=|==|!=|&&|\|\||[-+*/%&|^]=|\.\*|\S")
 LINEMARKER = re.compile(r'^# \d+ "((?:\\.|[^"\\])*)"')
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")
+HUNK_KEY = re.compile(r"^[0-9a-f]{16}$")
 # The options of a compile command that name an output or produce one.
 DROPPED_WITH_VALUE = frozenset({"-o", "-MF", "-MT", "-MQ"})
 DROPPED = frozenset({"-c", "-MD", "-MMD"})
@@ -244,30 +269,112 @@ class Snapshot:
         return False
 
 
-def ledger_entries(root: Path) -> list[tuple[str, str]]:
-    """Return (path, reason) for each entry of the soundness-mirror ledger."""
+def changed_opcodes(old: list[str], new: list[str]) -> list[tuple[str, int, int, int, int]]:
+    """Return the opcodes of the line diff that are not equal: one per hunk.
+
+    Complexity: quadratic in the number of lines in the worst case, as
+    difflib is.
+    """
+    return [op for op in difflib.SequenceMatcher(a=old, b=new, autojunk=False).get_opcodes() if op[0] != "equal"]
+
+
+def hunk_key(old: list[str], new: list[str], opcode: tuple[str, int, int, int, int]) -> str:
+    """Return the ledger key of one hunk: the SHA-256 of its removed and added lines, 16 hex digits."""
+    _, i1, i2, j1, j2 = opcode
+    text = "\n".join(["-" + line for line in old[i1:i2]] + ["+" + line for line in new[j1:j2]])
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def mirror_hunks(base_text: str, new_text: str) -> list[tuple[str, tuple[str, int, int, int, int]]]:
+    """Return (key, opcode) for each hunk of a frozen file against its base, with the marking stripped."""
+    old, new = normalized(base_text), normalized(new_text)
+    return [(hunk_key(old, new, opcode), opcode) for opcode in changed_opcodes(old, new)]
+
+
+def include_rows(text: str) -> dict[int, str]:
+    """Return the row and the header of each `#include <...>` that the parser reads in a text.
+
+    A text that does not parse gives no row, so no include removal is
+    admitted from it.
+    """
+    with tempfile.TemporaryDirectory() as work:
+        source = Path(work) / "base.h"
+        source.write_text(text, encoding="utf-8")
+        tree = next(iter(tsast.parse([source], strict=False)))
+        if tree.diagnostic is not None:
+            return {}
+        rows = {}
+        for node in tree.find("preproc_include"):
+            target = node.child_by_field("path")
+            if target is not None and target.type == "system_lib_string":
+                rows[node.start[0]] = target.text[1:-1]
+    return rows
+
+
+def removed_headers(snapshot: Snapshot, old: list[str], includes: dict[int, str],
+                    opcode: tuple[str, int, int, int, int]) -> list[str]:
+    """Return the headers of an include-removal hunk, or [] when the hunk is not one.
+
+    Each removed line must be one include that the parser reads, of a header
+    that the base holds under include/ and the disk does not.
+
+    Complexity: linear in the number of removed lines.
+    """
+    tag, i1, i2, _, _ = opcode
+    if tag != "delete":
+        return []
+    headers = []
+    for row in range(i1, i2):
+        line = INCLUDE_LINE.match(old[row])
+        header = includes.get(row)
+        if line is None or header is None or line.group(1) != header:
+            return []
+        target = f"include/{header}"
+        if target not in snapshot.base_blobs or (snapshot.root / target).exists():
+            return []
+        headers.append(header)
+    return headers
+
+
+@dataclass(frozen=True)
+class LedgerRow:
+    """One reviewed change of the soundness-mirror ledger."""
+
+    number: int
+    path: str
+    keys: tuple[str, ...]
+    reason: str
+
+
+def ledger_rows(root: Path) -> tuple[list[LedgerRow], list[str]]:
+    """Return each row of the soundness-mirror ledger, and one report line for each malformed row."""
     ledger = root / MIRROR_LEDGER
     if not ledger.is_file():
-        return []
-    entries = []
-    for line in ledger.read_text().splitlines():
+        return [], []
+    rows: list[LedgerRow] = []
+    rot: list[str] = []
+    for number, line in enumerate(ledger.read_text().splitlines(), 1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
-        path = line.split("—", 1)[0].strip()
-        if path:
-            entries.append((path, line.rsplit("—", 1)[-1].strip()))
-    return entries
+        fields = [field.strip() for field in line.split(" — ", 3)]
+        keys = tuple(key.strip() for key in fields[1].split(",")) if len(fields) == 4 else ()
+        if len(fields) != 4 or not all(fields) or not keys or not all(HUNK_KEY.match(key) for key in keys):
+            rot.append(f"SOUNDNESS-MIRROR-LEDGER: line {number} — not `path — keys — new-tree fix — reason` with "
+                       f"16-hex hunk keys.  Run check-frozen-tree.py --mirror-hunks PATH for the keys of a change.")
+            continue
+        rows.append(LedgerRow(number, fields[0], keys, fields[3]))
+    return rows, rot
 
 
 def ledger_rot(root: Path, prefixes: list[str]) -> list[str]:
-    """Return one report line for each ledger entry that can admit no real edit."""
-    rot = []
-    for path, _ in ledger_entries(root):
-        if not is_frozen(path, prefixes):
-            rot.append(f"SOUNDNESS-MIRROR-LEDGER: {path} — not under a frozen directory, so a mirror "
+    """Return one report line for each ledger row that is malformed or can admit no real edit."""
+    rows, rot = ledger_rows(root)
+    for row in rows:
+        if not is_frozen(row.path, prefixes):
+            rot.append(f"SOUNDNESS-MIRROR-LEDGER: {row.path} — not under a frozen directory, so a mirror "
                        f"admission means nothing.  Name the frozen file, or remove the entry.")
-        elif not (root / path).is_file():
-            rot.append(f"SOUNDNESS-MIRROR-LEDGER: {path} — does not exist, so the entry admits no edit and "
+        elif not (root / row.path).is_file():
+            rot.append(f"SOUNDNESS-MIRROR-LEDGER: {row.path} — does not exist, so the entry admits no edit and "
                        f"hides a typo.  Re-key it onto the surviving path, or prune it.")
     return rot
 
@@ -541,12 +648,17 @@ class Context:
     preprocessor: Preprocessor
 
 
-def unification(snapshot: Snapshot, path: str, context: Context) -> tuple[bool, list[str]]:
-    """Decide whether the change to a frozen file is a macro unification.
+def unification(snapshot: Snapshot, path: str, context: Context,
+                 admitted: frozenset[tuple[str, int, int, int, int]] = frozenset()) -> tuple[bool, list[str]]:
+    """Decide whether the open hunks of a frozen file form a macro unification.
 
     Complexity: one line diff of the file against its base twin, two parses,
     the parse of the include closure of the added headers, and at most three
     runs of the preprocessor.
+
+    Args:
+        admitted: The hunks that an include removal or a ledger key admits.
+            The check reads every other hunk, and must explain each one of them
 
     Returns:
         (True, [verdict]) when admitted, or (False, reasons) when refused
@@ -570,7 +682,9 @@ def unification(snapshot: Snapshot, path: str, context: Context) -> tuple[bool, 
     reasons: list[str] = [f"the {side} text does not parse" for side in unparsed]
     removed: set[int] = set()
     added: list[int] = []
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=old, b=new, autojunk=False).get_opcodes():
+    for tag, i1, i2, j1, j2 in changed_opcodes(old, new):
+        if (tag, i1, i2, j1, j2) in admitted:
+            continue
         if tag in ("delete", "replace"):
             removed.update(range(i1, i2))
         if tag in ("insert", "replace"):
@@ -660,31 +774,71 @@ def scan(root: Path, base: str, database: Path) -> int:
     for line in ledger_rot(root, prefixes) + context.table.rot:
         print(line, file=sys.stderr)
         rc = 1
-    ledger = dict(ledger_entries(root))
+    rows_of: dict[str, list[LedgerRow]] = {}
+    for row in ledger_rows(root)[0]:
+        rows_of.setdefault(row.path, []).append(row)
+    # The keys each row still has to find in its file.  A key that no open
+    # hunk of the file carries is stale, so the ledger only shrinks.
+    unfound: dict[int, list[str]] = {row.number: list(row.keys) for rows in rows_of.values() for row in rows}
     snapshot = Snapshot(root, base, prefixes)
     for path in snapshot.disk:
         if snapshot.base_blobs.get(path) == snapshot.disk_blobs[path] or snapshot.is_marking(path):
             continue
-        change = "modified" if snapshot.base_twin(path) is not None else "added"
-        if path in ledger and snapshot.base_twin(path) is not None:
-            print(f"check-frozen-tree: ADMITTED soundness mirror: {path} — {ledger[path]} (per {MIRROR_LEDGER}).",
-                  file=sys.stderr)
-            continue
-        admitted, notes = unification(snapshot, path, context)
-        if admitted:
-            print(f"check-frozen-tree: ADMITTED macro unification: {path} — {notes[0]}.", file=sys.stderr)
-            continue
+        twin = snapshot.base_twin(path)
+        change = "modified" if twin is not None else "added"
+        notes: list[str] = []
+        if twin is not None:
+            base_text = snapshot.base_text(twin)
+            hunks = mirror_hunks(base_text, snapshot.disk_text(path))
+            old = normalized(base_text)
+            includes = include_rows(base_text) if any(op[0] == "delete" for _, op in hunks) else {}
+            admitted: set[tuple[str, int, int, int, int]] = set()
+            reasons: list[str] = []
+            for key, opcode in hunks:
+                headers = removed_headers(snapshot, old, includes, opcode)
+                if headers:
+                    admitted.add(opcode)
+                    for header in headers:
+                        spot = PurePosixPath("include") / header
+                        state = "marked superseded" if (root / spot.with_name("_" + spot.name)).is_file() else "deleted"
+                        print(f"check-frozen-tree: ADMITTED include removal: {path} — {header} is {state}.",
+                              file=sys.stderr)
+                    continue
+                row = next((r for r in rows_of.get(path, []) if key in unfound[r.number]), None)
+                if row is not None:
+                    unfound[row.number].remove(key)
+                    admitted.add(opcode)
+                    if row.reason not in reasons:
+                        reasons.append(row.reason)
+            for reason in reasons:
+                print(f"check-frozen-tree: ADMITTED reviewed hunk: {path} — {reason} (per {MIRROR_LEDGER}).",
+                      file=sys.stderr)
+            if len(admitted) == len(hunks):
+                continue
+            passed, notes = unification(snapshot, path, context, frozenset(admitted))
+            if passed:
+                print(f"check-frozen-tree: ADMITTED macro unification: {path} — {notes[0]}.", file=sys.stderr)
+                continue
         print(f"FROZEN violation: {path} — {change} under a frozen path.  The old substrate only shrinks.  "
               f"Admitted: the deletion of a whole file; the _ marking of a ported file (git mv dir/X.h "
-              f"dir/_X.h) and of each include of it; a file listed in {MIRROR_LEDGER}; a macro unification "
-              f"with its rows in {UNIFICATION_TABLE}.  To change what the file does, port it to "
-              f"include/foundation or include/fixy, move its consumers there, and mark the old file "
-              f"superseded.", file=sys.stderr)
+              f"dir/_X.h) and of each include of it; the removal of an include of a header that the same "
+              f"change deletes or marks; a hunk that a row of {MIRROR_LEDGER} keys; a macro unification with "
+              f"its rows in {UNIFICATION_TABLE}.  Each hunk of the file needs one of these.  To change what the "
+              f"file does, port it to include/foundation or include/fixy, move its consumers there, and mark "
+              f"the old file superseded.", file=sys.stderr)
         for note in notes[:3]:
             print(f"    not a macro unification: {note}", file=sys.stderr)
         if len(notes) > 3:
             print(f"    not a macro unification: {len(notes) - 3} more lines", file=sys.stderr)
         rc = 1
+    for rows in rows_of.values():
+        for row in rows:
+            if unfound[row.number] and (root / row.path).is_file():
+                print(f"SOUNDNESS-MIRROR-LEDGER: line {row.number}: {row.path} — no hunk of the file that needs "
+                      f"a row carries {', '.join(unfound[row.number])}.  The file no longer has that change, "
+                      f"another row keys the hunk, or the include-removal kind admits it.  Remove the key, or "
+                      f"re-key the row with --mirror-hunks.", file=sys.stderr)
+                rc = 1
     return rc
 
 
@@ -760,6 +914,42 @@ def self_test() -> int:
         sh(root, "init", "-q")
         write(root, PATHS_FILE, "# planted\ninclude/crucible/safety/\ninclude/crucible/fixy/\n"
                                 "src/fixy/_Fs.cpp\nsrc/fixy/_Io.cpp\nexamples/fn/\n")
+        # A reviewed change of three hunks, and the same change with one more
+        # line next to its last hunk.
+        pinned_base = "#pragma once\n// pin one\nint p = 1;\n// pin two\nint q = 2;\n// pin three\n"
+        pinned_new = "#pragma once\n// pin one fixed\nint p = 1;\nint q = 2;\n// pin three fixed\n// pin four\n"
+        pinned_plus = pinned_new + "// pin five, not reviewed\n"
+        # Each umbrella includes one header that the change deletes, marks or
+        # keeps, and the change removes one include line from it.
+        umbrellas = {
+            "UmbrellaA": "#pragma once\n#include <crucible/safety/GoneA.h>\n#include <crucible/safety/Kept.h>\n// a\n",
+            "UmbrellaM": "#pragma once\n#include <crucible/safety/MarkedM.h>\n#include <crucible/safety/Kept.h>\n// m\n",
+            "UmbrellaB": "#pragma once\n#include <crucible/safety/KeptB.h>\n#include <crucible/safety/GoneB.h>\n// b\n",
+            "UmbrellaC": "#pragma once\n#include <crucible/safety/GoneC.h>\n#include <crucible/safety/Kept.h>\n// c\n",
+            "UmbrellaE": "#pragma once\n#include <crucible/safety/KeptE.h>\n#include <crucible/safety/Kept.h>\n// e\n",
+            "UmbrellaF": "#pragma once\n/*\n#include <crucible/safety/GoneF.h>\n*/\n#include <crucible/safety/Kept.h>\n",
+            "UmbrellaK": "#pragma once\n#include <crucible/safety/GoneK.h>\n#include <crucible/safety/Kept.h>\n"
+                         "int k = 1;\n// k\n",
+            "UmbrellaL": "#pragma once\n#include <crucible/safety/GoneL.h>\n#include <crucible/safety/Kept.h>\n"
+                         "int k = 1;\n// k\nint m = 0;\nint l = 2;\n",
+        }
+        umbrella_edits = {
+            "UmbrellaA": "#pragma once\n#include <crucible/safety/Kept.h>\n// a\n",
+            "UmbrellaM": "#pragma once\n#include <crucible/safety/Kept.h>\n// m\n",
+            "UmbrellaB": "#pragma once\n#include <crucible/safety/GoneB.h>\n// b\n",
+            "UmbrellaC": "#pragma once\n#include <crucible/safety/Kept.h>\n// c, and edited\n",
+            "UmbrellaE": "#pragma once\n#include <crucible/safety/Kept.h>\n// e\n",
+            "UmbrellaF": "#pragma once\n/*\n*/\n#include <crucible/safety/Kept.h>\n",
+            "UmbrellaK": "#pragma once\n#include <crucible/safety/Kept.h>\nint k = 1;\n// k, reviewed\n",
+            "UmbrellaL": "#pragma once\n#include <crucible/safety/Kept.h>\nint k = 1;\n// k, reviewed\nint m = 0;\n"
+                         "int l = 3;\n",
+        }
+
+        def keys(base_text: str, new_text: str, *, skip_deletes: bool = False) -> str:
+            """Return the ledger keys of a change, without its pure deletions when asked."""
+            return ",".join(key for key, opcode in mirror_hunks(base_text, new_text)
+                            if not (skip_deletes and opcode[0] == "delete"))
+
         planted = {
             "include/crucible/safety/Old.h": "// old\n",
             "include/crucible/fixy/Gone.h": "// gone\n",
@@ -772,7 +962,15 @@ def self_test() -> int:
             "include/crucible/safety/Includer.h": "#pragma once\n#include <crucible/safety/Twin.h>\n// frozen\n",
             "include/crucible/safety/Tampered.h": "#pragma once\n// tampered\n",
             "include/crucible/safety/Mirror.h": "#pragma once\n// mirror base\n",
+            "include/crucible/safety/MirrorCopy.h": "#pragma once\n// mirror base\n",
             "include/crucible/safety/Mirror2.h": "#pragma once\n// mirror2 base ported\n",
+            "include/crucible/safety/Twice.h": "#pragma once\n// twice one\nint twice = 1;\n// twice two\n",
+            "include/crucible/safety/Pinned.h": pinned_base,
+            "include/crucible/safety/PinnedPlus.h": pinned_base,
+            "include/crucible/safety/Kept.h": "// kept\n",
+            **{f"include/crucible/safety/{name}.h": f"// {name}\n"
+               for name in ("GoneA", "MarkedM", "KeptB", "GoneB", "GoneC", "KeptE", "GoneF", "GoneK", "GoneL")},
+            **{f"include/crucible/safety/{name}.h": text for name, text in umbrellas.items()},
             "include/crucible/Root.h": "#pragma once\n// root\n",
             "include/crucible/safety/RootIncluder.h": "#pragma once\n#include <crucible/Root.h>\n// roots\n",
             "include/crucible/safety/Hidden.h": "// hidden\n",
@@ -803,13 +1001,39 @@ def self_test() -> int:
         sh(root, "mv", "include/crucible/Root.h", "include/crucible/_Root.h")
         write(root, "include/crucible/safety/RootIncluder.h",
               "#pragma once\n#include <crucible/_Root.h>\n// roots\n")
-        write(root, "include/crucible/safety/Mirror.h", "#pragma once\n// mirror edited\n")
+        mirror_new = "#pragma once\n// mirror edited\n"
+        write(root, "include/crucible/safety/Mirror.h", mirror_new)
+        write(root, "include/crucible/safety/MirrorCopy.h", mirror_new)
         sh(root, "mv", "include/crucible/safety/Mirror2.h", "include/crucible/safety/_Mirror2.h")
-        write(root, "include/crucible/safety/_Mirror2.h", "#pragma once\n// mirror2 ported, and edited\n")
-        write(root, MIRROR_LEDGER,
-              "# planted\n"
-              "include/crucible/safety/Mirror.h — include/foundation/Mirror.h — a live bug already fixed\n"
-              "include/crucible/safety/_Mirror2.h — include/foundation/Mirror2.h — fixed in the ported file\n")
+        mirror2_new = "#pragma once\n// mirror2 ported, and edited\n"
+        write(root, "include/crucible/safety/_Mirror2.h", mirror2_new)
+        twice_reviewed = "#pragma once\n// twice one, reviewed\nint twice = 1;\n// twice two\n"
+        write(root, "include/crucible/safety/Twice.h", twice_reviewed.replace("// twice two", "// twice two, not"))
+        write(root, "include/crucible/safety/Pinned.h", pinned_new)
+        write(root, "include/crucible/safety/PinnedPlus.h", pinned_plus)
+        for name, text in umbrella_edits.items():
+            write(root, f"include/crucible/safety/{name}.h", text)
+        for name in ("GoneA", "GoneB", "GoneC", "GoneF", "GoneK", "GoneL"):
+            sh(root, "rm", "-q", f"include/crucible/safety/{name}.h")
+        sh(root, "mv", "include/crucible/safety/MarkedM.h", "include/crucible/safety/_MarkedM.h")
+        k_reviewed = keys(umbrellas["UmbrellaK"], umbrella_edits["UmbrellaK"], skip_deletes=True)
+        mirror_keys = keys(planted["include/crucible/safety/Mirror.h"], mirror_new)
+        mirror2_keys = keys(planted["include/crucible/safety/Mirror2.h"], mirror2_new)
+        twice_keys = keys(planted["include/crucible/safety/Twice.h"], twice_reviewed)
+        ledger = (
+            "# planted\n"
+            f"include/crucible/safety/Mirror.h — {mirror_keys} — include/foundation/Mirror.h — "
+            "a live bug already fixed\n"
+            f"include/crucible/safety/_Mirror2.h — {mirror2_keys} — include/foundation/Mirror2.h — "
+            "fixed in the ported file\n"
+            f"include/crucible/safety/Twice.h — {twice_keys} — include/foundation/Twice.h — the first edit only\n"
+            f"include/crucible/safety/Pinned.h — {keys(pinned_base, pinned_new)} — include/foundation/Pinned.h — "
+            "a pinned change of three hunks\n"
+            f"include/crucible/safety/PinnedPlus.h — {keys(pinned_base, pinned_new)} — "
+            "include/foundation/Pinned.h — the pinned change, with one more line\n"
+            f"include/crucible/safety/UmbrellaK.h — {k_reviewed} — include/foundation/K.h — a reviewed hunk\n"
+            f"include/crucible/safety/UmbrellaL.h — {k_reviewed} — include/foundation/K.h — a reviewed hunk\n")
+        write(root, MIRROR_LEDGER, ledger)
         sh(root, "add", "-A")
         # The stale-index hole: a file dropped from the index and then edited.
         # A diff against the index calls it deleted and passes it.
@@ -817,12 +1041,23 @@ def self_test() -> int:
         write(root, "include/crucible/safety/Hidden.h", "// hidden, and edited\n")
         code, report = captured(root, base)
         expect("the planted tree fails", code == 1)
-        for path, label in (("include/crucible/safety/Old.h", "a modify under a frozen directory"),
-                            ("include/crucible/safety/New.h", "an untracked add under a frozen directory"),
-                            ("include/crucible/fixy/Moved.h", "a rename into a frozen directory"),
-                            ("src/fixy/_Fs.cpp", "a modify of a frozen single file"),
-                            ("include/crucible/safety/_Tampered.h", "a marking that also edits content"),
-                            ("include/crucible/safety/Hidden.h", "an edit to a file missing from the index")):
+        caught = (("include/crucible/safety/Old.h", "a modify under a frozen directory"),
+                  ("include/crucible/safety/New.h", "an untracked add under a frozen directory"),
+                  ("include/crucible/fixy/Moved.h", "a rename into a frozen directory"),
+                  ("src/fixy/_Fs.cpp", "a modify of a frozen single file"),
+                  ("include/crucible/safety/_Tampered.h", "a marking that also edits content"),
+                  ("include/crucible/safety/Hidden.h", "an edit to a file missing from the index"),
+                  ("include/crucible/safety/MirrorCopy.h", "the reviewed hunk of one file in another file"),
+                  ("include/crucible/safety/Twice.h", "a second, unreviewed edit to a ledger path"),
+                  ("include/crucible/safety/PinnedPlus.h", "a pinned multi-hunk change plus one more line"),
+                  ("include/crucible/safety/UmbrellaB.h",
+                   "an include removal while a different header is deleted"),
+                  ("include/crucible/safety/UmbrellaC.h", "an include removal plus another change"),
+                  ("include/crucible/safety/UmbrellaE.h", "the removal of an include of a header that exists"),
+                  ("include/crucible/safety/UmbrellaF.h", "the removal of an include inside a block comment"),
+                  ("include/crucible/safety/UmbrellaL.h",
+                   "a reviewed hunk and an include removal plus one unadmitted hunk"))
+        for path, label in caught:
             expect(f"caught: {label}", f"violation: {path}" in report, True)
         for path, label in (("include/crucible/fixy/Gone.h", "a deletion"),
                             ("include/foundation/Fine.h", "an add in the new tree"),
@@ -832,23 +1067,68 @@ def self_test() -> int:
                             ("include/crucible/safety/Includer.h", "an include-only edit that follows a marking"),
                             ("include/crucible/safety/RootIncluder.h",
                              "an include edit that follows a root-level marking"),
-                            ("include/crucible/safety/Mirror.h", "a ledgered modify"),
-                            ("include/crucible/safety/_Mirror2.h", "a ledgered edit to an already-ported file")):
+                            ("include/crucible/safety/Mirror.h", "a keyed modify"),
+                            ("include/crucible/safety/_Mirror2.h", "a keyed edit to an already-ported file"),
+                            ("include/crucible/safety/Pinned.h", "a pinned change of three hunks"),
+                            ("include/crucible/safety/UmbrellaA.h", "an include removal with the deletion"),
+                            ("include/crucible/safety/UmbrellaM.h", "an include removal with the marking"),
+                            ("include/crucible/safety/UmbrellaK.h", "a reviewed hunk and an include removal")):
             expect(f"not caught: {label}", f"violation: {path}" not in report)
-        expect("the ledgered modify is admitted with its reason",
-               "ADMITTED soundness mirror: include/crucible/safety/Mirror.h — a live bug already fixed" in report)
-        expect("the ledgered ported edit is admitted",
-               "ADMITTED soundness mirror: include/crucible/safety/_Mirror2.h" in report)
-        expect("a valid ledger raises no rot", "SOUNDNESS-MIRROR-LEDGER:" not in report)
-        expect("exactly six violations", report.count("FROZEN violation:") == 6)
+        expect("the keyed modify is admitted with its reason",
+               "ADMITTED reviewed hunk: include/crucible/safety/Mirror.h — a live bug already fixed" in report)
+        expect("the keyed ported edit is admitted", "ADMITTED reviewed hunk: include/crucible/safety/_Mirror2.h" in report)
+        expect("the reviewed edit of a twice-edited file is still admitted",
+               "ADMITTED reviewed hunk: include/crucible/safety/Twice.h" in report)
+        expect("the include removal names the deleted header",
+               "ADMITTED include removal: include/crucible/safety/UmbrellaA.h — crucible/safety/GoneA.h is deleted"
+               in report)
+        expect("the include removal names the marked header",
+               "ADMITTED include removal: include/crucible/safety/UmbrellaM.h — crucible/safety/MarkedM.h is "
+               "marked superseded" in report)
+        expect("the include removal of a kept header is not admitted",
+               "ADMITTED include removal: include/crucible/safety/UmbrellaB.h" not in report
+               and "ADMITTED include removal: include/crucible/safety/UmbrellaE.h" not in report, True)
+        expect("an include inside a block comment is not an include",
+               "ADMITTED include removal: include/crucible/safety/UmbrellaF.h" not in report, True)
+        expect("the one rot is the stale last key of the pinned row",
+               report.count("SOUNDNESS-MIRROR-LEDGER:") == 1
+               and "SOUNDNESS-MIRROR-LEDGER: line 6: include/crucible/safety/PinnedPlus.h — no hunk of the file "
+                   f"that needs a row carries {keys(pinned_base, pinned_new).split(',')[-1]}" in report, True)
+        expect(f"exactly {len(caught)} violations", report.count("FROZEN violation:") == len(caught))
         expect("the report from / equals the report from the repository",
                captured(root, base, Path("/")) == captured(root, base, root))
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            print_mirror_hunks(root, base, "include/crucible/safety/UmbrellaK.h")
+        expect("--mirror-hunks keys the reviewed hunk and not the include removal",
+               f"keys: {k_reviewed}\n" in printed.getvalue()
+               and "(an include removal: it needs no key)" in printed.getvalue())
+
+        # Each hunk takes exactly one admission, so a second row for a hunk
+        # that another row or the include-removal kind admits is stale.
+        removal_key = next(key for key, opcode in mirror_hunks(umbrellas["UmbrellaA"], umbrella_edits["UmbrellaA"])
+                           if opcode[0] == "delete")
+        for extra, stale, label in (
+                (f"include/crucible/safety/UmbrellaA.h — {removal_key} — ref — keys a removal\n",
+                 "include/crucible/safety/UmbrellaA.h", "a row that keys an admitted include removal"),
+                (f"include/crucible/safety/Mirror.h — {mirror_keys} — ref — a second row\n",
+                 "include/crucible/safety/Mirror.h", "a second row for a hunk that a row admits")):
+            write(root, MIRROR_LEDGER, ledger + extra)
+            code, report = captured(root, base)
+            expect(f"stale: {label}", f"SOUNDNESS-MIRROR-LEDGER: line 9: {stale} — no hunk" in report, True)
+        write(root, MIRROR_LEDGER, ledger)
 
         for text, name, label in (
-                ("include/crucible/safety/Ghost.h — ref — not here\n", "include/crucible/safety/Ghost.h",
-                 "a ledger entry for a missing path"),
-                ("include/foundation/Fine.h — ref — not frozen\n", "include/foundation/Fine.h",
-                 "a ledger entry for a path that is not frozen")):
+                ("include/crucible/safety/Ghost.h — 0123456789abcdef — ref — not here\n",
+                 "include/crucible/safety/Ghost.h", "a ledger entry for a missing path"),
+                ("include/foundation/Fine.h — 0123456789abcdef — ref — not frozen\n", "include/foundation/Fine.h",
+                 "a ledger entry for a path that is not frozen"),
+                ("include/crucible/safety/Mirror.h — ref — a row with no keys\n", "line 1",
+                 "a row in the three-field form, with no keys"),
+                ("include/crucible/safety/Mirror.h — 0123456789ABCDEF — ref — upper case\n", "line 1",
+                 "a key that is not 16 lowercase hex digits"),
+                ("include/crucible/safety/Mirror.h — 0123456789abcdef, — ref — an empty key\n", "line 1",
+                 "a key list with an empty key")):
             write(root, MIRROR_LEDGER, text)
             expect(f"rot: {label}", f"SOUNDNESS-MIRROR-LEDGER: {name}" in "\n".join(ledger_rot(
                 root, frozen_prefixes(root))), True)
@@ -1007,19 +1287,56 @@ def self_test() -> int:
     return 0
 
 
+def print_mirror_hunks(root: Path, base: str, path: str) -> int:
+    """Print each hunk of a frozen file against its base twin with its ledger key, for a new ledger row.
+
+    Returns:
+        0 when the file has a base twin, 2 otherwise
+    """
+    snapshot = Snapshot(root, base, frozen_prefixes(root))
+    twin = snapshot.base_twin(path)
+    if twin is None or not (root / path).is_file():
+        print(f"check-frozen-tree: {path} has no base twin in {base}, so no mirror row can admit it.",
+              file=sys.stderr)
+        return 2
+    base_text, new_text = snapshot.base_text(twin), snapshot.disk_text(path)
+    old, new = normalized(base_text), normalized(new_text)
+    includes = include_rows(base_text)
+    keys = []
+    for key, opcode in mirror_hunks(base_text, new_text):
+        _, i1, i2, j1, j2 = opcode
+        kind = removed_headers(snapshot, old, includes, opcode)
+        print(f"{key}  base lines {i1 + 1}-{i2}, file lines {j1 + 1}-{j2}"
+              f"{'  (an include removal: it needs no key)' if kind else ''}")
+        keys += [] if kind else [key]
+        for line in old[i1:i2]:
+            print(f"    -{line}")
+        for line in new[j1:j2]:
+            print(f"    +{line}")
+    print(f"keys: {','.join(keys)}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
-    """Run the scan against the freeze base, or the self-test."""
+    """Run the scan against the freeze base, the self-test, or print the mirror hunks of one file."""
     database = tsast.REPO_ROOT / DEFAULT_COMPILE_DB
     if argv[:1] == ["--compile-db"] and len(argv) == 2:
         database, argv = Path(argv[1]).resolve(), []
-    if argv not in ([], ["--self-test"]):
-        print("usage: check-frozen-tree.py [--self-test | --compile-db PATH]", file=sys.stderr)
+    hunks_of = argv[1] if argv[:1] == ["--mirror-hunks"] and len(argv) == 2 else None
+    if hunks_of is None and argv not in ([], ["--self-test"]):
+        print("usage: check-frozen-tree.py [--self-test | --compile-db PATH | --mirror-hunks PATH]",
+              file=sys.stderr)
         return 2
     try:
+        if hunks_of is not None:
+            return print_mirror_hunks(tsast.REPO_ROOT, FREEZE_BASE, hunks_of)
         return self_test() if argv else run(tsast.REPO_ROOT, FREEZE_BASE, database)
     except tsast.KitMissing as exc:
         print(f"check-frozen-tree: {exc}", file=sys.stderr)
         return 3
+    except Refused as exc:
+        print(f"check-frozen-tree: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
