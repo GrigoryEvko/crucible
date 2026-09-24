@@ -185,6 +185,11 @@ jobs:
           bash scripts/check-syscall-grant-coverage.sh --self-test
           bash scripts/check-syscall-grant-coverage.sh
 
+      - name: git writes only to a named, isolated repository (self-test + scan)
+        run: |
+          python3 scripts/check-git-isolation.py --self-test
+          python3 scripts/check-git-isolation.py
+
       - name: no -ffast-math (self-test + scan)
         run: |
           bash scripts/check-no-ffast-math.sh --self-test

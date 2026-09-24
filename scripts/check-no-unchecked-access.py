@@ -92,6 +92,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cxx_lex  # noqa: E402
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -467,7 +468,7 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        throwaway_repo.init(root)
         write(root, "include/foundation/Walk.h",
               "auto m = std::meta::members_of(^^T, std::meta::access_context::unchecked());\n")
         write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n")

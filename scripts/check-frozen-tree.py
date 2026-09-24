@@ -106,6 +106,7 @@ from pathlib import Path, PurePosixPath
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cxx_lex  # noqa: E402
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 FREEZE_BASE = "1e0cd65e975f53d8838cb4d22e0aad9233374e35"
@@ -878,6 +879,9 @@ def self_test() -> int:
         if not ok:
             failures.append(name)
 
+    # The fixture commits must land in the fixture repository, so the
+    # repository variables of the caller go before the environment is copied.
+    throwaway_repo.isolate()
     env = dict(os.environ, GIT_AUTHOR_NAME="selftest", GIT_AUTHOR_EMAIL="selftest@invalid",
                GIT_COMMITTER_NAME="selftest", GIT_COMMITTER_EMAIL="selftest@invalid")
 
@@ -911,7 +915,7 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        sh(root, "init", "-q")
+        throwaway_repo.init(root)
         write(root, PATHS_FILE, "# planted\ninclude/crucible/safety/\ninclude/crucible/fixy/\n"
                                 "src/fixy/_Fs.cpp\nsrc/fixy/_Io.cpp\nexamples/fn/\n")
         # A reviewed change of three hunks, and the same change with one more

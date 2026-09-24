@@ -47,6 +47,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cxx_lex  # noqa: E402
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 ROSTER = "scripts/host-owner-roster.txt"
@@ -227,7 +228,7 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        throwaway_repo.init(root)
         write(root, "include/foundation/effects/Effect.h",
               "#pragma once\nnamespace foundation::effects {\nnamespace host {\nstruct InitOwner { static int key(); };\n"
               "struct BackgroundOwner;\n}\nstruct Bg { friend struct ::foundation::effects::host::BackgroundOwner; };\n}\n")

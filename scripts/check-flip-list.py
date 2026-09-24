@@ -74,6 +74,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cxx_lex  # noqa: E402
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 LIST = "scripts/flip-list.txt"
@@ -328,7 +329,7 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        throwaway_repo.init(root)
         write(root, PATHS_FILE, "# planted\ninclude/crucible/safety/\ninclude/crucible/Fixy.h\n")
         write(root, "include/crucible/safety/Linear.h",
               "#pragma once\nnamespace crucible::safety::detail { struct Linear {}; }\n")

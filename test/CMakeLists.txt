@@ -767,6 +767,17 @@ add_test(NAME syscall_grant_coverage
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.sh)
 set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PROPERTIES
     LABELS "ci_guard")
+# A script that writes to a git repository names it and clears the
+# caller's repository variables.  scripts/check-git-isolation.py refuses a
+# script under scripts/ or tools/ that runs git init, commit, update-ref,
+# reset or checkout without scripts/throwaway_repo.py, or, in shell,
+# without the unset and the --absolute-git-dir check.
+add_test(NAME git_isolation_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-git-isolation.py --self-test)
+add_test(NAME git_isolation
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-git-isolation.py)
+set_tests_properties(git_isolation git_isolation_self_test PROPERTIES
+    LABELS "ci_guard")
 # std::start_lifetime_as over an array of proofs, over an aggregate that
 # holds one, and std::start_lifetime_as_array over proofs each give a
 # pointer to a proof whose lifetime never started, and no property of a

@@ -75,6 +75,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cxx_lex  # noqa: E402
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 ALLOWLIST = "scripts/detail-namespace-allowlist.txt"
@@ -448,7 +449,7 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        throwaway_repo.init(root)
         write(root, "include/foundation/effects/Key.h",
               "#pragma once\nnamespace foundation::effects {\nnamespace detail { struct Key {}; void helper(Key); }\n"
               "inline void frob(detail::Key key) { detail::helper(key); }\n}\n")
