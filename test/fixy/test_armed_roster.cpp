@@ -368,32 +368,15 @@ struct foundation::contracts::armed_cell<::fixy::io::zerocopy_is_simple_transfer
 
 // ── fixy: the grade readers of the collision rules ──────────────────
 //
-// The Effect grade has two shapes, a stated with<Es...> and the strict
-// pole Row<>.  Each reader answers for the stated shape and stands down
-// for the pole, which names no effect.
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::collision::detail::row_admits_bg_> {
-    using accepts = witnesses<at::with<Effect::Bg>, at::with<Effect::IO, Effect::Bg>>;
-    using refuses = witnesses<at::with<Effect::IO>, at::with<>, Row<>>;
-};
+// The rules read the row of the binding, which is a canonical Row: the
+// Effect grade joined with the lifts of the atoms.  The observable reader
+// answers for a row, and it gives false for a stated grade, which is not
+// the row a rule reads.
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::row_admits_observable_> {
-    using accepts = witnesses<at::with<Effect::Alloc>, at::with<Effect::IO>, at::with<Effect::Block>>;
-    using refuses = witnesses<at::with<Effect::Bg>, at::with<>, Row<>>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::collision::detail::row_admits_init_> {
-    using accepts = witnesses<at::with<Effect::Init>, at::with<Effect::IO, Effect::Init>>;
-    using refuses = witnesses<at::with<Effect::Bg>, at::with<>, Row<>>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::collision::detail::row_admits_alloc_or_io_> {
-    using accepts = witnesses<at::with<Effect::Alloc>, at::with<Effect::IO>>;
-    using refuses = witnesses<at::with<Effect::Block>, at::with<>, Row<>>;
+    using accepts = witnesses<Row<Effect::Alloc>, Row<Effect::IO>, Row<Effect::Block>>;
+    using refuses = witnesses<Row<Effect::Bg>, Row<>, at::with<Effect::IO>>;
 };
 
 template <>
@@ -697,21 +680,12 @@ struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_ghost_> {
     using refuses = witnesses<int, at::copy>;
 };
 
-// The pole Row<> names no effect, and a type that is not a row names none.
-template <>
-struct foundation::contracts::armed_instances<^^::fixy::corpus::detail::row_has_effect_> {
-    using accepts = witnesses<::fixy::corpus::detail::row_has_effect_<Effect::IO, at::with<Effect::IO>>,
-                              ::fixy::corpus::detail::row_has_effect_<Effect::Bg, at::with<Effect::IO, Effect::Bg>>>;
-    using refuses = witnesses<::fixy::corpus::detail::row_has_effect_<Effect::IO, at::with<Effect::Bg>>,
-                              ::fixy::corpus::detail::row_has_effect_<Effect::IO, Row<>>,
-                              ::fixy::corpus::detail::row_has_effect_<Effect::IO, int>>;
-};
-
-// Init and Test stay outside the observable set.
+// Init and Test stay outside the observable set.  The entry reads the row
+// of the binding, so a stated grade that is not a row names nothing here.
 template <>
 struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_row_observable_> {
-    using accepts = witnesses<at::with_io, at::with_alloc, at::with<Effect::Init, Effect::Block>>;
-    using refuses = witnesses<at::with_init, at::with_test, Row<>, int>;
+    using accepts = witnesses<Row<Effect::IO>, Row<Effect::Alloc>, Row<Effect::Init, Effect::Block>>;
+    using refuses = witnesses<Row<Effect::Init>, Row<Effect::Test>, Row<>, at::with_io, int>;
 };
 
 // Only AuthorizedReplay discharges an axis, and it discharges staleness

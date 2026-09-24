@@ -94,6 +94,9 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <fixy/atoms/Stdio.h>
+#include <fixy/atoms/Sync.h>
+#include <fixy/atoms/Syscall.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/algebra/lattices/DualLattice.h>
@@ -255,6 +258,20 @@ using S03_IoFunction = ::fixy::role::IoFunction<int>;
 using S04_BgWorker = ::fixy::role::BgWorker<int>;
 using S05_CtCrypto = ::fixy::role::CtCrypto<int>;
 
+// ── The bindings whose atoms lift ──────────────────────────────────
+//
+// Each of these atoms carries the row of the operation it names, and
+// the row a binding requires of its context joins those lifts with the
+// Effect grade.  The key does not read that row.  It folds the grade on
+// each axis, and a lift is not a grade.  These four lines are the witness:
+// a change to what an atom lifts must leave them where they are.
+using L01_FnFutexCall = ::fixy::fn<int, ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::futex>>;
+using L02_FnPark = ::fixy::fn<int, ::fixy::atom::sync::park>;
+using L03_FnProcessStateRead =
+    ::fixy::fn<int, ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::getpid>, ::fixy::atom::as_public>;
+using L04_FnStderrWrite =
+    ::fixy::fn<int, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stderr>, ::fixy::atom::as_public>;
+
 // ── The permission carriers ────────────────────────────────────────
 //
 // Each carrier folds its tag's row as its payload.  P01 and P02 differ
@@ -283,7 +300,7 @@ struct LabeledEntry {
     std::uint64_t value;
 };
 
-inline constexpr std::array<LabeledEntry, 51> kEntries = {{
+inline constexpr std::array<LabeledEntry, 55> kEntries = {{
     {"G01_Linear", row_hash_contribution_v<G01_Linear>},
     {"G02_Affine", row_hash_contribution_v<G02_Affine>},
     {"G03_TaggedVerified", row_hash_contribution_v<G03_TaggedVerified>},
@@ -315,6 +332,10 @@ inline constexpr std::array<LabeledEntry, 51> kEntries = {{
     {"S03_IoFunction", row_hash_contribution_v<S03_IoFunction>},
     {"S04_BgWorker", row_hash_contribution_v<S04_BgWorker>},
     {"S05_CtCrypto", row_hash_contribution_v<S05_CtCrypto>},
+    {"L01_FnFutexCall", row_hash_contribution_v<L01_FnFutexCall>},
+    {"L02_FnPark", row_hash_contribution_v<L02_FnPark>},
+    {"L03_FnProcessStateRead", row_hash_contribution_v<L03_FnProcessStateRead>},
+    {"L04_FnStderrWrite", row_hash_contribution_v<L04_FnStderrWrite>},
     {"G10_EpochVersioned", row_hash_contribution_v<G10_EpochVersioned>},
     {"G11_Budgeted", row_hash_contribution_v<G11_Budgeted>},
     {"K02_OnDualGeneration", row_hash_contribution_v<K02_OnDualGeneration>},
@@ -345,7 +366,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0xd9890c7a0bd36692ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0xd8a50f1650b1c32aULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -479,11 +500,11 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
     return distinct;
 }
 
-// Fifty-one entries carry forty-seven distinct values. Four entries repeat
+// Fifty-five entries carry fifty-one distinct values. Four entries repeat
 // one that stands above them: R05 repeats R04, and B02, B07 and S01 each
 // repeat B01. Every one of those four has its own assert above, with the
 // property that makes the repeat correct.
-static_assert(distinct_value_count() == 47,
+static_assert(distinct_value_count() == 51,
               "the number of distinct values moved. Every repeat in this matrix is "
               "named by an assert above, so a new one is a collision between two "
               "claims that must not share a cache slot.");

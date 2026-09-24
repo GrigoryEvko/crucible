@@ -1,7 +1,8 @@
 // Sentinel TU for fixy/Fn.h and fixy/Reject.h: the binding collapses to
 // sizeof(T), an unmentioned axis takes its strict pole silently, one
 // atom relaxes exactly its own axis, the gate refuses a duplicate and a
-// non-atom, and the duplicate diagnostic names the axis.
+// non-atom, the duplicate diagnostic names the axis, and a context gate
+// reads the lifts of the atoms as well as the Effect grade.
 //
 // The header self-tests prove these for a sample.  What this file adds
 // is the walk over every atom the tree ships: each one is checked
@@ -9,8 +10,15 @@
 // axis it actually resolves is caught here rather than by whichever
 // binding happens to use it.
 
+#include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/Reject.h>
+#include <fixy/atoms/Sync.h>
+#include <fixy/atoms/Syscall.h>
+
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <cstddef>
 #include <meta>
@@ -158,6 +166,37 @@ static_assert(std::is_same_v<decltype(std::declval<const fn<int, ::fixy::atom::c
 static_assert(std::is_same_v<decltype(std::declval<fn<int, ::fixy::atom::copy>&&>().value()), int&&>);
 static_assert(!std::is_assignable_v<decltype(std::declval<fn<int, ::fixy::atom::copy>&>().value()), int>,
               "a default-constructed binding cannot be written into after the fact");
+
+// ---------------------------------------------------------------------
+// The row a binding requires of its context.
+//
+// The row joins the Effect grade with the lifts of the atoms.  Each
+// context below holds the row the binding lifts to and admits it.  The
+// two negative fixtures neg_fn_futex_row_under_compile_ctx and
+// neg_fn_io_syscall_row_under_drain_ctx take the same bindings to a
+// context that lacks one effect of the row.
+
+namespace fe = ::foundation::effects;
+using SyscallId = ::fixy::atom::syscall::SyscallId;
+using FutexBinding = fn<int, ::fixy::atom::syscall::per<SyscallId::futex>>;
+using ProcessStateBinding = fn<int, ::fixy::atom::syscall::per<SyscallId::getpid>, ::fixy::atom::as_public>;
+using ParkBinding = fn<int, ::fixy::atom::sync::park>;
+
+static_assert(std::is_same_v<::fixy::binding_row_t<FutexBinding>, fe::Row<fe::Effect::Block>>);
+static_assert(std::is_same_v<::fixy::binding_row_t<ProcessStateBinding>, fe::Row<fe::Effect::IO>>);
+static_assert(std::is_same_v<::fixy::binding_row_t<ParkBinding>, fe::Row<fe::Effect::Block>>);
+static_assert(std::is_same_v<::fixy::binding_row_t<fn<int, ::fixy::atom::with_io, ::fixy::atom::as_public,
+                                                      ::fixy::atom::sync::park>>,
+                             fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+
+static_assert(::fixy::CtxAdmitsBinding<::fixy::BgLoadCtx, FutexBinding>, "the load context holds Block");
+static_assert(::fixy::CtxAdmitsBinding<::fixy::TestRunnerCtx, ParkBinding>);
+static_assert(::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, ProcessStateBinding>, "the compile context holds IO");
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, FutexBinding>, "the compile context lacks Block");
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgDrainCtx, ProcessStateBinding>, "the drain context lacks IO");
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, ParkBinding>);
+static_assert(::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, fn<int, ::fixy::atom::sync::spin_pause>>,
+              "a spin lifts the empty row, so the foreground context admits it");
 
 // A static_assert proves the constant-evaluated path only.  These run.
 [[nodiscard]] int check_runtime_paths() {

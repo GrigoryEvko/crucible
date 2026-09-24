@@ -359,6 +359,57 @@ concept IsEffectGrade = requires { typename detail::effect_grade_row_<Grade>::ty
 template <IsEffectGrade Grade>
 using effect_row_of_t = typename detail::effect_grade_row_<Grade>::type;
 
+// ---------------------------------------------------------------------
+// The row that a pack lifts to, and the row of a binding.
+//
+// An atom that reaches a real operation carries the row of that
+// operation as `lifts_to`.  The stated with<Es...> of the Effect axis
+// lifts, and so do the waits of fixy/atoms/Sync.h and the system calls
+// of fixy/atoms/Syscall.h and fixy/atoms/Os.h.  An atom with no lift
+// reaches no operation, so it adds nothing to the union.
+//
+// The row of a binding is the row that its Effect grade states, joined
+// with the row that its atoms lift to.  The Effect grade alone is not
+// this row.  A binding can state a futex call and leave its Effect grade
+// at the strict pole.  A row read from the grade alone is then the empty
+// row, and the empty row is a Subrow of the row of every context.
+// fixy/Fn.h reads this relation for context admission, and the collision
+// rules and the corpus read it for their premises.
+//
+// Complexity: linear in the length of the pack.  Each union is quadratic
+// in the size of one row, and the effect catalog bounds that size.
+namespace detail {
+
+template <class Atom>
+struct lifted_row_of_atom_ {
+    using type = ::foundation::effects::Row<>;
+};
+template <::foundation::effects::LiftsToRow Atom>
+struct lifted_row_of_atom_<Atom> {
+    using type = ::foundation::effects::lift_row_t<Atom>;
+};
+
+template <class... Atoms>
+struct lifted_row_of_pack_ {
+    using type = ::foundation::effects::Row<>;
+};
+template <class First, class... Rest>
+struct lifted_row_of_pack_<First, Rest...> {
+    using type = ::foundation::effects::row_union_t<typename lifted_row_of_atom_<First>::type,
+                                                    typename lifted_row_of_pack_<Rest...>::type>;
+};
+
+}  // namespace detail
+
+template <class... Atoms>
+using lifted_row_of_t = typename detail::lifted_row_of_pack_<Atoms...>::type;
+
+// Grade is the resolved Effect grade of the pack, which the caller
+// reads with its own resolver: fn::grade_on in fixy/Fn.h and
+// collision::grades in fixy/Collision.h.
+template <IsEffectGrade Grade, class... Atoms>
+using binding_row_of_t = ::foundation::effects::row_union_t<effect_row_of_t<Grade>, lifted_row_of_t<Atoms...>>;
+
 // `declassify<Policy>` drops the binding to the public security level and
 // names the policy that licenses the drop.  The policy is opaque to the
 // engagement check and exists for the audit trail.
@@ -970,6 +1021,23 @@ static_assert(!IsEffectGrade<const with_io>);
 static_assert(IsAtom<with_io>);
 static_assert(with_io::axis == Axis::Effect);
 static_assert(sizeof(with_io) == 1 && std::is_empty_v<with_io>);
+
+// ── The row of a pack, and the row of a binding ──────────────────────
+//
+// The union of the lifts in the pack.  An atom with no lift adds nothing,
+// and the result is the canonical row, so two orders give one type.
+static_assert(std::is_same_v<lifted_row_of_t<>, fe_::Row<>>);
+static_assert(std::is_same_v<lifted_row_of_t<affine>, fe_::Row<>>);
+static_assert(std::is_same_v<lifted_row_of_t<affine, with_io>, fe_::Row<fe_::Effect::IO>>);
+static_assert(std::is_same_v<lifted_row_of_t<with<fe_::Effect::IO, fe_::Effect::Bg>>,
+                             lifted_row_of_t<with<fe_::Effect::Bg, fe_::Effect::IO>>>);
+
+// The row of a binding joins the grade and the lifts.  The strict pole
+// states no effect, so a binding at the pole requires what its atoms
+// lift to and nothing more.
+static_assert(std::is_same_v<binding_row_of_t<fe_::Row<>, affine>, fe_::Row<>>);
+static_assert(std::is_same_v<binding_row_of_t<with_io, with_io>, fe_::Row<fe_::Effect::IO>>);
+static_assert(std::is_same_v<binding_row_of_t<fe_::Row<>, with_io>, fe_::Row<fe_::Effect::IO>>);
 
 }  // namespace detail::atom_self_test
 

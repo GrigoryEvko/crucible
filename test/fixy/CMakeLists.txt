@@ -652,6 +652,19 @@ fixy_neg_compile_test(neg_role_io_row_under_foreground_ctx
   "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
   "R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<>")
 
+# The same gate reads the lifts of the atoms.  Each pack states no Effect
+# atom, so its Effect grade is the empty row, and the atom alone puts the
+# effect in the row the binding requires.  The second regex names that
+# row and the row of the context, so each fixture fails for the one
+# effect the context lacks: Block for the futex call, IO for the read of
+# process state.
+fixy_neg_compile_test(neg_fn_futex_row_under_compile_ctx
+  "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
+  "R1 = foundation::effects::Row<foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>")
+fixy_neg_compile_test(neg_fn_io_syscall_row_under_drain_ctx
+  "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
+  "R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>")
+
 # The same lift, pointing the other way.  An atom::with in an os mint
 # pack widens the row the context has to admit, and this is the fixture
 # for that direction: before with<Es...> lifted, the pack failed one

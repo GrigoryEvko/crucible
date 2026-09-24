@@ -379,7 +379,7 @@ inline constexpr corpus_entry rule_corpus[] = {
     // The eleven that fire today.
     {"L002", Disposition::Live, "borrow x async"},
     {"M012", Disposition::Live, "monotonic x concurrent without an atomic representation"},
-    {"P010", Disposition::Live, "ghost x an observable effect row"},
+    {"P010", Disposition::Live, "ghost x an observable effect in the row of the binding"},
     {"P002", Disposition::Live, "ghost x stdio or a syscall surface"},
     {"L007", Disposition::Live, "borrow x Row<Bg>"},
     {"T001", Disposition::Live, "capability x unverified trust"},
@@ -984,26 +984,26 @@ static_assert(pending_rule_count == detail::corpus_count_(Disposition::Pending),
 // Reading a grade.
 //
 // A parametric atom carries its argument in the template-id, so the
-// question "does this effect row admit Bg" is answered by matching the
-// atom rather than by calling anything on it.
+// question "does this grade name a fence at or above SeqCst" is answered
+// by matching the atom rather than by calling anything on it.
+//
+// No reader here reads the Effect grade.  A rule that asks what the
+// binding does reads the row of the binding, which fixy/Atom.h computes:
+// the Effect grade joined with the row that the atoms of the pack lift
+// to.  That row is a canonical Row, so a question about one effect in it
+// is row_contains_v.
 
 namespace detail {
-
-template <class G>
-struct row_admits_bg_ : std::false_type {};
-template <::foundation::effects::Effect... Es>
-struct row_admits_bg_<::fixy::atom::with<Es...>>
-    : std::bool_constant<((Es == ::foundation::effects::Effect::Bg) || ...)> {};
 
 // P010's set is the observable atoms without Bg.  Whether an atom is
 // observable is decided in foundation/effects/Effect.h, where a count pin
 // makes each new atom take a decision, so a new observable atom joins
 // this set there and cannot be left out here.  Bg is left out because the
 // rules that read a Bg row, L007 and R003 among them, carry its theorem.
-template <class G>
+template <class R>
 struct row_admits_observable_ : std::false_type {};
 template <::foundation::effects::Effect... Es>
-struct row_admits_observable_<::fixy::atom::with<Es...>>
+struct row_admits_observable_<::foundation::effects::Row<Es...>>
     : std::bool_constant<((::foundation::effects::is_observable<Es>() && Es != ::foundation::effects::Effect::Bg)
                           || ...)> {};
 
@@ -1047,8 +1047,9 @@ struct is_replay_deterministic_<Payload> : is_replay_deterministic_<::fixy::band
 // it did not recognise, which was safe for B002's comparison direction
 // and was still a second copy of a relation.  fixy/Atom.h now carries
 // the one closed relation — atom::effect_row_of_t, over the stated
-// with<Es...> and the bare Row the strict pole leaves behind — and the
-// rules below read it.  A grade of any other shape fails there by name
+// with<Es...> and the bare Row the strict pole leaves behind — and
+// atom::binding_row_of_t joins it with the lifts of the pack.  The rules
+// below read that join.  A grade of any other shape fails there by name
 // rather than passing as the empty row.
 //
 // Observability keeps its own map, because its shape is different: its
@@ -1155,14 +1156,6 @@ template <auto Wanted, class G>
     requires requires { G::template names<Wanted>; }
 struct fp_mode_has_setting_<Wanted, G> : std::bool_constant<G::template names<Wanted>> {};
 
-// Whether the Effect row carries Init, which is the context V202 asks a
-// privileged tier to be reached from.  Same shape as row_admits_bg_.
-template <class G>
-struct row_admits_init_ : std::false_type {};
-template <::foundation::effects::Effect... Es>
-struct row_admits_init_<::fixy::atom::with<Es...>>
-    : std::bool_constant<((Es == ::foundation::effects::Effect::Init) || ...)> {};
-
 // The busy-wait classification, lifted from a grade to a type-level
 // answer.  The primary is false because the strict pole of
 // Synchronization is not a wait at all: a binding that names no strategy
@@ -1191,51 +1184,6 @@ template <class G>
         { G::strategy } -> std::same_as<const ::foundation::algebra::lattices::WaitStrategy&>;
     }
 struct has_wait_strategy_<G> : std::true_type {};
-
-// H003's theorem names Alloc and IO, so it reads its own predicate and
-// not row_admits_observable_ above, which also admits Block.  Block on a
-// hot path is W001's theorem, which cites the futex cost and not the
-// cost of the allocator.  W001 reads Block in lifted_row_of_pack_ below.
-template <class G>
-struct row_admits_alloc_or_io_ : std::false_type {};
-template <::foundation::effects::Effect... Es>
-struct row_admits_alloc_or_io_<::fixy::atom::with<Es...>>
-    : std::bool_constant<((Es == ::foundation::effects::Effect::Alloc || Es == ::foundation::effects::Effect::IO)
-                          || ...)> {};
-
-// The row that the whole pack lifts to.
-//
-// An atom that reaches a real operation carries the row of that
-// operation as `lifts_to`, and foundation/effects/Lift.h reads it.  Three
-// kinds of atom lift: the stated with<Es...> of the Effect axis, the
-// waits of fixy/atoms/Sync.h, and the system calls of
-// fixy/atoms/Syscall.h and fixy/atoms/Os.h.  An atom with no lift
-// reaches no operation, so it adds nothing to the union.
-//
-// The Effect grade alone is not this row.  A binding can state a futex
-// call or a park and leave its Effect grade empty, and a rule that read
-// only the grade would admit that binding.
-//
-// Complexity: linear in the length of the pack.  Each union is quadratic
-// in the size of one row, and the effect catalog bounds that size.
-template <class Atom>
-struct lifted_row_of_atom_ {
-    using type = ::foundation::effects::Row<>;
-};
-template <::foundation::effects::LiftsToRow Atom>
-struct lifted_row_of_atom_<Atom> {
-    using type = ::foundation::effects::lift_row_t<Atom>;
-};
-
-template <class... Atoms>
-struct lifted_row_of_pack_ {
-    using type = ::foundation::effects::Row<>;
-};
-template <class First, class... Rest>
-struct lifted_row_of_pack_<First, Rest...> {
-    using type = ::foundation::effects::row_union_t<typename lifted_row_of_atom_<First>::type,
-                                                    typename lifted_row_of_pack_<Rest...>::type>;
-};
 
 template <class G>
 struct repr_is_atomic_ : std::false_type {};
@@ -1506,8 +1454,19 @@ struct rules_of {
     static constexpr bool unbounded_cost =
         std::is_same_v<typename G::template on<Axis::Complexity>, ::fixy::atom::cost_unbounded>;
 
-    static constexpr bool row_bg = detail::row_admits_bg_<typename G::template on<Axis::Effect>>::value;
-    static constexpr bool row_observable = detail::row_admits_observable_<typename G::template on<Axis::Effect>>::value;
+    // The rows of the binding.  effect_row is the row that the Effect
+    // grade states.  lifted_row is the union of the lifts of the atoms in
+    // the pack.  binding_row joins the two, through the relation of
+    // fixy/Atom.h that fixy/Fn.h also reads for context admission.  Every
+    // rule that asks what the binding does reads binding_row.  A binding
+    // can state a futex call or a park and leave its Effect grade empty.
+    // A rule that reads only the grade admits that binding.
+    using effect_row = ::fixy::atom::effect_row_of_t<typename G::template on<Axis::Effect>>;
+    using lifted_row = ::fixy::atom::lifted_row_of_t<Atoms...>;
+    using binding_row = ::fixy::atom::binding_row_of_t<typename G::template on<Axis::Effect>, Atoms...>;
+
+    static constexpr bool row_bg = ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Bg>;
+    static constexpr bool row_observable = detail::row_admits_observable_<binding_row>::value;
     static constexpr bool atomic_repr = detail::repr_is_atomic_<typename G::template on<Axis::Representation>>::value;
     static constexpr bool thread_local_state =
         detail::is_thread_local_<typename G::template on<Axis::GlobalState>>::value;
@@ -1556,7 +1515,8 @@ struct rules_of {
     // old catalog left it.  False under the pack-only view.
     static constexpr bool replay_deterministic = detail::is_replay_deterministic_<Payload>::value;
     static constexpr bool row_alloc_or_io =
-        detail::row_admits_alloc_or_io_<typename G::template on<Axis::Effect>>::value;
+        ::foundation::effects::row_contains_v<effect_row, ::foundation::effects::Effect::Alloc>
+        || ::foundation::effects::row_contains_v<effect_row, ::foundation::effects::Effect::IO>;
 
     // "Unstated" is the strict pole on Complexity, so an unstated cost
     // is the absence of a grade rather than a grade of its own.  H001
@@ -1591,18 +1551,17 @@ struct rules_of {
     // grades enter the kernel or the scheduler, and the three highest stay
     // in user space.
     //
-    // W001 reads the row that the whole pack lifts to, and not the
-    // Synchronization axis alone.  A kernel wait lifts to Row<Block>, a
-    // system call that can park the caller lifts to a row with Block, and
-    // with<Block> states Block on the Effect axis.  The scheduler bounds
-    // each of them.  The three are one theorem.  A new atom that can block
-    // puts Block in its lift, and W001 then refuses it with no edit here.
+    // W001 reads the row of the binding, and not the Synchronization axis
+    // alone.  A kernel wait lifts to Row<Block>, a system call that can
+    // park the caller lifts to a row with Block, and with<Block> states
+    // Block on the Effect axis.  The scheduler bounds each of them.  The
+    // three are one theorem.  A new atom that can block puts Block in its
+    // lift, and W001 then refuses it with no edit here.
     //
     // W002 reads the axis through the predicate of fixy/atoms/Sync.h.  The
     // rule and the atom header then cannot disagree about the line.
-    using lifted_row = typename detail::lifted_row_of_pack_<Atoms...>::type;
     static constexpr bool blocks =
-        ::foundation::effects::row_contains_v<lifted_row, ::foundation::effects::Effect::Block>;
+        ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Block>;
     static constexpr bool core_burning_spin =
         detail::is_busy_wait_<typename G::template on<Axis::Synchronization>>::value;
 
@@ -1619,13 +1578,13 @@ struct rules_of {
     // Two theorems about one axis, and they are not the same theorem.
     //
     // B002 is the containment: the effects a binding declares OBSERVABLE
-    // must be effects it declared at all.  The Effect grade stays the
-    // single authority for what the binding may do, and Observability
-    // names which part of that row is observation rather than
-    // computation.  A surface naming an effect outside the Effect row
-    // would widen what the operation is permitted to do, and a passive
-    // surface that can do that is not passive — CLAUDE.md L15 says
-    // Observe records facts and does not enforce policy.
+    // must be effects it declared at all.  The row of the binding stays the
+    // single authority for what the binding may do: the Effect grade and
+    // the lifts of its atoms.  Observability names which part of that row
+    // is observation rather than computation.  A surface naming an effect
+    // outside that row would widen what the operation is permitted to do,
+    // and a passive surface that can do that is not passive — CLAUDE.md
+    // L15 says Observe records facts and does not enforce policy.
     //
     // B001 is the back-pressure trap, and it is the theorem the catalog
     // recorded for this axis before any atom existed.  It is kept rather
@@ -1633,10 +1592,9 @@ struct rules_of {
     // a new code rather than a reinterpretation of this one.
     using observability_row = typename detail::observability_row_of_<
         typename G::template on<Axis::Observability>>::type;
-    using effect_row = ::fixy::atom::effect_row_of_t<typename G::template on<Axis::Effect>>;
 
     static constexpr bool observes_something = G::template mentions<Axis::Observability>;
-    static constexpr bool B002_ok = ::foundation::effects::Subrow<observability_row, effect_row>;
+    static constexpr bool B002_ok = ::foundation::effects::Subrow<observability_row, binding_row>;
 
     // "May run unbounded" reads three ways on this pack, and B001 refuses
     // all three: an explicit unbounded cost, an unstated cost, or an
@@ -1661,7 +1619,8 @@ struct rules_of {
         ::fixy::atom::hw::HwInstruction::NonDeterministicTsc, typename G::template on<Axis::HwInstruction>>::value;
     static constexpr bool hw_privileged = detail::is_hw_at_or_above_<
         ::fixy::atom::hw::HwInstruction::PrivilegedMsr, typename G::template on<Axis::HwInstruction>>::value;
-    static constexpr bool row_init = detail::row_admits_init_<typename G::template on<Axis::Effect>>::value;
+    static constexpr bool row_init =
+        ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Init>;
 
     static constexpr bool V201_ok = !(hot && hw_nondeterministic);
     static constexpr bool V202_ok = !(hw_privileged && !row_init);
@@ -1780,9 +1739,11 @@ struct rules_of {
         detail::can_spawn_outlive_the_frame_<typename G::template on<Axis::Protocol>>::value;
     static constexpr bool L003_ok = !(borrow && spawn_outlives_the_frame);
 
-    // P010 reads the effect row.  Two other axes also force emitted
-    // code, and a ghost binding that engages either is the same
-    // contradiction through a different door.
+    // P010 reads the row of the binding, which holds the lifts of its
+    // atoms.  A stdio write lifts nothing, and a call through the vDSO
+    // lifts the empty row, but each is emitted code.  So P002 reads the
+    // two axes that such atoms engage.  A ghost binding that engages
+    // either is the same contradiction through a different door.
     static constexpr bool emits_outside_the_row = G::template mentions<Axis::Stdio>
                                                || G::template mentions<Axis::SyscallSurface>;
     static constexpr bool P002_ok = !(ghost && emits_outside_the_row);
@@ -1965,7 +1926,8 @@ struct rules_of {
                                "a monotonic counter through a non-atomic carrier lose updates. Use "
                                "repr<ReprKind::Atomic>.");
         static_assert(P010_ok, "P010: ghost x Row<Alloc|IO|Block>. A ghost binding is erased at codegen and emits no "
-                               "instructions, but each of those three effects requires emitted code. Drop the ghost "
+                               "instructions, but each of those three effects requires emitted code. The row holds "
+                               "the lifts of the atoms, so a kernel wait or a system call counts too. Drop the ghost "
                                "grade, or drop the observable effect.");
         static_assert(L007_ok, "L007: borrow x Row<Bg>. When the background thread runs the body, the caller's frame "
                                "may have unwound and the borrow dangles. Move ownership into the closure, or drop "

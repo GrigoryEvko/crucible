@@ -4,22 +4,24 @@
 // Axis::Observability.
 //
 // ---------------------------------------------------------------------
-// Observability is a projection of the Effect row, not a second row
+// Observability is a projection of the binding row, not a second row
 //
-// This axis does NOT say what the binding may do.  The Effect axis says
-// that, and stays the only authority for it.  Observability names which
-// PART of that row is observation rather than computation — which of the
-// operations the binding already declared exist so that something
-// outside can see a fact, as opposed to existing to compute a result.
+// This axis does NOT say what the binding may do.  The row of the
+// binding says that, and stays the only authority for it: the Effect
+// grade joined with the lifts of the atoms, as fixy/Atom.h computes it.
+// Observability names which PART of that row is observation rather than
+// computation — which of the operations the binding already declared
+// exist so that something outside can see a fact, as opposed to existing
+// to compute a result.
 //
 // The invariant is therefore a containment, and B002 below enforces it:
 //
-//     Subrow<observability_row, effect_row>
+//     Subrow<observability_row, binding_row>
 //
 // Three consequences, and the second is the one that matters:
 //
-//   1. Every existing gate is unchanged.  They read the Effect row, and
-//      it did not move.
+//   1. Every existing gate is unchanged.  They read the row of the
+//      binding, and a surface does not move it.
 //
 //   2. An observability atom cannot smuggle in an effect the binding
 //      never declared.  Observation that requires an effect the
@@ -46,7 +48,7 @@
 // requires nothing.  The spins are the second.
 //
 // An observability surface is neither.  It names NO operation: it
-// re-describes operations the Effect grade already declared.  So it
+// re-describes operations the binding already declared.  So it
 // declares no `lifts_to` at all, and that absence is the third meaning.
 // Were it to lift to its own row it would widen the required row, which
 // is the failure B002 exists to refuse; were it to lift to Row<> it

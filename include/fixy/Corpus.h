@@ -37,6 +37,10 @@
 // Each matcher reads collision::grades<Atoms...>::on<Axis> (Collision.h),
 // the same resolved grade fn::grade_on gives, computed from the pack
 // alone so that no entry completes fn and recurses through the gate.
+// The effect row is read one step further: an entry that reads IO, Bg or
+// an observable effect reads the row of the binding, which joins the
+// Effect grade with the lifts of the atoms.
+//
 // One axis carries one grade, so "classified" is a question about the
 // Security grade: it is the strict pole, as_secret or as_classified.
 // A declassify atom on that axis displaces the carrier, so the
@@ -53,6 +57,7 @@
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <concepts>
 #include <cstddef>
@@ -167,6 +172,14 @@ namespace detail {
 template <Axis A, class... Atoms>
 using grade_on = typename ::fixy::collision::grades<Atoms...>::template on<A>;
 
+// The row of the binding: the Effect grade joined with the lifts of the
+// atoms, through the relation of fixy/Atom.h that fixy/Fn.h and the
+// collision rules also read.  An entry that reads IO, Bg or an observable
+// effect reads this row, so a system call that lifts IO opens the same
+// channel as a stated with<IO>.
+template <class... Atoms>
+using binding_row_on = ::fixy::atom::binding_row_of_t<grade_on<Axis::Effect, Atoms...>, Atoms...>;
+
 // The three Security readings, each a reading of the one closed relation
 // fixy/Atom.h declares beside the Security atoms.  A type that is not a
 // Security grade makes no Security claim, so each answers false for it.
@@ -205,32 +218,33 @@ template <::fixy::atom::IsSecurityGrade G>
 struct is_internal_<G>
     : std::bool_constant<::fixy::atom::security_class_of_v<G> == ::fixy::atom::SecurityClass::Internal> {};
 
-template <::foundation::effects::Effect E, class G>
-struct row_has_effect_ : std::false_type {};
-template <::foundation::effects::Effect E, ::foundation::effects::Effect... Es>
-struct row_has_effect_<E, ::fixy::atom::with<Es...>> : std::bool_constant<((Es == E) || ...)> {};
-
 // Which effects count as observable is decided where the effect atoms
 // are declared, not here.  Deferring keeps a newly added atom from
 // defaulting to unobservable, which would widen what ghost code is
-// allowed to request without anyone deciding to widen it.
-template <class G>
+// allowed to request without anyone deciding to widen it.  The entry
+// reads the row of the binding, which binding_row_on above gives as a
+// canonical Row.
+template <class R>
 struct is_row_observable_ : std::false_type {};
 template <::foundation::effects::Effect... Es>
-struct is_row_observable_<::fixy::atom::with<Es...>>
+struct is_row_observable_<::foundation::effects::Row<Es...>>
     : std::bool_constant<(::foundation::effects::is_observable<Es>() || ...)> {};
 
-static_assert(!is_row_observable_<::fixy::atom::with_init>::value,
+static_assert(!is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Init>>::value,
               "Init must stay outside the observable set.  Moving it in rejects every ghost binding that "
               "participates in initialization, so it needs its own corpus entry naming the contradiction it "
               "catches.");
-static_assert(!is_row_observable_<::fixy::atom::with_test>::value,
+static_assert(!is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Test>>::value,
               "Test must stay outside the observable set.  A specification evaluated under a test harness is "
               "legitimate ghost code.");
-static_assert(is_row_observable_<::fixy::atom::with_alloc>::value, "Alloc must stay inside the observable set.");
-static_assert(is_row_observable_<::fixy::atom::with_io>::value, "IO must stay inside the observable set.");
-static_assert(is_row_observable_<::fixy::atom::with_block>::value, "Block must stay inside the observable set.");
-static_assert(is_row_observable_<::fixy::atom::with_bg>::value, "Bg must stay inside the observable set.");
+static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Alloc>>::value,
+              "Alloc must stay inside the observable set.");
+static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::IO>>::value,
+              "IO must stay inside the observable set.");
+static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Block>>::value,
+              "Block must stay inside the observable set.");
+static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Bg>>::value,
+              "Bg must stay inside the observable set.");
 
 template <class G>
 struct is_stale_ : std::false_type {};
@@ -289,9 +303,9 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Effects = detail::grade_on<Axis::Effect, Atoms...>;
+        using Effects = detail::binding_row_on<Atoms...>;
         const bool has_secret = detail::is_secret_carrier_<Security>::value;
-        const bool has_io = detail::row_has_effect_<::foundation::effects::Effect::IO, Effects>::value;
+        const bool has_io = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::IO>;
         const bool has_declassify = detail::can_discharge_<DischargeAxis::IO, Security>::value;
         return has_secret && has_io && !has_declassify;
     }
@@ -321,9 +335,9 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Effects = detail::grade_on<Axis::Effect, Atoms...>;
+        using Effects = detail::binding_row_on<Atoms...>;
         const bool has_secret = detail::is_secret_carrier_<Security>::value;
-        const bool has_bg = detail::row_has_effect_<::foundation::effects::Effect::Bg, Effects>::value;
+        const bool has_bg = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::Bg>;
         const bool has_declassify = detail::can_discharge_<DischargeAxis::Bg, Security>::value;
         return has_secret && has_bg && !has_declassify;
     }
@@ -397,7 +411,7 @@ struct ghost_runtime_observable final : ::foundation::diag::tag_base {
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         using Usage = detail::grade_on<Axis::Usage, Atoms...>;
-        using Effects = detail::grade_on<Axis::Effect, Atoms...>;
+        using Effects = detail::binding_row_on<Atoms...>;
         const bool has_ghost = detail::is_ghost_<Usage>::value;
         const bool has_observable = detail::is_row_observable_<Effects>::value;
         return has_ghost && has_observable;
@@ -429,9 +443,9 @@ struct internal_io_without_declassify final : ::foundation::diag::tag_base {
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Effects = detail::grade_on<Axis::Effect, Atoms...>;
+        using Effects = detail::binding_row_on<Atoms...>;
         const bool has_internal = detail::is_internal_<Security>::value;
-        const bool has_io = detail::row_has_effect_<::foundation::effects::Effect::IO, Effects>::value;
+        const bool has_io = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::IO>;
         // The carrier arm reads is_internal_ directly.  That predicate
         // has no declassify specialization, so the two arms cannot be
         // satisfied by one grade the way they can above.
@@ -465,9 +479,9 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
-        using Effects = detail::grade_on<Axis::Effect, Atoms...>;
+        using Effects = detail::binding_row_on<Atoms...>;
         const bool has_internal = detail::is_internal_<Security>::value;
-        const bool has_bg = detail::row_has_effect_<::foundation::effects::Effect::Bg, Effects>::value;
+        const bool has_bg = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::Bg>;
         const bool has_declassify = detail::can_discharge_<DischargeAxis::Bg, Security>::value;
         return has_internal && has_bg && !has_declassify;
     }

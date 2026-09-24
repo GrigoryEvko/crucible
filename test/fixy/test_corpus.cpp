@@ -11,6 +11,8 @@
 
 #include <fixy/Corpus.h>
 #include <fixy/Reject.h>
+#include <fixy/atoms/Sync.h>
+#include <fixy/atoms/Syscall.h>
 
 #include <cstddef>
 #include <meta>
@@ -115,6 +117,25 @@ static_assert(!corpus::internal_io_without_declassify::matches<int, at::as_inter
 static_assert(corpus::classified_io_without_declassify::matches<int, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
 static_assert(corpus::classified_bg_without_declassify::matches<int, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
 
+// The row an entry reads is the row of the binding: the Effect grade
+// joined with the lifts of the atoms.  A system call that lifts IO opens
+// the channel that a stated with<IO> opens, and a declassification or a
+// public grade closes it the same way.
+using ProcessStateRead = at::syscall::per<at::syscall::SyscallId::getpid>;
+using FileWrite = at::syscall::per<at::syscall::SyscallId::write>;
+using FutexCall = at::syscall::per<at::syscall::SyscallId::futex>;
+static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, ProcessStateRead>());
+static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, at::as_secret, FileWrite>());
+static_assert(only_this_entry_matches<corpus::internal_io_without_declassify, at::as_internal, FileWrite>());
+static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_public, FileWrite>());
+static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, FileWrite>());
+static_assert(!corpus::classified_io_without_declassify::matches<int, FutexCall>(), "a futex call lifts Block alone");
+static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::park>(),
+              "a park lifts Block, which is emitted code");
+static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, FutexCall>());
+static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::spin_pause>(),
+              "a spin lifts the empty row");
+
 // ---------------------------------------------------------------------
 // Staleness: the discharge must match the axis.  A value declassified
 // for export is still a secret where replay is concerned.
@@ -177,6 +198,14 @@ static_assert(IsAccepted<int, at::declassify<policy::AuthorizedReplay>, at::stal
 static_assert(!IsAccepted<int, at::ghost, at::as_public, at::with_bg>);
 static_assert(IsAccepted<int, at::ghost, at::as_public>);
 static_assert(IsAccepted<int, at::as_public, at::with_bg>);
+
+// The gate reads the lifts too.  A classified binding that writes a file
+// is refused, and the public binding that writes the same file is not.
+static_assert(!IsAccepted<int, FileWrite>);
+static_assert(IsAccepted<int, at::as_public, FileWrite>);
+static_assert(IsAccepted<int, FutexCall>, "Block alone opens no channel the corpus reads");
+static_assert(std::is_same_v<corpus::matched_entry_or_void_t<int, ProcessStateRead>,
+                             corpus::classified_io_without_declassify>);
 
 static_assert(std::is_same_v<corpus::matched_entry_or_void_t<int, at::with_io>,
                              corpus::classified_io_without_declassify>);

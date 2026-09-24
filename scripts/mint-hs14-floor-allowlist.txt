@@ -92,7 +92,6 @@ mint_nic_telemetry_snapshot|include/crucible/topology/Telemetry.h
 
 # include/fixy
 mint_carries_the_value|include/fixy/Fn.h
-mint_fn|include/fixy/Fn.h
 mint_fn_for|include/fixy/Fn.h
 mint_machine|include/fixy/Machine.h
 mint_append_only|include/fixy/Mutation.h

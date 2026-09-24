@@ -29,6 +29,7 @@
 #include <fixy/Axis.h>
 #include <fixy/Reject.h>
 #include <fixy/Tags.h>
+#include <fixy/atoms/Syscall.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
@@ -299,24 +300,46 @@ template <template <class> class Role, class Type>
 // ---------------------------------------------------------------------
 // The row a binding requires of its caller's context.
 //
-// A binding declares its effects on Axis::Effect.  This reads that
-// declaration back as a row, and the concept below is the gate a caller
-// writes instead of spelling the row a second time by hand.
+// A binding declares its effects in two places: the grade on
+// Axis::Effect, and the lift of each atom that reaches a real operation.
+// A futex call, a park and a system call each lift the row of the
+// operation they name.  The row a binding requires is the union of the
+// two.  The concept below is the gate a caller writes, so a caller does
+// not write the row a second time by hand.
 //
-// It is one line because the work is elsewhere: fixy/Atom.h's closed
-// relation answers for both shapes the grade can take, the stated
-// `with<Es...>` and the bare Row the strict pole leaves behind.  A grade
-// of any other shape fails there, with its own name in the diagnostic.
+// The work is in fixy/Atom.h.  Its closed relation answers for both
+// shapes the grade can take, the stated `with<Es...>` and the bare Row
+// the strict pole leaves behind, and binding_row_of_t joins that row
+// with the lifts of the pack.  A grade of any other shape fails there,
+// with its own name in the diagnostic.  The collision rules and the
+// corpus read the same join, so the gate and the rules cannot disagree
+// about what a binding does.
 //
-// What this closes: before it, nothing mapped the Effect axis's grade to
-// a row for context admission.  The row nobody computed is the empty
-// row, the empty row is a Subrow of every context's, and so a binding
-// that had declared it performs IO was admitted by a context that admits
-// nothing.  The declaration was readable by the collision rules and by
-// no gate.
+// Why the lifts are part of the row.  A binding can state a futex call,
+// `fn<int, syscall::per<SyscallId::futex>>`, and leave its Effect grade
+// at the strict pole.  A row read from the grade alone is then the empty
+// row, and the empty row is a Subrow of the row of every context.  A
+// context that admits nothing then admits a call that can park the
+// caller.
+//
+// The federation key does not read this row.  It folds the grade on each
+// axis, and a lift is not a grade, so a lift cannot move the key of a
+// binding.
+namespace detail::binding_row {
+
+template <class F>
+struct of_;
+
+template <class Type, class... Atoms>
+struct of_<fn<Type, Atoms...>> {
+    using type = atom::binding_row_of_t<typename fn<Type, Atoms...>::template grade_on<Axis::Effect>, Atoms...>;
+};
+
+}  // namespace detail::binding_row
+
 template <class F>
     requires is_fn_v<F>
-using binding_row_t = atom::effect_row_of_t<typename std::remove_cvref_t<F>::template grade_on<Axis::Effect>>;
+using binding_row_t = typename detail::binding_row::of_<std::remove_cvref_t<F>>::type;
 
 // A context admits a binding when it admits every effect the binding
 // declared.  Both halves are checked: a first argument that is not a
@@ -677,6 +700,22 @@ static_assert(fd_::row_hash_contribution_v<fn<int>> == fd_::row_hash_contributio
 static_assert(fd_::row_hash_contribution_v<fn<int, atom::declassify<tags::secret_policy::WireSerialize>>>
                   != fd_::row_hash_contribution_v<fn<int, atom::declassify<tags::secret_policy::AuditedLogging>>>,
               "a declassification's policy is part of its identity");
+
+// The row a binding requires joins its Effect grade with the lifts of its
+// atoms.  A futex call requires Block although the Effect grade stays at
+// the strict pole.
+using FutexBinding = fn<int, atom::syscall::per<atom::syscall::SyscallId::futex>>;
+using StatedBlockBinding = fn<int, atom::with<fe_::Effect::Block>>;
+static_assert(std::is_same_v<FutexBinding::grade_on<Axis::Effect>, typename axis_traits<Axis::Effect>::strict>);
+static_assert(std::is_same_v<binding_row_t<FutexBinding>, fe_::Row<fe_::Effect::Block>>);
+static_assert(std::is_same_v<binding_row_t<fn<int>>, fe_::Row<>>);
+
+// The key folds the grade on each axis, and not the row a binding
+// requires.  These two bindings require one row and state it on two
+// different axes, so they take two slots.
+static_assert(std::is_same_v<binding_row_t<FutexBinding>, binding_row_t<StatedBlockBinding>>);
+static_assert(fd_::row_hash_contribution_v<FutexBinding> != fd_::row_hash_contribution_v<StatedBlockBinding>,
+              "the key folds the axis grades, and the row of the binding is not one of them");
 
 }  // namespace detail::fn_self_test
 

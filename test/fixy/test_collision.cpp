@@ -97,6 +97,21 @@ static_assert(!live_rules<at::ghost, at::with<Eff::Block>>::P010_ok);
 static_assert(live_rules<at::ghost>::P010_ok);
 static_assert(live_rules<at::ghost, at::with<Eff::Test>>::P010_ok, "Test is not an emitted-code effect");
 
+// P010 reads the row of the binding, so an atom that lifts an observable
+// effect trips it as a stated with<> does.  A kernel wait lifts Block, a
+// futex call lifts Block and a read of process state lifts IO.  A call
+// through the vDSO lifts the empty row, so P010 admits it and P002
+// refuses it.
+static_assert(!live_rules<at::ghost, at::sync::park>::P010_ok, "a park is emitted code");
+static_assert(live_rules<at::ghost, at::sync::park>::failing_codes() == "P010",
+              "P002 reads the Stdio and SyscallSurface axes, and a park engages neither");
+static_assert(!live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::futex>>::P010_ok);
+static_assert(!live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::getpid>>::P010_ok);
+static_assert(live_rules<at::ghost, at::sync::spin_pause>::P010_ok, "a spin lifts the empty row");
+static_assert(live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>::P010_ok
+              && !live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>::P002_ok);
+static_assert(live_rules<at::sync::park>::P010_ok, "not ghost, so a park is ordinary");
+
 // L007 borrow x Bg row
 static_assert(!live_rules<at::borrow, at::with<Eff::Bg>>::L007_ok);
 static_assert(live_rules<at::borrow>::L007_ok);
@@ -276,6 +291,17 @@ static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>, at::
 static_assert(std::is_same_v<live_rules<>::lifted_row, fe::Row<>>);
 static_assert(!live_rules<at::sync::spin_pause>::blocks && !live_rules<at::sync::umwait_c01>::blocks);
 
+// The row of the binding joins the Effect grade with the lifted row.  It
+// is the row every rule reads, and it is the row fixy::binding_row_t
+// gives for context admission, so a rule and a context gate read one row.
+static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::binding_row, fe::Row<Eff::Block>>);
+static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::effect_row, fe::Row<>>,
+              "the Effect grade stays at the strict pole");
+static_assert(std::is_same_v<live_rules<at::with<Eff::IO>, at::sync::park>::binding_row, fe::Row<Eff::IO, Eff::Block>>);
+static_assert(std::is_same_v<live_rules<>::binding_row, fe::Row<>>);
+static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::binding_row,
+                             ::fixy::binding_row_t<::fixy::fn<int, at::syscall::per<SyscallId::futex>>>>);
+
 // The positive controls: the rules admit a warm or a cold binding with
 // the same row, and a binding that states no tier.
 static_assert(live_rules<at::regime::warm, at::with<Eff::Block>>::valid);
@@ -328,6 +354,12 @@ static_assert(live_rules<at::observe::surface<Eff::IO>, at::with<Eff::IO, Eff::B
 static_assert(!live_rules<at::observe::surface<Eff::IO, Eff::Bg>, at::with<Eff::IO>>::B002_ok,
               "one effect of the surface is outside the row, which is enough");
 static_assert(live_rules<at::observe::surface<>>::B002_ok, "the empty surface observes nothing and is contained");
+// The row that contains the surface is the row of the binding, so an
+// effect that an atom lifts is an effect the binding declared.
+static_assert(live_rules<at::observe::surface<Eff::IO>, at::syscall::per<SyscallId::getpid>>::B002_ok,
+              "a read of process state lifts IO, so the surface names an effect the binding performs");
+static_assert(!live_rules<at::observe::surface<Eff::IO>, at::syscall::per<SyscallId::futex>>::B002_ok,
+              "a futex call lifts Block and not IO");
 static_assert(live_rules<at::with<Eff::IO>>::B002_ok, "a binding with no surface observes nothing");
 static_assert(live_rules<>::B002_ok);
 
