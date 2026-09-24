@@ -5,7 +5,7 @@
 # the commit that drains its file, and never add one.  A new consumer
 # writes include/foundation or include/fixy instead.
 #
-# The old substrate is the FROZEN_PATHS set of scripts/check-frozen-tree.sh.
+# The old substrate is the prefix list of scripts/frozen-paths.txt.
 # The scan roots are include/crucible, src, vessel, bench, tools, examples
 # and fuzz.  check-flip-list.sh --scan prints the consumers it finds.
 #

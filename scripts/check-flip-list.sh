@@ -3,9 +3,9 @@
 # the flip list, every listed file still names it, and the list only shrinks.
 #
 # Each consumer of the old substrate moves onto include/foundation/ and
-# include/fixy/.  The old substrate is the frozen tree: the prefixes in
-# FROZEN_PATHS of scripts/check-frozen-tree.sh, read from that script so
-# the two guards cannot disagree about what is old.  A consumer is a file
+# include/fixy/.  The old substrate is the frozen tree: the prefixes of
+# scripts/frozen-paths.txt, the list that scripts/check-frozen-tree.py also
+# reads, so the two guards cannot disagree about what is old.  A consumer is a file
 # under the scan roots, outside every frozen prefix, that names the old
 # substrate.  scripts/flip-list.txt holds one path per consumer, and its
 # header comment gives the flip order.
@@ -98,7 +98,7 @@ from pathlib import Path
 
 mode, root = sys.argv[1], Path(sys.argv[2])
 LIST = root / "scripts" / "flip-list.txt"
-FROZEN_SOURCE = root / "scripts" / "check-frozen-tree.sh"
+FROZEN_SOURCE = root / "scripts" / "frozen-paths.txt"
 SCAN_ROOTS = ["include/crucible", "src", "vessel", "bench", "tools", "examples", "fuzz"]
 SUFFIXES = {".h", ".hh", ".hpp", ".hxx", ".H", ".C", ".c", ".cc", ".cpp", ".cxx",
             ".inl", ".ipp", ".tpp"}
@@ -118,17 +118,13 @@ def die(message: str) -> None:
 
 
 def frozen_prefixes() -> list[str]:
-    """The FROZEN_PATHS array of check-frozen-tree.sh, in order."""
+    """The prefixes of scripts/frozen-paths.txt, in order."""
     if not FROZEN_SOURCE.is_file():
         die(f"{FROZEN_SOURCE} is missing, so the old substrate is undefined.")
-    text = FROZEN_SOURCE.read_text()
-    match = re.search(r"^FROZEN_PATHS=\(\n(.*?)^\)", text, re.S | re.M)
-    if not match:
-        die(f"no FROZEN_PATHS=( ... ) block in {FROZEN_SOURCE}.")
-    prefixes = [line.split("#", 1)[0].strip() for line in match.group(1).splitlines()]
+    prefixes = [line.split("#", 1)[0].strip() for line in FROZEN_SOURCE.read_text().splitlines()]
     prefixes = [p for p in prefixes if p]
     if not prefixes:
-        die(f"the FROZEN_PATHS block in {FROZEN_SOURCE} is empty.")
+        die(f"{FROZEN_SOURCE} lists no prefix, so the old substrate is undefined.")
     return prefixes
 
 
@@ -236,12 +232,7 @@ self_test() {
     git -C "$repo" init -q
 
     # The frozen list is read from this file, in the same shape as the real one.
-    cat >"$repo/scripts/check-frozen-tree.sh" <<'EOF'
-FROZEN_PATHS=(
-    include/crucible/safety/
-    include/crucible/Fixy.h
-)
-EOF
+    printf '# planted\ninclude/crucible/safety/\ninclude/crucible/Fixy.h\n' >"$repo/scripts/frozen-paths.txt"
     # Frozen files name the old substrate and are never consumers.
     printf '#pragma once\nnamespace crucible::safety::detail { struct Linear {}; }\n' \
         >"$repo/include/crucible/safety/Linear.h"
@@ -326,10 +317,12 @@ EOF
     # Case 7: the frozen list is read, not assumed.  Unfreezing the old
     # substrate makes its own files consumers, and they are unlisted.
     cp "$tmp/good" "$repo/scripts/flip-list.txt"
-    printf 'FROZEN_PATHS=(\n    include/crucible/Fixy.h\n)\n' >"$repo/scripts/check-frozen-tree.sh"
+    printf 'include/crucible/Fixy.h\n' >"$repo/scripts/frozen-paths.txt"
     expect 1 'UNLISTED  include/crucible/safety/Linear.h' "frozen list read from its owner" || return 2
-    : >"$repo/scripts/check-frozen-tree.sh"
-    expect 2 'no FROZEN_PATHS' "missing frozen list" || return 2
+    : >"$repo/scripts/frozen-paths.txt"
+    expect 2 'lists no prefix' "empty frozen list" || return 2
+    rm "$repo/scripts/frozen-paths.txt"
+    expect 2 'is missing' "missing frozen list" || return 2
 
     printf 'check-flip-list --self-test: PASS.\n'
 }

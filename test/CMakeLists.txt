@@ -16045,12 +16045,16 @@ add_test(NAME layer_boundary
 set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
     LABELS "ci_guard;stage-A1")
 add_test(NAME frozen_tree_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.sh --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.py --self-test)
+# The scan preprocesses a unified frozen header on the flags of this build.
 add_test(NAME frozen_tree
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.py
+          --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(frozen_tree frozen_tree_self_test PROPERTIES
     LABELS "ci_guard;stage-A1")
-set_tests_properties(frozen_tree PROPERTIES SKIP_RETURN_CODE 3)
+set_tests_properties(frozen_tree frozen_tree_self_test PROPERTIES SKIP_RETURN_CODE 3)
+set_tests_properties(frozen_tree_self_test PROPERTIES
+    ENVIRONMENT "FROZEN_TREE_CXX=${CMAKE_CXX_COMPILER}")
 add_test(NAME derived_pins_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.sh --self-test)
 add_test(NAME derived_pins

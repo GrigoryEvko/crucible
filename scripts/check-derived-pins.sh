@@ -21,7 +21,7 @@
 # flagged.
 #
 # Scope: include/, src/, test/, bench/, tools/, vessel/, minus the frozen old
-# substrate and its fixtures (scripts/check-frozen-tree.sh lists them); those
+# substrate and its fixtures (scripts/frozen-paths.txt lists them); those
 # die with the old tree and are not worth allowlisting one by one.
 #
 # Allowlist: scripts/derived-pins-allowlist.txt, content-keyed as

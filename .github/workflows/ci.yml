@@ -263,8 +263,9 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # The sibling-substrate guards (Stage A1). Same free runner, no compiler.
-  # Split from `guards` because frozen_tree needs full history: it diffs the
-  # working tree against the freeze base, and a depth-1 checkout cannot.
+  # The frozen-tree scan preprocesses each unified frozen header on the flags
+  # of a compile database, so it runs in the build legs through ctest.  Only
+  # its self-test runs here, on the system c++ of the runner.
   # ---------------------------------------------------------------------------
   layers:
     name: layer boundary, frozen tree, derived pins (toolchain-free)
@@ -278,15 +279,18 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
 
+      # The frozen-tree guard reads macro definitions and includes with the
+      # parser, so this job needs the pinned kit too.
+      - name: Install the pinned tree-sitter C++ kit
+        run: bash scripts/install-tree-sitter.sh
+
       - name: layer boundary (self-test + scan)
         run: |
           bash scripts/check-layer-boundary.sh --self-test
           bash scripts/check-layer-boundary.sh
 
-      - name: frozen old substrate (self-test + scan)
-        run: |
-          bash scripts/check-frozen-tree.sh --self-test
-          bash scripts/check-frozen-tree.sh
+      - name: frozen old substrate (self-test)
+        run: python3 scripts/check-frozen-tree.py --self-test
 
       - name: derived cardinality pins (self-test + scan)
         run: |
@@ -411,8 +415,12 @@ jobs:
             ccache-${{ matrix.arch }}-${{ matrix.preset }}-main-
             ccache-${{ matrix.arch }}-${{ matrix.preset }}-
 
+      # Full history: the frozen_tree test compares the tree with the freeze
+      # base, and a depth-1 checkout lacks the base, so the test would skip.
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       # ctest runs the script-backed guards under the ci_guard label, and the
       # AST guards among them parse C++ with the pinned kit.  Install it before

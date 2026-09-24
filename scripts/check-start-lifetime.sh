@@ -9,7 +9,7 @@
 #   the checked start    include/foundation/Lifetime.h, whose
 #                        start_as_array refuses at compile time a type with
 #                        a subobject that is not an implicit-lifetime type
-#   a frozen file        a path that scripts/check-frozen-tree.sh freezes,
+#   a frozen file        a path that scripts/frozen-paths.txt freezes,
 #                        so no new use can appear there
 #   a negative fixture   a file under a test directory named neg or *_neg,
 #                        which must fail to compile
@@ -208,17 +208,14 @@ def entry_source(command: dict) -> Path:
 
 
 def frozen_prefixes() -> list[str]:
-    """The frozen prefixes that scripts/check-frozen-tree.sh declares.
+    """The frozen prefixes that scripts/frozen-paths.txt lists.
 
-    An unreadable declaration freezes nothing, so the rule fails closed."""
-    script = root / "scripts" / "check-frozen-tree.sh"
-    if not script.is_file():
+    An unreadable list freezes nothing, so the rule fails closed."""
+    listing = root / "scripts" / "frozen-paths.txt"
+    if not listing.is_file():
         return []
-    declared = re.search(r"^FROZEN_PATHS=\(\n(.*?)^\)", script.read_text(), re.M | re.S)
-    if declared is None:
-        return []
-    return [line.strip() for line in declared.group(1).splitlines()
-            if line.strip() and not line.strip().startswith("#")]
+    return [line.split("#", 1)[0].strip() for line in listing.read_text().splitlines()
+            if line.split("#", 1)[0].strip()]
 
 
 FROZEN = frozen_prefixes()
@@ -494,11 +491,7 @@ self_test() {
         "$tmp/build-planted/gen"
 
     # A planted freeze.  The guard reads the frozen prefixes from it.
-    cat >"$tmp/scripts/check-frozen-tree.sh" <<'EOF'
-FROZEN_PATHS=(
-    include/planted/frozen/
-)
-EOF
+    printf '# planted\ninclude/planted/frozen/\n' >"$tmp/scripts/frozen-paths.txt"
     # Each route of the ledger and each bypass the guard must see.  Each
     # use has a distinct template argument, so each key names exactly one
     # planted line.  The <Listed> use has an allowlist entry, and the path
@@ -739,9 +732,9 @@ EOF
         || { self_test_fail "stale entries gave exit $rc without their reports."; return 2; }
     printf 'check-start-lifetime --self-test: an entry above its count and an entry with no use are reported, as expected.\n'
 
-    # With no frozen declaration, nothing is frozen, so the frozen site is
-    # refused.  The rule fails closed.
-    rm -f "$tmp/scripts/check-frozen-tree.sh"
+    # With no frozen list, nothing is frozen, so the frozen site is refused.
+    # The rule fails closed.
+    rm -f "$tmp/scripts/frozen-paths.txt"
     run_planted
     [[ $rc -eq 1 ]] && rg -q -F 'include/planted/frozen/Reviewed.h:' "$out" \
         || { self_test_fail "a missing frozen declaration did not refuse the frozen site (exit $rc)."; return 2; }
