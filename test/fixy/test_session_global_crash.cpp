@@ -24,7 +24,7 @@
 namespace s = fixy::session;
 namespace g = fixy::session::global;
 
-namespace {
+namespace test_session_global_crash_types {
 
 // ── The Simpler Logging protocol, equation (2.1) ────────────────────
 
@@ -231,6 +231,8 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     return static_cast<std::size_t>(slot);
 };
 
+namespace {
+
 int fail(const char* what) {
     std::fprintf(stderr, "test_session_global_crash: %s\n", what);
     return 1;
@@ -296,6 +298,10 @@ int run_sender_crashes_first() {
 }
 
 }  // namespace
+
+}  // namespace test_session_global_crash_types
+
+using namespace test_session_global_crash_types;
 
 int main() {
     if (const int rc = run_sender_crashes_after_send(); rc != 0) return rc;

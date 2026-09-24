@@ -35,7 +35,7 @@ namespace s = ::fixy::session;
 namespace tr = ::foundation::algebra::transition;
 namespace tags = ::fixy::tags;
 
-namespace {
+namespace test_session_subtype_attack_types {
 
 struct A {};
 struct B {};
@@ -206,6 +206,8 @@ enum class side : int { running, waiting, finished };
 // each thread leaves its wait, and both joins return.  A run with no
 // progress for `hard_ticks` while a side still runs is a fault of this
 // harness, and the test aborts with a diagnostic.
+namespace {
+
 outcome run_pair(std::span<const step> left, std::span<const step> right, std::size_t capacity) {
     bounded_queue left_to_right{capacity};
     bounded_queue right_to_left{capacity};
@@ -283,6 +285,8 @@ void expect(bool condition, std::string_view what) {
     std::fprintf(stderr, "test_session_subtype_attack: %.*s\n", static_cast<int>(what.size()), what.data());
     ++failures;
 }
+
+}  // namespace
 
 // The check and the runtime agree on each member of the family, for
 // every capacity from 1 to 4: the check admits exactly the runs that
@@ -513,6 +517,8 @@ struct generated_tally {
 // Runs every admitted pair.  A case that the check refuses at every
 // capacity is run one time at the largest capacity, and a run that then
 // completes counts as a pair the bounded check cannot prove.
+namespace {
+
 generated_tally run_generated() {
     generated_tally tally{};
     for (std::size_t index = 0; index < generated_cases.size(); ++index) {
@@ -541,6 +547,8 @@ generated_tally run_generated() {
     return tally;
 }
 
+}  // namespace
+
 // ── Registration attacks ─────────────────────────────────────────────
 //
 // A combinator whose dual is not an involution, whose variance does not
@@ -557,7 +565,9 @@ struct Offload {};
 template <class T, class K>
 struct Onload {};
 
-}  // namespace
+}  // namespace test_session_subtype_attack_types
+
+using namespace test_session_subtype_attack_types;
 
 namespace fixy::session::combinators {
 inline constexpr ::foundation::algebra::transition::combinator offload{
@@ -574,7 +584,7 @@ inline constexpr ::foundation::algebra::transition::combinator onload{
     .payload_variance = ::foundation::algebra::transition::variance::contravariant};
 }  // namespace fixy::session::combinators
 
-namespace {
+namespace test_session_subtype_attack_types {
 
 static_assert(std::is_same_v<s::dual_of_t<Send<int, Offload<A, End>>>, Recv<int, Onload<A, End>>>);
 static_assert(s::is_well_formed_v<Loop<Offload<A, Continue>>>);
@@ -691,6 +701,8 @@ inline constexpr int label_number_v = std::is_same_v<typename Message::label, L0
 // Returns the label that the picker sent and the label that the offerer
 // received, when the picker speaks Permuted and the offerer speaks the
 // dual of Projected.
+namespace {
+
 [[nodiscard]] std::pair<int, int> labels_on_a_word_wire() {
     WordWire wire{};
     auto picker = s::mint_session_handle<Permuted>(PickerEnd{&wire});
@@ -712,6 +724,8 @@ inline constexpr int label_number_v = std::is_same_v<typename Message::label, L0
                               });
     return {label_number_v<Sent>, received};
 }
+
+}  // namespace
 
 // ── Fuel ─────────────────────────────────────────────────────────────
 //
@@ -833,7 +847,7 @@ static_assert(!s::is_subtype_sync_v<Send<Wide, End>, Send<Narrow, End>>
               && s::is_subtype_sync_v<Recv<Wide, End>, Recv<Narrow, End>>
               && !s::is_subtype_sync_v<Recv<Narrow, End>, Recv<Wide, End>>);
 
-}  // namespace
+}  // namespace test_session_subtype_attack_types
 
 int main() {
     // The runtime half of the capacity family: the check and the runs agree.

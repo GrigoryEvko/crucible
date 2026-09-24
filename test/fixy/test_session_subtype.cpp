@@ -22,7 +22,7 @@ namespace tr = ::foundation::algebra::transition;
 namespace tags = ::fixy::tags;
 using ::foundation::algebra::lattices::Tolerance;
 
-namespace {
+namespace test_session_subtype_types {
 
 struct Alice {};
 struct Bob {};
@@ -723,7 +723,9 @@ static_assert(generated.pair_closure == generated.pairs,
               "on every generated pair, T refines U up to exits exactly when the dual of U refines the dual of T up "
               "to exits");
 
-}  // namespace
+}  // namespace test_session_subtype_types
+
+using namespace test_session_subtype_types;
 
 int main() {
     // The generated counts reach the program, so a law that no longer

@@ -15,7 +15,7 @@
 
 namespace tr = ::foundation::algebra::transition;
 
-namespace {
+namespace test_transition_types {
 
 // ── A coherent registry ───────────────────────────────────────────────
 
@@ -826,7 +826,9 @@ constexpr std::string_view names[] = {
     "input label set refused",
 };
 
-}  // namespace
+}  // namespace test_transition_types
+
+using namespace test_transition_types;
 
 int main() {
     int failures = 0;

@@ -11,7 +11,7 @@
 
 #include <type_traits>
 
-namespace {
+namespace test_session_global_types_types {
 
 namespace g = ::fixy::session::global;
 namespace s = ::fixy::session;
@@ -396,6 +396,6 @@ consteval bool gates_accept_the_ring() {
 }
 static_assert(gates_accept_the_ring());
 
-}  // namespace
+}  // namespace test_session_global_types_types
 
 int main() { return 0; }

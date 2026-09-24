@@ -27,12 +27,14 @@
 
 namespace s = fixy::session;
 
-namespace {
+namespace test_session_recording_types {
 
+namespace {
 int fail(const char* what) {
     std::fprintf(stderr, "test_session_recording: %s\n", what);
     return 1;
 }
+}  // namespace
 
 constexpr s::RoleTagId kSelf{11};
 constexpr s::RoleTagId kPeer{22};
@@ -117,6 +119,8 @@ static_assert(!s::decode_session_event(std::span<const std::byte>{kSendBytes.dat
 static_assert(s::decode_session_event(std::span<const std::byte>{kSendBytes.data(), 71}).error()
               == s::EventDecodeError::Truncated);
 
+namespace {
+
 int check_log_decode() {
     std::vector<std::byte> block;
     for (const auto& bytes : {kSendBytes, kCloseBytes, kStopBytes}) block.insert(block.end(), bytes.begin(), bytes.end());
@@ -146,6 +150,8 @@ int check_log_steps() {
     const auto drained = std::move(log).drain();
     return drained.size() == 2 ? 0 : fail("the drain lost an event");
 }
+
+}  // namespace
 
 // ── The wire ────────────────────────────────────────────────────────
 
@@ -179,6 +185,8 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
 
 // ── A plain session ─────────────────────────────────────────────────
 
+namespace {
+
 int check_plain_recording() {
     using Proto = s::Send<int, s::Offer<s::Recv<int, s::End>, s::End>>;
     Mailbox to_self;
@@ -209,12 +217,16 @@ int check_plain_recording() {
     return 0;
 }
 
+}  // namespace
+
 // ── Example 3.2 with the receiver crashed ───────────────────────────
 
 struct P {};
 struct Q {};
 using ProtoP = s::Select<s::Send<int, s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<Q>, s::End>>>>;
 using ProtoQ = s::Offer<s::Recv<int, s::Select<s::Send<int, s::End>>>, s::Recv<s::Crash<P>, s::End>>;
+
+namespace {
 
 int check_crash_recording() {
     Mailbox to_p;
@@ -310,6 +322,8 @@ int check_checkpoint_recording() {
     return 0;
 }
 
+}  // namespace
+
 // ── A keyed choice, and the replay of a choice ──────────────────────
 //
 // The two sides hold the labels in another order.  Each records the
@@ -329,6 +343,8 @@ constexpr auto pop_empty = [](Port& port) noexcept {
     port.in->slots.pop_front();
     return T{};
 };
+
+namespace {
 
 int check_keyed_recording() {
     Mailbox to_left;
@@ -383,6 +399,10 @@ int check_keyed_recording() {
 }
 
 }  // namespace
+
+}  // namespace test_session_recording_types
+
+using namespace test_session_recording_types;
 
 int main() {
     if (const int rc = check_log_decode(); rc != 0) return rc;
