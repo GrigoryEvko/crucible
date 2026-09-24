@@ -718,6 +718,16 @@ fixy_neg_compile_test(neg_refined_implication_not_admitted
   "constraints not satisfied"
   "the expression .implies_v<P, Q> \\[with P = .*; Q = .*\\]. evaluated to .false.")
 
+# The relation holds a seal that counts every member at the foot of the
+# header.  An edge or a rule family added after it stops the build at the
+# first implication query that no earlier line asked.
+fixy_neg_compile_test(neg_refined_edge_after_the_header
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .fixy::refined::implies_types<fixy::InRange<0, 7>, fixy::IsPositive>\\(\\).")
+fixy_neg_compile_test(neg_refined_family_after_the_header
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .fixy::refined::implies_types<fixy::BoundedBelow<2>, fixy::IsNonZero>\\(\\).")
+
 # No public constructor takes a bare value; the candidates the compiler
 # lists are the copy, the move and the two private doors.
 fixy_neg_compile_test(neg_refined_direct_construction

@@ -26,6 +26,29 @@
 // The namespace is read when a pair is first checked, and that answer
 // holds for the rest of the translation unit.  Declare every edge of a
 // relation before the first check against it.
+//
+// ── The seal ──────────────────────────────────────────────────────────
+//
+// A namespace can be opened again from any file, so a translation unit
+// can add an edge to a shipped relation after its header, and a pair
+// first checked after that point is admitted.  A seal closes that door.
+// It is one variable of type seal in the relation's namespace, and its
+// count is a literal: the number of members the namespace declares
+// other than the seal.  The count takes every member, an edge, an alias,
+// a class or anything else, because a relation can read more than its
+// edges: a rule family or a second kind of edge admits pairs too.
+//
+//     namespace retag {
+//     inline constexpr foundation::fail_closed::edge<FromUser, Sanitized> user_to_sanitized{};
+//     inline constexpr foundation::fail_closed::seal sealed{.members = 1};
+//     }  // namespace retag
+//
+// Every read of a sealed relation counts the members again.  A count
+// that differs from the seal, before or after the header, stops the
+// build, and so does a second seal.  A late member is then a compile
+// error and never a different answer.  A relation with no seal stays
+// open, and the census in test/fixy/test_armed_roster.cpp names every
+// open relation under foundation and fixy with the reason it is open.
 
 #include <foundation/Platform.h>
 
@@ -39,6 +62,77 @@ namespace foundation::fail_closed {
 template <class From, class To>
 struct edge {};
 
+// The closure of one relation.  `members` is the number of members the
+// namespace declares other than the seal, written as a literal.
+struct seal {
+    std::size_t members = 0;
+};
+
+enum class seal_fault : unsigned char {
+    none,
+    count_differs,  // the namespace holds a different number of members than its seal states
+    sealed_twice,   // the namespace holds two seals
+};
+
+struct seal_reading {
+    bool is_sealed = false;
+    seal_fault fault = seal_fault::none;
+    std::size_t sealed = 0;
+    std::size_t found = 0;
+};
+
+// True when m reflects a variable of type seal.
+[[nodiscard]] consteval bool is_seal(std::meta::info m) noexcept {
+    return std::meta::is_variable(m) && std::meta::remove_cvref(std::meta::type_of(m)) == ^^seal;
+}
+
+// Reads the seal of a relation and counts its members now.  A namespace
+// with no seal is open and has no fault.  Complexity: linear in the
+// members of the namespace.
+[[nodiscard]] consteval seal_reading read_seal(std::meta::info ns) {
+    seal_reading reading{};
+    std::size_t seals = 0;
+    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+        if (is_seal(m)) {
+            ++seals;
+            reading.is_sealed = true;
+            reading.sealed = std::meta::extract<seal>(m).members;
+        } else {
+            ++reading.found;
+        }
+    }
+    if (seals > 1) {
+        reading.fault = seal_fault::sealed_twice;
+    } else if (reading.is_sealed && reading.found != reading.sealed) {
+        reading.fault = seal_fault::count_differs;
+    }
+    return reading;
+}
+
+namespace detail {
+
+// Each function below has no constant definition.  A call to one stops
+// the constant evaluation, and the diagnostic names it.
+void a_member_stands_outside_the_seal_of_its_relation() noexcept;
+void a_relation_holds_two_seals() noexcept;
+
+}  // namespace detail
+
+// Stops the build when a read of a sealed relation finds a fault.  Every
+// query below calls it first.  A header whose own walk reads a sealed
+// relation calls it at the start of each query.  A static assertion on
+// Sealed does not do that work: a condition that names no template
+// parameter is checked one time, where the template is defined.
+consteval void require_seal_holds(std::meta::info ns) {
+    const seal_reading reading = read_seal(ns);
+    if (reading.fault == seal_fault::sealed_twice) detail::a_relation_holds_two_seals();
+    if (reading.fault == seal_fault::count_differs) detail::a_member_stands_outside_the_seal_of_its_relation();
+}
+
+// True when Ns holds one seal and exactly the members it counts.
+template <std::meta::info Ns>
+concept Sealed = read_seal(Ns).is_sealed && read_seal(Ns).fault == seal_fault::none;
+
 // True when Ns declares a variable of type edge<From, To>.  Every other
 // member of Ns is skipped: a function, a nested type, a nested
 // namespace, a template, or a variable of any other type.  A nested
@@ -47,6 +141,7 @@ template <std::meta::info Ns, class From, class To>
 [[nodiscard]] consteval bool admits() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::admits<Ns, From, To>: Ns must be the reflection of "
                                                "a namespace, written ^^name.");
+    require_seal_holds(Ns);
     static constexpr auto members =
         std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
     // -Wshadow fires on the expansion-statement induction variable.
@@ -119,6 +214,7 @@ template <std::meta::info Ns>
 [[nodiscard]] consteval std::size_t edge_count() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::edge_count<Ns>: Ns must be the reflection of a "
                                                "namespace, written ^^name.");
+    require_seal_holds(Ns);
     std::size_t count = 0;
     for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
         if (is_edge(m)) ++count;
@@ -134,6 +230,7 @@ template <std::meta::info Ns>
 [[nodiscard]] consteval bool is_antisymmetric() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::is_antisymmetric<Ns>: Ns must be the reflection of "
                                                "a namespace, written ^^name.");
+    require_seal_holds(Ns);
     const auto members = std::meta::members_of(Ns, std::meta::access_context::unchecked());
     for (const auto m : members) {
         if (!is_edge(m)) continue;
@@ -156,6 +253,7 @@ template <std::meta::info Ns>
 [[nodiscard]] consteval bool is_intra_namespace() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::is_intra_namespace<Ns>: Ns must be the reflection "
                                                "of a namespace, written ^^name.");
+    require_seal_holds(Ns);
     for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
         if (!is_edge(m)) continue;
         const auto ends = ends_of(m);
@@ -169,6 +267,7 @@ template <std::meta::info Ns, class T>
 [[nodiscard]] consteval bool has_edge_from() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::has_edge_from<Ns, T>: Ns must be the reflection of "
                                                "a namespace, written ^^name.");
+    require_seal_holds(Ns);
     for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
         if (is_edge(m) && ends_of(m).from == std::meta::dealias(^^T)) return true;
     }
@@ -180,6 +279,7 @@ template <std::meta::info Ns, class T>
 [[nodiscard]] consteval bool has_edge_to() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::has_edge_to<Ns, T>: Ns must be the reflection of a "
                                                "namespace, written ^^name.");
+    require_seal_holds(Ns);
     for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
         if (is_edge(m) && ends_of(m).to == std::meta::dealias(^^T)) return true;
     }
@@ -191,6 +291,7 @@ template <std::meta::info Ns, class T>
 [[nodiscard]] consteval std::size_t edge_count_from() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::edge_count_from<Ns, T>: Ns must be the reflection "
                                                "of a namespace, written ^^name.");
+    require_seal_holds(Ns);
     std::size_t count = 0;
     for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
         if (is_edge(m) && ends_of(m).from == std::meta::dealias(^^T)) ++count;
@@ -239,6 +340,7 @@ template <std::meta::info Ns, std::meta::info TagNs, EdgeEnd End, class... Exclu
     static_assert(std::meta::is_namespace(Ns) && std::meta::is_namespace(TagNs),
                   "fail_closed::every_class_in_has_edge<Ns, TagNs, End, Excluded...>: Ns and TagNs "
                   "must be reflections of namespaces, written ^^name.");
+    require_seal_holds(Ns);
     for (const auto m : std::meta::members_of(TagNs, std::meta::access_context::unchecked())) {
         if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
         if (((m == std::meta::dealias(^^Excluded)) || ... || false)) continue;
@@ -265,6 +367,7 @@ template <std::meta::info Ns>
 [[nodiscard]] consteval bool every_edge_is_admitted() noexcept {
     static_assert(std::meta::is_namespace(Ns), "fail_closed::every_edge_is_admitted<Ns>: Ns must be the "
                                                "reflection of a namespace, written ^^name.");
+    require_seal_holds(Ns);
     static constexpr auto members =
         std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
     // -Wshadow fires on the expansion-statement induction variable.

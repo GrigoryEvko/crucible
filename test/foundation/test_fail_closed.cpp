@@ -235,6 +235,26 @@ static_assert(ffc::every_class_in_has_edge<^^exits_missing_gamma, ^^tag_family, 
 static_assert(ffc::every_class_in_has_edge<^^vacant, ^^vacant, ffc::EdgeEnd::Either>());
 static_assert(!ffc::every_class_in_has_edge<^^vacant, ^^tag_family, ffc::EdgeEnd::Either>());
 
+// ── The seal ─────────────────────────────────────────────────────────
+//
+// A sealed relation counts every member other than its seal, and every
+// read checks the count.  The two negative fixtures show a late edge and
+// a second seal stopping the build.  Here the count holds, so the
+// relation reads as it would with no seal.
+namespace sealed_ingest {
+using raw = Raw;
+inline constexpr ffc::edge<raw, Checked> raw_to_checked{};
+inline constexpr ffc::seal sealed{.members = 2};
+}  // namespace sealed_ingest
+
+static_assert(ffc::Sealed<^^sealed_ingest>);
+static_assert(!ffc::Sealed<^^ingest>, "a relation with no seal is open");
+static_assert(ffc::read_seal(^^sealed_ingest).found == 2, "the alias counts as a member, and the seal does not");
+static_assert(ffc::read_seal(^^sealed_ingest).fault == ffc::seal_fault::none);
+static_assert(ffc::admits<^^sealed_ingest, Raw, Checked>());
+static_assert(!ffc::admits<^^sealed_ingest, Checked, Raw>());
+static_assert(ffc::edge_count<^^sealed_ingest>() == 1);
+
 // Keeps a compile-time answer from folding into the caller.
 [[gnu::noipa]] bool as_runtime(bool value) noexcept { return value; }
 
@@ -245,5 +265,9 @@ int main() {
     const bool refused = as_runtime(ffc::admits<^^ingest, Checked, Raw>());
     if (!admitted || refused) std::abort();
     if (!as_runtime(transition(Raw{}, Checked{}))) std::abort();
+    if (!as_runtime(ffc::admits<^^sealed_ingest, Raw, Checked>())) std::abort();
+    constexpr bool is_sealed = ffc::Sealed<^^sealed_ingest>;
+    constexpr bool is_open_sealed = ffc::Sealed<^^ingest>;
+    if (!as_runtime(is_sealed) || as_runtime(is_open_sealed)) std::abort();
     return 0;
 }

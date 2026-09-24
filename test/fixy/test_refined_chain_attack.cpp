@@ -129,31 +129,17 @@ static_assert(fixy::implies_v<fixy::in_range<1, 9>, fixy::non_null>,
 
 // ── Attack 7: declarations after the header ──────────────────────────
 //
-// The relation reads the namespace as it stands at the foot of
-// fixy/Refined.h.  A family or an edge added later is inert for it.
+// The relation holds one seal, which counts its members at the foot of
+// fixy/Refined.h.  Each implication query reads the seal first.  A family
+// or an edge that a file adds later stops the build at the next query,
+// and the fixtures neg_refined_edge_after_the_header and
+// neg_refined_family_after_the_header show the refusal.  Here the seal
+// holds, and the sealed count is the count the header states.
 
-}  // namespace
-
-namespace fixy::refined::admitted_implications {
-
-struct late_family : rule_family<late_family> {
-    static consteval bool holds_(predicate_t<::fixy::non_negative>*, predicate_t<::fixy::non_zero>*) noexcept {
-        return true;
-    }
-};
-
-// Unsound: zero is non-negative and not positive.
-inline constexpr ::foundation::fail_closed::edge<predicate_t<::fixy::non_negative>, predicate_t<::fixy::positive>>
-    late_edge{};
-
-}  // namespace fixy::refined::admitted_implications
-
-namespace {
-
-static_assert(!fixy::implies_v<fixy::non_negative, fixy::non_zero>, "a family added after the header is inert");
-static_assert(!fixy::implies_v<fixy::non_negative, fixy::positive>, "an edge added after the header is inert");
-static_assert(ffc::edge_count<^^rel::admitted_implications>() == 5,
-              "a walk here sees the late edge, which is the property the relation avoids");
+static_assert(ffc::Sealed<^^rel::admitted_implications>);
+static_assert(ffc::read_seal(^^rel::admitted_implications).sealed == 20);
+static_assert(ffc::edge_count<^^rel::admitted_implications>() == 4,
+              "the header states four plain edges beside its narrowing edges and rule families");
 
 // The payload order of fixy/session/Subtype.h is this relation, so the
 // late edge does not make a non-negative payload a subtype of a positive

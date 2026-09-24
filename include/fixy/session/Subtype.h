@@ -194,6 +194,9 @@ inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::FromDb, v
 inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::Durable, void> durable{};
 inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::Computed, void> computed{};
 inline constexpr ::foundation::fail_closed::edge<::fixy::tags::vessel_trust::Validated, void> validated{};
+// Every read counts the members against this seal, so a member that
+// another file adds stops the build rather than widening the relation.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 7};
 }  // namespace droppable_tags
 
 namespace detail::payload_order {

@@ -59,6 +59,11 @@ inline constexpr ::foundation::fail_closed::edge<classified, LengthOnly> length_
 inline constexpr ::foundation::fail_closed::edge<classified, UserDisplay> user_display{};
 inline constexpr ::foundation::fail_closed::edge<classified, AuthorizedReplay> authorized_replay{};
 
+// Every read counts the members against this seal, so a member that
+// another file adds stops the build rather than admitting a new exit
+// from the Secret tier.  The count is the six edges and `classified`.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 7};
+
 }  // namespace fixy::tags::secret_policy::admitted_policies
 
 namespace fixy {
@@ -305,12 +310,13 @@ static_assert(std::is_same_v<secret_value_t<S_payload const&>, payload>);
 }  // namespace detail::secret_self_test
 
 // The policy relation's discipline, derived from the namespace.  The
-// count is the one place a new policy must be acknowledged by hand.
+// seal is the one place a new policy must be acknowledged by hand.
 // Adding a tag takes three steps: declare `struct NewTag final :
 // secret_policy_base {}` in the secret_policy namespace of
-// fixy/Tags.h, admit it with one edge above, and move this pin.  A
-// downstream consumer that pins its own cardinality against
+// fixy/Tags.h, admit it with one edge above, and move the seal and this
+// pin.  A downstream consumer that pins its own cardinality against
 // admitted_policy_count moves in the same change.
+static_assert(::foundation::fail_closed::Sealed<^^tags::secret_policy::admitted_policies>);
 inline constexpr std::size_t admitted_policy_count =
     ::foundation::fail_closed::edge_count<^^tags::secret_policy::admitted_policies>();
 

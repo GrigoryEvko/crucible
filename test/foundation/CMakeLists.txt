@@ -371,6 +371,16 @@ foundation_neg_compile_test(neg_permission_row_member_for_a_derived_tag
   "static assertion failed: permission_row: a derived tag declares a row of its own"
   "required from .struct foundation::permissions::detail::permission_row_lookup<user_code::shard>.")
 
+# A sealed relation counts its members at every read.  An edge added from
+# another file, and a second seal that tries to widen the count, each stop
+# the build with the name of the fault.
+foundation_neg_compile_test(neg_fail_closed_edge_after_the_seal
+  "non-constant condition for static assertion"
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\).")
+foundation_neg_compile_test(neg_fail_closed_relation_sealed_twice
+  "non-constant condition for static assertion"
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_relation_holds_two_seals\\(\\).")
+
 # The permission tests keep the file names of the tests they are ported
 # from and carry a suffix, because test/CMakeLists.txt still registers
 # the plain names and a CMake target name is global.

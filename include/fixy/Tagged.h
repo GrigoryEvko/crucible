@@ -173,6 +173,9 @@ inline constexpr ::foundation::fail_closed::edge<source::PortablePinned, source:
 inline constexpr ::foundation::fail_closed::edge<vessel_trust::FromPytorch, vessel_trust::Validated>
     from_pytorch_to_validated{};
 
+// Every read counts the members against this seal, so a member that
+// another file adds stops the build rather than widening the relation.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 22};
 }  // namespace fixy::tags::admitted_retags
 
 namespace fixy {
@@ -219,6 +222,7 @@ namespace detail::earned_tag {
 // Complexity: linear in the number of members of the catalog.
 template <typename Tag>
 [[nodiscard]] consteval bool is_earned() noexcept {
+    ::foundation::fail_closed::require_seal_holds(^^tags::admitted_retags);
     const std::meta::info tag = std::meta::dealias(^^Tag);
     for (const std::meta::info member :
          std::meta::members_of(^^tags::admitted_retags, std::meta::access_context::unchecked())) {

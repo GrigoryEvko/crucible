@@ -23,9 +23,13 @@
 #include <array>
 #include <cstdio>
 #include <memory>
+#include <meta>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <vector>
 
 namespace fc = ::foundation::contracts;
 namespace fe = ::foundation::effects;
@@ -717,10 +721,113 @@ static_assert(verdict.stale_ledger_entries == 0,
               "entry: the ledger only shrinks.");
 static_assert(verdict.armed + verdict.ledgered == verdict.walked);
 
+// ── the relation census ─────────────────────────────────────────────
+//
+// Every namespace under foundation and fixy that declares a
+// fail_closed edge is a relation that some check admits pairs from.
+// A namespace can be opened again from any file, so each such relation
+// carries a seal whose count every read checks, or it is named below as
+// open with the reason its openness grants nothing.  The walk finds the
+// relations by reflection, so a new relation is sealed or named the day
+// it is declared.
+struct OpenRelation {
+    std::meta::info ns;
+    std::string_view reason;
+};
+
+inline constexpr OpenRelation open_relations[] = {
+    {^^::foundation::permissions::permission_rows,
+     "the effect row of each permission tag, which a tag registers beside its own declaration.  A tag has one "
+     "row: unique_target refuses a second edge from one tag, an edge beside a permission_row member is refused, "
+     "and a derived tag, which has its parent's row, may declare neither"},
+};
+
+consteval void collect_relations(std::meta::info ns, std::vector<std::meta::info>& found) {
+    bool holds_an_edge = false;
+    for (const std::meta::info member : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+        if (std::meta::is_namespace(member) && !std::meta::is_namespace_alias(member)) {
+            collect_relations(member, found);
+        } else if (::foundation::fail_closed::is_edge(member)) {
+            holds_an_edge = true;
+        }
+    }
+    if (holds_an_edge) found.push_back(ns);
+}
+
+struct RelationVerdict {
+    std::size_t relations = 0;
+    std::size_t sealed = 0;
+    std::size_t named_open = 0;
+    std::size_t neither = 0;
+    std::size_t stale_open_entries = 0;
+};
+
+[[nodiscard]] consteval RelationVerdict relation_verdict() {
+    std::vector<std::meta::info> relations;
+    collect_relations(^^::foundation, relations);
+    collect_relations(^^::fixy, relations);
+    RelationVerdict result{};
+    result.relations = relations.size();
+    for (const std::meta::info ns : relations) {
+        const auto reading = ::foundation::fail_closed::read_seal(ns);
+        bool is_named_open = false;
+        for (const OpenRelation& open : open_relations) {
+            if (open.ns == ns && !open.reason.empty()) is_named_open = true;
+        }
+        if (reading.is_sealed && reading.fault == ::foundation::fail_closed::seal_fault::none && !is_named_open) {
+            ++result.sealed;
+        } else if (!reading.is_sealed && is_named_open) {
+            ++result.named_open;
+        } else {
+            ++result.neither;
+        }
+    }
+    for (const OpenRelation& open : open_relations) {
+        bool is_a_relation = false;
+        for (const std::meta::info ns : relations) {
+            if (ns == open.ns) is_a_relation = true;
+        }
+        if (!is_a_relation) ++result.stale_open_entries;
+    }
+    return result;
+}
+
+[[nodiscard]] consteval std::string_view unsealed_message() {
+    std::vector<std::meta::info> relations;
+    collect_relations(^^::foundation, relations);
+    collect_relations(^^::fixy, relations);
+    std::string text{"a fail-closed relation under foundation or fixy is neither sealed nor named open, or is "
+                     "both.  Add `inline constexpr foundation::fail_closed::seal sealed{.members = N};` to its "
+                     "namespace.  The relations at fault: "};
+    for (const std::meta::info ns : relations) {
+        const auto reading = ::foundation::fail_closed::read_seal(ns);
+        bool is_named_open = false;
+        for (const OpenRelation& open : open_relations) {
+            if (open.ns == ns) is_named_open = true;
+        }
+        const bool is_sound_seal = reading.is_sealed && reading.fault == ::foundation::fail_closed::seal_fault::none;
+        if (is_sound_seal == is_named_open) {
+            text += std::meta::display_string_of(ns);
+            text += "; ";
+        }
+    }
+    return std::define_static_string(text);
+}
+
+constexpr RelationVerdict relations = relation_verdict();
+
+static_assert(relations.relations > 1, "the relation census found no relation, so it proves nothing");
+static_assert(relations.neither == 0, unsealed_message());
+static_assert(relations.stale_open_entries == 0,
+              "an entry of open_relations names a namespace that holds no edge.  Delete the entry.");
+static_assert(relations.sealed + relations.named_open == relations.relations);
+
 }  // namespace
 
 int main() {
     std::printf("test_armed_roster: %zu predicates walked, %zu armed, %zu on the unarmed ledger\n", verdict.walked,
                 verdict.armed, verdict.ledgered);
+    std::printf("test_armed_roster: %zu fail-closed relations, %zu sealed, %zu named open\n", relations.relations,
+                relations.sealed, relations.named_open);
     return 0;
 }

@@ -1055,6 +1055,10 @@ struct divisible_by_weakens : rule_family<divisible_by_weakens> {
     }
 };
 
+// Every read counts the members against this seal: the edges, the
+// narrowing edges and the rule families.  A member that another file
+// adds stops the build rather than widening the relation.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 20};
 }  // namespace admitted_implications
 
 // True when m reflects a variable of type narrowing_edge<From, To> for
@@ -1217,13 +1221,24 @@ void implication_cycle_between_two_names_for_one_predicate() noexcept;
     return false;
 }
 
+// The walks above read the namespace where each query first stands, and a
+// member that another file adds would change the answer of a later
+// query.  Each query reads the seal after its walk, so a planted cycle is
+// named as a cycle, and every other planted member stops the build at
+// the seal.  A late member stops the build at the first pair that no
+// earlier line asked.  A pair that an earlier line asked keeps the answer
+// it got from the sealed members, so a late member never changes an
+// answer.
 template <class PType, class QType>
 [[nodiscard]] consteval bool implies_types() noexcept {
+    bool is_implied = false;
     if constexpr (std::is_same_v<PType, QType>) {
-        return implies_directly<PType, QType>();
+        is_implied = implies_directly<PType, QType>();
     } else {
-        return implies_closed(std::meta::dealias(^^PType), std::meta::dealias(^^QType));
+        is_implied = implies_closed(std::meta::dealias(^^PType), std::meta::dealias(^^QType));
     }
+    ::foundation::fail_closed::require_seal_holds(^^admitted_implications);
+    return is_implied;
 }
 
 }  // namespace refined
@@ -1430,7 +1445,7 @@ template <class From, class To>
             static_assert(std::is_base_of_v<refined::rule_family<Family>, Family>,
                           "a class declared in admitted_implications is a rule family, which it says by "
                           "deriving rule_family<itself>");
-        } else if constexpr (std::meta::is_variable(m)) {
+        } else if constexpr (std::meta::is_variable(m) && !::foundation::fail_closed::is_seal(m)) {
             static_assert(::foundation::fail_closed::is_edge(m), "a variable declared in admitted_implications "
                                                                  "is an edge");
         }

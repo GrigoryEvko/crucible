@@ -187,6 +187,9 @@ struct Connected {
 namespace connection_edges {
 inline constexpr ::foundation::fail_closed::edge<Disconnected, Connecting> disconnected_to_connecting{};
 inline constexpr ::foundation::fail_closed::edge<Connecting, Connected> connecting_to_connected{};
+// Every read counts the members against this seal, so a member that
+// another file adds stops the build rather than widening the relation.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 2};
 }  // namespace connection_edges
 
 using ConnMachine = Machine<Disconnected, ^^connection_edges>;

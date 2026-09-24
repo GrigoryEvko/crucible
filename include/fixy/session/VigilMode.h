@@ -56,6 +56,9 @@ inline constexpr ::foundation::fail_closed::edge<mode_tag<Mode::RECORDING>, mode
 inline constexpr ::foundation::fail_closed::edge<mode_tag<Mode::COMPILED>, mode_tag<Mode::RECORDING>>
     compiled_to_recording{};
 
+// Every read counts the members against this seal, so a member that
+// another file adds stops the build rather than widening the relation.
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 2};
 }  // namespace admitted_mode_transitions
 
 template <Mode From, Mode To>
