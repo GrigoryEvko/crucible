@@ -190,6 +190,11 @@ jobs:
           python3 scripts/check-git-isolation.py --self-test
           python3 scripts/check-git-isolation.py
 
+      - name: erased brand spellings only decrease (self-test + scan)
+        run: |
+          python3 scripts/check-brand-drain.py --self-test
+          python3 scripts/check-brand-drain.py
+
       - name: no -ffast-math (self-test + scan)
         run: |
           bash scripts/check-no-ffast-math.sh --self-test

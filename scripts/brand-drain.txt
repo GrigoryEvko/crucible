@@ -1,23 +1,48 @@
-# scripts/brand-drain.txt — sites still on the erased brand, one count
-# per file.  Read by scripts/check-brand-drain.sh.  A count only goes
-# down: to add a site, write the brand instead.  Regenerate with
-# --refresh in the same commit that removes a site.
+# scripts/brand-drain.txt — the sites on the erased brand, one count per
+# file.  scripts/check-brand-drain.py reads this ledger.  A count can only
+# decrease.  Where a new spelling is necessary, write the brand.  Run
+# --refresh in the commit that removes a site.
+#
+# This ledger holds the counts of 2026-09-24, when the guard moved onto
+# the parse tree and into CI.  These counts replace the smaller counts of
+# the last ledger.  That is permitted only because the erased brand cannot
+# open a door that trusts a brand to skip a check.  mint_shared_read
+# refuses the erased brand, and it asks the guard for its pool at run
+# time.  OwnedRegion::recombine examines the address of each shard.  A
+# site here is drain work, not a hole.
 include/fixy/Borrowed.h	57
-include/fixy/OwnedRegion.h	7
+include/fixy/OwnedRegion.h	9
 include/fixy/Qtt.h	2
 include/fixy/ScopedView.h	8
 include/fixy/concurrent/PermissionedMpscChannel.h	6
 include/fixy/concurrent/PermissionedSpscChannel.h	8
 include/fixy/os/SpinLock.h	2
+include/fixy/session/Handle.h	2
+include/fixy/session/Payload.h	17
+include/foundation/effects/Computation.h	3
 include/foundation/permissions/Permission.h	54
 include/foundation/permissions/PermissionFork.h	4
-include/foundation/permissions/ReadView.h	9
+include/foundation/permissions/ReadView.h	16
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp	1
 test/fixy/neg/neg_disjoint_receipt_from_another_split.cpp	1
 test/fixy/neg/neg_qtt_affine_over_shared_permission.cpp	1
 test/fixy/neg/neg_qtt_linear_over_permission.cpp	1
 test/fixy/neg/neg_scoped_view_escapes_through_private_member.cpp	1
+test/fixy/neg/neg_sess_forked_channel_body_stops_early.cpp	2
+test/fixy/neg/neg_sess_forked_channel_without_bg.cpp	2
+test/fixy/neg/neg_sess_loop_iteration_sends_permission.cpp	1
+test/fixy/neg/neg_sess_mint_unselected_arm_sends_unheld_permission.cpp	1
+test/fixy/neg/neg_sess_permissioned_session_flow_open.cpp	1
+test/fixy/neg/neg_sess_permissioned_session_row_refused.cpp	1
+test/fixy/neg/neg_sess_permissioned_session_token_kept.cpp	1
+test/fixy/neg/neg_sess_send_unheld_permission.cpp	2
+test/fixy/neg/neg_sess_unselected_arm_leaves_loan_open.cpp	1
+test/fixy/neg/neg_session_borrowed_proof_of_another_region.cpp	2
+test/fixy/neg/neg_session_borrowed_without_proof.cpp	1
+test/fixy/neg/neg_shared_read_of_an_erased_region.cpp	1
+test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp	1
 test/fixy/neg/neg_spawn_callable_carries_throws.cpp	2
+test/fixy/neg/neg_spawn_callable_member_carries_throws.cpp	2
 test/fixy/neg/neg_spawn_mint_parallel_for_ctx_lacks_bg.cpp	1
 test/fixy/neg/neg_spawn_mint_spawn_ctx_lacks_bg.cpp	2
 test/fixy/neg/neg_witness_borrowed_direct_construction.cpp	1
@@ -27,23 +52,61 @@ test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_producerhandle_dire
 test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_consumerhandle_direct_construction.cpp	1
 test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_producerhandle_direct_construction.cpp	1
 test/fixy/neg/neg_witness_ownedregion_direct_construction.cpp	2
+test/fixy/neg/neg_witness_permissions_lentpermission_direct_construction.cpp	1
 test/fixy/neg/neg_witness_permissions_permission_direct_construction.cpp	1
 test/fixy/neg/neg_witness_permissions_readview_direct_construction.cpp	1
 test/fixy/neg/neg_witness_permissions_sharedpermission_direct_construction.cpp	1
 test/fixy/neg/neg_witness_permissions_sharedpermissionguard_direct_construction.cpp	2
 test/fixy/neg/neg_witness_permissions_sharedpermissionpool_direct_construction.cpp	1
 test/fixy/neg/neg_witness_scopedview_direct_construction.cpp	1
+test/fixy/neg/neg_witness_session_permhold_direct_construction.cpp	1
+test/fixy/test_armed_roster.cpp	9
 test/fixy/test_borrowed.cpp	19
 test/fixy/test_cheat_probe.cpp	2
+test/fixy/test_forgeable_proofs.cpp	8
 test/fixy/test_os_spawn.cpp	4
-test/fixy/test_owned_region.cpp	19
+test/fixy/test_owned_region.cpp	21
+test/fixy/test_row_hash_wrappers.cpp	23
 test/fixy/test_scoped_view.cpp	2
+test/fixy/test_session_async_channel.cpp	2
+test/fixy/test_session_handle.cpp	6
+test/fixy/test_session_handle_attacks.cpp	6
+test/fixy/test_session_ownership_attacks.cpp	37
+test/fixy/test_shared_region.cpp	1
+test/foundation/neg/neg_aligned_buffer_proof_element.cpp	1
+test/foundation/neg/neg_aligned_buffer_value_initialized_proof.cpp	1
 test/foundation/neg/neg_brand_erased_token_does_not_rebrand.cpp	1
+test/foundation/neg/neg_computation_extract_permission_payload.cpp	1
+test/foundation/neg/neg_lifetime_start_as_array_proof_holder.cpp	1
+test/foundation/neg/neg_lifetime_start_as_proof_array.cpp	3
+test/foundation/neg/neg_loan_end_with_the_loan_of_another_tag.cpp	2
+test/foundation/neg/neg_permission_forged_by_bit_cast.cpp	1
+test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp	2
 test/foundation/neg/neg_permission_forged_without_key.cpp	1
+test/foundation/neg/neg_permission_fork_body_may_throw.cpp	2
+test/foundation/neg/neg_permission_fork_child_row_not_admitted.cpp	2
+test/foundation/neg/neg_permission_fork_duplicate_child_names_the_fork.cpp	2
 test/foundation/neg/neg_permission_fork_pack_does_not_partition.cpp	2
+test/foundation/neg/neg_permission_fork_parent_row_not_admitted.cpp	2
+test/foundation/neg/neg_permission_fork_runner_body_address.cpp	4
+test/foundation/neg/neg_permission_fork_runner_body_is_private.cpp	2
+test/foundation/neg/neg_permission_fork_split_witness_missing.cpp	2
 test/foundation/neg/neg_permission_fork_without_bg.cpp	2
-test/foundation/test_brand.cpp	1
+test/foundation/neg/neg_permission_tag_not_empty.cpp	1
+test/foundation/neg/neg_read_view_body_by_value.cpp	1
+test/foundation/neg/neg_read_view_body_returns_a_type_erased_callable.cpp	1
+test/foundation/neg/neg_read_view_body_returns_an_untyped_pointer.cpp	1
+test/foundation/neg/neg_read_view_forged_by_bit_cast.cpp	1
+test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp	2
+test/foundation/neg/neg_read_view_host_door_closed.cpp	2
+test/foundation/neg/neg_read_view_returned_from_the_body.cpp	1
+test/foundation/neg/neg_read_view_stored_past_the_callback.cpp	2
+test/foundation/neg/neg_read_view_undeclared_row_without_ctx.cpp	1
+test/foundation/neg/neg_swiss_table_buffer_proof_slot.cpp	1
+test/foundation/test_brand.cpp	3
+test/foundation/test_computation.cpp	4
 test/foundation/test_permission_shared.cpp	22
 test/foundation/test_permission_shared_xor_exclusive.cpp	4
 test/foundation/test_permissions_compile.cpp	4
-test/foundation/test_read_view.cpp	23
+test/foundation/test_read_view.cpp	24
+test/foundation/test_read_view_escape_attacks.cpp	1

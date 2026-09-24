@@ -778,6 +778,18 @@ add_test(NAME git_isolation
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-git-isolation.py)
 set_tests_properties(git_isolation git_isolation_self_test PROPERTIES
     LABELS "ci_guard")
+# A spelling of a branded type that names no brand is the erased
+# identity.  scripts/check-brand-drain.py reads those spellings from the
+# parse tree, and scripts/brand-drain.txt holds one count per file.  A
+# count can only decrease.  Exit 3 when the kit is absent reports a skip.
+add_test(NAME brand_drain_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-brand-drain.py
+          --self-test)
+add_test(NAME brand_drain
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-brand-drain.py)
+set_tests_properties(brand_drain brand_drain_self_test PROPERTIES
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # std::start_lifetime_as over an array of proofs, over an aggregate that
 # holds one, and std::start_lifetime_as_array over proofs each give a
 # pointer to a proof whose lifetime never started, and no property of a

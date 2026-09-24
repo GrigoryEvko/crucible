@@ -16,7 +16,7 @@
 // exclusive's.  foundation/Brand.h states the three facts a brand
 // rests on.  A spelling that names no brand is the erased identity
 // DefaultBrand, kept so that code written before brands means what it
-// meant; scripts/check-brand-drain.sh lists every such spelling.
+// meant; scripts/check-brand-drain.py lists every such spelling.
 //
 // Nothing ties a tag to the memory it names, and nothing confines the
 // holder's writes to that memory.  Both are obligations on the code

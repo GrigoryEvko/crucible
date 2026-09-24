@@ -208,7 +208,7 @@ def fixture_path(type_):
 
 # ── The fixture a closed entry produces ─────────────────────────────
 # A brand a roster line can spell.  A branded type left at its old arity
-# is the erased identity, which scripts/check-brand-drain.sh counts and
+# is the erased identity, which scripts/check-brand-drain.py counts and
 # will not let a new file add, so an expression that names the same
 # brand in two places needs one it can write down.  It is empty, so
 # foundation::brand::IsBrand admits it.  The declaration is emitted only

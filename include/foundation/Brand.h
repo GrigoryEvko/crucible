@@ -52,7 +52,7 @@
 // had.  A branded value converts to its erased spelling implicitly and
 // never back, so old code compiles and new code that holds a brand
 // cannot be handed an erased value in its place.  Every spelling still
-// on DefaultBrand is a site scripts/check-brand-drain.sh lists, and
+// on DefaultBrand is a site scripts/check-brand-drain.py lists, and
 // that list only shrinks.
 
 #include <foundation/Platform.h>
