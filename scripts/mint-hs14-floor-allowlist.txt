@@ -119,5 +119,3 @@ mint_tsc_reader|include/fixy/os/Time.h
 mint_diagnostic|include/foundation/diag/Catalog.h
 mint_from_ctx|include/foundation/effects/Capability.h
 Computation::mint_computation_in_ctx|include/foundation/effects/Computation.h
-mint_permission_combine_n|include/foundation/permissions/Permission.h
-mint_permission_share|include/foundation/permissions/Permission.h

@@ -159,6 +159,11 @@ void test_permission_row_compile() {
     static_assert(!perm::has_permission_row_v<UndeclaredTag>);
     static_assert(!perm::permission_row_empty_v<UndeclaredTag>);
     static_assert(!perm::CtxAdmitsPermission<UndeclaredTag, TestRunnerCtx>);
+    // A token over such a tag can be named, and its row hash folds no row
+    // rather than stopping the build, so the hash of a type that is only
+    // named needs no declared row.
+    static_assert(::foundation::diag::row_hash_contribution_v<perm::Permission<UndeclaredTag>>
+                  != ::foundation::diag::row_hash_contribution_v<perm::Permission<HugePage>>);
     static_assert(perm::CtxAdmitsPermission<HugePage, BgCompileCtx>);
     static_assert(!perm::CtxAdmitsPermission<HugePage, HotFgCtx>);
     static_assert(!perm::CtxAdmitsPermission<HugePage, BgDrainCtx>);

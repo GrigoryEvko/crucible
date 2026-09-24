@@ -871,6 +871,148 @@ foundation_neg_compile_test(neg_permission_combine_n_lvalue_token
   "satisfaction of .PermissionCombineNArgs<Parent, Args \\.\\.\\.>."
   "mint_args_shaped_<MaxCtx, NPerms, Args \\.\\.\\.>\\)\\(\\) \\[with MaxCtx = 1. NPerms = 0. Args = \\{foundation::permissions::Permission<<unnamed>::Left, [^}]*>&, ")
 
+# ── The brand, the root and the admission doors ───────────────────────
+
+# A brand with a data member is a class, and the emptiness check in
+# Permission's class body is what refuses it.
+foundation_neg_compile_test(neg_permission_brand_not_empty
+  "static assertion failed: Permission<Tag, Brand>: Brand must be an empty class type"
+  "is_empty_v<B> \\[with B = <unnamed>::StatefulBrand\\]. evaluated to .false.")
+
+# The token form of the root mint has no context to compare a row
+# against, so the static_assert in its body refuses an effectful tag.
+foundation_neg_compile_test(neg_permission_root_without_ctx_refuses_row
+  "static assertion failed: mint_permission_root<Tag>\\(\\) without an ExecCtx is only valid"
+  "permission_row_empty_v<foundation::permissions::tag::HugePageTag>\\)\\). evaluates to false")
+
+# The admission and the handoff each refuse a context that does not
+# admit the tag's row, at their own door.
+foundation_neg_compile_test(neg_permission_admit_ctx_refuses_row
+  "no matching function for call to .admit_permission\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "required for the satisfaction of .CtxAdmitsPermission<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo")
+foundation_neg_compile_test(neg_permission_handoff_ctx_refuses_row
+  "no matching function for call to .permission_handoff\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "required for the satisfaction of .CtxAdmitsPermission<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo")
+
+# ── The checks in the bodies of split and combine ─────────────────────
+#
+# The fit concepts of the token forms compare no row, so each check
+# below is the only one that refuses its program.
+foundation_neg_compile_test(neg_permission_split_child_row_undeclared
+  "static assertion failed: mint_permission_split<L, R>: a tag named here declares no effect row"
+  "has_permission_row_v<.anonymous.::RowlessRight>. evaluates to false")
+foundation_neg_compile_test(neg_permission_split_without_ctx_refuses_row
+  "static assertion failed: mint_permission_split<L, R>\\(Permission<In>&&\\) without ExecCtx is only valid"
+  "has_permission_row_v<.anonymous.::Whole>\\)")
+foundation_neg_compile_test(neg_permission_split_witness_missing
+  "static assertion failed: can_split_into<In, L, R> is true but the accompanying has_split_authoring_witness"
+  "has_split_authoring_witness_v<.anonymous.::Whole, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
+foundation_neg_compile_test(neg_permission_split_duplicate_child
+  "static assertion failed: mint_permission_split<L, R> requires L and R to be DISTINCT region tags"
+  "all_distinct_tags_v<.anonymous.::Half, .anonymous.::Half>. evaluates to false")
+foundation_neg_compile_test(neg_permission_combine_child_row_undeclared
+  "static assertion failed: mint_permission_combine<In>: a tag named here declares no effect row"
+  "has_permission_row_v<.anonymous.::RowlessWhole>. evaluates to false")
+foundation_neg_compile_test(neg_permission_combine_without_ctx_refuses_row
+  "static assertion failed: mint_permission_combine<In>\\(Permission<L>&&, Permission<R>&&\\) without ExecCtx is only valid"
+  "mint_permission_combine\\(Args&& \\.\\.\\.\\) \\[with In = .anonymous.::Whole")
+# The manifest check and the witness check each refuse a forger who
+# wrote only the other trait.
+foundation_neg_compile_test(neg_permission_combine_undeclared_parent
+  "static assertion failed: mint_permission_combine<In>\\(Permission<L>&&, Permission<R>&&\\) requires can_split_into"
+  "can_split_into_v<.anonymous.::Other, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
+foundation_neg_compile_test(neg_permission_combine_witness_missing
+  "static assertion failed: has_split_authoring_witness<In, L, R> missing for combine"
+  "has_split_authoring_witness_v<.anonymous.::Other, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
+
+# The same four checks in the body of split_n, and the five in the body
+# of combine_n.
+foundation_neg_compile_test(neg_permission_split_n_child_row_undeclared
+  "static assertion failed: mint_permission_split_n<Children\\.\\.\\.>: a tag named here declares no effect row"
+  "has_permission_row_v<.anonymous.::RowlessRight>. evaluates to false")
+foundation_neg_compile_test(neg_permission_split_n_without_ctx_refuses_row
+  "static assertion failed: mint_permission_split_n<Children\\.\\.\\.>\\(Permission<In>&&\\) without ExecCtx is only valid"
+  "has_permission_row_v<.anonymous.::Whole>\\)")
+foundation_neg_compile_test(neg_permission_split_n_undeclared_pack
+  "static assertion failed: mint_permission_split_n<Children\\.\\.\\.>\\(Permission<In>&&\\) requires can_split_into_pack"
+  "can_split_into_pack_v<.anonymous.::Whole, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
+foundation_neg_compile_test(neg_permission_split_n_witness_missing
+  "static assertion failed: has_split_pack_authoring_witness<In, Children\\.\\.\\.> missing"
+  "has_split_pack_authoring_witness_v<.anonymous.::Whole, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
+foundation_neg_compile_test(neg_permission_split_n_duplicate_child
+  "static assertion failed: mint_permission_split_n<Children\\.\\.\\.> requires the child tags to be PAIRWISE DISTINCT"
+  "all_distinct_tags_v<.anonymous.::Half, .anonymous.::Half>. evaluates to false")
+foundation_neg_compile_test(neg_permission_combine_n_parent_row_undeclared
+  "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.>: a tag named here declares no effect row"
+  "combine_n_manifest<.anonymous.::RowlessWhole, std::tuple<.anonymous.::Left, .anonymous.::Right> >::rows_declared. evaluates to false")
+foundation_neg_compile_test(neg_permission_combine_n_without_ctx_refuses_row
+  "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.>\\(\\.\\.\\.\\) without ExecCtx is only valid"
+  "combine_n_manifest<.anonymous.::Whole, std::tuple<.anonymous.::Left, .anonymous.::Right> >::rows_declared\\)")
+foundation_neg_compile_test(neg_permission_combine_n_undeclared_parent
+  "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.>\\(Permission<Children>&&\\.\\.\\.\\) requires can_split_into_pack"
+  "combine_n_manifest<.anonymous.::Other, std::tuple<.anonymous.::Left, .anonymous.::Right> >::declared. evaluates to false")
+foundation_neg_compile_test(neg_permission_combine_n_witness_missing
+  "static assertion failed: has_split_pack_authoring_witness<Parent, Children\\.\\.\\.> missing for combine_n"
+  "combine_n_manifest<.anonymous.::Other, std::tuple<.anonymous.::Left, .anonymous.::Right> >::witnessed. evaluates to false")
+foundation_neg_compile_test(neg_permission_combine_n_children_of_two_regions
+  "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.>\\(\\.\\.\\.\\): the children carry different brands"
+  "perm_brands_agree_<foundation::permissions::Permission<.anonymous.::Left")
+# A brand names a mint site, so two root mints through one site are two
+# tokens of one tag that the brand agreement admits.  The distinctness
+# check is what refuses them.
+foundation_neg_compile_test(neg_permission_combine_n_duplicate_child
+  "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.> requires the child tags to be PAIRWISE DISTINCT"
+  "combine_n_manifest<.anonymous.::Whole, std::tuple<.anonymous.::Half, .anonymous.::Half> >::distinct. evaluates to false")
+
+# ── The share, the guard and the pool ─────────────────────────────────
+
+# A share proof carries a brand, and a brand with a data member is
+# refused by the emptiness check in the class body.
+foundation_neg_compile_test(neg_shared_permission_brand_not_empty
+  "static assertion failed: SharedPermission<Tag, Brand>: Brand must be an empty class type"
+  "is_empty_v<B> \\[with B = <unnamed>::StatefulBrand\\]. evaluated to .false.")
+# The token form of the share compares no row in its fit concept, so the
+# two checks in its body are the only ones that refuse a row.
+foundation_neg_compile_test(neg_permission_share_row_undeclared
+  "static assertion failed: mint_permission_share: the tag declares no effect row"
+  "has_permission_row_v<.anonymous.::RowlessRegion>. evaluates to false")
+foundation_neg_compile_test(neg_permission_share_without_ctx_refuses_row
+  "static assertion failed: mint_permission_share\\(Permission<Tag>&&\\) without ExecCtx is only valid"
+  "permission_row_empty_v<.anonymous.::NeedsIo>\\)\\). evaluates to false")
+# A token minted from a guard that dies at the end of the statement
+# proves a share that is gone.  Only the deleted const&& twin refuses it.
+foundation_neg_compile_test(neg_share_token_from_temporary_guard
+  "use of deleted function .constexpr foundation::permissions::SharedPermission<Tag, Brand> foundation::permissions::SharedPermissionGuard<Tag, Brand>::token\\(\\) const &&"
+  "a share proof minted from a temporary guard outlives the share")
+# The pool's context check refuses a lend and an upgrade under a
+# context that does not admit the tag's row, and the checks in their
+# bodies refuse an effectful tag when no context is passed.
+foundation_neg_compile_test(neg_share_pool_lend_ctx_refuses_row
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::lend\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo")
+foundation_neg_compile_test(neg_share_pool_upgrade_ctx_refuses_row
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo")
+foundation_neg_compile_test(neg_share_pool_lend_without_ctx_refuses_row
+  "static assertion failed: SharedPermissionPool<Tag>::lend\\(\\) without ExecCtx is only valid"
+  "permission_row_empty_v<.anonymous.::NeedsIo>\\)\\). evaluates to false")
+foundation_neg_compile_test(neg_share_pool_upgrade_without_ctx_refuses_row
+  "static assertion failed: SharedPermissionPool<Tag>::try_upgrade\\(\\) without ExecCtx is only valid"
+  "permission_row_empty_v<.anonymous.::NeedsIo>\\)\\). evaluates to false")
+# with_shared_read lends from an lvalue pool only, in its value form and
+# in its void form.
+foundation_neg_compile_test(neg_shared_read_of_a_temporary_pool
+  "no matching function for call to .with_shared_read\\("
+  "required for the satisfaction of .WithSharedReadArgs<Args \\.\\.\\.>. \\[with Args = \\{foundation::permissions::SharedPermissionPool<<unnamed>::Region")
+foundation_neg_compile_test(neg_shared_read_of_a_temporary_pool_void_body
+  "no matching function for call to .with_shared_read\\("
+  "required for the satisfaction of .WithSharedReadArgs<Args \\.\\.\\.>. \\[with Args = \\{foundation::permissions::SharedPermissionPool<<unnamed>::Region")
+
+# A pool that still parks its exclusive refuses a second deposit.  The
+# attack runs in a child process, and the test passes only on the
+# violated condition.
+foundation_test(test_share_pool_double_deposit_aborts)
+
 # ── The row-mismatch message builder ──────────────────────────────────
 #
 # The static_assert message a mint hands the compiler when a row is not

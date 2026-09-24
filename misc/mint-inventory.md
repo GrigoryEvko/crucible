@@ -460,14 +460,14 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_permission_after_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
+| `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
+| `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 92 |
-| `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
-| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
-| `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 122 |
+| `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
+| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 15 |
+| `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |
 | `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 
 ## Summary
@@ -475,4 +475,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 206 | 101 | 96 | 9 | 0 | 75 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 93 | 37 | 55 | 1 | 0 | · | 26 |
+| new (`include/foundation/`, `include/fixy/`) | 93 | 37 | 55 | 1 | 0 | · | 24 |
