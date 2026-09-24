@@ -815,6 +815,10 @@ foundation_test(test_row_hash)
 # still succeeds is a row of the shrink-only ledger in the file.
 foundation_test(test_identity_attacks)
 
+# Legal C++ that builds a production context key without its owner.  An
+# attack that still succeeds is a row of the shrink-only ledger.
+foundation_test(test_host_owner_attacks)
+
 # A stable id refuses a template argument that names an object by address
 # or by reference, a class value that holds an address, and a reflection
 # of an entity with internal linkage.
