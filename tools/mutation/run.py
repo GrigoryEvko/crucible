@@ -209,8 +209,11 @@ def _mentions(candidate: Candidate, entity: str, cache: dict[str, str]) -> bool:
 # ── one header ─────────────────────────────────────────────────────────
 
 
-def _probe_ok(header_abs: Path, flags_from: Candidate | None, compiler_argv: list[str] | None) -> bool:
-    """Say whether a TU that only includes the header compiles."""
+PARSE_ERROR = re.compile(r"expected [^\n]* before|expected primary-expression|expected unqualified-id|stray ")
+
+
+def _probe(header_abs: Path, flags_from: Candidate | None, compiler_argv: list[str] | None) -> tuple[bool, str]:
+    """Compile a TU that only includes the header, and say whether it compiled, with its output."""
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / "probe.cpp"
         probe.write_text(f'#include "{header_abs}"\n')
@@ -223,21 +226,22 @@ def _probe_ok(header_abs: Path, flags_from: Candidate | None, compiler_argv: lis
                     and not a.endswith(".cpp")]
             argv = argv + ["-fsyntax-only", str(probe)]
             cwd = flags_from.cwd if flags_from.kind == "syntax" else str(Path(flags_from.source).parent)
-        ok, _ = _run(argv, cwd, {})
-        return ok
+        return _run(argv, cwd, {})
 
 
 def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: int, neg_cap: int,
-               syntax_cap: int, probe_argv: list[str] | None = None) -> list[Outcome]:
+               syntax_cap: int, probe_argv: list[str] | None = None,
+               only_lines: set[int] | None = None) -> list[Outcome]:
     """Every mutant of one header, each with its verdict.
 
-    The header in the source root is restored after each mutant, also when
-    the run stops on an error."""
+    With only_lines, only the gates on those lines run: this re-checks the
+    survivors of an earlier run with larger caps.  The header in the source
+    root is restored after each mutant, also when the run stops on an error."""
     header_abs = src_root / header
     original = header_abs.read_bytes()
     found = gate_finder.find_gates(header_abs, src_root)
     found = [gate_finder.Gate(header, g.kind, g.line, g.start, g.end, g.replacement, g.entity, g.original)
-             for g in found]
+             for g in found if only_lines is None or g.line in only_lines]
     reach = [c for c in candidates if header in c.headers]
     text_cache: dict[str, str] = {}
 
@@ -261,7 +265,7 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
     baseline = {c.name: ok for c, ok in check_all(list(everything.values()))}
     probe_from = next((c for c in reach if c.kind == "syntax" and c.compile_argv), None) or next(
         (c for c in reach if c.compile_argv), None)
-    base_probe = _probe_ok(header_abs, probe_from, probe_argv) if (probe_from or probe_argv) else False
+    base_probe = _probe(header_abs, probe_from, probe_argv)[0] if (probe_from or probe_argv) else False
 
     outcomes: list[Outcome] = []
     try:
@@ -271,8 +275,15 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
             outcome = Outcome(gate.key, header, gate.kind, gate.line, gate.entity, gate.original[:200],
                               "survived", candidates=len(chosen))
             header_abs.write_bytes(gate_finder.apply(original, gate))
-            if base_probe and not _probe_ok(header_abs, probe_from, probe_argv):
-                outcome.status = "invalid"
+            probe_ok, probe_out = _probe(header_abs, probe_from, probe_argv) if base_probe else (True, "")
+            if not probe_ok:
+                # The header alone no longer compiles.  A parse error says the
+                # mutant is malformed.  Any other error comes from the header's
+                # own checks, and that self-test is a witness of the gate.
+                if PARSE_ERROR.search(probe_out):
+                    outcome.status = "invalid"
+                else:
+                    outcome.status, outcome.killer = "killed", "header-self-test"
             else:
                 for start in range(0, len(chosen), jobs):
                     results = check_all(chosen[start:start + jobs])
@@ -300,9 +311,11 @@ def cmd_mutate(args: argparse.Namespace) -> int:
     out = Path(args.out)
     deps = json.loads((out / "deps.json").read_text())
     candidates = load_candidates(build, deps)
-    with (out / "results.jsonl").open("a") as sink:
+    only_lines = {int(line) for line in args.lines.split(",")} if args.lines else None
+    with (out / args.results).open("a") as sink:
         for header in args.header:
-            for outcome in run_header(header, src_root, candidates, args.jobs, args.neg_cap, args.syntax_cap):
+            for outcome in run_header(header, src_root, candidates, args.jobs, args.neg_cap, args.syntax_cap,
+                                      only_lines=only_lines):
                 sink.write(json.dumps(asdict(outcome)) + "\n")
                 sink.flush()
     return 0
@@ -386,6 +399,8 @@ def main() -> int:
     mutate.add_argument("--jobs", type=int, default=6)
     mutate.add_argument("--neg-cap", type=int, default=80)
     mutate.add_argument("--syntax-cap", type=int, default=12)
+    mutate.add_argument("--lines", default="", help="comma-separated gate lines to re-check")
+    mutate.add_argument("--results", default="results.jsonl", help="the file under --out to append to")
     selftest = sub.add_parser("selftest")
     selftest.add_argument("--compiler", required=True)
     args = parser.parse_args()
