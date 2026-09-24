@@ -2689,6 +2689,44 @@ fixy_neg_compile_test(neg_os_sched_mint_priority_test_ctx
 fixy_test(test_os_mmap)
 fixy_test(test_os_io)
 
+# ── A NUMA placement comes only from a successful mbind ─────────────
+#
+# The proof owns an anonymous region, and fixy::numa::mint_numa_placement
+# is the sole friend of its one value constructor.  The positive test
+# binds a real region and reads the policy back from the kernel.  The
+# fixtures close the other routes to a proof: the default constructor,
+# a copy, bytes through std::bit_cast and through the checked lifetime
+# start, a shared region, and two contexts that do not own IO and Block.
+fixy_test(test_os_numa_placement)
+
+fixy_neg_compile_test(neg_os_numa_placement_default_ctor
+  "use of deleted function"
+  "would claim a binding that nobody made")
+
+fixy_neg_compile_test(neg_os_numa_placement_copied
+  "use of deleted function"
+  "a copy would unmap it twice")
+
+fixy_neg_compile_test(neg_os_numa_placement_bit_cast
+  "no matching function for call to .bit_cast"
+  "is_trivially_copyable_v<_To> \\[with _To = fixy::NumaPlacement<")
+
+fixy_neg_compile_test(neg_os_numa_placement_start_as_array
+  "no matching function for call to .start_as_array<"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::NumaPlacement<")
+
+fixy_neg_compile_test(neg_os_numa_placement_shared_region
+  "no matching function for call to .mint_numa_placement\\("
+  "mismatched types .fixy::mmap::share::Anonymous. and .fixy::mmap::share::Shared.")
+
+fixy_neg_compile_test(neg_os_numa_placement_io_only_ctx
+  "no matching function for call to .mint_numa_placement\\("
+  "required for the satisfaction of .CtxFitsNumaBind<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >\\]")
+
+fixy_neg_compile_test(neg_os_numa_placement_foreground_ctx
+  "no matching function for call to .mint_numa_placement\\("
+  "required for the satisfaction of .CtxFitsNumaBind<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+
 # ── OwnedMmap has one door, and it is the one that maps ──────────────
 #
 # The constructor over an address was public, so a caller could claim a

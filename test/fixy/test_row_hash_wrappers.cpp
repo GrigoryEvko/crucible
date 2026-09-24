@@ -77,6 +77,7 @@
 #include <fixy/os/Fs.h>
 #include <fixy/os/Io.h>
 #include <fixy/os/Mmap.h>
+#include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/Spawn.h>
@@ -811,6 +812,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::Budgeted, ^^::fixy::Budgeted<int>},
     {^^::fixy::Tagged, ^^::fixy::Tagged<int, ::fixy::tags::trust::Verified>},
     {^^::fixy::CpuPinned, ^^::fixy::detail::cpu_pinned_invariants::PinnedC0},
+    {^^::fixy::NumaPlacement, ^^::fixy::detail::numa_placement_invariants::Placement},
     {^^::fixy::SchedClass, ^^::fixy::sched_class::Batch<int>},
     {^^::fixy::ThreadNamed, ^^::fixy::ThreadNamed<"census">},
     {^^::fixy::Machine, ^^::fixy::Machine<MachineState>},

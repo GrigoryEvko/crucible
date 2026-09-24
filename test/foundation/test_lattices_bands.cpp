@@ -18,6 +18,7 @@
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/algebra/lattices/LifetimeLattice.h>
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
+#include <foundation/algebra/lattices/NumaNodeLattice.h>
 #include <foundation/algebra/lattices/PinningRequirementLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/RecipeFamilyLattice.h>
@@ -645,6 +646,24 @@ void affinity_lattice_runs_at_run_time() {
     [[maybe_unused]] auto vp = v.peek();
 }
 
+// The node order at run time: two siblings join to the wildcard and meet
+// at None, and a graded value carries a concrete node.
+void numa_node_lattice_runs_at_run_time() {
+    using namespace fa;
+    using namespace fl;
+    NumaNodeId const first{0};
+    NumaNodeId const second{1};
+    if (NumaNodeLattice::join(first, second) != NumaNodeId::Any) std::abort();
+    if (NumaNodeLattice::meet(first, second) != NumaNodeId::None) std::abort();
+    if (!NumaNodeLattice::leq(NumaNodeLattice::bottom(), first)) std::abort();
+    if (NumaNodeLattice::leq(NumaNodeLattice::top(), first)) std::abort();
+    if (!is_concrete_numa_node(second) || is_concrete_numa_node(NumaNodeId::Any)) std::abort();
+
+    using NumaGraded = Graded<ModalityKind::Absolute, NumaNodeLattice, int>;
+    NumaGraded const value{42, NumaNodeId{2}};
+    if (value.grade() != NumaNodeId{2} || value.peek() != 42) std::abort();
+}
+
 void scheduler_policy_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
@@ -698,6 +717,7 @@ int main() {
     pinning_requirement_lattice_runs_at_run_time();
     suspend_behavior_lattice_runs_at_run_time();
     clock_source_lattice_runs_at_run_time();
+    numa_node_lattice_runs_at_run_time();
 
     // The reflected names reach a runtime context too: the views point
     // at static storage, so a diagnostic can print them.

@@ -287,7 +287,6 @@ crucible/safety/diag/_RowHashFold.h:CrashClass
 crucible/safety/diag/_RowHashFold.h:JoinPolicy
 crucible/safety/diag/_RowHashFold.h:MemOrder
 crucible/safety/diag/_RowHashFold.h:MemOrderTag
-crucible/safety/diag/_RowHashFold.h:NumaPlacement
 crucible/safety/diag/_RowHashFold.h:ResidencyHeat
 crucible/safety/diag/_RowHashFold.h:ResidencyHeatTag
 crucible/safety/diag/_RowHashFold.h:TimeOrdered
