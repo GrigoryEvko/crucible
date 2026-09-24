@@ -562,6 +562,12 @@ foundation_neg_compile_test(neg_read_loan_forged_by_bit_cast
 foundation_neg_compile_test(neg_lent_permission_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::permissions::LentPermission<.*Region"
   "is_trivially_copyable_v<_To>")
+foundation_neg_compile_test(neg_read_loan_forged_by_start_lifetime_as
+  "static assertion failed"
+  "foundation::permissions::ReadLoan<.*Region.*. is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_lent_permission_forged_by_start_lifetime_as
+  "static assertion failed"
+  "foundation::permissions::LentPermission<.*Region.*. is not an implicit-lifetime type")
 
 # No route builds a context, a context key, the capability key, a
 # capability or an execution context over Bg without a constructor.

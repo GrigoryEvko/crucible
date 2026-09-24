@@ -51,5 +51,7 @@ test/foundation/neg/neg_init_context_forged_by_start_lifetime_as.cpp:start_lifet
 test/foundation/neg/neg_init_key_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::detail::ctx_mint::init_key>
 test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp:start_lifetime_as<fp::Permission<Region>>
 test/foundation/neg/neg_read_view_forged_by_start_lifetime_as.cpp:start_lifetime_as<fp::ReadView<Region>>
+test/foundation/neg/neg_read_loan_forged_by_start_lifetime_as.cpp:start_lifetime_as<fp::ReadLoan<Region>>
+test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp:start_lifetime_as<fp::LentPermission<Region>>
 test/foundation/neg/neg_test_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Test>
 test/foundation/neg/neg_test_key_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::detail::ctx_mint::test_key>
