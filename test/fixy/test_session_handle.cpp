@@ -21,10 +21,12 @@
 // wait status is also stricter than ctest's WILL_FAIL, which would
 // accept any non-zero exit.
 
+#include <fixy/Ctx.h>
 #include <fixy/ScopedView.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Projection.h>
 
+#include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
@@ -719,6 +721,30 @@ template <typename Message>
     if (!value) return std::nullopt;
     return Message{*value};
 }
+
+// The row gate of a channel.  One context runs the two sides of a
+// channel, so it must hold each effect that a payload of either side
+// carries.  The background context holds Bg and Alloc, the compile
+// context holds IO too, and the test context holds IO and no Bg.
+using ChannelBgCtx = ::fixy::BgDrainCtx;
+using ChannelBgIoCtx = ::fixy::BgCompileCtx;
+using ChannelTestCtx = ::fixy::TestRunnerCtx;
+using IoWork = ::foundation::effects::Computation<::foundation::effects::Row<::foundation::effects::Effect::IO>, int>;
+using BgWork = ::foundation::effects::Computation<::foundation::effects::Row<::foundation::effects::Effect::Bg>, int>;
+using SendsIo = s::Send<IoWork, s::End>;
+using SendsBg = s::Send<BgWork, s::End>;
+
+template <typename Ctx, typename Proto>
+inline constexpr bool forked_gate_admits_v =
+    s::CtxFitsForkedChannel<Ctx, Proto, channel_tags::Whole, channel_tags::Self, channel_tags::Peer>;
+
+static_assert(!s::CtxAdmitsChannelRow<ChannelBgCtx, Once, s::Recv<IoWork, s::End>>,
+              "the row of the peer side counts as the row of the self side does");
+static_assert(s::CtxAdmitsChannelRow<ChannelBgIoCtx, Once, s::Recv<IoWork, s::End>>);
+static_assert(!forked_gate_admits_v<ChannelBgCtx, SendsIo>, "the background context holds no IO");
+static_assert(forked_gate_admits_v<ChannelBgIoCtx, SendsIo>);
+static_assert(!s::CtxFitsTestChannel<ChannelTestCtx, SendsBg>, "the test context holds no Bg");
+static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
 
 // The two endpoints on one thread, through the test hatch.  The order is
 // fixed: the self side sends before the peer side receives.

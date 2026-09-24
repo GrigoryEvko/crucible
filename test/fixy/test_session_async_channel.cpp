@@ -11,8 +11,10 @@
 // receives, so a channel with no buffer deadlocks.  Every wait has a
 // deadline, so a bug aborts with a diagnostic and does not hang the run.
 
+#include <fixy/Ctx.h>
 #include <fixy/session/AsyncChannel.h>
 
+#include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -181,6 +183,19 @@ static_assert(!s::is_subtype_async_v<NeverStops, s::dual_of_t<AwaitsStop>, Right
 static_assert(!gate_admits_v<AwaitsStop, NeverStops, LeftEnd, RightEnd>);
 static_assert(!gate_admits_v<NeverStops, AwaitsStop, LeftEnd, RightEnd>);
 static_assert(gate_admits_v<RightProto, LeftProto, RightEnd, LeftEnd>, "a compatible pair is admitted in each order");
+
+// One context runs the two sides, so it must hold each effect that a
+// payload of either side carries.  The background context holds Bg and
+// Alloc, and the compile context holds IO too.
+using BgIoCtx = ::fixy::BgCompileCtx;
+using IoWork = eff::Computation<eff::Row<eff::Effect::IO>, int>;
+using SendsIo = s::Send<IoWork, s::End>;
+using ReceivesIo = s::Recv<IoWork, s::End>;
+
+static_assert(!gate_admits_v<SendsIo, ReceivesIo, LeftEnd, RightEnd>, "the background context holds no IO");
+static_assert(!gate_admits_v<ReceivesIo, SendsIo, LeftEnd, RightEnd>, "the row of the peer side counts too");
+static_assert(s::CtxFitsAsyncForkedChannel<BgIoCtx, SendsIo, ReceivesIo, async_tags::Whole, async_tags::Left,
+                                           async_tags::Right, LeftEnd, RightEnd>);
 
 // ── The runtime pair ─────────────────────────────────────────────────
 

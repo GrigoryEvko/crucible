@@ -50,9 +50,10 @@ namespace fixy::session {
 // channel type.
 
 // The gate of the asynchronous fork-shaped mint.  Each side is runnable,
-// its permission flow closes, the two Resources state one capacity, each
-// side refines the dual of the other side at that capacity, and the
-// context may start the fork.
+// its permission flow closes, the context admits the row of each side
+// (CtxAdmitsChannelRow of fixy/session/Handle.h), the two Resources state
+// one capacity, each side refines the dual of the other side at that
+// capacity, and the context may start the fork.
 //
 // The relation asks for both directions because refinement keeps each
 // exit, and duality does not keep that property.  A side that waits for a
@@ -64,6 +65,7 @@ concept CtxFitsAsyncForkedChannel =
     WellFormedRunnableProtocol<SelfProto> && WellFormedRunnableProtocol<PeerProto>
     && PermissionFlowCloses<SelfProto, ::foundation::permissions::EmptyPermSet>
     && PermissionFlowCloses<PeerProto, ::foundation::permissions::EmptyPermSet>
+    && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>
     && StatesChannelCapacity<ResourceSelf> && StatesChannelCapacity<ResourcePeer>
     && (channel_capacity_v<ResourceSelf> == channel_capacity_v<ResourcePeer>)
     && is_subtype_async_v<SelfProto, dual_of_t<PeerProto>, ResourceSelf>

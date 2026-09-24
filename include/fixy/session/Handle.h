@@ -2411,13 +2411,22 @@ concept ForkedEndpointBody =
 // (fixy/session/AsyncChannel.h).
 class AsyncChannelDoor;
 
+// The row gate of a channel.  Each channel mint gives one context to the
+// two sides of the channel.  So the context must admit the row of each
+// side, as CtxFitsSessionFrom asks for the one side of a session.  Every
+// channel mint reads this concept, so the channel mints and the session
+// mints cannot drift apart.
+template <typename Ctx, typename SelfProto, typename PeerProto>
+concept CtxAdmitsChannelRow = CtxAdmitsProtocolRow<Ctx, SelfProto> && CtxAdmitsProtocolRow<Ctx, PeerProto>;
+
 // The context gate of the fork-shaped mint: two runnable local
-// protocols, one the dual of the other, and a fork that the context may
-// start.
+// protocols, one the dual of the other, a context that admits the row of
+// each side, and a fork that the context may start.
 template <typename Ctx, typename Proto, typename Parent, typename SelfTag, typename PeerTag>
 concept CtxFitsForkedChannel = WellFormedRunnableProtocol<Proto> && WellFormedRunnableProtocol<dual_of_t<Proto>>
                             && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
                             && PermissionFlowCloses<dual_of_t<Proto>, ::foundation::permissions::EmptyPermSet>
+                            && CtxAdmitsChannelRow<Ctx, Proto, dual_of_t<Proto>>
                             && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;
 
 // Makes a channel and starts its two sides on two threads through
@@ -2457,12 +2466,14 @@ mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent
 // hatch for a test that drives the two sides on one thread in a fixed
 // order, and the context gate admits only a context that holds the Test
 // capability.  A production context has no Test capability, so it
-// cannot reach this mint.
+// cannot reach this mint.  The context must also admit the row of each
+// side, as the context of a forked channel must.
 template <typename Ctx, typename Proto>
 concept CtxFitsTestChannel = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Test>
                           && WellFormedRunnableProtocol<Proto> && WellFormedRunnableProtocol<dual_of_t<Proto>>
                           && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
-                          && PermissionFlowCloses<dual_of_t<Proto>, ::foundation::permissions::EmptyPermSet>;
+                          && PermissionFlowCloses<dual_of_t<Proto>, ::foundation::permissions::EmptyPermSet>
+                          && CtxAdmitsChannelRow<Ctx, Proto, dual_of_t<Proto>>;
 
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename ResourceA,
           typename ResourceB>
@@ -2590,6 +2601,7 @@ class SessionMintDoor final {
         requires WellFormedRunnableProtocol<SelfProto> && WellFormedRunnableProtocol<PeerProto>
               && PermissionFlowCloses<SelfProto, ::foundation::permissions::EmptyPermSet>
               && PermissionFlowCloses<PeerProto, ::foundation::permissions::EmptyPermSet>
+              && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>
               && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>
               && SessionResource<ResourceSelf> && SessionResource<ResourcePeer>
               && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>

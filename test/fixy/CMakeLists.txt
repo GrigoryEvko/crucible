@@ -1813,6 +1813,17 @@ fixy_neg_compile_test(neg_sess_forked_channel_body_stops_early
   "no matching function for call to .mint_forked_channel"
   "ForkedEndpointBody<PeerBody"
   "the required expression .std::move\\(handle\\).close\\(\\). is invalid")
+# One context runs the two sides of a channel, so each channel mint reads
+# the row gate of a session for each side (CtxAdmitsChannelRow).  A
+# payload whose row the context does not hold is refused.
+fixy_neg_compile_test(neg_sess_forked_channel_row_outside_ctx
+  "no matching function for call to .mint_forked_channel<forked_row_fixture::Proto, forked_row_fixture::Left, forked_row_fixture::Right>"
+  "satisfaction of .CtxAdmitsChannelRow<Ctx, Proto, typename fixy::session::dual_of<[A-Za-z0-9]+>::type>."
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, SelfProto>. .with Ctx = .*SelfProto = fixy::session::Send<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>, fixy::session::End>.")
+fixy_neg_compile_test(neg_sess_test_channel_row_outside_ctx
+  "no matching function for call to .mint_test_channel<test_row_fixture::Proto>"
+  "satisfaction of .CtxAdmitsChannelRow<Ctx, Proto, typename fixy::session::dual_of<[A-Za-z0-9]+>::type>."
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, SelfProto>. .with Ctx = .*SelfProto = fixy::session::Send<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int>, fixy::session::End>.")
 
 # A forked channel whose sides are related by asynchronous subtyping runs
 # the check at the capacity that its two ends state.  A pair that sends
@@ -1835,6 +1846,10 @@ fixy_neg_compile_test(neg_sess_async_channel_peer_drops_the_exit
 fixy_neg_compile_test(neg_sess_async_channel_self_drops_the_exit
   "no matching function for call to .mint_forked_async_channel"
   "is_subtype_async_v<SelfProto, typename fixy::session::dual_of<PeerProto>::type, ResourceSelf> \\[with SelfProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
+fixy_neg_compile_test(neg_sess_async_channel_row_outside_ctx
+  "no matching function for call to .mint_forked_async_channel<async_row_fixture::LeftProto, async_row_fixture::RightProto, async_row_fixture::Left, async_row_fixture::Right>"
+  "satisfaction of .CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>."
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, SelfProto>. .with Ctx = .*SelfProto = fixy::session::Send<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>, fixy::session::End>.")
 
 # The callback entry point closes the handle the body returns, so the
 # body must return it at End.
