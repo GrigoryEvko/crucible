@@ -18,7 +18,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -30,7 +30,7 @@ int main() {
     // reject via AllGrantsWellFormed.  All 20 other axes engage
     // with their strict acceptance markers so the rejection is
     // uniquely attributable to the reference-qualified grant.
-    auto bad = fixy::mint_fn<int, strict<D::Refinement>, gr::affine& /* reference-qualified */, strict<D::Effect>,
+    auto bad = crucible_fixy::mint_fn<int, strict<D::Refinement>, gr::affine& /* reference-qualified */, strict<D::Effect>,
                              strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
                              strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
                              strict<D::Complexity>, strict<D::Precision>, strict<D::Space>, strict<D::Overflow>,

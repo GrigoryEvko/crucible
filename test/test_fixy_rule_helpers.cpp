@@ -6,7 +6,7 @@
 
 #include <type_traits>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace sfn = crucible::safety::fn;
 
 // A linear binding inside a region counts as unprotected by default, and
@@ -60,42 +60,42 @@ template <>
 struct marks_lifetime_region_unprotected<::PublicFn> : std::false_type {};
 }  // namespace crucible::safety::fn::collision
 
-static_assert(fixy::rule::pack::no_linear_region_alias_v<>, "Empty pack must accept — no aliasing possible.");
+static_assert(crucible_fixy::rule::pack::no_linear_region_alias_v<>, "Empty pack must accept — no aliasing possible.");
 
-static_assert(fixy::rule::pack::no_linear_region_alias_v<LinearA>,
+static_assert(crucible_fixy::rule::pack::no_linear_region_alias_v<LinearA>,
               "Single-binding pack must accept — no aliasing possible.");
 
-static_assert(fixy::rule::pack::no_linear_region_alias_v<LinearA, LinearB>,
+static_assert(crucible_fixy::rule::pack::no_linear_region_alias_v<LinearA, LinearB>,
               "Two Linears in DIFFERENT regions must accept.");
 
-static_assert(!fixy::rule::pack::no_linear_region_alias_v<LinearA, LinearAClone>,
+static_assert(!crucible_fixy::rule::pack::no_linear_region_alias_v<LinearA, LinearAClone>,
               "Two Linears in the SAME region (tag 7) must reject — alias.");
 
-static_assert(fixy::rule::pack::frame_axis_consistent_v<>, "Empty pack must accept — vacuously consistent.");
+static_assert(crucible_fixy::rule::pack::frame_axis_consistent_v<>, "Empty pack must accept — vacuously consistent.");
 
-static_assert(fixy::rule::pack::frame_axis_consistent_v<LinearA>, "Single-binding pack is consistent with itself.");
+static_assert(crucible_fixy::rule::pack::frame_axis_consistent_v<LinearA>, "Single-binding pack is consistent with itself.");
 
-static_assert(fixy::rule::pack::frame_axis_consistent_v<LinearA, LinearB>,
+static_assert(crucible_fixy::rule::pack::frame_axis_consistent_v<LinearA, LinearB>,
               "LinearA + LinearB agree on Security (both Classified).");
 
-static_assert(!fixy::rule::pack::frame_axis_consistent_v<LinearA, PublicFn>,
+static_assert(!crucible_fixy::rule::pack::frame_axis_consistent_v<LinearA, PublicFn>,
               "LinearA (Classified) + PublicFn (Public) disagree on Security.");
 
-static_assert(fixy::rule::pack::is_linear_in_region_v<LinearA>,
+static_assert(crucible_fixy::rule::pack::is_linear_in_region_v<LinearA>,
               "LinearA is Linear in lifetime::In<7> — is_linear_in_region must accept.");
 
-using TagA = fixy::rule::pack::region_tag_of_t<sfn::lifetime::In<7>>;
-using TagAClone = fixy::rule::pack::region_tag_of_t<sfn::lifetime::In<7>>;
-using TagB = fixy::rule::pack::region_tag_of_t<sfn::lifetime::In<11>>;
+using TagA = crucible_fixy::rule::pack::region_tag_of_t<sfn::lifetime::In<7>>;
+using TagAClone = crucible_fixy::rule::pack::region_tag_of_t<sfn::lifetime::In<7>>;
+using TagB = crucible_fixy::rule::pack::region_tag_of_t<sfn::lifetime::In<11>>;
 
-static_assert(fixy::rule::pack::same_region_tag_v<TagA, TagAClone>, "Identical region tags must compare equal.");
+static_assert(crucible_fixy::rule::pack::same_region_tag_v<TagA, TagAClone>, "Identical region tags must compare equal.");
 
-static_assert(!fixy::rule::pack::same_region_tag_v<TagA, TagB>, "Distinct region tags must compare unequal.");
+static_assert(!crucible_fixy::rule::pack::same_region_tag_v<TagA, TagB>, "Distinct region tags must compare unequal.");
 
-static_assert(std::is_void_v<fixy::rule::pack::region_tag_of_t<sfn::lifetime::Static>>,
+static_assert(std::is_void_v<crucible_fixy::rule::pack::region_tag_of_t<sfn::lifetime::Static>>,
               "region_tag_of_t<lifetime::Static> must be void (non-region sentinel).");
 
-static_assert(!std::is_void_v<fixy::rule::pack::region_tag_of_t<sfn::lifetime::In<7>>>,
+static_assert(!std::is_void_v<crucible_fixy::rule::pack::region_tag_of_t<sfn::lifetime::In<7>>>,
               "region_tag_of_t<lifetime::In<7>> must be non-void.");
 
 int main() { return 0; }

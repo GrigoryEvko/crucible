@@ -17,7 +17,7 @@
 
 namespace fixy_neg_rule_detail {
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 namespace sfn = crucible::safety::fn;
 namespace eff = crucible::effects;

@@ -6,7 +6,7 @@
 // therefore a class type, NOT a grant tag (no `grant_base` base, not
 // `final` per the grant discipline).  Authors occasionally try
 //
-//     fixy::mint_fn<int, stance::PureLinear<int>, ...>(42)
+//     crucible_fixy::mint_fn<int, stance::PureLinear<int>, ...>(42)
 //
 // thinking they can "extend a stance" by adding grants on top.  The
 // stance alias must be REJECTED by IsGrantTag at the
@@ -18,13 +18,13 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 
 int main() {
     // Pass a stance alias as if it were a grant tag — must reject.
-    // (stance::PureLinear<int> is fixy::fn<int, ...> — a class type,
+    // (stance::PureLinear<int> is crucible_fixy::fn<int, ...> — a class type,
     // not a grant.)
-    auto bad = fixy::mint_fn<int, fixy::stance::PureLinear<int>>(42);
+    auto bad = crucible_fixy::mint_fn<int, crucible_fixy::stance::PureLinear<int>>(42);
     (void)bad;
     return 0;
 }

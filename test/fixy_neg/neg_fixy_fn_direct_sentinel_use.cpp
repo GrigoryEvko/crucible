@@ -1,12 +1,12 @@
 // fixy_neg: §XXI Universal Mint Pattern rejects DIRECT use of the
-//           CTAD-blocker sentinel as fixy::fn's Type argument
+//           CTAD-blocker sentinel as crucible_fixy::fn's Type argument
 //           (defense-in-depth — even back-door sentinel naming fires).
 //
 // fixy-A4-025 negative fixture #2 (HS14 ≥2 floor: direct-sentinel
 // route, distinct mismatch class from #1's CTAD route).  The CTAD
-// route fires when the deduction guide picks up `fixy::fn{value}`.
+// route fires when the deduction guide picks up `crucible_fixy::fn{value}`.
 // This fixture proves that a clever user attempting to BACK-DOOR the
-// mint discipline by explicitly naming the sentinel type as fixy::fn's
+// mint discipline by explicitly naming the sentinel type as crucible_fixy::fn's
 // Type parameter ALSO fires tier-0 — the sentinel itself is the gate,
 // not just the deduction guide.  Together the two fixtures prove the
 // tier-0 check is robust against BOTH the deduction-guide route AND
@@ -28,7 +28,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -37,10 +37,10 @@ using strict = gr::accept_default_strict_for<Axis>;
 
 int main() {
     // Direct sentinel reference: user explicitly names the sentinel
-    // type as fixy::fn's Type parameter.  Even with a fully engaged
+    // type as crucible_fixy::fn's Type parameter.  Even with a fully engaged
     // Grants pack (would otherwise satisfy tier-3 AllDimsEngaged),
     // tier-0 STILL fires because the sentinel detection is unconditional.
-    fixy::fn<crucible::fixy::detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for, strict<D::Refinement>,
+    crucible_fixy::fn<crucible::fixy::detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for, strict<D::Refinement>,
              strict<D::Usage>, strict<D::Effect>, strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>,
              strict<D::Provenance>, strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
              strict<D::Complexity>, strict<D::Precision>, strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,

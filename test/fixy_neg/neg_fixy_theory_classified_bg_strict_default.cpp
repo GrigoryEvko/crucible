@@ -32,7 +32,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -46,7 +46,7 @@ int main() {
     //   Effect   = with_bg              (Bg effect — background thread)
     //   NO declassify<Policy> grant in the pack
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
                       gr::with_bg,  // Effect = Bg
                       strict<D::Security>,  // Security = strict default = Classified
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,

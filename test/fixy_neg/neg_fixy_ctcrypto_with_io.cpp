@@ -11,7 +11,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -24,7 +24,7 @@ int main() {
     // The §30.14 detector fires because `as_secret` + `with<IO>` +
     // (no declassify) matches the implicit-flow pattern.
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
                       gr::with_io,  // <-- IO added; defeats CT discipline
                       gr::as_secret, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,

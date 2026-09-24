@@ -1,34 +1,28 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: constructing ValidScalarType with int8_t{14} in constexpr
-// context.  14 is an INTERIOR GAP in ScalarType's sparse enumerator set
-// (Bool = 11, BFloat16 = 15 — values 12..14 are not enumerators).
+// Violation: the checked mint of ValidScalarType receives int8_t{14} in
+// constant evaluation.  14 is an interior gap of the sparse ScalarType set:
+// Bool is 11 and BFloat16 is 15, and 12 thru 14 are not enumerators.
 //
-// Per the read_meta dtype gate (sibling of #534 ndim / #892 kernel_id),
-// ValidScalarType is
-// safety::Refined<valid_scalar_type, int8_t>.  read_meta() in Serialize.h
-// previously reconstructed `m.dtype = r.r<ScalarType>()` unguarded, so a
-// corrupt/version-skewed Cipher byte in a gap slipped through to
-// element_size(), whose `default: std::unreachable()` makes any non-
-// enumerator value UNDEFINED BEHAVIOUR in the size-math path.
+// ValidScalarType is ::fixy::Refined<valid_scalar_type, int8_t>.  read_meta
+// in Serialize.h reads the dtype byte through this gate, because
+// element_size() marks every value that is not an enumerator unreachable.
 //
-// Companion fixture: neg_tensor_meta_dtype_above_max.cpp
-//   * This one is the INTERIOR GAP (14).  Catches drift where the
-//     predicate is relaxed to a plain range check `[-1, 26]` that would
-//     wrongly admit the 12..14, 16..22 gaps.
-//   * That one is the ABOVE-MAX wide miss (99 > 26).  Catches "drop the
-//     predicate entirely" regression.
+// The companion fixture neg_tensor_meta_dtype_above_max.cpp is the wide
+// miss (99).  This one catches a predicate relaxed to a plain range check,
+// which admits the gaps.
 //
-// In constant evaluation a contract violation makes the expression
-// non-constant per P1494R5 — using it where a constant is required is
-// ill-formed.  Per HS14, >=2 fixtures per soundness gate, distinct class.
+// mint_refined checks its predicate with CRUCIBLE_PRE.  In constant
+// evaluation a false predicate reaches __builtin_trap, which is not a
+// constant expression, so the constexpr variable is ill-formed.
 
 #include <crucible/TensorMeta.h>
 
 #include <cstdint>
 
 int main() {
-    constexpr crucible::ValidScalarType bad{static_cast<std::int8_t>(14)};
+    constexpr crucible::ValidScalarType bad =
+        ::fixy::mint_refined<crucible::valid_scalar_type>(static_cast<std::int8_t>(14));
     (void)bad;
     return 0;
 }

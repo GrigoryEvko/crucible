@@ -36,7 +36,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -51,7 +51,7 @@ int main() {
     // after CR-08 it triggers `IsGrantTag_v<int> == false` first,
     // and the rejection comes from AllGrantsWellFormed.
     auto bad =
-        fixy::mint_fn<float, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+        crucible_fixy::mint_fn<float, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,

@@ -41,7 +41,7 @@
 #include <crucible/fixy/syscall/Family.h>
 #include <crucible/fixy/syscall/Per.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 namespace grs = crucible::fixy::grant::syscall;
 using D = crucible::fixy::dim::DimensionAxis;
@@ -57,7 +57,7 @@ int main() {
     // (Per.h) covering SyscallSurface twice.  The duplicate
     // SyscallSurface engagement is the load-bearing rejection cause;
     // every OTHER axis is uniquely engaged.
-    auto bad = fixy::mint_fn<
+    auto bad = crucible_fixy::mint_fn<
         int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
         strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>, strict<D::Representation>,
         strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>, strict<D::Space>, strict<D::Overflow>,

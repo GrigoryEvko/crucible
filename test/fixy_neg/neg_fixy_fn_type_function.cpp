@@ -5,13 +5,13 @@
 // `std::is_object_v<void(int)>` is false (functions are not objects in
 // the C++ object model).  Function types must be wrapped as pointers
 // (`int (*)(int)`) or callables (lambdas / std::function_ref) before
-// reaching fixy::fn.
+// reaching crucible_fixy::fn.
 //
 // Expected diagnostic: "IsAccepted" — concept satisfaction failure.
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -25,7 +25,7 @@ int main() {
     // template parameter is named.
     using BareFn = void(int);
     using Bad =
-        fixy::fn<BareFn, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+        crucible_fixy::fn<BareFn, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                  strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                  strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                  strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>,

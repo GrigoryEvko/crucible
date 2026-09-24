@@ -78,7 +78,6 @@
 
 #include <type_traits>
 
-namespace fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 

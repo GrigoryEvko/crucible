@@ -1,7 +1,7 @@
 // fixy_neg: mint_fn_for<Stance, int[4]>(...) rejects via the
 // StanceForUnary concept gate (fixy-H-01).
 //
-// HS14 floor for fixy::mint_fn_for (fixy/Fn.h §A11 + fixy-H-01).
+// HS14 floor for crucible_fixy::mint_fn_for (fixy/Fn.h §A11 + fixy-H-01).
 // Passing an array type as the explicit `Type` template parameter
 // trips `detail::TypeIsStanceCompatible<int[4]>` (std::is_array_v)
 // inside the `StanceForUnary` concept; the function template's
@@ -14,13 +14,13 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 
 int main() {
     // Stance template + explicit Type=int[4].  The parameter value is
     // not needed; mint_fn_for fails inside Stance<int[4]> construction.
     int arr[4]{};
-    auto bad = fixy::mint_fn_for<fixy::stance::PureLinear, int[4]>(arr);
+    auto bad = crucible_fixy::mint_fn_for<crucible_fixy::stance::PureLinear, int[4]>(arr);
     (void)bad;
     return 0;
 }

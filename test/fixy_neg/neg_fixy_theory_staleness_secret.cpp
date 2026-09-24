@@ -27,7 +27,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -41,7 +41,7 @@ int main() {
     //   NO declassify<Policy> grant in the pack
     // This is the Sabelfeld-Sands stale-replay shape.
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
                       gr::as_secret,  // Security = Secret
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,

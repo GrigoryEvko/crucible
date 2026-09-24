@@ -14,7 +14,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 namespace eff = crucible::effects;
 using D = crucible::fixy::dim::DimensionAxis;
@@ -29,7 +29,7 @@ int main() {
     //   NO declassify<Policy>
     // Internal data leaks through I/O regardless of whether IO is the
     // sole effect or one of several in the pack — must reject.
-    auto bad = fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+    auto bad = crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
                              gr::with<eff::Effect::Alloc, eff::Effect::IO>,  // IO inside multi-effect pack
                              gr::as_internal, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
                              strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,

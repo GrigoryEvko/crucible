@@ -8,7 +8,7 @@
 
 #include <type_traits>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -16,7 +16,7 @@ template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
 
 namespace lat_sec_unclassified {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_unclassified,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_unclassified,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -29,7 +29,7 @@ static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Unclassified,
 }  // namespace lat_sec_unclassified
 
 namespace lat_sec_public {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_public,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_public,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -42,7 +42,7 @@ static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Public,
 }  // namespace lat_sec_public
 
 namespace lat_sec_internal {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_internal,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_internal,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -55,7 +55,7 @@ static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Internal,
 }  // namespace lat_sec_internal
 
 namespace lat_sec_classified {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_classified,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_classified,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -71,7 +71,7 @@ static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Classified,
 }  // namespace lat_sec_classified
 
 namespace lat_sec_secret {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_secret,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_secret,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -84,7 +84,7 @@ static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Secret,
 }  // namespace lat_sec_secret
 
 namespace lat_trust_verified {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, gr::trust_verified,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -97,7 +97,7 @@ static_assert(std::is_same_v<typename fn_t::trust_t, crucible::safety::trust::Ve
 }  // namespace lat_trust_verified
 
 namespace lat_trust_tested {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, gr::trust_tested,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -110,7 +110,7 @@ static_assert(std::is_same_v<typename fn_t::trust_t, crucible::safety::trust::Te
 }  // namespace lat_trust_tested
 
 namespace lat_trust_unverified {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, gr::trust_unverified,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -123,7 +123,7 @@ static_assert(std::is_same_v<typename fn_t::trust_t, crucible::safety::trust::Un
 }  // namespace lat_trust_unverified
 
 namespace lat_trust_external {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, gr::trust_external,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -139,7 +139,7 @@ static_assert(std::is_same_v<typename fn_t::trust_t, crucible::safety::trust::Ex
 // resolves to its own tag, not to the other tag's slot.
 
 namespace lat_cross_secret_external {
-using fn_t = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_secret,
+using fn_t = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_secret,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, gr::trust_external,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -155,10 +155,10 @@ static_assert(std::is_same_v<typename fn_t::trust_t, crucible::safety::trust::Ex
 
 // Each tag is an empty final type, so the binding collapses to the
 // size of its payload however many tags it carries.
-static_assert(sizeof(lat_sec_secret::fn_t) == sizeof(int), "fixy::fn with as_secret must EBO-collapse to sizeof(int).");
+static_assert(sizeof(lat_sec_secret::fn_t) == sizeof(int), "crucible_fixy::fn with as_secret must EBO-collapse to sizeof(int).");
 static_assert(sizeof(lat_trust_external::fn_t) == sizeof(int),
-              "fixy::fn with trust_external must EBO-collapse to sizeof(int).");
+              "crucible_fixy::fn with trust_external must EBO-collapse to sizeof(int).");
 static_assert(sizeof(lat_cross_secret_external::fn_t) == sizeof(int),
-              "fixy::fn with as_secret + trust_external must EBO-collapse.");
+              "crucible_fixy::fn with as_secret + trust_external must EBO-collapse.");
 
 int main() { return 0; }

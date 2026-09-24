@@ -11,7 +11,7 @@
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Theory.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 namespace th = crucible::fixy::theory;
 using D = crucible::fixy::dim::DimensionAxis;
@@ -25,7 +25,7 @@ using strict = gr::accept_default_strict_for<Axis>;
 
 template <typename ExtraGrant>
 inline constexpr bool implicit_flow_pack_rejects =
-    !fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>,
+    !crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>,
                       gr::with_io,  // Effect = IO
                       gr::as_secret,  // Security = Secret
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
@@ -37,7 +37,7 @@ inline constexpr bool implicit_flow_pack_rejects =
 // gate is not simply refusing everything.
 namespace counter_witness {
 static_assert(
-    fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+    crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                      strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                      strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                      strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>,
@@ -67,7 +67,7 @@ template <>
 struct is_declassify_grant<::cheat_1_rogue_declassify_trait::rogue> : std::true_type {};
 }  // namespace crucible::fixy::theory::detail
 namespace cheat_1_rogue_declassify_trait {
-static_assert(!fixy::IsAcceptedGrants<rogue>, "Cheat 1: a rogue type cannot satisfy IsAcceptedGrants — "
+static_assert(!crucible_fixy::IsAcceptedGrants<rogue>, "Cheat 1: a rogue type cannot satisfy IsAcceptedGrants — "
                                               "engagement gate fires before the corpus.");
 static_assert(implicit_flow_pack_rejects<rogue>, "Cheat 1: even with rogue specialized as a declassify, the "
                                                  "outer IsAccepted must reject because the rogue type is not "
@@ -151,7 +151,7 @@ template <>
 struct is_io_effect_grant<::cheat_4_rogue_io_trait::rogue> : std::true_type {};
 }  // namespace crucible::fixy::theory::detail
 namespace cheat_4_rogue_io_trait {
-static_assert(!fixy::IsAcceptedGrants<rogue>, "Cheat 4: a rogue type cannot satisfy IsAcceptedGrants — "
+static_assert(!crucible_fixy::IsAcceptedGrants<rogue>, "Cheat 4: a rogue type cannot satisfy IsAcceptedGrants — "
                                               "the engagement gate fires before the corpus.");
 static_assert(th::detail::is_io_effect_grant<gr::with_io>::value,
               "Cheat 4 defense witness: the substrate's positive "
@@ -165,7 +165,7 @@ static_assert(th::detail::is_io_effect_grant<gr::with_io>::value,
 // alone would be enough.
 
 namespace cheat_5_double_security_engagement {
-static_assert(!fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, gr::with_io,
+static_assert(!crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, gr::with_io,
                                 gr::as_secret,  // Security #1
                                 strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                                 strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
@@ -192,7 +192,7 @@ namespace sp = ::crucible::safety::secret_policy;
 // The pack carries the pattern the corpus fires on, and the
 // declassification discharges it, so the binding accepts.
 static_assert(
-    fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, gr::with_io,
+    crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, gr::with_io,
                      gr::declassify<sp::AuditedLogging>,  // remediation
                      strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                      strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
@@ -222,7 +222,7 @@ namespace cheat_7_strict_default_security_bypass {
 // declassification is the semantic twin of the explicit form, and
 // rejects with it.
 static_assert(
-    !fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, gr::with_io,
+    !crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, gr::with_io,
                       strict<D::Security>,  // strict default = Classified
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
@@ -237,7 +237,7 @@ static_assert(
 
 // Pack 2: strict-default Security × Bg, NO declassify.
 static_assert(
-    !fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, gr::with_bg, strict<D::Security>,
+    !crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, gr::with_bg, strict<D::Security>,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -249,7 +249,7 @@ static_assert(
     "strict-default Security x Bg without declassify.");
 
 // Pack 3: strict-default Security × stale_to<N>, NO declassify.
-static_assert(!fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+static_assert(!crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                                 strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                                 strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
                                 strict<D::Precision>, strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,
@@ -285,7 +285,7 @@ namespace sp = ::crucible::safety::secret_policy;
 // the per-axis check rejects because the policy discharges a
 // different axis.
 static_assert(
-    !fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
+    !crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
                       gr::declassify<sp::AuditedLogging>,  // engages security, discharges the wrong axis
                       gr::stale_to<100>,  // engages Staleness
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
@@ -302,7 +302,7 @@ static_assert(
 // The same binding shape with the policy that does declare the
 // staleness axis, which accepts.
 static_assert(
-    fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
+    crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
                      gr::declassify<sp::AuthorizedReplay>,  // discharges the staleness axis
                      gr::stale_to<100>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
                      strict<D::Trust>, strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
@@ -321,7 +321,7 @@ static_assert(
 // the same combination.  They are separate mismatch classes, not
 // repetitions of one.
 static_assert(
-    !fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
+    !crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
                       gr::declassify<sp::HashForCompare>,  // engages security, declares no axis
                       gr::stale_to<50>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
                       strict<D::Trust>, strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
@@ -335,7 +335,7 @@ static_assert(
     "temporal.");
 
 static_assert(
-    !fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::declassify<sp::LengthOnly>,
+    !crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::declassify<sp::LengthOnly>,
                       gr::stale_to<200>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
                       strict<D::Trust>, strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
                       strict<D::Precision>, strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,
@@ -348,7 +348,7 @@ static_assert(
     "discharge, not temporal.");
 
 static_assert(
-    !fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::declassify<sp::UserDisplay>,
+    !crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::declassify<sp::UserDisplay>,
                       gr::stale_to<10>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
                       strict<D::Trust>, strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
                       strict<D::Precision>, strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,

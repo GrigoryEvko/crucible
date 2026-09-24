@@ -6,7 +6,7 @@
 // `grant::simd::width<WidthBits W>` (V-259, Simd.h:124) ARE structurally
 // distinct grant types but BOTH route to `DimensionAxis::SimdIsa`
 // (proven structurally by the FOUND-039 witness block in Simd.h's
-// self-test).  A `fixy::fn` Grants pack that contains one of each
+// self-test).  A `crucible_fixy::fn` Grants pack that contains one of each
 // therefore engages SimdIsa twice and MUST be rejected by tier-4
 // `UniqueEngagementPerAxis` with the `FixyDuplicate_SimdIsa` diagnostic.
 //
@@ -26,7 +26,7 @@
 #include <crucible/fixy/Hw.h>
 #include <crucible/fixy/Simd.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 namespace ghw = crucible::fixy::grant::hw;
 namespace gsi = crucible::fixy::grant::simd;
@@ -47,7 +47,7 @@ using strict = gr::accept_default_strict_for<Axis>;
 // missing-axis red.  The duplicate gate fires whenever cardinality > 1,
 // so 3 is sufficient to witness FOUND-039.)
 using BadFn =
-    fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
+    crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
              strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>, strict<D::Representation>,
              strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
              strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
@@ -61,6 +61,6 @@ using BadFn =
 
 // Force class-body completion via sizeof so the tier-4 static_assert
 // chain fires.
-static_assert(sizeof(BadFn) > 0, "instantiate fixy::fn class body to force its static_assert chain");
+static_assert(sizeof(BadFn) > 0, "instantiate crucible_fixy::fn class body to force its static_assert chain");
 
 int main() { return 0; }

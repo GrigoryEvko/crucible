@@ -26,7 +26,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -42,7 +42,7 @@ int main() {
     // Semantically identical to the explicit-as_secret form; the
     // strict-default-Security specialization closes the bypass.
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
                       gr::with_io,  // Effect = IO
                       strict<D::Security>,  // Security = strict default = Classified
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,

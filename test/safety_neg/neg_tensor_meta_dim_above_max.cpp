@@ -1,11 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-TensorMeta-1 (#1034): TensorDim construction is gated by
-// bounded_above<kMaxTensorDimExtent>, where the bound is INT64_MAX / 16
-// for the largest ScalarType element width.  The boundary value + 1
-// must fail in constexpr context.
-//
-// Expected diagnostic: Refined bounded_above contract failure.
+// tensor_dim gates every size and stride by bounded_above<kMaxTensorDimExtent>,
+// where the bound is INT64_MAX / 16 for the widest element.  It states the
+// bound as a contract assertion ahead of the checked mint, so the boundary
+// value plus one violates the contract in constant evaluation, and the
+// constexpr variable is ill-formed.
 
 #include <crucible/TensorMeta.h>
 

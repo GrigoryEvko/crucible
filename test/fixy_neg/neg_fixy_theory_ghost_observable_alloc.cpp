@@ -23,7 +23,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -35,7 +35,7 @@ int main() {
     //   Usage  = ghost      (compile-time-erased binding)
     //   Effect = with_alloc (requests runtime heap presence)
     //   contradictory by construction — Alloc is runtime-observable.
-    auto bad = fixy::mint_fn<int, strict<D::Refinement>,
+    auto bad = crucible_fixy::mint_fn<int, strict<D::Refinement>,
                              gr::ghost,  // Usage = Ghost
                              gr::with_alloc,  // Effect = Alloc (observable)
                              strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,

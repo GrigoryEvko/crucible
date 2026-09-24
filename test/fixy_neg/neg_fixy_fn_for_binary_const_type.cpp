@@ -18,7 +18,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 
 namespace test_policy {
 struct EmitPolicy {};
@@ -29,7 +29,7 @@ int main() {
     // Explicit Type=const int via the binary overload's template arg
     // list: <Stance, Policy, Type>.  TypeIsStanceCompatible<const int>
     // = false → StanceForBinary fails → no viable overload.
-    auto bad = fixy::mint_fn_for<fixy::stance::SecretConsumer, test_policy::EmitPolicy, const int>(c);
+    auto bad = crucible_fixy::mint_fn_for<crucible_fixy::stance::SecretConsumer, test_policy::EmitPolicy, const int>(c);
     (void)bad;
     return 0;
 }

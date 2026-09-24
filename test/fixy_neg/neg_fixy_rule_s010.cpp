@@ -23,7 +23,7 @@ template <>
 struct marks_ct<probe::F> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
-using Witness = fixy::fn<TypeS010, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+using Witness = crucible_fixy::fn<TypeS010, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                          strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                          strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
                          strict<D::Precision>, strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,

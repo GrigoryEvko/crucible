@@ -127,12 +127,10 @@ include/crucible/Serialize.h
 include/crucible/StorageNbytes.h
 include/crucible/SwissTable.h
 include/crucible/SymbolTable.h
-include/crucible/TensorMeta.h
 include/crucible/TraceGraph.h
 include/crucible/TraceLoader.h
 include/crucible/TraceRing.h
 include/crucible/Transaction.h
-include/crucible/Types.h
 include/crucible/Vigil.h
 include/crucible/_Saturate.h
 include/crucible/canopy/Crdt.h

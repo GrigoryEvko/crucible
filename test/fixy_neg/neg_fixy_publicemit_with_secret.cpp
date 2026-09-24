@@ -10,7 +10,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -21,7 +21,7 @@ int main() {
     // Hand-rolled "broken PublicEmit" — same engagements as
     // stance::PublicEmit but with as_secret in lieu of declassify.
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>, gr::with_io,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>, gr::with_io,
                       gr::as_secret,  // <-- swapped from declassify; now Secret+IO
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,

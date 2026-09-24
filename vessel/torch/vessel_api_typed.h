@@ -19,8 +19,7 @@
 //   as_meta_typed(metas)      : const CrucibleMeta*      -> TypedMeta
 //   metas_from_typed(typed)   : TypedMeta                -> const CrucibleMeta*
 //
-//   TypedDataPtr              := Tagged<void*, source::External>
-//   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> TypedDataPtr
+//   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> ExternalDataPtr
 //
 //   TypedSchemaName           := SchemaTable::LookupName
 //   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
@@ -74,12 +73,10 @@ namespace crucible::vessel {
 
 // ── Vigil typed handle ────────────────────────────────────────────
 //
-// TypedHandle, TypedMeta and TypedDataPtr use the Tagged of the
-// include/crucible tree.  Two things hold them there.  The vessel
-// tests, their negative-compile fixtures and two benches name the same
-// types.  And vessel_api.cpp includes this header with no substrate
-// fence, so an include of ::fixy here would parse crucible/Platform.h
-// with the macros of foundation/Platform.h.
+// TypedHandle and TypedMeta use the Tagged of the include/crucible tree,
+// because the vessel tests, their negative-compile fixtures and two
+// benches name the same types.  The data pointer of a meta is the
+// ExternalDataPtr of TensorMeta, which is a ::fixy Tagged.
 
 using TypedHandle = fixy::wrap::Tagged<Vigil*, fixy::tags::source::ABIBoundary>;
 
@@ -200,26 +197,20 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 // Crucible's TensorMeta::data_ptr is a `void*` whose provenance is
 // "data pages PyTorch handed to us — externally-owned, lifetime
 // controlled by the autograd / caching-allocator graph on the Python
-// side".  Wrap it as `Tagged<void*, source::External>` so downstream
-// consumers (memory-plan recording, pool-shadow-handle binding, Cipher
-// snapshot serializer) carry the provenance into their own type-level
-// reasoning.  The wire-struct layout is unchanged — this helper is a
-// pure read-and-tag operation.
+// side".  The field is an ExternalDataPtr, a `Tagged<void*,
+// source::External>`, so downstream consumers (memory-plan recording,
+// pool-shadow-handle binding, Cipher snapshot serializer) carry the
+// provenance into their own type-level reasoning.  TensorMeta.h pins
+// its size, its standard layout and its trivial copy.  This helper is
+// a pure read.
 //
 // `i` MUST be a valid index in the typed meta array (caller is the
 // authority on the array length, which travels via `n_metas` through
 // the C ABI).  Debug builds tighten this with a contract.
-
-using TypedDataPtr = fixy::wrap::Tagged<void*, fixy::tags::source::External>;
-
-static_assert(sizeof(TypedDataPtr) == sizeof(void*));
-static_assert(alignof(TypedDataPtr) == alignof(void*));
-static_assert(std::is_trivially_copy_constructible_v<TypedDataPtr>);
-
-[[nodiscard]] CRUCIBLE_HOT TypedDataPtr data_ptr_typed(TypedMeta typed, std::size_t i) noexcept {
+[[nodiscard]] CRUCIBLE_HOT ExternalDataPtr data_ptr_typed(TypedMeta typed, std::size_t i) noexcept {
     const TensorMeta* metas = typed.value();
     CRUCIBLE_DEBUG_ASSERT(metas != nullptr);
-    return TypedDataPtr{metas[i].data_ptr};
+    return metas[i].data_ptr;
 }
 
 // ── Schema-name typed lookup ───────────────────────────────────────

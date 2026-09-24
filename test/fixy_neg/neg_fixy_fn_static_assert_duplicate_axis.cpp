@@ -1,4 +1,4 @@
-// fixy_neg: fixy::fn class-body tier-4 branch rejects duplicate axis.
+// fixy_neg: crucible_fixy::fn class-body tier-4 branch rejects duplicate axis.
 //
 // HS14 floor for fixy-H-02.  The wrapper's class-body static_assert
 // chain now has FIVE tiers (replacing a single misleading message).
@@ -11,7 +11,7 @@
 //
 // Distinct from neg_fixy_duplicate_engagement.cpp (which targets
 // mint_fn's requires-clause path and surfaces "UniqueEngagementPer-
-// Axis" as a concept-name match): this fixture instantiates fixy::fn
+// Axis" as a concept-name match): this fixture instantiates crucible_fixy::fn
 // directly, so the diagnostic is the tier-4 static_assert message
 // inside the class body — proving the H-02 branched-message fix
 // actually surfaces the duplicate-axis cite, not the missing-axis
@@ -23,7 +23,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -37,7 +37,7 @@ using strict = gr::accept_default_strict_for<Axis>;
 // PASSES (Usage is engaged), tier 4 (UniqueEngagementPerAxis) FAILS
 // at the Usage axis.
 using BadFn =
-    fixy::fn<int, strict<D::Refinement>,
+    crucible_fixy::fn<int, strict<D::Refinement>,
              strict<D::Usage>,  // first engagement of Usage
              strict<D::Usage>,  // DUPLICATE engagement of Usage
              strict<D::Effect>, strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
@@ -49,6 +49,6 @@ using BadFn =
              strict<D::BarrierStrength>, strict<D::SimdIsa>, strict<D::MemoryScope>>;
 
 // Force class-body completion via sizeof.
-static_assert(sizeof(BadFn) > 0, "instantiate fixy::fn class body to force its static_assert chain");
+static_assert(sizeof(BadFn) > 0, "instantiate crucible_fixy::fn class body to force its static_assert chain");
 
 int main() { return 0; }

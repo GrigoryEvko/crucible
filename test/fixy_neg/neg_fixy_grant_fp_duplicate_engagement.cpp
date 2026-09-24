@@ -38,7 +38,7 @@
 #include <crucible/fixy/Fn.h>
 #include <crucible/fixy/Fp.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 namespace sf = crucible::safety;
 using D = crucible::fixy::dim::DimensionAxis;
@@ -54,7 +54,7 @@ int main() {
     // (including SyscallSurface, the V-097 axis, and the 5 V-238 hazard
     // axes ControlFlow/CallShape/StackUse/GlobalState/Stdio).
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,

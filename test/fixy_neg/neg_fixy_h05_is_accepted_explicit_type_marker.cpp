@@ -1,6 +1,6 @@
 // fixy_neg: wrapper-discipline IsAccepted rejects explicit user Type-marker.
 //
-// HS14 floor for fixy-H-05.  The public `fixy::IsAccepted<Type, Grants...>`
+// HS14 floor for fixy-H-05.  The public `crucible_fixy::IsAccepted<Type, Grants...>`
 // concept (Reject.h §IsAccepted) was inverted from FIXY-AUDIT-A8's design:
 // the SIMPLE name now auto-injects `ImplicitTypeMarker` (a private
 // `accept_default_strict_for<DimensionAxis::Type>` alias) into the
@@ -15,23 +15,23 @@
 // that rule structurally: 19 non-Type axes engaged + 1 explicit Type
 // marker = REJECTED via the duplicate-axis path.
 //
-// The LOW-LEVEL form `fixy::IsAcceptedDirect<Type, Grants...>` remains
+// The LOW-LEVEL form `crucible_fixy::IsAcceptedDirect<Type, Grants...>` remains
 // available for code that genuinely needs to spell every engagement
 // marker (e.g., Reject.h's own self-tests on `accepts_pack_v`).
 //
 // Distinct from neg_fixy_fn_static_assert_duplicate_axis.cpp (which
 // targets fn<>'s class-body tier-4 static_assert chain via a duplicate
 // Usage engagement): this fixture pins the CONCEPT-LEVEL gate at
-// `fixy::IsAccepted` for a duplicate TYPE engagement caused by the
+// `crucible_fixy::IsAccepted` for a duplicate TYPE engagement caused by the
 // wrapper-discipline auto-injection.
 //
-// Expected diagnostic: rejection at the `static_assert(fixy::IsAccepted<...>)`
+// Expected diagnostic: rejection at the `static_assert(crucible_fixy::IsAccepted<...>)`
 // line below.  The full diagnostic chain cites
 // `UniqueEngagementPerAxis` and the duplicate Type axis.
 
 #include <crucible/fixy/Reject.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -41,7 +41,7 @@ using strict = gr::accept_default_strict_for<Axis>;
 // 20-axis pack including explicit strict<D::Type> — duplicates the
 // auto-injected ImplicitTypeMarker on the Type axis.
 static_assert(
-    fixy::IsAccepted<int,
+    crucible_fixy::IsAccepted<int,
                      strict<D::Type>,  // ← explicit Type marker
                      strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                      strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,

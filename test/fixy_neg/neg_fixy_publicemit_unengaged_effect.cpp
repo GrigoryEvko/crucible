@@ -10,7 +10,7 @@
 #include <crucible/fixy/Fn.h>
 #include <crucible/safety/_Secret.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -36,7 +36,7 @@ int main() {
     // stance::PublicEmit MINUS the Effect engagement.  IsAccepted
     // rejects via the engagement gate.
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
                       /* gr::with_io removed — Effect unengaged */
                       gr::declassify<pe_neg_policies::EmitPolicy>, strict<D::Protocol>, strict<D::Lifetime>,
                       strict<D::Provenance>, strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,

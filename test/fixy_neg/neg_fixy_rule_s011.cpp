@@ -21,7 +21,7 @@ struct marks_replay_required<probe::F> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 using Witness =
-    fixy::fn<TypeS011, strict<D::Refinement>, gr::capability_usage, strict<D::Effect>, strict<D::Security>,
+    crucible_fixy::fn<TypeS011, strict<D::Refinement>, gr::capability_usage, strict<D::Effect>, strict<D::Security>,
              strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
              strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
              strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>,

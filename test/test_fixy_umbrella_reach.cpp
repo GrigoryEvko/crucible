@@ -16,60 +16,60 @@
 #include <type_traits>
 #include <utility>
 
-namespace fixy = ::crucible::fixy;
+namespace crucible_fixy = ::crucible::fixy;
 namespace fcc = ::crucible::fixy::contract::cipher;
 namespace cs = ::crucible::safety;
 namespace cc = ::crucible::cipher;
 
 #if CRUCIBLE_FIXY_STRICT
-static_assert(fixy::fixy_is_strict, "umbrella reach: fixy::fixy_is_strict must be true under "
+static_assert(crucible_fixy::fixy_is_strict, "umbrella reach: crucible_fixy::fixy_is_strict must be true under "
                                     "CRUCIBLE_FIXY_STRICT=1.  If this red-lights, fixy/Profile.h is "
                                     "not pulled in by <crucible/Fixy.h>.");
 #else
-static_assert(!fixy::fixy_is_strict, "umbrella reach: fixy::fixy_is_strict must be false under "
+static_assert(!crucible_fixy::fixy_is_strict, "umbrella reach: crucible_fixy::fixy_is_strict must be false under "
                                      "CRUCIBLE_FIXY_STRICT=0.");
 #endif
 
-static_assert(fixy::IsAcceptedSketch<int>, "umbrella reach: fixy::IsAcceptedSketch must resolve through the "
+static_assert(crucible_fixy::IsAcceptedSketch<int>, "umbrella reach: crucible_fixy::IsAcceptedSketch must resolve through the "
                                            "umbrella.");
 
 // An empty Grants pack engages nothing, so the toggle alone decides the
 // verdict.
 #if CRUCIBLE_FIXY_STRICT
-static_assert(!fixy::IsAcceptedActive<int>, "umbrella reach: under STRICT, IsAcceptedActive<int> with empty "
+static_assert(!crucible_fixy::IsAcceptedActive<int>, "umbrella reach: under STRICT, IsAcceptedActive<int> with empty "
                                             "Grants must reject.");
 #else
-static_assert(fixy::IsAcceptedActive<int>, "umbrella reach: under SKETCH, IsAcceptedActive<int> with empty "
+static_assert(crucible_fixy::IsAcceptedActive<int>, "umbrella reach: under SKETCH, IsAcceptedActive<int> with empty "
                                            "Grants must accept.");
 #endif
 
 // This witnesses that the concept template instantiates at all, not that
 // it gives a particular verdict.  The verdict is already pinned above.
 template <typename T>
-constexpr bool umbrella_reach_active_resolves = requires { requires fixy::IsAcceptedActive<T>; };
+constexpr bool umbrella_reach_active_resolves = requires { requires crucible_fixy::IsAcceptedActive<T>; };
 
 // Only the sketch branch can assert a true result, because under strict
 // mode the empty Grants pack makes the concept false.
 #if !CRUCIBLE_FIXY_STRICT
-static_assert(umbrella_reach_active_resolves<int>, "umbrella reach: under SKETCH, fixy::IsAcceptedActive<int> must "
+static_assert(umbrella_reach_active_resolves<int>, "umbrella reach: under SKETCH, crucible_fixy::IsAcceptedActive<int> must "
                                                    "instantiate true through the umbrella.");
 #endif
 
 static_assert(
     std::is_same_v<fcc::CipherTier<cs::CipherTierTag_v::Hot, int>, cs::CipherTier<cs::CipherTierTag_v::Hot, int>>,
-    "umbrella reach: fixy::contract::cipher::CipherTier must alias "
+    "umbrella reach: crucible_fixy::contract::cipher::CipherTier must alias "
     "safety::CipherTier when reached via the umbrella.");
 
 static_assert(std::is_same_v<fcc::HotTierHandle<int>, cs::cipher_tier::Hot<int>>,
-              "umbrella reach: fixy::contract::cipher::HotTierHandle must alias "
+              "umbrella reach: crucible_fixy::contract::cipher::HotTierHandle must alias "
               "cipher_tier::Hot when reached via the umbrella.");
 
 static_assert(std::is_same_v<fcc::WarmTierHandle<int>, cs::cipher_tier::Warm<int>>,
-              "umbrella reach: fixy::contract::cipher::WarmTierHandle must alias "
+              "umbrella reach: crucible_fixy::contract::cipher::WarmTierHandle must alias "
               "cipher_tier::Warm when reached via the umbrella.");
 
 static_assert(std::is_same_v<fcc::ColdTierHandle<int>, cs::cipher_tier::Cold<int>>,
-              "umbrella reach: fixy::contract::cipher::ColdTierHandle must alias "
+              "umbrella reach: crucible_fixy::contract::cipher::ColdTierHandle must alias "
               "cipher_tier::Cold when reached via the umbrella.");
 
 static_assert(
@@ -78,7 +78,7 @@ static_assert(
         == static_cast<
             cs::CipherTier<cs::CipherTierTag_v::Hot, int> (*)(cs::CipherTier<cs::CipherTierTag_v::Cold, int>)>(
             &cc::mint_promote<cs::CipherTierTag_v::Cold, cs::CipherTierTag_v::Hot, int>),
-    "umbrella reach: fixy::contract::cipher::mint_promote must be the "
+    "umbrella reach: crucible_fixy::contract::cipher::mint_promote must be the "
     "substrate cipher::mint_promote when reached via the umbrella.");
 
 // The contract macros are reached the same way as a type: the function
@@ -105,28 +105,28 @@ using WireMsg = fsd::DeclassifyOnSend<WirePayload, ::crucible::safety::secret_po
 static_assert(std::is_same_v<u052a_reach_probe::WireMsg,
                              ::crucible::safety::DeclassifyOnSend<u052a_reach_probe::WirePayload,
                                                                   ::crucible::safety::secret_policy::WireSerialize>>,
-              "umbrella reach: fixy::sess::declassify::DeclassifyOnSend must "
+              "umbrella reach: crucible_fixy::sess::declassify::DeclassifyOnSend must "
               "alias safety::DeclassifyOnSend when reached via the umbrella.  "
               "If this red-lights, fixy/SessDecl.h is not pulled in by "
               "<crucible/Fixy.h>.");
 
 static_assert(fsd::DeclassifyOnSendable<u052a_reach_probe::WireMsg>,
-              "umbrella reach: fixy::sess::declassify::DeclassifyOnSendable "
+              "umbrella reach: crucible_fixy::sess::declassify::DeclassifyOnSendable "
               "must accept DeclassifyOnSend specialisations.");
 static_assert(!fsd::DeclassifyOnSendable<u052a_reach_probe::WirePayload>,
-              "umbrella reach: fixy::sess::declassify::DeclassifyOnSendable "
+              "umbrella reach: crucible_fixy::sess::declassify::DeclassifyOnSendable "
               "must reject bare payloads.");
 
 static_assert(std::is_same_v<fsd::wire_payload_type_t<u052a_reach_probe::WireMsg>, u052a_reach_probe::WirePayload>,
-              "umbrella reach: fixy::sess::declassify::wire_payload_type_t must "
+              "umbrella reach: crucible_fixy::sess::declassify::wire_payload_type_t must "
               "extract the inner payload through the umbrella.");
 static_assert(std::is_same_v<fsd::wire_payload_type_t<int>, int>,
-              "umbrella reach: fixy::sess::declassify::wire_payload_type_t must "
+              "umbrella reach: crucible_fixy::sess::declassify::wire_payload_type_t must "
               "pass non-DeclassifyOnSend types through unchanged.");
 
 static_assert(
     std::is_same_v<fsd::wire_policy_t<u052a_reach_probe::WireMsg>, ::crucible::safety::secret_policy::WireSerialize>,
-    "umbrella reach: fixy::sess::declassify::wire_policy_t must "
+    "umbrella reach: crucible_fixy::sess::declassify::wire_policy_t must "
     "extract the wire-policy tag through the umbrella.");
 
 namespace fsct = ::crucible::fixy::sess::ct;
@@ -150,15 +150,15 @@ struct requires_ct<u052b_reach_probe::AuthTag> : std::true_type {};
 
 static_assert(std::is_same_v<fsct::CTPayload<u052b_reach_probe::AuthTag>,
                              ::crucible::safety::ct::CTPayload<u052b_reach_probe::AuthTag>>,
-              "umbrella reach: fixy::sess::ct::CTPayload must alias "
+              "umbrella reach: crucible_fixy::sess::ct::CTPayload must alias "
               "safety::ct::CTPayload when reached via the umbrella.  If this "
               "red-lights, fixy/SessCT.h is not pulled in by <crucible/Fixy.h>.");
 
 static_assert(fsct::requires_ct_v<u052b_reach_probe::AuthTag>,
-              "umbrella reach: fixy::sess::ct::requires_ct_v must observe the "
+              "umbrella reach: crucible_fixy::sess::ct::requires_ct_v must observe the "
               "opt-in specialization through the umbrella.");
 static_assert(!fsct::requires_ct_v<u052b_reach_probe::PlainTag>,
-              "umbrella reach: fixy::sess::ct::requires_ct_v must reject "
+              "umbrella reach: crucible_fixy::sess::ct::requires_ct_v must reject "
               "non-opted-in types through the umbrella.");
 
 static_assert(fsct::RequiresCT<u052b_reach_probe::AuthTag>);
@@ -170,10 +170,10 @@ static_assert(fsct::CTPayloadType<fsct::CTPayload<u052b_reach_probe::AuthTag>>);
 
 static_assert(std::is_same_v<fsct::ct_payload_value_type_t<fsct::CTPayload<u052b_reach_probe::AuthTag>>,
                              u052b_reach_probe::AuthTag>,
-              "umbrella reach: fixy::sess::ct::ct_payload_value_type_t must "
+              "umbrella reach: crucible_fixy::sess::ct::ct_payload_value_type_t must "
               "extract the inner payload through the umbrella.");
 static_assert(std::is_same_v<fsct::ct_payload_value_type_t<int>, int>,
-              "umbrella reach: fixy::sess::ct::ct_payload_value_type_t must "
+              "umbrella reach: crucible_fixy::sess::ct::ct_payload_value_type_t must "
               "pass non-CTPayload types through unchanged.");
 
 namespace fsca = ::crucible::fixy::sess::contentaddr;
@@ -184,16 +184,16 @@ struct Payload {};
 
 static_assert(std::is_same_v<fsca::ContentAddressed<u052c_reach_probe::Payload>,
                              ::crucible::safety::proto::ContentAddressed<u052c_reach_probe::Payload>>,
-              "umbrella reach: fixy::sess::contentaddr::ContentAddressed must "
+              "umbrella reach: crucible_fixy::sess::contentaddr::ContentAddressed must "
               "alias safety::proto::ContentAddressed when reached via the "
               "umbrella.  If this red-lights, fixy/SessContentAddr.h is not "
               "pulled in by <crucible/Fixy.h>.");
 
 static_assert(fsca::is_content_addressed_v<fsca::ContentAddressed<u052c_reach_probe::Payload>>,
-              "umbrella reach: fixy::sess::contentaddr::is_content_addressed_v "
+              "umbrella reach: crucible_fixy::sess::contentaddr::is_content_addressed_v "
               "must observe wrapped payloads through the umbrella.");
 static_assert(!fsca::is_content_addressed_v<u052c_reach_probe::Payload>,
-              "umbrella reach: fixy::sess::contentaddr::is_content_addressed_v "
+              "umbrella reach: crucible_fixy::sess::contentaddr::is_content_addressed_v "
               "must reject bare payloads through the umbrella.");
 
 static_assert(fsca::ContentAddressedType<fsca::ContentAddressed<u052c_reach_probe::Payload>>);
@@ -203,7 +203,7 @@ static_assert(
     std::is_same_v<
         fsca::unwrap_content_addressed_t<fsca::ContentAddressed<fsca::ContentAddressed<u052c_reach_probe::Payload>>>,
         u052c_reach_probe::Payload>,
-    "umbrella reach: fixy::sess::contentaddr::unwrap_content_addressed_t "
+    "umbrella reach: crucible_fixy::sess::contentaddr::unwrap_content_addressed_t "
     "must strip all wrapper layers through the umbrella.");
 
 static_assert(fsca::content_addressed_depth_v<u052c_reach_probe::Payload> == 0);
@@ -212,7 +212,7 @@ static_assert(fsca::content_addressed_depth_v<fsca::ContentAddressed<u052c_reach
 namespace fsel = ::crucible::fixy::sess::eventlog;
 
 static_assert(std::is_same_v<fsel::StepId, ::crucible::safety::proto::StepId>,
-              "umbrella reach: fixy::sess::eventlog::StepId must alias "
+              "umbrella reach: crucible_fixy::sess::eventlog::StepId must alias "
               "safety::proto::StepId.  If this red-lights, fixy/SessEventLog.h is "
               "not pulled in by <crucible/Fixy.h>.");
 static_assert(std::is_same_v<fsel::SessionTagId, ::crucible::safety::proto::SessionTagId>);
@@ -221,7 +221,7 @@ static_assert(std::is_same_v<fsel::StepIdLess, ::crucible::safety::proto::StepId
 
 // The 72-byte size is the cold-tier record layout on disk.
 static_assert(std::is_same_v<fsel::SessionEvent, ::crucible::safety::proto::SessionEvent>);
-static_assert(sizeof(fsel::SessionEvent) == 72, "umbrella reach: fixy::sess::eventlog::SessionEvent must keep its "
+static_assert(sizeof(fsel::SessionEvent) == 72, "umbrella reach: crucible_fixy::sess::eventlog::SessionEvent must keep its "
                                                 "72-byte cold-tier wire format through the umbrella.");
 
 static_assert(std::is_same_v<fsel::SessionEventLog, ::crucible::safety::proto::SessionEventLog>);
@@ -231,13 +231,13 @@ static_assert(std::is_same_v<fsel::SessionOp, ::crucible::safety::proto::Session
 // name one substrate type, or a consumer that mixes the two spellings
 // gets two incompatible records.
 static_assert(std::is_same_v<fsel::SessionEvent, ::crucible::fixy::contract::cipher::SessionEvent>,
-              "dual-export: fixy::sess::eventlog::SessionEvent and "
-              "fixy::contract::cipher::SessionEvent must be the same substrate type.");
+              "dual-export: crucible_fixy::sess::eventlog::SessionEvent and "
+              "crucible_fixy::contract::cipher::SessionEvent must be the same substrate type.");
 
 namespace fss = ::crucible::fixy::sess::subtype;
 
 static_assert(fss::is_subtype_sync_v<::crucible::safety::proto::End, ::crucible::safety::proto::End>,
-              "umbrella reach: fixy::sess::subtype::is_subtype_sync_v must reach "
+              "umbrella reach: crucible_fixy::sess::subtype::is_subtype_sync_v must reach "
               "safety::proto.  If this red-lights, fixy/SessSubtype.h is not "
               "pulled in by <crucible/Fixy.h>.");
 static_assert(!fss::is_subtype_sync_v<::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
@@ -252,7 +252,7 @@ static_assert(
     std::is_same_v<fss::subtype_rejection_reason_t<::crucible::safety::proto::End, ::crucible::safety::proto::End>,
                    fss::SubtypeOk>,
     "umbrella reach: End ⩽ End yields the SubtypeOk sentinel through "
-    "the fixy::sess::subtype path.");
+    "the crucible_fixy::sess::subtype path.");
 
 namespace fsq = ::crucible::fixy::sess::queue;
 
@@ -263,7 +263,7 @@ using Msg = fsq::QueuedMsg<RoleA, RoleB, int>;
 }  // namespace u052f_reach
 
 static_assert(std::is_same_v<fsq::EmptyQueue, ::crucible::safety::proto::EmptyQueue>,
-              "umbrella reach: fixy::sess::queue::EmptyQueue must alias "
+              "umbrella reach: crucible_fixy::sess::queue::EmptyQueue must alias "
               "safety::proto::EmptyQueue.  If this red-lights, fixy/SessQueue.h is "
               "not pulled in by <crucible/Fixy.h>.");
 static_assert(std::is_same_v<fsq::QueuedMsg<u052f_reach::RoleA, u052f_reach::RoleB, int>,
@@ -277,12 +277,12 @@ static_assert(fsq::queue_contains_v<fsq::Queue<u052f_reach::Msg>, u052f_reach::R
 static_assert(fsq::is_queue_state_v<fsq::EmptyQueue>);
 
 // This is the session diagnostic catalog, which is a different catalog
-// from the one under fixy::diag::.
+// from the one under crucible_fixy::diag::.
 
 namespace fsdiag = ::crucible::fixy::sess::diagnostic;
 
 static_assert(std::is_same_v<fsdiag::SubtypeMismatch, ::crucible::safety::proto::diagnostic::SubtypeMismatch>,
-              "umbrella reach: fixy::sess::diagnostic::SubtypeMismatch must alias "
+              "umbrella reach: crucible_fixy::sess::diagnostic::SubtypeMismatch must alias "
               "safety::proto::diagnostic::SubtypeMismatch.  If this red-lights, "
               "fixy/SessDiagnostic.h is not pulled in by <crucible/Fixy.h>.");
 static_assert(std::is_same_v<fsdiag::Catalog, ::crucible::safety::proto::diagnostic::Catalog>);
@@ -293,7 +293,7 @@ static_assert(std::is_same_v<fsdiag::Catalog, ::crucible::safety::proto::diagnos
 // adding a diagnostic does not force an edit in two places.
 static_assert(fsdiag::is_diagnostic_class_v<fsdiag::SubtypeMismatch>);
 static_assert(!fsdiag::is_diagnostic_class_v<int>);
-static_assert(fsdiag::catalog_size >= 23, "floor: fixy::sess::diagnostic::catalog_size regressed below 23 "
+static_assert(fsdiag::catalog_size >= 23, "floor: crucible_fixy::sess::diagnostic::catalog_size regressed below 23 "
                                           "— a session-diagnostic Catalog entry was removed without "
                                           "updating both SessDiagnostic.h's colocated ceiling pin AND this "
                                           "floor witness.");
@@ -330,7 +330,7 @@ using Ctx = fsctx::Context<fsctx::Entry<Sess, RoleP, TyP>, fsctx::Entry<Sess, Ro
 }  // namespace u052i_reach
 
 static_assert(std::is_same_v<fsctx::EmptyContext, ::crucible::safety::proto::EmptyContext>,
-              "umbrella reach: fixy::sess::context::EmptyContext must alias "
+              "umbrella reach: crucible_fixy::sess::context::EmptyContext must alias "
               "safety::proto::EmptyContext.  If this red-lights, fixy/SessContext.h "
               "is not pulled in by <crucible/Fixy.h>.");
 
@@ -349,7 +349,7 @@ using P = ::crucible::safety::proto::Send<
 }  // namespace u052j_reach
 
 static_assert(std::is_same_v<fsg::axis::NumericalTier, ::crucible::safety::proto::axis::NumericalTier>,
-              "umbrella reach: fixy::sess::grade::axis::NumericalTier must alias "
+              "umbrella reach: crucible_fixy::sess::grade::axis::NumericalTier must alias "
               "safety::proto::axis::NumericalTier.  If this red-lights, "
               "fixy/SessGrade.h is not pulled in by <crucible/Fixy.h>.");
 
@@ -372,19 +372,19 @@ namespace fwrap = ::crucible::fixy::wrap;
 
 static_assert(std::is_same_v<decltype(&fwrap::add_sat_checked<std::uint32_t>),
                              decltype(&::crucible::safety::add_sat_checked<std::uint32_t>)>,
-              "umbrella reach: fixy::wrap::add_sat_checked must alias "
+              "umbrella reach: crucible_fixy::wrap::add_sat_checked must alias "
               "safety::add_sat_checked when reached via the umbrella.  If this "
               "red-lights, fixy/Wrap.h dropped the using-decl or Fixy.h fails "
               "to pull in fixy/Wrap.h.");
 
 static_assert(std::is_same_v<decltype(&fwrap::sub_sat_checked<std::int32_t>),
                              decltype(&::crucible::safety::sub_sat_checked<std::int32_t>)>,
-              "umbrella reach: fixy::wrap::sub_sat_checked must alias "
+              "umbrella reach: crucible_fixy::wrap::sub_sat_checked must alias "
               "safety::sub_sat_checked when reached via the umbrella.");
 
 static_assert(std::is_same_v<decltype(&fwrap::mul_sat_checked<std::uint16_t>),
                              decltype(&::crucible::safety::mul_sat_checked<std::uint16_t>)>,
-              "umbrella reach: fixy::wrap::mul_sat_checked must alias "
+              "umbrella reach: crucible_fixy::wrap::mul_sat_checked must alias "
               "safety::mul_sat_checked when reached via the umbrella.");
 
 // The behavioral check runs in a consteval context, so it does not
@@ -402,7 +402,7 @@ consteval bool fixy_wrap_sat_smoke() noexcept {
     if (c.was_clamped()) return false;
     return true;
 }
-static_assert(fixy_wrap_sat_smoke(), "umbrella reach: fixy::wrap:: saturating-arithmetic free functions "
+static_assert(fixy_wrap_sat_smoke(), "umbrella reach: crucible_fixy::wrap:: saturating-arithmetic free functions "
                                      "must produce the substrate's behavioral semantics through the "
                                      "umbrella path.");
 }  // namespace u096b_reach_probe
@@ -420,7 +420,7 @@ using Gamma = fsassoc::projected_context_t<G, SessZ>;
 
 static_assert(
     std::is_same_v<v059_reach::Gamma, ::crucible::safety::proto::projected_context_t<v059_reach::G, v059_reach::SessZ>>,
-    "umbrella reach: fixy::sess::assoc::projected_context_t must alias "
+    "umbrella reach: crucible_fixy::sess::assoc::projected_context_t must alias "
     "safety::proto::projected_context_t.  If this red-lights, "
     "fixy/SessAssoc.h is not pulled in by <crucible/Fixy.h>.");
 
@@ -443,7 +443,7 @@ using EA = fsdelegate::EpochedAccept<T, K, 11u, 13u>;
 }  // namespace v060_reach
 
 static_assert(std::is_same_v<v060_reach::D, ::crucible::safety::proto::Delegate<v060_reach::T, v060_reach::K>>,
-              "umbrella reach: fixy::sess::delegate::Delegate must alias "
+              "umbrella reach: crucible_fixy::sess::delegate::Delegate must alias "
               "safety::proto::Delegate.  If this red-lights, fixy/SessDelegate.h "
               "is not pulled in by <crucible/Fixy.h>.");
 static_assert(std::is_same_v<v060_reach::A, ::crucible::safety::proto::Accept<v060_reach::T, v060_reach::K>>);
@@ -506,7 +506,7 @@ using Plain = ::crucible::safety::proto::Send<Req, ::crucible::safety::proto::En
 static_assert(
     std::is_same_v<v061_reach::Ckpt,
                    ::crucible::safety::proto::CheckpointedSession<v061_reach::CommitPath, v061_reach::RollbackPath>>,
-    "umbrella reach: fixy::sess::checkpoint::CheckpointedSession must "
+    "umbrella reach: crucible_fixy::sess::checkpoint::CheckpointedSession must "
     "alias safety::proto::CheckpointedSession.  If this red-lights, "
     "fixy/SessCheckpoint.h is not pulled in by <crucible/Fixy.h>.");
 
@@ -542,7 +542,7 @@ static_assert(
                                    ::crucible::effects::Row<::crucible::effects::Effect::IO>>,
         ::crucible::safety::proto::NumericalPayloadRow<::crucible::safety::Tolerance::BITEXACT,
                                                        ::crucible::effects::Row<::crucible::effects::Effect::IO>>>,
-    "umbrella reach: fixy::sess::row::NumericalPayloadRow must alias "
+    "umbrella reach: crucible_fixy::sess::row::NumericalPayloadRow must alias "
     "safety::proto::NumericalPayloadRow.  If this red-lights, "
     "fixy/SessRowExtraction.h is not pulled in by <crucible/Fixy.h>.");
 
@@ -566,7 +566,7 @@ using SendHandle = ::crucible::safety::proto::SessionHandle<SendProto, FakeResou
 }  // namespace v063_reach
 
 static_assert(std::is_same_v<fsview::AtSend, ::crucible::safety::proto::AtSend>,
-              "umbrella reach: fixy::sess::view::AtSend must alias "
+              "umbrella reach: crucible_fixy::sess::view::AtSend must alias "
               "safety::proto::AtSend.  If this red-lights, "
               "fixy/SessView.h is not pulled in by <crucible/Fixy.h>.");
 
@@ -607,7 +607,7 @@ using CrashOblivClient = proto::Send<Msg, NormalOffer>;
 }  // namespace v064_reach
 
 static_assert(std::is_same_v<fscrash::Stop, ::crucible::safety::proto::Stop>,
-              "umbrella reach: fixy::sess::crash::Stop must alias "
+              "umbrella reach: crucible_fixy::sess::crash::Stop must alias "
               "safety::proto::Stop.  If this red-lights, "
               "fixy/SessCrash.h is not pulled in by <crucible/Fixy.h>.");
 static_assert(std::is_same_v<fscrash::CrashClass, ::crucible::safety::proto::CrashClass>);
@@ -647,7 +647,7 @@ struct ReachKey {};
 }  // namespace v065_reach
 
 static_assert(std::is_same_v<ffed::SenderRole, pfed::SenderRole>,
-              "umbrella reach: fixy::sess::federation::SenderRole must alias "
+              "umbrella reach: crucible_fixy::sess::federation::SenderRole must alias "
               "safety::proto::federation::SenderRole.  If this red-lights, "
               "fixy/SessFederation.h is not pulled in by <crucible/Fixy.h>.");
 static_assert(std::is_same_v<ffed::ReceiverRole, pfed::ReceiverRole>);
@@ -677,14 +677,14 @@ static_assert(std::is_same_v<ffed::FederationEntryPayload<v065_reach::ReachKey>,
 static_assert(
     ffed::role_protocol_matches_v<pfed::SenderRole, ffed::SenderProto<v065_reach::ReachKey>, v065_reach::ReachKey>,
     "umbrella reach: role_protocol_matches_v admits matching "
-    "(role, proto) pair through fixy::sess::federation::.");
+    "(role, proto) pair through crucible_fixy::sess::federation::.");
 static_assert(
     !ffed::role_protocol_matches_v<pfed::SenderRole, ffed::ReceiverProto<v065_reach::ReachKey>, v065_reach::ReachKey>,
     "umbrella reach: role_protocol_matches_v rejects mismatched pair.");
 
 namespace fsess = ::crucible::fixy::sess;
 static_assert(std::is_same_v<decltype(fsess::federation_required_row{}), decltype(pfed::federation_required_row{})>,
-              "umbrella reach: fixy::sess::federation_required_row must alias "
+              "umbrella reach: crucible_fixy::sess::federation_required_row must alias "
               "the substrate row.");
 
 // A positive witness would need a fitting context fixture.  Rejecting a
@@ -692,7 +692,7 @@ static_assert(std::is_same_v<decltype(fsess::federation_required_row{}), decltyp
 // evaluates, which is all this file claims.
 struct NonExecCtxProbe {};
 static_assert(!fsess::CtxFitsFederation<NonExecCtxProbe>,
-              "umbrella reach: fixy::sess::CtxFitsFederation must reach AND "
+              "umbrella reach: crucible_fixy::sess::CtxFitsFederation must reach AND "
               "reject a non-IsExecCtx argument (clause 1 of the packaged gate).");
 
 // The shape predicates are reachable under two spellings: the canonical
@@ -715,7 +715,7 @@ using EndP = pproto::End;
 }  // namespace v066_reach
 
 static_assert(fshape::is_send_v<v066_reach::SendP>,
-              "umbrella reach: fixy::sess::shape::is_send_v must admit Send<T, K> "
+              "umbrella reach: crucible_fixy::sess::shape::is_send_v must admit Send<T, K> "
               "through the umbrella.  If this red-lights, fixy/SessShape.h is not "
               "pulled in by <crucible/Fixy.h> OR the substrate predicate moved.");
 static_assert(!fshape::is_send_v<v066_reach::RecvP>);
@@ -735,7 +735,7 @@ static_assert(!fshape::is_head_v<v066_reach::LoopP>, "umbrella reach: is_head_v 
                                                      "Loop must classify as non-head.");
 
 static_assert(fsess_umbrella::is_send_v<v066_reach::SendP>,
-              "umbrella reach: fixy::sess::is_send_v must reach through Sess.h's "
+              "umbrella reach: crucible_fixy::sess::is_send_v must reach through Sess.h's "
               "compatibility using-decl.  If this red-lights, Sess.h's umbrella "
               "using-decls were dropped — restore them or every call site that "
               "uses the shorter spelling breaks.");
@@ -775,7 +775,7 @@ using Choice_via_fixy =
 using RecG_via_fixy = fmpst::Rec_G<fmpst::End_G>;
 using StopG_via_fixy = fmpst::StopG<v068_reach::Alice>;
 
-static_assert(fmpst::is_end_g_v<EndG_via_fixy>, "umbrella reach: fixy::sess::mpst::is_end_g_v must admit End_G "
+static_assert(fmpst::is_end_g_v<EndG_via_fixy>, "umbrella reach: crucible_fixy::sess::mpst::is_end_g_v must admit End_G "
                                                 "through the umbrella.  If this red-lights, fixy/SessGlobal.h is "
                                                 "not pulled in by <crucible/Fixy.h> OR the substrate predicate "
                                                 "moved.");
@@ -791,7 +791,7 @@ static_assert(!fmpst::is_transmission_v<EndG_via_fixy>);
 // fixy spellings, because both spellings route to the same substrate
 // namespace and that is the fact worth pinning.
 static_assert(std::is_same_v<EndG_via_fixy, pproto_v068::End_G>,
-              "umbrella reach: fixy::sess::mpst::End_G must resolve to "
+              "umbrella reach: crucible_fixy::sess::mpst::End_G must resolve to "
               "safety::proto::End_G regardless of whether the consumer reaches "
               "the surface through fixy/SessGlobal.h (canonical) or fixy/Mpst.h "
               "(shim).  If this red-lights, audit the shim header and the "
@@ -826,12 +826,12 @@ static_assert(std::is_same_v<fmpst::EmptyRoleList, fmpst::RoleList<>>);
 using G_AB_Ping_v169 = fmpst::Transmission<v068_reach::Alice, v068_reach::Bob, v068_reach::Ping, fmpst::End_G>;
 
 static_assert(fmpst::has_interaction_between_v<G_AB_Ping_v169, v068_reach::Alice, v068_reach::Bob>,
-              "umbrella reach: fixy::sess::mpst::has_interaction_between_v "
+              "umbrella reach: crucible_fixy::sess::mpst::has_interaction_between_v "
               "must admit the (Alice, Bob) pair on Transmission<Alice, Bob, "
               "Ping, End> through the umbrella.  If this red-lights, the "
               "using-decl in SessGlobal.h was dropped or rewritten.");
 static_assert(!fmpst::has_interaction_between_v<G_AB_Ping_v169, v068_reach::Alice, v068_reach::Carol>,
-              "umbrella reach: fixy::sess::mpst::has_interaction_between_v "
+              "umbrella reach: crucible_fixy::sess::mpst::has_interaction_between_v "
               "must reject (Alice, Carol) on Transmission<Alice, Bob, Ping, "
               "End> through the umbrella — Carol does not participate.");
 // The query is over an unordered pair, so swapping the roles must not
@@ -882,7 +882,7 @@ static_assert(pproto_v168::ProtocolVendorAdmittedByLoopCtx<v168_reach::EndP, voi
               "baseline: substrate ProtocolVendorAdmittedByLoopCtx "
               "must admit End under the no-LoopCtx (void) sentinel.");
 static_assert(fsess_v168::ProtocolVendorAdmittedByLoopCtx<v168_reach::EndP, void>,
-              "umbrella reach: fixy::sess::ProtocolVendorAdmittedByLoopCtx "
+              "umbrella reach: crucible_fixy::sess::ProtocolVendorAdmittedByLoopCtx "
               "must admit the same baseline through the umbrella.  If this "
               "red-lights, the using-decl in fixy/Sess.h was dropped.");
 static_assert(fsess_v168::ProtocolVendorAdmittedByLoopCtx<v168_reach::EndP, void>
@@ -892,7 +892,7 @@ static_assert(fsess_v168::ProtocolVendorAdmittedByLoopCtx<v168_reach::EndP, void
 
 static_assert(pproto_v168::ProtocolEpochAdmittedByLoopCtx<v168_reach::EndP, void>);
 static_assert(fsess_v168::ProtocolEpochAdmittedByLoopCtx<v168_reach::EndP, void>,
-              "umbrella reach: fixy::sess::ProtocolEpochAdmittedByLoopCtx "
+              "umbrella reach: crucible_fixy::sess::ProtocolEpochAdmittedByLoopCtx "
               "must admit End under the no-LoopCtx (void) sentinel through "
               "the umbrella.");
 static_assert(fsess_v168::ProtocolEpochAdmittedByLoopCtx<v168_reach::EndP, void>
@@ -910,13 +910,13 @@ static_assert(!pproto_v168::ProtocolPermissionedRunnable<v168_reach::EmptyOfferP
               "not runnable, and admitting it would let an unrunnable protocol "
               "through the channel mint on vacuous truth.");
 static_assert(fsess_v168::ProtocolPermissionedRunnable<v168_reach::EndP>,
-              "umbrella reach: fixy::sess::ProtocolPermissionedRunnable "
+              "umbrella reach: crucible_fixy::sess::ProtocolPermissionedRunnable "
               "must admit End through the umbrella.");
 static_assert(fsess_v168::ProtocolPermissionedRunnable<v168_reach::SendP>,
-              "umbrella reach: fixy::sess::ProtocolPermissionedRunnable "
+              "umbrella reach: crucible_fixy::sess::ProtocolPermissionedRunnable "
               "must admit Send<Probe, End> through the umbrella.");
 static_assert(!fsess_v168::ProtocolPermissionedRunnable<v168_reach::EmptyOfferP>,
-              "umbrella reach: fixy::sess::ProtocolPermissionedRunnable "
+              "umbrella reach: crucible_fixy::sess::ProtocolPermissionedRunnable "
               "must reject empty Offer<> through the umbrella.");
 static_assert(fsess_v168::ProtocolPermissionedRunnable<v168_reach::EndP>
               == pproto_v168::ProtocolPermissionedRunnable<v168_reach::EndP>);
@@ -936,12 +936,12 @@ static_assert(
     "IsExecCtx clause must fire first, before any row check).");
 static_assert(
     fsess_v168::CtxFitsPermissionedProtocol<v168_reach::EndP, v168_reach::FittingCtx, fsess_v168::EmptyPermSet>,
-    "umbrella reach: fixy::sess::CtxFitsPermissionedProtocol "
+    "umbrella reach: crucible_fixy::sess::CtxFitsPermissionedProtocol "
     "must admit the same fitting (End, TestRunnerCtx, EmptyPermSet) "
     "triple through the umbrella.");
 static_assert(
     !fsess_v168::CtxFitsPermissionedProtocol<v168_reach::EndP, v168_reach::NonExecCtxProbe, fsess_v168::EmptyPermSet>,
-    "umbrella reach: fixy::sess::CtxFitsPermissionedProtocol "
+    "umbrella reach: crucible_fixy::sess::CtxFitsPermissionedProtocol "
     "must reject the same non-IsExecCtx Ctx through the umbrella.");
 static_assert(
     fsess_v168::CtxFitsPermissionedProtocol<v168_reach::EndP, v168_reach::FittingCtx, fsess_v168::EmptyPermSet>
@@ -964,15 +964,15 @@ static_assert(!pproto_v168::CtxFitsChannel<v168_reach::EndP, v168_reach::NonExec
               "when either endpoint's Ctx is not an IsExecCtx (the per-endpoint "
               "CtxFitsPermissionedProtocol gate fires).");
 static_assert(fsess_v168::CtxFitsChannel<v168_reach::EndP, v168_reach::FittingCtx, v168_reach::FittingCtx>,
-              "umbrella reach: fixy::sess::CtxFitsChannel must admit the "
+              "umbrella reach: crucible_fixy::sess::CtxFitsChannel must admit the "
               "same baseline through the umbrella.");
 static_assert(!fsess_v168::CtxFitsChannel<v168_reach::EndP, v168_reach::NonExecCtxProbe, v168_reach::FittingCtx>,
-              "umbrella reach: fixy::sess::CtxFitsChannel must reject the "
+              "umbrella reach: crucible_fixy::sess::CtxFitsChannel must reject the "
               "same non-IsExecCtx endpoint through the umbrella.");
 static_assert(fsess_v168::CtxFitsChannel<v168_reach::EndP, v168_reach::FittingCtx, v168_reach::FittingCtx>
               == pproto_v168::CtxFitsChannel<v168_reach::EndP, v168_reach::FittingCtx, v168_reach::FittingCtx>);
 
-// ── fixy::is:: alias reach, one claim per symbol ──────────────────────
+// ── crucible_fixy::is:: alias reach, one claim per symbol ──────────────────────
 //
 // fixy/Is.h re-exports the 96 public `_v` traits and `_t` slot
 // extractors of crucible::safety::extract through using-declarations.
@@ -984,7 +984,7 @@ static_assert(fsess_v168::CtxFitsChannel<v168_reach::EndP, v168_reach::FittingCt
 //
 //   * fixy/Is.h drops a row        -> "X has not been declared in
 //                                      crucible::fixy::is"
-//   * fixy::is::X names something
+//   * crucible_fixy::is::X names something
 //     other than extract::X        -> "conflicts with a previous
 //                                      declaration"
 //
@@ -998,7 +998,7 @@ static_assert(fsess_v168::CtxFitsChannel<v168_reach::EndP, v168_reach::FittingCt
 // concept that delegates to the substrate concept.  A fresh concept is
 // by construction a different entity, so the pair claim does not apply;
 // a missing concept surfaces as an ordinary compile error at the
-// `fixy::is::IsX` use sites elsewhere in this TU and in production.
+// `crucible_fixy::is::IsX` use sites elsewhere in this TU and in production.
 //
 // This gate proves fidelity, not completeness: it says every symbol
 // named here resolves correctly, not that the list covers the whole

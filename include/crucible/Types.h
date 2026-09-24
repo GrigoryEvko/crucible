@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/fixy/wrap/Refined.h>
+#include <fixy/Refined.h>
 
 #include <compare>
 #include <cstddef>
@@ -17,11 +17,17 @@ namespace crucible {
 // entirely. This does not convert to any of them. The domain is zero, for the
 // undefined type, and the powers of two up to sixteen, so anything above
 // sixteen fails at construction rather than propagating.
+//
+// The bound is a contract assertion ahead of the mint. The mint alone only
+// assumes its predicate under NDEBUG, and a Release build that evaluates
+// contracts must still stop on a value above sixteen.
 struct ElementBytes {
-    fixy::wrap::Refined<fixy::wrap::bounded_above<uint8_t{16}>, uint8_t> value_{uint8_t{0}};
+    using Bytes = ::fixy::Refined<::fixy::bounded_above<uint8_t{16}>, uint8_t>;
+
+    Bytes value_ = ::fixy::mint_refined<::fixy::bounded_above<uint8_t{16}>>(uint8_t{0});
 
     constexpr ElementBytes() noexcept = default;
-    explicit constexpr ElementBytes(uint8_t v) noexcept : value_{v} {}
+    explicit constexpr ElementBytes(uint8_t v) noexcept : value_{checked_(v)} {}
 
     [[nodiscard]] constexpr uint8_t raw() const noexcept { return value_.value(); }
     [[nodiscard]] constexpr bool is_zero() const noexcept { return value_.value() == 0; }
@@ -31,6 +37,12 @@ struct ElementBytes {
     // Widens to a size, so a total is not truncated. The multiplication is
     // unchecked. A caller that cannot bound the count needs a checked one.
     [[nodiscard]] constexpr std::size_t times(std::size_t n) const noexcept { return std::size_t{value_.value()} * n; }
+
+private:
+    [[nodiscard]] static constexpr Bytes checked_(uint8_t v) noexcept {
+        contract_assert(v <= uint8_t{16});
+        return ::fixy::mint_refined<::fixy::bounded_above<uint8_t{16}>>(v);
+    }
 };
 static_assert(sizeof(ElementBytes) == sizeof(uint8_t), "ElementBytes must be layout-identical to uint8_t");
 

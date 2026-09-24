@@ -128,12 +128,16 @@ struct Reader {
     // return, and the substituted value is discarded with the rest of the
     // parse. A value that passes is returned unchanged, so the bytes a good
     // image produces are untouched.
+    //
+    // Every value is judged, also when ok is already false. An earlier
+    // rejected read clears ok but leaves the bytes that follow it real, so a
+    // read after it returns a wire byte, and the refinement that receives it
+    // assumes its predicate in a release build. Each caller passes a
+    // substitute that its predicate accepts.
     template <typename T, typename Pred>
     [[nodiscard]] T read_gated(Pred pred, T valid_substitute = T{0}) {
         const T v = r<T>();
-        // Judge only a byte that was actually read. After a truncation the
-        // value is the zero default and the failure is already recorded.
-        if (ok && !pred(v)) [[unlikely]] {
+        if (!pred(v)) [[unlikely]] {
             ok = false;
             return valid_substitute;
         }
@@ -195,17 +199,18 @@ inline TensorMeta read_meta(Reader& r) {
     (void)r.r<uint64_t>();  // the persisted data pointer, deliberately dropped
     m.data_ptr = external_data_ptr(nullptr);
     // The rank is bounded by the fixed width of the size and stride arrays.
-    m.ndim = make_ndim(ValidNDim{r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>)});
+    m.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(
+        r.read_gated<uint8_t>(::fixy::bounded_above<kMaxTensorNDim>)));
     // The scalar-type enumerators are sparse, and a value outside the set
     // reaches a switch whose default is marked unreachable.
-    m.dtype = make_scalar_type(ValidScalarType{r.read_gated<int8_t>(valid_scalar_type)});
+    m.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(r.read_gated<int8_t>(valid_scalar_type)));
     // The device type and the layout both feed the content hash, which is the
     // node's identity, so an unrecognised value would not fail loudly. It
     // would produce a node whose identity silently disagrees with the one that
     // was written.
-    m.device_type = make_device_type(ValidDeviceType{r.read_gated<int8_t>(valid_device_type)});
+    m.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
     m.device_idx = r.r<int8_t>();
-    m.layout = make_layout(ValidLayout{r.read_gated<int8_t>(valid_layout)});
+    m.layout = make_layout(::fixy::mint_refined<valid_layout>(r.read_gated<int8_t>(valid_layout)));
     m.requires_grad = r.r<bool>();
     m.flags = r.r<uint8_t>();
     m.output_nr = r.r<uint8_t>();
@@ -371,7 +376,8 @@ inline Header read_header(Reader& r) {
         // exceed the total.
         if (plan->num_external > plan->num_slots) return LoadedRegionNode{nullptr};
         // An unrecognised device type would reach pool selection unchecked.
-        plan->device_type = make_device_type(ValidDeviceType{r.read_gated<int8_t>(valid_device_type)});
+        plan->device_type =
+            make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
         plan->device_idx = r.r<int8_t>();
         r.read_bytes(plan->pad0, sizeof(plan->pad0));
         plan->device_capability = r.r<uint64_t>();

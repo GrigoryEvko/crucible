@@ -1,34 +1,27 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: constructing ValidLayout with int8_t{99} in constexpr
-// context.  Layout is a DENSE enum (Strided=0 .. SparseBsc=5); 99 is far
-// ABOVE the valid range.
+// Violation: the checked mint of ValidLayout receives int8_t{99} in constant
+// evaluation.  Layout is dense, from Strided = 0 to SparseBsc = 5, and 99 is
+// above the range.
 //
-// Per the read_meta layout gate (last enum reconstruction in read_meta,
-// sibling of #534 ndim / #892 kernel_id / dtype / device_type),
-// ValidLayout is safety::Refined<valid_layout, int8_t>.  read_meta() in
-// Serialize.h previously reconstructed `m.layout = r.r<Layout>()`
-// unguarded; layout feeds the node content hash (Merkle identity), so a
-// corrupt/version-skewed Cipher byte silently corrupted it.  The gate
-// fail-closes instead.
+// ValidLayout is ::fixy::Refined<valid_layout, int8_t>.  read_meta in
+// Serialize.h reads the layout byte through this gate.  The layout feeds the
+// node content hash, so an unchecked byte would change the identity of a
+// node without any other symptom.
 //
-// Companion fixture: neg_tensor_meta_layout_below_min.cpp
-//   * This one is the ABOVE-MAX wide miss (99 > 5).  Catches "drop the
-//     predicate entirely" regression where ValidLayout degrades into a
-//     transparent wrapper.
-//   * That one is the BELOW-MIN case (-1).  Catches the signed-lower-bound
-//     bug where `bounded_above<5>` would wrongly accept negatives.
+// The companion fixture neg_tensor_meta_layout_below_min.cpp is the value
+// -1.  This one catches a predicate that is dropped entirely.
 //
-// In constant evaluation a contract violation makes the expression
-// non-constant per P1494R5 — using it where a constant is required is
-// ill-formed.  Per HS14, >=2 fixtures per soundness gate, distinct class.
+// mint_refined checks its predicate with CRUCIBLE_PRE.  In constant
+// evaluation a false predicate reaches __builtin_trap, which is not a
+// constant expression, so the constexpr variable is ill-formed.
 
 #include <crucible/TensorMeta.h>
 
 #include <cstdint>
 
 int main() {
-    constexpr crucible::ValidLayout bad{static_cast<std::int8_t>(99)};
+    constexpr crucible::ValidLayout bad = ::fixy::mint_refined<crucible::valid_layout>(static_cast<std::int8_t>(99));
     (void)bad;
     return 0;
 }

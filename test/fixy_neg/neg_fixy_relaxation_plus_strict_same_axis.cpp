@@ -22,7 +22,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -32,7 +32,7 @@ using strict = gr::accept_default_strict_for<Axis>;
 int main() {
     // 20-element pack: 19 distinct axes covered + strict<D::Effect>
     // collides with the with_io relaxation that already engages Effect.
-    auto bad = fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+    auto bad = crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
                              gr::with_io,  // Effect engagement #1 (relaxation)
                              strict<D::Effect>,  // Effect engagement #2 (strict marker)
                              strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,

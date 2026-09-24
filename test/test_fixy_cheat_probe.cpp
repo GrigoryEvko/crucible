@@ -5,7 +5,7 @@
 
 #include <crucible/fixy/Reject.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -17,12 +17,12 @@ using strict = gr::accept_default_strict_for<Axis>;
 
 namespace cheat_1_user_empty_type {
 struct rogue final {};
-static_assert(!fixy::grant::IsGrantTag<rogue>, "Cheat 1: a final empty user type without grant_base must NOT "
+static_assert(!crucible_fixy::grant::IsGrantTag<rogue>, "Cheat 1: a final empty user type without grant_base must NOT "
                                                "satisfy IsGrantTag.");
 
 // In a pack it engages no axis at all, so acceptance fails a second
 // time over.
-static_assert(!fixy::IsAccepted<int, rogue>, "Cheat 1: a rogue type cannot satisfy the engagement check.");
+static_assert(!crucible_fixy::IsAccepted<int, rogue>, "Cheat 1: a rogue type cannot satisfy the engagement check.");
 }  // namespace cheat_1_user_empty_type
 
 // Deriving from a real grant would inherit the base for free and open the
@@ -32,8 +32,8 @@ static_assert(!fixy::IsAccepted<int, rogue>, "Cheat 1: a rogue type cannot satis
 // itself final, which the gate refuses on the same check.
 
 namespace cheat_2_subclass_injection {
-struct rogue_nonfinal : fixy::grant::grant_base {};
-static_assert(!fixy::grant::IsGrantTag<rogue_nonfinal>, "Cheat 2: a non-final type inheriting grant_base must NOT "
+struct rogue_nonfinal : crucible_fixy::grant::grant_base {};
+static_assert(!crucible_fixy::grant::IsGrantTag<rogue_nonfinal>, "Cheat 2: a non-final type inheriting grant_base must NOT "
                                                         "satisfy IsGrantTag — the final-class check defends against "
                                                         "subclass-injection of behavior.");
 }  // namespace cheat_2_subclass_injection
@@ -55,7 +55,7 @@ struct which_dim<::cheat_3_foreign_which_dim::foreign>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
 }  // namespace crucible::fixy::grant
 namespace cheat_3_foreign_which_dim {
-static_assert(!fixy::IsAccepted<int, foreign>, "Cheat 3: specializing which_dim<> for a non-grant type must "
+static_assert(!crucible_fixy::IsAccepted<int, foreign>, "Cheat 3: specializing which_dim<> for a non-grant type must "
                                                "NOT bypass IsAcceptedGrants — the IsGrantTag gate fires "
                                                "before which_dim is consulted.");
 }  // namespace cheat_3_foreign_which_dim
@@ -65,7 +65,7 @@ static_assert(!fixy::IsAccepted<int, foreign>, "Cheat 3: specializing which_dim<
 // type axis and nothing else.
 
 namespace cheat_4_empty_pack_with_type {
-static_assert(!fixy::IsAccepted<int>, "Cheat 4: the auto-injected Type marker alone does not "
+static_assert(!crucible_fixy::IsAccepted<int>, "Cheat 4: the auto-injected Type marker alone does not "
                                       "satisfy IsAccepted — the other 18 axes are still unengaged.");
 }  // namespace cheat_4_empty_pack_with_type
 
@@ -74,7 +74,7 @@ static_assert(!fixy::IsAccepted<int>, "Cheat 4: the auto-injected Type marker al
 // conjunction over every axis, so one unengaged axis is enough to refuse.
 
 namespace cheat_5_half_engagement {
-static_assert(!fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+static_assert(!crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                                 strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                                 strict<D::Representation>>,
               "Cheat 5: 10-of-20 engagement (Type via injection + 9 "
@@ -88,7 +88,7 @@ static_assert(!fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, st
 
 namespace counter_witness_accepts {
 static_assert(
-    fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+    crucible_fixy::IsAccepted<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                      strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                      strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                      strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>,

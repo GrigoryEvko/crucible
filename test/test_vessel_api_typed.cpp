@@ -13,10 +13,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
-using crucible::vessel::TypedDataPtr;
+using crucible::ExternalDataPtr;
 using crucible::vessel::TypedHandle;
 using crucible::vessel::TypedMeta;
 using crucible::vessel::TypedSchemaName;
@@ -48,10 +49,11 @@ static_assert(!std::is_convertible_v<
 // schema name wraps a borrowed span, and the tag collapses around it
 // while the span keeps its owner and its byte length visible.
 
-static_assert(std::is_same_v<TypedDataPtr, crucible::safety::Tagged<void*, crucible::safety::source::External>>);
-static_assert(sizeof(TypedDataPtr) == sizeof(void*));
-static_assert(alignof(TypedDataPtr) == alignof(void*));
-static_assert(std::is_trivially_copy_constructible_v<TypedDataPtr>);
+static_assert(std::is_same_v<decltype(crucible::vessel::data_ptr_typed(std::declval<TypedMeta>(), 0)), ExternalDataPtr>);
+static_assert(std::is_same_v<ExternalDataPtr, ::fixy::Tagged<void*, ::fixy::tags::source::External>>);
+static_assert(sizeof(ExternalDataPtr) == sizeof(void*));
+static_assert(alignof(ExternalDataPtr) == alignof(void*));
+static_assert(std::is_trivially_copy_constructible_v<ExternalDataPtr>);
 
 static_assert(std::is_same_v<TypedSchemaName, crucible::SchemaTable::LookupName>);
 static_assert(sizeof(TypedSchemaName) == sizeof(crucible::SchemaTable::BorrowedName));
@@ -60,10 +62,12 @@ static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 
 // The data pointer's provenance differs from the containing meta's, so
 // a value carrying the container's tag cannot take its place.
-static_assert(
-    !std::is_convertible_v<crucible::safety::Tagged<void*, crucible::safety::source::ABIBoundary>, TypedDataPtr>);
-static_assert(
-    !std::is_convertible_v<crucible::safety::Tagged<void*, crucible::safety::source::Sanitized>, TypedDataPtr>);
+static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::source::ABIBoundary>, ExternalDataPtr>);
+static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::source::Sanitized>, ExternalDataPtr>);
+// The old tree and the new tree give two distinct classes, so a pointer
+// tagged by the old tree cannot enter a meta either.
+static_assert(!std::is_convertible_v<crucible::safety::Tagged<void*, crucible::safety::source::External>,
+                                     ExternalDataPtr>);
 
 // A validated name and raw input from the boundary cannot be confused
 // for one another.
@@ -196,12 +200,12 @@ void test_data_ptr_typed() {
     EXPECT(p1.value() != p2.value(), "distinct meta data_ptrs must yield distinct typed values");
 
     // The wrapper must hold exactly the bytes of the bare pointer.
-    std::array<std::byte, sizeof(TypedDataPtr)> typed_bytes{};
+    std::array<std::byte, sizeof(ExternalDataPtr)> typed_bytes{};
     std::memcpy(typed_bytes.data(), &p0, sizeof(p0));
     std::array<std::byte, sizeof(void*)> raw_bytes{};
     void* raw0 = arr[0].data_ptr;
     std::memcpy(raw_bytes.data(), &raw0, sizeof(raw0));
-    EXPECT(typed_bytes == raw_bytes, "TypedDataPtr layout must be byte-identical to void*");
+    EXPECT(typed_bytes == raw_bytes, "ExternalDataPtr layout must be byte-identical to void*");
 }
 
 void test_schema_name_typed() {

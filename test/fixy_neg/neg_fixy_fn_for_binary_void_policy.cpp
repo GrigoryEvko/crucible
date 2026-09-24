@@ -27,13 +27,13 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 
 int main() {
     // void Policy via the binary overload's template arg list:
     // <Stance, Policy, Type>.  TypeIsStanceCompatible<void> = false
     // (std::is_void_v) → StanceForBinary fails → no viable overload.
-    auto bad = fixy::mint_fn_for<fixy::stance::SecretConsumer, void>(42);
+    auto bad = crucible_fixy::mint_fn_for<crucible_fixy::stance::SecretConsumer, void>(42);
     (void)bad;
     return 0;
 }

@@ -25,7 +25,7 @@ struct marks_fail<probe::F> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 using Witness =
-    fixy::fn<TypeI002, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+    crucible_fixy::fn<TypeI002, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
              strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
              strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
              strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>,

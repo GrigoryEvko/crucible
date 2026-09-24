@@ -33,7 +33,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 namespace sp = crucible::safety::secret_policy;
 using D = crucible::fixy::dim::DimensionAxis;
@@ -51,7 +51,7 @@ int main() {
     // DischargeAxis::None`, so the staleness-replay axis is NOT
     // discharged → matcher fires → corpus rejects.
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
                       gr::declassify<sp::WireSerialize>,  // Security via WRONG axis (IO)
                       gr::stale_to<500>,  // Staleness ≠ Fresh
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,

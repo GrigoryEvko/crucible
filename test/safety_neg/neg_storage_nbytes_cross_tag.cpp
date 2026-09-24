@@ -1,20 +1,18 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #2 of 2 for #1022 WRAP-StorageNbytes-5
-// (compute_storage_nbytes* TensorMeta input -> ExternalTensorMeta).
+// compute_storage_nbytes takes ExternalTensorMeta, ::fixy::Tagged<const
+// TensorMeta&, source::External>.  A TensorMeta under a different
+// provenance tag cannot be passed as if it were External.  Two Tagged
+// instantiations with different tags do not convert into each other.
 //
-// Premise: a TensorMeta already carrying a different provenance tag
-// cannot be passed to the storage-span boundary as if it were
-// source::External.  The caller must choose the correct trust lane
-// explicitly; unrelated Tagged instantiations do not implicitly
-// convert.
+// The view here is minted External and retagged Sanitized along the
+// admitted edge, so the only defect is the tag at the call.
 //
 // Distinct mismatch class from neg_storage_nbytes_raw_tensor_meta.cpp:
-//   * Companion: raw TensorMeta rejected at the write boundary.
-//   * This fixture: cross-tag passback rejected at the read boundary.
+//   * Companion: a raw TensorMeta is refused at the call.
+//   * This fixture: a view under another tag is refused at the call.
 
 #include <crucible/MerkleDag.h>
-#include <crucible/safety/_Tagged.h>
 
 int main() {
     crucible::TensorMeta meta{};
@@ -23,9 +21,8 @@ int main() {
     meta.strides[0] = ::crucible::tensor_dim(1);
     meta.dtype = crucible::ScalarType::Float;
 
-    using SanitizedTensorMeta =
-        crucible::safety::Tagged<const crucible::TensorMeta&, crucible::safety::source::Sanitized>;
-    SanitizedTensorMeta sanitized{meta};
+    auto sanitized = ::fixy::mint_tagged<::fixy::tags::source::External, const crucible::TensorMeta&>(meta)
+                         .retag<::fixy::tags::source::Sanitized>();
 
     // MUST fail: Tagged<const TensorMeta&, Sanitized> is not
     // ExternalTensorMeta.

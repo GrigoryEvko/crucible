@@ -1,9 +1,9 @@
-// fixy_neg: fixy::fn class-body tier-2 branch rejects malformed grant.
+// fixy_neg: crucible_fixy::fn class-body tier-2 branch rejects malformed grant.
 //
 // HS14 floor for fixy-H-02.  The wrapper's class-body static_assert
 // chain now has FIVE tiers (replacing a single misleading message).
 // Tier 2 fires when the Grants pack contains a type that does NOT
-// satisfy fixy::grant::IsGrantTag (not final-class, doesn't inherit
+// satisfy crucible_fixy::grant::IsGrantTag (not final-class, doesn't inherit
 // grant_base, or is a non-grant type entirely — here: a raw `int`).
 // Before H-02 this would produce a misleading "axis not engaged"
 // diagnostic; H-02 surfaces the FixyMalformedGrant tag instead so
@@ -21,7 +21,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -37,7 +37,7 @@ using strict = gr::accept_default_strict_for<Axis>;
 // We use an otherwise-complete 19-axis strict pack so the failure
 // CANNOT be attributed to a missing axis — only the malformed `int`
 // entry breaks well-formedness.
-using BadFn = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+using BadFn = crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                        strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                        strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
@@ -46,6 +46,6 @@ using BadFn = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::E
                        >;
 
 // Force class-body completion via sizeof.
-static_assert(sizeof(BadFn) > 0, "instantiate fixy::fn class body to force its static_assert chain");
+static_assert(sizeof(BadFn) > 0, "instantiate crucible_fixy::fn class body to force its static_assert chain");
 
 int main() { return 0; }

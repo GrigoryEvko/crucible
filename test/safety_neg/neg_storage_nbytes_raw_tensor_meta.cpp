@@ -11,7 +11,7 @@
 //
 // Distinct mismatch class from neg_storage_nbytes_cross_tag.cpp:
 //   * This fixture: raw TensorMeta rejected because Tagged's ctor is
-//     explicit and the API demands ExternalTensorMeta.
+//     private and the API demands ExternalTensorMeta.
 //   * Companion: another Tagged provenance is rejected because
 //     Tagged<T, Sanitized> is not Tagged<T, External>.
 

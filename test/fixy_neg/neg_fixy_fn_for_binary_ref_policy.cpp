@@ -26,7 +26,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 
 namespace test_policy {
 struct EmitPolicy {};
@@ -37,7 +37,7 @@ int main() {
     // <Stance, Policy, Type>.  TypeIsStanceCompatible<EmitPolicy&> =
     // false (std::is_reference_v) → StanceForBinary fails → no viable
     // overload.
-    auto bad = fixy::mint_fn_for<fixy::stance::SecretConsumer, test_policy::EmitPolicy&>(42);
+    auto bad = crucible_fixy::mint_fn_for<crucible_fixy::stance::SecretConsumer, test_policy::EmitPolicy&>(42);
     (void)bad;
     return 0;
 }

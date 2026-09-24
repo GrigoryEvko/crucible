@@ -11,7 +11,7 @@ using namespace fixy_neg_rule_detail;
 
 struct TypeM012 {};
 
-using Witness = fixy::fn<TypeM012, strict<D::Refinement>, strict<D::Usage>,
+using Witness = crucible_fixy::fn<TypeM012, strict<D::Refinement>, strict<D::Usage>,
                          gr::with<eff::Effect::Bg>,  // Effect row contains Bg
                          strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
                          strict<D::Trust>, strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,

@@ -19,7 +19,7 @@ struct marks_unscoped_spawn<probe::F> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 using Witness =
-    fixy::fn<TypeL003, strict<D::Refinement>, gr::borrow, strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
+    crucible_fixy::fn<TypeL003, strict<D::Refinement>, gr::borrow, strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
              strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>, strict<D::Representation>,
              strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
              strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,

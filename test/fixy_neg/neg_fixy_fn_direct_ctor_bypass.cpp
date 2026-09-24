@@ -1,8 +1,8 @@
-// fixy_neg: direct fixy::fn<T, ...> value construction is rejected —
+// fixy_neg: direct crucible_fixy::fn<T, ...> value construction is rejected —
 // closes fixy-A4-018.
 //
-// HS14 fixture 1/2.  Pre-A4-018, `fixy::fn<int, ...>::fn(Type v)` was
-// public, allowing `fixy::fn<int, all-strict-pack>{42}` to construct a
+// HS14 fixture 1/2.  Pre-A4-018, `crucible_fixy::fn<int, ...>::fn(Type v)` was
+// public, allowing `crucible_fixy::fn<int, all-strict-pack>{42}` to construct a
 // value-carrying binding WITHOUT routing through `mint_fn` — diluting
 // the §XXI "single grep target" discipline.  Reviewers grep-scanning
 // for `mint_fn` would miss every direct-ctor binding.
@@ -15,8 +15,8 @@
 //
 // Distinct from neg_fixy_fn_stance_ctor_bypass.cpp: that fixture
 // witnesses bypass via a STANCE ALIAS spelling
-// (`fixy::stance::PureLinear<int>{42}`); this fixture witnesses
-// bypass via the RAW `fixy::fn<T, all-strict-grants>{42}` spelling.
+// (`crucible_fixy::stance::PureLinear<int>{42}`); this fixture witnesses
+// bypass via the RAW `crucible_fixy::fn<T, all-strict-grants>{42}` spelling.
 // Both flow through the SAME private-ctor rejection but cover
 // orthogonal call-site shapes the reviewer might see in production.
 //
@@ -29,7 +29,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -50,7 +50,7 @@ int main() {
     // so a short pack hides the second rejection behind the first
     // instead of reddening.  Keep this list exhaustive.
     auto bad =
-        fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+        crucible_fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                  strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
                  strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
                  strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>,

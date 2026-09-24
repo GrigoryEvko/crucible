@@ -33,7 +33,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -45,7 +45,7 @@ int main() {
     //   Usage  = ghost     (compile-time-erased binding)
     //   Effect = with_io   (requests runtime I/O)
     //   contradictory by construction.
-    auto bad = fixy::mint_fn<int, strict<D::Refinement>,
+    auto bad = crucible_fixy::mint_fn<int, strict<D::Refinement>,
                              gr::ghost,  // Usage = Ghost
                              gr::with_io,  // Effect = IO (observable)
                              strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,

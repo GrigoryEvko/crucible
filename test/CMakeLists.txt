@@ -6618,7 +6618,7 @@ crucible_neg_compile_test(neg_graded_inject_on_coeffect
 
 # WRAP-Types-1 (#1067) — ElementBytes::value_ wraps Refined<bounded_above<16>,
 # uint8_t>; constructing ElementBytes{17} in constexpr context drives the
-# bounded_above<16>(17) pre-clause through constant evaluation.  The contract
+# bounded_above<16>(17) contract assertion through constant evaluation.  The
 # violation is rejected as a non-constant expression (P1494R5 + P2900R14),
 # pinning the structural bound at the storage type rather than relying on
 # the source dtype enum being well-formed.
@@ -7123,10 +7123,10 @@ crucible_neg_compile_test(neg_trace_ring_drain_count_uint32_max
 # enforce semantics, OR invoke `[[assume]]`-driven UB under ignore on
 # hot-path TUs).
 #
-# ValidNDim is Refined<bounded_above<kMaxTensorNDim>, uint8_t>; its
-# ctor pre-clause `bounded_above<8>(v)` rejects any byte past 8 via
-# P1494R5 partial-program correctness — the deserialize path then
-# routes through handle_contract_violation (logged + std::abort).
+# ValidNDim is ::fixy::Refined<::fixy::bounded_above<kMaxTensorNDim>,
+# uint8_t>.  Its checked mint refuses any byte past 8: CRUCIBLE_PRE traps
+# in constant evaluation, and read_meta substitutes a valid byte and
+# fails the read at run time.
 #
 # Two fixtures per HS14 mandate:
 #   * neg_tensor_meta_ndim_above_max — boundary edge (kMaxTensorNDim+1
@@ -7151,7 +7151,8 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
 # deserialize boundary.  ScalarType is a SPARSE int8_t enum; a corrupt or
 # version-skewed Cipher byte outside the enumerator set reached
 # element_size()'s `default: std::unreachable()` as UB.  ValidScalarType is
-# Refined<valid_scalar_type, int8_t>; its ctor rejects an invalid byte.
+# ::fixy::Refined<valid_scalar_type, int8_t>; its checked mint refuses an
+# invalid byte.
 # Two fixtures per HS14, distinct mismatch classes:
 #   * neg_tensor_meta_dtype_gap_value — INTERIOR gap (14, between Bool=11
 #     and BFloat16=15) catches "predicate relaxed to a plain range check

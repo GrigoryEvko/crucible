@@ -24,7 +24,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -39,7 +39,7 @@ int main() {
     // This is the Internal-tier concurrent no-write-down shape that
     // fixy-A4-008 added to §30.14 — must reject.
     auto bad =
-        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+        crucible_fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
                       gr::with_bg,  // Effect = Bg
                       gr::as_internal,  // Security = Internal (NOT Classified/Secret)
                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,

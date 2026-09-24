@@ -19,7 +19,7 @@
 
 #include <crucible/fixy/Reject.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 
 namespace neg_fixy_grant_missing_which_dim {
 
@@ -34,6 +34,6 @@ int main() {
 
     // Should FAIL: the resolver tries which_dim_v<evil_grant> and
     // hits the undefined primary.
-    static_assert(fixy::IsAcceptedGrants<tags::evil_grant>, "evil_grant must reject — no which_dim specialization.");
+    static_assert(crucible_fixy::IsAcceptedGrants<tags::evil_grant>, "evil_grant must reject — no which_dim specialization.");
     return 0;
 }

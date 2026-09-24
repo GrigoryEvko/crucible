@@ -11,7 +11,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -25,7 +25,7 @@ int main() {
     // axis is engaged; the duplication on Usage is the load-
     // bearing rejection cause.  IsAccepted → IsAcceptedGrants →
     // UniqueEngagementPerAxis must fire.
-    auto bad = fixy::mint_fn<
+    auto bad = crucible_fixy::mint_fn<
         int, strict<D::Refinement>, strict<D::Usage>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>, strict<D::Representation>,
         strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>, strict<D::Space>, strict<D::Overflow>,

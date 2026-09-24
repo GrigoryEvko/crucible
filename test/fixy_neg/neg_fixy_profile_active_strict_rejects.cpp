@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-AUDIT-A4 fixture: `fixy::IsAcceptedActive` under STRICT mode
+// FIXY-AUDIT-A4 fixture: `crucible_fixy::IsAcceptedActive` under STRICT mode
 // rejects a partially-specified Grants pack identically to
-// `fixy::IsAccepted`.
+// `crucible_fixy::IsAccepted`.
 //
 // Profile.h ships the toggle infrastructure: `IsAcceptedActive`
 // aliases `IsAccepted` (strict, default) or `IsAcceptedSketch`
@@ -11,8 +11,8 @@
 // `IsAcceptedActive` in this TU resolves to the strict gate.
 //
 // Violation: a binding with NO engaged dims must reject under strict.
-// Routing through `fixy::IsAcceptedActive` must reject identically to
-// `fixy::IsAccepted` to keep the toggle behaviorally faithful when
+// Routing through `crucible_fixy::IsAcceptedActive` must reject identically to
+// `crucible_fixy::IsAccepted` to keep the toggle behaviorally faithful when
 // production wrappers eventually rewire (deferred — see Profile.h
 // §"Scope note (B2 ship)").
 //
@@ -21,7 +21,7 @@
 
 #include <crucible/fixy/Profile.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 
 namespace neg_fixy_profile_active_strict_rejects {
 
@@ -30,7 +30,7 @@ struct TypeNoEngagement {
 };
 
 template <typename Type, typename... Grants>
-    requires fixy::IsAcceptedActive<Type, Grants...>
+    requires crucible_fixy::IsAcceptedActive<Type, Grants...>
 [[nodiscard]] constexpr int gate(Type const&) noexcept {
     return 1;
 }
@@ -41,7 +41,7 @@ int main() {
     namespace tags = neg_fixy_profile_active_strict_rejects;
 
     // Witness: assert the toggle is strict in this TU (preset default).
-    static_assert(fixy::fixy_is_strict, "Default preset must compile with CRUCIBLE_FIXY_STRICT=1.");
+    static_assert(crucible_fixy::fixy_is_strict, "Default preset must compile with CRUCIBLE_FIXY_STRICT=1.");
 
     // Should FAIL under STRICT: empty grants pack engages no dim, so
     // IsAccepted rejects → IsAcceptedActive rejects.

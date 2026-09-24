@@ -27,7 +27,7 @@
 
 #include <crucible/fixy/Fn.h>
 
-namespace fixy = crucible::fixy;
+namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;
 
@@ -38,7 +38,7 @@ int main() {
     // 20-axis pack including explicit strict<D::Type>.  mint_fn
     // auto-injects ImplicitTypeMarker via IsAccepted, so this pack
     // double-engages Type and the requires-clause fails.
-    auto bad = fixy::mint_fn<int,
+    auto bad = crucible_fixy::mint_fn<int,
                              strict<D::Type>,  // ← explicit Type marker
                              strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
                              strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
