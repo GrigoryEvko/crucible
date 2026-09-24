@@ -170,7 +170,7 @@ def scan() -> int:
         0 when clean, 2 on a finding, 3 when the pinned kit is absent
     """
     try:
-        mints = mintmodel.collect(mintmodel.guard_files())
+        mints = mintmodel.collect(mintmodel.surface_files())
     except tsast.KitMissing as exc:
         print(f"check-mint-pattern: {exc}", file=sys.stderr)
         return 3

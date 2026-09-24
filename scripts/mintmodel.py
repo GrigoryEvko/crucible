@@ -2,20 +2,15 @@
 """Derive the §XXI mint model from the AST, for the guard and the inventory.
 
 CLAUDE.md §XXI names every cross-tier composition factory `mint_<noun>`, and two
-consumers ask the same question of that set: `check-mint-pattern.sh` asks whether
+consumers ask the same question of that set: `check-mint-pattern.py` asks whether
 each one carries `[[nodiscard]]`, `constexpr`, `noexcept` and a `requires`
-clause, and `gen-mint-inventory.sh` renders the same four flags plus the
-authorization shape into `misc/mint-inventory.md`.  Both find their sites with a
-broad regex over `mint_[a-z_]+\\s*\\(` and then filter out comments, friend
-forwards, using-declarations, method calls and call positions by hand.  A regex
-cannot tell a declaration from a call, so the filters need an allowlist for the
-sites they get wrong, and a name key cannot tell two functions with one name
-apart.
+clause, and `gen-mint-inventory.py` renders the same flags plus the
+authorization shape into `misc/mint-inventory.md`.  Both read this one model,
+so the guard and the inventory cannot disagree about which sites are mints.
 
-This module answers the question from the parse tree instead.  A site is a
-`function_declarator` whose `declarator` field names an identifier that starts
-with `mint_`.  Four rules then exclude what is not a live mint, and each one is a
-node type rather than a heuristic:
+A site is a `function_declarator` whose `declarator` field names an identifier
+that starts with `mint_`.  Four rules then exclude what is not a live mint, and
+each one is a node type rather than a heuristic:
 
   * a `friend_declaration` ancestor — a friend re-declares a mint defined
     elsewhere, so the canonical site is the definition
@@ -25,11 +20,17 @@ node type rather than a heuristic:
   * a trailing underscore on the name — §XXI reserves that for an internal
     detail helper, not a mint
 
-PARITY.  Measured 2026-09-21 against the 216 rows of `misc/mint-inventory.md`:
-these rules reproduce every row, miss none, and add three sites the snapshot
-does not hold.  All three are real: two independent
-definitions that share a name, and one row whose fixy cell names a different
-function than the row's own site.
+THE OWNER OF A MEMBER.  A member function sits in the class body directly, or
+under a `template_declaration` that sits there.  Both count, so a templated
+member mint has an owner.  A STATIC member takes its authority from its
+arguments, not from an object, so its shape is read from its parameters like a
+free function.  Only a non-static member has the `member` shape.
+
+A DECLARATION AND ITS DEFINITION ARE ONE MINT.  A forward declaration and the
+later definition of the same function are two sites and one function.  The
+model keeps the definition and folds the declaration into it: an attribute such
+as `[[nodiscard]]` may sit on either, and the language demands the other flags
+agree.
 """
 
 from __future__ import annotations
@@ -42,14 +43,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402  (the path insert above has to come first)
-
-# The substrate trees the §XXI surface covers, plus the top-level headers, which
-# belong to no tree, plus fixy/ for the mints that originate there.
-SUBSTRATE_TREES = (
-    "safety", "effects", "algebra", "concurrent", "sessions", "permissions",
-    "bridges", "handles", "cipher", "warden", "perf", "cntp", "topology",
-    "canopy", "observe", "cog", "mimic", "ledger",
-)
 
 # A leading underscore on a FILE name marks an old-substrate header that a port
 # has superseded.  Its mints live on in the ported file, so counting both would
@@ -98,6 +91,9 @@ class Mint:
         templated: Whether a template declaration encloses the site
         carve_out_cx: Whether a comment documents the absent `constexpr`
         carve_out_rq: Whether a comment documents the absent `requires`
+        static_member: Whether the site is a static member of its owner
+        defines: Whether the site is a definition, not a forward declaration
+        signature: The parameter types, normalized, with no parameter names
     """
 
     name: str
@@ -118,6 +114,9 @@ class Mint:
     templated: bool
     carve_out_cx: bool
     carve_out_rq: bool
+    static_member: bool = False
+    defines: bool = True
+    signature: str = ""
 
     @property
     def key(self) -> tuple[str, str, int]:
@@ -140,8 +139,19 @@ class Mint:
         A re-export names the mint through its namespace, so this is the key a
         `using` has to match.  Matching the bare name instead reports a
         re-export that names a different function as if it named this one.
+        A member names its class between the namespace and the function.
         """
-        return f"::{self.namespace}::{self.name}" if self.namespace else f"::{self.name}"
+        scoped = self.qualified
+        return f"::{self.namespace}::{scoped}" if self.namespace else f"::{scoped}"
+
+    @property
+    def identity(self) -> tuple[str, str | None, str, str]:
+        """Return the key that one function keeps across its declarations.
+
+        A forward declaration and the definition of one function share it.  Two
+        overloads do not, because their parameter types differ.
+        """
+        return (self.namespace, self.owner, self.name, self.signature)
 
 
 def _is_borrow_projection(site: tsast.Node) -> bool:
@@ -270,34 +280,16 @@ def ctxfit_applies(mint: Mint) -> bool:
     return mint.shape == "ctx"
 
 
-def scan_files() -> list[Path]:
-    """Return every header the §XXI mint surface covers, sorted.
+def surface_files() -> list[Path]:
+    """Return every header of the §XXI mint surface, sorted.
 
-    Sorted order keeps a gate's report stable between runs.
+    The guard and the inventory read one scope: all of `include/`, the old tree
+    and the new one.  The scope is derived, never listed.  A list of trees once
+    left a third of the tree's mints unaudited, and a directory added later was
+    unaudited on arrival until someone remembered to extend the list.
 
-    Returns:
-        Repo-relative paths, in sorted order
-    """
-    found: list[Path] = []
-    for tree in SUBSTRATE_TREES:
-        found += tsast.cpp_files(f"include/crucible/{tree}")
-    found += tsast.cpp_files("include/crucible/fixy")
-    root = Path("include/crucible")
-    found += [p for p in tsast.cpp_files("include/crucible") if p.parent == root]
-    return sorted({p for p in found if not p.name.startswith(SUPERSEDED_PREFIX)})
-
-
-def guard_files() -> list[Path]:
-    """Return every header the §XXI GUARD enforces over, sorted.
-
-    The guard and the inventory have different scopes, and conflating them was
-    the source of two wrong numbers.  The guard scans all of `include/`, so it
-    reaches the canonical new substrate at `include/foundation/` and
-    `include/fixy/` as well as the old tree.  The inventory documents the
-    substrate trees it lists, which is a narrower set.
-
-    Superseded `_*.h` headers are excluded from both: they are frozen, so a
-    shortfall there cannot be repaired, and they go with the old tree.
+    Superseded `_*.h` headers are excluded: they are frozen, so a shortfall there
+    cannot be repaired, and they go with the old tree.
 
     Returns:
         Repo-relative paths, in sorted order
@@ -515,23 +507,25 @@ def _ctx_parameter_names(site: tsast.Node) -> frozenset[str]:
     return frozenset(names)
 
 
-def _shape(site: tsast.Node, declarator: tsast.Node, owner: str | None) -> str:
+def _shape(site: tsast.Node, declarator: tsast.Node, owner: str | None, static_member: bool) -> str:
     """Return the authorization shape of a mint.
 
     §XXI has two flavours.  A ctx-bound mint threads ctx-driven policy and takes
     the context first.  A token mint derives its authority from a parent token
-    and takes no context.  A class method is neither, because its authority is
-    the object whose method it is.
+    and takes no context.  A non-static class method is neither, because its
+    authority is the object whose method it is.  A static member has no object,
+    so its shape comes from its parameters, as for a free function.
 
     Args:
         site: The declaration or definition node
         declarator: The function declarator of the mint
         owner: The enclosing class name for a member mint, otherwise None
+        static_member: Whether the member is declared `static`
 
     Returns:
         `member`, `ctx` or `token`
     """
-    if owner is not None:
+    if owner is not None and not static_member:
         return "member"
     params = declarator.child_by_field("parameters")
     if params is None:
@@ -556,6 +550,75 @@ def _shape(site: tsast.Node, declarator: tsast.Node, owner: str | None) -> str:
     if named in _ctx_parameter_names(site) or named == "Ctx":
         return "ctx"
     return "token"
+
+
+_PARAMETER_TYPES = (
+    "parameter_declaration",
+    "optional_parameter_declaration",
+    "variadic_parameter_declaration",
+)
+
+
+def _signature(declarator: tsast.Node) -> str:
+    """Return the parameter types of a function declarator, with no names.
+
+    A forward declaration may name its parameters differently from the
+    definition, or not at all, so the parameter names and any default value are
+    removed.  Whitespace is normalized so a line wrap cannot split one function
+    into two.
+
+    Args:
+        declarator: The function declarator of the mint
+
+    Returns:
+        The normalized parameter types, for example `(Ctx const&,int)`
+    """
+    params = declarator.child_by_field("parameters")
+    if params is None:
+        return "()"
+    parts: list[str] = []
+    for param in params.children:
+        if param.type not in _PARAMETER_TYPES:
+            continue
+        text = param.text
+        default = param.child_by_field("default_value")
+        if default is not None:
+            text = text[: text.rfind(default.text)].rstrip().removesuffix("=")
+        named = param.child_by_field("declarator")
+        if named is not None:
+            names = [named] if named.type == "identifier" else list(named.descendants("identifier"))
+            for ident in names:
+                cut = text.rfind(ident.text)
+                if cut >= 0:
+                    text = text[:cut] + text[cut + len(ident.text):]
+        text = re.sub(r"\s+", " ", text).strip()
+        parts.append(re.sub(r"\s*([&*<>,:()\[\]])\s*", r"\1", text))
+    return "(" + ",".join(parts) + ")"
+
+
+def _owner_of(site: tsast.Node) -> str | None:
+    """Return the class that owns a member site, or None for a free function.
+
+    A member sits in the `field_declaration_list` of its class directly, or under
+    a `template_declaration` that sits there.  Reading only the first position
+    reported every templated member mint as a free function.
+
+    Args:
+        site: The declaration or definition node
+
+    Returns:
+        The name of the owning class, or None
+    """
+    container = site.parent
+    if container is not None and container.type == "template_declaration":
+        container = container.parent
+    if container is None or container.type != "field_declaration_list":
+        return None
+    enclosing = container.parent
+    if enclosing is None:
+        return None
+    named = enclosing.child_by_field("name")
+    return named.text if named is not None else None
 
 
 def _namespace_of(node: tsast.Node) -> str:
@@ -627,7 +690,53 @@ def reexports(paths: list[Path] | None = None) -> dict[str, tuple[str, int]]:
     return found
 
 
-def fixture_counts(paths: list[Path] | None = None) -> dict[str, int]:
+NEW_TREE_ROOTS = ("include/foundation", "include/fixy")
+
+
+def is_new_tree(path: str) -> bool:
+    """Report whether a header path lies in the new tree.
+
+    Args:
+        path: A repo-relative header path
+
+    Returns:
+        True for a path under `include/foundation/` or `include/fixy/`
+    """
+    return any(path == root or path.startswith(root + "/") for root in NEW_TREE_ROOTS)
+
+
+def fixture_files(root: Path = tsast.REPO_ROOT) -> dict[str, list[Path]]:
+    """Return the negative-compile fixture files of each tree, sorted.
+
+    A fixture directory is a directory under `test/` named `neg` or ending in
+    `_neg`.  The fixtures of the new tree live under `test/fixy/` and
+    `test/foundation/`.  Every other directory holds fixtures of the old tree.
+    A mint's HS14 count reads only the fixtures of its own tree, because the two
+    trees share mint names and a fixture of one tree says nothing about a gate
+    of the other.
+
+    Args:
+        root: The repository root to search
+
+    Returns:
+        `old` and `new` to the fixture files of that tree, relative to root
+    """
+    found: dict[str, list[Path]] = {"old": [], "new": []}
+    test_dir = root / "test"
+    if not test_dir.is_dir():
+        return found
+    for directory in sorted(p for p in test_dir.rglob("*") if p.is_dir()):
+        if directory.name != "neg" and not directory.name.endswith("_neg"):
+            continue
+        rel = directory.relative_to(root)
+        family = "new" if rel.parts[1] in ("fixy", "foundation") else "old"
+        for suffix in (".h", ".hpp", ".cpp", ".cc"):
+            found[family].extend(p.relative_to(root) if root == tsast.REPO_ROOT else p
+                                 for p in directory.glob(f"*{suffix}"))
+    return {family: sorted(set(paths)) for family, paths in found.items()}
+
+
+def fixture_counts(paths: list[Path]) -> dict[str, int]:
     """Return, for each mint name, how many negative-compile fixtures use it.
 
     HS14 sets a floor of two fixtures per mint.  The count has to come from the
@@ -637,16 +746,11 @@ def fixture_counts(paths: list[Path] | None = None) -> dict[str, int]:
     class of inflation by construction.
 
     Args:
-        paths: The fixture files to scan, or None to find every `*_neg` tree
+        paths: The fixture files to scan
 
     Returns:
         Mint name to the number of fixture files that reference it
     """
-    if paths is None:
-        found: list[Path] = []
-        for tree_dir in sorted(tsast.REPO_ROOT.glob("test/*_neg")):
-            found += tsast.cpp_files(str(tree_dir.relative_to(tsast.REPO_ROOT)))
-        paths = sorted(found)
     counts: dict[str, int] = {}
     for tree in tsast.parse(paths, strict=False):
         seen: set[str] = set()
@@ -726,15 +830,11 @@ def extract(tree: tsast.Tree) -> list[Mint]:
         if site.child_by_field("type") is None:
             continue
 
-        owner = None
-        if site.parent is not None and site.parent.type == "field_declaration_list":
-            enclosing = node.ancestor_of_type("class_specifier", "struct_specifier")
-            if enclosing is not None:
-                named = enclosing.child_by_field("name")
-                owner = named.text if named is not None else None
+        owner = _owner_of(site)
+        static_member = owner is not None and _has_qualifier(site, "static")
 
         carve_cx, carve_rq = _carve_outs(tree, node.line)
-        shape = _shape(site, declarator, owner)
+        shape = _shape(site, declarator, owner, static_member)
         token = _ctx_token(declarator) if shape == "ctx" else None
         mints.append(
             Mint(
@@ -756,6 +856,9 @@ def extract(tree: tsast.Tree) -> list[Mint]:
                 templated=site.parent is not None and site.parent.type == "template_declaration",
                 carve_out_cx=carve_cx,
                 carve_out_rq=carve_rq,
+                static_member=static_member,
+                defines=site.type == "function_definition",
+                signature=_signature(declarator),
             )
         )
     return mints
@@ -800,14 +903,51 @@ def collect(paths: list[Path] | None = None) -> list[Mint]:
     Returns:
         Every mint, sorted by name then path then line
     """
-    files = scan_files() if paths is None else paths
+    files = surface_files() if paths is None else paths
     raw: list[Mint] = []
     roster: set[str] = set()
     for tree in tsast.parse(files, strict=False):
         raw += extract(tree)
         roster |= concept_names(tree)
     mints = [replace(m, constraint_concepts=m.constraint_concepts & roster) for m in raw]
-    return sorted(mints, key=lambda m: (m.name, m.path, m.line))
+    return sorted(merge_declarations(mints), key=lambda m: (m.name, m.path, m.line))
+
+
+def merge_declarations(mints: list[Mint]) -> list[Mint]:
+    """Fold each forward declaration into the definition of the same function.
+
+    One function keeps one row.  The definition is the canonical site.  An
+    attribute may sit on the declaration alone, so `[[nodiscard]]` and the
+    carve-out markers are taken from either site.  A function declared and never
+    defined in the scanned surface keeps its first declaration.
+
+    Complexity: O(m) in the number of sites, from one grouping pass.
+
+    Args:
+        mints: Every site the extraction found
+
+    Returns:
+        One mint for each function
+    """
+    groups: dict[tuple[str, str | None, str, str], list[Mint]] = {}
+    for mint in mints:
+        groups.setdefault(mint.identity, []).append(mint)
+    merged: list[Mint] = []
+    for sites in groups.values():
+        definitions = [m for m in sites if m.defines]
+        if not definitions:
+            merged.append(min(sites, key=lambda m: (m.path, m.line)))
+            continue
+        declarations = [m for m in sites if not m.defines]
+        for definition in definitions:
+            merged.append(replace(
+                definition,
+                nodiscard=definition.nodiscard or any(d.nodiscard for d in declarations),
+                carve_out_cx=definition.carve_out_cx or any(d.carve_out_cx for d in declarations),
+                carve_out_rq=definition.carve_out_rq or any(d.carve_out_rq for d in declarations),
+                inline_ok=definition.inline_ok or any(d.inline_ok for d in declarations),
+            ))
+    return merged
 
 
 def _self_test() -> int:
@@ -907,6 +1047,32 @@ template <IsExecCtx C>
 template <CtxFitsProbe Ctx>
 [[nodiscard]] constexpr Thing mint_ctx_in_parameter(Ctx const&) noexcept { return {}; }
 
+// Members under a template declaration. The static one takes its shape from its
+// parameters, the other one is a method of its object.
+struct Lattice {
+    template <IsExecCtx C>
+        requires CtxFitsProbe<C>
+    [[nodiscard]] static constexpr Thing mint_from_image(C const&, int) noexcept { return {}; }
+
+    template <Scalar K>
+    [[nodiscard]] constexpr Thing mint_templated_member(K) const noexcept { return {}; }
+};
+
+// A forward declaration carries the attribute, and the definition does not.
+// One function, one row, and the attribute counts.
+template <IsExecCtx C>
+    requires CtxFitsProbe<C>
+[[nodiscard]] constexpr Thing mint_declared_first(C const& ctx, int count) noexcept;
+
+template <IsExecCtx C>
+    requires CtxFitsProbe<C>
+constexpr Thing mint_declared_first(C const&, int) noexcept { return {}; }
+
+// An overload of the same name with other parameter types is its own row.
+template <IsExecCtx C>
+    requires CtxFitsProbe<C>
+[[nodiscard]] constexpr Thing mint_declared_first(C const&, Thing) noexcept { return {}; }
+
 }  // namespace probe
 """
     with tempfile.TemporaryDirectory() as work:
@@ -917,13 +1083,42 @@ template <CtxFitsProbe Ctx>
 
         # Positive control: every live mint is found, and only those.
         check(
-            "finds exactly the twelve live mints",
+            "finds exactly the fifteen live mint names",
             sorted(by_name) == [
                 "mint_allocating", "mint_bare", "mint_compliant",
-                "mint_ctx_in_clause", "mint_ctx_in_parameter", "mint_member",
-                "mint_param_constrained", "mint_plain_ctx", "mint_shape_only",
-                "mint_sized", "mint_surface_only", "mint_token",
+                "mint_ctx_in_clause", "mint_ctx_in_parameter", "mint_declared_first",
+                "mint_from_image", "mint_member", "mint_param_constrained",
+                "mint_plain_ctx", "mint_shape_only", "mint_sized",
+                "mint_surface_only", "mint_templated_member", "mint_token",
             ],
+        )
+        image = by_name.get("mint_from_image")
+        check(
+            "a templated static member has its owner and a parameter shape",
+            image is not None and image.owner == "Lattice" and image.static_member
+            and image.shape == "ctx" and image.ctx_gated,
+        )
+        templated_member = by_name.get("mint_templated_member")
+        check(
+            "a templated non-static member has the member shape",
+            templated_member is not None and templated_member.owner == "Lattice"
+            and not templated_member.static_member and templated_member.shape == "member",
+        )
+        declared = [m for m in mints if m.name == "mint_declared_first"]
+        check(
+            "a declaration and its definition are one row, an overload is another",
+            len(declared) == 2 and all(m.defines for m in declared),
+        )
+        check(
+            "the declaration's nodiscard reaches the definition's row",
+            all(m.nodiscard for m in declared),
+        )
+        # Negative control: without the merge, the declaration is its own site.
+        unmerged = [m for m in extract(next(iter(tsast.parse([path], strict=False))))
+                    if m.name == "mint_declared_first"]
+        check(
+            "the extraction alone reports three sites for the two functions",
+            len(unmerged) == 3,
         )
         # Negative controls: each exclusion rule fires.
         check("excludes a deleted overload", "mint_removed" not in by_name)
@@ -1028,7 +1223,7 @@ template <CtxFitsProbe Ctx>
     if failures:
         print(f"mintmodel --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("mintmodel --self-test: 21 cases pass, 9 of them negative controls.")
+    print("mintmodel --self-test: 26 cases pass, 10 of them negative controls.")
     return 0
 
 

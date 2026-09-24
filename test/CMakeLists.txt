@@ -1129,35 +1129,28 @@ add_test(NAME lock_free_asserts
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.sh)
 set_tests_properties(lock_free_asserts lock_free_asserts_self_test PROPERTIES
     LABELS "ci_guard")
-# FIXY-U-106 wire: gen-mint-inventory.sh self-test + --check drift gate.
-# Complementary to test_fixy_mint_inventory (the structural CI gate of
-# U-002) — the script surfaces the WHOLE substrate-mint table with §XXI
-# compliance flags and HS14 fixture counts.  --check fires CI red if
-# scripts/gen-mint-inventory.sh has not been re-run after a mint
-# add/rename/move, forcing same-PR resync of misc/mint-inventory.md.
+# The mint inventory: its self-test, the drift gate that fails when
+# misc/mint-inventory.md was not regenerated after a mint changed, and the
+# HS14 floor gate.  scripts/gen-mint-inventory.py holds the floor value.
+# The generator reads the parse tree, so it skips (exit 3) where the pinned
+# tree-sitter kit is absent.  CI installs the kit, so CI enforces.
 add_test(NAME mint_inventory_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.py
           --self-test
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME mint_inventory_check
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.py
           --check
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-# FIXY-FOUND-140 wire: --check-floor promotes the ⚠ visual marker on
-# under-witnessed mints (HS14 < FLOOR) to a hard CI gate.  Closes the
-# loop between the legend's documented floor and actual enforcement —
-# previously a production mint shipping with HS14:0 or HS14:1 reddened
-# nothing.  Single source of truth for the floor value lives in
-# scripts/gen-mint-inventory.sh (HS14_FLOOR constant — bumping that
-# bumps both the legend prose AND the CI gate atomically).
 add_test(NAME mint_inventory_check_floor
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.py
           --check-floor
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 set_tests_properties(mint_inventory_self_test
                      mint_inventory_check
                      mint_inventory_check_floor PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # FIXY-FOUND-050 — single combine_ids source of truth.  This guard
 # existed but was registered NOWHERE: not in ctest, not in CI.  It had
 # therefore never run, and its own header rotted (it cited

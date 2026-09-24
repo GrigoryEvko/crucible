@@ -234,9 +234,9 @@ jobs:
 
       - name: mint inventory (self-test + drift check + HS14 floor)
         run: |
-          bash scripts/gen-mint-inventory.sh --self-test
-          bash scripts/gen-mint-inventory.sh --check
-          bash scripts/gen-mint-inventory.sh --check-floor
+          python3 scripts/gen-mint-inventory.py --self-test
+          python3 scripts/gen-mint-inventory.py --check
+          python3 scripts/gen-mint-inventory.py --check-floor
 
       - name: fixy::grant namespace purity (self-test + scan)
         run: |

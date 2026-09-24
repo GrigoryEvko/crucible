@@ -169,11 +169,6 @@ include/fixy/os/Sched.h:mint_scheduler_policy:constexpr-ok
 # above.  The carve-out is the same one and for the same reason: each
 # body issues mmap, madvise, io_uring_setup, sendfile or
 # copy_file_range, so the factory cannot be constexpr.
-#
-# mint_io_uring_ring is DECLARED before IoUringRing and defined after
-# it, because the class names it as the sole friend of its only
-# constructor and a friend has to be declared first.  The guard sees the
-# signature twice; one name-keyed entry covers both.
 include/fixy/os/Mmap.h:mint_mmap:constexpr-ok
 include/fixy/os/Mmap.h:mint_mmap_anon:constexpr-ok
 include/fixy/os/Io.h:mint_io_uring_ring:constexpr-ok
@@ -184,11 +179,6 @@ include/fixy/os/Io.h:mint_zerocopy_transfer:constexpr-ok
 # be constexpr.  The two durable mints carried a `requires-ok` entry in
 # the old tree because they had no requires-clause of their own; they
 # have one now, so only the constexpr carve-out remains.
-#
-# The three CipherDurable mints are DECLARED before the handle they
-# return and defined after it, because the handle names them as the
-# sole friends of its only constructor.  The guard sees each signature
-# twice; one name-keyed entry covers both.
 include/fixy/os/Fs.h:mint_file:constexpr-ok
 include/fixy/os/Fs.h:mint_durable_append_file:constexpr-ok
 include/fixy/os/Fs.h:mint_durable_truncate_file:constexpr-ok
@@ -196,13 +186,12 @@ include/fixy/os/CipherDurable.h:mint_warm_writer:constexpr-ok
 include/fixy/os/CipherDurable.h:mint_cold_writer:constexpr-ok
 include/fixy/os/CipherDurable.h:mint_head_advancer:constexpr-ok
 
-# mint_affinity is DECLARED in fixy/os/CpuPinned.h and defined in
-# fixy/os/Sched.h, so the guard sees its signature twice and both sites
-# need the same carve-out.  The split is not arbitrary: CpuPinned names
-# this mint as the sole friend of its only constructor, and a friend has
-# to be declared before it is named.  Deleting the declaration would
-# reopen the forgery the friendship closes.
-include/fixy/os/CpuPinned.h:mint_affinity:constexpr-ok
+# A mint declared before the class that befriends it and defined after
+# that class is one function.  The guard reads a forward declaration and
+# its definition as one site, keyed at the definition, so one entry at
+# the defining header covers it: mint_io_uring_ring, the three
+# CipherDurable writers, and mint_affinity (declared in
+# fixy/os/CpuPinned.h, defined in fixy/os/Sched.h).
 # The ported pair, §XXI carve-out cx=thread.  Neither can be constexpr and
 # mean it: mint_spawn starts one jthread per child, and mint_parallel_for
 # does the same for every shard but the single-shard case.  A constexpr on

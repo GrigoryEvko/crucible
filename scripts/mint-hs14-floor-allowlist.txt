@@ -1,6 +1,7 @@
 # scripts/mint-hs14-floor-allowlist.txt — grandfathered HS14 floor deficits.
 #
 # Format: `mint_name|path` (one per line, path relative to project root).
+# A member mint is keyed `Class::mint_name|path`.
 # No line number: a mint moves down its own header every time an edit lands
 # above it, so a line key stales on contact.  Name plus path is a content
 # key in the sense the sibling guards use — it survives line drift and
@@ -9,25 +10,19 @@
 #
 # Why this file exists.  HS14 (CLAUDE.md §XVIII) demands two negative-compile
 # fixtures per mint, because a `requires` clause with no witness that it
-# FIRES is a comment.  The floor gate enforced that against 11 trees.  The
-# scan then reached `cntp`, `topology`, `canopy`, `observe`, `cog` and
-# `mimic`, which added 69 mints — and with them the 42 deficits below.
-# They are pre-existing, not new: the gate could not see these trees, so
-# nothing ever asked them for fixtures.  The last one
-# (`mint_computation_in_ctx`) appeared when the counter learned to ignore
-# mentions inside comments.
+# FIRES is a comment.  Each time the gate reached more of the tree, it found
+# mints that nothing had ever asked for fixtures.  The sections below record
+# those deficits by the scan extension that surfaced them.
 #
 # Listing them here keeps the gate doing its actual job.  A mint added
-# tomorrow without fixtures reds CI immediately; these 42 are tracked debt
-# instead of an invisible hole or a blanket red that trains everyone to
+# tomorrow without fixtures reds CI immediately; these entries are tracked
+# debt instead of an invisible hole or a blanket red that trains everyone to
 # ignore the gate.
 #
 # Every entry is a TODO.  Write the fixtures, delete the line.  A stale
 # entry — one naming a mint that now meets the floor, or that was renamed
 # or moved — reds CI at exit 2, so the file drains in lockstep and cannot
 # quietly outlive the debt it records.
-#
-# 16 of the 42 have ZERO fixtures; the rest have exactly one.
 
 # ── canopy ───────────────────────────────────────────────────────────
 mint_plumtree|include/crucible/canopy/Plumtree.h
@@ -86,8 +81,51 @@ mint_synthetic_probes|include/crucible/observe/SyntheticProbe.h
 mint_congestion_telemetry_worker|include/crucible/topology/CongestionTelemetryWorker.h
 mint_nic_telemetry_snapshot|include/crucible/topology/Telemetry.h
 
-# ── effects (pre-existing, surfaced by the comment-stripping fix) ─────
+# ── the new tree and the top-level headers ───────────────────────────
 #
-# `mint_computation_in_ctx` read as HS14: 2 while one of the two mentions
-# lived in a `//` comment in neg_mint_computation_non_pure_row.cpp.  One
-# real fixture remains.
+# The inventory reached include/foundation, include/fixy and the headers
+# directly under include/crucible when it moved onto the AST mint model.
+# It also started to count each mint's fixtures in its own tree only.  The
+# old count matched fixtures by name across both trees, so the ported
+# mints below read as covered by the old tree's fixtures of their
+# namesakes.  Their own tree has fewer than two.
+
+# The old tree, a top-level header the old scan did not reach.
+mint_ffi_entry|include/crucible/TraceRing.h
+
+# include/fixy
+mint_carries_the_value|include/fixy/Fn.h
+mint_fn|include/fixy/Fn.h
+mint_fn_for|include/fixy/Fn.h
+mint_machine|include/fixy/Machine.h
+mint_append_only|include/fixy/Mutation.h
+mint_atomic_monotonic|include/fixy/Mutation.h
+mint_bounded_monotonic|include/fixy/Mutation.h
+mint_monotonic|include/fixy/Mutation.h
+mint_ordered_append_only|include/fixy/Mutation.h
+mint_write_once|include/fixy/Mutation.h
+mint_write_once_non_null|include/fixy/Mutation.h
+mint_affine|include/fixy/Qtt.h
+mint_sealed_refined_trusted|include/fixy/Refined.h
+
+# include/fixy/os
+mint_io_uring_ring|include/fixy/os/Io.h
+mint_zerocopy_transfer|include/fixy/os/Io.h
+mint_mmap|include/fixy/os/Mmap.h
+mint_mmap_anon|include/fixy/os/Mmap.h
+mint_sched_class|include/fixy/os/SchedClass.h
+mint_parallel_for|include/fixy/os/Spawn.h
+mint_thread_name|include/fixy/os/ThreadName.h
+mint_bounded_sleep|include/fixy/os/Time.h
+mint_clock_reader|include/fixy/os/Time.h
+mint_tsc_reader|include/fixy/os/Time.h
+
+# include/foundation
+mint_diagnostic|include/foundation/diag/Catalog.h
+mint_from_ctx|include/foundation/effects/Capability.h
+Computation::mint_computation_in_ctx|include/foundation/effects/Computation.h
+mint_permission_combine|include/foundation/permissions/Permission.h
+mint_permission_combine_n|include/foundation/permissions/Permission.h
+mint_permission_share|include/foundation/permissions/Permission.h
+mint_permission_split_n|include/foundation/permissions/Permission.h
+mint_permission_fork_inline|include/foundation/permissions/PermissionFork.h
