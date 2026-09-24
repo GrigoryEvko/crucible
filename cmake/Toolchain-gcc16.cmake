@@ -1,12 +1,11 @@
-# Toolchain-gcc16.cmake — portable resolution of the patched GCC 16.2.1 toolchain.
+# Toolchain-gcc16.cmake: find the patched GCC 16.2.1 and its libstdc++ 16.
 #
-# Crucible builds REQUIRE the patched GCC 16.2.1 plus its matching libstdc++ 16.
-# The patch is upstream commit ac1cdcdad9d ("c++, contracts: fix testsuite
-# basic.contract.eval.p8 failed"), which is on trunk only. It adds one guard in
-# cxx_eval_call_expression so that a constexpr call with a contract violation is
-# not cached. Without it, every pre()/post() clause is bypassed at consteval.
-# The location of the toolchain is machine-specific, so this file resolves it in
-# priority order instead of hardcoding a single path in the preset.
+# Crucible needs GCC 16.2.1 with the fixes in toolchain/gcc/patches.
+# toolchain/gcc/build.sh builds that compiler from toolchain/gcc/BASE and the
+# patches.  The location of the compiler is different on each machine, so this
+# file finds it in the order below, and the preset gives no path.  Then the
+# probes in cmake/PatchedGccProbe.cmake identify the compiler by what it does.
+# A compiler that fails a probe stops the configure step.
 #
 # Resolution order (highest priority first):
 #   1. CRUCIBLE_CXX           — full path to the g++ binary. The sibling tools
@@ -78,13 +77,24 @@ if(NOT EXISTS "${_crucible_cxx}")
     "See cmake/Toolchain-gcc16.cmake for resolution order.")
 endif()
 
+# --- 3. Refuse a compiler that does not have each fix -----------------------
+# CMake reads this file again in each try_compile project, with the same
+# compiler.  The probes run only in the top project.
+if(NOT CMAKE_IN_TRY_COMPILE)
+  include("${CMAKE_CURRENT_LIST_DIR}/PatchedGccProbe.cmake")
+  crucible_patched_gcc_problem("${_crucible_cxx}" _crucible_gcc_problem)
+  if(NOT _crucible_gcc_problem STREQUAL "")
+    message(FATAL_ERROR "${_crucible_gcc_problem}")
+  endif()
+endif()
+
 set(CMAKE_C_COMPILER   "${_crucible_cc}"     CACHE FILEPATH "Crucible patched gcc-16p")
 set(CMAKE_CXX_COMPILER "${_crucible_cxx}"    CACHE FILEPATH "Crucible patched g++-16p")
 set(CMAKE_AR           "${_crucible_ar}"     CACHE FILEPATH "Crucible patched gcc-ar-16p")
 set(CMAKE_NM           "${_crucible_nm}"     CACHE FILEPATH "Crucible patched gcc-nm-16p")
 set(CMAKE_RANLIB       "${_crucible_ranlib}" CACHE FILEPATH "Crucible patched gcc-ranlib-16p")
 
-# --- 3. Derive the rpath from the SAME prefix -------------------------------
+# --- 4. Derive the rpath from the SAME prefix -------------------------------
 # Binaries compiled with the patched tree link against its newer libstdc++.so.6,
 # which is not on the system path. The rpath is derived from the resolved
 # prefix so it always matches the compiler that produced the binary.

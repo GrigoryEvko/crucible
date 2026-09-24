@@ -550,6 +550,16 @@ if(CRUCIBLE_UBSAN_STRICT)
   set_tests_properties(no_throw_no_rtti PROPERTIES DISABLED TRUE)
 endif()
 
+# The toolchain file refuses a compiler that does not have each fix in
+# toolchain/gcc/patches.  This test runs the probes on the compiler of the
+# build, which must pass, and on stub compilers, which must each get the
+# result that their behaviour calls for.
+add_test(NAME patched_gcc_probe_self_test
+  COMMAND ${CMAKE_COMMAND} -DCXX=${CMAKE_CXX_COMPILER}
+          -DWORK=${CMAKE_CURRENT_BINARY_DIR}/patched_gcc_probe_self_test
+          -P ${CMAKE_SOURCE_DIR}/cmake/probes/self_test.cmake)
+set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
+
 # Every site that claims a lifetime bound carries the deleted overload
 # that enforces it.  CRUCIBLE_LIFETIMEBOUND expands to nothing on the
 # only compiler this tree builds with, so the claim is checked here

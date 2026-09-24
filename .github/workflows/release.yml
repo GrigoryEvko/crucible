@@ -72,6 +72,15 @@ jobs:
           fi
 
   # ---------------------------------------------------------------------------
+  # The patched GCC of the tag, built once for each arch and cached.  A cache
+  # entry from a CI run of the same toolchain/gcc files is a hit.
+  # ---------------------------------------------------------------------------
+  patched-gcc:
+    uses: ./.github/workflows/patched-gcc.yml
+    with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+  # ---------------------------------------------------------------------------
   # Build the portable static tools per arch and attach them to the Release.
   # Mirrors ci.yml's container + dnf-cache + split ccache restore/save, under a
   # `release`-namespaced cache key (warm across tags, never collides with the
@@ -79,7 +88,7 @@ jobs:
   # ---------------------------------------------------------------------------
   binaries:
     name: portable static binaries (${{ matrix.arch }})
-    needs: ensure_release
+    needs: [ensure_release, patched-gcc]
     runs-on: ${{ matrix.runner }}
     container: fedora:44
     # aarch64 is best-effort: x86_64 is the primary deployment target, so an arm
@@ -94,7 +103,7 @@ jobs:
           - { arch: x86_64,  runner: ubuntu-24.04,     march: x86-64-v3 }
           - { arch: aarch64, runner: ubuntu-24.04-arm, march: armv8.2-a }
     env:
-      CRUCIBLE_CXX: /usr/bin/g++
+      CRUCIBLE_CXX: /opt/crucible-gcc/usr/bin/g++-16p
       CCACHE_DIR: /ccache
       CCACHE_MAXSIZE: "2G"
       CCACHE_COMPRESS: "true"
@@ -114,13 +123,22 @@ jobs:
           key: dnf-release-${{ matrix.arch }}-${{ github.run_id }}
           restore-keys: dnf-release-${{ matrix.arch }}-
 
-      # Static-link toolchain: glibc-static + libstdc++-static back `-static`;
-      # gh uploads the assets. No BPF stack, no sanitizers (release build only).
+      # Static-link toolchain: glibc-static backs `-static`, and the patched
+      # GCC carries its own libstdc++.a.  gcc-c++ and isl supply the tools and
+      # the libraries that the patched GCC runs on.  gh uploads the assets.
+      # No BPF stack, no sanitizers (release build only).
       - name: Install toolchain + static libs + gh
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ cmake ninja-build git ccache gh
-          glibc-static libstdc++-static
+          gcc-c++ isl cmake ninja-build git ccache gh
+          glibc-static
+
+      - name: Restore the patched GCC
+        uses: actions/cache/restore@v4
+        with:
+          path: /opt/crucible-gcc
+          key: ${{ needs.patched-gcc.outputs.key }}-${{ matrix.arch }}
+          fail-on-cache-miss: true
 
       # Split restore/save (same rationale as ci.yml): unique run_id in the key
       # so save never collides; prefix restore-keys so each tag build resumes
@@ -182,7 +200,7 @@ jobs:
               echo "::error::$b is NOT statically linked"; ldd "$b" || true; exit 1
             fi
           done
-          ( cd dist && sha256sum *-${{ matrix.arch }}-linux > "SHA256SUMS-${{ matrix.arch }}.txt" )
+          ( cd dist && sha256sum -- *-${{ matrix.arch }}-linux >"SHA256SUMS-${{ matrix.arch }}.txt" )
           cat "dist/SHA256SUMS-${{ matrix.arch }}.txt"
 
       # Release assets — NOT actions/upload-artifact (see billing block). --clobber

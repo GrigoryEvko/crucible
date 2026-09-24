@@ -1,0 +1,97 @@
+# Build the patched GCC once for each arch, and cache the install.
+#
+# ci.yml and release.yml call this workflow.  Each job that compiles Crucible
+# then restores the install from the cache and sets CRUCIBLE_CXX to it, so no
+# job compiles with the stock g++ of the container.  cmake/Toolchain-gcc16.cmake
+# refuses a compiler without each fix, so a job that uses a different compiler
+# fails at the configure step.
+#
+# toolchain/gcc/build.sh builds the compiler from toolchain/gcc/BASE and
+# toolchain/gcc/patches/.  The cache key is a hash of those files and of the
+# script, so a change to one of them builds the compiler again.  A cache hit
+# skips the build, and the job then takes approximately one minute.
+#
+# BILLING: the same rules as the billing block in ci.yml.  Standard runners
+# only, no cache limit change, no upload-artifact.  The install is
+# approximately 254 MB, and 90 MB after compression.  There is one cache
+# entry for each arch.
+
+name: patched-gcc
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "The commit to read toolchain/gcc from.  Empty means the commit of the run."
+        required: false
+        type: string
+        default: ""
+    outputs:
+      key:
+        description: "The cache key without the arch.  Append -x86_64 or -aarch64."
+        value: ${{ jobs.build.outputs.key }}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: patched GCC ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    container: fedora:44
+    # The aarch64 legs of ci.yml and release.yml do not block a run.  A failed
+    # aarch64 compiler must not block the x86_64 legs either, because a job
+    # that needs this one runs only if this job succeeds.
+    continue-on-error: ${{ matrix.arch == 'aarch64' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # BILLING: `runner` MUST stay a standard free label.
+          - { arch: x86_64,  runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - name: Bootstrap cache tooling
+        run: dnf install -y --setopt=install_weak_deps=False tar zstd
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      # The two legs compute the same key, because it does not contain the
+      # arch.  The consumers append the arch.
+      - name: Compute the cache key
+        id: key
+        run: echo "key=patched-gcc-fedora44-${{ hashFiles('toolchain/gcc/BASE', 'toolchain/gcc/patches/*.patch', 'toolchain/gcc/build.sh') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Look up the cached install
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /opt/crucible-gcc
+          key: ${{ steps.key.outputs.key }}-${{ matrix.arch }}
+          lookup-only: true
+
+      - name: Install the build dependencies
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        run: >
+          dnf install -y --setopt=install_weak_deps=False
+          gcc-c++ make flex git tar diffutils findutils gawk file perl
+          gmp-devel mpfr-devel libmpc-devel isl-devel zlib-devel libzstd-devel
+
+      - name: Build and install the patched GCC
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        run: bash toolchain/gcc/build.sh /opt/crucible-gcc "$(nproc)"
+
+      - name: Save the install
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: /opt/crucible-gcc
+          key: ${{ steps.key.outputs.key }}-${{ matrix.arch }}

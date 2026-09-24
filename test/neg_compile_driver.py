@@ -200,10 +200,8 @@ def main() -> int:
     # diagnostic gate.  GCC honors the LAST -fcontract-evaluation-
     # semantic flag, so append `enforce` to override whatever the
     # replayed preset command carried.  No-op under default/tsan
-    # (already enforce); fixes the release preset.  Identical on stock
-    # and patched GCC 16 — the consteval rejection here is NOT the
-    # patched compiler's c++/124241 fix (that only affects the two
-    # graded-regime fixtures CI excludes by name).  Only appended when
+    # (already enforce); fixes the release preset.  The flag does not
+    # depend on the fixes in toolchain/gcc/patches.  Only appended when
     # contracts are already enabled on the replayed command.
     if any(arg.startswith("-fcontract") for arg in argv):
         argv.append("-fcontract-evaluation-semantic=enforce")
