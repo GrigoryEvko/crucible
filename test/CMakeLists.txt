@@ -1663,6 +1663,10 @@ crucible_test(test_spsc_session)
 # round trip, and the handle that a session gives back at End.
 crucible_test(test_metalog_session)
 
+# SingletonInitGraph.h: the registry of runtime singletons and the gate
+# that refuses a cycle in their lazy-initialization graph.
+crucible_test(test_singleton_init_graph)
+
 # ChainEdgeSession.h (GAPS-062) — one-shot semaphore signal/wait facade
 # over PermissionedChainEdge.  Covers CPU oracle plus stubbed vendor
 # surfaces and the Send<SemaphoreSignal, End> / Recv<...> sessions.
@@ -13007,6 +13011,16 @@ crucible_neg_compile_multi_test(neg_metalog_session_consumer_wrong_role
     "no matching function for call to .mint_metalog_consumer_session<"
     "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_wrong_role_fixture::Tag>::ProducerHandle"
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
+
+# SingletonInitGraph.h: the gate refuses a cycle, and it refuses an edge
+# to a singleton that the registry does not hold.
+crucible_neg_compile_multi_test(neg_singleton_init_graph_cycle
+    "template constraint failure for .template<class Registry, class Edges>  requires  AcyclicInitGraph<Registry, Edges> struct crucible::singleton_init_graph::init_graph."
+    "the expression .\\(is_acyclic_<Registry>\\)\\(static_cast<Edges\\*>\\(nullptr\\)\\) \\[with Registry = std::tuple<fixy::atom::global::singleton<neg_singleton_init_graph_cycle_types::first_tag>.*\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_singleton_init_graph_unregistered_edge
+    "template constraint failure for .template<class Registry, class Edges>  requires  AcyclicInitGraph<Registry, Edges> struct crucible::singleton_init_graph::init_graph."
+    "required for the satisfaction of .EdgesNameRegisteredSingletons<Registry, Edges>. \\[with Registry = std::tuple<fixy::atom::global::singleton<neg_singleton_init_graph_unregistered_edge_types::registered_tag> >.*\\]"
+    "the expression .\\(edges_name_registered_<Registry>\\)")
 
 # ── GAPS-062 — PermissionedChainEdge role-discrimination tests ─────
 crucible_neg_compile_test(neg_chainedge_signaler_wait

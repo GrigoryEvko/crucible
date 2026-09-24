@@ -494,8 +494,9 @@ inline constexpr corpus_entry rule_corpus[] = {
      "no two linear bindings in one frame name the same in_region tag. The rule needs the set of bindings "
      "that F001 needs, and no gate takes one"},
     {"S004", Disposition::Absent,
-     "walks the init-dependency graph of every singleton for a cycle. global::singleton<Tag> names no edge, "
-     "and the old SingletonInitGraph.h, which states the edges, is not ported"},
+     "walks the init-dependency graph of every singleton for a cycle. global::singleton<Tag> names no edge. "
+     "crucible/SingletonInitGraph.h states the edges and refuses a cycle at its own gate, and no gate takes the "
+     "set of bindings that would read the graph"},
 
     // Retired: the rule is not carried further, and the note says why.
     // Each of these is discharged by the shape of the new tree — the
