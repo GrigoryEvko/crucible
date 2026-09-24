@@ -79,6 +79,12 @@ namespace eff = crucible::effects;
 namespace perm = crucible::permissions;
 namespace saf = crucible::safety;
 
+// The keyed function stands outside the unnamed namespace, because a key
+// refuses a function with internal linkage.
+namespace attack_federation_forgery_functions {
+inline void f_attacker_payload(int) noexcept {}
+}  // namespace attack_federation_forgery_functions
+
 namespace {
 
 // ─── The victim ────────────────────────────────────────────────────
@@ -91,7 +97,7 @@ struct VictimOrgPeer {};
 
 using VictimAdmitPolicy = perm::policy::admit_orgs<VictimOrgSelf, VictimOrgPeer>;
 
-inline void f_attacker_payload(int) noexcept {}
+using attack_federation_forgery_functions::f_attacker_payload;
 
 using RowIO = eff::Row<eff::Effect::IO>;
 

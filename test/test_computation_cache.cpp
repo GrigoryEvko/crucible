@@ -48,9 +48,13 @@ void run_test(const char* name, F&& body) {
 
 namespace cipher = ::crucible::cipher;
 
+}  // namespace
+
 // None of the functions below is ever called.  Their addresses serve
 // as template arguments, and each function paired with an argument
-// pack names one atomic slot.
+// pack names one atomic slot.  They stand outside the unnamed
+// namespace, because a key refuses a function with internal linkage.
+namespace test_computation_cache_functions {
 
 inline void test_fn_a(int) noexcept {}
 inline void test_fn_b(int, double) noexcept {}
@@ -88,6 +92,12 @@ inline void cr_fn_t3(int) noexcept {}
 // Separate from the row-blind contention fixture, so the row-aware
 // first-writer test starts from a slot known to be empty.
 inline int cr_contention_fn(int) noexcept { return 0; }
+
+}  // namespace test_computation_cache_functions
+
+namespace {
+
+using namespace test_computation_cache_functions;
 
 // The cache stores these pointers and never dereferences them, so a
 // bit pattern that points nowhere is a valid stand-in for a body.

@@ -26,9 +26,15 @@ namespace eff = ::crucible::effects;
 // Only the function's identity contributes to the key.  Renaming it or
 // its namespace changes every pinned key and reads as algorithm drift.
 
+}  // namespace
+
+// The function stands outside the unnamed namespace, because a key
+// refuses a function with internal linkage.
 namespace found_f13_pins {
 inline void canonical_pin_fn(int) noexcept {}
 }  // namespace found_f13_pins
+
+namespace {
 
 // Effect underlying values line up with bit positions, which is what
 // makes the cast from a bit index to an Effect correct.

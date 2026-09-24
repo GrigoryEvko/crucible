@@ -1462,10 +1462,12 @@ fixy_neg_compile_test(neg_sess_subtype_label_discipline_positional
   "The failed pair is fixy::session::Offer<fixy::session::Recv<int, fixy::session::End> > against .*Offer<.*PeerMsg<.*Hello, int>")
 fixy_neg_compile_test(neg_sess_subtype_label_word_clash_output
   "fixy::session::diagnostic \\[Subtype_LabelWordClash\\]: assert_subtype_sync"
-  "The failed pair is .*Select<.*PeerMsg<.*Bob, .*<lambda\\(\\)>, int>.* against .*Select<.*<lambda\\(\\)>, int>")
+  "The failed pair is .*Select<.*PeerMsg<.*Bob, .*<lambda\\(\\)>, int>.* against .*Select<.*<lambda\\(\\)>, int>"
+  "a stable id refuses the type .*<lambda\\(\\)>.*has no declared name")
 fixy_neg_compile_test(neg_sess_subtype_label_word_clash_input
   "fixy::session::diagnostic \\[Subtype_LabelWordClash\\]: assert_subtype_sync"
-  "The failed pair is .*Offer<.*Recv<.*PeerMsg<.*Bob, .*<lambda\\(\\)>, int>.* against .*Offer<.*<lambda\\(\\)>, int>")
+  "The failed pair is .*Offer<.*Recv<.*PeerMsg<.*Bob, .*<lambda\\(\\)>, int>.* against .*Offer<.*<lambda\\(\\)>, int>"
+  "a stable id refuses the type .*<lambda\\(\\)>.*has no declared name")
 
 # Well-formedness of a choice: no message branch after a crash branch,
 # no two crash branches with one payload, and no two branches that name
@@ -1488,7 +1490,8 @@ fixy_neg_compile_test(neg_sess_wf_mixed_label_keys
   "some label branches name a label key and some do not")
 fixy_neg_compile_test(neg_sess_wf_label_word_collision
   "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
-  "two label keys of the choice have one label word")
+  "two label keys of the choice have one label word"
+  "a stable id refuses the type .*<lambda\\(\\)>.*has no declared name")
 fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
   "no matching function for call to .mint_session_handle"
   "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>, fixy::session::End>, fixy::session::Send<int, fixy::session::End>")
@@ -2037,12 +2040,12 @@ fixy_neg_compile_test(neg_sess_assoc_not_balanced_plus
 fixy_neg_compile_test(neg_sess_assoc_select_widened
   "static assertion failed"
   "fixy::session::diagnostic \\[Association_Local_Mismatch\\]"
-  "PeerMsg<\\{anonymous\\}::Carol, \\{anonymous\\}::Stop, int>")
+  "PeerMsg<neg_sess_assoc_select_widened_types::Carol, neg_sess_assoc_select_widened_types::Stop, int>")
 
 fixy_neg_compile_test(neg_sess_assoc_offer_narrowed
   "static assertion failed"
   "fixy::session::diagnostic \\[Association_Local_Mismatch\\]"
-  "RoleState<\\{anonymous\\}::Carol, OutQueue<>, Offer<Sender<\\{anonymous\\}::Bob>, Recv<PeerMsg<\\{anonymous\\}::Bob, \\{anonymous\\}::Left, int>, End> > >")
+  "RoleState<neg_sess_assoc_offer_narrowed_types::Carol, OutQueue<>, Offer<Sender<neg_sess_assoc_offer_narrowed_types::Bob>, Recv<PeerMsg<neg_sess_assoc_offer_narrowed_types::Bob, neg_sess_assoc_offer_narrowed_types::Left, int>, End> > >")
 
 fixy_neg_compile_test(neg_sess_assoc_untrusted_payload
   "static assertion failed"
@@ -3281,6 +3284,34 @@ fixy_neg_compile_test(neg_disjoint_split_refuses_spelled_name
 # would hand the class half a zero.  The cell lives here rather than in
 # test/foundation because foundation must not depend on fixy.
 fixy_test(test_row_hash_wrappers)
+
+# A row hash is a function of the type alone, so two translation units
+# of one build compute one hash for one type.  The second unit declares
+# generic closures before its includes, which moves the counter GCC
+# prints in every closure name.  The positive control proves the shift
+# is real, and every entry must still agree across the two units.
+fixy_test(test_row_hash_translation_units
+  test_row_hash_translation_units.cpp
+  test_row_hash_translation_units_shifted.cpp)
+
+# Every stable id refuses a type whose printed name is not an identity.
+# A refinement over a closure predicate takes no row hash, and a value
+# that points at a closure's static invoker takes no stable id.
+fixy_neg_compile_test(neg_row_hash_of_a_closure_predicate
+  "a stable id refuses the type"
+  "has no declared name")
+fixy_neg_compile_test(neg_stable_id_of_a_closure_invoker_value
+  "a stable id refuses the type"
+  "has no declared name")
+fixy_neg_compile_test(neg_stable_id_of_an_internal_type
+  "a stable id refuses the type"
+  "has internal linkage")
+
+# A predicate class states its expression as a constraint, so a payload
+# the expression cannot evaluate fails the invocability gate at the mint.
+fixy_neg_compile_test(neg_refined_mint_predicate_not_comparable
+  "constraints not satisfied"
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = .*; T = refined_not_comparable::Uncomparable\\]")
 
 # ── The three axes as one surface ─────────────────────────────────────
 #

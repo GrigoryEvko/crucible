@@ -757,7 +757,17 @@ void expect_context(std::string_view label, bool expect_clean) {
 // Unfolding does not change the graph, so the unfolded rewrite reuses
 // the projected context in the explorer.
 
+}  // namespace
+
+// A label with external linkage: a label word is a stable id, and a
+// stable id refuses a type with internal linkage.
+namespace test_session_global_attack_roles {
 struct NeverSent {};
+}  // namespace test_session_global_attack_roles
+
+namespace {
+
+using test_session_global_attack_roles::NeverSent;
 using Checked = ::fixy::Tagged<int, ::fixy::tags::source::Sanitized>;
 static_assert(s::is_payload_subsort_v<Checked, int>);
 static_assert(s::is_payload_subsort_v<s::PeerMsg<NeverSent, NeverSent, Checked>, s::PeerMsg<NeverSent, NeverSent, int>>);
@@ -1092,14 +1102,6 @@ struct GenA {};
 struct GenB {};
 struct GenC {};
 struct GenD {};
-}  // namespace test_session_global_attack_roles
-
-namespace {
-
-using test_session_global_attack_roles::P;
-using test_session_global_attack_roles::Q;
-using test_session_global_attack_roles::R;
-using test_session_global_attack_roles::S;
 struct M {};
 struct M0 {};
 struct M1 {};
@@ -1112,6 +1114,29 @@ struct L1 {};
 struct L2 {};
 struct Add {};
 struct Sub {};
+struct GenL0 {};
+struct GenL1 {};
+struct GenL2 {};
+}  // namespace test_session_global_attack_roles
+
+namespace {
+
+using test_session_global_attack_roles::P;
+using test_session_global_attack_roles::Q;
+using test_session_global_attack_roles::R;
+using test_session_global_attack_roles::S;
+using test_session_global_attack_roles::M;
+using test_session_global_attack_roles::M0;
+using test_session_global_attack_roles::M1;
+using test_session_global_attack_roles::M2;
+using test_session_global_attack_roles::X;
+using test_session_global_attack_roles::Y;
+using test_session_global_attack_roles::Z;
+using test_session_global_attack_roles::Kk;
+using test_session_global_attack_roles::L1;
+using test_session_global_attack_roles::L2;
+using test_session_global_attack_roles::Add;
+using test_session_global_attack_roles::Sub;
 
 template <typename Peer, typename Label, typename Cont>
 using Out = s::Send<s::PeerMsg<Peer, Label, int>, Cont>;
@@ -1372,9 +1397,9 @@ using test_session_global_attack_roles::GenA;
 using test_session_global_attack_roles::GenB;
 using test_session_global_attack_roles::GenC;
 using test_session_global_attack_roles::GenD;
-struct GenL0 {};
-struct GenL1 {};
-struct GenL2 {};
+using test_session_global_attack_roles::GenL0;
+using test_session_global_attack_roles::GenL1;
+using test_session_global_attack_roles::GenL2;
 using GenRoles = std::tuple<GenA, GenB, GenC, GenD>;
 using GenLabels = std::tuple<GenL0, GenL1, GenL2>;
 

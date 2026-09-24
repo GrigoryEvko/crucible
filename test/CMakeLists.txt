@@ -409,6 +409,12 @@ crucible_test(test_kernel_cache_key)
 crucible_test(test_row_hash_fold)
 crucible_test(test_row_hash_contribution_sentinel)
 crucible_test(test_row_hash_distinctness)
+# An old-tree row hash is a function of the type alone, so two
+# translation units of one build compute one hash for one type.  The
+# second unit declares generic closures before its includes.
+crucible_test(test_row_hash_translation_units_safety
+  test_row_hash_translation_units_safety.cpp
+  test_row_hash_translation_units_safety_shifted.cpp)
 # fix-14 — SchedClass SCHED_DEADLINE budget NTTPs were folded with a
 # collidable shift-XOR pre-mix; now per-field combine_ids.  Witnesses an
 # old-collision triple pair now produces distinct row_hash.
@@ -10580,6 +10586,16 @@ crucible_neg_compile_test(neg_computation_cache_in_row_non_row_param
 # the matrix on the row-aware × IsCacheableFunction cell.
 crucible_neg_compile_test(neg_computation_cache_in_row_non_function_nttp
   "constraints not satisfied|template constraint failure|associated constraints")
+# The content key folds the printed name of the function and of each
+# argument type, so it refuses a closure's static invoker and a closure
+# argument type: either prints a name that depends on the translation
+# unit.
+crucible_neg_compile_multi_test(neg_computation_cache_closure_invoker
+  "computation_cache_key: the function, its signature or an argument type has no stable identity"
+  "HasStableKeyIdentity")
+crucible_neg_compile_multi_test(neg_computation_cache_closure_argument
+  "computation_cache_key: the function, its signature or an argument type has no stable identity"
+  "HasStableKeyIdentity")
 # F13-AUDIT subset_row Mask precondition — pins the requires-clause
 # on the subset_row<Mask> alias used by the F13 invalidation TU.
 # Without the `requires (Mask < 64u)` fence, high bits of Mask would

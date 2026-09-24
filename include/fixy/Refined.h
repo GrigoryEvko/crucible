@@ -70,14 +70,25 @@ namespace fixy {
 // wrong.  Each predicate therefore ships as a class and a value, and
 // call sites name the value as before.
 
+// Each call operator states the expression its body evaluates as a
+// constraint, so a predicate that cannot evaluate a type fails
+// PredicateInvocableOn at the mint instead of failing inside the body.
 struct IsPositive {
-    constexpr bool operator()(auto x) const noexcept { return x > decltype(x){0}; }
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x > decltype(x){0}; }
+    {
+        return x > decltype(x){0};
+    }
 };
 
 inline constexpr IsPositive positive{};
 
 struct IsNonNegative {
-    constexpr bool operator()(auto x) const noexcept { return x >= decltype(x){0}; }
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x >= decltype(x){0}; }
+    {
+        return x >= decltype(x){0};
+    }
 };
 
 inline constexpr IsNonNegative non_negative{};
@@ -90,7 +101,9 @@ inline constexpr IsNonNegative non_negative{};
 // that the zero value of a pointer type is spelled as the null pointer
 // it is.  For an arithmetic type the two spellings are the same value.
 struct IsNonZero {
-    constexpr bool operator()(const auto& x) const noexcept {
+    constexpr bool operator()(const auto& x) const noexcept
+        requires requires { x.raw() != 0; } || requires { x != std::remove_cvref_t<decltype(x)>{}; }
+    {
         if constexpr (requires { x.raw(); })
             return x.raw() != 0;
         else
@@ -105,7 +118,9 @@ inline constexpr IsNonZero non_zero{};
 // invariant lives in the type instead of being discovered by reading a
 // write routine and noticing the zero literal.
 struct IsZero {
-    constexpr bool operator()(const auto& x) const noexcept {
+    constexpr bool operator()(const auto& x) const noexcept
+        requires requires { x.raw() == 0; } || requires { x == std::remove_cvref_t<decltype(x)>{}; }
+    {
         if constexpr (requires { x.raw(); })
             return x.raw() == 0;
         else
@@ -122,7 +137,9 @@ struct IsNonNull {
 inline constexpr IsNonNull non_null{};
 
 struct IsPowerOfTwo {
-    constexpr bool operator()(auto x) const noexcept {
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x != decltype(x){0} && (x & (x - decltype(x){1})) == decltype(x){0}; }
+    {
         using U = decltype(x);
         return x != U{0} && (x & (x - U{1})) == U{0};
     }
@@ -131,7 +148,11 @@ struct IsPowerOfTwo {
 inline constexpr IsPowerOfTwo power_of_two{};
 
 struct IsNonEmpty {
-    constexpr bool operator()(const auto& c) const noexcept { return !c.empty(); }
+    constexpr bool operator()(const auto& c) const noexcept
+        requires requires { !c.empty(); }
+    {
+        return !c.empty();
+    }
 };
 
 inline constexpr IsNonEmpty non_empty{};

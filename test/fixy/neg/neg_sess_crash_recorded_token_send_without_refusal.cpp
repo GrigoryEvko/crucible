@@ -12,7 +12,9 @@
 namespace s = fixy::session;
 namespace fp = foundation::permissions;
 
-namespace {
+// These types have external linkage.  The session folds their stable
+// ids, and a stable id refuses a type with internal linkage.
+namespace neg_sess_crash_recorded_token_send_without_refusal_types {
 struct Alice {};
 struct Bob {};
 struct Wire {};
@@ -21,7 +23,9 @@ struct Region {
 };
 using Token = s::Transferable<int, Region>;
 using Relay = s::Recv<Token, s::Select<s::Send<Token, s::End>>>;
-}  // namespace
+}  // namespace neg_sess_crash_recorded_token_send_without_refusal_types
+
+using namespace neg_sess_crash_recorded_token_send_without_refusal_types;
 
 int main() {
     s::PeerCrashCell cell;

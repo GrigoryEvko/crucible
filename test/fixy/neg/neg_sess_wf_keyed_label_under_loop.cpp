@@ -8,11 +8,15 @@
 
 namespace s = fixy::session;
 
-namespace {
+// These types have external linkage.  The session folds their stable
+// ids, and a stable id refuses a type with internal linkage.
+namespace neg_sess_wf_keyed_label_under_loop_types {
 struct Bob {};
 struct Tick {};
 struct Stop {};
-}  // namespace
+}  // namespace neg_sess_wf_keyed_label_under_loop_types
+
+using namespace neg_sess_wf_keyed_label_under_loop_types;
 
 using LoopFirst = s::Select<s::Loop<s::Send<s::PeerMsg<Bob, Tick, int>, s::Continue>>,
                             s::Send<s::PeerMsg<Bob, Stop, int>, s::End>>;

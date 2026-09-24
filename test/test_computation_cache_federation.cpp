@@ -24,12 +24,18 @@ namespace eff = crucible::effects;
 
 // These fixtures carry their own names rather than the ones the header's
 // self-test uses, so a translation unit that runs both has no collision.
+// They stand outside the unnamed namespace, because a key refuses a
+// function with internal linkage.
 
-namespace {
+namespace test_computation_cache_federation_functions {
 inline void t_unary(int) noexcept {}
 inline void t_binary(int, double) noexcept {}
 inline void t_void() noexcept {}
 inline void t_other(int) noexcept {}  // same signature as t_unary
+}  // namespace test_computation_cache_federation_functions
+
+namespace {
+using namespace test_computation_cache_federation_functions;
 
 using R0 = eff::Row<>;
 using RBg = eff::Row<eff::Effect::Bg>;

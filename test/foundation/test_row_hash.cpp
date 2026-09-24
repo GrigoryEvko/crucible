@@ -38,6 +38,16 @@
 #include <cstdlib>
 #include <type_traits>
 
+// The identities the probes below fold.  They stand outside the unnamed
+// namespace, because a stable id refuses a type with internal linkage.
+namespace test_row_hash_identities {
+struct sealed_probe_identity;
+struct probe_discipline;
+struct other_probe_discipline;
+struct probe_protocol_end;
+struct probe_protocol_send;
+}  // namespace test_row_hash_identities
+
 namespace {
 
 namespace fd = ::foundation::diag;
@@ -286,7 +296,7 @@ static_assert(fd::lattice_canonical_id_v<DetPure> != 0);
 // row_discipline beside the graded shape folds one more identity in, and
 // a wrapper that publishes none keeps the hash it had.
 
-struct sealed_probe_identity;
+using test_row_hash_identities::sealed_probe_identity;
 
 template <fa::ModalityKind M, typename L, typename T>
 struct SealedFacadeProbe : FacadeProbe<M, L, T> {
@@ -300,8 +310,8 @@ static_assert(row_hash_contribution_v<SealedFacadeProbe<fa::ModalityKind::Absolu
 
 // ── The discipline carrier ───────────────────────────────────────────
 
-struct probe_discipline;
-struct other_probe_discipline;
+using test_row_hash_identities::other_probe_discipline;
+using test_row_hash_identities::probe_discipline;
 
 template <typename Identity, typename Payload>
 struct DisciplineProbe {
@@ -337,8 +347,8 @@ static_assert(row_hash_contribution_v<DisciplineProbe<DetPure, int>>
 
 // ── The stepping carrier ─────────────────────────────────────────────
 
-struct probe_protocol_end;
-struct probe_protocol_send;
+using test_row_hash_identities::probe_protocol_end;
+using test_row_hash_identities::probe_protocol_send;
 
 template <typename Proto, typename Resource>
 struct SteppingProbe {

@@ -328,8 +328,10 @@ inline constexpr std::uint64_t row_hash_contribution_v = row_hash_contribution<T
 // The default is a reflected name, which is the toolchain bound the
 // header comment sets out. Nothing here falls back to a shared constant
 // when a lattice declines to name itself: two unnamed lattices must not
-// share a slot, and a type always has a name even when it does not
-// publish one.
+// share a slot.  A lattice whose printed name is not an identity, because
+// it names a closure, an unnamed class or an entity with internal
+// linkage, fails to compile here: stable_type_id refuses it, since such a
+// name differs between translation units or is shared by different types.
 //
 // The name is narrower than the role, and it stays. Not every identity
 // folded through this trait belongs to a lattice: the multi-axis binding

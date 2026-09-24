@@ -7,7 +7,9 @@
 
 #include <fixy/session/Liveness.h>
 
-namespace {
+// These types have external linkage.  The session folds their stable
+// ids, and a stable id refuses a type with internal linkage.
+namespace neg_sess_context_live_queue_mismatch_types {
 
 namespace g = ::fixy::session::global;
 namespace s = ::fixy::session;
@@ -26,6 +28,8 @@ constexpr int require_live() noexcept {
     return 0;
 }
 
-}  // namespace
+}  // namespace neg_sess_context_live_queue_mismatch_types
+
+using namespace neg_sess_context_live_queue_mismatch_types;
 
 int main() { return require_live(); }

@@ -216,7 +216,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // A divergence in count, ordering, or any individual hash flips this
 // value and reddens the build BEFORE the golden-file diff would notice.
 inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x2423EAB340316E9BULL;
+inline constexpr std::uint64_t kFoldAnchor = 0xA53AAB4B77338374ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;

@@ -7,7 +7,9 @@
 
 #include <fixy/session/Projection.h>
 
-namespace {
+// These types have external linkage.  The session folds their stable
+// ids, and a stable id refuses a type with internal linkage.
+namespace neg_sess_assoc_untrusted_payload_types {
 
 namespace g = ::fixy::session::global;
 namespace s = ::fixy::session;
@@ -32,6 +34,8 @@ constexpr int check_context() noexcept {
     return 0;
 }
 
-}  // namespace
+}  // namespace neg_sess_assoc_untrusted_payload_types
+
+using namespace neg_sess_assoc_untrusted_payload_types;
 
 int main() { return check_context(); }

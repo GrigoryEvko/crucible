@@ -36,40 +36,95 @@ namespace crucible::safety {
 
 // Every predicate is stateless, so that it can serve as a template
 // argument.
+//
+// Every predicate is also a named class type, never a closure.  The row
+// hash folds the predicate's printed name, and GCC prints a generic
+// closure with a counter that runs across the translation unit, so a
+// closure predicate gave one refinement a different hash in each
+// translation unit.  Call sites name the values as before.
 
-inline constexpr auto positive = [](auto x) constexpr noexcept { return x > decltype(x){0}; };
+// Each call operator states the expression its body evaluates as a
+// constraint, so a predicate that cannot evaluate a type fails the
+// mint's invocability gate instead of failing inside the body.
+struct IsPositive {
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x > decltype(x){0}; }
+    {
+        return x > decltype(x){0};
+    }
+};
 
-inline constexpr auto non_negative = [](auto x) constexpr noexcept { return x >= decltype(x){0}; };
+inline constexpr IsPositive positive{};
+
+struct IsNonNegative {
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x >= decltype(x){0}; }
+    {
+        return x >= decltype(x){0};
+    }
+};
+
+inline constexpr IsNonNegative non_negative{};
 
 // For an unsigned type this coincides with positive. The two are kept
 // apart because they state different intents: non_zero reserves a
 // sentinel, positive claims a sign class.
-inline constexpr auto non_zero = [](const auto& x) constexpr noexcept {
-    if constexpr (requires { x.raw(); })
-        return x.raw() != 0;
-    else
-        return x != decltype(x){0};
+struct IsNonZero {
+    constexpr bool operator()(const auto& x) const noexcept
+        requires requires { x.raw() != 0; } || requires { x != decltype(x){0}; }
+    {
+        if constexpr (requires { x.raw(); })
+            return x.raw() != 0;
+        else
+            return x != decltype(x){0};
+    }
 };
+
+inline constexpr IsNonZero non_zero{};
 
 // The dual of non_zero. It holds where a wire or disk format reserves
 // zero as the only valid payload for a field, so that the must-be-zero
 // invariant lives in the type instead of being discovered by reading a
 // write routine and noticing the zero literal.
-inline constexpr auto is_zero = [](const auto& x) constexpr noexcept {
-    if constexpr (requires { x.raw(); })
-        return x.raw() == 0;
-    else
-        return x == decltype(x){0};
+struct IsZero {
+    constexpr bool operator()(const auto& x) const noexcept
+        requires requires { x.raw() == 0; } || requires { x == decltype(x){0}; }
+    {
+        if constexpr (requires { x.raw(); })
+            return x.raw() == 0;
+        else
+            return x == decltype(x){0};
+    }
 };
 
-inline constexpr auto non_null = [](auto* p) constexpr noexcept { return p != nullptr; };
+inline constexpr IsZero is_zero{};
 
-inline constexpr auto power_of_two = [](auto x) constexpr noexcept {
-    using U = decltype(x);
-    return x != U{0} && (x & (x - U{1})) == U{0};
+struct IsNonNull {
+    constexpr bool operator()(auto* p) const noexcept { return p != nullptr; }
 };
 
-inline constexpr auto non_empty = [](const auto& c) constexpr noexcept { return !c.empty(); };
+inline constexpr IsNonNull non_null{};
+
+struct IsPowerOfTwo {
+    constexpr bool operator()(auto x) const noexcept
+        requires requires { x != decltype(x){0} && (x & (x - decltype(x){1})) == decltype(x){0}; }
+    {
+        using U = decltype(x);
+        return x != U{0} && (x & (x - U{1})) == U{0};
+    }
+};
+
+inline constexpr IsPowerOfTwo power_of_two{};
+
+struct IsNonEmpty {
+    constexpr bool operator()(const auto& c) const noexcept
+        requires requires { !c.empty(); }
+    {
+        return !c.empty();
+    }
+};
+
+inline constexpr IsNonEmpty non_empty{};
 
 // Each parameterised predicate is a named struct template rather than
 // a variable template of lambdas. A lambda produces a distinct

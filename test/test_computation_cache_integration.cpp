@@ -40,9 +40,14 @@ constexpr bool all_pairwise_distinct(const std::array<std::uint64_t, N>& keys) n
     return true;
 }
 
+}  // namespace
+
 // These fixtures share no name with any other cache fixture.  The two
 // sets of tests run in separate processes and could not collide, but
 // distinct names keep a search for one set from turning up the other.
+// They stand outside the unnamed namespace, because a key refuses a
+// function with internal linkage.
+namespace test_computation_cache_integration_functions {
 inline void ic_unary(int) noexcept {}
 inline void ic_binary(int, double) noexcept {}
 inline void ic_void() noexcept {}
@@ -56,6 +61,11 @@ inline void ic_pop7(int) noexcept {}
 inline void ic_pop8(int) noexcept {}
 inline void ic_lifetime(int) noexcept {}
 inline void ic_hotloop(int) noexcept {}
+}  // namespace test_computation_cache_integration_functions
+
+namespace {
+
+using namespace test_computation_cache_integration_functions;
 
 // The cache never dereferences a body, so a bare bit pattern serves.
 inline cipher::CompiledBody* mk_body(std::uintptr_t v) noexcept { return std::bit_cast<cipher::CompiledBody*>(v); }

@@ -19,12 +19,14 @@
 #include <crucible/safety/diag/_StableName.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/effects/_EffectRow.h>
+#include <foundation/reflect/Hash.h>
 
 #include <atomic>
 #include <bit>
 #include <chrono>
 #include <cstdint>
 #include <meta>
+#include <string_view>
 
 namespace crucible::cipher {
 
@@ -49,6 +51,27 @@ struct CompiledBody;
 template <auto FnPtr>
 concept IsCacheableFunction =
     std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>;
+
+// A key that travels must be a function of the computation alone.  The
+// key folds the printed name of the function and of each argument type,
+// and a closure prints a name that depends on its translation unit.  So
+// a function reached through a closure's static invoker, or a signature
+// or an argument type that names a closure or an unnamed class, has no
+// key.  foundation/reflect/Hash.h reads the structure of each type.
+template <auto FnPtr, typename... Args>
+concept HasStableKeyIdentity =
+    IsCacheableFunction<FnPtr> && ::foundation::reflect::function_has_stable_identity_v<FnPtr>
+    && ::foundation::reflect::HasStableIdentity<std::remove_pointer_t<decltype(FnPtr)>>
+    && (::foundation::reflect::HasStableIdentity<Args> && ...);
+
+namespace detail {
+
+inline constexpr std::string_view kUnstableKeyIdentity =
+    "computation_cache_key: the function, its signature or an argument type has no stable identity.  The key "
+    "folds each printed name, and a closure or an unnamed class prints a name that differs between translation "
+    "units or is shared by different types.  Key a named function over named types.";
+
+}  // namespace detail
 
 // Unfenced, the row parameter would take any type. A type that is not
 // a row folds to a zero contribution, which silently produces a key
@@ -82,6 +105,7 @@ namespace detail {
 template <auto FnPtr, typename... Args>
     requires ::crucible::cipher::IsCacheableFunction<FnPtr>
 [[nodiscard]] consteval std::uint64_t computation_cache_key_impl() noexcept {
+    static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
     std::uint64_t k =
         ::crucible::safety::diag::detail::hash_name(std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
     k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_function_id<FnPtr>);
@@ -135,6 +159,7 @@ namespace detail {
 template <auto FnPtr, typename Row, typename... Args>
     requires ::crucible::cipher::IsCacheableFunction<FnPtr> && ::crucible::cipher::IsEffectRow<Row>
 [[nodiscard]] consteval std::uint64_t computation_cache_key_in_row_impl() noexcept {
+    static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
     std::uint64_t k =
         ::crucible::safety::diag::detail::hash_name(std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
     k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_function_id<FnPtr>);

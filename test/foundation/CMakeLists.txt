@@ -374,6 +374,13 @@ foundation_test(test_fail_closed)
 # refinement preorder, over stand-in registries.
 foundation_test(test_transition)
 
+# A closure takes no label word: the word comes from a stable id, and a
+# stable id refuses a type that names a closure, so two closure keys that
+# print one name never share a word on the wire.
+foundation_neg_compile_test(neg_label_word_of_a_closure_key
+  "a stable id refuses the type"
+  "has no declared name")
+
 # The only Raw -> Checked edge is declared outside the relation's
 # namespace, so the pair is not admitted.  The satisfaction note names
 # the concept and the namespace the check was given.

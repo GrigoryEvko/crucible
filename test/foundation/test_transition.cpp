@@ -597,19 +597,16 @@ static_assert(tr::wire_word_of(reg, ^^Pick<Done, Ping>, 1).value == 1);
 static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<int, Done>>).fault
               == tr::choice_fault::mixed_label_keys);
 
-// Rule 5: two distinct closure types print one name, so their keys share
-// a word.  The peer could not tell the two labels apart.
+// Rule 5: two distinct closure types print one name, so they would share
+// a label word, and the peer could not tell the two labels apart.  No word
+// exists for such a key: every stable id refuses a type that names a
+// closure, so the collision never reaches the wire.
+// test/foundation/neg/neg_label_word_of_a_closure_key.cpp is the witness.
 using ClosureLabelA = decltype([] {});
 using ClosureLabelB = decltype([] {});
 static_assert(!std::is_same_v<ClosureLabelA, ClosureLabelB>);
-static_assert(tr::label_word_of(^^Envelope<Alice, ClosureLabelA, void>)
-              == tr::label_word_of(^^Envelope<Alice, ClosureLabelB, void>));
-static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>,
-                                                   Put<Envelope<Alice, ClosureLabelB, int>, Done>>)
-                  .fault
-              == tr::choice_fault::label_word_collision);
-static_assert(!well_formed(^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>,
-                                  Put<Envelope<Alice, ClosureLabelB, int>, Done>>));
+static_assert(!::foundation::reflect::HasStableIdentity<Envelope<Alice, ClosureLabelA, void>>);
+static_assert(!::foundation::reflect::HasStableIdentity<Envelope<Alice, ClosureLabelB, void>>);
 
 // An axiom that breaks the contract and sheds to the same type stops at
 // the depth bound instead of a recursion without end.
@@ -751,12 +748,10 @@ static_assert(refine(^^Put<int, Done>, ^^Pick<Put<int, Done>>).reason == tr::mis
 static_assert(tr::wire_word_of_step(reg, ^^SendByeStep).value == tr::wire_word_of(reg, ^^SendHelloBye, 1).value,
               "a keyed step sends the word of its branch");
 
-// Two labels pair by label word and label key.  One word with two keys is
-// refused, and a keyed choice never pairs with a positional one.
-static_assert(refine(^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>>,
-                     ^^Pick<Put<Envelope<Alice, ClosureLabelB, int>, Done>>)
-                  .reason
-              == tr::mismatch::label_word_clash);
+// Two labels pair by label word and label key, and a keyed choice never
+// pairs with a positional one.  One word with two keys is refused as well.
+// Only a collision of two stable ids reaches that case, because a closure
+// key takes no label word.
 static_assert(refine(^^Pick<Put<Envelope<Alice, Hello, int>, Done>>, ^^Pick<Put<int, Done>>).reason
               == tr::mismatch::label_discipline);
 static_assert(refine(^^Wait<Take<Envelope<Alice, Hello, int>, Done>>, ^^Wait<Take<Envelope<Bob, Hello, int>, Done>>)
@@ -772,11 +767,6 @@ static_assert(refine(^^Wait<Take<Envelope<Alice, Hello, int>, Done>, Take<Envelo
                   .reason
               == tr::mismatch::ill_formed,
               "an input choice of the subtype repeats a label");
-static_assert(refine(^^Pick<Put<Envelope<Alice, Hello, int>, Done>>,
-                     ^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>, Put<Envelope<Alice, ClosureLabelB, int>, Done>>)
-                  .reason
-              == tr::mismatch::ill_formed,
-              "an output choice of the supertype has two keys of one word");
 
 // A paired label compares its payloads, and a crash branch still pairs by
 // the payload it receives.
@@ -835,7 +825,7 @@ constexpr bool runtime_facts[] = {
                  ^^Put<Envelope<Bob, Hello, long>, Done>)
          .holds,
     tr::wire_word_of(reg, ^^EnvelopePick, 0).value == tr::wire_word_of(reg, ^^EnvelopePickSwapped, 1).value,
-    !well_formed(^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>, Put<Envelope<Alice, ClosureLabelB, int>, Done>>),
+    !::foundation::reflect::HasStableIdentity<Envelope<Alice, ClosureLabelA, void>>,
     refines(^^SendByeHello, ^^SendHelloBye),
     refine(^^HearBye, ^^HearHelloBye).reason == tr::mismatch::label_set,
 };
@@ -843,7 +833,7 @@ constexpr bool runtime_facts[] = {
 constexpr std::string_view names[] = {
     "coherent registry",      "narrow output choice", "wide output choice refused", "guarded loop",
     "unguarded loop refused", "drop then weaken",     "congruent payload",          "other peer refused",
-    "label word by label",    "label word collision refused", "keyed branches pair by label",
+    "label word by label",    "closure label key refused",    "keyed branches pair by label",
     "input label set refused",
 };
 

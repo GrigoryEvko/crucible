@@ -21,6 +21,14 @@
 #include <string_view>
 #include <type_traits>
 
+// The two types whose ids are compared below.  They stand outside the
+// unnamed namespace, because a stable id refuses a type with internal
+// linkage.
+namespace test_reflect_types {
+struct Alpha {};
+struct Beta {};
+}  // namespace test_reflect_types
+
 namespace {
 
 namespace dc = ::foundation::decide;
@@ -80,8 +88,8 @@ static_assert(magenta_spells_red_and_blue());
 
 // Two distinct types take distinct ids, and two spellings of one type take
 // one id.
-struct Alpha {};
-struct Beta {};
+using test_reflect_types::Alpha;
+using test_reflect_types::Beta;
 using AlphaAlias = Alpha;
 
 static_assert(fr::stable_type_id<Alpha> != fr::stable_type_id<Beta>);

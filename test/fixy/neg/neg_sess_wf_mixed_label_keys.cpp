@@ -8,10 +8,14 @@
 
 namespace s = fixy::session;
 
-namespace {
+// These types have external linkage.  The session folds their stable
+// ids, and a stable id refuses a type with internal linkage.
+namespace neg_sess_wf_mixed_label_keys_types {
 struct Bob {};
 struct Hello {};
-}  // namespace
+}  // namespace neg_sess_wf_mixed_label_keys_types
+
+using namespace neg_sess_wf_mixed_label_keys_types;
 
 using Mixed = s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::End>, s::Send<int, s::End>>;
 

@@ -238,7 +238,7 @@ inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 // of its inner type.  Rolling the anchor is a wire-format break: the
 // federation cache slot of every affected kernel moves, and peers on
 // either side of the roll route to different slots.
-inline constexpr std::uint64_t kFoldAnchor = 0x2423EAB340316E9BULL;
+inline constexpr std::uint64_t kFoldAnchor = 0xA53AAB4B77338374ULL;
 
 static_assert(fold_anchor() == kFoldAnchor, "ceremony anchor drift.  A row_hash_contribution specialization "
                                             "changed its salt, its combine_ids order, its inner fold, or its "

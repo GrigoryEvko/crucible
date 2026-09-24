@@ -21,6 +21,11 @@
 // unaffected: the variable template resolves to one inline constexpr
 // definition that every translation unit shares.
 //
+// The id also holds only for a type whose printed name is a function of
+// the type. An entity with no declared name, or with internal linkage,
+// breaks that, and every id here refuses such a type at compile time.
+// The section on identity below says why and how.
+//
 // Old spelling: include/crucible/safety/diag/StableName.h; fmix64 and
 // combine_ids were in include/crucible/Expr.h.
 
@@ -31,6 +36,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -145,11 +151,244 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 
 }  // namespace detail
 
+// ── Identity ─────────────────────────────────────────────────────────
+//
+// An id is a function of the type only when the printed name is a
+// function of the type.  Two kinds of entity break that, and so does
+// every type that names one of them:
+//
+//   - An entity with no declared name: a closure type, an unnamed class,
+//     an unnamed union or an unnamed enumeration.  GCC prints a closure
+//     from its call signature, so two closures of one signature print
+//     one name.  A generic closure also prints auto:N, and N counts the
+//     generic parameters that the translation unit declared before it.
+//     So one closure prints two names in two translation units.
+//   - An entity with internal linkage, such as a class in an unnamed
+//     namespace.  Each translation unit has its own, and all of them
+//     print one name, so two different types would share one id.
+//
+// A name is an identity only when it is a path of declared names from
+// the global namespace.  The walk below reads that path by reflection.
+// It opens the cv, reference, pointer, array, function and member
+// pointer parts of a type.  It reads the template that a class
+// instantiates and each template argument.  It follows each class, and
+// each function that encloses a local class, up to the global namespace.
+//
+// A template argument that is a value cannot be opened that way: a
+// pointer to a function gives no reflection of the function.  So the
+// walk reads the printed value for the marks that GCC gives such an
+// entity, and refuses a value that prints one.  A builtin type with no
+// declared parts, such as a vector extension type, is read the same way.
+
+namespace detail {
+
+enum class identity_fault : std::uint8_t {
+    none,
+    no_declared_name,
+    internal_linkage,
+};
+
+// The part of a type that has no identity, and the kind of fault, or
+// none.
+struct identity_verdict {
+    identity_fault fault = identity_fault::none;
+    std::meta::info culprit{};
+};
+
+// The two parts of a member pointer type.  The meta header gives no
+// query for them, so a partial specialization takes the type apart.
+template <typename T>
+inline constexpr std::meta::info member_pointer_member_ = ^^void;
+template <typename M, typename C>
+inline constexpr std::meta::info member_pointer_member_<M C::*> = ^^M;
+template <typename T>
+inline constexpr std::meta::info member_pointer_owner_ = ^^void;
+template <typename M, typename C>
+inline constexpr std::meta::info member_pointer_owner_<M C::*> = ^^C;
+
+// The function that a template argument of pointer-to-function type
+// names, or a null reflection for any other value.  The pointer is not
+// compared with null: under -fno-delete-null-pointer-checks that
+// comparison is not a constant expression.  A null pointer argument
+// therefore fails to compile here, which refuses the type.
+template <auto Value>
+[[nodiscard]] consteval std::meta::info function_named_by() {
+    if constexpr (std::is_pointer_v<decltype(Value)> && std::is_function_v<std::remove_pointer_t<decltype(Value)>>) {
+        return std::meta::reflect_function(*Value);
+    } else {
+        return {};
+    }
+}
+
+template <auto Value>
+inline constexpr std::meta::info function_named_by_v = function_named_by<Value>();
+
+// True when the printed text carries a mark that GCC gives only to an
+// entity with no declared name or with internal linkage.
+[[nodiscard]] consteval bool prints_a_mark_of_no_identity(std::string_view text) noexcept {
+    return text.find("<lambda") != std::string_view::npos || text.find("<unnamed") != std::string_view::npos
+        || text.find("{anonymous}") != std::string_view::npos;
+}
+
+[[nodiscard]] consteval identity_verdict identity_of_type(std::meta::info type);
+
+// The scopes that enclose an entity, up to the global namespace.  An
+// enclosing class is walked as a type, so a class declared inside a
+// closure is refused with it.  A namespace with no name is an unnamed
+// namespace, whose members have internal linkage, and a function with
+// internal linkage gives its local classes the same fault.  Complexity:
+// linear in the depth of the scope chain, plus the walk of each
+// enclosing class.
+[[nodiscard]] consteval identity_verdict identity_of_scope(std::meta::info scope) {
+    while (true) {
+        if (std::meta::is_type(scope)) return identity_of_type(scope);
+        if (scope == ^^::) return {};
+        if (std::meta::is_namespace(scope) && !std::meta::has_identifier(scope)) {
+            return {identity_fault::internal_linkage, scope};
+        }
+        if (std::meta::is_function(scope) && std::meta::has_internal_linkage(scope)) {
+            return {identity_fault::internal_linkage, scope};
+        }
+        if (!std::meta::has_parent(scope)) return {};
+        scope = std::meta::parent_of(scope);
+    }
+}
+
+// A function entity: its linkage and its name, then its scopes.  A
+// static invoker of a closure has the closure as its parent, so the
+// scope walk refuses it.
+[[nodiscard]] consteval identity_verdict identity_of_function(std::meta::info function) {
+    if (std::meta::has_internal_linkage(function)) return {identity_fault::internal_linkage, function};
+    if (!std::meta::has_identifier(function)) return {identity_fault::no_declared_name, function};
+    return identity_of_scope(std::meta::parent_of(function));
+}
+
+// The walk over one type.  Complexity: linear in the number of nodes of
+// the type, counting template arguments and enclosing classes.
+[[nodiscard]] consteval identity_verdict identity_of_type(std::meta::info type) {
+    type = std::meta::dealias(type);
+    if (std::meta::is_reference_type(type)) return identity_of_type(std::meta::remove_reference(type));
+    if (std::meta::is_pointer_type(type)) return identity_of_type(std::meta::remove_pointer(type));
+    if (std::meta::is_array_type(type)) return identity_of_type(std::meta::remove_all_extents(type));
+    type = std::meta::dealias(std::meta::remove_cv(type));
+    if (std::meta::is_member_pointer_type(type)) {
+        const identity_verdict owner = identity_of_type(
+            std::meta::extract<std::meta::info>(std::meta::substitute(^^member_pointer_owner_, {type})));
+        if (owner.fault != identity_fault::none) return owner;
+        return identity_of_type(
+            std::meta::extract<std::meta::info>(std::meta::substitute(^^member_pointer_member_, {type})));
+    }
+    if (std::meta::is_function_type(type)) {
+        const identity_verdict result = identity_of_type(std::meta::return_type_of(type));
+        if (result.fault != identity_fault::none) return result;
+        for (const std::meta::info parameter : std::meta::parameters_of(type)) {
+            const identity_verdict verdict = identity_of_type(parameter);
+            if (verdict.fault != identity_fault::none) return verdict;
+        }
+        return {};
+    }
+    if (std::meta::is_fundamental_type(type) || std::meta::is_reflection_type(type)) return {};
+    if (std::meta::is_class_type(type) || std::meta::is_union_type(type) || std::meta::is_enum_type(type)) {
+        if (std::meta::has_template_arguments(type)) {
+            const std::meta::info primary = std::meta::template_of(type);
+            if (std::meta::has_internal_linkage(primary)) return {identity_fault::internal_linkage, primary};
+            const identity_verdict scope = identity_of_scope(std::meta::parent_of(primary));
+            if (scope.fault != identity_fault::none) return scope;
+            for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
+                identity_verdict verdict{};
+                if (std::meta::is_type(argument)) {
+                    verdict = identity_of_type(argument);
+                } else if (std::meta::is_template(argument)) {
+                    if (std::meta::has_internal_linkage(argument)) {
+                        verdict = {identity_fault::internal_linkage, argument};
+                    } else {
+                        verdict = identity_of_scope(std::meta::parent_of(argument));
+                    }
+                } else {
+                    verdict = identity_of_type(std::meta::type_of(argument));
+                    if (verdict.fault == identity_fault::none) {
+                        // A pointer to a function prints the function's
+                        // name, so the function must have an identity too.
+                        const std::meta::info function = std::meta::extract<std::meta::info>(
+                            std::meta::substitute(^^function_named_by_v, {argument}));
+                        if (function != std::meta::info{}) verdict = identity_of_function(function);
+                    }
+                    if (verdict.fault == identity_fault::none
+                        && prints_a_mark_of_no_identity(std::meta::display_string_of(argument))) {
+                        verdict = {identity_fault::no_declared_name, argument};
+                    }
+                }
+                if (verdict.fault != identity_fault::none) return verdict;
+            }
+            return {};
+        }
+        if (!std::meta::has_identifier(type)) return {identity_fault::no_declared_name, type};
+        if (std::meta::has_internal_linkage(type)) return {identity_fault::internal_linkage, type};
+        return identity_of_scope(std::meta::parent_of(type));
+    }
+    if (prints_a_mark_of_no_identity(std::meta::display_string_of(type))) {
+        return {identity_fault::no_declared_name, type};
+    }
+    return {};
+}
+
+// The refusal text for a type that has no identity.  Built only when
+// the verdict is a fault.
+[[nodiscard]] consteval std::string_view identity_refusal_text(std::meta::info type, identity_verdict verdict) {
+    if (verdict.fault == identity_fault::none) return "";
+    std::string text{"foundation::reflect: a stable id refuses the type "};
+    text += std::meta::display_string_of(type);
+    text += ", because its part ";
+    text += std::meta::display_string_of(verdict.culprit);
+    if (verdict.fault == identity_fault::no_declared_name) {
+        text += " has no declared name.  A closure type, an unnamed class, an unnamed union and an unnamed "
+                "enumeration print a name that is not a function of the entity: GCC prints a closure from its "
+                "call signature, and numbers each generic parameter by its position in the translation unit.  "
+                "Give the entity a declared name: a named class type with a call operator, or a named class "
+                "template.";
+    } else {
+        text += " has internal linkage.  Each translation unit holds its own entity under one printed name, so "
+                "two different types would share one id.  Declare it in a named namespace.";
+    }
+    return std::define_static_string(text);
+}
+
+template <typename T>
+inline constexpr identity_verdict identity_verdict_of = identity_of_type(^^T);
+
+}  // namespace detail
+
+// True when the printed name of T is a path of declared names from the
+// global namespace, so that every translation unit prints it the same
+// and no other type prints it.  Every id below requires it.
+template <typename T>
+concept HasStableIdentity = detail::identity_verdict_of<T>.fault == detail::identity_fault::none;
+
+// The same question for a function that a pointer names.  A pointer to
+// the static invoker of a closure, or to a function with internal
+// linkage, has no stable identity.
+template <auto FnPtr>
+    requires std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>
+inline constexpr bool function_has_stable_identity_v =
+    detail::identity_of_function(std::meta::reflect_function(*FnPtr)).fault == detail::identity_fault::none;
+
+namespace detail {
+
+// The one door to a printed name that feeds an id.  The assertion names
+// the part of the type that has no identity.
+template <typename T>
+[[nodiscard]] consteval std::string_view checked_stable_name() {
+    static_assert(HasStableIdentity<T>, identity_refusal_text(^^T, identity_verdict_of<T>));
+    return std::meta::display_string_of(^^T);
+}
+
+}  // namespace detail
+
 // The string lives in consteval result storage, which outlives every
 // caller, so holding the view for the life of the program is safe.
 
 template <typename T>
-inline constexpr std::string_view stable_name_of = std::meta::display_string_of(^^T);
+inline constexpr std::string_view stable_name_of = detail::checked_stable_name<T>();
 
 template <typename T>
 inline constexpr std::uint64_t stable_type_id = detail::hash_name(stable_name_of<T>);
@@ -211,10 +450,12 @@ using canonicalize_pack_t = typename canonicalize_pack<Ts...>::type;
 // This hashes the function type, never the address. Two distinct
 // functions that share a signature therefore share one id, and one
 // function reached through different declarations keeps a single id.
+// The function type goes through the same door as every other type, so
+// a signature that names a closure type is refused.
 
 template <auto FnPtr>
 inline constexpr std::uint64_t stable_function_id =
-    detail::hash_name(std::meta::display_string_of(^^std::remove_pointer_t<decltype(FnPtr)>));
+    detail::hash_name(detail::checked_stable_name<std::remove_pointer_t<decltype(FnPtr)>>());
 
 namespace detail::stable_name_self_test {
 
@@ -313,6 +554,85 @@ static_assert(detail::fnv1a_64("ab") == expected_fnv_ab);
 static_assert(detail::hash_name("test") == fmix64(detail::fnv1a_64("test")));
 
 static_assert(combine_ids(1, 2) != combine_ids(2, 1));
+
+// Each shape the identity walk opens, one positive and one negative.
+namespace identity_test {
+struct Named {};
+template <typename T>
+struct Box {};
+template <auto V>
+struct Holds {};
+template <template <typename> typename Tmpl>
+struct HoldsTemplate {};
+enum class Colour : std::uint8_t { red };
+inline constexpr auto closure = [](auto value) { return value; };
+inline constexpr auto plain_closure = [](int value) { return value; };
+inline constexpr int (*closure_invoker)(int) = +[](int value) { return value; };
+inline int named_function(int value) { return value; }
+inline auto local_of_named() {
+    struct Local {};
+    return Local{};
+}
+inline constexpr auto local_of_closure = [] {
+    struct Local {};
+    return Local{};
+};
+inline auto unnamed_class_of_named() {
+    struct {
+        int field;
+    } value{};
+    return value;
+}
+enum { unnamed_enumerator };
+namespace {
+struct Internal {};
+template <typename T>
+struct InternalBox {};
+inline int internal_function(int value) { return value; }
+}  // namespace
+}  // namespace identity_test
+
+static_assert(HasStableIdentity<int>);
+static_assert(HasStableIdentity<identity_test::Named>);
+static_assert(HasStableIdentity<identity_test::Named const volatile* const&>);
+static_assert(HasStableIdentity<identity_test::Named[3][4]>);
+static_assert(HasStableIdentity<identity_test::Box<identity_test::Box<int>>>);
+static_assert(HasStableIdentity<identity_test::Colour>);
+static_assert(HasStableIdentity<identity_test::Named (*)(identity_test::Colour, int&)>);
+static_assert(HasStableIdentity<int identity_test::Named::*>);
+static_assert(HasStableIdentity<identity_test::Holds<&identity_test::named_function>>);
+static_assert(HasStableIdentity<identity_test::Holds<identity_test::Colour::red>>);
+static_assert(HasStableIdentity<identity_test::HoldsTemplate<identity_test::Box>>);
+static_assert(HasStableIdentity<decltype(identity_test::local_of_named())>);
+static_assert(HasStableIdentity<decltype(^^int)>);
+
+static_assert(!HasStableIdentity<decltype(identity_test::closure)>);
+static_assert(!HasStableIdentity<decltype(identity_test::plain_closure)>);
+static_assert(!HasStableIdentity<identity_test::Box<decltype(identity_test::closure)>>);
+static_assert(!HasStableIdentity<identity_test::Holds<identity_test::closure>>);
+static_assert(!HasStableIdentity<identity_test::Holds<identity_test::closure_invoker>>);
+static_assert(!HasStableIdentity<decltype(identity_test::unnamed_class_of_named())>);
+static_assert(!HasStableIdentity<decltype(identity_test::unnamed_enumerator)>);
+static_assert(!HasStableIdentity<decltype(identity_test::local_of_closure())>);
+static_assert(!HasStableIdentity<identity_test::Internal>);
+static_assert(!HasStableIdentity<identity_test::Box<identity_test::Internal>>);
+static_assert(!HasStableIdentity<identity_test::HoldsTemplate<identity_test::InternalBox>>);
+static_assert(!HasStableIdentity<identity_test::Holds<&identity_test::internal_function>>);
+static_assert(!HasStableIdentity<int (*)(decltype(identity_test::plain_closure))>);
+static_assert(!HasStableIdentity<int decltype(identity_test::plain_closure)::*>);
+
+static_assert(function_has_stable_identity_v<&identity_test::named_function>);
+static_assert(!function_has_stable_identity_v<identity_test::closure_invoker>);
+
+// The verdict names the part that has no identity, not the whole type,
+// and the kind of fault that part has.
+static_assert(identity_verdict_of<identity_test::Box<identity_test::Box<identity_test::Internal>>>.culprit
+              == ^^identity_test::Internal);
+static_assert(identity_verdict_of<identity_test::Internal>.fault == identity_fault::internal_linkage);
+static_assert(
+    identity_verdict_of<identity_test::Box<identity_test::Box<decltype(identity_test::plain_closure)>>>.culprit
+    == std::meta::dealias(std::meta::remove_cv(^^decltype(identity_test::plain_closure))));
+static_assert(identity_verdict_of<decltype(identity_test::plain_closure)>.fault == identity_fault::no_declared_name);
 
 }  // namespace detail::stable_name_self_test
 

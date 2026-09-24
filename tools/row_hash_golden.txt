@@ -2,11 +2,11 @@
 # format-version: 1
 # matrix-size:    44
 # fold-seed:      0xc0ffeebadf00dba5
-# fold-anchor:    0x2423eab340316e9b
+# fold-anchor:    0xa53aab4b77338374
 # (a mismatch on diff means a row_hash_contribution specialization moved — document the ceremony in the commit message and re-capture this golden.)
 W01_Linear             0xba3d8586917ed8f0
-W02_Refined            0x8418f88137b279df
-W03_SealedRefined      0x8ed50740ee288d1d
+W02_Refined            0xe936e81af5d537b4
+W03_SealedRefined      0x624069969b2d91fe
 W04_Tagged             0xc756dd547b442f28
 W05_Secret             0x35e6aad6c3434191
 W06_Stale              0xee45676666883bd0

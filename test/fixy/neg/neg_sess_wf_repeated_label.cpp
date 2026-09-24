@@ -8,11 +8,15 @@
 
 namespace s = fixy::session;
 
-namespace {
+// The label types have external linkage: a label word is a stable id,
+// and a stable id refuses a type with internal linkage.
+namespace neg_sess_wf_repeated_label_types {
 struct Bob {};
 struct Hello {};
 struct Wire {};
-}  // namespace
+}  // namespace neg_sess_wf_repeated_label_types
+
+using namespace neg_sess_wf_repeated_label_types;
 
 using SameLabel = s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::End>, s::Send<s::PeerMsg<Bob, Hello, bool>, s::End>>;
 

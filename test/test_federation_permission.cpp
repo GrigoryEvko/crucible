@@ -22,13 +22,19 @@ namespace eff = crucible::effects;
 namespace perm = crucible::permissions;
 namespace saf = crucible::safety;
 
+// The keyed function stands outside the unnamed namespace, because a key
+// refuses a function with internal linkage.
+namespace test_federation_permission_functions {
+inline void f_payload(int) noexcept {}
+}  // namespace test_federation_permission_functions
+
 namespace {
+
+using test_federation_permission_functions::f_payload;
 
 struct OrgSelf {};
 struct OrgPeer {};
 struct OrgBlocked {};
-
-inline void f_payload(int) noexcept {}
 
 using RowIO = eff::Row<eff::Effect::IO>;
 using AllowSelfAndPeer = perm::policy::admit_orgs<OrgSelf, OrgPeer>;

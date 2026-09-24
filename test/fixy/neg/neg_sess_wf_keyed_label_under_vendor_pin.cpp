@@ -8,11 +8,15 @@
 
 namespace s = fixy::session;
 
-namespace {
+// These types have external linkage.  The session folds their stable
+// ids, and a stable id refuses a type with internal linkage.
+namespace neg_sess_wf_keyed_label_under_vendor_pin_types {
 struct Bob {};
 struct Hello {};
 struct Bye {};
-}  // namespace
+}  // namespace neg_sess_wf_keyed_label_under_vendor_pin_types
+
+using namespace neg_sess_wf_keyed_label_under_vendor_pin_types;
 
 using PinnedFirst = s::Offer<s::Sender<Bob>, s::VendorPinned<s::VendorBackend::NV, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>>,
                              s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>>;

@@ -5,7 +5,9 @@
 #include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
-namespace {
+// These types have external linkage.  The session folds their stable
+// ids, and a stable id refuses a type with internal linkage.
+namespace neg_sess_subtype_keyed_step_label_set_output_types {
 
 namespace s = ::fixy::session;
 
@@ -16,7 +18,9 @@ struct L2 {};
 using Sub = s::Send<s::PeerMsg<Bob, L2, int>, s::End>;
 using Super = s::Select<s::Send<s::PeerMsg<Bob, L0, int>, s::End>, s::Send<s::PeerMsg<Bob, L1, int>, s::End>>;
 
-}  // namespace
+}  // namespace neg_sess_subtype_keyed_step_label_set_output_types
+
+using namespace neg_sess_subtype_keyed_step_label_set_output_types;
 
 int main() {
     s::assert_subtype_sync<Sub, Super>();

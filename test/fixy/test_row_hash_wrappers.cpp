@@ -419,6 +419,12 @@ static_assert(row_hash_contribution_v<UnverifiedInt> != row_hash_contribution_v<
 // The census sees what this translation unit includes, which is every
 // public header of both layers.  A header left out of that list is the
 // one gap, and the include block above is where to close it.
+//
+// The census stands outside the unnamed namespace, because its witness
+// tags reach a row hash, and a stable id refuses a type with internal
+// linkage.
+
+}  // namespace
 
 namespace census {
 
@@ -1147,6 +1153,8 @@ static_assert(row_hash_contribution_v<::fixy::concurrent::PermissionedMpscChanne
               != row_hash_contribution_v<::fixy::concurrent::PermissionedSpscChannel<int, 8>::ProducerHandle>);
 
 }  // namespace census
+
+namespace {
 
 struct TestFailure {};
 int total_passed = 0;
