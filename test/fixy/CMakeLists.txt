@@ -1065,6 +1065,14 @@ fixy_neg_compile_test(neg_version_source_in_foreground
 fixy_neg_compile_test(neg_budget_stamp_forged
   ".constexpr fixy::BudgetStamp::BudgetStamp\\(foundation::algebra::lattices::BitsBudget, foundation::algebra::lattices::PeakBytes\\). is private within this context"
   "fixy::BudgetStamp::BudgetStamp")
+# An allowance is spent one time: a stamp does not copy, and a value takes
+# it by rvalue only.
+fixy_neg_compile_test(neg_budget_stamp_copied_onto_two_values
+  "use of deleted function .fixy::BudgetStamp::BudgetStamp\\(const fixy::BudgetStamp&\\)."
+  "an allowance is spent one time. a copy would put one grant on two payloads")
+fixy_neg_compile_test(neg_budget_stamp_lvalue_grades_a_value
+  "no matching function for call to .fixy::Budgeted<int>::Budgeted"
+  "cannot bind rvalue reference of type .fixy::BudgetStamp&&. to lvalue of type .fixy::BudgetStamp.")
 fixy_neg_compile_test(neg_budget_stamp_bit_cast
   "no matching function for call to .bit_cast<fixy::BudgetStamp>"
   "the expression .is_trivially_copyable_v<_To> .with _To = fixy::BudgetStamp.. evaluated to .false.")

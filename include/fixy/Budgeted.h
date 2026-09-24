@@ -16,7 +16,8 @@
 //     A grant is an allowance, and the stamp that records it is a proof
 //     type: its constructor is private, and its copy is user-provided, so
 //     neither std::bit_cast nor a lifetime start over bytes makes one.
-//   - Budgeted is built only from a stamp, or unbounded.
+//   - Budgeted is built only from a stamp, or unbounded.  The value spends
+//     the stamp, which does not copy, so one grant grades one value.
 //
 // The rest of the discipline follows from the orientation:
 //
@@ -81,16 +82,32 @@ using BudgetLattice = ::foundation::algebra::lattices::ProductLattice<BitsBudget
 class BudgetAuthority;
 
 // An allowance that a BudgetAuthority granted.  No caller can build one.
+//
+// An allowance is spent one time.  The stamp does not copy, so one grant
+// cannot be put on two payloads, and the sum of the claims of a program
+// stays at or below the sum of its grants.  A move leaves the source
+// unbounded, the weakest claim, so a stamp spent twice through a move
+// claims nothing the second time.
 class BudgetStamp {
 public:
     BudgetStamp() = delete("a budget stamp comes only from a BudgetAuthority");
+    BudgetStamp(BudgetStamp const&) = delete("an allowance is spent one time; a copy would put one grant on two "
+                                             "payloads");
+    BudgetStamp& operator=(BudgetStamp const&) = delete("an allowance is spent one time");
 
     // User-provided, so that the stamp is neither trivially copyable nor
     // implicit-lifetime, and no route builds one from bytes.
-    constexpr BudgetStamp(BudgetStamp const& other) noexcept : bits_{other.bits_}, peak_{other.peak_} {}
-    constexpr BudgetStamp& operator=(BudgetStamp const& other) noexcept {
-        bits_ = other.bits_;
-        peak_ = other.peak_;
+    constexpr BudgetStamp(BudgetStamp&& other) noexcept : bits_{other.bits_}, peak_{other.peak_} {
+        other.bits_ = BitsBudgetLattice::top();
+        other.peak_ = PeakBytesLattice::top();
+    }
+    constexpr BudgetStamp& operator=(BudgetStamp&& other) noexcept {
+        if (this != &other) {
+            bits_ = other.bits_;
+            peak_ = other.peak_;
+            other.bits_ = BitsBudgetLattice::top();
+            other.peak_ = PeakBytesLattice::top();
+        }
         return *this;
     }
     ~BudgetStamp() = default;
@@ -193,15 +210,20 @@ public:
         requires std::default_initializable<T>
         : impl_{T{}, lattice_type::top()} {}
 
-    constexpr Budgeted(T value, BudgetStamp const& stamp) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), budget_t{stamp.bits(), stamp.peak_bytes()}} {}
+    // The stamp is spent here, so one grant grades one value.
+    constexpr Budgeted(T value, BudgetStamp&& stamp) noexcept(std::is_nothrow_move_constructible_v<T>)
+        : impl_{std::move(value), budget_t{stamp.bits(), stamp.peak_bytes()}} {
+        BudgetStamp const spent{std::move(stamp)};
+    }
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr Budgeted(std::in_place_t, BudgetStamp const& stamp,
+    constexpr Budgeted(std::in_place_t, BudgetStamp&& stamp,
                        Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), budget_t{stamp.bits(), stamp.peak_bytes()}} {}
+        : impl_{T(std::forward<Args>(args)...), budget_t{stamp.bits(), stamp.peak_bytes()}} {
+        BudgetStamp const spent{std::move(stamp)};
+    }
 
     // The weakest claim, for a producer whose use is unknown.
     [[nodiscard]] static constexpr Budgeted unbounded(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
@@ -335,6 +357,12 @@ static_assert(!std::is_default_constructible_v<BudgetStamp>);
 static_assert(!std::is_constructible_v<BudgetStamp, BitsBudget, PeakBytes>);
 static_assert(!std::is_trivially_copyable_v<BudgetStamp> && !std::is_implicit_lifetime_v<BudgetStamp>);
 static_assert(!std::is_copy_constructible_v<BudgetAuthority> && !std::is_move_constructible_v<BudgetAuthority>);
+
+// An allowance is spent one time: the stamp does not copy, a value takes
+// it by rvalue only, and a moved-from stamp is unbounded.
+static_assert(!std::is_copy_constructible_v<BudgetStamp> && std::is_move_constructible_v<BudgetStamp>);
+static_assert(!std::is_constructible_v<B, int, BudgetStamp const&> && !std::is_constructible_v<B, int, BudgetStamp&>);
+static_assert(std::is_constructible_v<B, int, BudgetStamp&&>);
 
 // Only the owner grants, and only an Init context mints the owner.
 template <typename A>

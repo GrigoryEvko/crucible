@@ -470,6 +470,20 @@ static_assert(!std::is_constructible_v<EpochVersioned<int>, int, Epoch, Generati
 static_assert(!std::is_constructible_v<Budgeted<int>, int, fixy::BitsBudget, fixy::PeakBytes>);
 static_assert(!std::is_constructible_v<VersionStamp, Epoch, Generation>);
 static_assert(!std::is_constructible_v<fixy::BudgetStamp, fixy::BitsBudget, fixy::PeakBytes>);
+
+// One grant is spent on one value.  A stamp does not copy, a value takes
+// it by rvalue only, and a stamp moved twice claims nothing the second
+// time, so the claims of a program sum to at most its grants.
+static_assert(!std::is_copy_constructible_v<fixy::BudgetStamp>);
+static_assert(!std::is_constructible_v<Budgeted<int>, int, fixy::BudgetStamp const&>);
+
+void attack_one_grant_on_two_values() {
+    fixy::BudgetStamp stamp = grant(8, 64);
+    Budgeted<int> const first{1, std::move(stamp)};
+    Budgeted<int> const second{2, std::move(stamp)};
+    expect(first.satisfies(BitsBudgetBound{8}, PeakBytesBound{64}), "the first value carries the grant");
+    expect(second.is_unbounded(), "a stamp spent twice claims nothing the second time");
+}
 template <typename Ctx>
 concept mints_a_source = requires(Ctx const& ctx) { fixy::mint_version_source(ctx); };
 static_assert(!mints_a_source<IoCtx> && !mints_a_source<fe::ExecCtx<>> && mints_a_source<InitCtx>,
@@ -529,6 +543,7 @@ int main() {
     attack_equal_versions_compare_payloads();
     attack_the_substrate();
     attack_the_closed_doors();
+    attack_one_grant_on_two_values();
     reproduce_the_ledger();
     if (g_failures != 0) {
         std::fprintf(stderr, "test_versioned_budgeted_attacks: %d case(s) failed\n", g_failures);
