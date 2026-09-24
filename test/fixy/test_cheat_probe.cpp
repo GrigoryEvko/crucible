@@ -413,8 +413,9 @@ static_assert(fr::is_instance_of_v<::Cheat25_FakeLinear, ^^fixy::Qtt>, "the inje
 static_assert(!fr::IsInstanceOf<::Cheat25_FakeLinear, ^^fixy::Qtt>,
               "[CHEAT 25 ADMITTED] is_instance_of_v injection passed the Qtt query");
 
-// Refined and SealedRefined share Refinement.
-struct Cheat26_DerivedFromRefined : fixy::Refined<positive_p, int> {};
+// Refined and SealedRefined share Refinement.  The predicate is a
+// stateless class, because the lattice is keyed by its type.
+struct Cheat26_DerivedFromRefined : fixy::Refined<fixy::positive, int> {};
 static_assert(!fixy::IsRefined<Cheat26_DerivedFromRefined>, "[CHEAT 26 ADMITTED] derived-from-Refined passed IsRefined");
 
 struct Cheat27_FakeRefined {

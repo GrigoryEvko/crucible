@@ -834,6 +834,21 @@ fixy_neg_compile_test(neg_secret_bit_cast_out
   "no matching function for call to .bit_cast<int>.fixy::Secret<int>&."
   "is_trivially_copyable_v<_From>")
 
+# A refined value is not trivially copyable, so no byte route builds one,
+# and its predicate is a stateless class, so the predicate's type keys the
+# row hash of exactly one claim.
+fixy_neg_compile_test(neg_refined_bit_cast
+  "no matching function for call to .bit_cast<fixy::Refined<"
+  "is_trivially_copyable_v<_To>")
+
+fixy_neg_compile_test(neg_refined_function_pointer_predicate
+  "static assertion failed"
+  "the predicate must be a stateless class")
+
+fixy_neg_compile_test(neg_refined_stateful_predicate
+  "static assertion failed"
+  "A function pointer or a class with state gives two predicates one type")
+
 # The value constructor is private, so a Sanitized tag cannot be forged
 # around a raw value; the compiler names the constructor.
 fixy_neg_compile_test(neg_tagged_forge_by_constructor

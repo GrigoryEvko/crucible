@@ -32,6 +32,7 @@
 
 #include <fixy/GradedFacade.h>
 #include <fixy/Qtt.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
@@ -381,13 +382,26 @@ template <auto Pred, typename T>
 [[nodiscard]] constexpr SealedRefined<Pred, T>
 mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
 
+// The annotation refuses the checked lifetime start over bytes, and the
+// user-provided assignments below keep the class from being trivially
+// copyable, so std::bit_cast<Refined<positive, int>>(-1) does not build a
+// positive int that holds -1.  The constructors stay trivial, so a refined
+// value still passes in a register.
 template <auto Pred, typename T, bool Sealed>
-class [[nodiscard]] Refinement
+class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] Refinement
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
                            ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>, T>,
       public refined::detail::sealed_row_discipline<Sealed> {
 public:
     using predicate_type = decltype(Pred);
+
+    // The lattice is keyed by the predicate's type, so the type must be the
+    // whole predicate: a stateless class.  A function pointer or a class
+    // with state gives two predicates one type, and so one row hash.
+    static_assert(std::is_class_v<refined::predicate_t<Pred>> && std::is_empty_v<refined::predicate_t<Pred>>,
+                  "fixy::Refined: the predicate must be a stateless class, such as fixy::positive or "
+                  "fixy::in_range<0, 9>.  A function pointer or a class with state gives two predicates one "
+                  "type, so two different refinements would share one row hash.");
 
     // value_type, modality and the two name forwarders arrive from
     // graded_facade.  The base is dependent, so the two names this
@@ -468,10 +482,20 @@ public:
     // constructor, and removing this block leaves Refined<Pred, T>
     // uncopyable.  Measured: without it, mint_linear over a Refined
     // fails on a deleted copy constructor.
+    //
+    // The two assignments are user-provided, so the class is not
+    // trivially copyable and no byte route builds a refined value.  The
+    // constructors stay trivial.
     Refinement(const Refinement&) = default;
     Refinement(Refinement&&) = default;
-    Refinement& operator=(const Refinement&) = default;
-    Refinement& operator=(Refinement&&) = default;
+    constexpr Refinement& operator=(const Refinement& other) noexcept(std::is_nothrow_copy_assignable_v<T>) {
+        impl_ = other.impl_;
+        return *this;
+    }
+    constexpr Refinement& operator=(Refinement&& other) noexcept(std::is_nothrow_move_assignable_v<T>) {
+        impl_ = std::move(other.impl_);
+        return *this;
+    }
 
     // For a sealed refinement this is the only way to observe the
     // value.  There is deliberately no mutable accessor on either.
@@ -522,6 +546,18 @@ template <auto Pred, typename T>
 mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return SealedRefined<Pred, T>{typename SealedRefined<Pred, T>::trusted_door_{}, std::move(value)};
 }
+
+// No byte route builds a refined value, and the constructors stay trivial
+// so that a refined value still passes in a register.
+static_assert(!std::is_trivially_copyable_v<Refined<positive, int>>
+                  && !std::is_trivially_copyable_v<SealedRefined<positive, int>>,
+              "std::bit_cast must not build a refined value from bytes that the predicate never saw");
+static_assert(std::is_trivially_copy_constructible_v<Refined<positive, int>>
+                  && std::is_trivially_move_constructible_v<Refined<positive, int>>
+                  && std::is_trivially_destructible_v<Refined<positive, int>> && sizeof(Refined<positive, int>) == sizeof(int),
+              "a refined int keeps the layout and the register passing of an int");
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Refined<positive, int>>,
+              "the checked lifetime start refuses a refined value over bytes");
 
 // Every load-bearing predicate gets a named alias, so that it takes
 // part in review rather than drifting into an anonymous refinement at
@@ -1468,16 +1504,22 @@ static_assert(
         Capped<255, std::uint32_t>, Floored<1, int>, DivisibleByN<4, std::size_t>>(),
     "every Refined and SealedRefined shape must satisfy GradedWrapper, nested combinators included");
 
-// The substrate's byte-level interchangeability claim, pinned over the
-// three arithmetic and pointer shapes.
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Positive, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Positive, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NonNull, void*);
+// The layout of the bare value, pinned over the arithmetic and pointer
+// shapes, with one difference on purpose: a refined value is not
+// trivially copyable, so no byte pattern becomes one.  The shared layout
+// invariant asserts that parity, so the three other properties are stated
+// here one by one, and the fourth inverted.
+template <typename Refinedness, typename T>
+inline constexpr bool keeps_the_value_layout =
+    sizeof(Refinedness) == sizeof(T) && alignof(Refinedness) == alignof(T)
+    && std::is_trivially_destructible_v<Refinedness> == std::is_trivially_destructible_v<T>
+    && !std::is_trivially_copyable_v<Refinedness>;
 
 template <typename T>
 using SealedPositive = SealedRefined<positive, T>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SealedPositive, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SealedPositive, double);
+static_assert(keeps_the_value_layout<Positive<int>, int> && keeps_the_value_layout<Positive<double>, double>
+              && keeps_the_value_layout<NonNull<void*>, void*> && keeps_the_value_layout<SealedPositive<int>, int>
+              && keeps_the_value_layout<SealedPositive<double>, double>);
 
 // One door: no public constructor takes a bare value.
 static_assert(!std::is_constructible_v<Refined<positive, int>, int>);

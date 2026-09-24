@@ -94,35 +94,33 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(Affine, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(Affine, int*);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(Affine, TwoWords);
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedAny, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedAny, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedAny, int*);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedAny, TwoWords);
-
-// Sealing removes the rvalue extractor from the API and changes no
-// storage.
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SealedAny, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SealedAny, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SealedAny, int*);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SealedAny, TwoWords);
-
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, int*);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, TwoWords);
 
-// Secret keeps the size, the alignment and the trivial destructor of its
-// value, and it breaks the trivial-copy parity on purpose: a trivially
-// copyable Secret let std::bit_cast read the value out with no policy.
-// The shared invariant asserts that parity, so the three other
-// properties are stated here one by one, and the fourth inverted.
-template <typename T>
-inline constexpr bool secret_keeps_the_value_layout =
-    sizeof(Secret<T>) == sizeof(T) && alignof(Secret<T>) == alignof(T)
-    && std::is_trivially_destructible_v<Secret<T>> == std::is_trivially_destructible_v<T>
-    && !std::is_trivially_copyable_v<Secret<T>>;
-static_assert(secret_keeps_the_value_layout<int> && secret_keeps_the_value_layout<double>
-              && secret_keeps_the_value_layout<int*> && secret_keeps_the_value_layout<TwoWords>);
+// Refined, SealedRefined and Secret keep the size, the alignment and the
+// trivial destructor of their value, and they break the trivial-copy
+// parity on purpose.  A trivially copyable Refined let std::bit_cast build
+// a value the predicate never saw, and a trivially copyable Secret let it
+// read the value out with no policy.  The shared invariant asserts that
+// parity, so the three other properties are stated here one by one, and
+// the fourth inverted.  Sealing removes the rvalue extractor from the API
+// and changes no storage.
+template <template <typename> class Wrapper, typename T>
+inline constexpr bool keeps_the_value_layout_with_no_byte_route =
+    sizeof(Wrapper<T>) == sizeof(T) && alignof(Wrapper<T>) == alignof(T)
+    && std::is_trivially_destructible_v<Wrapper<T>> == std::is_trivially_destructible_v<T>
+    && !std::is_trivially_copyable_v<Wrapper<T>>;
+
+template <template <typename> class Wrapper>
+inline constexpr bool keeps_the_layout_of_every_shape =
+    keeps_the_value_layout_with_no_byte_route<Wrapper, int> && keeps_the_value_layout_with_no_byte_route<Wrapper, double>
+    && keeps_the_value_layout_with_no_byte_route<Wrapper, int*>
+    && keeps_the_value_layout_with_no_byte_route<Wrapper, TwoWords>;
+
+static_assert(keeps_the_layout_of_every_shape<RefinedAny> && keeps_the_layout_of_every_shape<SealedAny>
+              && keeps_the_layout_of_every_shape<Secret>);
 
 // Monotonic's grade is its value, so the substrate holds one cell
 // instead of a value and a grade.
