@@ -1,29 +1,31 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Lower-4 (#934): lower_trace_to_graph propagates the TraceGraph
-// source tag to the returned Graph pointer.  Replayed output cannot be
-// consumed as Recorded output.
+// lower_trace_to_graph propagates the TraceGraph source tag to the
+// returned Graph pointer.  Replayed output cannot be consumed as Recorded
+// output.
 //
 // Expected diagnostic: no conversion from LoweredGraph<Replayed> to
 // LoweredGraph<Recorded>.
 
 #include <crucible/Lower.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = eff::testing::test();
     crucible::ExprPool pool{test.alloc};
     crucible::Graph graph{test.alloc, &pool};
     crucible::TraceGraph trace{};
+    const crucible::TraceGraph* const trace_ptr = &trace;
 
-    using ReplayedTraceGraph = crucible::LowerTraceGraph<crucible::safety::source::Replayed>;
-    using RecordedGraph = crucible::LoweredGraph<crucible::safety::source::Recorded>;
+    using RecordedGraph = crucible::LoweredGraph<::fixy::tags::source::Recorded>;
     using LowerBgAllocRow = eff::Row<eff::Effect::Bg, eff::Effect::Alloc>;
 
-    RecordedGraph wrong =
-        crucible::lower_trace_to_graph<LowerBgAllocRow>(test.alloc, ReplayedTraceGraph{&trace}, pool, graph);
+    RecordedGraph wrong = crucible::lower_trace_to_graph<LowerBgAllocRow>(
+        test.alloc, ::fixy::mint_tagged<::fixy::tags::source::Replayed>(trace_ptr), pool, graph);
     return wrong.value() == nullptr ? 0 : 1;
 }

@@ -2,13 +2,12 @@
 
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Pre.h>
-#include <crucible/safety/_Tagged.h>
 #include <crucible/Types.h>
+#include <fixy/Tagged.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
 
 #include <bit>
-#include <cassert>
 #include <cstdint>
 
 namespace crucible {
@@ -41,7 +40,7 @@ struct Expr {
     // another process. It must never be persisted, shared between processes,
     // or folded into a content hash. The tag is what makes a cross-family use
     // fail to compile rather than silently produce an unstable key.
-    const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB> hash{std::uint64_t{0}};
+    const ::fixy::Tagged<std::uint64_t, hash_family::FamilyB> hash{};
     const int64_t payload = 0;  // an integer, a double's bits, or a name pointer
     const Expr* const* const args = nullptr;
 
@@ -52,8 +51,14 @@ struct Expr {
     // is legitimate too, but only for a node with no children.
     constexpr Expr(Op op_, uint8_t nargs_, uint16_t flags_, SymbolId symbol_id_, uint64_t hash_, int64_t payload_,
                    const Expr* const* args_) noexcept
-        pre(::crucible::decide::implies(::crucible::decide::positive(nargs_), args_ != nullptr))
-        : op(op_), nargs(nargs_), flags(flags_), symbol_id(symbol_id_), hash(hash_), payload(payload_), args(args_) {}
+        pre(::foundation::decide::implies(::foundation::decide::positive(nargs_), args_ != nullptr))
+        : op(op_),
+          nargs(nargs_),
+          flags(flags_),
+          symbol_id(symbol_id_),
+          hash(::fixy::mint_tagged<hash_family::FamilyB>(hash_)),
+          payload(payload_),
+          args(args_) {}
 
     Expr(const Expr&) = delete("interned Exprs have identity equality; copying would break intern");
     Expr& operator=(const Expr&) = delete("fields are const");
@@ -95,7 +100,7 @@ struct Expr {
         // children the subtraction below wraps to the largest uint8_t and the
         // range check then admits every index.
         CRUCIBLE_PRE(nargs > 0u);
-        CRUCIBLE_PRE(::crucible::decide::in_range<std::uint8_t>(i, 0u, static_cast<std::uint8_t>(nargs - 1u)));
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint8_t>(i, 0u, static_cast<std::uint8_t>(nargs - 1u)));
         CRUCIBLE_PRE(args != nullptr);
         return args[i];
     }
@@ -109,9 +114,9 @@ static_assert(Expr::kMaxArgs == static_cast<uint8_t>(~static_cast<uint8_t>(0)),
               "Expr::kMaxArgs must be the largest value Expr::nargs can hold");
 
 static_assert(std::is_same_v<decltype(std::declval<Expr>().hash),
-                             const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>>,
+                             const ::fixy::Tagged<std::uint64_t, hash_family::FamilyB>>,
               "Expr::hash must stay a const Tagged<uint64_t, hash_family::FamilyB>");
-static_assert(sizeof(::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>) == sizeof(std::uint64_t),
+static_assert(sizeof(::fixy::Tagged<std::uint64_t, hash_family::FamilyB>) == sizeof(std::uint64_t),
               "Tagged<uint64_t, hash_family::FamilyB> must stay the width of its payload, or the Expr "
               "layout changes");
 

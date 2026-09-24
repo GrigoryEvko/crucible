@@ -22,6 +22,7 @@
 #include <crucible/MerkleDag.h>  // FeedbackEdge, LoopTermKind, NumericalRecipe
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Reflect.h>
+#include <fixy/Bits.h>
 
 #include "bench_harness.h"
 
@@ -246,7 +247,7 @@ int main() {
                        crucible::NumericalRecipe r{};
                        r.accum_dtype = crucible::ScalarType::Float;
                        r.out_dtype = crucible::ScalarType::Half;
-                       r.flags = crucible::safety::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
+                       r.flags = ::fixy::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
                        auto h = crucible::compute_recipe_hash(r);
                        bench::do_not_optimize(h);
                    }),
@@ -255,7 +256,7 @@ int main() {
                        crucible::NumericalRecipe r{};
                        r.accum_dtype = crucible::ScalarType::Float;
                        r.out_dtype = crucible::ScalarType::Half;
-                       r.flags = crucible::safety::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
+                       r.flags = ::fixy::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
                        auto h = compute_recipe_hash_reflected(r);
                        bench::do_not_optimize(h);
                    }),

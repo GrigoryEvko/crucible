@@ -20,6 +20,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Types.h>
+#include <fixy/Bits.h>
 
 #include <cstdint>
 
@@ -55,7 +56,7 @@ namespace crucible::fuzz::prop {
     r.scale_policy = static_cast<ScalePolicy>(rng.next_below(6));
     r.softmax = static_cast<SoftmaxRecurrence>(rng.next_below(4));
     r.determinism = static_cast<ReductionDeterminism>(rng.next_below(4));
-    r.flags = fixy::wrap::Bits<RecipeFlags>::from_raw(static_cast<uint8_t>(rng.next32() & 0xFF));
+    r.flags = ::fixy::Bits<RecipeFlags>::from_raw(static_cast<uint8_t>(rng.next32() & 0xFF));
     // hash field intentionally left default-zero — caller invokes
     // hashed() or compute_recipe_hash to populate.
     return r;

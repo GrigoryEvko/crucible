@@ -71,7 +71,6 @@ bench/bench_phases.cpp
 bench/bench_pipeline_dispatch.cpp
 bench/bench_pool_allocator.cpp
 bench/bench_record_leaf.cpp
-bench/bench_reflect.cpp
 bench/bench_region_cache.cpp
 bench/bench_safety.cpp
 bench/bench_scheduler_policies.cpp
@@ -99,15 +98,11 @@ include/crucible/Cipher.h
 include/crucible/CostModel.h
 include/crucible/CrucibleContext.h
 include/crucible/DimHash.h
-include/crucible/Expr.h
 include/crucible/ExprPool.h
-include/crucible/Graph.h
 include/crucible/IterationDetector.h
 include/crucible/IterationDetectorState.h
-include/crucible/Lower.h
 include/crucible/MerkleDag.h
 include/crucible/MetaLog.h
-include/crucible/NumericalRecipe.h
 include/crucible/Philox.h
 include/crucible/PoolAllocator.h
 include/crucible/RecipePool.h
@@ -117,7 +112,6 @@ include/crucible/ReplayEngine.h
 include/crucible/SchemaTable.h
 include/crucible/Serialize.h
 include/crucible/SwissTable.h
-include/crucible/SymbolTable.h
 include/crucible/TraceGraph.h
 include/crucible/TraceLoader.h
 include/crucible/Transaction.h

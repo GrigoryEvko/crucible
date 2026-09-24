@@ -7,10 +7,11 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Pre.h>
+#include <fixy/Bits.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
 
 #include <bit>
 #include <cstddef>
@@ -40,7 +41,7 @@ struct SymbolEntry {
     int64_t range_lower = 0;
     int64_t range_upper = 0;
     SymKind kind = SymKind::SIZE;
-    fixy::wrap::Bits<SymFlags> sym_flags{};
+    ::fixy::Bits<SymFlags> sym_flags{};
     uint16_t expr_flags = 0;  // the assumption bits to stamp on an expression node
     uint32_t _pad = 0;
 };
@@ -51,7 +52,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolEntry);
 // An identifier this table hands out is known to index this table. One that
 // arrives from a file or across a language boundary is not, and has to be
 // validated before it reaches the accessors below.
-using InternalSymbolId = ::crucible::fixy::wrap::Tagged<SymbolId, ::crucible::fixy::tags::source::FromInternal>;
+using InternalSymbolId = ::fixy::Tagged<SymbolId, ::fixy::tags::source::FromInternal>;
 static_assert(sizeof(InternalSymbolId) == sizeof(SymbolId));
 
 class CRUCIBLE_OWNER SymbolTable {
@@ -94,7 +95,7 @@ public:
         }
 
         entries_.push_back(e);
-        return InternalSymbolId{id};
+        return ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(id);
     }
 
     void set_hint(SymbolId id, int64_t hint) {
@@ -183,15 +184,15 @@ private:
 
     [[nodiscard, gnu::pure]] const SymbolEntry& entry_at(SymbolId id) const noexcept pre(id.is_valid()) {
         CRUCIBLE_PRE(!entries_.empty());
-        CRUCIBLE_PRE(::crucible::decide::in_range<std::size_t>(static_cast<std::size_t>(id.raw()), std::size_t{0},
-                                                               entries_.size() - std::size_t{1}));
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(static_cast<std::size_t>(id.raw()), std::size_t{0},
+                                                                 entries_.size() - std::size_t{1}));
         return entries_[id.raw()];
     }
 
     [[nodiscard]] SymbolEntry& entry_at_mut(SymbolId id) noexcept pre(id.is_valid()) {
         CRUCIBLE_PRE(!entries_.empty());
-        CRUCIBLE_PRE(::crucible::decide::in_range<std::size_t>(static_cast<std::size_t>(id.raw()), std::size_t{0},
-                                                               entries_.size() - std::size_t{1}));
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(static_cast<std::size_t>(id.raw()), std::size_t{0},
+                                                                 entries_.size() - std::size_t{1}));
         return entries_[id.raw()];
     }
 

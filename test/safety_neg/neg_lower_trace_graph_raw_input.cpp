@@ -1,19 +1,19 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Lower-4 (#934): lower_trace_to_graph requires the input
-// TraceGraph to carry Recorded/Replayed provenance.  A raw TraceGraph*
-// must not cross the lowering boundary.
+// lower_trace_to_graph requires the input TraceGraph to carry Recorded or
+// Replayed provenance.  A raw TraceGraph* must not cross the lowering
+// boundary.
 //
 // Expected diagnostic: no matching lower_trace_to_graph overload.
 
 #include <crucible/Lower.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = eff::testing::test();
     crucible::ExprPool pool{test.alloc};
     crucible::Graph graph{test.alloc, &pool};
     crucible::TraceGraph trace{};

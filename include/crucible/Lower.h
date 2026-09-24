@@ -3,10 +3,11 @@
 #include <crucible/ExprPool.h>
 #include <crucible/Graph.h>
 #include <crucible/TraceGraph.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/fixy/Source.h>
-#include <crucible/fixy/Wrap.h>
+#include <fixy/FixedArray.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <concepts>
 #include <cstring>
@@ -15,15 +16,16 @@ namespace crucible {
 
 template <typename Source>
 concept LowerTraceSource =
-    std::same_as<Source, fixy::tags::source::Recorded> || std::same_as<Source, fixy::tags::source::Replayed>;
+    std::same_as<Source, ::fixy::tags::source::Recorded> || std::same_as<Source, ::fixy::tags::source::Replayed>;
 
 template <LowerTraceSource Source>
-using LowerTraceGraph = fixy::wrap::Tagged<const TraceGraph*, Source>;
+using LowerTraceGraph = ::fixy::Tagged<const TraceGraph*, Source>;
 
 template <LowerTraceSource Source>
-using LoweredGraph = fixy::wrap::Tagged<Graph*, Source>;
+using LoweredGraph = ::fixy::Tagged<Graph*, Source>;
 
-using lower_trace_required_row = effects::Row<effects::Effect::Bg, effects::Effect::Alloc>;
+using lower_trace_required_row =
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>;
 
 // One graph node per recorded op, plus one input node per external tensor,
 // which is any tensor with a slot but no producing op in this trace.
@@ -31,14 +33,14 @@ using lower_trace_required_row = effects::Row<effects::Effect::Bg, effects::Effe
 // An absent optional tensor input is dropped, so a node can end up with fewer
 // inputs than the entry it came from. The slot list is compacted to match.
 template <typename CallerRow, LowerTraceSource Source>
-    requires effects::Subrow<lower_trace_required_row, CallerRow>
+    requires ::foundation::effects::Subrow<lower_trace_required_row, CallerRow>
 [[nodiscard]] inline LoweredGraph<Source> lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> trace,
                                                                ExprPool& pool, Graph& graph)
     pre(trace.value() != nullptr) {
     const TraceGraph& tg = *trace.value();
     const uint32_t num_ops = tg.num_ops.get_assuming_set();
     const uint32_t num_slots = tg.num_slots.get_assuming_set();
-    if (num_ops == 0) return LoweredGraph<Source>{&graph};
+    if (num_ops == 0) return ::fixy::mint_tagged<Source>(&graph);
 
     Arena& arena = graph.arena();
 
@@ -59,7 +61,7 @@ template <typename CallerRow, LowerTraceSource Source>
             if (extern_map[sid.raw()]) continue;
 
             const TensorMeta& m = te.input_metas[j];
-            fixy::wrap::FixedArray<const Expr*, 8> sizes{};
+            ::fixy::FixedArray<const Expr*, 8> sizes{};
             const uint8_t ndim = (m.ndim <= 8) ? m.ndim : 8;
             for (uint8_t d = 0; d < ndim; d++)
                 sizes[d] = pool.integer(a, raw_tensor_dim(m.sizes[d]));
@@ -80,7 +82,7 @@ template <typename CallerRow, LowerTraceSource Source>
         uint8_t ndim = 0;
         ScalarType dtype = ScalarType::Undefined;
         int8_t dev = -1;
-        fixy::wrap::FixedArray<const Expr*, 8> sizes{};
+        ::fixy::FixedArray<const Expr*, 8> sizes{};
 
         if (te.num_outputs > 0 && te.output_metas) {
             const TensorMeta& m = te.output_metas[0];
@@ -171,7 +173,7 @@ template <typename CallerRow, LowerTraceSource Source>
     }
     if (n_outputs > 0) graph.set_graph_outputs(a, std::span{output_ids, n_outputs});
 
-    return LoweredGraph<Source>{&graph};
+    return ::fixy::mint_tagged<Source>(&graph);
 }
 
 }  // namespace crucible

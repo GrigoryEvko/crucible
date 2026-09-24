@@ -12,14 +12,16 @@
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 #include <crucible/Platform.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Pre.h>
+#include <fixy/Bits.h>
+#include <fixy/Mutation.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 
+#include <array>
 #include <bit>
-#include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
@@ -201,10 +203,11 @@ static_assert(std::is_standard_layout_v<InstIndex>);
 struct Inst {
     MicroOp op{};  // Zero is LOAD, always overwritten before use.
     ScalarType dtype = ScalarType::Undefined;
-    InstIndex operands[3]{};
+    std::array<InstIndex, 3> operands{};
 };
 
 static_assert(sizeof(Inst) == 8, "Inst must be 8 bytes");
+static_assert(offsetof(Inst, operands) == 2, "Inst's operands start after the op byte and the dtype byte");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Inst);
 
 // A kernel body as a flat array of SSA instructions, directly emittable as
@@ -242,7 +245,7 @@ struct ExternInfo {
 struct GraphNode {
     NodeId id;  // Also names the output buffer.
     NodeKind kind = NodeKind::NOP;
-    fixy::wrap::Bits<NodeFlags> flags{};
+    ::fixy::Bits<NodeFlags> flags{};
     uint8_t ndim = 0;
     uint8_t nred = 0;  // Zero for anything but a reduction.
 
@@ -281,7 +284,7 @@ struct GraphNode {
     // The positive-nred precondition is what keeps the size + ndim offset
     // inside the reduction tail instead of one past the array end.
     [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND pre(kind == NodeKind::REDUCTION)
-        pre(::crucible::decide::positive(nred)) {
+        pre(::foundation::decide::positive(nred)) {
         return size + ndim;
     }
 
@@ -1016,7 +1019,7 @@ private:
     SlotId** input_slots_;  // Indexed by node id, null where unset.
     SlotId** output_slots_;  // Indexed by node id, null where unset.
     // alloc_node_ is the only mutator, and it only ever increments.
-    fixy::wrap::Monotonic<uint32_t> num_nodes_{0};
+    ::fixy::Monotonic<uint32_t> num_nodes_ = ::fixy::mint_monotonic<uint32_t>(0);
     uint32_t capacity_;
 
     NodeId* input_ids_;

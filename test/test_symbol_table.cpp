@@ -1,6 +1,6 @@
 #include <crucible/Ops.h>
 #include <crucible/SymbolTable.h>
-#include <crucible/safety/_Reflected.h>
+#include <foundation/reflect/Enumerate.h>
 
 #include "test_assert.h"
 
@@ -143,7 +143,7 @@ static void test_kind_roundtrip() {
 //   3. The flag byte sits at offset 25, which is what the serializers
 //      already encode, and the entry is 32 bytes wide.
 static void test_sym_flags_bits_typed_surface() {
-    namespace ref = crucible::safety::reflected;
+    namespace ref = foundation::reflect;
 
     // Both symbols are added before anything reads a reference, because
     // a later add can reallocate the entry storage and leave an earlier
@@ -178,13 +178,13 @@ static void test_sym_flags_bits_typed_surface() {
     // The printed order follows enumerator declaration order, which is
     // what fixes the expected string below.
     char buf[64] = {};
-    auto n = ref::bits_to_string<SymFlags>(e_s.sym_flags, buf, sizeof(buf));
+    auto n = ref::bits_to_string<SymFlags>(e_s.sym_flags.raw(), buf, sizeof(buf));
     const std::string_view want = "IS_SIZE_LIKE|HAS_HINT|IS_BACKED";
     assert(std::string_view{buf} == want);
     assert(n == want.size());
 
     char empty_buf[16] = {};
-    auto n_empty = ref::bits_to_string<SymFlags>(e_f.sym_flags, empty_buf, sizeof(empty_buf));
+    auto n_empty = ref::bits_to_string<SymFlags>(e_f.sym_flags.raw(), empty_buf, sizeof(empty_buf));
     assert(n_empty == 0);
     assert(empty_buf[0] == '\0');
 

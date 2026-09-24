@@ -6,7 +6,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Wrap.h>
+#include <fixy/Bits.h>
 
 #include <bit>
 #include <cstdint>
@@ -96,7 +96,7 @@ struct alignas(16) NumericalRecipe {
     ScalePolicy scale_policy = ScalePolicy::NONE;
     SoftmaxRecurrence softmax = SoftmaxRecurrence::ONLINE_LSE;
     ReductionDeterminism determinism = ReductionDeterminism::ORDERED;
-    fixy::wrap::Bits<RecipeFlags> flags{};
+    ::fixy::Bits<RecipeFlags> flags{};
     // Filled in when the recipe is interned, not at construction.
     RecipeHash hash;
 };

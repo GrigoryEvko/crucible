@@ -6,6 +6,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
+#include <fixy/Bits.h>
 
 #include "test_assert.h"
 #include <cinttypes>
@@ -35,7 +36,7 @@ using crucible::SoftmaxRecurrence;
     r.out_dtype = out;
     r.determinism = det;
     r.scale_policy = scale;
-    r.flags = ::crucible::safety::Bits<::crucible::RecipeFlags>::from_raw(flags);
+    r.flags = ::fixy::Bits<::crucible::RecipeFlags>::from_raw(flags);
     return r;
 }
 
