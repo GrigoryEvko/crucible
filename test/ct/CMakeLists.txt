@@ -40,6 +40,17 @@ add_test(NAME check_ct_disassembly_self_test
 set_tests_properties(check_ct_disassembly check_ct_disassembly_self_test
   PROPERTIES LABELS "ci_guard;ct" WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
+# The dudect timing harness is evidence, not a test: a timing result
+# depends on the host and its load.  Build it on request with
+# `cmake --build <dir> --target ct_dudect` and run it on an isolated core.
+# It builds with the Release optimization for this host.
+add_executable(ct_dudect EXCLUDE_FROM_ALL dudect.cpp)
+target_include_directories(ct_dudect PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(ct_dudect PRIVATE
+  -O3 -march=native -DNDEBUG -fno-sanitize=all
+  -freflection -fcontracts -fcontract-evaluation-semantic=observe)
+target_link_options(ct_dudect PRIVATE -fno-sanitize=all)
+
 if(NOT CRUCIBLE_VALGRIND OR NOT CRUCIBLE_VALGRIND_INCLUDE)
   if(CRUCIBLE_REQUIRE_CT_TAINT)
     message(FATAL_ERROR
