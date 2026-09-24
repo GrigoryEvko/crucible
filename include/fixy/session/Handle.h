@@ -733,6 +733,7 @@ template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy
 class handle_core : public SessionHandleBase<Proto, SessionHandle<Proto, Resource, LoopCtx, Policy, PS>, Policy> {
     using base_type = SessionHandleBase<Proto, SessionHandle<Proto, Resource, LoopCtx, Policy, PS>, Policy>;
     friend struct endpoint_transfer;
+    friend class SessionHandle<Proto, Resource, LoopCtx, Policy, PS>;
 
     static_assert(Policy::action != AbandonAction::Cancel || CancellableResource<Resource>,
                   "fixy::session::diagnostic [Cancel_Needs_A_Channel]: check::Cancel sends a cancellation to the "
@@ -752,11 +753,13 @@ class handle_core : public SessionHandleBase<Proto, SessionHandle<Proto, Resourc
         }
     }
 
-protected:
+    // Only the handle specialization over this core builds it, so a core
+    // alone is never a handle that no mint made.
     constexpr handle_core(Resource r, watch::session_ref session,
                           std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : base_type{loc, session}, resource_{std::forward<Resource>(r)} {}
 
+protected:
     // Hands the Resource to the next handle, and marks this one consumed.
     // Each consumer method calls it exactly once, after the transport.
     [[nodiscard]] constexpr Resource take_resource_() noexcept(std::is_nothrow_move_constructible_v<Resource>) {
