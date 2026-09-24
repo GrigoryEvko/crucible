@@ -89,9 +89,9 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_demote` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Contract.h:52` | HS14: 4 |
-| `mint_promote` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Contract.h:51` | HS14: 4 |
-| `mint_restore` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Contract.h:53` | HS14: 6 |
+| `mint_demote` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Contract.h:41` | HS14: 4 |
+| `mint_promote` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Contract.h:40` | HS14: 4 |
+| `mint_restore` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Contract.h:42` | HS14: 6 |
 
 ## include/crucible/cntp/
 
@@ -454,9 +454,10 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
 | `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
+| `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | · | member | · | · | HS14: 2 |
 | `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | · | HS14: 3 |
+| `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
 | `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
 
 ## include/foundation/permissions/
@@ -479,4 +480,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 211 | 105 | 98 | 8 | 0 | 72 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 92 | 38 | 54 | 0 | 0 | · | 31 |
+| new (`include/foundation/`, `include/fixy/`) | 93 | 38 | 54 | 1 | 0 | · | 31 |
