@@ -18,6 +18,11 @@
 //
 // Expected diagnostic: "unused-result".
 
+// This pragma makes the discarded result an error in every build.  Without
+// it, a build with CRUCIBLE_WERROR=OFF gives only a warning, and the
+// fixture compiles.
+#pragma GCC diagnostic error "-Wunused-result"
+
 #include <crucible/fixy/Source.h>
 #include <crucible/permissions/_Permission.h>
 
