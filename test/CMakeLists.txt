@@ -15759,11 +15759,12 @@ crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_custom_cc_missing_name
 # each allowlist sentence to the code the entry names.  It existed without
 # a runner; it runs here now.
 add_test(NAME layer_boundary_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.sh --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.py --self-test)
 add_test(NAME layer_boundary
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.py)
 set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
-    LABELS "ci_guard;stage-A1")
+    LABELS "ci_guard;stage-A1"
+    SKIP_RETURN_CODE 3)
 add_test(NAME frozen_tree_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.py --self-test)
 # The scan preprocesses a unified frozen header on the flags of this build.

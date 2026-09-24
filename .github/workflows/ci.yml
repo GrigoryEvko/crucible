@@ -309,8 +309,8 @@ jobs:
 
       - name: layer boundary (self-test + scan)
         run: |
-          bash scripts/check-layer-boundary.sh --self-test
-          bash scripts/check-layer-boundary.sh
+          python3 scripts/check-layer-boundary.py --self-test
+          python3 scripts/check-layer-boundary.py
 
       - name: frozen old substrate (self-test)
         run: python3 scripts/check-frozen-tree.py --self-test

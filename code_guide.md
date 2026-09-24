@@ -1515,7 +1515,7 @@ Library types in `include/crucible/safety/` that mechanize the axioms from §II 
 | `ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
 
 Every header is header-only and self-contained. The dependency rule is the layer
-rule, and `scripts/check-layer-boundary.sh` enforces it: `foundation` names only
+rule, and `scripts/check-layer-boundary.py` enforces it: `foundation` names only
 `foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`
 names anything below it.
 

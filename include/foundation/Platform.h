@@ -5,7 +5,7 @@
 // std::, so every foundation header can include it.
 //
 // The macro prefix stays CRUCIBLE_ on purpose.  Macros have no namespace, the
-// repository is crucible, and the layer rule (scripts/check-layer-boundary.sh)
+// repository is crucible, and the layer rule (scripts/check-layer-boundary.py)
 // is stated over namespace roots and include roots, not over macro names.  A
 // crucible/ consumer that flips to this header keeps every spelling it has.
 

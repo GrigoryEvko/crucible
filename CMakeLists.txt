@@ -369,7 +369,7 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # include/foundation/ (namespace ::foundation) is the algebra and the
 # discharge mechanisms; include/fixy/ (namespace ::fixy) is the axis table,
 # the atoms, the gate and the OS leaves.  Neither names crucible:: —
-# scripts/check-layer-boundary.sh enforces the order foundation < fixy <
+# scripts/check-layer-boundary.py enforces the order foundation < fixy <
 # crucible, and scripts/check-frozen-tree.py freezes the old substrate under
 # include/crucible/ until the old tree is deleted.
 #
