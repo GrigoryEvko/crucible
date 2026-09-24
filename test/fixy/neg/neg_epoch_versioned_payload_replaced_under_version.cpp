@@ -6,7 +6,7 @@
 #include <fixy/EpochVersioned.h>
 
 int main() {
-    fixy::EpochVersioned<int> current{20, fixy::Epoch{5}, fixy::Generation{2}};
+    fixy::EpochVersioned<int> current = fixy::EpochVersioned<int>::at_genesis(20);
     current.peek_mut() = 10;
     return current.peek();
 }

@@ -6,6 +6,6 @@
 #include <string_view>
 
 int main() {
-    fixy::EpochVersioned<std::string_view> const name{std::string_view{"node"}, fixy::Epoch{2}, fixy::Generation{2}};
+    auto const name = fixy::EpochVersioned<std::string_view>::at_genesis(std::string_view{"node"});
     return static_cast<int>(name.peek().size());
 }

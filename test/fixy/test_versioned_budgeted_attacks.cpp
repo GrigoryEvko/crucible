@@ -13,7 +13,7 @@
 
 #include <fixy/Budgeted.h>
 #include <fixy/EpochVersioned.h>
-#include <foundation/Saturate.h>
+#include <foundation/effects/Ctx.h>
 
 #include <array>
 #include <cstddef>
@@ -37,13 +37,20 @@
 
 namespace {
 
-using fixy::BitsBudget;
+using fixy::BitsBudgetBound;
 using fixy::Budgeted;
 using fixy::Epoch;
+using fixy::EpochBound;
+using fixy::EpochLattice;
 using fixy::EpochVersioned;
 using fixy::Generation;
-using fixy::PeakBytes;
+using fixy::GenerationBound;
+using fixy::GenerationLattice;
+using fixy::PeakBytesBound;
 using fixy::VersionConflict;
+using fixy::VersionStamp;
+
+namespace fe = ::foundation::effects;
 
 constexpr std::uint64_t kMax = std::numeric_limits<std::uint64_t>::max();
 
@@ -55,6 +62,52 @@ void expect(bool holds, char const* what) {
         std::fprintf(stderr, "test_versioned_budgeted_attacks: FAILED: %s\n", what);
         ++g_failures;
     }
+}
+
+using InitCtx = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO>>;
+using IoCtx = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>>;
+
+// A count at a number, read through the checked image door.
+template <typename L>
+typename L::element_type count_at(std::uint64_t count) {
+    IoCtx const ctx{fe::testing::test()};
+    typename L::image_type image{};
+    for (std::size_t i = 0; i < 8; ++i) {
+        image[i] = static_cast<std::byte>((L::image_axis() >> (8 * i)) & 0xFFu);
+        image[8 + i] = static_cast<std::byte>((count >> (8 * i)) & 0xFFu);
+    }
+    auto const read = L::mint_from_image(ctx, image);
+    if (!read) std::abort();
+    return *read;
+}
+
+// The one version source and the one budget authority of this program.
+// The source has reached the top of both counters, so it vouches for any
+// version below it.
+fixy::VersionSource& version_source() {
+    static fixy::VersionSource source = fixy::mint_version_source(InitCtx{fe::testing::init()});
+    static bool const reached_the_top = [] {
+        (void)source.adopt(EpochLattice::top(), GenerationLattice::top());
+        return true;
+    }();
+    (void)reached_the_top;
+    return source;
+}
+
+fixy::BudgetAuthority& budget_authority() {
+    static fixy::BudgetAuthority authority = fixy::mint_budget_authority(InitCtx{fe::testing::init()});
+    return authority;
+}
+
+VersionStamp stamp_at(std::uint64_t epoch, std::uint64_t generation) {
+    auto const stamp =
+        version_source().stamp_received(count_at<EpochLattice>(epoch), count_at<GenerationLattice>(generation));
+    if (!stamp) std::abort();
+    return *stamp;
+}
+
+fixy::BudgetStamp grant(std::uint64_t bits, std::uint64_t peak) {
+    return budget_authority().grant(BitsBudgetBound{bits}, PeakBytesBound{peak});
 }
 
 // The numeric reading of "a is at or above b", written with no lattice,
@@ -75,7 +128,7 @@ void attack_select_fresher_grid() {
     // Five epochs, five generations, two payloads: fifty values.
     auto const value_at = [&counts](std::size_t i) {
         int const payload = static_cast<int>(i % 2) + 1;
-        return EpochVersioned<int>{payload, Epoch{counts[i / 10]}, Generation{counts[(i / 2) % 5]}};
+        return EpochVersioned<int>{payload, stamp_at(counts[i / 10], counts[(i / 2) % 5])};
     };
     auto const grid = [&value_at]<std::size_t... I>(std::index_sequence<I...>) {
         return std::array<EpochVersioned<int>, sizeof...(I)>{value_at(I)...};
@@ -120,10 +173,10 @@ void attack_is_at_least_matches_the_numeric_order() {
     std::array<std::uint64_t, 5> const counts = {0, 1, s, s + 1, kMax};
     for (std::uint64_t const e : counts) {
         for (std::uint64_t const g : counts) {
-            EpochVersioned<int> const value{7, Epoch{e}, Generation{g}};
+            EpochVersioned<int> const value{7, stamp_at(e, g)};
             for (std::uint64_t const me : counts) {
                 for (std::uint64_t const mg : counts) {
-                    expect(value.is_at_least(Epoch{me}, Generation{mg}) == (e >= me && g >= mg),
+                    expect(value.is_at_least(EpochBound{me}, GenerationBound{mg}) == (e >= me && g >= mg),
                            "is_at_least is the numeric order on both counters");
                 }
             }
@@ -131,10 +184,10 @@ void attack_is_at_least_matches_the_numeric_order() {
     }
     // A value at the top of both counters passes every gate, and genesis
     // passes only the genesis gate.
-    EpochVersioned<int> const newest{1, Epoch{kMax}, Generation{kMax}};
-    expect(newest.is_at_least(Epoch{kMax}, Generation{kMax}), "the top passes the top gate");
+    EpochVersioned<int> const newest{1, stamp_at(kMax, kMax)};
+    expect(newest.is_at_least(EpochBound{kMax}, GenerationBound{kMax}), "the top passes the top gate");
     EpochVersioned<int> const genesis = EpochVersioned<int>::at_genesis(1);
-    expect(genesis.is_at_least(Epoch{0}, Generation{0}) && !genesis.is_at_least(Epoch{0}, Generation{1}),
+    expect(genesis.is_at_least(EpochBound{0}, GenerationBound{0}) && !genesis.is_at_least(EpochBound{0}, GenerationBound{1}),
            "genesis passes the genesis gate and no other");
 }
 
@@ -142,50 +195,52 @@ void attack_is_at_least_matches_the_numeric_order() {
 
 void attack_moved_from_version() {
     std::uint64_t const s = g_seed;
-    EpochVersioned<std::string> source{std::string(64, 'x'), Epoch{s + 5}, Generation{s}};
+    EpochVersioned<std::string> source{std::string(64, 'x'), stamp_at(s + 5, s)};
     EpochVersioned<std::string> taken{std::move(source)};
-    expect(taken.is_at_least(Epoch{s + 5}, Generation{s}), "the target keeps the claim");
-    expect(!source.is_at_least(Epoch{1}, Generation{0}), "the moved-from source drops to genesis");
+    expect(taken.is_at_least(EpochBound{s + 5}, GenerationBound{s}), "the target keeps the claim");
+    expect(!source.is_at_least(EpochBound{1}, GenerationBound{0}), "the moved-from source drops to genesis");
 
-    EpochVersioned<std::string> assigned{std::string("old"), Epoch{1}, Generation{1}};
+    EpochVersioned<std::string> assigned{std::string("old"), stamp_at(1, 1)};
     assigned = std::move(taken);
-    expect(assigned.peek().size() == 64 && assigned.is_at_least(Epoch{s + 5}, Generation{s}), "assignment moves the claim");
-    expect(!taken.is_at_least(Epoch{1}, Generation{0}), "the moved-from assignment source drops to genesis");
+    expect(assigned.peek().size() == 64 && assigned.is_at_least(EpochBound{s + 5}, GenerationBound{s}),
+           "assignment moves the claim");
+    expect(!taken.is_at_least(EpochBound{1}, GenerationBound{0}), "the moved-from assignment source drops to genesis");
 
     // The rvalue selector moves the winner out, and the winner's source
     // drops to genesis.
-    EpochVersioned<std::string> older{std::string("older"), Epoch{2}, Generation{2}};
-    EpochVersioned<std::string> newer{std::string("newer"), Epoch{3}, Generation{3}};
+    EpochVersioned<std::string> older{std::string("older"), stamp_at(2, 2)};
+    EpochVersioned<std::string> newer{std::string("newer"), stamp_at(3, 3)};
     auto picked = fixy::select_fresher(std::move(older), std::move(newer));
     expect(picked.has_value() && picked->peek() == "newer", "the rvalue selector picks the newer value");
-    expect(!newer.is_at_least(Epoch{1}, Generation{0}), "the moved winner leaves genesis behind");
+    expect(!newer.is_at_least(EpochBound{1}, GenerationBound{0}), "the moved winner leaves genesis behind");
 
     // A trivially copyable payload is copied by a move, so the source
     // keeps a claim that is still true of the bytes it still holds.
-    EpochVersioned<int> copied_source{11, Epoch{s}, Generation{s}};
+    EpochVersioned<int> copied_source{11, stamp_at(s, s)};
     EpochVersioned<int> copied_target{std::move(copied_source)};
-    expect(copied_source.peek() == 11 && copied_source.is_at_least(Epoch{s}, Generation{s})
+    expect(copied_source.peek() == 11 && copied_source.is_at_least(EpochBound{s}, GenerationBound{s})
                && copied_target.peek() == 11,
            "a trivially copyable source keeps a true claim");
 
     // swap exchanges payload and version together.
-    EpochVersioned<int> left{1, Epoch{1}, Generation{9}};
-    EpochVersioned<int> right{2, Epoch{9}, Generation{1}};
+    EpochVersioned<int> left{1, stamp_at(1, 9)};
+    EpochVersioned<int> right{2, stamp_at(9, 1)};
     swap(left, right);
-    expect(left.peek() == 2 && left.epoch() == Epoch{9} && right.peek() == 1 && right.generation() == Generation{9},
+    expect(left.peek() == 2 && left.epoch().raw() == 9 && right.peek() == 1 && right.generation().raw() == 9,
            "swap moves each payload with its own version");
 }
 
 void attack_moved_from_budget() {
-    Budgeted<std::string> source{std::string(64, 'y'), BitsBudget{8}, PeakBytes{64}};
+    Budgeted<std::string> source{std::string(64, 'y'), grant(8, 64)};
     Budgeted<std::string> taken{std::move(source)};
-    expect(taken.satisfies(BitsBudget{8}, PeakBytes{64}), "the target keeps the claim");
-    expect(source.is_unbounded() && !source.satisfies(BitsBudget{kMax - 1}, PeakBytes{kMax - 1}),
+    expect(taken.satisfies(BitsBudgetBound{8}, PeakBytesBound{64}), "the target keeps the claim");
+    expect(source.is_unbounded() && !source.satisfies(BitsBudgetBound{kMax - 1}, PeakBytesBound{kMax - 1}),
            "the moved-from source is unbounded");
 
-    Budgeted<std::string> assigned{std::string("old"), BitsBudget{1}, PeakBytes{1}};
+    Budgeted<std::string> assigned{std::string("old"), grant(1, 1)};
     assigned = std::move(taken);
-    expect(taken.is_unbounded() && assigned.satisfies(BitsBudget{8}, PeakBytes{64}), "assignment moves the claim");
+    expect(taken.is_unbounded() && assigned.satisfies(BitsBudgetBound{8}, PeakBytesBound{64}),
+           "assignment moves the claim");
 }
 
 // ── Budgets at the edge ─────────────────────────────────────────────
@@ -194,21 +249,22 @@ void attack_budget_edges() {
     std::uint64_t const s = g_seed;
     Budgeted<int> const unmeasured{};
     expect(unmeasured.is_unbounded(), "the default is unbounded");
-    expect(!unmeasured.satisfies(BitsBudget{kMax - 1}, PeakBytes{kMax}), "the default fails a finite bits gate");
-    expect(!unmeasured.satisfies(BitsBudget{kMax}, PeakBytes{kMax - 1}), "the default fails a finite peak gate");
+    expect(!unmeasured.satisfies(BitsBudgetBound{kMax - 1}, PeakBytesBound{kMax}), "the default fails a finite bits gate");
+    expect(!unmeasured.satisfies(BitsBudgetBound{kMax}, PeakBytesBound{kMax - 1}), "the default fails a finite peak gate");
     // A gate at the top of both axes is no gate, and admits anything.
-    expect(unmeasured.satisfies(BitsBudget{kMax}, PeakBytes{kMax}), "a gate at the top admits the unbounded claim");
+    expect(unmeasured.satisfies(BitsBudgetBound{kMax}, PeakBytesBound{kMax}),
+           "a gate at the top admits the unbounded claim");
 
-    Budgeted<int> const near_top{1, BitsBudget{kMax - s}, PeakBytes{kMax - s}};
-    Budgeted<int> const small{2, BitsBudget{s * 2}, PeakBytes{s * 2}};
+    Budgeted<int> const near_top{1, grant(kMax - s, kMax - s)};
+    Budgeted<int> const small{2, grant(s * 2, s * 2)};
     Budgeted<int> const summed = near_top.accumulate(small);
     expect(summed.is_unbounded(), "a sum past the top clamps to unbounded");
-    expect(!summed.satisfies(BitsBudget{kMax - 1}, PeakBytes{kMax - 1}), "a clamped sum fails every finite gate");
+    expect(!summed.satisfies(BitsBudgetBound{kMax - 1}, PeakBytesBound{kMax - 1}), "a clamped sum fails every finite gate");
 
     // The two compositions commute and associate on the grade.
-    Budgeted<int> const a{1, BitsBudget{s}, PeakBytes{s * 5}};
-    Budgeted<int> const b{2, BitsBudget{s * 3}, PeakBytes{s}};
-    Budgeted<int> const c{3, BitsBudget{s * 7}, PeakBytes{s * 2}};
+    Budgeted<int> const a{1, grant(s, s * 5)};
+    Budgeted<int> const b{2, grant(s * 3, s)};
+    Budgeted<int> const c{3, grant(s * 7, s * 2)};
     expect(a.combine_max(b).budget() == b.combine_max(a).budget(), "the join commutes on the grade");
     expect(a.accumulate(b).budget() == b.accumulate(a).budget(), "the sum commutes on the grade");
     expect(a.combine_max(b).combine_max(c).budget() == a.combine_max(b.combine_max(c)).budget(),
@@ -220,7 +276,7 @@ void attack_budget_edges() {
 
     // Each composition keeps the left payload, and never claims less use
     // than the left operand had.  O(n^2) over the grid of five.
-    std::array<Budgeted<int>, 5> const grid = {a, b, c, near_top, Budgeted<int>{9, BitsBudget{0}, PeakBytes{0}}};
+    std::array<Budgeted<int>, 5> const grid = {a, b, c, near_top, Budgeted<int>{9, grant(0, 0)}};
     for (auto const& x : grid) {
         for (auto const& y : grid) {
             expect(fixy::BudgetLattice::leq(x.budget(), x.accumulate(y).budget()), "the sum never tightens");
@@ -299,20 +355,38 @@ static_assert(refused_by_both<std::vector<void (*)()>>);
 void attack_payload_owns_what_it_reaches() {
     std::uint64_t const s = g_seed;
     std::vector<int> source{1, 2, 3};
-    EpochVersioned<std::vector<int>> const versioned{source, Epoch{s}, Generation{s}};
-    Budgeted<std::vector<int>> const budgeted{source, BitsBudget{s}, PeakBytes{s}};
+    EpochVersioned<std::vector<int>> const versioned{source, stamp_at(s, s)};
+    Budgeted<std::vector<int>> const budgeted{source, grant(s, s)};
     source[0] = 99;
     source.push_back(4);
     expect(versioned.peek() == std::vector<int>{1, 2, 3} && budgeted.peek() == std::vector<int>{1, 2, 3},
            "a write to the source does not reach an owned payload");
-    expect(versioned.is_at_least(Epoch{s}, Generation{s}) && budgeted.satisfies(BitsBudget{s}, PeakBytes{s}),
+    expect(versioned.is_at_least(EpochBound{s}, GenerationBound{s})
+               && budgeted.satisfies(BitsBudgetBound{s}, PeakBytesBound{s}),
            "the claims stay true of the payload they describe");
 }
 
 // ── Equal versions ──────────────────────────────────────────────────
 
+// A payload with no operator== compares by its members, so it can show
+// that two values at one version are one event.  A payload whose
+// operator== is hand-written is refused: that equality can hold for values
+// a reader tells apart.
 struct NoEquality {
     int v = 0;
+    double weight = 0.0;
+};
+struct EqualToEverything {
+    int v = 0;
+    [[nodiscard]] constexpr bool operator==(EqualToEverything const&) const noexcept { return true; }
+};
+struct HoldsEqualToEverything {
+    int id = 0;
+    EqualToEverything inner{};
+};
+struct FriendDefaultedEquality {
+    int v = 0;
+    friend bool operator==(FriendDefaultedEquality const&, FriendDefaultedEquality const&) = default;
 };
 template <typename T>
 concept can_select_copies = requires(EpochVersioned<T> const& a, EpochVersioned<T> const& b) {
@@ -322,21 +396,43 @@ template <typename T>
 concept can_select_moves = requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) {
     fixy::select_fresher(std::move(a), std::move(b));
 };
-static_assert(!can_select_copies<NoEquality> && !can_select_moves<NoEquality>,
-              "a payload that cannot compare cannot show that two values at one version are one event");
+static_assert(can_select_copies<NoEquality> && can_select_moves<NoEquality>,
+              "a payload with no equality compares by its members");
 static_assert(can_select_copies<std::string> && can_select_moves<std::string>);
+static_assert(!can_select_copies<EqualToEverything> && !can_select_moves<EqualToEverything>,
+              "a hand-written operator== is refused");
+static_assert(!can_select_copies<HoldsEqualToEverything>, "a hand-written operator== in a member is refused too");
+static_assert(!can_select_copies<FriendDefaultedEquality>,
+              "an operator== that reflection cannot see as defaulted is refused, which errs toward safety");
+static_assert(std::is_same_v<fixy::uncomparable_part_t<HoldsEqualToEverything>, EqualToEverything>,
+              "the refusal names the part whose equality is hand-written");
 
 void attack_equal_versions_compare_payloads() {
     std::uint64_t const s = g_seed;
-    EpochVersioned<std::string> const left{std::string("same"), Epoch{s}, Generation{s}};
-    EpochVersioned<std::string> const agrees{std::string("same"), Epoch{s}, Generation{s}};
-    EpochVersioned<std::string> const differs{std::string("other"), Epoch{s}, Generation{s}};
+    EpochVersioned<std::string> const left{std::string("same"), stamp_at(s, s)};
+    EpochVersioned<std::string> const agrees{std::string("same"), stamp_at(s, s)};
+    EpochVersioned<std::string> const differs{std::string("other"), stamp_at(s, s)};
     auto const one_event = fixy::select_fresher(left, agrees);
     expect(one_event.has_value() && one_event->peek() == "same", "agreeing payloads at one version are one event");
     auto const conflict = fixy::select_fresher(left, differs);
     expect(!conflict && conflict.error() == VersionConflict::Divergent, "differing payloads at one version conflict");
     auto const moved = fixy::select_fresher(EpochVersioned<std::string>{differs}, EpochVersioned<std::string>{left});
     expect(!moved && moved.error() == VersionConflict::Divergent, "the moving form refuses the same conflict");
+
+    // The derived equality reads every member, the bits of a double
+    // included, so a payload that differs in one member conflicts.
+    EpochVersioned<NoEquality> const first{NoEquality{1, 0.5}, stamp_at(s, s)};
+    EpochVersioned<NoEquality> const second{NoEquality{1, 0.25}, stamp_at(s, s)};
+    EpochVersioned<NoEquality> const same_as_first{NoEquality{1, 0.5}, stamp_at(s, s)};
+    auto const differs_in_one_member = fixy::select_fresher(first, second);
+    expect(!differs_in_one_member && differs_in_one_member.error() == VersionConflict::Divergent,
+           "a payload that differs in one member conflicts");
+    expect(fixy::select_fresher(first, same_as_first).has_value() && first == same_as_first && !(first == second),
+           "payloads with equal members are one event");
+    EpochVersioned<NoEquality> const signed_zero{NoEquality{1, -0.0}, stamp_at(s, s)};
+    EpochVersioned<NoEquality> const unsigned_zero{NoEquality{1, 0.0}, stamp_at(s, s)};
+    expect(!fixy::select_fresher(signed_zero, unsigned_zero).has_value(),
+           "two zeros of different sign are two values, as a reader of the sign sees");
 }
 
 // ── The substrate under each wrapper ────────────────────────────────
@@ -345,19 +441,52 @@ void attack_the_substrate() {
     std::uint64_t const s = g_seed;
     using VersionGrade = EpochVersioned<int>::graded_type;
     using V = EpochVersioned<int>::version_t;
-    VersionGrade const current{1, V{Epoch{s + 4}, Generation{s + 4}}};
+    auto const version = [](std::uint64_t epoch, std::uint64_t generation) {
+        return V{count_at<EpochLattice>(epoch), count_at<GenerationLattice>(generation)};
+    };
+    VersionGrade const current{1, version(s + 4, s + 4)};
     // Weakening a version moves it older, which is the weaker claim.
-    VersionGrade const aged = current.weaken(V{Epoch{s}, Generation{s}});
-    expect(aged.grade() == V{Epoch{s}, Generation{s}}, "the version substrate weakens toward older");
+    VersionGrade const aged = current.weaken(version(s, s));
+    expect(aged.grade() == version(s, s), "the version substrate weakens toward older");
     // Composing two versions reports the older of the two.
-    VersionGrade const other{2, V{Epoch{s + 9}, Generation{s + 1}}};
-    expect(current.compose(other).grade() == V{Epoch{s + 4}, Generation{s + 1}},
+    VersionGrade const other{2, version(s + 9, s + 1)};
+    expect(current.compose(other).grade() == version(s + 4, s + 1),
            "the version substrate composes to the older counter on each axis");
 
     using BudgetGrade = Budgeted<int>::graded_type;
-    BudgetGrade const measured{1, fixy::BudgetLattice::element_type{BitsBudget{s}, PeakBytes{s}}};
-    BudgetGrade const looser = measured.weaken(fixy::BudgetLattice::element_type{BitsBudget{s + 1}, PeakBytes{s}});
-    expect(looser.grade().first == BitsBudget{s + 1}, "the budget substrate weakens toward more use");
+    using Budget = fixy::BudgetLattice::element_type;
+    BudgetGrade const measured{1, Budget{count_at<fixy::BitsBudgetLattice>(s), count_at<fixy::PeakBytesLattice>(s)}};
+    BudgetGrade const looser =
+        measured.weaken(Budget{count_at<fixy::BitsBudgetLattice>(s + 1), count_at<fixy::PeakBytesLattice>(s)});
+    expect(looser.grade().first.raw() == s + 1, "the budget substrate weakens toward more use");
+}
+
+// ── The doors the old ledger held, each shown closed ────────────────
+
+// No producer states a claim.  A version comes only from a stamp of the
+// one source, a budget only from a grant of the one authority, and each is
+// minted only with an Init context.
+static_assert(!std::is_constructible_v<EpochVersioned<int>, int, Epoch, Generation>);
+static_assert(!std::is_constructible_v<Budgeted<int>, int, fixy::BitsBudget, fixy::PeakBytes>);
+static_assert(!std::is_constructible_v<VersionStamp, Epoch, Generation>);
+static_assert(!std::is_constructible_v<fixy::BudgetStamp, fixy::BitsBudget, fixy::PeakBytes>);
+template <typename Ctx>
+concept mints_a_source = requires(Ctx const& ctx) { fixy::mint_version_source(ctx); };
+static_assert(!mints_a_source<IoCtx> && !mints_a_source<fe::ExecCtx<>> && mints_a_source<InitCtx>,
+              "only a context that owns Init mints a version source");
+
+void attack_the_closed_doors() {
+    // A stamp never names a version above its source.  A fresh source is at
+    // genesis and refuses every later version.
+    fixy::VersionSource fresh = fixy::mint_version_source(InitCtx{fe::testing::init()});
+    auto const future = fresh.stamp_received(count_at<EpochLattice>(1), GenerationLattice::bottom());
+    expect(!future && future.error() == VersionConflict::AheadOfSource, "a fresh source vouches for no later version");
+    VersionStamp const now = fresh.stamp();
+    expect(now.epoch() == EpochLattice::bottom() && now.generation() == GenerationLattice::bottom(),
+           "a fresh source is at genesis");
+    VersionStamp const advanced = fresh.advance_generation();
+    expect(advanced.generation().raw() == 1 && fresh.stamp_received(EpochLattice::bottom(), advanced.generation()),
+           "the source vouches for what it reached");
 }
 
 // ── The ledger ───────────────────────────────────────────────────────
@@ -373,43 +502,19 @@ struct KnownLimit {
 };
 
 inline constexpr KnownLimit kLedger[] = {
-    {"an equality that is not equality-preserving",
-     "Two values at one version are one event when the payload type says they are equal. A type whose operator== "
-     "holds for values that differ in what a reader can observe does not model std::equality_comparable "
-     "([concepts.equality]), and select_fresher cannot know sameness better than the type that defines it."},
-    {"a claim stated by the producer",
-     "The constructor takes the grade the producer states, and nothing in foundation or fixy can produce a grade "
-     "instead: a version comes from a committed fleet membership change, and a budget from a measurement of the "
-     "work. A version stated too high, or a zero budget computed by subtraction, passes the gate until a mint "
-     "that holds that source is the only door."},
+    {"work beyond its grant",
+     "A budget is an allowance that the authority grants, and a grant bounds the work only when the work spends "
+     "through resources that draw on it. operator new, a system call and a store through a pointer pass through no "
+     "object that a type can watch, so C++ cannot route every allocation and every byte of a production through one "
+     "meter. A producer that uses more than its grant still carries the grant."},
 };
-static_assert(std::size(kLedger) <= 2, "the ledger only shrinks");
-
-// Every value compares equal, so two values at one version always read as
-// one event, whatever they hold.
-struct EqualToEverything {
-    int v = 0;
-    [[nodiscard]] constexpr bool operator==(EqualToEverything const&) const noexcept { return true; }
-};
+static_assert(std::size(kLedger) <= 1, "the ledger only shrinks");
 
 void reproduce_the_ledger() {
-    std::uint64_t const s = g_seed;
-
-    EpochVersioned<EqualToEverything> const first{EqualToEverything{1}, Epoch{s}, Generation{s}};
-    EpochVersioned<EqualToEverything> const second{EqualToEverything{2}, Epoch{s}, Generation{s}};
-    auto const pick = fixy::select_fresher(first, second);
-    expect(pick.has_value() && pick->peek().v == 1,
-           "ledger: an equality that holds for different values still hides a conflict at one version");
-
-    std::uint64_t const allowance = s * 1000;
-    std::uint64_t const over_budget = allowance + 500;
-    BitsBudget const zero_by_arithmetic{allowance - allowance};
-    BitsBudget const zero_by_saturation{::foundation::sat::sub_sat(allowance, over_budget)};
-    Budgeted<int> const claims_nothing{1, zero_by_arithmetic, PeakBytes{zero_by_saturation.raw()}};
-    expect(claims_nothing.satisfies(BitsBudget{0}, PeakBytes{0}), "ledger: a producer-stated zero still passes");
-    EpochVersioned<int> const claims_future{1, Epoch{kMax}, Generation{kMax}};
-    expect(claims_future.is_at_least(Epoch{kMax}, Generation{kMax}),
-           "ledger: a producer-stated version still passes");
+    // A grant of zero bytes, and a payload that holds a mebibyte.
+    Budgeted<std::vector<int>> const holds_more{std::vector<int>(262144, 1), grant(0, 0)};
+    expect(holds_more.satisfies(BitsBudgetBound{0}, PeakBytesBound{0}),
+           "ledger: work beyond its grant still passes the gate of the grant");
 }
 
 }  // namespace
@@ -423,6 +528,7 @@ int main() {
     attack_payload_owns_what_it_reaches();
     attack_equal_versions_compare_payloads();
     attack_the_substrate();
+    attack_the_closed_doors();
     reproduce_the_ledger();
     if (g_failures != 0) {
         std::fprintf(stderr, "test_versioned_budgeted_attacks: %d case(s) failed\n", g_failures);

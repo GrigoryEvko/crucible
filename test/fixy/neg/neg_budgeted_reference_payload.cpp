@@ -6,6 +6,6 @@
 
 int main() {
     int target = 1;
-    fixy::Budgeted<int&> const aliased{target, fixy::BitsBudget{8}, fixy::PeakBytes{8}};
+    auto const aliased = fixy::Budgeted<int&>::unbounded(target);
     return aliased.peek();
 }

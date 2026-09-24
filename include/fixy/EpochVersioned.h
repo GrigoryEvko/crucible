@@ -6,8 +6,26 @@
 // The version is a claim about the payload.  A gate that asks for at
 // least version v admits the value when its version sits at or above v,
 // so a version that is too high makes a stale payload read as fresh.
-// Every door that could raise the version without new evidence is
-// absent here, and each absence is a design choice:
+// The claim therefore does not come from the producer.  It comes from a
+// VersionSource, the one owner of the version counters of a program:
+//
+//   - A VersionSource is minted only with a context that owns Init, the
+//     capability of process startup, so a producer running on a
+//     background or foreground thread cannot make one.
+//   - Its version only rises.  The owner advances the epoch on a committed
+//     membership change and the generation on a restart, and adopts a
+//     newer version that it learns from consensus or from storage.
+//   - It hands out a VersionStamp, a proof type that no caller can build:
+//     its constructor is private, and its copy is user-provided, so
+//     neither std::bit_cast nor a lifetime start over bytes makes one.
+//   - Every stamp names a version at or below the version of its source
+//     when the stamp was taken.  stamp() gives the current version, and
+//     stamp_received() gives the version of a value that came from a peer,
+//     and refuses one that the source has not reached.  An old stamp is a
+//     weaker claim, never a false one.
+//
+// EpochVersioned is built only from a stamp, or at the genesis version,
+// which is the weakest claim.  The rules of the wrapper follow:
 //
 //   - There is no default constructor.  A value that was never produced
 //     at a version has no version to report, so the type does not invent
@@ -15,42 +33,31 @@
 //   - There is no peek_mut().  Replacing the payload under the current
 //     version would let an older payload carry a newer version.
 //   - There is no combine that joins two versions and keeps one payload.
-//     The old wrapper had one: it kept the left payload and stored the
-//     join of both versions, so combining an old payload with a newer
-//     version produced an old payload marked with the newer version.
-//     select_fresher() below returns the operand whose own version is
-//     the higher one, together with that version, and refuses an
-//     incomparable pair.  It needs a payload that can compare, because
-//     two equal versions are one event only when the two payloads agree,
-//     and a payload with no equality cannot show that.
+//     select_fresher() below returns the operand whose own version is the
+//     higher one, together with that version, and refuses an incomparable
+//     pair.  Two equal versions are one event only when the two payloads
+//     are the same, and the payloads are compared by the equality derived
+//     from their members (SelfContained.h).  A hand-written operator== is
+//     refused, because one that holds for values a reader tells apart
+//     would hide a conflict at one version.
 //
 // The grade is the order dual of the version order.  Graded reads up as
 // the weaker claim, and an older version is the weaker claim, so the
-// older version sits higher.  The old combine was an instance of the
-// opposite orientation: its join took the newer version.  Under the dual,
-// the substrate's own weaken() moves to an older version and its
-// compose() reports the older of two, so neither can mark a value fresh.
-// A reader who needs the counters in their numeric order reads epoch()
-// and generation(), which are the counters themselves.
+// older version sits higher.  Under the dual, the substrate's own weaken()
+// moves to an older version and its compose() reports the older of two,
+// so neither can mark a value fresh.  A reader who needs the counters in
+// their numeric order reads epoch() and generation().
 //
 // Two more doors close on the payload side:
 //
 //   - A payload that reaches state outside itself, or that a const
-//     reference can write, is refused: a reference, a pointer, a span, a
-//     string_view, a handle that writes through const, or a mutable
-//     member anywhere on a by-value path (SelfContained.h).  peek()
-//     returns a const reference, so each of these lets the payload change
-//     under the version with no cast and no warning.
+//     reference can write, is refused (SelfContained.h).
 //   - A move out of a payload that is not trivially copyable leaves the
 //     source at the genesis version.  The moved-from payload holds some
-//     unspecified value, and genesis is the weakest claim, so a gate that
-//     asks for any real version refuses it.  A trivially copyable payload
-//     is copied by a move, so its source keeps a true claim.
+//     unspecified value, and genesis is the weakest claim.
 //
-// Nothing here stops a caller who builds an older version after a newer
-// one.  Forward progress is a property of where the version comes from:
-// the fleet publishes an epoch only through a committed membership
-// change, and a node advances its own generation only when it restarts.
+// A VersionSource is owned by one thread.  Share its versions by passing
+// stamps, which are values.
 //
 // Old spelling: include/crucible/safety/EpochVersioned.h, and the
 // detection surface of include/crucible/safety/IsEpochVersioned.h.
@@ -63,6 +70,7 @@
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -77,8 +85,10 @@
 namespace fixy {
 
 using ::foundation::algebra::lattices::Epoch;
+using ::foundation::algebra::lattices::EpochBound;
 using ::foundation::algebra::lattices::EpochLattice;
 using ::foundation::algebra::lattices::Generation;
+using ::foundation::algebra::lattices::GenerationBound;
 using ::foundation::algebra::lattices::GenerationLattice;
 
 // The pointwise order on (epoch, generation), turned over so that the
@@ -88,7 +98,8 @@ using EpochVersionLattice =
     ::foundation::algebra::lattices::ProductLattice<::foundation::algebra::lattices::DualLattice<EpochLattice>,
                                                     ::foundation::algebra::lattices::DualLattice<GenerationLattice>>;
 
-// Why select_fresher() declined to choose.
+// Why select_fresher() declined to choose, or why a source declined to
+// stamp.
 enum class VersionConflict : std::uint8_t {
     // Each operand leads on one counter, so neither version is at or
     // above the other, and no operand has the version a join reports.
@@ -98,7 +109,106 @@ enum class VersionConflict : std::uint8_t {
     // same version mean one of the producers lied or two states shared
     // a version, and neither operand can be preferred.
     Divergent = 2,
+    // The version is above the version of the source, so the source
+    // cannot vouch for it.  The owner adopts the version first.
+    AheadOfSource = 3,
 };
+
+class VersionSource;
+
+// A version that a VersionSource vouches for.  No caller can build one.
+class VersionStamp {
+public:
+    VersionStamp() = delete("a stamp comes only from a VersionSource");
+
+    // User-provided, so that the stamp is neither trivially copyable nor
+    // implicit-lifetime, and no route builds one from bytes.
+    constexpr VersionStamp(VersionStamp const& other) noexcept
+        : epoch_{other.epoch_}, generation_{other.generation_} {}
+    constexpr VersionStamp& operator=(VersionStamp const& other) noexcept {
+        epoch_ = other.epoch_;
+        generation_ = other.generation_;
+        return *this;
+    }
+    ~VersionStamp() = default;
+
+    [[nodiscard]] constexpr Epoch epoch() const noexcept { return epoch_; }
+    [[nodiscard]] constexpr Generation generation() const noexcept { return generation_; }
+
+private:
+    friend class VersionSource;
+    constexpr VersionStamp(Epoch epoch, Generation generation) noexcept : epoch_{epoch}, generation_{generation} {}
+
+    Epoch epoch_;
+    Generation generation_;
+};
+
+template <typename Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+[[nodiscard]] constexpr VersionSource mint_version_source(Ctx const& ctx) noexcept;
+
+// The owner of the version counters.  Its address is its identity, so it
+// neither copies nor moves.
+class [[nodiscard]] VersionSource {
+public:
+    VersionSource(VersionSource const&) = delete("the source is the one owner of its version; a copy would be a "
+                                                 "second owner that advances on its own");
+    VersionSource(VersionSource&&) = delete("the source is the one owner of its version, so it stays in place");
+    VersionSource& operator=(VersionSource const&) = delete("the version of a source only rises");
+    VersionSource& operator=(VersionSource&&) = delete("the version of a source only rises");
+    ~VersionSource() = default;
+
+    // The current version.
+    [[nodiscard]] constexpr VersionStamp stamp() const noexcept { return VersionStamp{epoch_, generation_}; }
+
+    // The version of a value that came from a peer.  A version above the
+    // source's own is refused: a node vouches only for what it has reached.
+    [[nodiscard]] constexpr std::expected<VersionStamp, VersionConflict> stamp_received(
+        Epoch epoch, Generation generation) const noexcept {
+        if (!EpochLattice::leq(epoch, epoch_) || !GenerationLattice::leq(generation, generation_)) {
+            return std::unexpected(VersionConflict::AheadOfSource);
+        }
+        return VersionStamp{epoch, generation};
+    }
+
+    // A committed membership change.
+    constexpr VersionStamp advance_epoch() noexcept {
+        epoch_ = EpochLattice::successor(epoch_);
+        return stamp();
+    }
+
+    // A restart of this node.
+    constexpr VersionStamp advance_generation() noexcept {
+        generation_ = GenerationLattice::successor(generation_);
+        return stamp();
+    }
+
+    // A version learned from consensus or read back from storage.  Each
+    // counter rises to the larger of the two and never falls.
+    constexpr VersionStamp adopt(Epoch epoch, Generation generation) noexcept {
+        epoch_ = EpochLattice::join(epoch_, epoch);
+        generation_ = GenerationLattice::join(generation_, generation);
+        return stamp();
+    }
+
+private:
+    template <typename Ctx>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+    friend constexpr VersionSource mint_version_source(Ctx const& ctx) noexcept;
+
+    constexpr VersionSource() noexcept = default;
+
+    Epoch epoch_{};
+    Generation generation_{};
+};
+
+// A source at the genesis version.  The context must own Init, which only
+// process startup and the test witness hold.
+template <typename Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+[[nodiscard]] constexpr VersionSource mint_version_source(Ctx const&) noexcept {
+    return VersionSource{};
+}
 
 template <SelfContained T>
 class [[nodiscard]] EpochVersioned
@@ -127,23 +237,26 @@ private:
         std::construct_at(&impl_, std::move(left_behind), genesis_());
     }
 
+    constexpr EpochVersioned(T value, version_t version) noexcept(std::is_nothrow_move_constructible_v<T>)
+        : impl_{std::move(value), version} {}
+
 public:
     EpochVersioned() = delete("a value that was never produced at a version has no version to report; "
                               "state one, or use at_genesis()");
 
-    constexpr EpochVersioned(T value, Epoch ep, Generation gen) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), version_t{ep, gen}} {}
+    constexpr EpochVersioned(T value, VersionStamp const& stamp) noexcept(std::is_nothrow_move_constructible_v<T>)
+        : impl_{std::move(value), version_t{stamp.epoch(), stamp.generation()}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr EpochVersioned(std::in_place_t, Epoch ep, Generation gen,
+    constexpr EpochVersioned(std::in_place_t, VersionStamp const& stamp,
                              Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                                       && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), version_t{ep, gen}} {}
+        : impl_{T(std::forward<Args>(args)...), version_t{stamp.epoch(), stamp.generation()}} {}
 
     [[nodiscard]] static constexpr EpochVersioned
     at_genesis(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        return EpochVersioned{std::move(value), EpochLattice::bottom(), GenerationLattice::bottom()};
+        return EpochVersioned{std::move(value), genesis_()};
     }
 
     // A copy is a replay, not a duplication: the version records when the
@@ -180,13 +293,12 @@ public:
 
     ~EpochVersioned() = default;
 
-    [[nodiscard]] friend constexpr bool operator==(EpochVersioned const& a,
-                                                   EpochVersioned const& b) noexcept(noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) {
-            { x == y } -> std::convertible_to<bool>;
-        }
+    // Two values are equal when their versions are equal and their payloads
+    // are equal by their members.
+    [[nodiscard]] friend constexpr bool operator==(EpochVersioned const& a, EpochVersioned const& b) noexcept
+        requires EqualityByMembers<T>
     {
-        return a.peek() == b.peek() && a.version() == b.version();
+        return a.version() == b.version() && equal_by_members(a.peek(), b.peek());
     }
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
@@ -206,34 +318,21 @@ public:
     }
 
     // The admission query.  Both counters must be at or above the
-    // required ones, which in the dual order means the version sits at or
-    // below the requirement.
-    [[nodiscard]] constexpr bool is_at_least(Epoch min_epoch, Generation min_gen) const noexcept {
-        return lattice_type::leq(version(), version_t{min_epoch, min_gen});
+    // required ones.
+    [[nodiscard]] constexpr bool is_at_least(EpochBound min_epoch, GenerationBound min_gen) const noexcept {
+        return EpochLattice::is_at_least(epoch(), min_epoch) && GenerationLattice::is_at_least(generation(), min_gen);
     }
 };
 
-namespace detail::epoch_versioned {
-
-// True when two values at one version hold different payloads.
-template <std::equality_comparable T>
-[[nodiscard]] constexpr bool payloads_diverge(EpochVersioned<T> const& a, EpochVersioned<T> const& b) {
-    return !(a.peek() == b.peek());
-}
-
-}  // namespace detail::epoch_versioned
-
 // The operand whose own version is at or above the other one, with its
-// payload and that version.  Equal versions with equal payloads are one
-// event, and the left operand stands for it.  Equal versions with
-// different payloads are Divergent.  An incomparable pair has no fresher
-// operand, so the result is Incomparable.  A payload that cannot compare
-// cannot show that two equal versions are one event, so the selection
-// does not exist for it.
+// payload and that version.  Equal versions with payloads equal by their
+// members are one event, and the left operand stands for it.  Equal
+// versions with different payloads are Divergent.  An incomparable pair
+// has no fresher operand, so the result is Incomparable.
 //
 // In the dual order, "a is at or above b" is leq(a, b).
 template <typename T>
-    requires std::copy_constructible<T> && std::equality_comparable<T>
+    requires std::copy_constructible<T> && EqualityByMembers<T>
 [[nodiscard]] constexpr std::expected<EpochVersioned<T>, VersionConflict>
 select_fresher(EpochVersioned<T> const& a, EpochVersioned<T> const& b) noexcept(
     std::is_nothrow_copy_constructible_v<T>) {
@@ -241,7 +340,7 @@ select_fresher(EpochVersioned<T> const& a, EpochVersioned<T> const& b) noexcept(
     bool const a_at_or_above_b = L::leq(a.version(), b.version());
     bool const b_at_or_above_a = L::leq(b.version(), a.version());
     if (a_at_or_above_b && b_at_or_above_a) {
-        if (detail::epoch_versioned::payloads_diverge(a, b)) return std::unexpected(VersionConflict::Divergent);
+        if (!equal_by_members(a.peek(), b.peek())) return std::unexpected(VersionConflict::Divergent);
         return a;
     }
     if (a_at_or_above_b) return a;
@@ -249,14 +348,14 @@ select_fresher(EpochVersioned<T> const& a, EpochVersioned<T> const& b) noexcept(
     return std::unexpected(VersionConflict::Incomparable);
 }
 
-template <std::equality_comparable T>
+template <EqualityByMembers T>
 [[nodiscard]] constexpr std::expected<EpochVersioned<T>, VersionConflict>
 select_fresher(EpochVersioned<T>&& a, EpochVersioned<T>&& b) noexcept(std::is_nothrow_move_constructible_v<T>) {
     using L = EpochVersionLattice;
     bool const a_at_or_above_b = L::leq(a.version(), b.version());
     bool const b_at_or_above_a = L::leq(b.version(), a.version());
     if (a_at_or_above_b && b_at_or_above_a) {
-        if (detail::epoch_versioned::payloads_diverge(a, b)) return std::unexpected(VersionConflict::Divergent);
+        if (!equal_by_members(a.peek(), b.peek())) return std::unexpected(VersionConflict::Divergent);
         return std::move(a);
     }
     if (a_at_or_above_b) return std::move(a);
@@ -283,12 +382,27 @@ using EV = EpochVersioned<int>;
 
 static_assert(!std::is_default_constructible_v<EV>, "a version must be stated, never defaulted");
 static_assert(std::is_copy_constructible_v<EV>);
-static_assert(std::is_trivially_copyable_v<EV>, "a trivially copyable payload keeps a trivially copyable wrapper");
-static_assert(!std::is_same_v<Epoch, Generation>);
-static_assert(!std::is_constructible_v<EV, int, Generation, Epoch>,
-              "the two counters are distinct types, so passing them in the wrong order does not compile");
-static_assert(!std::is_constructible_v<EV, int, std::uint64_t, std::uint64_t>,
-              "a raw integer is not a version");
+static_assert(!std::is_trivially_copyable_v<EV> && !::foundation::lifetime::ImplicitLifetimeThroughout<EV>,
+              "a versioned value is not built from bytes, so neither bit_cast nor a checked lifetime start forges "
+              "a version");
+static_assert(!std::is_constructible_v<EV, int, Epoch, Generation>, "a version comes from a stamp, not from counts");
+static_assert(!std::is_constructible_v<EV, int, std::uint64_t, std::uint64_t>, "a raw integer is not a version");
+
+// A stamp is a proof: no caller builds one, and no route builds one from
+// bytes.  A source neither copies nor moves.
+static_assert(!std::is_default_constructible_v<VersionStamp>);
+static_assert(!std::is_constructible_v<VersionStamp, Epoch, Generation>);
+static_assert(!std::is_trivially_copyable_v<VersionStamp> && !std::is_implicit_lifetime_v<VersionStamp>);
+static_assert(!std::is_copy_constructible_v<VersionSource> && !std::is_move_constructible_v<VersionSource>);
+static_assert(!std::is_default_constructible_v<VersionSource>);
+
+// A source is minted with an Init context only.
+template <typename Ctx>
+concept can_mint_source = requires(Ctx const& ctx) { mint_version_source(ctx); };
+static_assert(!can_mint_source<::foundation::effects::detail::ctx_witnesses::FgWitness>);
+static_assert(!can_mint_source<::foundation::effects::detail::ctx_witnesses::BgBlockWitness>);
+static_assert(!can_mint_source<::foundation::effects::detail::ctx_witnesses::TestWitnessCtx>);
+static_assert(can_mint_source<::foundation::effects::detail::ctx_witnesses::InitWitness>);
 
 // The grade is carried per instance: the payload plus two 64-bit
 // counters, and no more for a payload that needs no padding.
@@ -311,73 +425,32 @@ static_assert(!can_version<int*> && !can_version<int const*>,
 static_assert(!can_version<PointsAtValue>, "a pointer member reaches out of the value, even to const");
 static_assert(!can_version<HoldsMutable>, "a mutable member is writable through peek()");
 
-inline constexpr EV v_explicit{42, Epoch{5}, Generation{2}};
-static_assert(v_explicit.peek() == 42);
-static_assert(v_explicit.epoch() == Epoch{5});
-static_assert(v_explicit.generation() == Generation{2});
-
-inline constexpr EV v_in_place{std::in_place, Epoch{3}, Generation{1}, 7};
-static_assert(v_in_place.peek() == 7);
-static_assert(v_in_place.version() == EV::version_t{Epoch{3}, Generation{1}});
-
 inline constexpr EV v_genesis = EV::at_genesis(99);
-static_assert(v_genesis.epoch() == Epoch{0});
-static_assert(v_genesis.generation() == Generation{0});
-static_assert(!v_genesis.is_at_least(Epoch{1}, Generation{0}));
-static_assert(v_genesis.is_at_least(Epoch{0}, Generation{0}));
+static_assert(v_genesis.epoch() == EpochLattice::bottom());
+static_assert(v_genesis.generation() == GenerationLattice::bottom());
+static_assert(!v_genesis.is_at_least(EpochBound{1}, GenerationBound{0}));
+static_assert(v_genesis.is_at_least(EpochBound{0}, GenerationBound{0}));
 
-static_assert(v_explicit.is_at_least(Epoch{5}, Generation{2}));
-static_assert(v_explicit.is_at_least(Epoch{4}, Generation{1}));
-static_assert(!v_explicit.is_at_least(Epoch{6}, Generation{2}));
-static_assert(!v_explicit.is_at_least(Epoch{5}, Generation{3}));
-
-// The fresher operand wins with its own payload and its own version.
-inline constexpr EV v_older{10, Epoch{3}, Generation{1}};
-inline constexpr EV v_newer{20, Epoch{5}, Generation{2}};
-static_assert(select_fresher(v_older, v_newer)->peek() == 20);
-static_assert(select_fresher(v_older, v_newer)->version() == v_newer.version());
-static_assert(select_fresher(v_newer, v_older)->peek() == 20);
-
-// Equal versions: one event if the payloads agree, a conflict if not.
-inline constexpr EV v_same_a{1, Epoch{4}, Generation{4}};
-inline constexpr EV v_same_b{2, Epoch{4}, Generation{4}};
-inline constexpr EV v_same_a_again{1, Epoch{4}, Generation{4}};
-static_assert(select_fresher(v_same_a, v_same_a_again)->peek() == 1);
-static_assert(select_fresher(v_same_a, v_same_b).error() == VersionConflict::Divergent);
-static_assert(select_fresher(v_same_b, v_same_a).error() == VersionConflict::Divergent);
-
-// Each operand leads on one counter.  The old combine would have
-// reported the version (5, 4) for a payload that has neither half of it.
-inline constexpr EV v_epoch_ahead{30, Epoch{5}, Generation{1}};
-inline constexpr EV v_gen_ahead{40, Epoch{3}, Generation{4}};
-static_assert(!select_fresher(v_epoch_ahead, v_gen_ahead).has_value());
-static_assert(select_fresher(v_epoch_ahead, v_gen_ahead).error() == VersionConflict::Incomparable);
-
-// The result never carries a version that its payload was not given.
-[[nodiscard]] consteval bool result_version_belongs_to_result_payload() noexcept {
-    EV const inputs[] = {v_older, v_newer, v_same_a, v_same_b, v_epoch_ahead, v_gen_ahead, v_genesis};
-    for (EV const& a : inputs) {
-        for (EV const& b : inputs) {
-            auto const r = select_fresher(a, b);
-            if (!r) continue;
-            bool const is_a = r->peek() == a.peek() && r->version() == a.version();
-            bool const is_b = r->peek() == b.peek() && r->version() == b.version();
-            if (!is_a && !is_b) return false;
-        }
-    }
-    return true;
-}
-static_assert(result_version_belongs_to_result_payload());
-
-// The substrate's own operations are sound under the dual order: weaken
-// moves to an older version, and compose reports the older of two.
-using RawGraded = EV::graded_type;
-inline constexpr RawGraded g_newer{20, EV::version_t{Epoch{5}, Generation{2}}};
-inline constexpr RawGraded g_older{10, EV::version_t{Epoch{3}, Generation{1}}};
-static_assert(g_newer.weaken(EV::version_t{Epoch{3}, Generation{1}}).grade().first == Epoch{3});
-static_assert(g_older.compose(g_newer).grade() == EV::version_t{Epoch{3}, Generation{1}},
-              "composition keeps the older version, so an old payload never reads as new");
-static_assert(g_newer.compose(g_older).grade() == EV::version_t{Epoch{3}, Generation{1}});
+// A payload with no equality compares by its members.  A payload whose
+// operator== is hand-written is refused, because that equality can hold
+// for values a reader tells apart.
+struct NoEquality {
+    int v{0};
+};
+struct HandWrittenEquality {
+    int v{0};
+    [[nodiscard]] constexpr bool operator==(HandWrittenEquality const&) const noexcept { return true; }
+};
+template <typename T>
+concept can_select_rvalues = requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) {
+    select_fresher(std::move(a), std::move(b));
+};
+template <typename T>
+concept can_select_lvalues = requires(EpochVersioned<T> const& a, EpochVersioned<T> const& b) {
+    select_fresher(a, b);
+};
+static_assert(can_select_rvalues<NoEquality> && can_select_lvalues<NoEquality> && can_select_rvalues<int>);
+static_assert(!can_select_rvalues<HandWrittenEquality> && !can_select_lvalues<HandWrittenEquality>);
 
 struct MoveOnly {
     int v{0};
@@ -390,60 +463,11 @@ struct MoveOnly {
     }
     MoveOnly(MoveOnly const&) = delete;
     MoveOnly& operator=(MoveOnly const&) = delete;
-    [[nodiscard]] constexpr bool operator==(MoveOnly const&) const noexcept = default;
 };
-
-// A payload that cannot compare cannot show that two equal versions are
-// one event, so neither form of the selection exists for it.
-struct NoEquality {
-    int v{0};
-};
-template <typename T>
-concept can_select_rvalues = requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) {
-    select_fresher(std::move(a), std::move(b));
-};
-static_assert(!can_select_rvalues<NoEquality> && can_select_rvalues<int>);
 
 static_assert(!std::is_copy_constructible_v<EpochVersioned<MoveOnly>>);
 static_assert(std::is_move_constructible_v<EpochVersioned<MoveOnly>>);
-
-[[nodiscard]] consteval bool select_fresher_moves_a_move_only_payload() noexcept {
-    EpochVersioned<MoveOnly> a{MoveOnly{1}, Epoch{1}, Generation{1}};
-    EpochVersioned<MoveOnly> b{MoveOnly{2}, Epoch{2}, Generation{2}};
-    auto r = select_fresher(std::move(a), std::move(b));
-    return r.has_value() && r->peek().v == 2;
-}
-static_assert(select_fresher_moves_a_move_only_payload());
-
-// A moved-from source drops to genesis, so it no longer passes a gate
-// that its old version passed.
-[[nodiscard]] consteval bool moved_from_source_claims_genesis() noexcept {
-    EpochVersioned<MoveOnly> source{MoveOnly{7}, Epoch{9}, Generation{4}};
-    EpochVersioned<MoveOnly> target{std::move(source)};
-    EpochVersioned<MoveOnly> assigned{MoveOnly{8}, Epoch{1}, Generation{1}};
-    assigned = std::move(target);
-    return source.version() == EpochVersioned<MoveOnly>::version_t{Epoch{0}, Generation{0}}
-        && !source.is_at_least(Epoch{1}, Generation{0}) && target.version() == source.version()
-        && assigned.peek().v == 7 && assigned.is_at_least(Epoch{9}, Generation{4});
-}
-static_assert(moved_from_source_claims_genesis());
-
-// A self-move keeps the value and its version.
-[[nodiscard]] consteval bool self_move_keeps_the_claim() noexcept {
-    EpochVersioned<MoveOnly> value{MoveOnly{5}, Epoch{3}, Generation{3}};
-    EpochVersioned<MoveOnly>& alias = value;
-    value = std::move(alias);
-    return value.is_at_least(Epoch{3}, Generation{3});
-}
-static_assert(self_move_keeps_the_claim());
-
-template <typename L, typename R>
-concept can_select_lvalues = requires(L const& a, R const& b) { select_fresher(a, b); };
-static_assert(can_select_lvalues<EV, EV>);
-static_assert(!can_select_lvalues<EpochVersioned<MoveOnly>, EpochVersioned<MoveOnly>>,
-              "the lvalue form copies, so a move-only payload leaves it by the constraint");
-static_assert(!can_select_lvalues<EpochVersioned<NoEquality>, EpochVersioned<NoEquality>>,
-              "a payload that cannot compare leaves the lvalue form by the constraint");
+static_assert(!can_select_lvalues<MoveOnly>, "the lvalue form copies, so a move-only payload leaves it");
 
 struct Lookalike {
     using value_type = int;
@@ -458,6 +482,9 @@ static_assert(std::is_same_v<epoch_versioned_value_t<EV const&>, int>);
 
 static_assert(EV::value_type_name().ends_with("int"));
 static_assert(EV::lattice_name() == "Product<L1xL2>");
+
+// The cases that need a source, and so an Init context, run in
+// test/fixy/test_versioned_budgeted.cpp and its attack file.
 
 }  // namespace detail::epoch_versioned_self_test
 

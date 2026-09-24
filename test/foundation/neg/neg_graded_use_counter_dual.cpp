@@ -11,6 +11,6 @@ int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
     fa::Graded<fa::ModalityKind::Absolute, fl::DualLattice<fl::PeakBytesLattice>, int> const measured{
-        1, fl::PeakBytes{4096}};
+        1, fl::PeakBytesLattice::bottom()};
     return measured.peek();
 }

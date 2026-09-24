@@ -13,9 +13,11 @@
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/effects/Ctx.h>
 
 #include <array>
 #include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -98,18 +100,50 @@ volatile std::uint64_t g_runtime_seed = 5;
     std::abort();
 }
 
+namespace fe = ::foundation::effects;
+
+// A count at a number read at run time.  No integer builds a count, so the
+// test reads one through the one door that states a count from bytes, with
+// a context that owns IO.
+template <typename L>
+typename L::element_type count_at(std::uint64_t count) {
+    fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>> const ctx{fe::testing::test()};
+    typename L::image_type image{};
+    for (std::size_t i = 0; i < 8; ++i) {
+        image[i] = static_cast<std::byte>((L::image_axis() >> (8 * i)) & 0xFFu);
+        image[8 + i] = static_cast<std::byte>((count >> (8 * i)) & 0xFFu);
+    }
+    auto const read = L::mint_from_image(ctx, image);
+    if (!read) std::abort();
+    return *read;
+}
+
+// A clock reached from the empty history by local events.
+template <typename HB>
+typename HB::element_type clock_after(std::array<std::uint64_t, HB::process_count> const& steps) {
+    typename HB::element_type clock = HB::bottom();
+    for (std::size_t p = 0; p < HB::process_count; ++p) {
+        for (std::uint64_t i = 0; i < steps[p]; ++i) clock = HB::successor_at(clock, p);
+    }
+    return clock;
+}
+
 template <typename L>
 void exercise_counter(char const* name) {
     using E = typename L::element_type;
-    E const low{g_runtime_seed};
-    E const high{g_runtime_seed + 10};
+    E const low = count_at<L>(g_runtime_seed);
+    E const high = count_at<L>(g_runtime_seed + 10);
     if (!L::leq(low, high) || L::leq(high, low)) fail(name);
     if (!(L::join(low, high) == high) || !(L::meet(low, high) == low)) fail(name);
     if (!(L::join(low, L::bottom()) == low) || !(L::meet(high, L::top()) == high)) fail(name);
     if (!L::leq(L::bottom(), low) || !L::leq(high, L::top())) fail(name);
     if ((low <=> high) != std::strong_ordering::less) fail(name);
     if (L::top().raw() != std::numeric_limits<std::uint64_t>::max()) fail(name);
-    if (!(L::successor(low) == E{g_runtime_seed + 1}) || !L::leq(low, L::successor(low))) fail(name);
+    if (!(L::successor(low) == count_at<L>(g_runtime_seed + 1)) || !L::leq(low, L::successor(low))) fail(name);
+    if (!L::is_at_least(high, typename L::bound_type{g_runtime_seed + 10})
+        || L::is_at_least(low, typename L::bound_type{high})) {
+        fail(name);
+    }
 
     OnAxisGradedWay<L> const carried{7, high};
     if (!(carried.grade() == high) || carried.peek() != 7) fail(name);
@@ -118,10 +152,10 @@ void exercise_counter(char const* name) {
 void exercise_happens_before() {
     using HB = fl::HappensBeforeLattice<4, ReplayTag>;
     std::uint64_t const s = g_runtime_seed;
-    HB::element_type const a = fl::make_clock<HB>(s, 0u, 0u, 0u);
+    HB::element_type const a = clock_after<HB>({s, 0, 0, 0});
     HB::element_type const b = HB::successor_at(a, 1);
-    HB::element_type const x = fl::make_clock<HB>(s + 1, 0u, 1u, 0u);
-    HB::element_type const y = fl::make_clock<HB>(0u, s + 1, 0u, 1u);
+    HB::element_type const x = clock_after<HB>({s + 1, 0, 1, 0});
+    HB::element_type const y = clock_after<HB>({0, s + 1, 0, 1});
 
     if (!HB::happens_before(a, b) || HB::happens_before(b, a)) fail("happens_before on a chain");
     if (!HB::is_concurrent(x, y) || HB::comparable(x, y)) fail("is_concurrent on an antichain");
@@ -133,7 +167,7 @@ void exercise_happens_before() {
     if (merged[0] != s + 1) fail("causal_merge counts the receive");
 
     using HB1 = fl::HappensBeforeLattice<1>;
-    HB1::element_type const one{{s}};
+    HB1::element_type const one = clock_after<HB1>({s});
     if (HB1::is_concurrent(one, HB1::successor_at(one, 0))) fail("a scalar clock is total");
 }
 

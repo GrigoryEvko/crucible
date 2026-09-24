@@ -1,12 +1,16 @@
 // The two grades are two types.  With raw integers, a peak of 4096 bytes
-// passed where the bit count belongs would be stored as the bit count,
-// and the gate would then compare it against the bit threshold.  The
-// constructor takes BitsBudget and then PeakBytes, and nothing converts
-// one into the other.
+// passed where the bit count belongs would be granted as the bit count,
+// and the gate would then compare it against the bit threshold.  A grant
+// takes a bits bound and then a peak bound, and nothing converts one into
+// the other.
 
 #include <fixy/Budgeted.h>
+#include <foundation/effects/Ctx.h>
 
 int main() {
-    fixy::Budgeted<int> const swapped{1, fixy::PeakBytes{4096}, fixy::BitsBudget{8}};
+    namespace fe = ::foundation::effects;
+    fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::IO>> const init{fe::testing::init()};
+    fixy::BudgetAuthority authority = fixy::mint_budget_authority(init);
+    fixy::Budgeted<int> const swapped{1, authority.grant(fixy::PeakBytesBound{4096}, fixy::BitsBudgetBound{8})};
     return swapped.peek();
 }

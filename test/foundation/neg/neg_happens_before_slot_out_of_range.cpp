@@ -6,7 +6,9 @@
 namespace fl = ::foundation::algebra::lattices;
 using HB = fl::HappensBeforeLattice<2>;
 
-constexpr HB::element_type clock{{4, 5}};
+namespace {
+constexpr HB::element_type clock = HB::bottom();
 static_assert(clock[2] == 0);
+}  // namespace
 
 int main() { return 0; }

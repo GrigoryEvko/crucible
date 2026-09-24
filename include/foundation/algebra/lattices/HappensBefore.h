@@ -8,20 +8,36 @@
 // clocks that each lead on a different slot are unordered, and
 // is_concurrent answers yes for them.
 //
+// A clock claims a history: the count in each slot is the number of events
+// of that process that the clock has seen.  So a clock has the doors of an
+// event history and no other.  bottom() is the empty history, successor_at()
+// is a local event, causal_merge() is a receive, join() and meet() combine
+// two clocks that exist, and top() is the witness a bounded lattice needs.
+// mint_from_image() is the checked read of a clock that crossed a wire, and
+// it needs a context that owns IO.  No door takes an array of integers, so
+// a clock cannot claim a history nobody recorded.  The element is closed to
+// std::bit_cast and to a lifetime start over bytes for the reasons given in
+// StrongCounterLattice.h, and at the same cost, which is none.
+//
 // Old spelling: include/crucible/algebra/lattices/_HappensBefore.h.  The
 // preconditions moved from native pre() clauses into the function bodies,
 // where CRUCIBLE_PRE fires during constant evaluation too.
 
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/reflect/Hash.h>
 
 #include <array>
 #include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <string_view>
 #include <type_traits>
@@ -43,14 +59,27 @@ struct HappensBeforeLattice {
     // which is the wrong relation: two clocks that each lead on a different
     // slot are unordered, not one-before-the-other.  A non-strong ordering
     // also supplies no operator== of its own, so that one stays defaulted.
-    // The slots are private.  The explicit constructor states a whole
-    // clock, and the lattice operations below produce the rest, so a
-    // clock that exists cannot be edited in place and a construction from
-    // integers is a visible site in the source.
-    class element_type {
+    // The slots are private, and only the lattice operations below produce
+    // a clock, so a clock that exists cannot be edited in place and no
+    // integer states one.
+    class [[=::foundation::lifetime::no_start_over_bytes{}]] element_type {
     public:
+        // The empty history.
         constexpr element_type() noexcept = default;
-        constexpr explicit element_type(std::array<std::uint64_t, N> const& slots) noexcept : clock_{slots} {}
+
+        // Trivial copies keep the calling convention of an array of counts.
+        // The assignments are user-provided, so std::bit_cast is refused.
+        constexpr element_type(element_type const&) noexcept = default;
+        constexpr element_type(element_type&&) noexcept = default;
+        constexpr element_type& operator=(element_type const& other) noexcept {
+            clock_ = other.clock_;
+            return *this;
+        }
+        constexpr element_type& operator=(element_type&& other) noexcept {
+            clock_ = other.clock_;
+            return *this;
+        }
+        ~element_type() = default;
 
         [[nodiscard]] constexpr bool operator==(element_type const&) const noexcept = default;
 
@@ -83,6 +112,8 @@ struct HappensBeforeLattice {
 
     private:
         friend struct HappensBeforeLattice;
+        constexpr explicit element_type(std::array<std::uint64_t, N> const& slots) noexcept : clock_{slots} {}
+
         std::array<std::uint64_t, N> clock_{};
     };
 
@@ -90,6 +121,10 @@ struct HappensBeforeLattice {
     using process_id_type = std::size_t;
     using clock_value_type = std::uint64_t;
     using tag_type = Tag;
+
+    // The image of a clock: eight bytes that name the lattice, then eight
+    // bytes per slot, each little-endian.
+    using image_type = std::array<std::byte, 8 * (N + 1)>;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{}; }
 
@@ -165,25 +200,61 @@ struct HappensBeforeLattice {
         return successor_at(join(local, received), me);
     }
 
+    // The identity of the lattice in an image: the width and the tag both
+    // enter it, so a clock of another protocol or width does not read back
+    // as this one.
+    [[nodiscard]] static constexpr std::uint64_t image_axis() noexcept {
+        return ::foundation::reflect::stable_type_id<HappensBeforeLattice>;
+    }
+
+    [[nodiscard]] static constexpr image_type image_of(element_type clock) noexcept {
+        image_type image{};
+        write_word_(image, 0, image_axis());
+        for (std::size_t p = 0; p < N; ++p) write_word_(image, 8 * (p + 1), clock.clock_[p]);
+        return image;
+    }
+
+    // The checked read of an image.  The context must own IO, and the image
+    // must name this lattice.
+    template <typename Ctx>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
+    [[nodiscard]] static constexpr std::expected<element_type, CountImageError> mint_from_image(
+        Ctx const&, image_type const& image) noexcept {
+        if (read_word_(image, 0) != image_axis()) return std::unexpected(CountImageError::OtherAxis);
+        std::array<std::uint64_t, N> slots{};
+        for (std::size_t p = 0; p < N; ++p) slots[p] = read_word_(image, 8 * (p + 1));
+        return element_type{slots};
+    }
+
     [[nodiscard]] static consteval std::string_view name() noexcept { return "HappensBeforeLattice"; }
+
+private:
+    static constexpr void write_word_(image_type& image, std::size_t offset, std::uint64_t word) noexcept {
+        for (std::size_t i = 0; i < 8; ++i) image[offset + i] = static_cast<std::byte>((word >> (8 * i)) & 0xFFu);
+    }
+    [[nodiscard]] static constexpr std::uint64_t read_word_(image_type const& image, std::size_t offset) noexcept {
+        std::uint64_t word = 0;
+        for (std::size_t i = 0; i < 8; ++i) {
+            word |= std::uint64_t{std::to_integer<std::uint8_t>(image[offset + i])} << (8 * i);
+        }
+        return word;
+    }
 };
 
-// A slot counts events, so it takes an unsigned integer.  The old helper
-// took any type convertible to the count, so a negative argument became
-// the largest count and a clock claimed to follow every other clock, and
-// a floating argument lost its fraction without a diagnostic.
-template <typename T>
-concept ClockSlot = std::unsigned_integral<T> && !std::same_as<std::remove_cv_t<T>, bool>;
-
-template <typename HB, typename... Slots>
-    requires(sizeof...(Slots) == HB::process_count) && (ClockSlot<Slots> && ...)
-[[nodiscard]] constexpr typename HB::element_type make_clock(Slots... slots) noexcept {
-    // Every unsigned type widens to the count without narrowing, so the
-    // braced list needs no cast.
-    return typename HB::element_type{std::array<typename HB::clock_value_type, HB::process_count>{slots...}};
-}
-
 namespace detail::happens_before_self_test {
+
+// A clock reached from the empty history by steps[p] local events at each
+// process p: the only way a constant expression reaches an interior clock.
+// Linear in the sum of the steps.
+template <typename HB>
+[[nodiscard]] consteval typename HB::element_type clock_after(
+    std::array<std::uint64_t, HB::process_count> const& steps) noexcept {
+    typename HB::element_type clock = HB::bottom();
+    for (std::size_t p = 0; p < HB::process_count; ++p) {
+        for (std::uint64_t i = 0; i < steps[p]; ++i) clock = HB::successor_at(clock, p);
+    }
+    return clock;
+}
 
 using HB4 = HappensBeforeLattice<4>;
 
@@ -208,13 +279,16 @@ inline constexpr HB4::element_type hb4_bot{};
 inline constexpr HB4::element_type hb4_top = HB4::top();
 
 // A chain: hb4_a precedes hb4_b precedes hb4_c.
-inline constexpr HB4::element_type hb4_a{{1, 0, 0, 0}};
-inline constexpr HB4::element_type hb4_b{{1, 1, 0, 0}};
-inline constexpr HB4::element_type hb4_c{{2, 2, 1, 0}};
+inline constexpr HB4::element_type hb4_a = clock_after<HB4>({1, 0, 0, 0});
+inline constexpr HB4::element_type hb4_b = clock_after<HB4>({1, 1, 0, 0});
+inline constexpr HB4::element_type hb4_c = clock_after<HB4>({2, 2, 1, 0});
 
 // A concurrent pair.
-inline constexpr HB4::element_type hb4_x{{2, 0, 1, 0}};
-inline constexpr HB4::element_type hb4_y{{0, 2, 0, 1}};
+inline constexpr HB4::element_type hb4_x = clock_after<HB4>({2, 0, 1, 0});
+inline constexpr HB4::element_type hb4_y = clock_after<HB4>({0, 2, 0, 1});
+
+// The slots of a clock, for pins against a literal.
+using Slots4 = std::array<std::uint64_t, 4>;
 
 static_assert(verify_bounded_lattice_axioms_at<HB4>(hb4_bot, hb4_bot, hb4_bot));
 static_assert(verify_bounded_lattice_axioms_at<HB4>(hb4_bot, hb4_a, hb4_top));
@@ -265,11 +339,10 @@ static_assert(HB4::leq(hb4_y, hb4_top));
 
 // Pinning the two values as well catches a top that returned the zero vector,
 // which the algebraic rollups would still accept.
-static_assert(hb4_bot == HB4::element_type{{0, 0, 0, 0}});
-static_assert(hb4_top
-              == HB4::element_type{{std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max(),
-                                    std::numeric_limits<std::uint64_t>::max(),
-                                    std::numeric_limits<std::uint64_t>::max()}});
+static_assert(hb4_bot.slots() == Slots4{0, 0, 0, 0});
+static_assert(hb4_top.slots()
+              == Slots4{std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max(),
+                        std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max()});
 
 // All four results of the comparison must be reachable.
 static_assert((hb4_bot <=> hb4_bot) == std::partial_ordering::equivalent);
@@ -321,26 +394,26 @@ static_assert(!HB4::comparable(hb4_x, hb4_y));
 
 static_assert(HB4::leq(hb4_x, HB4::join(hb4_x, hb4_y)));
 static_assert(HB4::leq(hb4_y, HB4::join(hb4_x, hb4_y)));
-static_assert(HB4::join(hb4_x, hb4_y) == HB4::element_type{{2, 2, 1, 1}});
+static_assert(HB4::join(hb4_x, hb4_y).slots() == Slots4{2, 2, 1, 1});
 
 // The meet of two clocks is their latest common ancestor.
-static_assert(HB4::meet(hb4_x, hb4_y) == HB4::element_type{{0, 0, 0, 0}});
+static_assert(HB4::meet(hb4_x, hb4_y).slots() == Slots4{0, 0, 0, 0});
 
 inline constexpr HB4::element_type hb4_a_after_p0 = HB4::successor_at(hb4_a, 0);
-static_assert(hb4_a_after_p0 == HB4::element_type{{2, 0, 0, 0}});
+static_assert(hb4_a_after_p0.slots() == Slots4{2, 0, 0, 0});
 static_assert(HB4::leq(hb4_a, hb4_a_after_p0));
 static_assert(HB4::happens_before(hb4_a, hb4_a_after_p0));
 static_assert(!HB4::leq(hb4_a_after_p0, hb4_a));
 
 inline constexpr HB4::element_type hb4_a_after_p2 = HB4::successor_at(hb4_a, 2);
-static_assert(hb4_a_after_p2 == HB4::element_type{{1, 0, 1, 0}});
+static_assert(hb4_a_after_p2.slots() == Slots4{1, 0, 1, 0});
 static_assert(HB4::leq(hb4_a, hb4_a_after_p2));
 
 // Local events at two processes with no message between them are concurrent.
 static_assert(HB4::is_concurrent(hb4_a_after_p0, hb4_a_after_p2));
 
 inline constexpr HB4::element_type hb4_received_y = HB4::causal_merge(hb4_a, hb4_y, 0);
-static_assert(hb4_received_y == HB4::element_type{{2, 2, 0, 1}});
+static_assert(hb4_received_y.slots() == Slots4{2, 2, 0, 1});
 
 static_assert(HB4::leq(hb4_a, hb4_received_y));
 static_assert(HB4::leq(hb4_y, hb4_received_y));
@@ -356,9 +429,9 @@ static_assert(hb4_c[3] == 0);
 // assumption of two or more slots.  Its order is total, so nothing is
 // concurrent with anything.
 using HB1 = HappensBeforeLattice<1>;
-inline constexpr HB1::element_type hb1_zero{{0}};
-inline constexpr HB1::element_type hb1_one{{1}};
-inline constexpr HB1::element_type hb1_two{{2}};
+inline constexpr HB1::element_type hb1_zero = HB1::bottom();
+inline constexpr HB1::element_type hb1_one = clock_after<HB1>({1});
+inline constexpr HB1::element_type hb1_two = clock_after<HB1>({2});
 
 static_assert(HB1::leq(hb1_zero, hb1_one));
 static_assert(HB1::leq(hb1_one, hb1_two));
@@ -371,12 +444,12 @@ static_assert(verify_bounded_lattice_axioms_at<HB1>(hb1_zero, hb1_one, hb1_two))
 static_assert(verify_distributive_lattice<HB1>(hb1_zero, hb1_one, hb1_two));
 
 inline constexpr HB1::element_type hb1_zero_after_succ = HB1::successor_at(hb1_zero, 0);
-static_assert(hb1_zero_after_succ == HB1::element_type{{1}});
+static_assert(hb1_zero_after_succ.slots() == std::array<std::uint64_t, 1>{1});
 static_assert(hb1_zero_after_succ == hb1_one);
 static_assert(HB1::happens_before(hb1_zero, hb1_zero_after_succ));
 
 inline constexpr HB1::element_type hb1_merged = HB1::causal_merge(hb1_one, hb1_two, 0);
-static_assert(hb1_merged == HB1::element_type{{3}});
+static_assert(hb1_merged.slots() == std::array<std::uint64_t, 1>{3});
 static_assert(HB1::leq(hb1_one, hb1_merged));
 static_assert(HB1::leq(hb1_two, hb1_merged));
 static_assert(HB1::happens_before(hb1_one, hb1_merged));
@@ -407,26 +480,26 @@ static_assert(sizeof(HBReplay::element_type) == sizeof(HBDefault::element_type))
 static_assert(HB4::name() == "HappensBeforeLattice");
 static_assert(HBReplay::name() == "HappensBeforeLattice");
 
-static_assert(make_clock<HB4>(1u, 0u, 0u, 0u) == HB4::element_type{{1, 0, 0, 0}});
-static_assert(make_clock<HB4>(0u, 0u, 0u, 0u) == HB4::bottom());
-static_assert(make_clock<HB4>(2u, 2u, 1u, 0u) == hb4_c);
-static_assert(make_clock<HB1>(std::uint64_t{7}) == HB1::element_type{{7}});
+// No integer and no array of integers states a clock, and no byte image
+// becomes one without the checked read.  The clock is closed to bit_cast
+// and to a lifetime start over bytes, and still copies trivially.
+static_assert(!std::is_constructible_v<HB4::element_type, Slots4>);
+static_assert(!std::is_constructible_v<HB1::element_type, std::uint64_t>);
+static_assert(!std::is_convertible_v<Slots4, HB4::element_type>);
+static_assert(!std::is_trivially_copyable_v<HB4::element_type> && std::is_trivially_copy_constructible_v<HB4::element_type>
+              && !::foundation::lifetime::ImplicitLifetimeThroughout<HB4::element_type>);
 
-static_assert(std::is_same_v<decltype(make_clock<HBReplay>(1u, 0u, 0u, 0u)), HBReplay::element_type>);
-static_assert(
-    !std::is_same_v<decltype(make_clock<HBReplay>(1u, 0u, 0u, 0u)), decltype(make_clock<HBKernel>(1u, 0u, 0u, 0u))>);
-
-// A slot is an unsigned count.  A signed, floating or boolean argument is
-// refused, and so is a clock of the wrong width.
-template <typename HB, typename... Args>
-concept can_make_clock_from = requires(Args... args) { make_clock<HB>(args...); };
-static_assert(can_make_clock_from<HB1, unsigned char>);
-static_assert(can_make_clock_from<HB1, std::uint64_t>);
-static_assert(!can_make_clock_from<HB1, int>);
-static_assert(!can_make_clock_from<HB1, long long>);
-static_assert(!can_make_clock_from<HB1, double>);
-static_assert(!can_make_clock_from<HB1, bool>);
-static_assert(!can_make_clock_from<HB4, unsigned, unsigned, unsigned>);
+// The image names the lattice first, then each slot, and two protocols or
+// two widths have two identities.
+[[nodiscard]] consteval bool image_pins_hold() noexcept {
+    auto const image = HB4::image_of(hb4_c);
+    return image.size() == 40 && image[8] == std::byte{2} && image[16] == std::byte{2} && image[24] == std::byte{1}
+        && image[32] == std::byte{0};
+}
+static_assert(image_pins_hold());
+static_assert(HBReplay::image_axis() != HBKernel::image_axis() && HBReplay::image_axis() != HBDefault::image_axis()
+                  && HB4::image_axis() != HB1::image_axis(),
+              "two clock lattices share one image identity");
 
 // The slots of a clock cannot be written through the clock: the reader
 // returns a copy, and the storage is private.

@@ -932,6 +932,17 @@ inline constexpr StatedZero kZeros[] = {
                            "site; each member folds on its own"},
     {^^::fixy::split_parts_for_, kMetafunction},
     {^^::fixy::OwnedFile, kDescriptor},
+    {^^::fixy::VersionSource, "the owner of the versions of one kind of value: only a context that owns Init mints "
+                              "it, it stays beside the values it stamps, and it is never a template argument of a "
+                              "kernel signature"},
+    {^^::fixy::VersionStamp, "a proof of one version that a source issued: it goes by reference into the "
+                             "constructor of an EpochVersioned, which folds the version, and it is never a value "
+                             "in a signature"},
+    {^^::fixy::BudgetAuthority, "the owner of the budgets of a process: only a context that owns Init mints it, "
+                                "and it is never a template argument of a kernel signature"},
+    {^^::fixy::BudgetStamp, "a proof of one budget that an authority granted: it goes by reference into the "
+                            "constructor of a Budgeted, which folds the budget, and it is never a value in a "
+                            "signature"},
     {^^::fixy::is_scoped_view, kMetafunction},
 
     {^^::fixy::session::Send, kProtocol},

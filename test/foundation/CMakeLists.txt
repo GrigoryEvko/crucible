@@ -146,6 +146,27 @@ foundation_neg_compile_test(neg_strong_counter_successor_overflows
 foundation_neg_compile_test(neg_strong_counter_count_is_private
   "is private within this context"
   "StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type::value_.")
+# No integer states a count, no bytes of another axis rebuild one, the
+# checked lifetime start refuses one, and the checked image read needs a
+# context that owns IO.  Two versions have no sum.
+foundation_neg_compile_test(neg_strong_counter_from_integer
+  "element_type::element_type\\(uint64_t\\) .with Tag = foundation::algebra::lattices::counter_tags::epoch.* is private within this context"
+  "StrongCounterLattice<Tag>::element_type::element_type")
+foundation_neg_compile_test(neg_strong_counter_bit_cast_retag
+  "no matching function for call to .bit_cast<foundation::algebra::lattices::Generation>"
+  "the expression .is_trivially_copyable_v<_To> .with _To = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation>::element_type.. evaluated to .false.")
+foundation_neg_compile_test(neg_strong_counter_start_as_array
+  "no matching function for call to .start_as_array<foundation::algebra::lattices::Epoch>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type.")
+foundation_neg_compile_test(neg_strong_counter_image_without_io
+  "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::mint_from_image"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::IO>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
+foundation_neg_compile_test(neg_strong_counter_image_in_test_scope_without_io
+  "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation>::mint_from_image"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::IO>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >.")
+foundation_neg_compile_test(neg_strong_counter_sum_on_version
+  "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::saturating_sum"
+  "the expression .\\(Tag::claim_orientation\\) == foundation::algebra::ClaimOrientation::weaker_is_higher .with Tag = foundation::algebra::lattices::counter_tags::epoch.. evaluated to .false.")
 # A generation cannot be built from an epoch.
 foundation_neg_compile_test(neg_strong_counter_retag_by_construction
   "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation>::element_type::element_type\\(<brace-enclosed initializer list>\\)."
@@ -171,14 +192,20 @@ foundation_neg_compile_test(neg_graded_use_counter_dual
 foundation_neg_compile_test(neg_counter_tag_without_orientation
   "template constraint failure for .template<class Tag> +requires +CounterTag<Tag> struct foundation::algebra::lattices::StrongCounterLattice."
   "the required expression .Tag::claim_orientation. is invalid")
-# A slot counts events, so a signed argument is refused.
-foundation_neg_compile_test(neg_happens_before_signed_slot
-  "no matching function for call to .make_clock<HB>\\(int, int\\)."
-  "the expression .\\(ClockSlot<Slots> && \\.\\.\\.\\) .with Slots = .int, int... evaluated to .false.")
+# No array of integers states a clock, and no bytes rebuild one.
+foundation_neg_compile_test(neg_happens_before_clock_from_integers
+  "element_type::element_type\\(const std::array<long unsigned int, N>&\\) .with long unsigned int N = 2. Tag = void.* is private within this context"
+  "HappensBeforeLattice<N, Tag>::element_type::element_type")
+foundation_neg_compile_test(neg_happens_before_image_without_io
+  "no matching function for call to .foundation::algebra::lattices::HappensBeforeLattice<2>::mint_from_image"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::IO>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >.")
+foundation_neg_compile_test(neg_happens_before_bit_cast
+  "no matching function for call to .bit_cast<foundation::algebra::lattices::HappensBeforeLattice<2>::element_type>"
+  "the expression .is_trivially_copyable_v<_To> .with _To = foundation::algebra::lattices::HappensBeforeLattice<2, void>::element_type.. evaluated to .false.")
 # A clock of two slots has no slot two.
 foundation_neg_compile_test(neg_happens_before_slot_out_of_range
   "non-constant condition for static assertion"
-  "in .constexpr. expansion of .clock\\.foundation::algebra::lattices::HappensBeforeLattice<2>::element_type::operator..\\(2\\)."
+  "in .constexpr. expansion of .\\{anonymous\\}::clock\\.foundation::algebra::lattices::HappensBeforeLattice<2>::element_type::operator..\\(2\\)."
   "foundation/algebra/lattices/HappensBefore\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 # A receive onto a slot at the largest count cannot count the receive.
 foundation_neg_compile_test(neg_happens_before_merge_overflows

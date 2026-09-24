@@ -8,7 +8,7 @@
 
 int main() {
     namespace fl = ::foundation::algebra::lattices;
-    fl::Epoch const epoch{3};
-    fl::Generation const generation{3};
+    fl::Epoch const epoch = fl::EpochLattice::bottom();
+    fl::Generation const generation = fl::GenerationLattice::bottom();
     return epoch == generation ? 0 : 1;
 }

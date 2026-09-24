@@ -10,6 +10,6 @@ struct CachedValue {
 };
 
 int main() {
-    fixy::EpochVersioned<CachedValue> const versioned{CachedValue{}, fixy::Epoch{2}, fixy::Generation{2}};
+    auto const versioned = fixy::EpochVersioned<CachedValue>::at_genesis(CachedValue{});
     return versioned.peek().value;
 }

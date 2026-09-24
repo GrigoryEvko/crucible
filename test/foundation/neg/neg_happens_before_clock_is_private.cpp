@@ -7,7 +7,7 @@
 int main() {
     namespace fl = ::foundation::algebra::lattices;
     using HB = fl::HappensBeforeLattice<2>;
-    HB::element_type clock{{4, 5}};
+    HB::element_type clock = HB::bottom();
     clock.clock_[0] = 0;
     return static_cast<int>(clock[0]);
 }

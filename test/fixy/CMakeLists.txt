@@ -944,8 +944,8 @@ fixy_neg_compile_test(neg_budgeted_free_claims_zero
   ".free. is not a member of"
   ".fixy::Budgeted<int>.")
 fixy_neg_compile_test(neg_budgeted_axes_swapped
-  "no matching function for call to .fixy::Budgeted<int>::Budgeted\\(<brace-enclosed initializer list>\\)."
-  "no known conversion for argument 2 from .element_type<foundation::algebra::lattices::counter_tags::peak_bytes>. to .element_type<foundation::algebra::lattices::counter_tags::bits_budget>.")
+  "cannot convert .bound_type<foundation::algebra::lattices::counter_tags::peak_bytes>. to .bound_type<foundation::algebra::lattices::counter_tags::bits_budget>."
+  "initializing argument 1 of .constexpr fixy::BudgetStamp fixy::BudgetAuthority::grant\\(foundation::algebra::lattices::BitsBudgetBound, foundation::algebra::lattices::PeakBytesBound\\).")
 fixy_neg_compile_test(neg_budgeted_payload_replaced_under_grade
   "has no member named .peek_mut."
   ".class fixy::Budgeted<int>.")
@@ -985,15 +985,71 @@ fixy_neg_compile_test(neg_budgeted_substrate_weaken_below
   ".anonymous.::measured\\.foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::bits_budget>"
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
-# Two values at one version are one event only when their payloads agree,
-# so select_fresher does not exist for a payload with no equality.  The
-# moving form fails the same constraint in both candidates.
-fixy_neg_compile_test(neg_epoch_versioned_select_without_equality
+# Two values at one version are one event only when their payloads are
+# the same, and the equality derived from the members decides that.  A
+# payload whose operator== is hand-written is refused, in the payload or in
+# a member of it, and the diagnostic names the part.  The moving form fails
+# the same constraint in both candidates.
+fixy_neg_compile_test(neg_epoch_versioned_select_hand_written_equality
   "no matching function for call to .select_fresher\\(const fixy::EpochVersioned<Reading>&, const fixy::EpochVersioned<Reading>&\\)."
-  "satisfaction of .equality_comparable<T>. .with T = Reading.")
-fixy_neg_compile_test(neg_epoch_versioned_select_rvalue_without_equality
+  "is_same_v<Part, fixy::detail::self_contained::every_part_compares> .with Part = Reading.. evaluated to .false.")
+fixy_neg_compile_test(neg_epoch_versioned_select_rvalue_hand_written_equality
   "no matching function for call to .select_fresher\\(std::remove_reference<fixy::EpochVersioned<Reading>&>::type, std::remove_reference<fixy::EpochVersioned<Reading>&>::type\\)."
-  "(?s)satisfaction of .equality_comparable<T>. .with T = Reading..*satisfaction of .equality_comparable<T>. .with T = Reading.")
+  "(?s)is_same_v<Part, fixy::detail::self_contained::every_part_compares> .with Part = Celsius.. evaluated to .false..*is_same_v<Part, fixy::detail::self_contained::every_part_compares> .with Part = Celsius.. evaluated to .false.")
+
+# No producer states a claim.  A version comes only from a stamp of a
+# source, and a budget only from a grant of an authority.  A stamp has a
+# private constructor and no trivial one, so it is built neither by a
+# caller nor from bytes, and only a context that owns Init mints a source
+# or an authority.
+fixy_neg_compile_test(neg_epoch_versioned_from_counts
+  "no matching function for call to .fixy::EpochVersioned<int>::EpochVersioned\\(<brace-enclosed initializer list>\\)."
+  "candidate [0-9]+: .constexpr fixy::EpochVersioned<T>::EpochVersioned\\(T, const fixy::VersionStamp&\\) .with T = int.")
+fixy_neg_compile_test(neg_version_stamp_forged
+  ".constexpr fixy::VersionStamp::VersionStamp\\(foundation::algebra::lattices::Epoch, foundation::algebra::lattices::Generation\\). is private within this context"
+  "fixy::VersionStamp::VersionStamp")
+fixy_neg_compile_test(neg_version_stamp_bit_cast
+  "no matching function for call to .bit_cast<fixy::VersionStamp>"
+  "the expression .is_trivially_copyable_v<_To> .with _To = fixy::VersionStamp.. evaluated to .false.")
+fixy_neg_compile_test(neg_version_stamp_start_as_array
+  "no matching function for call to .start_as_array<fixy::VersionStamp>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = fixy::VersionStamp.")
+fixy_neg_compile_test(neg_version_source_without_init
+  "no matching function for call to .mint_version_source"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+fixy_neg_compile_test(neg_version_source_in_foreground
+  "no matching function for call to .mint_version_source"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
+fixy_neg_compile_test(neg_budget_stamp_forged
+  ".constexpr fixy::BudgetStamp::BudgetStamp\\(foundation::algebra::lattices::BitsBudget, foundation::algebra::lattices::PeakBytes\\). is private within this context"
+  "fixy::BudgetStamp::BudgetStamp")
+fixy_neg_compile_test(neg_budget_stamp_bit_cast
+  "no matching function for call to .bit_cast<fixy::BudgetStamp>"
+  "the expression .is_trivially_copyable_v<_To> .with _To = fixy::BudgetStamp.. evaluated to .false.")
+fixy_neg_compile_test(neg_budget_stamp_start_as_array
+  "no matching function for call to .start_as_array<fixy::BudgetStamp>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = fixy::BudgetStamp.")
+fixy_neg_compile_test(neg_budget_authority_without_init
+  "no matching function for call to .mint_budget_authority"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test,")
+fixy_neg_compile_test(neg_budget_authority_in_background
+  "no matching function for call to .mint_budget_authority"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+
+# A source or an authority has no copy and no move, so no byte route
+# builds a second one.
+fixy_neg_compile_test(neg_version_source_bit_cast
+  "no matching function for call to .bit_cast<fixy::VersionSource>"
+  "the expression .is_trivially_copyable_v<_To> .with _To = fixy::VersionSource.. evaluated to .false.")
+fixy_neg_compile_test(neg_version_source_start_as_array
+  "no matching function for call to .start_as_array<fixy::VersionSource>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = fixy::VersionSource.")
+fixy_neg_compile_test(neg_budget_authority_bit_cast
+  "no matching function for call to .bit_cast<fixy::BudgetAuthority>"
+  "the expression .is_trivially_copyable_v<_To> .with _To = fixy::BudgetAuthority.. evaluated to .false.")
+fixy_neg_compile_test(neg_budget_authority_start_as_array
+  "no matching function for call to .start_as_array<fixy::BudgetAuthority>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = fixy::BudgetAuthority.")
 
 # ── The consumed bands and the F* aliases ─────────────────────────────
 fixy_test(test_bands)

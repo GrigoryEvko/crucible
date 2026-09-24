@@ -10,6 +10,6 @@
 int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
-    fa::Graded<fa::ModalityKind::Absolute, fl::EpochLattice, int> const stale{1, fl::Epoch{3}};
+    fa::Graded<fa::ModalityKind::Absolute, fl::EpochLattice, int> const stale{1, fl::EpochLattice::bottom()};
     return stale.peek();
 }

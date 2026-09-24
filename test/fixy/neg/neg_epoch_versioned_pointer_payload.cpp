@@ -5,6 +5,6 @@
 
 int main() {
     int target = 1;
-    fixy::EpochVersioned<int*> const handle{&target, fixy::Epoch{2}, fixy::Generation{2}};
+    auto const handle = fixy::EpochVersioned<int*>::at_genesis(&target);
     return *handle.peek();
 }

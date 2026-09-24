@@ -6,6 +6,6 @@
 
 int main() {
     int target = 1;
-    fixy::EpochVersioned<int&> const aliased{target, fixy::Epoch{2}, fixy::Generation{2}};
+    auto const aliased = fixy::EpochVersioned<int&>::at_genesis(target);
     return aliased.peek();
 }

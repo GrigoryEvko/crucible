@@ -17,6 +17,7 @@
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/effects/Ctx.h>
 
 #include <array>
 #include <bit>
@@ -34,6 +35,7 @@ namespace {
 namespace fa = ::foundation::algebra;
 namespace fl = ::foundation::algebra::lattices;
 namespace fd = ::foundation::diag;
+namespace fe = ::foundation::effects;
 
 constexpr std::uint64_t kMax = std::numeric_limits<std::uint64_t>::max();
 
@@ -52,6 +54,41 @@ void expect(bool holds, char const* what) {
 template <typename L>
 using OnAxis = fa::Graded<fa::ModalityKind::Absolute, L, int>;
 
+// A test scope that owns IO, the capability the checked read needs.
+using IoCtx = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>>;
+
+// An image written by hand: the axis word, then one word per slot.  This
+// is the only way a test reaches a count or a clock at a number of its
+// choice, and it goes through the one door that reads bytes.
+template <typename L, std::size_t Words>
+typename L::image_type image_with(std::uint64_t axis, std::array<std::uint64_t, Words> const& words) {
+    typename L::image_type image{};
+    static_assert(image.size() == 8 * (Words + 1));
+    for (std::size_t i = 0; i < 8; ++i) image[i] = static_cast<std::byte>((axis >> (8 * i)) & 0xFFu);
+    for (std::size_t w = 0; w < Words; ++w) {
+        for (std::size_t i = 0; i < 8; ++i) {
+            image[8 * (w + 1) + i] = static_cast<std::byte>((words[w] >> (8 * i)) & 0xFFu);
+        }
+    }
+    return image;
+}
+
+template <typename L>
+typename L::element_type count_at(std::uint64_t count) {
+    IoCtx const ctx{fe::testing::test()};
+    auto const read = L::mint_from_image(ctx, image_with<L, 1>(L::image_axis(), {count}));
+    if (!read) std::abort();
+    return *read;
+}
+
+template <typename HB>
+typename HB::element_type clock_at(std::array<std::uint64_t, HB::process_count> const& slots) {
+    IoCtx const ctx{fe::testing::test()};
+    auto const read = HB::mint_from_image(ctx, image_with<HB, HB::process_count>(HB::image_axis(), slots));
+    if (!read) std::abort();
+    return *read;
+}
+
 // ── Counters at the top ─────────────────────────────────────────────
 
 template <typename L>
@@ -59,8 +96,8 @@ void attack_counter_top(char const* axis) {
     using E = typename L::element_type;
     std::uint64_t const s = g_seed;
     E const top = L::top();
-    E const low{s};
-    E const near_top{kMax - s};
+    E const low = count_at<L>(s);
+    E const near_top = count_at<L>(kMax - s);
 
     expect(L::join(top, low) == top && L::join(low, top) == top, axis);
     expect(L::meet(top, low) == low && L::meet(low, top) == low, axis);
@@ -75,7 +112,13 @@ void attack_counter_top(char const* axis) {
         climbing = next;
     }
     expect(climbing == top, axis);
-    expect(L::successor(L::bottom()) == E{1}, axis);
+    expect(L::successor(L::bottom()) == count_at<L>(1), axis);
+
+    // An image carries its count through a round trip, at both ends.
+    IoCtx const ctx{fe::testing::test()};
+    expect(L::mint_from_image(ctx, L::image_of(top)) == top, axis);
+    expect(L::mint_from_image(ctx, L::image_of(L::bottom())) == L::bottom(), axis);
+    expect(L::mint_from_image(ctx, L::image_of(near_top)) == near_top, axis);
 
     // The dual turns the extremes over and keeps every element.
     using D = fl::DualLattice<L>;
@@ -119,10 +162,23 @@ static_assert(construct_across<fl::Epoch, fl::Epoch> && compare_across<fl::Epoch
               && lattice_accepts<fl::EpochLattice, fl::Epoch, fl::Epoch>);
 
 // A counter is not an integer and an integer is not a counter, in either
-// direction, except through the one explicit door.
+// direction.  No constructor takes an integer, and a bound, which does,
+// never becomes a count.
 static_assert(!std::is_convertible_v<fl::Epoch, std::uint64_t> && !std::is_convertible_v<std::uint64_t, fl::Epoch>);
 static_assert(!std::is_convertible_v<int, fl::Epoch> && !std::is_convertible_v<bool, fl::Epoch>);
-static_assert(std::is_constructible_v<fl::Epoch, std::uint64_t>);
+static_assert(!std::is_constructible_v<fl::Epoch, std::uint64_t> && !std::is_constructible_v<fl::Generation, int>);
+static_assert(!std::is_constructible_v<fl::Epoch, fl::EpochBound> && !std::is_constructible_v<fl::Epoch, fl::Generation>);
+static_assert(std::is_constructible_v<fl::EpochBound, std::uint64_t> && std::is_constructible_v<fl::EpochBound, fl::Epoch>);
+
+// A count is not buildable from bytes: std::bit_cast needs a trivially
+// copyable type, and the checked lifetime start refuses the annotation.
+// The copy stays trivial, so a count still passes in a register.
+template <typename To, typename From>
+concept bit_castable = requires(From from) { std::bit_cast<To>(from); };
+static_assert(!bit_castable<fl::Generation, fl::Epoch> && !bit_castable<fl::Epoch, std::uint64_t>);
+static_assert(!bit_castable<fl::HappensBeforeLattice<2>::element_type, std::array<std::uint64_t, 2>>);
+static_assert(bit_castable<std::uint64_t, std::int64_t>, "the detector answers yes where a cast exists");
+static_assert(std::is_trivially_copy_constructible_v<fl::Epoch> && std::is_trivially_destructible_v<fl::Epoch>);
 
 // A product of two axes refuses its components in the swapped order.
 using VersionPair = fl::ProductLattice<fl::EpochLattice, fl::GenerationLattice>::element_type;
@@ -152,8 +208,9 @@ static_assert(!lattice_accepts<fl::HappensBeforeLattice<2>, fl::HappensBeforeLat
                                fl::HappensBeforeLattice<3>::element_type>);
 static_assert(lattice_accepts<fl::HappensBeforeLattice<2>, fl::HappensBeforeLattice<2>::element_type,
                               fl::HappensBeforeLattice<2>::element_type>);
-static_assert(!std::is_convertible_v<std::array<std::uint64_t, 2>, fl::HappensBeforeLattice<2>::element_type>,
-              "a clock is built from an array only through the explicit constructor");
+static_assert(!std::is_convertible_v<std::array<std::uint64_t, 2>, fl::HappensBeforeLattice<2>::element_type>
+                  && !std::is_constructible_v<fl::HappensBeforeLattice<2>::element_type, std::array<std::uint64_t, 2>>,
+              "no array of integers states a clock");
 
 void attack_clock_single_slot() {
     using HB = fl::HappensBeforeLattice<1>;
@@ -161,23 +218,37 @@ void attack_clock_single_slot() {
     // One slot is a scalar clock: every pair is ordered, none concurrent.
     for (std::uint64_t i = 0; i < 16; ++i) {
         for (std::uint64_t j = 0; j < 16; ++j) {
-            HB::element_type const a{{s * i}};
-            HB::element_type const b{{s * j}};
+            HB::element_type const a = clock_at<HB>({s * i});
+            HB::element_type const b = clock_at<HB>({s * j});
             expect(HB::comparable(a, b) && !HB::is_concurrent(a, b), "one slot is total");
             expect(HB::happens_before(a, b) == (s * i < s * j), "one slot orders by the count");
         }
     }
-    HB::element_type const near_top{{kMax - 1}};
+    HB::element_type const near_top = clock_at<HB>({kMax - 1});
     expect(HB::successor_at(near_top, 0) == HB::top(), "one step below the top reaches the top");
-    expect(HB::causal_merge(HB::element_type{{3}}, HB::element_type{{kMax - 1}}, 0) == HB::top(),
+    expect(HB::causal_merge(clock_at<HB>({3}), near_top, 0) == HB::top(),
            "a merge that lands on the top is still a successor of both inputs");
+}
+
+// A clock carries its slots through an image, and an image of one
+// protocol or width does not read back as another.
+void attack_clock_images() {
+    using Replay = fl::HappensBeforeLattice<3, ReplayClock>;
+    using Kernel = fl::HappensBeforeLattice<3, KernelClock>;
+    std::uint64_t const s = g_seed;
+    IoCtx const ctx{fe::testing::test()};
+    Replay::element_type const clock = clock_at<Replay>({s, s + 1, kMax});
+    expect(Replay::mint_from_image(ctx, Replay::image_of(clock)) == clock, "a clock survives its image");
+    auto const as_kernel = Kernel::mint_from_image(ctx, image_with<Kernel, 3>(Replay::image_axis(), {s, s + 1, kMax}));
+    expect(!as_kernel && as_kernel.error() == fl::CountImageError::OtherAxis,
+           "an image of one protocol does not read back as another");
 }
 
 void attack_clock_equal_and_concurrent() {
     using HB = fl::HappensBeforeLattice<3>;
     std::uint64_t const s = g_seed;
-    HB::element_type const a = fl::make_clock<HB>(s, 2u, 5u);
-    HB::element_type const a_again = fl::make_clock<HB>(s, 2u, 5u);
+    HB::element_type const a = clock_at<HB>({s, 2, 5});
+    HB::element_type const a_again = clock_at<HB>({s, 2, 5});
 
     // Equal clocks are one moment: neither precedes, neither is concurrent.
     expect(!HB::happens_before(a, a_again) && !HB::happens_before(a_again, a), "equal clocks do not precede");
@@ -186,9 +257,9 @@ void attack_clock_equal_and_concurrent() {
     expect(HB::join(a, a_again) == a && HB::meet(a, a_again) == a, "join and meet are idempotent");
 
     // Three pairwise concurrent clocks: each leads on its own slot.
-    HB::element_type const p = fl::make_clock<HB>(s + 1, 0u, 0u);
-    HB::element_type const q = fl::make_clock<HB>(0u, s + 1, 0u);
-    HB::element_type const r = fl::make_clock<HB>(0u, 0u, s + 1);
+    HB::element_type const p = clock_at<HB>({s + 1, 0, 0});
+    HB::element_type const q = clock_at<HB>({0, s + 1, 0});
+    HB::element_type const r = clock_at<HB>({0, 0, s + 1});
     expect(HB::is_concurrent(p, q) && HB::is_concurrent(q, r) && HB::is_concurrent(p, r), "an antichain of three");
     expect((p <=> q) == std::partial_ordering::unordered, "concurrent clocks are unordered");
 
@@ -403,36 +474,55 @@ struct KnownLimit {
 };
 
 inline constexpr KnownLimit kLedger[] = {
-    {"retag through raw()",
-     "Generation{epoch.raw()} states a generation from an epoch's count. A count crosses a wire, and the read that "
-     "gives it back is a public injection from integers. A typed wire word only moves the relabel to the word's own "
-     "constructor, so the retag stays legal while any integer door exists."},
-    {"retag through std::bit_cast",
-     "std::bit_cast needs only two trivially copyable types of one size ([bit.cast]). A counter that is not "
-     "trivially copyable loses std::atomic, which requires it, and its register passing in the ABI."},
-    {"a count or a clock from integers claims any history",
-     "The order sees values and not events, and top() is itself a legal element that claims every history. That a "
-     "value was reached by successor steps is a property of the code that advances it, so it belongs to an "
-     "advance-only owner, not to the lattice."},
+    {"an image written by hand under a context that owns IO",
+     "A count that crosses a wire or goes to storage must come back, so a read from bytes exists, and the bytes that "
+     "storage returns are whatever was written. The read names the axis and needs IO, so no integer and no count of "
+     "another axis reaches it, and an image of one axis does not read as another. A program that writes an image of "
+     "an axis on purpose is the author of that record, and only an authenticated store, not a type, can tell that "
+     "record from one the owner wrote."},
 };
-static_assert(std::size(kLedger) <= 3, "the ledger only shrinks");
+static_assert(std::size(kLedger) <= 1, "the ledger only shrinks");
 
 void reproduce_the_ledger() {
     std::uint64_t const s = g_seed;
-    fl::Epoch const epoch{s + 40};
+    fl::Epoch const epoch = count_at<fl::EpochLattice>(s + 40);
+    IoCtx const ctx{fe::testing::test()};
+    auto const authored = fl::GenerationLattice::mint_from_image(
+        ctx, image_with<fl::GenerationLattice, 1>(fl::GenerationLattice::image_axis(), {epoch.raw()}));
+    expect(authored.has_value() && authored->raw() == epoch.raw(),
+           "ledger: an image written by hand under IO still loads as a count of any axis");
+}
 
-    fl::Generation const retagged{epoch.raw()};
-    expect(retagged.raw() == epoch.raw(), "ledger: retag through raw() still reproduces");
+// The routes the old ledger held, each turned into a check that it is
+// closed.  A count of one axis is not a count of another through raw(),
+// through std::bit_cast or through an image, and no integer states a
+// count or a clock.  The attacks that the compiler refuses are the
+// negative fixtures neg_strong_counter_from_integer,
+// neg_strong_counter_bit_cast_retag, neg_strong_counter_start_as_array and
+// neg_happens_before_clock_from_integers.
+void attack_the_closed_routes() {
+    std::uint64_t const s = g_seed;
+    IoCtx const ctx{fe::testing::test()};
+    fl::Epoch const epoch = count_at<fl::EpochLattice>(s + 40);
 
-    auto const bit_retagged = std::bit_cast<fl::Generation>(epoch);
-    expect(bit_retagged.raw() == epoch.raw(), "ledger: retag through std::bit_cast still reproduces");
+    // An image of an epoch does not read back as a generation.
+    auto const relabelled = fl::GenerationLattice::mint_from_image(ctx, fl::EpochLattice::image_of(epoch));
+    expect(!relabelled && relabelled.error() == fl::CountImageError::OtherAxis,
+           "an image of an epoch is refused as a generation");
+    auto const as_bits = fl::BitsBudgetLattice::mint_from_image(ctx, fl::PeakBytesLattice::image_of(
+                                                                          count_at<fl::PeakBytesLattice>(s)));
+    expect(!as_bits && as_bits.error() == fl::CountImageError::OtherAxis, "an image of bytes is refused as bits");
 
-    fl::Epoch const newer{s + 100};
-    fl::Epoch const older_after_newer{newer.raw() - 60};
-    expect(fl::EpochLattice::leq(older_after_newer, newer), "ledger: a count from an integer still claims any history");
-    using HB = fl::HappensBeforeLattice<2>;
-    HB::element_type const forged{{kMax, kMax}};
-    expect(HB::leq(fl::make_clock<HB>(s, s), forged), "ledger: a clock from integers still claims any history");
+    // The raw count is an integer, and an integer builds a bound, which
+    // claims nothing: it cannot be joined, advanced or graded.
+    fl::GenerationBound const bound{epoch.raw()};
+    expect(bound.raw() == epoch.raw(), "raw() gives the count as an integer");
+    static_assert(!std::is_constructible_v<fl::Generation, fl::GenerationBound>);
+
+    // A count reached after a newer one is reached by steps from genesis,
+    // so its count is the number of steps in its own derivation.
+    fl::Epoch const older = fl::EpochLattice::successor(fl::EpochLattice::bottom());
+    expect(older.raw() == 1 && fl::EpochLattice::leq(older, epoch), "a derived count is its number of steps");
 }
 
 // Graded over a version counter in its numeric order does not compile, so
@@ -443,11 +533,12 @@ void reproduce_the_ledger() {
 void attack_graded_version_orientation() {
     std::uint64_t const s = g_seed;
     using DualVersion = fa::Graded<fa::ModalityKind::Absolute, Dual<fl::EpochLattice>, int>;
-    DualVersion const current{1, fl::Epoch{s + 9}};
-    expect(current.weaken(fl::Epoch{s}).grade() == fl::Epoch{s}, "the dual weakens toward the older epoch");
-    expect(DualVersion{2, fl::Epoch{s}}.compose(current).grade() == fl::Epoch{s},
-           "the dual composes to the older epoch");
-    expect(!Dual<fl::EpochLattice>::leq(fl::Epoch{s}, fl::Epoch{s + 9}),
+    fl::Epoch const older = count_at<fl::EpochLattice>(s);
+    fl::Epoch const newer = count_at<fl::EpochLattice>(s + 9);
+    DualVersion const current{1, newer};
+    expect(current.weaken(older).grade() == older, "the dual weakens toward the older epoch");
+    expect(DualVersion{2, older}.compose(current).grade() == older, "the dual composes to the older epoch");
+    expect(!Dual<fl::EpochLattice>::leq(older, newer),
            "an older epoch is not below a newer one in the dual, so no weaken reaches the newer");
 }
 
@@ -459,9 +550,11 @@ int main() {
     attack_counter_top<fl::PeakBytesLattice>("counter top: peak bytes");
     attack_counter_top<fl::BitsBudgetLattice>("counter top: bits");
     attack_clock_single_slot();
+    attack_clock_images();
     attack_clock_equal_and_concurrent();
     attack_clock_against_the_causal_order();
     attack_graded_version_orientation();
+    attack_the_closed_routes();
     reproduce_the_ledger();
     for (std::uint64_t const identity : kIdentities) expect(identity != 0, "an identity reached run time as zero");
 

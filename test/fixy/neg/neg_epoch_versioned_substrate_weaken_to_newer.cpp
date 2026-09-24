@@ -10,8 +10,10 @@ namespace {
 using Grade = fixy::EpochVersioned<int>::graded_type;
 using Version = fixy::EpochVersioned<int>::version_t;
 
-constexpr Grade stale{1, Version{fixy::Epoch{3}, fixy::Generation{1}}};
-static_assert(stale.weaken(Version{fixy::Epoch{9}, fixy::Generation{9}}).peek() == 1);
+constexpr Grade stale{1, Version{fixy::EpochLattice::bottom(), fixy::GenerationLattice::bottom()}};
+static_assert(stale.weaken(Version{fixy::EpochLattice::successor(fixy::EpochLattice::bottom()),
+                                   fixy::GenerationLattice::successor(fixy::GenerationLattice::bottom())})
+                  .peek() == 1);
 
 }  // namespace
 

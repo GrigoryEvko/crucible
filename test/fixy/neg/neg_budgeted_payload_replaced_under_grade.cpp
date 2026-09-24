@@ -5,7 +5,7 @@
 #include <fixy/Budgeted.h>
 
 int main() {
-    fixy::Budgeted<int> measured{1, fixy::BitsBudget{8}, fixy::PeakBytes{64}};
+    fixy::Budgeted<int> measured = fixy::Budgeted<int>::unbounded(1);
     measured.peek_mut() = 2;
     return measured.peek();
 }

@@ -12,6 +12,6 @@ int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
     using HalfTurned = fl::ProductLattice<fl::DualLattice<fl::EpochLattice>, fl::GenerationLattice>;
-    fa::Graded<fa::ModalityKind::Absolute, HalfTurned, int> const value{1, {fl::Epoch{3}, fl::Generation{2}}};
+    fa::Graded<fa::ModalityKind::Absolute, HalfTurned, int> const value{1, {fl::EpochLattice::bottom(), fl::GenerationLattice::bottom()}};
     return value.peek();
 }

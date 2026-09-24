@@ -7,7 +7,7 @@
 #include <fixy/EpochVersioned.h>
 
 int main() {
-    fixy::EpochVersioned<int> const older{10, fixy::Epoch{3}, fixy::Generation{1}};
-    fixy::EpochVersioned<int> const newer{20, fixy::Epoch{5}, fixy::Generation{2}};
+    fixy::EpochVersioned<int> const older = fixy::EpochVersioned<int>::at_genesis(10);
+    fixy::EpochVersioned<int> const newer = fixy::EpochVersioned<int>::at_genesis(20);
     return older.combine_max(newer).peek();
 }

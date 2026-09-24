@@ -10,6 +10,6 @@ struct Scratchpad {
 };
 
 int main() {
-    fixy::Budgeted<Scratchpad> const measured{Scratchpad{}, fixy::BitsBudget{8}, fixy::PeakBytes{16}};
+    auto const measured = fixy::Budgeted<Scratchpad>::unbounded(Scratchpad{});
     return measured.peek().value;
 }

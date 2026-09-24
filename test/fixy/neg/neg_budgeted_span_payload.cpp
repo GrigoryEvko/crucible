@@ -8,6 +8,6 @@
 
 int main() {
     static int storage[4] = {1, 2, 3, 4};
-    fixy::Budgeted<std::span<int const>> const window{std::span<int const>{storage}, fixy::BitsBudget{8}, fixy::PeakBytes{16}};
+    auto const window = fixy::Budgeted<std::span<int const>>::unbounded(std::span<int const>{storage});
     return static_cast<int>(window.peek().size());
 }

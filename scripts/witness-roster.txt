@@ -82,6 +82,17 @@ fixy::WriteOnce<int> | fixy/Mutation.h | fixy::WriteOnce<int>{} | private | clos
 fixy::WriteOnceNonNull<int*> | fixy/Mutation.h | fixy::WriteOnceNonNull<int*>{} | private | closed
 fixy::session::SessionFromMachine<int, fixy::session::End> | fixy/session/MachineBridge.h | fixy::session::SessionFromMachine<int, fixy::session::End>{forge::rvalue<fixy::Machine<int>>()} | private | closed
 
+# -- Counts, clocks, versions and budgets ----------------------------
+# A count or a clock comes only from the successor doors of its lattice
+# or from the checked image read under IO.  A version comes only from a
+# source, and a budget only from an authority, each minted under Init.
+foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type | foundation/algebra/lattices/StrongCounterLattice.h | foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::element_type{forge::rvalue<unsigned long>()} | private | closed
+foundation::algebra::lattices::HappensBeforeLattice<2>::element_type | foundation/algebra/lattices/HappensBefore.h | foundation::algebra::lattices::HappensBeforeLattice<2>::element_type{forge::lvalue<const std::array<unsigned long, 2>>()} | private | closed
+fixy::VersionSource | fixy/EpochVersioned.h | fixy::VersionSource{} | private | closed
+fixy::VersionStamp | fixy/EpochVersioned.h | fixy::VersionStamp{forge::rvalue<foundation::algebra::lattices::Epoch>(), forge::rvalue<foundation::algebra::lattices::Generation>()} | private | closed
+fixy::BudgetAuthority | fixy/Budgeted.h | fixy::BudgetAuthority{forge::lvalue<const foundation::effects::Init>()} | private | closed
+fixy::BudgetStamp | fixy/Budgeted.h | fixy::BudgetStamp{forge::rvalue<foundation::algebra::lattices::BitsBudget>(), forge::rvalue<foundation::algebra::lattices::PeakBytes>()} | private | closed
+
 # -- Branded regions and borrows -------------------------------------
 #
 # Each of these carries a brand, the type that names one instance, and a

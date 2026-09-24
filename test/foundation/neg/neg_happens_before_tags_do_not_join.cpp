@@ -11,7 +11,7 @@ int main() {
     namespace fl = ::foundation::algebra::lattices;
     using Replay = fl::HappensBeforeLattice<2, ReplayClock>;
     using KernelOrder = fl::HappensBeforeLattice<2, KernelOrderClock>;
-    Replay::element_type const replay{{1, 0}};
-    KernelOrder::element_type const kernel{{0, 1}};
+    Replay::element_type const replay = Replay::bottom();
+    KernelOrder::element_type const kernel = KernelOrder::bottom();
     return static_cast<int>(Replay::join(replay, kernel)[0]);
 }
