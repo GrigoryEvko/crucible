@@ -8,10 +8,9 @@
 //
 // An attack that the discipline refuses is a static assertion here, or a
 // negative fixture when the refusal is a compile error.  An attack that
-// compiles and goes wrong is a finding.  It is fixed, or it is pinned on
-// the ledger at the foot, which names the attack and the condition of the
-// literature that it breaks.  The ledger can only shrink: each entry
-// asserts that its attack still compiles, so a repair fails the entry.
+// compiles and goes wrong is a finding, and it is fixed.  A second use of
+// a moved-from token is legal C++, so scripts/check-use-after-move.py
+// refuses it in the source.  The section at the foot states that attack.
 //
 // The run-time attacks run under a watchdog that aborts with a
 // diagnostic, so a lost wakeup fails the test and does not hang it.
@@ -22,7 +21,6 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 
-#include <algorithm>
 #include <any>
 #include <array>
 #include <atomic>
@@ -633,14 +631,14 @@ void borrowed_prefix_on_another_thread() {
 
 // ── A read proof lives in the frame of its door ─────────────────────
 //
-// This attack was on the ledger: a ReadView copied during a loan
-// outlived the Released that ended the loan, and a copy taken under a
-// share guard outlived the upgrade that followed.  That broke the rule of
-// Saffrich, Spaderna, Thiemann and Vasconcelos, OOPSLA 2025, that a
-// borrow ends when it is returned, and the CLASS rule, ESOP 2023, that no
-// reader acts after the writer takes the region.
+// The attack: a ReadView copied during a loan outlives the Released that
+// ends the loan, or a copy taken under a share guard outlives the upgrade
+// that follows.  That breaks the rule of Saffrich, Spaderna, Thiemann and
+// Vasconcelos, OOPSLA 2025, that a borrow ends when it is returned, and
+// the CLASS rule, ESOP 2023, that no reader acts after the writer takes
+// the region.
 //
-// A view now exists only inside the callback of with_read_view, which
+// A view exists only inside the callback of with_read_view, which
 // keeps its source in its own frame, and the view neither copies nor
 // moves (Thiemann, ICFP 2023).  A loan travels as a ReadLoan, which the
 // borrower reads only through the door of its hold, and which the
@@ -717,42 +715,33 @@ void read_proof_ends_with_the_share() {
 
 }  // namespace
 
-// ── The ledger of attacks that compile and go wrong ─────────────────
+// ── A token that moves twice: the use-after-move guard refuses it ───
 //
-// Each entry pins an attack that the discipline does not refuse.  The
-// pin asserts that the attack still compiles, so a repair turns the pin
-// red and the entry must go.
-
-// The same token moves twice.  A Permission is empty, so a moved-from
-// token is indistinguishable from a live one, and nothing diagnoses a
-// second use after std::move.  Two markers then carry one region.  This
-// breaks the exclusive points-to of Actris 2.0 (Hinrichsen, Bengtson,
-// Krebbers, LMCS 2022): a resource owned twice.  Permission.h states
-// this limit as the linearity decision of the tree.
+// A Permission is empty, so a moved-from token is indistinguishable from
+// a live one, and a second std::move of
+// one token gives two markers for one region.  This breaks the exclusive
+// points-to of Actris 2.0 (Hinrichsen, Bengtson, Krebbers, LMCS 2022): a
+// resource owned twice.
 //
-// Why it stays open.  C++ has no affine types, so a use after std::move
-// is legal, and GCC 16 has no use-after-move analysis.  A check at the
-// second use needs state that records the move.  A liveness byte in the
-// token is that state, and it makes sizeof(Permission) larger than 1 and
-// defeats the empty-base collapse that CLAUDE.md states for it, so it
-// waits for approval.
+// A liveness byte in the token can record the move, but it makes
+// sizeof(Permission) larger than 1 and defeats the empty-base collapse,
+// so the tree does not use one.  scripts/check-use-after-move.py refuses
+// the attack in the source.  It walks each path of each function body in
+// include, src, test, vessel and tools, and it refuses a read of a name
+// after a move spends that name.  Its self-test holds this attack as
+// must_catch_token_moves_twice.
+//
+// The language still compiles the attack, so the guard is its only
+// refusal, and the assertion below pins that fact.  If the assertion
+// fails, the compiler refuses the attack itself.  Then move the attack to
+// the refused attacks above.
 template <class Tag>
 concept TokenMovesTwice = requires(fp::Permission<Tag>& token) {
     sess::Transferable<int, Tag>{1, std::move(token)};
     sess::Transferable<int, Tag>{2, std::move(token)};
 };
-
-// Each entry is true while its attack compiles.  An attack that stops
-// compiling turns its entry false, and the assertion below then names a
-// repair: delete the entry.  The ledger only shrinks, and a new entry
-// needs a review of why the discipline cannot refuse it.
-inline constexpr bool pinned_attacks[] = {
-    TokenMovesTwice<X>,
-};
-static_assert(std::ranges::all_of(pinned_attacks, std::identity{}),
-              "a pinned attack no longer compiles.  The discipline refuses it now, so delete its ledger entry.");
-inline constexpr std::size_t kLedgerSize = std::size(pinned_attacks);
-static_assert(kLedgerSize <= 1, "the ledger only shrinks");
+static_assert(TokenMovesTwice<X>,
+              "C++ compiles a second move of one token.  The use-after-move guard refuses it in the source.");
 
 }  // namespace ownership_attacks
 
@@ -767,7 +756,6 @@ int main() {
         std::fprintf(stderr, "test_session_ownership_attacks: %d failures\n", failures);
         return EXIT_FAILURE;
     }
-    std::printf("test_session_ownership_attacks: every refused attack refused, %zu pinned on the ledger\n",
-                kLedgerSize);
+    std::printf("test_session_ownership_attacks: every attack refused\n");
     return EXIT_SUCCESS;
 }

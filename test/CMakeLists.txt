@@ -798,6 +798,21 @@ add_test(NAME start_lifetime
           --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
     LABELS "ci_guard")
+# A linear token is an empty class, so a moved-from token looks live, and
+# a second std::move of one Permission gives two owners of one region.
+# sizeof(Permission) stays 1, so no byte records the move.
+# scripts/check-use-after-move.py walks each control-flow path of each
+# function body and refuses a read of a name after a move spends it, unless
+# an assignment or a reset builds the value again first.  The reviewed and
+# counted exceptions are in scripts/use-after-move-allowlist.txt.  The
+# self-test plants the uses that the guard must catch and the correct code
+# that it must accept.
+add_test(NAME use_after_move_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-use-after-move.py --self-test)
+add_test(NAME use_after_move
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-use-after-move.py)
+set_tests_properties(use_after_move use_after_move_self_test PROPERTIES
+    LABELS "ci_guard")
 # FIXY-V-094 fast-math-family flag ban enforcement (CLAUDE.md §V "NEVER"
 # matrix + cmake/FpStrict.cmake floor).  scripts/check-no-ffast-math.sh
 # is the per-TU guard against `#pragma GCC optimize("fast-math")` or
