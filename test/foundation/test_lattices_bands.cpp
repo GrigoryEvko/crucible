@@ -22,6 +22,7 @@
 #include <foundation/algebra/lattices/PinningRequirementLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/RecipeFamilyLattice.h>
+#include <foundation/algebra/lattices/ResidencyHeatLattice.h>
 #include <foundation/algebra/lattices/SchedulerPolicyLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
@@ -72,6 +73,7 @@ static_assert(every_tier_collapses<fl::DetSafeLattice>());
 static_assert(every_tier_collapses<fl::AllocClassLattice>());
 static_assert(every_tier_collapses<fl::HotPathLattice>());
 static_assert(every_tier_collapses<fl::CipherTierLattice>());
+static_assert(every_tier_collapses<fl::ResidencyHeatLattice>());
 static_assert(every_tier_collapses<fl::ToleranceLattice>());
 static_assert(every_tier_collapses<fl::WaitLattice>());
 static_assert(every_tier_collapses<fl::LifetimeLattice>());
@@ -106,6 +108,7 @@ static_assert(every_at_name_is_reflected<fl::DetSafeLattice>());
 static_assert(every_at_name_is_reflected<fl::ToleranceLattice>());
 static_assert(every_at_name_is_reflected<fl::LifetimeLattice>());
 static_assert(every_at_name_is_reflected<fl::VendorLattice>());
+static_assert(every_at_name_is_reflected<fl::ResidencyHeatLattice>());
 static_assert(every_at_name_is_reflected<fl::ClockSourceLattice, fl::ClockSource>());
 
 // The clock lattice is a product of three axes and its At<> pins the

@@ -7,8 +7,8 @@
 // from the type alone.
 //
 // Old spellings: include/crucible/safety/{DetSafe,AllocClass,HotPath,
-// CipherTier,Wait,NumericalTier,OpaqueLifetime,ScopedFence,RecipeSpec}.h, each a
-// class of its own around the same Graded.  Only what a consumer calls
+// CipherTier,Wait,NumericalTier,OpaqueLifetime,ScopedFence,Vendor,
+// ResidencyHeat,RecipeSpec}.h, each a class of its own around the same Graded.  Only what a consumer calls
 // survives here: the carrier's own peek and consume, the construction
 // door, the admission query satisfies_v, the tier query, and relax.
 //
@@ -29,10 +29,12 @@
 // so the grade is stored beside the value and the caller decides
 // admission with admits().
 //
-// One band pins a partial order rather than a chain.  ScopedFence's
+// Two bands pin a partial order rather than a chain.  ScopedFence's
 // scopes form two trunks that meet only at the ends, so two scopes on
 // different trunks are incomparable and neither satisfies the other.
-// Nothing in the generic surface below changes for it: every operation
+// Vendor's named backends sit side by side between None and Portable, so
+// two different named backends are incomparable in the same way.
+// Nothing in the generic surface below changes for them: every operation
 // here is written in terms of the outer lattice's leq alone, and leq is
 // defined on a partial order.  satisfies_v answers no for an
 // incomparable pair, and relax rejects one, so a cross-trunk move is a
@@ -49,7 +51,9 @@
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/RecipeFamilyLattice.h>
+#include <foundation/algebra/lattices/ResidencyHeatLattice.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
+#include <foundation/algebra/lattices/VendorLattice.h>
 #include <foundation/algebra/lattices/WaitLattice.h>
 
 #include <concepts>
@@ -67,6 +71,8 @@ using CipherTierTag_v = ::foundation::algebra::lattices::CipherTierTag;
 using WaitStrategy_v = ::foundation::algebra::lattices::WaitStrategy;
 using Lifetime_v = ::foundation::algebra::lattices::Lifetime;
 using MemoryScope_v = ::foundation::algebra::lattices::MemoryScope;
+using VendorBackend_v = ::foundation::algebra::lattices::VendorBackend;
+using ResidencyHeatTag_v = ::foundation::algebra::lattices::ResidencyHeatTag;
 using ::foundation::algebra::lattices::RecipeFamily;
 using ::foundation::algebra::lattices::Tolerance;
 
@@ -77,14 +83,16 @@ using ::foundation::algebra::lattices::HotPathLattice;
 using ::foundation::algebra::lattices::LifetimeLattice;
 using ::foundation::algebra::lattices::MemoryScopeLattice;
 using ::foundation::algebra::lattices::RecipeFamilyLattice;
+using ::foundation::algebra::lattices::ResidencyHeatLattice;
 using ::foundation::algebra::lattices::ToleranceLattice;
+using ::foundation::algebra::lattices::VendorLattice;
 using ::foundation::algebra::lattices::WaitLattice;
 
 // ── The generic band surface ────────────────────────────────────────
 //
 // Written once over every Graded<Absolute, L::At<v>, T>.  A per-band
-// detector, tier query or relax would repeat the same five lines eight
-// times, so none exists.
+// detector, tier query or relax would repeat the same five lines for
+// every band, so none exists.
 
 // A pinned grade: the At<v> of a lattice over a scoped enum.
 template <typename L>
@@ -237,6 +245,26 @@ template <MemoryScope_v S, class T>
 using ScopedFence =
     ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, MemoryScopeLattice::At<S>, T>;
 
+// The backend that produced the value.  The order is partial: None is the
+// bottom, Portable is the top, and the named backends between them are
+// incomparable.  A portable value runs wherever a named one does, so
+// Portable satisfies every requirement.  A named backend satisfies only
+// itself and None, and two different named backends satisfy neither.
+// relax narrows toward None.  A move up to Portable, or across to another
+// named backend, is a compile error, because it would claim that the
+// value runs on hardware its producer never built for.
+template <VendorBackend_v Backend, class T>
+using Vendor =
+    ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, VendorLattice::At<Backend>, T>;
+
+// The cache level that holds the working set of the value.  Nearer the
+// core is higher.  A Hot value serves a Warm requirement, because
+// evicting it outward is always possible.  A Cold value does not serve a
+// Hot one, because the consumer would pay a miss it did not budget for.
+template <ResidencyHeatTag_v Tier, class T>
+using ResidencyHeat =
+    ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, ResidencyHeatLattice::At<Tier>, T>;
+
 namespace det_safe {
 template <typename T>
 using Pure = DetSafe<DetSafeTier_v::Pure, T>;
@@ -347,7 +375,35 @@ template <typename T>
 using System = ScopedFence<MemoryScope_v::System, T>;
 }  // namespace scoped_fence
 
-// Nothing checked that the eight alias namespaces above cover their
+namespace vendor {
+template <typename T>
+using None = Vendor<VendorBackend_v::None, T>;
+template <typename T>
+using Cpu = Vendor<VendorBackend_v::CPU, T>;
+template <typename T>
+using Nv = Vendor<VendorBackend_v::NV, T>;
+template <typename T>
+using Amd = Vendor<VendorBackend_v::AMD, T>;
+template <typename T>
+using Tpu = Vendor<VendorBackend_v::TPU, T>;
+template <typename T>
+using Trn = Vendor<VendorBackend_v::TRN, T>;
+template <typename T>
+using Cer = Vendor<VendorBackend_v::CER, T>;
+template <typename T>
+using Portable = Vendor<VendorBackend_v::Portable, T>;
+}  // namespace vendor
+
+namespace residency_heat {
+template <typename T>
+using Cold = ResidencyHeat<ResidencyHeatTag_v::Cold, T>;
+template <typename T>
+using Warm = ResidencyHeat<ResidencyHeatTag_v::Warm, T>;
+template <typename T>
+using Hot = ResidencyHeat<ResidencyHeatTag_v::Hot, T>;
+}  // namespace residency_heat
+
+// Nothing checked that the alias namespaces above cover their
 // enums.  An enumerator added to a lattice enum and not given an alias
 // here is simply unreachable by the short spelling, silently, and the
 // aliases cannot be generated because GCC 16 has no code injection.
@@ -565,6 +621,56 @@ static_assert(!std::is_same_v<CtaInt, InnerInt>);
 static_assert(CtaInt::lattice_name() == "MemoryScopeLattice::At<Cta>");
 static_assert(InnerInt::lattice_name() == "MemoryScopeLattice::At<Inner>");
 
+// The second poset band.  The named backends are incomparable siblings,
+// so a kernel built for one never reaches a consumer of another.
+using NvInt = vendor::Nv<int>;
+using AmdInt = vendor::Amd<int>;
+using PortableInt = vendor::Portable<int>;
+using NoVendorInt = vendor::None<int>;
+
+static_assert(sizeof(NvInt) == sizeof(int));
+static_assert(IsBandOf<VendorLattice, NvInt>);
+static_assert(!IsBandOf<MemoryScopeLattice, NvInt>);
+static_assert(band_tier_v<NvInt> == VendorBackend_v::NV);
+static_assert(satisfies_v<PortableInt, VendorBackend_v::NV>, "A portable value runs on every named backend.");
+static_assert(satisfies_v<NvInt, VendorBackend_v::None>);
+static_assert(!satisfies_v<NvInt, VendorBackend_v::AMD>,
+              "An NV value must not reach an AMD consumer.  The two backends are incomparable.");
+static_assert(!satisfies_v<NvInt, VendorBackend_v::Portable>);
+static_assert(!satisfies_v<NoVendorInt, VendorBackend_v::CPU>);
+static_assert(can_relax<PortableInt, VendorBackend_v::NV>);
+static_assert(can_relax<NvInt, VendorBackend_v::None>);
+static_assert(!can_relax<NvInt, VendorBackend_v::Portable>,
+              "relax<Portable> on an NV value must be rejected.  It would claim the value runs everywhere.");
+static_assert(!can_relax<NvInt, VendorBackend_v::AMD>);
+static_assert(std::is_same_v<rebind_band_t<PortableInt, VendorBackend_v::AMD>, AmdInt>);
+static_assert(NvInt::lattice_name() == "VendorLattice::At<NV>");
+
+constexpr PortableInt pinned_portable{7, {}};
+static_assert(tier_of(relax<VendorBackend_v::CPU>(pinned_portable)) == VendorBackend_v::CPU);
+static_assert(relax<VendorBackend_v::CPU>(pinned_portable).peek() == 7);
+
+// The residency chain: nearer the core is higher.
+using HotInt = residency_heat::Hot<int>;
+using WarmInt = residency_heat::Warm<int>;
+using ColdInt = residency_heat::Cold<int>;
+
+static_assert(sizeof(HotInt) == sizeof(int));
+static_assert(IsBandOf<ResidencyHeatLattice, HotInt>);
+static_assert(!IsBandOf<CipherTierLattice, HotInt>,
+              "Residency heat and cipher tier spell the same three tiers and must stay two lattices.");
+static_assert(!std::is_same_v<HotInt, cipher_tier::Hot<int>>);
+static_assert(satisfies_v<HotInt, ResidencyHeatTag_v::Warm>);
+static_assert(!satisfies_v<ColdInt, ResidencyHeatTag_v::Hot>,
+              "A Cold value must not reach a consumer that budgets for an L1 hit.");
+static_assert(can_relax<HotInt, ResidencyHeatTag_v::Cold>);
+static_assert(!can_relax<WarmInt, ResidencyHeatTag_v::Hot>);
+static_assert(std::is_same_v<rebind_band_t<HotInt, ResidencyHeatTag_v::Warm>, WarmInt>);
+static_assert(HotInt::lattice_name() == "ResidencyHeatLattice::At<Hot>");
+
+constexpr HotInt pinned_hot{9, {}};
+static_assert(tier_of(relax<ResidencyHeatTag_v::Warm>(pinned_hot)) == ResidencyHeatTag_v::Warm);
+
 constexpr RecipeSpec<int> spec{7, {Tolerance::ULP_FP16, RecipeFamily::Kahan}};
 static_assert(tolerance_of(spec) == Tolerance::ULP_FP16);
 static_assert(recipe_family_of(spec) == RecipeFamily::Kahan);
@@ -576,7 +682,7 @@ static_assert(!admits(spec, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
 // Every enumerator of each lattice enum has a short spelling in the
 // namespace that mirrors it.  An enumerator added to one of these enums
 // and left without an alias is reachable only through the long
-// Band<Tier, T> form, which is the gap these eight lines close.
+// Band<Tier, T> form, which is the gap these lines close.
 static_assert(every_tier_has_an_alias<^^::fixy::det_safe, std::meta::dealias(^^DetSafeTier_v)>(),
               "fixy/Bands.h: a DetSafeTier enumerator has no alias in fixy::det_safe.");
 static_assert(every_tier_has_an_alias<^^::fixy::alloc_class, std::meta::dealias(^^AllocClassTag_v)>(),
@@ -596,9 +702,13 @@ static_assert(every_tier_has_an_alias<^^::fixy::opaque_lifetime, std::meta::deal
               "fixy/Bands.h: a Lifetime enumerator has no alias in fixy::opaque_lifetime.");
 static_assert(every_tier_has_an_alias<^^::fixy::scoped_fence, std::meta::dealias(^^MemoryScope_v)>(),
               "fixy/Bands.h: a MemoryScope enumerator has no alias in fixy::scoped_fence.");
+static_assert(every_tier_has_an_alias<^^::fixy::vendor, std::meta::dealias(^^VendorBackend_v)>(),
+              "fixy/Bands.h: a VendorBackend enumerator has no alias in fixy::vendor.");
+static_assert(every_tier_has_an_alias<^^::fixy::residency_heat, std::meta::dealias(^^ResidencyHeatTag_v)>(),
+              "fixy/Bands.h: a ResidencyHeatTag enumerator has no alias in fixy::residency_heat.");
 
 // The walk answers no when an enumerator has no alias, which is what
-// keeps the seven assertions above from passing vacuously.  det_safe
+// keeps the assertions above from passing vacuously.  det_safe
 // holds no HotPathTier alias, so asking it about one is the shape of
 // the failure without planting a defect in the table.
 static_assert(!some_alias_names_tier<^^::fixy::det_safe, HotPathTier_v::Hot>(),

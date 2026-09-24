@@ -22,8 +22,8 @@
 // row hash at all; until then the nesting cells pin type distinctness
 // only.  The
 // wrappers the new tree did not carry (Consistency, Crash, Progress,
-// MemOrder, ResidencyHeat, Vendor, Budgeted, EpochVersioned,
-// NumaPlacement, TimeOrdered) have no cell, because they have no type.
+// MemOrder, Budgeted, EpochVersioned, NumaPlacement, TimeOrdered) have
+// no cell, because they have no type.
 // SharedPermission is a foundation type and is verified in
 // test/foundation/test_permission_shared.cpp.
 
@@ -164,6 +164,16 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(opaque_lifetime::PerFleet, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(opaque_lifetime::PerFleet, int*);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(opaque_lifetime::PerFleet, TwoWords);
 
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(vendor::Portable, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(vendor::Portable, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(vendor::Portable, int*);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(vendor::Portable, TwoWords);
+
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(residency_heat::Hot, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(residency_heat::Hot, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(residency_heat::Hot, int*);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(residency_heat::Hot, TwoWords);
+
 // Stale carries its staleness beside the value; the bound is the value
 // plus that field, and the wrapper keeps the value's trivialities.
 static_assert(sizeof(Stale<int>) >= sizeof(int) + sizeof(Stale<int>::staleness_t));
@@ -250,6 +260,8 @@ static_assert(fa::IsGraded<cipher_tier::Warm<int>> && IsBand<cipher_tier::Warm<i
 static_assert(fa::IsGraded<wait::SpinPause<int>> && IsBand<wait::SpinPause<int>>);
 static_assert(fa::IsGraded<numerical_tier::Bitexact<int>> && IsBand<numerical_tier::Bitexact<int>>);
 static_assert(fa::IsGraded<opaque_lifetime::PerFleet<int>> && IsBand<opaque_lifetime::PerFleet<int>>);
+static_assert(fa::IsGraded<vendor::Nv<int>> && IsBand<vendor::Nv<int>>);
+static_assert(fa::IsGraded<residency_heat::Warm<int>> && IsBand<residency_heat::Warm<int>>);
 static_assert(fa::IsGraded<RecipeSpec<int>> && IsRecipeSpec<RecipeSpec<int>> && !IsBand<RecipeSpec<int>>);
 static_assert(IsBandOf<DetSafeLattice, det_safe::Pure<int>> && !IsBandOf<HotPathLattice, det_safe::Pure<int>>);
 
@@ -296,6 +308,9 @@ static_assert(det_safe::Pure<int>::lattice_name() != det_safe::PhiloxRng<int>::l
 static_assert(hot_path::Hot<int>::lattice_name() != cipher_tier::Hot<int>::lattice_name(),
               "Two tier axes that spell the same tier must keep distinct lattice names, or a diagnostic "
               "cannot tell an execution budget from a storage tier.");
+static_assert(residency_heat::Hot<int>::lattice_name() != cipher_tier::Hot<int>::lattice_name(),
+              "Residency heat and cipher tier spell the same three tiers, and a diagnostic must still tell "
+              "a cache level from a storage tier.");
 
 // ── Composition ─────────────────────────────────────────────────────
 //

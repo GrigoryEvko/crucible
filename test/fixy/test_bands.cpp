@@ -2,9 +2,9 @@
 // pinned grade, so the pins are the carrier's own: a band costs
 // sizeof(T) at every tier, its diagnostic surface is the substrate's,
 // at_bottom and weaken are the singleton identity, and relax rebinds
-// the type down the chain only.  One band, ScopedFence, pins a partial
-// order instead of a chain, so relax there also refuses a move across to
-// an incomparable trunk.
+// the type down the chain only.  Two bands, ScopedFence and Vendor, pin a
+// partial order instead of a chain, so relax there also refuses a move
+// across to an incomparable element.
 //
 // The tiers are walked by reflection over each band's enum, so a new
 // tier is covered the moment it is declared.
@@ -98,6 +98,8 @@ static_assert(every_tier_is_a_band<fixy::CipherTierLattice, fixy::CipherTier>())
 static_assert(every_tier_is_a_band<fixy::WaitLattice, fixy::Wait>());
 static_assert(every_tier_is_a_band<fixy::ToleranceLattice, fixy::NumericalTier>());
 static_assert(every_tier_is_a_band<fixy::LifetimeLattice, fixy::OpaqueLifetime>());
+static_assert(every_tier_is_a_band<fixy::VendorLattice, fixy::Vendor>());
+static_assert(every_tier_is_a_band<fixy::ResidencyHeatLattice, fixy::ResidencyHeat>());
 
 // The old spellings resolve to the same carriers.
 static_assert(std::is_same_v<fixy::det_safe::Pure<int>, fixy::DetSafe<fixy::DetSafeTier_v::Pure, int>>);
@@ -110,11 +112,15 @@ static_assert(std::is_same_v<fixy::wait::Block<int>, fixy::Wait<fixy::WaitStrate
 static_assert(std::is_same_v<fixy::numerical_tier::Bitexact<int>, fixy::NumericalTier<fixy::Tolerance::BITEXACT, int>>);
 static_assert(
     std::is_same_v<fixy::opaque_lifetime::PerFleet<int>, fixy::OpaqueLifetime<fixy::Lifetime_v::PER_FLEET, int>>);
+static_assert(std::is_same_v<fixy::vendor::Nv<int>, fixy::Vendor<fixy::VendorBackend_v::NV, int>>);
+static_assert(std::is_same_v<fixy::residency_heat::Warm<int>, fixy::ResidencyHeat<fixy::ResidencyHeatTag_v::Warm, int>>);
 
 // Two bands over one payload at different tiers, or over different
 // lattices at the same ordinal, are different types.
 static_assert(!std::is_same_v<fixy::det_safe::Pure<int>, fixy::det_safe::PhiloxRng<int>>);
 static_assert(!std::is_same_v<fixy::hot_path::Hot<int>, fixy::cipher_tier::Hot<int>>);
+static_assert(!std::is_same_v<fixy::residency_heat::Hot<int>, fixy::cipher_tier::Hot<int>>);
+static_assert(!std::is_same_v<fixy::vendor::Nv<int>, fixy::vendor::Amd<int>>);
 
 // The old detector answered the same question per band; one query
 // answers it for all of them.
@@ -279,6 +285,34 @@ int main() {
     const bool device_covers_inner = fixy::satisfies_v<decltype(device_wide), fixy::MemoryScope_v::Inner>;
     if (!device_covers_block || device_covers_inner) {
         std::fprintf(stderr, "test_bands: scope admission crossed a trunk\n");
+        return 1;
+    }
+
+    // The second partial order.  A portable value relaxes to one named
+    // backend and then to None.  The refusals of a move up or across are
+    // compile-time and live in test/fixy/neg/neg_bands_vendor_*.cpp.
+    fixy::vendor::Portable<int> portable{seed, {}};
+    auto on_cpu = fixy::relax<fixy::VendorBackend_v::CPU>(portable);
+    if (on_cpu.peek() != seed || fixy::tier_of(on_cpu) != fixy::VendorBackend_v::CPU) {
+        std::fprintf(stderr, "test_bands: relax<CPU>(Portable) is wrong\n");
+        return 1;
+    }
+    auto unbound = fixy::relax<fixy::VendorBackend_v::None>(std::move(on_cpu));
+    if (std::move(unbound).consume() != seed) {
+        std::fprintf(stderr, "test_bands: relax<None>(CPU) lost the value\n");
+        return 1;
+    }
+    const bool portable_covers_nv = fixy::satisfies_v<decltype(portable), fixy::VendorBackend_v::NV>;
+    const bool nv_covers_amd = fixy::satisfies_v<fixy::vendor::Nv<int>, fixy::VendorBackend_v::AMD>;
+    if (!portable_covers_nv || nv_covers_amd) {
+        std::fprintf(stderr, "test_bands: vendor admission crossed two named backends\n");
+        return 1;
+    }
+
+    fixy::residency_heat::Hot<MoveOnlyValue> hot{MoveOnlyValue{seed}, {}};
+    auto cold = fixy::relax<fixy::ResidencyHeatTag_v::Cold>(std::move(hot));
+    if (std::move(cold).consume().v != seed) {
+        std::fprintf(stderr, "test_bands: relax<Cold>(Hot) lost a move-only value\n");
         return 1;
     }
 

@@ -135,6 +135,7 @@
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
 #include <foundation/algebra/lattices/RecipeFamilyLattice.h>
+#include <foundation/algebra/lattices/ResidencyHeatLattice.h>
 #include <foundation/algebra/lattices/SchedulerPolicyLattice.h>
 #include <foundation/algebra/lattices/SeqPrefixLattice.h>
 #include <foundation/algebra/lattices/StalenessSemiring.h>

@@ -1150,16 +1150,16 @@ fixy_neg_compile_test(neg_bands_satisfies_foreign_tier
   "satisfaction of .same_as<decltype \\(Required\\), fixy::band_tier_t<B> >."
   ".enum class foundation::algebra::lattices::HotPathTier. is not the same as .enum class foundation::algebra::lattices::DetSafeTier.")
 
-# The eight coverage assertions in Bands.h all pass, so none of them
+# The coverage assertions in Bands.h all pass, so none of them
 # shows what the walk does when a tier has no alias.  This namespace
 # mirrors fixy::hot_path and leaves one of the three tiers out.
 fixy_neg_compile_test(neg_bands_tier_without_an_alias
   "static assertion failed: a namespace missing one tier alias covers its enum"
   "the comparison reduces to .\\(0 == 1\\).")
 
-# ScopedFence is the one band over a partial order rather than a chain,
-# so it is the only one that can be asked to move to a tier that sits
-# neither above nor below its own.  Cta is on the accelerator trunk and
+# ScopedFence is a band over a partial order rather than a chain, so it
+# can be asked to move to a tier that sits neither above nor below its
+# own.  Cta is on the accelerator trunk and
 # Inner on the ARM trunk, the two meet only at Thread and System, and the
 # same leq gate that refuses a move up refuses this one.  The chain
 # fixture above cannot produce the case.
@@ -1176,6 +1176,36 @@ fixy_neg_compile_test(neg_bands_satisfies_cross_trunk
   "no matching function for call to .consume"
   "required for the satisfaction of .covers_cta_requirement<"
   "satisfies_v<Provider, foundation::algebra::lattices::MemoryScope::Cta>.*evaluated to .false.")
+
+# Vendor is the second band over a partial order.  Portable is its top,
+# so relax from a named backend up to Portable is a move up, and the leq
+# gate refuses it: the value would claim to run on every backend.
+fixy_neg_compile_test(neg_bands_vendor_relax_to_portable
+  "no matching function for call to .relax<foundation::algebra::lattices::VendorBackend::Portable>"
+  "band_lattice_t<B>::leq\\)\\(WeakerTier, band_tier_v<B>\\).*evaluated to .false."
+  "VendorLattice::At<foundation::algebra::lattices::VendorBackend::NV>")
+
+# The admission direction between two named backends.  NV and AMD are
+# incomparable, so an AMD provider is refused at an NV requirement.
+fixy_neg_compile_test(neg_bands_vendor_satisfies_other_backend
+  "no matching function for call to .consume"
+  "required for the satisfaction of .covers_nv_requirement<"
+  "satisfies_v<Provider, foundation::algebra::lattices::VendorBackend::NV>.*evaluated to .false.")
+
+# The residency chain refuses a move up: a Warm value must not claim that
+# its working set sits in L1.
+fixy_neg_compile_test(neg_bands_residency_heat_relax_up
+  "no matching function for call to .relax<foundation::algebra::lattices::ResidencyHeatTag::Hot>"
+  "band_lattice_t<B>::leq\\)\\(WeakerTier, band_tier_v<B>\\).*evaluated to .false."
+  "ResidencyHeatLattice::At<foundation::algebra::lattices::ResidencyHeatTag::Warm>")
+
+# The admission direction on the residency chain.  A Cold provider is
+# refused at a Hot requirement, because the consumer did not budget for
+# the cache miss.
+fixy_neg_compile_test(neg_bands_residency_heat_cold_at_hot
+  "no matching function for call to .consume"
+  "required for the satisfaction of .covers_hot_requirement<"
+  "satisfies_v<Provider, foundation::algebra::lattices::ResidencyHeatTag::Hot>.*evaluated to .false.")
 
 # ── The eight value wrappers ──────────────────────────────────────────
 #

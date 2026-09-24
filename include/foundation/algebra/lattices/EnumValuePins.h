@@ -32,6 +32,7 @@
 #include <foundation/algebra/lattices/LifetimeLattice.h>
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
 #include <foundation/algebra/lattices/RecipeFamilyLattice.h>
+#include <foundation/algebra/lattices/ResidencyHeatLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
@@ -159,6 +160,11 @@ static_assert(pin_enum<MemoryScope>(memory_scope_pins), "MemoryScope drifted fro
 inline constexpr std::array<enum_pin, 3> cipher_tier_tag_pins{{{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
 static_assert(pin_enum<CipherTierTag>(cipher_tier_tag_pins), "CipherTierTag drifted from cipher_tier_tag_pins.");
 
+// These are the values that the old tree pinned for this enum.
+inline constexpr std::array<enum_pin, 3> residency_heat_tag_pins{{{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
+static_assert(pin_enum<ResidencyHeatTag>(residency_heat_tag_pins), "ResidencyHeatTag drifted from "
+                                                                   "residency_heat_tag_pins.");
+
 inline constexpr std::array<enum_pin, 6> alloc_class_tag_pins{
     {{"HugePage", 0}, {"Mmap", 1}, {"Heap", 2}, {"Arena", 3}, {"Pool", 4}, {"Stack", 5}}};
 static_assert(pin_enum<AllocClassTag>(alloc_class_tag_pins), "AllocClassTag drifted from alloc_class_tag_pins.");
@@ -201,7 +207,7 @@ static_assert(pin_enum<RecipeFamily>(recipe_family_pins), "RecipeFamily drifted 
 
 // The walk answers no for each way a table and its enum can disagree.
 // Without these, a pin_enum that answered yes for everything would leave
-// all thirteen assertions above green and pin nothing.
+// all the assertions above green and pin nothing.
 namespace pin_enum_self_test {
 
 enum class Probe : std::uint8_t {

@@ -287,10 +287,7 @@ crucible/safety/diag/_RowHashFold.h:CrashClass
 crucible/safety/diag/_RowHashFold.h:JoinPolicy
 crucible/safety/diag/_RowHashFold.h:MemOrder
 crucible/safety/diag/_RowHashFold.h:MemOrderTag
-crucible/safety/diag/_RowHashFold.h:ResidencyHeat
-crucible/safety/diag/_RowHashFold.h:ResidencyHeatTag
 crucible/safety/diag/_RowHashFold.h:TimeOrdered
-crucible/safety/diag/_RowHashFold.h:Vendor
 crucible/safety/diag/_RowHashFold.h:Witness
 "
 uncarried_pinned="${PORT_GUARD_UNCARRIED-$uncarried_pinned_default}"
