@@ -10,9 +10,12 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <meta>
+#include <stdfloat>
 #include <string_view>
 
 namespace identity_attacks {
@@ -74,6 +77,31 @@ struct HoldsBoundReference {};
 static_assert(HasStableIdentity<Holds<Bound{3}>>);
 static_assert(HasStableIdentity<Holds<named_bound>>);
 static_assert(!HasStableIdentity<HoldsBoundReference<named_bound>>);
+
+// A number prints without its type: 1 and 1L print 1, a char16_t and an
+// unsigned char print 65, a null data member pointer prints -1, and a
+// bfloat16 prints as a double.  The stable name appends the type of each
+// such value, so the ids differ.
+struct Member {
+    int field;
+};
+using NullMember = int Member::*;
+inline constexpr NullMember null_member = nullptr;
+
+// Two different values that print one text: a NaN prints without its
+// payload, and a union value without its active member.  The walk
+// refuses both, and a class value that holds a union.
+union Either {
+    int first;
+    int second;
+};
+struct HoldsEither {
+    Either either;
+};
+inline constexpr double payload_nan = std::bit_cast<double>(std::uint64_t{0x7ff8000000001234});
+static_assert(!HasStableIdentity<Holds<payload_nan>>);
+static_assert(!HasStableIdentity<Holds<Either{.first = 1}>>);
+static_assert(!HasStableIdentity<Holds<HoldsEither{Either{.second = 1}}>>);
 
 // Two classes of one name in two blocks of one function.  The walk
 // appends the line and column of a class that a function body declares.
@@ -154,6 +182,14 @@ int main() {
     expect(stable_type_id<Holds<Bound{3}>> != stable_type_id<Holds<Bound{4}>>, "two class values share an id");
     expect(stable_type_id<Holds<named_bound>> == stable_type_id<Holds<Bound{4}>>,
            "one class value gives two ids when a variable spells it");
+    expect(stable_type_id<Holds<1>> != stable_type_id<Holds<1L>>, "an int and a long of one value share an id");
+    expect(stable_type_id<Holds<u'A'>> != stable_type_id<Holds<static_cast<unsigned char>(65)>>,
+           "a char16_t and an unsigned char of one value share an id");
+    expect(stable_type_id<Holds<null_member>> != stable_type_id<Holds<-1>>,
+           "a null member pointer and the int -1 share an id");
+    expect(stable_type_id<Holds<static_cast<std::bfloat16_t>(1.5)>> != stable_type_id<Holds<1.5>>,
+           "a bfloat16 and a double of one value share an id");
+    expect(stable_type_id<Holds<1>> == stable_type_id<Holds<1>>, "one value gives two ids");
 
     // The ledger entry reproduces: when it stops reproducing, delete it.
     const LocalIds twins = two_classes_one_expansion();

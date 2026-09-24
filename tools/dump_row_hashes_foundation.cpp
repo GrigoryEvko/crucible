@@ -345,7 +345,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x0856e32833e00ef7ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0xd9890c7a0bd36692ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;

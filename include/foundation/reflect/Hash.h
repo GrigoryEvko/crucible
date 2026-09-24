@@ -193,6 +193,13 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 // name, and two such classes in two blocks of one function print one
 // name.  Its line and column in the source tell them apart and are the
 // same in every translation unit, so the stable name appends them.
+//
+// A number prints without its type.  The values 1 and 1L print as 1, a
+// null data member pointer prints as -1, and a bfloat16 prints as a
+// double.  So the stable name appends the type of each value argument of
+// arithmetic or member pointer type.  In two cases two different values
+// print one text, and the walk refuses both: a NaN prints without its
+// payload, and a union value prints without its active member.
 
 namespace detail {
 
@@ -202,6 +209,7 @@ enum class identity_fault : std::uint8_t {
     internal_linkage,
     object_address,
     unreadable_argument,
+    ambiguous_value,
 };
 
 // The part of a type that has no identity, and the kind of fault, or
@@ -246,26 +254,55 @@ inline constexpr std::meta::info function_named_by_v = function_named_by<Value>(
         || text.find("{anonymous}") != std::string_view::npos;
 }
 
-// The walk takes an optional sink.  When one is given, the walk appends
-// the line and column of each class that a function body declares, in
-// the order it meets them.
-[[nodiscard]] consteval identity_verdict identity_of_type(std::meta::info type, std::string* locals = nullptr);
+// True when the printed value carries a NaN, which GCC prints without its
+// payload, so two different NaNs print one text.
+[[nodiscard]] consteval bool prints_a_nan(std::string_view text) noexcept {
+    for (const std::string_view mark : {"+QNaN", "-QNaN", "+SNaN", "-SNaN"}) {
+        if (text.find(mark) != std::string_view::npos) return true;
+    }
+    return false;
+}
+
+// The walk takes an optional sink for the suffix of the stable name.
+// When one is given, the walk appends, in the order it meets them, the
+// line and column of each class that a function body declares and the
+// type of each value that prints without it.
+[[nodiscard]] consteval identity_verdict identity_of_type(std::meta::info type, std::string* suffix = nullptr);
+
+// Append " =type" for a value whose print does not name its type.
+consteval void append_value_type(std::string& suffix, std::meta::info type) {
+    suffix += " =";
+    suffix += std::meta::display_string_of(type);
+}
+
+// True when a value of this type can print without its type, such as a
+// number or a member pointer.  The test names the types whose print does
+// name the type, so a builtin type that the standard traits do not
+// classify, such as __float128 in strict mode, still gets the suffix.  A
+// bool prints true or false, and only a bool does.  A class value and a
+// cast enumerator print the type, and a named enumerator is a qualified
+// name.  A pointer names a function, and nullptr is its own type.
+[[nodiscard]] consteval bool prints_without_its_type(std::meta::info type) {
+    return !(std::meta::is_class_type(type) || std::meta::is_union_type(type) || std::meta::is_enum_type(type)
+             || type == ^^bool || std::meta::is_null_pointer_type(type) || std::meta::is_pointer_type(type)
+             || std::meta::is_reflection_type(type));
+}
 
 // Append " @line:column" of a class that a function body declares.
-consteval void append_local_position(std::string& locals, std::meta::info type) {
+consteval void append_local_position(std::string& suffix, std::meta::info type) {
     const std::source_location where = std::meta::source_location_of(type);
-    const auto append_number = [&locals](std::uint_least32_t number) {
+    const auto append_number = [&suffix](std::uint_least32_t number) {
         char digits[10]{};
         std::size_t count = 0;
         do {
             digits[count++] = static_cast<char>('0' + number % 10);
             number /= 10;
         } while (number != 0);
-        while (count != 0) locals += digits[--count];
+        while (count != 0) suffix += digits[--count];
     };
-    locals += " @";
+    suffix += " @";
     append_number(where.line());
-    locals += ':';
+    suffix += ':';
     append_number(where.column());
 }
 
@@ -291,12 +328,32 @@ consteval void append_local_position(std::string& locals, std::meta::info type) 
     return false;
 }
 
-[[nodiscard]] consteval identity_verdict identity_of_function(std::meta::info function, std::string* locals);
+// True when a value of this type holds a union at any depth.  A union
+// value prints the value of its active member and not the member, so two
+// values that differ only in the active member print one text.
+// Complexity: linear in the number of members and bases, counted through
+// arrays.
+[[nodiscard]] consteval bool carries_a_union(std::meta::info type) {
+    type = std::meta::dealias(std::meta::remove_cv(type));
+    if (std::meta::is_union_type(type)) return true;
+    if (std::meta::is_array_type(type)) return carries_a_union(std::meta::remove_all_extents(type));
+    if (!std::meta::is_class_type(type)) return false;
+    const std::meta::access_context everywhere = std::meta::access_context::unchecked();
+    for (const std::meta::info base : std::meta::bases_of(type, everywhere)) {
+        if (carries_a_union(std::meta::type_of(base))) return true;
+    }
+    for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, everywhere)) {
+        if (carries_a_union(std::meta::type_of(member))) return true;
+    }
+    return false;
+}
+
+[[nodiscard]] consteval identity_verdict identity_of_function(std::meta::info function, std::string* suffix);
 
 // The entity that a reflection names.  A reflection that names no
 // declared entity, such as an object or a base, cannot be read, so the
 // walk refuses it.
-[[nodiscard]] consteval identity_verdict identity_of_reflection(std::meta::info named, std::string* locals);
+[[nodiscard]] consteval identity_verdict identity_of_reflection(std::meta::info named, std::string* suffix);
 
 // The scopes that enclose an entity, up to the global namespace.  An
 // enclosing class is walked as a type, so a class declared inside a
@@ -305,9 +362,9 @@ consteval void append_local_position(std::string& locals, std::meta::info type) 
 // internal linkage gives its local classes the same fault.  Complexity:
 // linear in the depth of the scope chain, plus the walk of each
 // enclosing class.
-[[nodiscard]] consteval identity_verdict identity_of_scope(std::meta::info scope, std::string* locals = nullptr) {
+[[nodiscard]] consteval identity_verdict identity_of_scope(std::meta::info scope, std::string* suffix = nullptr) {
     while (true) {
-        if (std::meta::is_type(scope)) return identity_of_type(scope, locals);
+        if (std::meta::is_type(scope)) return identity_of_type(scope, suffix);
         if (scope == ^^::) return {};
         if (std::meta::is_namespace(scope) && !std::meta::has_identifier(scope)) {
             return {identity_fault::internal_linkage, scope};
@@ -323,21 +380,25 @@ consteval void append_local_position(std::string& locals, std::meta::info type) 
 // A function entity: its linkage and its name, then its scopes.  A
 // static invoker of a closure has the closure as its parent, so the
 // scope walk refuses it.
-[[nodiscard]] consteval identity_verdict identity_of_function(std::meta::info function, std::string* locals) {
+[[nodiscard]] consteval identity_verdict identity_of_function(std::meta::info function, std::string* suffix) {
     if (std::meta::has_internal_linkage(function)) return {identity_fault::internal_linkage, function};
     if (!std::meta::has_identifier(function)) return {identity_fault::no_declared_name, function};
-    return identity_of_scope(std::meta::parent_of(function), locals);
+    return identity_of_scope(std::meta::parent_of(function), suffix);
 }
 
 // A template argument that is a value: its type, then what the value
 // names.  Complexity: linear in the walk of the type, plus the members
 // of a class value.
-[[nodiscard]] consteval identity_verdict identity_of_value(std::meta::info argument, std::string* locals) {
+[[nodiscard]] consteval identity_verdict identity_of_value(std::meta::info argument, std::string* suffix) {
     const std::meta::info type = std::meta::dealias(std::meta::remove_cv(std::meta::type_of(argument)));
-    const identity_verdict of_type = identity_of_type(type, locals);
+    const identity_verdict of_type = identity_of_type(type, suffix);
     if (of_type.fault != identity_fault::none) return of_type;
+    if (carries_a_union(type) || prints_a_nan(std::meta::display_string_of(argument))) {
+        return {identity_fault::ambiguous_value, argument};
+    }
+    if (suffix != nullptr && prints_without_its_type(type)) append_value_type(*suffix, type);
     if (std::meta::is_reflection_type(type)) {
-        return identity_of_reflection(std::meta::extract<std::meta::info>(argument), locals);
+        return identity_of_reflection(std::meta::extract<std::meta::info>(argument), suffix);
     }
     if (std::meta::is_pointer_type(type)) {
         if (!std::meta::is_function_type(std::meta::remove_pointer(type))) {
@@ -348,7 +409,7 @@ consteval void append_local_position(std::string& locals, std::meta::info type) 
         const std::meta::info function =
             std::meta::extract<std::meta::info>(std::meta::substitute(^^function_named_by_v, {argument}));
         if (function != std::meta::info{}) {
-            const identity_verdict of_function = identity_of_function(function, locals);
+            const identity_verdict of_function = identity_of_function(function, suffix);
             if (of_function.fault != identity_fault::none) return of_function;
         }
     }
@@ -386,48 +447,48 @@ consteval void append_local_position(std::string& locals, std::meta::info type) 
 // a class value and is read as one.  Any other object is named by a
 // reference, prints the name of its variable, and no query reads it back
 // to that variable, so the walk refuses it.
-[[nodiscard]] consteval identity_verdict identity_of_object(std::meta::info object, std::string* locals) {
-    if (is_template_parameter_object(object)) return identity_of_value(object, locals);
+[[nodiscard]] consteval identity_verdict identity_of_object(std::meta::info object, std::string* suffix) {
+    if (is_template_parameter_object(object)) return identity_of_value(object, suffix);
     return {identity_fault::object_address, object};
 }
 
-[[nodiscard]] consteval identity_verdict identity_of_reflection(std::meta::info named, std::string* locals) {
+[[nodiscard]] consteval identity_verdict identity_of_reflection(std::meta::info named, std::string* suffix) {
     if (named == std::meta::info{}) return {};
-    if (std::meta::is_type(named)) return identity_of_type(named, locals);
-    if (std::meta::is_function(named)) return identity_of_function(named, locals);
-    if (std::meta::is_namespace(named)) return named == ^^:: ? identity_verdict{} : identity_of_scope(named, locals);
+    if (std::meta::is_type(named)) return identity_of_type(named, suffix);
+    if (std::meta::is_function(named)) return identity_of_function(named, suffix);
+    if (std::meta::is_namespace(named)) return named == ^^:: ? identity_verdict{} : identity_of_scope(named, suffix);
     if (std::meta::is_variable(named) || std::meta::is_template(named)) {
         if (std::meta::has_internal_linkage(named)) return {identity_fault::internal_linkage, named};
         if (!std::meta::has_identifier(named)) return {identity_fault::no_declared_name, named};
-        return identity_of_scope(std::meta::parent_of(named), locals);
+        return identity_of_scope(std::meta::parent_of(named), suffix);
     }
     if (std::meta::is_enumerator(named) || std::meta::is_nonstatic_data_member(named)) {
-        return identity_of_scope(std::meta::parent_of(named), locals);
+        return identity_of_scope(std::meta::parent_of(named), suffix);
     }
-    if (std::meta::is_value(named)) return identity_of_value(named, locals);
+    if (std::meta::is_value(named)) return identity_of_value(named, suffix);
     return {identity_fault::unreadable_argument, named};
 }
 
 // The walk over one type.  Complexity: linear in the number of nodes of
 // the type, counting template arguments and enclosing classes.
-[[nodiscard]] consteval identity_verdict identity_of_type(std::meta::info type, std::string* locals) {
+[[nodiscard]] consteval identity_verdict identity_of_type(std::meta::info type, std::string* suffix) {
     type = std::meta::dealias(type);
-    if (std::meta::is_reference_type(type)) return identity_of_type(std::meta::remove_reference(type), locals);
-    if (std::meta::is_pointer_type(type)) return identity_of_type(std::meta::remove_pointer(type), locals);
-    if (std::meta::is_array_type(type)) return identity_of_type(std::meta::remove_all_extents(type), locals);
+    if (std::meta::is_reference_type(type)) return identity_of_type(std::meta::remove_reference(type), suffix);
+    if (std::meta::is_pointer_type(type)) return identity_of_type(std::meta::remove_pointer(type), suffix);
+    if (std::meta::is_array_type(type)) return identity_of_type(std::meta::remove_all_extents(type), suffix);
     type = std::meta::dealias(std::meta::remove_cv(type));
     if (std::meta::is_member_pointer_type(type)) {
         const identity_verdict owner = identity_of_type(
-            std::meta::extract<std::meta::info>(std::meta::substitute(^^member_pointer_owner_, {type})), locals);
+            std::meta::extract<std::meta::info>(std::meta::substitute(^^member_pointer_owner_, {type})), suffix);
         if (owner.fault != identity_fault::none) return owner;
         return identity_of_type(
-            std::meta::extract<std::meta::info>(std::meta::substitute(^^member_pointer_member_, {type})), locals);
+            std::meta::extract<std::meta::info>(std::meta::substitute(^^member_pointer_member_, {type})), suffix);
     }
     if (std::meta::is_function_type(type)) {
-        const identity_verdict result = identity_of_type(std::meta::return_type_of(type), locals);
+        const identity_verdict result = identity_of_type(std::meta::return_type_of(type), suffix);
         if (result.fault != identity_fault::none) return result;
         for (const std::meta::info parameter : std::meta::parameters_of(type)) {
-            const identity_verdict verdict = identity_of_type(parameter, locals);
+            const identity_verdict verdict = identity_of_type(parameter, suffix);
             if (verdict.fault != identity_fault::none) return verdict;
         }
         return {};
@@ -437,24 +498,24 @@ consteval void append_local_position(std::string& locals, std::meta::info type) 
         if (std::meta::has_template_arguments(type)) {
             const std::meta::info primary = std::meta::template_of(type);
             if (std::meta::has_internal_linkage(primary)) return {identity_fault::internal_linkage, primary};
-            const identity_verdict scope = identity_of_scope(std::meta::parent_of(primary), locals);
+            const identity_verdict scope = identity_of_scope(std::meta::parent_of(primary), suffix);
             if (scope.fault != identity_fault::none) return scope;
             for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
                 identity_verdict verdict{};
                 if (std::meta::is_type(argument)) {
-                    verdict = identity_of_type(argument, locals);
+                    verdict = identity_of_type(argument, suffix);
                 } else if (std::meta::is_template(argument)) {
                     if (std::meta::has_internal_linkage(argument)) {
                         verdict = {identity_fault::internal_linkage, argument};
                     } else {
-                        verdict = identity_of_scope(std::meta::parent_of(argument), locals);
+                        verdict = identity_of_scope(std::meta::parent_of(argument), suffix);
                     }
                 } else if (std::meta::is_object(argument)) {
-                    verdict = identity_of_object(argument, locals);
+                    verdict = identity_of_object(argument, suffix);
                 } else if (std::meta::is_function(argument)) {
-                    verdict = identity_of_function(argument, locals);
+                    verdict = identity_of_function(argument, suffix);
                 } else {
-                    verdict = identity_of_value(argument, locals);
+                    verdict = identity_of_value(argument, suffix);
                 }
                 if (verdict.fault != identity_fault::none) return verdict;
             }
@@ -463,8 +524,8 @@ consteval void append_local_position(std::string& locals, std::meta::info type) 
         if (!std::meta::has_identifier(type)) return {identity_fault::no_declared_name, type};
         if (std::meta::has_internal_linkage(type)) return {identity_fault::internal_linkage, type};
         const std::meta::info parent = std::meta::parent_of(type);
-        if (locals != nullptr && std::meta::is_function(parent)) append_local_position(*locals, type);
-        return identity_of_scope(parent, locals);
+        if (suffix != nullptr && std::meta::is_function(parent)) append_local_position(*suffix, type);
+        return identity_of_scope(parent, suffix);
     }
     if (prints_a_mark_of_no_identity(std::meta::display_string_of(type))) {
         return {identity_fault::no_declared_name, type};
@@ -489,6 +550,10 @@ consteval void append_local_position(std::string& locals, std::meta::info type) 
     } else if (verdict.fault == identity_fault::internal_linkage) {
         text += " has internal linkage.  Each translation unit holds its own entity under one printed name, so "
                 "two different types would share one id.  Declare it in a named namespace.";
+    } else if (verdict.fault == identity_fault::ambiguous_value) {
+        text += " prints a text that a different value also prints: GCC prints a NaN without its payload, and a "
+                "union value without its active member.  Pass a number that is not a NaN, or a value of a type "
+                "that holds no union.";
     } else if (verdict.fault == identity_fault::object_address) {
         text += " names an object by its address or by a reference.  No query reads the object back to its "
                 "variable, so a variable with internal linkage would print one name in every translation unit.  "
@@ -527,10 +592,10 @@ namespace detail {
 template <typename T>
 [[nodiscard]] consteval std::string_view checked_stable_name() {
     static_assert(HasStableIdentity<T>, identity_refusal_text(^^T, identity_verdict_of<T>));
-    std::string locals;
-    (void)identity_of_type(^^T, &locals);
-    if (locals.empty()) return std::meta::display_string_of(^^T);
-    return std::define_static_string(std::string{std::meta::display_string_of(^^T)} + locals);
+    std::string suffix;
+    (void)identity_of_type(^^T, &suffix);
+    if (suffix.empty()) return std::meta::display_string_of(^^T);
+    return std::define_static_string(std::string{std::meta::display_string_of(^^T)} + suffix);
 }
 
 }  // namespace detail
@@ -742,6 +807,13 @@ struct Address {
 struct Bound {
     int limit;
 };
+union Either {
+    int first;
+    int second;
+};
+struct HoldsEither {
+    Either either;
+};
 inline constexpr Bound named_bound{4};
 template <Bound const& Reference>
 struct HoldsBoundReference {};
@@ -816,6 +888,17 @@ static_assert(HasStableIdentity<identity_test::Holds<identity_test::Named{}>>);
 static_assert(HasStableIdentity<identity_test::Holds<identity_test::named_bound>>);
 static_assert(!HasStableIdentity<identity_test::Holds<identity_test::Internal{}>>);
 static_assert(!HasStableIdentity<identity_test::HoldsBoundReference<identity_test::named_bound>>);
+
+// A number prints without its type, so the stable name appends it.  A
+// NaN and a union value print a text that a different value also prints.
+static_assert(stable_type_id<identity_test::Holds<1>> != stable_type_id<identity_test::Holds<1L>>);
+static_assert(stable_type_id<identity_test::Holds<65>> != stable_type_id<identity_test::Holds<u8'A'>>);
+static_assert(stable_type_id<identity_test::Holds<1.5>> != stable_type_id<identity_test::Holds<1.5L>>);
+static_assert(stable_type_id<identity_test::Holds<-1>>
+              != stable_type_id<identity_test::Holds<static_cast<int identity_test::Bound::*>(nullptr)>>);
+static_assert(!HasStableIdentity<identity_test::Holds<__builtin_nan("")>>);
+static_assert(!HasStableIdentity<identity_test::Holds<identity_test::Either{.first = 1}>>);
+static_assert(!HasStableIdentity<identity_test::Holds<identity_test::HoldsEither{identity_test::Either{.second = 1}}>>);
 
 // A class declared in a function body carries its line and column in
 // its stable name, so two such classes of one name do not share an id.

@@ -2,7 +2,7 @@
 # format-version:  1
 # matrix-size:     51
 # fold-seed:       0xf0117a11eda11a5e
-# fold-anchor:     0x0856e32833e00ef7
+# fold-anchor:     0xd9890c7a0bd36692
 # toolchain-tag:   0x531f2bb4b45652c8
 # (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
 # (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
@@ -25,27 +25,27 @@ R05_RowIoBg              0x3a57703490bfba7f
 C01_CompEmpty            0x49a55be1cfc23fb0
 C02_CompBg               0x3ace35615f0f9243
 C03_CompNested           0x44ae5b8b654b243f
-B01_FnStrictPole         0x4ef9a43e8f6bc2ff
-B02_FnClassified         0x4ef9a43e8f6bc2ff
-B03_FnSecret             0x1c0979fc154d15e7
-B04_FnInternal           0x3ab76aec6ebbe87b
-B05_FnPublic             0xac728c1cee9e0a8e
-B06_FnUnverified         0x968c6c4824c481f2
-B07_FnDoublePayload      0x4ef9a43e8f6bc2ff
-S01_PureLinear           0x4ef9a43e8f6bc2ff
-S02_PureCopy             0xf7744749b767d412
-S03_IoFunction           0x28e2d1651e4cd671
-S04_BgWorker             0x12e21a941a44e678
-S05_CtCrypto             0x7fcfe5f6a53f0a3b
+B01_FnStrictPole         0x50cf5f8eb1021e2a
+B02_FnClassified         0x50cf5f8eb1021e2a
+B03_FnSecret             0x681cc6f6ac42ce5a
+B04_FnInternal           0x273e71893171a1af
+B05_FnPublic             0x7ce7afc684f6c933
+B06_FnUnverified         0x4eb0efe0aa437e53
+B07_FnDoublePayload      0x50cf5f8eb1021e2a
+S01_PureLinear           0x50cf5f8eb1021e2a
+S02_PureCopy             0x681be1f418caea7c
+S03_IoFunction           0xc2a733647dd4efeb
+S04_BgWorker             0xe381c6d98dab4734
+S05_CtCrypto             0x2a38de8fea98bf21
 G10_EpochVersioned       0xe3543c60534b7736
 G11_Budgeted             0xdefcdb2e9f0ea002
 K02_OnDualGeneration     0x9e071212337c3790
 K03_OnPeakBytes          0x1efd403d7caa48e3
 K04_OnBitsBudget         0x5d25bcd8a9645a63
 K05_OnDualEpoch          0x3bc2ce4347181e0b
-H01_ClockOfFour          0x14b939fd150039ed
-H02_ClockOfFourTagged    0xfcc26e891a02575a
-H03_ClockOfEight         0xbcc3798689f398bd
+H01_ClockOfFour          0xaa19a122d6e2ef4c
+H02_ClockOfFourTagged    0xaea5fe292e998b0d
+H03_ClockOfEight         0xeab69bb82089eec4
 P01_PermissionPure       0xe9592725c224e6b2
 P02_PermissionIo         0xda89dec3dcfa7d6f
 P03_SharePure            0x77a817c3794bb2da

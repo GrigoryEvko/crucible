@@ -831,6 +831,14 @@ foundation_neg_compile_test(neg_stable_id_refuses_an_address_inside_a_class_valu
 foundation_neg_compile_test(neg_stable_id_refuses_a_reflection_of_an_internal_entity
   "a stable id refuses the type"
   "has internal linkage")
+# A NaN prints without its payload and a union value without its active
+# member, so two different values print one text.
+foundation_neg_compile_test(neg_stable_id_refuses_a_nan_value
+  "a stable id refuses the type"
+  "prints a text that a different value also prints")
+foundation_neg_compile_test(neg_stable_id_refuses_a_union_value
+  "a stable id refuses the type"
+  "prints a text that a different value also prints")
 
 # ── The owned buffers ─────────────────────────────────────────────────
 #

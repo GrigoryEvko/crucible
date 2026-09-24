@@ -14,6 +14,12 @@ test/foundation/test_permissions_compile.cpp:union:UnionTag
 test/test_permissions_compile.cpp:union:UnionTag
 test/test_is_permission.cpp:union:test_union_tag
 
+# Unions of scalars in the stable-id tests.  GCC prints a union value
+# without its active member, so the stable id refuses a union value.  These
+# unions prove that refusal.  No member is a proof type.
+include/foundation/reflect/Hash.h:union:Either
+test/foundation/test_identity_attacks.cpp:union:Either
+
 # Probe unions of the checked lifetime start.  Each one is local to a
 # consteval self-test and proves that the walk refuses a union member, and
 # no object of it is built at run time.
