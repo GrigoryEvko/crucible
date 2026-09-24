@@ -1766,9 +1766,12 @@ concept ChannelEndsShareAPriority = session_priority_v<ResourceA> == session_pri
 
 // An empty choice is not well-formed either.  The empty-choice clause
 // comes first so that the refusal of such a protocol names that fault
-// and not the general one.
+// and not the general one.  A protocol that hands an endpoint of a
+// session to a peer of that session is refused too
+// (DelegatesToNoOwnPeer in fixy/session/Payload.h).
 template <typename Proto>
-concept WellFormedRunnableProtocol = !is_empty_choice_v<Proto> && is_well_formed_v<Proto>;
+concept WellFormedRunnableProtocol =
+    !is_empty_choice_v<Proto> && is_well_formed_v<Proto> && DelegatesToNoOwnPeer<Proto>;
 
 namespace detail {
 

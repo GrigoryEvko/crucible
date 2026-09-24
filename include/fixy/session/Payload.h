@@ -18,8 +18,11 @@
 //   Released<T, Tag>         The end of a read loan.  It carries the
 //                            ReadLoan back, and the lender gets its token
 //                            back only with that loan.
-//   DelegatedSession<P, PS>  An endpoint of another protocol.  The tokens
-//                            in PS move with it.
+//   DelegatedSession<P, R, Pol, PS>
+//                            A live endpoint of another session, at
+//                            protocol P over Resource R
+//                            (fixy/session/Delegate.h).  The tokens in PS
+//                            move with it.
 //   SharedReader<Tag>        A read share of a pool.  No set changes,
 //                            because the pool counts its shares.
 //
@@ -101,7 +104,7 @@
 // type that names an endpoint can hold one.  A component delegates when
 // it is one of these:
 //
-//   the hand-off       DelegatedSession<P, PS>
+//   the hand-off       DelegatedSession<P, R, Pol, PS>
 //   an endpoint        a class that declares a member type named protocol
 //                      or protocol_type, and that is not a protocol
 //                      itself.  Each handle, decorator and bridge of this
@@ -287,14 +290,6 @@ private:
     friend class PermHold;
 
     [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
-};
-
-// The endpoint itself moves through the transport that does the
-// handoff.  This type tells the two sets how authority moves with it.
-template <class InnerProto, class InnerPS>
-struct [[nodiscard]] DelegatedSession {
-    using inner_proto = InnerProto;
-    using inner_perm_set = InnerPS;
 };
 
 // A reader's share of a pool, which a message can carry to a reader on
@@ -588,7 +583,7 @@ struct PayloadAccount {
             }
             if (family == ^^DelegatedSession) {
                 if (owned_or_refuse(node)) {
-                    for (const std::meta::info tag : std::meta::template_arguments_of(arguments[1])) {
+                    for (const std::meta::info tag : std::meta::template_arguments_of(arguments[3])) {
                         record(account.moved, tag, type);
                     }
                 }
@@ -977,6 +972,110 @@ struct payload_conveys_delegation : std::bool_constant<payload_delegation_carrie
 // crash session and a checkpoint session refuse such a payload.
 template <class P>
 inline constexpr bool payload_conveys_delegation_v = detail::payload_conveys_delegation<P>::value;
+
+// ── Delegation to a peer of the delegated session ───────────────────
+//
+// A send that hands an endpoint of a session S to a role that is a peer
+// of S gives that role two endpoints of S: its own end and the end that
+// it receives.  The role can then wait on one end for a message that
+// only the other end sends, and S deadlocks.  This breaks the forest
+// condition of LinearActris (Jacobs, Hinrichsen and Krebbers, POPL 2024).
+//
+// A local type names the receiver of each message with a PeerMsg.  So
+// the check reads each Send of a PeerMsg<Q, L, U>, and each
+// DelegatedSession<Inner, ...> that U holds, and refuses the protocol
+// when Inner names Q as a peer.  The peers of Inner are the peer of each
+// PeerMsg and the role of each Sender note in it.  A binary step names
+// no receiver, so the check cannot see a delegation over it.  There the
+// watch of fixy/session/Watch.h refuses the wait of a thread that holds
+// the peer of the endpoint it waits on.
+//
+// Each walk reads the template arguments of each type, and the members
+// of each complete class in a payload.  It stops at a nested
+// DelegatedSession, because the protocol of that endpoint is a different
+// session, and its own mint checks it.  Complexity: linear in the number
+// of distinct types that the walk reaches.
+
+namespace detail {
+
+// The types that one step of a walk reaches from `type`: its type
+// arguments, and for a complete class its bases and data members.
+consteval void push_reached_types(std::meta::info type, std::vector<std::meta::info>& pending) {
+    if (payload_is_specialization(type)) {
+        for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
+            if (std::meta::is_type(argument)) pending.push_back(std::meta::dealias(argument));
+        }
+    }
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return;
+    const auto unchecked = std::meta::access_context::unchecked();
+    for (const std::meta::info base : std::meta::bases_of(type, unchecked)) {
+        pending.push_back(std::meta::dealias(std::meta::type_of(base)));
+    }
+    for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, unchecked)) {
+        pending.push_back(std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(member))));
+    }
+}
+
+[[nodiscard]] consteval bool holds_type(const std::vector<std::meta::info>& types, std::meta::info type) {
+    for (const std::meta::info held : types) {
+        if (held == type) return true;
+    }
+    return false;
+}
+
+// Each type that the walk reaches from `root` once, in the order of the
+// walk.  The walk does not go past a DelegatedSession, but it lists it.
+[[nodiscard]] consteval std::vector<std::meta::info> reached_before_delegation(std::meta::info root) {
+    std::vector<std::meta::info> visited;
+    std::vector<std::meta::info> pending{std::meta::dealias(root)};
+    while (!pending.empty()) {
+        const std::meta::info type = pending.back();
+        pending.pop_back();
+        if (!std::meta::is_type(type) || holds_type(visited, type)) continue;
+        visited.push_back(type);
+        if (payload_family_is(type, ^^DelegatedSession)) continue;
+        push_reached_types(type, pending);
+    }
+    return visited;
+}
+
+// The roles that a protocol names as peers.
+[[nodiscard]] consteval std::vector<std::meta::info> named_peers_of(std::meta::info protocol) {
+    std::vector<std::meta::info> peers;
+    for (const std::meta::info type : reached_before_delegation(protocol)) {
+        if (payload_family_is(type, ^^PeerMsg) || payload_family_is(type, ^^Sender)) {
+            peers.push_back(std::meta::dealias(std::meta::template_arguments_of(type)[0]));
+        }
+    }
+    return peers;
+}
+
+// True when a Send of the protocol hands an endpoint of a session to a
+// role that the protocol of that session names as a peer.
+[[nodiscard]] consteval bool delegates_to_own_peer(std::meta::info protocol) {
+    for (const std::meta::info step : reached_before_delegation(protocol)) {
+        if (!payload_family_is(step, ^^Send)) continue;
+        const std::meta::info message = std::meta::dealias(std::meta::template_arguments_of(step)[0]);
+        if (!payload_family_is(message, ^^PeerMsg)) continue;
+        const auto parts = std::meta::template_arguments_of(message);
+        const std::meta::info receiver = std::meta::dealias(parts[0]);
+        for (const std::meta::info carried : reached_before_delegation(parts[2])) {
+            if (!payload_family_is(carried, ^^DelegatedSession)) continue;
+            const std::meta::info inner = std::meta::template_arguments_of(carried)[0];
+            if (holds_type(named_peers_of(inner), receiver)) return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace detail
+
+template <class Proto>
+inline constexpr bool delegates_to_own_peer_v = detail::delegates_to_own_peer(^^Proto);
+
+// The gate that each mint of fixy/session/Handle.h reads.
+template <class Proto>
+concept DelegatesToNoOwnPeer = !delegates_to_own_peer_v<Proto>;
 
 // ── The set after one step ──────────────────────────────────────────
 
@@ -1369,7 +1468,9 @@ struct PlainMessage {
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::detail::payload_conveys_delegation> {
     using accepts =
-        witnesses<::fixy::session::DelegatedSession<::fixy::session::End, ::foundation::permissions::EmptyPermSet>,
+        witnesses<::fixy::session::DelegatedSession<::fixy::session::End,
+                                                    ::fixy::session::detail::delegation_armed_witness::Wire, void,
+                                                    ::foundation::permissions::EmptyPermSet>,
                   ::fixy::session::detail::delegation_armed_witness::HoldsEndpoint,
                   ::fixy::session::detail::delegation_armed_witness::NamesItsProtocol*, void*>;
     using refuses =

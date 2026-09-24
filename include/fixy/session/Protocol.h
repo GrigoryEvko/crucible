@@ -163,6 +163,13 @@ struct PeerMsg;
 template <typename Label, typename Payload>
 struct Labelled;
 
+// A payload that carries a live endpoint of another session.  It is
+// defined in fixy/session/Delegate.h.  The payload walk of
+// fixy/session/Payload.h and the payload order of
+// fixy/session/Subtype.h name it here.
+template <typename InnerProto, typename Resource, typename Policy, typename InnerPS>
+class DelegatedSession;
+
 namespace detail {
 
 template <VendorBackend V>

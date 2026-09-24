@@ -124,8 +124,8 @@ struct is_crash_send_shape<CrashSend<Next, T>> : std::true_type {};
 // hand-off.  Every other payload that Payload.h accepts is a message.
 template <typename T>
 struct is_delegation_shape : std::false_type {};
-template <typename InnerProto, typename InnerPS>
-struct is_delegation_shape<DelegatedSession<InnerProto, InnerPS>> : std::true_type {
+template <typename InnerProto, typename Resource, typename Policy, typename InnerPS>
+struct is_delegation_shape<DelegatedSession<InnerProto, Resource, Policy, InnerPS>> : std::true_type {
     using protocol = InnerProto;
     using perm_set = InnerPS;
 };

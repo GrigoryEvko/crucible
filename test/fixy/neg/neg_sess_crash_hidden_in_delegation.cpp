@@ -4,6 +4,7 @@
 // theory has no delegation, and the mint refuses the payload.
 
 #include <fixy/session/CrashTransport.h>
+#include <fixy/session/Delegate.h>
 
 namespace s = fixy::session;
 namespace fp = foundation::permissions;
@@ -14,7 +15,7 @@ struct Bob {};
 struct Wire {};
 }  // namespace
 
-using Inner = s::DelegatedSession<s::Recv<int, s::End>, fp::EmptyPermSet>;
+using Inner = s::DelegatedSession<s::Recv<int, s::End>, Wire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
 using Proto = s::Offer<s::Recv<Inner, s::End>, s::Recv<s::Crash<Bob>, s::End>>;
 
 int main() {

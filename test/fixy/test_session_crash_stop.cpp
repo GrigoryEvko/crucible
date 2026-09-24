@@ -113,8 +113,11 @@ namespace transport_walk = s::detail::crash_transport;
 using NotedSelect = s::Select<s::Sender<P>, s::Send<int, Guarded>>;
 using NotedSelectSendsCrash = s::Select<s::Sender<P>, s::Send<s::Crash<Q>, s::End>>;
 using NotedSelectThenBare = s::Select<s::Sender<P>, s::Send<int, Bare>>;
+struct DelegatedWire {};
 using NotedSelectDelegates =
-    s::Select<s::Sender<P>, s::Send<s::DelegatedSession<Bare, ::foundation::permissions::EmptyPermSet>, s::End>>;
+    s::Select<s::Sender<P>, s::Send<s::DelegatedSession<Bare, DelegatedWire, s::DefaultAbandonmentPolicy,
+                                                        ::foundation::permissions::EmptyPermSet>,
+                                    s::End>>;
 static_assert(walk::is_crash_well_structured<NotedSelect>::value);
 static_assert(!walk::is_crash_well_structured<NotedSelectSendsCrash>::value);
 static_assert(walk::is_delegation_free<NotedSelect>::value);

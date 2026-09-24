@@ -17,6 +17,7 @@
 
 #include <fixy/Secret.h>
 #include <fixy/session/Classified.h>
+#include <fixy/session/Delegate.h>
 #include <fixy/session/Payload.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
@@ -221,7 +222,10 @@ static_assert(refusal_of<std::tuple<TX, sess::Returned<int, X>>> == Refusal::Dup
 static_assert(refusal_of<std::pair<TX, sess::Transferable<int, XAlias>>> == Refusal::DuplicateTag,
               "an alias of a tag is the same tag");
 static_assert(refusal_of<std::pair<fp::Permission<X>, TX>> == Refusal::DuplicateTag);
-static_assert(refusal_of<std::pair<TX, sess::DelegatedSession<int, fp::PermSet<X>>>> == Refusal::DuplicateTag,
+struct DelegatedWire {};
+static_assert(refusal_of<std::pair<TX, sess::DelegatedSession<sess::End, DelegatedWire, sess::DefaultAbandonmentPolicy,
+                                                              fp::PermSet<X>>>>
+                  == Refusal::DuplicateTag,
               "a delegated endpoint carries its tags");
 
 // Refused as a read proof or a share outside its marker.

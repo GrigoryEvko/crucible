@@ -143,6 +143,16 @@
 //                                                        droppable_tags
 //   NumericalTier<Tight, T>    ⩽  NumericalTier<Loose, T>
 //   PeerMsg<R, L, T>           ⩽  PeerMsg<R, L, U>      when T ⩽ U
+//   DelegatedSession<P, Res, Pol, PS>
+//                              ⩽  DelegatedSession<Q, Res, Pol, PS>
+//                                                       when Q refines P
+//
+// A delegated endpoint is contravariant in its protocol (Gay and Hole,
+// 2005, for channel types).  The recipient runs code of the protocol
+// that its type names, and that code takes over the obligation of the
+// endpoint it receives.  Code of protocol Q can take over an obligation
+// of protocol P when Q refines P.  So a send of an endpoint at P stands
+// where a send of an endpoint at Q is expected.
 //
 // A seal closes the axioms.  An axiom that a later header adds stops the
 // build at the next query of the order, so each translation unit that
@@ -211,7 +221,24 @@ inline constexpr ::foundation::fail_closed::edge<::fixy::tags::vessel_trust::Val
 inline constexpr ::foundation::fail_closed::seal sealed{.members = 7};
 }  // namespace droppable_tags
 
+namespace detail::subtype {
+
+// The synchronous verdict on one pair, defined below.  The payload order
+// reads it for a delegated endpoint, whose protocol is a smaller type
+// than the protocol that sends it, so the recursion ends.
+template <typename Sub, typename Super>
+consteval ::foundation::algebra::transition::verdict sync_verdict();
+
+}  // namespace detail::subtype
+
 namespace detail::payload_order {
+
+template <typename T, typename U>
+inline constexpr bool delegation_weakens_v = false;
+template <typename P, typename Q, typename Resource, typename Policy, typename PS>
+inline constexpr bool delegation_weakens_v<DelegatedSession<P, Resource, Policy, PS>,
+                                           DelegatedSession<Q, Resource, Policy, PS>> =
+    ::fixy::session::detail::subtype::sync_verdict<Q, P>().holds;
 
 template <typename T>
 struct refinement_parts {
@@ -292,8 +319,14 @@ inline constexpr ::foundation::algebra::transition::subsort_axiom tier_weakens{
 inline constexpr ::foundation::algebra::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg,
                                                                               .covariant = 0b100};
 
+// A delegated endpoint is below another when its protocol is refined by
+// the protocol of the other, and the Resource, the policy and the set are
+// the same.
+inline constexpr ::foundation::algebra::transition::subsort_axiom delegation_contravariant{
+    .weakens = ^^detail::payload_order::delegation_weakens_v};
+
 inline constexpr ::foundation::algebra::transition::seal axiom_seal{
-    .kind = ^^::foundation::algebra::transition::subsort_axiom, .count = 5};
+    .kind = ^^::foundation::algebra::transition::subsort_axiom, .count = 6};
 
 }  // namespace payload_axioms
 

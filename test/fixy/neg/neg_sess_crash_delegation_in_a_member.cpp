@@ -3,6 +3,7 @@
 // refuses a delegated endpoint sent alone.
 
 #include <fixy/session/CrashTransport.h>
+#include <fixy/session/Delegate.h>
 
 namespace s = fixy::session;
 namespace fp = foundation::permissions;
@@ -13,7 +14,7 @@ struct Bob {};
 struct Wire {};
 struct Envelope {
     int sequence = 0;
-    s::DelegatedSession<s::Recv<int, s::End>, fp::EmptyPermSet> inner;
+    s::DelegatedSession<s::Recv<int, s::End>, Wire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet> inner;
 };
 }  // namespace
 

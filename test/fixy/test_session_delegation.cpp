@@ -1,0 +1,152 @@
+// Delegation: a message that carries a live endpoint of a different
+// session.
+//
+// The test hands an endpoint of an inner session over an outer test
+// channel.  The recipient accepts it and walks the inner session to End,
+// and End releases the one watch record that the inner session had from
+// its mint.  It also checks the payload order, the refusal of a protocol
+// that sends an endpoint to a peer of its own session, and that no code
+// builds a DelegatedSession other than the mint.
+
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <fixy/session/Delegate.h>
+#include <fixy/session/Projection.h>
+
+#include <atomic>
+#include <cstdio>
+#include <optional>
+#include <type_traits>
+#include <utility>
+
+namespace test_session_delegation_types {
+
+namespace s = ::fixy::session;
+namespace fp = ::foundation::permissions;
+
+struct Ping {
+    int value = 0;
+};
+
+// The inner session: one Ping and End, over a Wire that records it.
+struct Wire {
+    int sent = 0;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+using Inner = s::Send<Ping, s::End>;
+using Carried = s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
+
+// The outer channel carries one DelegatedSession, in a slot that the test
+// fills and empties on one thread.
+struct Slot : ::foundation::Pinned<Slot> {
+    std::optional<Carried> held;
+};
+struct SenderEnd {
+    Slot* slot = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+struct RecipientEnd {
+    Slot* slot = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+using Outer = s::Send<Carried, s::End>;
+
+// ── The payload order ────────────────────────────────────────────────
+//
+// The recipient runs code of the protocol that its type names.  Code
+// that sends a positive int takes over an endpoint that must send an int,
+// so an endpoint at Send<int> stands where one at Send<positive int> is
+// expected, and not the reverse.
+using SendsAny = s::Send<int, s::End>;
+using SendsPositive = s::Send<::fixy::Refined<::fixy::positive, int>, s::End>;
+template <typename P>
+using At = s::DelegatedSession<P, Wire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
+static_assert(s::is_subtype_sync_v<SendsPositive, SendsAny>);
+static_assert(s::is_payload_subsort_v<At<SendsAny>, At<SendsPositive>>,
+              "a delegated endpoint is contravariant in its protocol");
+static_assert(!s::is_payload_subsort_v<At<SendsPositive>, At<SendsAny>>,
+              "a delegated endpoint is not covariant in its protocol");
+static_assert(s::is_subtype_sync_v<s::Send<At<SendsAny>, s::End>, s::Send<At<SendsPositive>, s::End>>);
+static_assert(!s::is_subtype_sync_v<s::Send<At<SendsPositive>, s::End>, s::Send<At<SendsAny>, s::End>>);
+struct OtherWire {};
+static_assert(!s::is_payload_subsort_v<At<SendsAny>,
+                                       s::DelegatedSession<SendsPositive, OtherWire, s::DefaultAbandonmentPolicy,
+                                                           fp::EmptyPermSet>>,
+              "a different Resource is a different endpoint");
+
+// ── A send to a peer of the delegated session ────────────────────────
+struct Bob {};
+struct Carol {};
+struct Hand {};
+struct Ask {};
+using TalksToBob = s::Send<s::PeerMsg<Bob, Ask, int>, s::End>;
+using HandsToBob = s::Send<s::PeerMsg<Bob, Hand, At<TalksToBob>>, s::End>;
+using HandsToCarol = s::Send<s::PeerMsg<Carol, Hand, At<TalksToBob>>, s::End>;
+static_assert(s::delegates_to_own_peer_v<HandsToBob>, "Bob would hold both ends of the inner session");
+static_assert(!s::delegates_to_own_peer_v<HandsToCarol>);
+static_assert(!s::WellFormedRunnableProtocol<HandsToBob> && s::WellFormedRunnableProtocol<HandsToCarol>);
+// The Sender note of an inner Offer names a peer too.
+using HearsFromCarol = s::Offer<s::Sender<Carol>, s::Recv<s::PeerMsg<Carol, Ask, int>, s::End>>;
+static_assert(s::delegates_to_own_peer_v<s::Send<s::PeerMsg<Carol, Hand, At<HearsFromCarol>>, s::End>>);
+// A receive names the sender, not the recipient, so it is no hand-off to
+// a peer of the inner session.
+static_assert(!s::delegates_to_own_peer_v<s::Recv<s::PeerMsg<Bob, Hand, At<TalksToBob>>, s::End>>);
+// A plain protocol delegates nothing.
+static_assert(!s::delegates_to_own_peer_v<Outer> && !s::delegates_to_own_peer_v<TalksToBob>);
+
+// ── No code builds a DelegatedSession but the mint ───────────────────
+static_assert(!std::is_copy_constructible_v<Carried> && std::is_move_constructible_v<Carried>);
+static_assert(!std::is_copy_assignable_v<Carried>);
+static_assert(!std::is_trivially_copyable_v<Carried> && !std::is_implicit_lifetime_v<Carried>);
+static_assert(s::DelegatableHandle<decltype(s::mint_session_handle<Inner, Wire>(Wire{}))>);
+static_assert(!s::DelegatableHandle<int>);
+static_assert(s::payload_conveys_delegation_v<Carried>);
+
+[[nodiscard]] static int fail(const char* what) {
+    std::fprintf(stderr, "test_session_delegation: %s\n", what);
+    return 1;
+}
+
+// The sender delegates the inner endpoint over the outer channel.  The
+// recipient accepts it, sends the Ping, and closes it.
+[[nodiscard]] static int delegate_over_a_channel() {
+    const std::uint32_t live_before = s::watch::live_count();
+    Slot slot{};
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto [sender, recipient] = s::mint_test_channel<Outer>(ctx, SenderEnd{&slot}, RecipientEnd{&slot});
+
+    auto inner = s::mint_session_handle<Inner, Wire>(Wire{});
+    Carried carried = s::mint_delegated_session(std::move(inner));
+    if (!carried.holds_endpoint()) return fail("the payload does not hold the endpoint");
+
+    auto sender_done = std::move(sender).send(std::move(carried), [](SenderEnd& end, Carried& value) noexcept {
+        if (end.slot->held.has_value()) return false;
+        end.slot->held.emplace(std::move(value));
+        return true;
+    });
+    auto [received, recipient_done] = std::move(recipient).recv([](RecipientEnd& end) noexcept -> std::optional<Carried> {
+        if (!end.slot->held.has_value()) return std::nullopt;
+        std::optional<Carried> taken{std::move(*end.slot->held)};
+        end.slot->held.reset();
+        return taken;
+    });
+    static_cast<void>(std::move(sender_done).close());
+    static_cast<void>(std::move(recipient_done).close());
+
+    auto accepted = std::move(received).accept();
+    auto at_end = std::move(accepted).send(Ping{5}, [](Wire& wire, Ping& ping) noexcept {
+        wire.sent = ping.value;
+        return true;
+    });
+    const Wire back = std::move(at_end).close();
+    if (back.sent != 5) return fail("the accepted handle did not step the delegated Resource");
+    if (s::watch::live_count() != live_before) return fail("a session record stayed live after every End");
+    return 0;
+}
+
+}  // namespace test_session_delegation_types
+
+int main() {
+    if (const int rc = test_session_delegation_types::delegate_over_a_channel(); rc != 0) return rc;
+    return 0;
+}

@@ -128,7 +128,9 @@ using BareCrashRecv = sn::Recv<sn::Crash<RoleQ>, sn::End>;
 using PureCrashOffer = sn::Offer<BareCrashRecv>;
 using CrashFirstOffer = sn::Offer<BareCrashRecv, BareRecv>;
 using SendsCrash = sn::Send<sn::Crash<RoleQ>, sn::End>;
-using Delegates = sn::Send<sn::DelegatedSession<BareRecv, fp::EmptyPermSet>, sn::End>;
+struct DelegatedWire {};
+using DelegatedRecv = sn::DelegatedSession<BareRecv, DelegatedWire, sn::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
+using Delegates = sn::Send<DelegatedRecv, sn::End>;
 using NotedGuardedSelect = sn::Select<sn::Sender<RoleP>, sn::Send<int, CrashGuarded>>;
 using UnwatchedRelay = sn::Select<sn::Sender<RoleP>, sn::Send<int, sn::Offer<sn::Sender<RoleR>, BareRecv,
                                                                               sn::Recv<sn::Crash<RoleR>, sn::End>>>>;
@@ -952,7 +954,7 @@ struct foundation::contracts::armed_cell<rec::is_crash_send_shape> {
 // A delegated session is a hand-off, and every other payload is a message.
 template <>
 struct foundation::contracts::armed_cell<rec::is_delegation_shape> {
-    using accepts = witnesses<w::sn::DelegatedSession<w::BareRecv, fp::EmptyPermSet>>;
+    using accepts = witnesses<w::DelegatedRecv>;
     using refuses = witnesses<int, w::BareRecv>;
 };
 

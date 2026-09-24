@@ -18,6 +18,7 @@
 
 #include <fixy/session/Checkpoint.h>
 #include <fixy/session/CrashTransport.h>
+#include <fixy/session/Delegate.h>
 #include <fixy/session/EventLog.h>
 #include <fixy/session/Recording.h>
 
@@ -61,7 +62,8 @@ struct X {
 // watches.  The coverage walk does not look inside a payload, so before
 // the delegation rule this protocol was admitted, and a crash of the
 // delegated peer left the holder waiting.
-using Delegated = s::DelegatedSession<s::Recv<int, s::End>, fp::EmptyPermSet>;
+struct DelegatedWire {};
+using Delegated = s::DelegatedSession<s::Recv<int, s::End>, DelegatedWire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
 using ReceivesDelegation = s::Offer<s::Recv<Delegated, s::End>, s::Recv<s::Crash<P>, s::End>>;
 static_assert(!s::CrashSessionAdmissible<ReceivesDelegation, Q, P, s::NoReliableRoles>);
 struct HidesDelegation {

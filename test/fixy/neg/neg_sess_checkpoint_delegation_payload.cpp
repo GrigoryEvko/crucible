@@ -3,6 +3,7 @@
 // cannot recall it, so the mint refuses the payload.
 
 #include <fixy/session/Checkpoint.h>
+#include <fixy/session/Delegate.h>
 
 namespace s = fixy::session;
 namespace fp = foundation::permissions;
@@ -11,7 +12,7 @@ namespace {
 struct Wire {};
 }  // namespace
 
-using Inner = s::DelegatedSession<s::Recv<int, s::End>, fp::EmptyPermSet>;
+using Inner = s::DelegatedSession<s::Recv<int, s::End>, Wire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
 using Decide = s::Select<s::Commit<s::Send<Inner, s::End>>, s::Roll>;
 using Follow = s::Offer<s::Commit<s::Recv<Inner, s::End>>, s::Roll>;
 

@@ -1314,6 +1314,35 @@ fixy_neg_compile_test(neg_sess_transferred_endpoint_forged
   "is private within this context"
   "detail::transferred_endpoint<Resource>::transferred_endpoint.Resource, fixy::session::watch::session_ref.")
 
+# Delegate.h: a message that carries a live endpoint.  The test hands an
+# endpoint over a channel and checks the contravariant payload order and
+# the refusal of a hand-off to a peer of the inner session.  Two fixtures
+# for each refusal: no code but the mint builds a DelegatedSession, no
+# protocol hands an endpoint to a peer of its session, and no handle
+# inside a Loop or under a brand delegates.
+fixy_test(test_session_delegation)
+fixy_neg_compile_test(neg_sess_delegated_session_forged
+  "is private within this context"
+  "DelegatedSession<InnerProto, Resource, Policy, InnerPS>::DelegatedSession.endpoint_type&&. .with InnerProto = fixy::session::Send<int, fixy::session::End>. Resource = neg_sess_delegated_session_forged_types::Wire")
+fixy_neg_compile_test(neg_sess_delegated_session_forged_by_bit_cast
+  "no matching function for call to .bit_cast<neg_sess_delegated_session_forged_by_bit_cast_types::Carried>"
+  "is_trivially_copyable_v<_To>")
+fixy_neg_compile_test(neg_sess_delegated_session_forged_by_start_lifetime_as
+  "static assertion failed"
+  "neg_sess_delegated_session_forged_by_start_lifetime_as_types::Wire, fixy::session::check::detail::tracked_policy<fixy::session::AbandonAction::Abort>, foundation::permissions::PermSet<> >. is not an implicit-lifetime type")
+fixy_neg_compile_test(neg_sess_delegation_to_own_peer_send
+  "the expression .!.delegates_to_own_peer_v<Proto>. .with Proto = fixy::session::Send<fixy::session::PeerMsg<neg_sess_delegation_to_own_peer_send_types::Bob, neg_sess_delegation_to_own_peer_send_types::Hand,"
+  "evaluated to .false.")
+fixy_neg_compile_test(neg_sess_delegation_to_own_peer_in_select
+  "the expression .!.delegates_to_own_peer_v<Proto>. .with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<neg_sess_delegation_to_own_peer_in_select_types::Carol, neg_sess_delegation_to_own_peer_in_select_types::Keep, int>"
+  "evaluated to .false.")
+fixy_neg_compile_test(neg_sess_delegation_handle_in_loop
+  "the expression .fixy::session::detail::is_delegatable_handle<H>::value .with H = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>,"
+  "evaluated to .false.")
+fixy_neg_compile_test(neg_sess_delegation_branded_handle
+  "the expression .fixy::session::detail::is_delegatable_handle<H>::value .with H = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_delegation_branded_handle_types::Wire, fixy::session::detail::session_brand<neg_sess_delegation_branded_handle_types::Body, void>,"
+  "evaluated to .false.")
+
 # A channel whose two endpoints are not duals has no deadlock-freedom
 # guarantee.  Both operands here are individually well-formed, so the
 # refusal can only come from the duality clause.
