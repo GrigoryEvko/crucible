@@ -728,12 +728,13 @@ add_test(NAME permission_storage
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh)
 set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
   LABELS "ci_guard")
-# The reinterpret_cast ban (CLAUDE.md §III) and the std::vector::reserve
-# ban (CLAUDE.md §IV), read from the parse tree of the pinned kit.  Each
-# ban has a content-keyed allowlist: scripts/no-reinterpret-allowlist.txt
-# and scripts/no-reserve-allowlist.txt.  The self-test plants each shape
-# that a line regex misses or misreads.  Exit 3 when the kit is absent
-# reports a skip.
+# The reinterpret_cast ban (CLAUDE.md §III), the std::vector::reserve ban
+# (CLAUDE.md §IV) and the file-stream ban of the fixy-only band-3
+# directories, read from the parse tree of the pinned kit.  Each ban has a
+# content-keyed allowlist: scripts/no-reinterpret-allowlist.txt,
+# scripts/no-reserve-allowlist.txt and scripts/no-file-stream-allowlist.txt.
+# The self-test plants each shape that a line regex misses or misreads.
+# Exit 3 when the kit is absent reports a skip.
 add_test(NAME banned_calls_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-banned-calls.py
           --self-test)
@@ -742,22 +743,6 @@ add_test(NAME banned_calls
 set_tests_properties(banned_calls banned_calls_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# FIXY-V-237 raw C++ file-stream ban in band-3 dirs (Agent 9 Phase F6).
-# scripts/check-no-raw-ofstream.sh flags any std::[basic_][oi]?fstream
-# use or `#include <fstream>` in the eight fixy-only band-3 subsystems
-# (cntp, canopy, cog, topology, forge, mimic, observe, warden); all
-# filesystem touches there route through fixy::mint_file /
-# safety::OwnedFile / safety::FileHandle.  Ships green with an empty
-# allowlist (band-3 had zero raw file streams at FIXY-V-237).  Self-test
-# plants a violation, allowlist entry, inline-suppressed use, commented
-# use, and a stale allowlist entry to verify every axis works.
-add_test(NAME no_raw_ofstream_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-ofstream.sh
-          --self-test)
-add_test(NAME no_raw_ofstream
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-ofstream.sh)
-set_tests_properties(no_raw_ofstream no_raw_ofstream_self_test PROPERTIES
-    LABELS "ci_guard")
 # The hardware-axis presence gate.  scripts/check-fixy-hw-discipline.sh
 # asserts that the four sites (SwissTable swiss_hw / Fec fec_hw / TraceRing
 # tracering_hw / ChaseLevDeque chaselev_hw) each keep their

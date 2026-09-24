@@ -170,15 +170,10 @@ jobs:
           bash scripts/check-permission-storage.sh --self-test
           bash scripts/check-permission-storage.sh
 
-      - name: no reinterpret_cast, no vector::reserve (self-test + scan)
+      - name: no reinterpret_cast, no vector::reserve, no band-3 file stream (self-test + scan)
         run: |
           python3 scripts/check-banned-calls.py --self-test
           python3 scripts/check-banned-calls.py
-
-      - name: no raw fstream (self-test + scan)
-        run: |
-          bash scripts/check-no-raw-ofstream.sh --self-test
-          bash scripts/check-no-raw-ofstream.sh
 
       - name: fixy hardware discipline (self-test + scan)
         run: |

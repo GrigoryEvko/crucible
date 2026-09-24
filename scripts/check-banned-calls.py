@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""check-banned-calls — the reinterpret_cast ban and the vector reserve ban, read from the AST.
+"""check-banned-calls — the reinterpret_cast, vector reserve and file-stream bans, read from the AST.
 
 CLAUDE.md §III bans `reinterpret_cast`, and CLAUDE.md §IV bans
-`std::vector::reserve`.  This guard finds each use in the parse tree of the
-pinned tree-sitter kit (scripts/tsast.py), so a comment, a string literal or
-a raw string cannot hold a false hit.  A call that spans lines, a call with a
-space before its `<` or `(`, and a qualified member call are still found.
+`std::vector::reserve`.  The fixy-only band-3 directories ban the C++ file
+streams.  This guard finds each use in the parse tree of the pinned
+tree-sitter kit (scripts/tsast.py), so a comment, a string literal or a raw
+string cannot hold a false hit.  A use that spans lines, a use with a space
+before its `<` or `(`, and a qualified member call are still found.
 
-THE TWO BANS
+THE THREE BANS
     reinterpret_cast   every identifier token spelled `reinterpret_cast`,
                        because the word is a keyword and has no other use.
                        Roots: include/ and vessel/.
@@ -15,6 +16,16 @@ THE TWO BANS
                        `reserve`: `v.reserve(n)`, `p->reserve(n)`,
                        `v.Base::reserve(n)` and `v.template reserve<T>(n)`.
                        Roots: include/ and bench/.
+    file stream        every name of a C++ file stream or file buffer
+                       (ofstream, ifstream, fstream, filebuf, their wide and
+                       basic_ spellings), with or without `std::`, and every
+                       `#include <fstream>`.  A file there goes through
+                       fixy::mint_file, safety::OwnedFile or
+                       safety::FileHandle.  Roots: each include/crucible
+                       directory that CMakeLists.txt registers with
+                       crucible_register_fixy_only_directory, and its src/
+                       twin.  A registry that names no such directory fails
+                       the guard, because the ban would then read nothing.
     A path with a component named test, examples, third_party, external or
     vendor, or a component that starts with build, is out of scope.  The
     reinterpret_cast ban also skips bench/.
@@ -31,6 +42,7 @@ EXEMPTIONS
     A comment on the line of the banned token that says
     `NO-REINTERPRET-OK: <reason>` or `NO-RESERVE-OK: <reason>` exempts that
     line.  The reason must not be empty.
+    `NO-FILE-STREAM-OK: <reason>` exempts a file-stream line the same way.
     An entry `path:text` in the ban's allowlist exempts the site whose line,
     trimmed, equals `text`.  The key is the content of the line, not its
     number, so an edit above the site does not move it.  An entry that
@@ -59,6 +71,13 @@ import tsast  # noqa: E402
 
 SUFFIXES = (".h", ".hpp", ".cpp", ".cc")
 EXCLUDED_COMPONENTS = frozenset({"test", "examples", "third_party", "external", "vendor"})
+FILE_STREAMS = frozenset({
+    "ofstream", "ifstream", "fstream", "filebuf",
+    "wofstream", "wifstream", "wfstream", "wfilebuf",
+    "basic_ofstream", "basic_ifstream", "basic_fstream", "basic_filebuf",
+})
+# A call of the CMake function that registers one fixy-only directory.
+FIXY_ONLY_DIRECTORY = re.compile(r"^[ \t]*crucible_register_fixy_only_directory\([ \t]*([^)\s]+)[ \t]*\)", re.M)
 
 
 @dataclass(frozen=True)
@@ -75,7 +94,7 @@ class Ban:
     """One banned construct, where it is banned, and how it is exempted."""
 
     name: str
-    roots: tuple[str, ...]
+    roots: Callable[[Path], tuple[str, ...]]
     extra_excluded: frozenset[str]
     marker: str
     allowlist: str
@@ -140,10 +159,46 @@ def _reserve_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
             yield name
 
 
+def _file_stream_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
+    """Yield each name of a file stream and each include of <fstream>.
+
+    The name counts with or without a `std::` qualifier, so a
+    using-directive or a namespace alias does not hide it.
+
+    Args:
+        tree: One parsed file
+
+    Yields:
+        The name node or the include node of each use
+    """
+    for node in tree.find("identifier", "type_identifier"):
+        if node.text in FILE_STREAMS:
+            yield node
+    for node in tree.find("preproc_include"):
+        target = node.child_by_field("path")
+        if target is not None and target.text == "<fstream>":
+            yield node
+
+
+def _band3_roots(root: Path) -> tuple[str, ...]:
+    """Return each fixy-only include/crucible directory that CMakeLists.txt registers, and its src/ twin.
+
+    Args:
+        root: The scan root
+
+    Returns:
+        The repo-relative directories, or () when the registry names none
+    """
+    cmake = root / "CMakeLists.txt"
+    listed = FIXY_ONLY_DIRECTORY.findall(cmake.read_text(encoding="utf-8")) if cmake.is_file() else []
+    subsystems = [Path(rel).name for rel in listed if Path(rel).parent == Path("include/crucible")]
+    return tuple(f"{top}/{name}" for name in subsystems for top in ("include/crucible", "src"))
+
+
 BANS = (
     Ban(
         name="reinterpret_cast",
-        roots=("include", "vessel"),
+        roots=lambda root: ("include", "vessel"),
         extra_excluded=frozenset({"bench"}),
         marker="NO-REINTERPRET-OK",
         allowlist="scripts/no-reinterpret-allowlist.txt",
@@ -153,7 +208,7 @@ BANS = (
     ),
     Ban(
         name="reserve",
-        roots=("include", "bench"),
+        roots=lambda root: ("include", "bench"),
         extra_excluded=frozenset(),
         marker="NO-RESERVE-OK",
         allowlist="scripts/no-reserve-allowlist.txt",
@@ -161,6 +216,17 @@ BANS = (
              "a sized constructor, or arena storage",
         token=re.compile(r"(?:\.|->)\s*reserve\s*\("),
         node_hits=_reserve_nodes,
+    ),
+    Ban(
+        name="file stream",
+        roots=_band3_roots,
+        extra_excluded=frozenset(),
+        marker="NO-FILE-STREAM-OK",
+        allowlist="scripts/no-file-stream-allowlist.txt",
+        rule="a C++ file stream is banned in a fixy-only band-3 directory. Use fixy::mint_file, "
+             "safety::OwnedFile or safety::FileHandle",
+        token=re.compile(r"\b(?:basic_)?w?(?:[oi]?fstream|filebuf)\b"),
+        node_hits=_file_stream_nodes,
     ),
 )
 
@@ -188,37 +254,39 @@ def _row_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset)
 
 
-def in_scope(rel: Path, ban: Ban) -> bool:
+def in_scope(rel: Path, ban: Ban, roots: tuple[str, ...]) -> bool:
     """Return True when a repo-relative path is inside the ban's scope.
 
     Args:
         rel: The path relative to the scan root
         ban: The ban
+        roots: The root directories of the ban, relative to the scan root
 
     Returns:
         Whether the ban reads the file
     """
-    if rel.suffix not in SUFFIXES or not rel.parts or rel.parts[0] not in ban.roots:
+    if rel.suffix not in SUFFIXES or not any(rel.is_relative_to(top) for top in roots):
         return False
     excluded = EXCLUDED_COMPONENTS | ban.extra_excluded
     return not any(part in excluded or part.startswith("build") for part in rel.parts[:-1])
 
 
-def scope_files(root: Path, ban: Ban) -> list[Path]:
-    """Return every file the ban reads under a scan root, sorted.
+def scope_files(root: Path, ban: Ban, roots: tuple[str, ...]) -> list[Path]:
+    """Return every file the ban reads under a scan root, sorted and without duplicates.
 
     Args:
         root: The scan root
         ban: The ban
+        roots: The root directories of the ban, relative to the scan root
 
     Returns:
         Absolute paths, in sorted order
     """
-    found: list[Path] = []
-    for top in ban.roots:
+    found: set[Path] = set()
+    for top in roots:
         base = root / top
         if base.is_dir():
-            found.extend(p for p in base.rglob("*") if p.is_file() and in_scope(p.relative_to(root), ban))
+            found.update(p for p in base.rglob("*") if p.is_file() and in_scope(p.relative_to(root), ban, roots))
     return sorted(found)
 
 
@@ -252,7 +320,12 @@ def scan(root: Path, ban: Ban) -> tuple[list[Hit], list[str]]:
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
     """
-    files = scope_files(root, ban)
+    roots = ban.roots(root)
+    if not roots:
+        return [], [f"the {ban.name} ban has no root directory, so it reads nothing. For the file-stream ban, "
+                    f"CMakeLists.txt must register the band-3 directories with "
+                    f"crucible_register_fixy_only_directory"]
+    files = scope_files(root, ban, roots)
     hits: list[Hit] = []
     failures: list[str] = []
     for tree in tsast.parse(files, strict=False):
@@ -407,10 +480,36 @@ def self_test() -> int:
         'inline const char* text = "v.reserve(19);";\n'
         "inline void reserved_name(V& v) { v.reserved_slots(20); }\n"
     )
-    cast_ban, reserve_ban = BANS
+    stream_fixture = (
+        "#pragma once\n"
+        "#include <fstream>\n"
+        "#include <iostream>\n"
+        "#define STREAM_IN_MACRO(p) std::ofstream macro_stream{p}\n"
+        "inline void plain() { std::ofstream plain_out{\"x\"}; }\n"
+        "inline void spaced() { std :: ifstream spaced_in{\"x\"}; }\n"
+        "using namespace std;\n"
+        "inline void bare() { fstream bare_io{\"x\"}; }\n"
+        "namespace s = std;\n"
+        "inline void aliased() { s::basic_ofstream<char> aliased_out{\"x\"}; }\n"
+        "inline void wide() { std::wofstream wide_out{L\"x\"}; }\n"
+        "inline void buffer() { std::filebuf buffer_io; }\n"
+        "inline void marked() { std::ofstream marked_out{\"x\"}; }  // NO-FILE-STREAM-OK: fixture\n"
+        "// std::ofstream in_comment{\"x\"};\n"
+        "inline const char* text = \"std::ofstream in_string\";\n"
+        "inline void other_name() { std::ofstreams_are_not_this plural; }\n"
+    )
+    cast_ban, reserve_ban, stream_ban = BANS
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         for rel, text in (
+            ("CMakeLists.txt", "crucible_register_fixy_only_directory(examples/fn)\n"
+                               "# crucible_register_fixy_only_directory(include/crucible/commented)\n"
+                               "crucible_register_fixy_only_directory(include/crucible/cntp)\n"),
+            ("include/crucible/cntp/Streams.h", stream_fixture),
+            ("src/cntp/streams.cpp", "void g() { std::ifstream src_twin{\"x\"}; }\n"),
+            ("include/crucible/cntp/test/planted.h", "void g() { std::ifstream band_test_dir{\"x\"}; }\n"),
+            ("include/crucible/commented/Streams.h", "void g() { std::ifstream commented_dir{\"x\"}; }\n"),
+            ("include/crucible/planted/Streams.h", "void g() { std::ifstream not_band3{\"x\"}; }\n"),
             ("include/crucible/planted/Casts.h", cast_fixture),
             ("include/crucible/planted/Reserve.h", reserve_fixture),
             ("vessel/planted.cpp", "int* f(void* p) { return reinterpret_cast<int*>(p); }\n"),
@@ -459,6 +558,30 @@ def self_test() -> int:
                               ("a longer member name", "reserved_slots")):
             expect(f"reserve: {label} is not caught", not any(needle in key for key in reserves), True)
 
+        streams = keys(root, stream_ban)
+        for label, needle in (("an include of <fstream>", "#include <fstream>"),
+                              ("a use in a macro body", "STREAM_IN_MACRO"), ("a plain use", "plain_out"),
+                              ("a use with spaces around ::", "spaced_in"),
+                              ("a use through a using-directive", "bare_io"),
+                              ("a basic_ use through a namespace alias", "aliased_out"),
+                              ("a wide stream", "wide_out"), ("a file buffer", "buffer_io"),
+                              ("a use in the src/ twin of a band-3 directory", "src_twin")):
+            expect(f"file stream: {label} is caught", any(needle in key for key in streams))
+        for label, needle in (("another standard header", "<iostream>"), ("a marked use", "marked_out"),
+                              ("a use in a comment", "in_comment"), ("a use in a string literal", "in_string"),
+                              ("a longer name", "plural"), ("a use under a test/ directory", "band_test_dir"),
+                              ("a directory that only a CMake comment registers", "commented_dir"),
+                              ("a directory that is not band-3", "not_band3")):
+            expect(f"file stream: {label} is not caught", not any(needle in key for key in streams), True)
+        registry = (root / "CMakeLists.txt").read_text(encoding="utf-8")
+        (root / "CMakeLists.txt").write_text("crucible_register_fixy_only_directory(examples/fn)\n",
+                                             encoding="utf-8")
+        unregistered_hits, unregistered_failures = scan(root, stream_ban)
+        expect("a registry with no band-3 directory fails the ban",
+               not unregistered_hits
+               and any("has no root directory" in failure for failure in unregistered_failures), True)
+        (root / "CMakeLists.txt").write_text(registry, encoding="utf-8")
+
         expect("the full check reports violations", check(root) == 1)
 
         def captured(cwd: Path) -> tuple[int, str]:
@@ -480,6 +603,8 @@ def self_test() -> int:
         (root / "bench/planted.cpp").unlink()
         (root / "include/crucible/planted/Casts.h").unlink()
         (root / "vessel/planted.cpp").unlink()
+        (root / "include/crucible/cntp/Streams.h").unlink()
+        (root / "src/cntp/streams.cpp").unlink()
         (root / "scripts/no-reinterpret-allowlist.txt").write_text("", encoding="utf-8")
         allow.write_text("\n".join(live_keys) + "\n", encoding="utf-8")
         shifted = root / "include/crucible/planted/Reserve.h"
