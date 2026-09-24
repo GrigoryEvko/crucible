@@ -928,6 +928,9 @@ fixy_neg_compile_test(neg_secret_three_way_value
 fixy_test(test_stale)
 fixy_test(test_versioned_budgeted)
 fixy_test(test_versioned_budgeted_attacks)
+# Legal C++ that tries to make a payload claim a version no source vouched
+# for.  An attack that still succeeds is a row of the shrink-only ledger.
+fixy_test(test_version_attacks)
 fixy_test(test_owned_region_fixy test_owned_region.cpp)
 fixy_test(test_borrowed)
 fixy_test(test_scoped_view)
