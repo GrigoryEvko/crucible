@@ -115,13 +115,28 @@ public:
     }
 
 private:
+    // The writer takes the sequence lock by a compare-exchange from an even
+    // value.  Two advancers that each read the sequence and stored its
+    // successor could leave it odd forever, which spins every reader, or lose
+    // one advance, which keeps a stale claim live.  With the exchange, a
+    // second advancer waits until the first one closes the lock.
     void advance_(std::atomic<std::uint64_t>& counter) noexcept {
-        const std::uint64_t sequence = sequence_.load(std::memory_order_acquire);
+        std::uint64_t sequence = sequence_.load(std::memory_order_acquire);
+        for (;;) {
+            if ((sequence & 1U) != 0U) {
+                CRUCIBLE_SPIN_PAUSE;
+                sequence = sequence_.load(std::memory_order_acquire);
+                continue;
+            }
+            if (sequence_.compare_exchange_weak(sequence, sequence + 1, std::memory_order_acq_rel,
+                                                std::memory_order_acquire)) {
+                break;
+            }
+        }
         const std::uint64_t value = counter.load(std::memory_order_acquire);
         if (value == UINT64_MAX) [[unlikely]] {
             detail::session_epoch::refuse("a session epoch counter would wrap");
         }
-        sequence_.store(sequence + 1, std::memory_order_release);
         counter.store(value + 1, std::memory_order_release);
         sequence_.store(sequence + 2, std::memory_order_release);
     }

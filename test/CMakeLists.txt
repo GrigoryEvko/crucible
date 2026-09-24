@@ -13429,6 +13429,8 @@ crucible_neg_compile_session_test(neg_endpoint_gate_sharded_calendar_consumer_bg
 # or orphaned claim and a second live source end the process.  The two
 # fixtures prove the wrapper cannot come from bytes.
 crucible_test(test_session_epoch_source)
+# Two advancers at once must not lose an advance or leave the sequence odd.
+crucible_test(test_session_epoch_attacks)
 crucible_neg_compile_effects_test(neg_effects_epoch_ctx_over_fg_forged_by_bit_cast
     "no matching function for call to .bit_cast"
     "is_trivially_copyable|__is_trivially_copyable")
