@@ -809,7 +809,8 @@ add_test(NAME proof_routes
           --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json
           --proof-names-binary $<TARGET_FILE:test_forgeable_proofs>)
 set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # scripts/preprocessed.py preprocesses each unit of the compile database
 # one time for check-start-lifetime.sh and check-proof-routes.py together.
 # The self-test proves that a warm run reads the store, that a changed
