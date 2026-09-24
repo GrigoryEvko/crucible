@@ -84,6 +84,8 @@ template <typename Ctx>
 template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
 void permission_fork_spawn_(Ctx const& ctx, Children&& children, Callables&& callables,
                             std::index_sequence<Is...>) noexcept {
+    static_assert(::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>,
+                  "detail::permission_fork_spawn_ starts threads, so its context must own the background effect.");
     // A jthread constructor is not noexcept, because the thread creation
     // under it can fail on resource exhaustion.  Without the catch, that
     // failure reaches this function's noexcept boundary and terminates
@@ -126,6 +128,10 @@ void permission_fork_inline_(Ctx const& ctx, Children&& children, Callables&& ca
 template <typename... Children, typename Ctx, typename Parent, typename... Callables>
 [[nodiscard]] Permission<Parent> permission_fork_(Ctx const& ctx, Permission<Parent>&& parent,
                                                   Callables&&... callables) noexcept {
+    static_assert(CtxFitsPermissionFork<Ctx, Parent, Children...>
+                      && permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>,
+                  "detail::permission_fork_ is the body of mint_permission_fork, so a direct call must meet the "
+                  "mint's gate.");
     auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
 
     auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};

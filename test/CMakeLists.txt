@@ -12499,6 +12499,13 @@ crucible_neg_compile_test(neg_permission_fork_ctx_no_bg
     "CtxFitsPermissionFork|row_contains|constraints not satisfied")
 crucible_neg_compile_test(neg_permission_fork_child_ctx_mismatch
     "permission_fork_ctx_callables|constraints not satisfied|no matching function")
+# The body of the fork and its spawn helper are named in a detail
+# namespace that any translation unit reaches, so each asserts the gate
+# of the mint it serves.
+crucible_neg_compile_test(neg_permission_fork_detail_body_needs_the_gate
+    "static assertion failed: detail::permission_fork_ is the body of mint_permission_fork")
+crucible_neg_compile_test(neg_permission_fork_detail_spawn_needs_bg
+    "static assertion failed: detail::permission_fork_spawn_ starts threads")
 # fix-07 — split/fork child tags must be pairwise distinct (aliasing →
 # data race the type system claims impossible).  Two distinct rejection
 # classes: binary split<A,A> and fork<A,A>.
