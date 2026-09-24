@@ -14,8 +14,11 @@
 //   (A4) the queues hold what G has en route: under End or a Rec every
 //        queue is empty; under p → q† and under a crash pseudo-message the
 //        queue from p to a live q is empty; under p† ⇝ q : j, with m_j no
-//        crash, the queue from p to q starts with m_j.  Each branch must
-//        match the queues, the head m_j taken away.
+//        crash, the queue from p to q starts with m_j.  Each branch of a
+//        transmission must match the queues.  Under an en-route node the
+//        chosen branch must match them, the head m_j taken away.  The paper
+//        asks every branch there, and the other branches can never run
+//        (fixy/session/Global.h, on the chosen branch).
 //
 // A queue is the outgoing queue of its sender (fixy/session/Projection.h),
 // so ∆(p, q) is the messages in the queue of p whose receiver is q.  The
@@ -221,11 +224,11 @@ template <typename Ctx, typename C, typename From, typename To, typename Chosen,
           typename... Cs>
 struct queue_walk<Ctx, C, g::EnRouteChoice<From, To, Chosen, g::Branch<Ls, Ps, Cs>...>> {
     using sender = g::detail::bare_role_t<From>;
+    using chosen = typename g::detail::continuation_of<Chosen, g::Branch<Ls, Ps, Cs>...>::type;
     static consteval bool compute() noexcept {
         if constexpr (g::detail::is_crash_label_v<Chosen>) {
             // (iii): the pseudo-message is in no queue.
-            return (g::role_in_v<To, C> || no_message_v<Ctx, sender, To>)
-                   && (queue_walk<Ctx, C, Cs>::is_matched && ...);
+            return (g::role_in_v<To, C> || no_message_v<Ctx, sender, To>) && queue_walk<Ctx, C, chosen>::is_matched;
         } else {
             // (iv): the message leads the queue from the sender to To.
             using head = typename ::fixy::session::config::detail::message_from<Ctx, To, sender>::type;
@@ -234,7 +237,7 @@ struct queue_walk<Ctx, C, g::EnRouteChoice<From, To, Chosen, g::Branch<Ls, Ps, C
                 return false;
             } else {
                 using rest = typename take_message<Ctx, sender, To>::type;
-                return (queue_walk<rest, C, Cs>::is_matched && ...);
+                return queue_walk<rest, C, chosen>::is_matched;
             }
         }
     }

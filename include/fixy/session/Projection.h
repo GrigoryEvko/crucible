@@ -103,9 +103,10 @@
 // fixy/session/CrashAssociation.h checks those roles on their own.  An
 // en-route node keeps every branch of its transmission, so the receiver
 // projects as the receiver of the transmission: the whole choice, with
-// its crash branch.  A node with one branch from an unreliable sender has
-// no crash branch to give the receiver, and crash-stop projection refuses
-// its receiver.
+// its crash branch.  Every other role projects the chosen branch alone,
+// the only branch that can still run.  A node with one branch from an
+// unreliable sender has no crash branch to give the receiver, and
+// crash-stop projection refuses its receiver.
 
 #include <fixy/session/Crash.h>
 #include <fixy/session/Global.h>
@@ -650,50 +651,46 @@ consteval auto proj_comm(BL<Br<Ls, Ps, Cs>...>) {
 }
 
 // The projection of an en-route node p ⇝ q : j {m_i(B_i).G_i} (Definition
-// 4.3 of the crash-stop paper).  The sender projects the chosen branch,
-// with the message at the head of its queue.  The receiver has not
-// received, so it projects as the receiver of a transmission: the whole
-// choice, with the crash branch last.  Each other role merges every
-// branch.  FromCrashed: the sender crashed after it sent the message.
+// 4.3 of the crash-stop paper).  The receiver has not received, so it
+// projects as the receiver of a transmission: the whole choice, with the
+// crash branch last.  Only the chosen branch is live after the send
+// (fixy/session/Global.h), so every other role projects branch j alone:
+// the sender with the message at the head of its queue, and each third
+// role as in the en-route node of Pischke, Masters and Yoshida.  The
+// paper merges every branch for a third role.  A third role's type from
+// before the send is that merge, and the merge refines each of its
+// branches, so association still holds for it.  FromCrashed: the sender
+// crashed after it sent the message.
 template <typename From, typename To, bool FromCrashed, typename Chosen, typename R, typename Reliable, typename... Ls,
           typename... Ps, typename... Cs>
 consteval auto proj_en_route(BL<Br<Ls, Ps, Cs>...>) {
-    using failure = typename first_failure<typename proj_walk<Cs, R, Reliable>::type...>::type;
+    using chosen = typename proj_walk<typename g::detail::continuation_of<Chosen, g::Branch<Ls, Ps, Cs>...>::type, R,
+                                      Reliable>::type;
     constexpr bool has_crash_branch = (std::is_same_v<Ls, g::CrashLabel> || ...);
     if constexpr (FromCrashed && std::is_same_v<R, From>) {
         return std::type_identity<NotProjectable<projection_failure::ProjectionOntoCrashedRole>>{};
-    } else if constexpr (std::is_same_v<R, To> && !is_reliable_role_v<Reliable, From> && !has_crash_branch) {
-        return std::type_identity<NotProjectable<projection_failure::EnRouteFromUnreliableSender>>{};
-    } else if constexpr (!std::is_void_v<failure>) {
-        return std::type_identity<failure>{};
+    } else if constexpr (std::is_same_v<R, To>) {
+        using failure = typename first_failure<typename proj_walk<Cs, R, Reliable>::type...>::type;
+        if constexpr (!is_reliable_role_v<Reliable, From> && !has_crash_branch) {
+            return std::type_identity<NotProjectable<projection_failure::EnRouteFromUnreliableSender>>{};
+        } else if constexpr (!std::is_void_v<failure>) {
+            return std::type_identity<failure>{};
+        } else if constexpr (is_reliable_role_v<Reliable, From> && has_crash_branch) {
+            return std::type_identity<NotProjectable<projection_failure::CrashBranchFromReliableSender>>{};
+        } else {
+            return std::type_identity<Projected<
+                typename chosen::queue,
+                typename rebuild<Side::External, From,
+                                 BL<Br<Ls, Ps, typename proj_walk<Cs, R, Reliable>::type::local>...>>::type>>{};
+        }
+    } else if constexpr (is_projection_failure_v<chosen>) {
+        return std::type_identity<chosen>{};
     } else if constexpr (std::is_same_v<R, From>) {
-        using chosen = typename proj_walk<typename g::detail::continuation_of<Chosen, g::Branch<Ls, Ps, Cs>...>::type, R,
-                                          Reliable>::type;
         using payload = typename g::detail::payload_of<Chosen, g::Branch<Ls, Ps, Cs>...>::type;
         return std::type_identity<Projected<typename queue_prepend<typename chosen::queue, Queued<To, Chosen, payload>>::type,
                                             typename chosen::local>>{};
     } else {
-        using first = typename proj_walk<Cs...[0], R, Reliable>::type;
-        if constexpr (!(queue_agrees_v<typename proj_walk<Cs, R, Reliable>::type, first> && ...)) {
-            return std::type_identity<NotProjectable<projection_failure::QueueDiffersAcrossBranches>>{};
-        } else if constexpr (std::is_same_v<R, To>) {
-            if constexpr (is_reliable_role_v<Reliable, From> && has_crash_branch) {
-                return std::type_identity<NotProjectable<projection_failure::CrashBranchFromReliableSender>>{};
-            } else {
-                return std::type_identity<Projected<
-                    typename first::queue,
-                    typename rebuild<Side::External, From,
-                                     BL<Br<Ls, Ps, typename proj_walk<Cs, R, Reliable>::type::local>...>>::type>>{};
-            }
-        } else {
-            using merged =
-                typename merge_all<merge_fuel_v<Reliable>, typename proj_walk<Cs, R, Reliable>::type::local...>::type;
-            if constexpr (is_projection_failure_v<merged>) {
-                return std::type_identity<merged>{};
-            } else {
-                return std::type_identity<Projected<typename first::queue, merged>>{};
-            }
-        }
+        return std::type_identity<chosen>{};
     }
 }
 

@@ -7,8 +7,9 @@
 // labels, crashes and detections included, and after each label the
 // configuration must stay associated with the state (Theorems 4.20 and
 // 4.21 of Barwell, Hou, Yoshida and Zhou, LMCS 2025).  The corpus holds
-// no en-route sender that acts before its message arrives: that case is
-// the gap that test_session_semantics.cpp pins.
+// a sender that acts before its first message arrives, the case where
+// only the chosen branch of an en-route node is live
+// (fixy/session/Global.h).
 
 #include <fixy/session/CrashAssociation.h>
 #include <fixy/session/Semantics.h>
@@ -216,13 +217,24 @@ using Logging = g::Msg<L, I, Trigger, void,
                                          g::Msg<I, L, Read, void, g::Msg<L, I, Report, Log, g::Msg<I, Cl, Report, Log, g::End>>>>,
                                g::Branch<Crash, void, g::Msg<I, L, Fatal, void, g::End>>>>;
 
+// P chooses a label for Q, and then sends R the matching label, with no
+// role reliable.  After its first send P acts again at once, so the walk
+// passes through en-route nodes whose other branches can never run.
+using SenderGoesOn =
+    g::Comm<P, Q,
+            g::Branch<M1, int, g::Comm<P, R, g::Branch<Add, int, g::End>, g::Branch<Crash, void, g::End>>>,
+            g::Branch<M2, int, g::Comm<P, R, g::Branch<Sub, int, g::End>, g::Branch<Crash, void, g::End>>>,
+            g::Branch<Crash, void, g::Comm<P, R, g::Branch<Add, int, g::End>, g::Branch<Crash, void, g::End>>>>;
+
 inline constexpr Tally kGuarded = explore_projected<Guarded, OnlyQ, 4>();
+inline constexpr Tally kSenderGoesOn = explore_projected<SenderGoesOn, s::NoReliableRoles, 5>();
 inline constexpr Tally kRemark413 = explore_projected<Remark413, s::NoReliableRoles, 4>();
 inline constexpr Tally kRelay = explore_projected<Relay, s::NoReliableRoles, 6>();
 inline constexpr Tally kLogging = explore_projected<Logging, s::ReliableSet<L, I>, 8>();
 inline constexpr Tally kRing = explore_projected<Ring, s::EveryRoleReliable, 6>();
 
 static_assert(is_clean(kGuarded) && kGuarded.crashes > 0);
+static_assert(is_clean(kSenderGoesOn) && kSenderGoesOn.crashes > 0);
 static_assert(is_clean(kRemark413) && kRemark413.crashes > 0);
 static_assert(is_clean(kRelay) && kRelay.crashes > 0);
 static_assert(is_clean(kLogging) && kLogging.crashes > 0);

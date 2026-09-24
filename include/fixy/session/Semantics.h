@@ -24,8 +24,8 @@
 //   [GR-µ]      a Rec reduces as its unfolding
 //   [GR-Ctx-i]  under p → q†, a label whose subject is neither p nor q
 //               reduces every branch
-//   [GR-Ctx-ii] under p† ⇝ q, a label whose subject is not q reduces every
-//               branch
+//   [GR-Ctx-ii] under p† ⇝ q : j, a label whose subject is not q reduces
+//               branch j (Figure 7 asks every branch, see below)
 //
 // Here p† is p or p↯.  A live role is a role of active_roles_t, which is
 // roles(G) of the paper.
@@ -38,14 +38,16 @@
 // association (Definition 4.19) does not read it either.  So one step
 // result per label is enough, and the step keeps the one of [GR-↯].
 //
-// [GR-Ctx-ii] asks every branch of an en-route prefix to take the label.
-// After p sends m_j only branch j can still run, but p acts only when
-// each branch lets it.  The configuration of p is branch j alone.  In our
-// reading, Theorem 4.20 then has a gap when p acts before its message
-// arrives (misc/session_types_literature.md, section 5, item 12, gives
-// the derivation).  The walks here follow Figure 7 as written, and
-// test/fixy/test_session_semantics.cpp pins the global types that show
-// the gap on a ledger that can only shrink.
+// Figure 7 states [GR-Ctx-ii] with every branch of the en-route prefix.
+// After p sends m_j only branch j can still run, and the configuration of
+// p is branch j alone.  So with every branch, p cannot act before its
+// message arrives, while its configuration can, and in our reading
+// Theorem 4.20 has a gap (misc/session_types_literature.md, section 5,
+// item 12, gives the derivation).  Here the rule reduces branch j alone,
+// as for the en-route node of Pischke, Masters and Yoshida, and the other
+// branches stay as they are.  They only give the receiver its choice.
+// fixy/session/Global.h and fixy/session/Projection.h read the chosen
+// branch alone for the same reason.
 //
 // ── Configurations ──────────────────────────────────────────────────────
 //
@@ -354,17 +356,22 @@ struct en_route_actions<Crashed<From>, To, CrashLabel, Bs...> {
     using type = Actions<DetectAction<To, From>>;
 };
 
+// [GR-Ctx-ii] reduces the chosen branch, the only live one, and keeps the
+// other branches for the receiver's choice.
 template <typename From, typename To, typename Chosen, typename A, typename U, typename... Ls, typename... Ps,
           typename... Cs>
 consteval auto en_route_step(Branch<Ls, Ps, Cs>*...) {
+    using chosen = typename continuation_of<Chosen, Branch<Ls, Ps, Cs>...>::type;
     if constexpr (holds_v<typename en_route_actions<From, To, Chosen, Branch<Ls, Ps, Cs>...>::type, A>) {
-        return std::type_identity<typename continuation_of<Chosen, Branch<Ls, Ps, Cs>...>::type>{};
+        return std::type_identity<chosen>{};
     } else if constexpr (is_crash_action_v<A> || std::is_same_v<subject_t<A>, To>) {
         return std::type_identity<NoTransition>{};
-    } else if constexpr (all_step_v<step_t<Cs, A, U>...>) {
-        return std::type_identity<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, step_t<Cs, A, U>>...>>{};
-    } else {
+    } else if constexpr (std::is_same_v<step_t<chosen, A, U>, NoTransition>) {
         return std::type_identity<NoTransition>{};
+    } else {
+        using stepped = step_t<chosen, A, U>;
+        return std::type_identity<
+            EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, std::conditional_t<std::is_same_v<Ls, Chosen>, stepped, Cs>>...>>{};
     }
 }
 
@@ -377,9 +384,10 @@ struct step<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>, A, U> {
 
 // ── The labels a global type offers, before the check ────────────────
 //
-// A context rule needs the label in every branch, so the labels of the
-// first branch are enough candidates.  A Rec that the walk is already
-// unfolding offers nothing more, for the reason the step gives.
+// Under a transmission a context rule needs the label in every branch,
+// so the labels of the first branch are enough candidates.  Under an
+// en-route node the chosen branch gives them.  A Rec that the walk is
+// already unfolding offers nothing more, for the reason the step gives.
 
 template <typename G, typename U = Unfolding<>>
 struct candidates;
@@ -411,8 +419,10 @@ struct candidates<Comm<From, To, Branch<Ls, Ps, Cs>...>, U> {
 };
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs, typename U>
 struct candidates<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>, U> {
-    using type = typename concat<typename en_route_actions<From, To, Chosen, Branch<Ls, Ps, Cs>...>::type,
-                                 typename not_about<typename candidates<Cs...[0], U>::type, To>::type>::type;
+    using type = typename concat<
+        typename en_route_actions<From, To, Chosen, Branch<Ls, Ps, Cs>...>::type,
+        typename not_about<typename candidates<typename continuation_of<Chosen, Branch<Ls, Ps, Cs>...>::type, U>::type,
+                           To>::type>::type;
 };
 
 // ── States ───────────────────────────────────────────────────────────

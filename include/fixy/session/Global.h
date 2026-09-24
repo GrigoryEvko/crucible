@@ -25,6 +25,15 @@
 // en-route node occurs only in the runtime types that a protocol
 // reaches.  A static specification has none.
 //
+// Only the chosen branch of an en-route node is live.  After From sends
+// the chosen label, no other branch can run, and those branches stay
+// only to give the receiver its choice.  So each walk here that reads
+// the roles or the en-route count reads the chosen branch, as the
+// en-route node of Pischke, Masters and Yoshida has that branch alone.
+// Barwell et al. read every branch, and their rule [GR-Ctx-ii] then asks
+// every branch to act.  In our reading that leaves a gap in their
+// Theorem 4.20 (misc/session_types_literature.md, section 5, item 12).
+//
 // Rec<Body> binds Var.  A Var always refers to the nearest Rec around
 // it, and a nested Rec hides the outer one.  This matches Loop and
 // Continue in fixy/session/Protocol.h, so a projected local type can
@@ -48,7 +57,8 @@
 // Balanced+ is Definition 17: balanced, and for each pair of roles the
 // count of en-route messages (Definition 16) exists.  The count exists
 // when it agrees across the branches of each transmission and no
-// en-route message sits below a recursion binder.  A static
+// en-route message sits below a recursion binder.  Below an en-route
+// node the count is the count of its chosen branch.  A static
 // specification has no en-route message, so it is balanced+ when it is
 // balanced.  Theorem 3 of the paper shows that transitions keep the
 // count.
@@ -312,7 +322,9 @@ struct role_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> {
 };
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
 struct role_walk<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>> {
-    using type = typename role_union_all<Roles<bare_role_t<From>, To>, typename role_walk<Cs>::type...>::type;
+    using type = typename role_union_all<
+        Roles<bare_role_t<From>, To>,
+        typename role_walk<typename continuation_of<Chosen, Branch<Ls, Ps, Cs>...>::type>::type>::type;
 };
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
 struct role_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>> {
@@ -337,10 +349,13 @@ struct active_role_walk<Comm<From, To, Branch<Ls, Ps, Cs>...>> {
     using type = typename role_union_all<Roles<From, To>, typename active_role_walk<Cs>::type...>::type;
 };
 // The receiver of an en-route message can act, and so can each role of
-// each branch (Definition 4.1 of the crash-stop paper).
+// the chosen branch (Definition 4.1 of the crash-stop paper reads every
+// branch).
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
 struct active_role_walk<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>> {
-    using type = typename role_union_all<Roles<To>, typename active_role_walk<Cs>::type...>::type;
+    using type = typename role_union_all<
+        Roles<To>,
+        typename active_role_walk<typename continuation_of<Chosen, Branch<Ls, Ps, Cs>...>::type>::type>::type;
 };
 // A crashed receiver cannot act.  The sender still sends.
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
@@ -373,8 +388,9 @@ struct sending_role_walk<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>> {
 // crash pseudo-message is not in a queue.
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs>
 struct sending_role_walk<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>> {
-    using type = typename role_union_all<std::conditional_t<is_crash_label_v<Chosen>, Roles<>, Roles<bare_role_t<From>>>,
-                                         typename sending_role_walk<Cs>::type...>::type;
+    using type = typename role_union_all<
+        std::conditional_t<is_crash_label_v<Chosen>, Roles<>, Roles<bare_role_t<From>>>,
+        typename sending_role_walk<typename continuation_of<Chosen, Branch<Ls, Ps, Cs>...>::type>::type>::type;
 };
 
 // The roles that carry the crash annotation somewhere in G.
@@ -725,12 +741,13 @@ struct has_en_route_pair<P, Q, Comm<From, To, Branch<Ls, Ps, Cs>...>>
 template <typename P, typename Q, typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
 struct has_en_route_pair<P, Q, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
     : std::bool_constant<(has_en_route_pair<P, Q, Cs>::value || ...)> {};
-// The crash pseudo-message is not in a queue.
+// The crash pseudo-message is not in a queue.  Only the chosen branch
+// is live.
 template <typename P, typename Q, typename From, typename To, typename Chosen, typename... Ls, typename... Pls,
           typename... Cs>
 struct has_en_route_pair<P, Q, EnRouteChoice<From, To, Chosen, Branch<Ls, Pls, Cs>...>>
     : std::bool_constant<(std::is_same_v<P, bare_role_t<From>> && std::is_same_v<Q, To> && !is_crash_label_v<Chosen>)
-                         || (has_en_route_pair<P, Q, Cs>::value || ...)> {};
+                         || has_en_route_pair<P, Q, typename continuation_of<Chosen, Branch<Ls, Pls, Cs>...>::type>::value> {};
 
 consteval std::int64_t agreed_count(std::initializer_list<std::int64_t> counts) noexcept {
     std::int64_t agreed = count_undefined;
@@ -770,12 +787,14 @@ struct en_route_count<P, Q, Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>>
     : std::integral_constant<std::int64_t, (std::is_same_v<P, From> && std::is_same_v<Q, To>)
                                                ? ((has_en_route_pair<P, Q, Cs>::value || ...) ? count_undefined : 0)
                                                : agreed_count({en_route_count<P, Q, Cs>::value...})> {};
-// The count below an en-route node agrees across its branches, and the
-// node adds its own message unless it is the crash pseudo-message.
+// The count below an en-route node is the count of its chosen branch,
+// the only live one, and the node adds its own message unless it is the
+// crash pseudo-message.
 template <typename P, typename Q, typename From, typename To, typename Chosen, typename... Ls, typename... Pls,
           typename... Cs>
 struct en_route_count<P, Q, EnRouteChoice<From, To, Chosen, Branch<Ls, Pls, Cs>...>> {
-    static constexpr std::int64_t below = agreed_count({en_route_count<P, Q, Cs>::value...});
+    static constexpr std::int64_t below =
+        en_route_count<P, Q, typename continuation_of<Chosen, Branch<Ls, Pls, Cs>...>::type>::value;
     static constexpr std::int64_t value =
         below == count_undefined ? count_undefined
         : (std::is_same_v<P, bare_role_t<From>> && std::is_same_v<Q, To> && !is_crash_label_v<Chosen>) ? below + 1

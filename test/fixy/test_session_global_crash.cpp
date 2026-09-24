@@ -13,6 +13,7 @@
 #include <fixy/session/Global.h>
 #include <fixy/session/Liveness.h>
 #include <fixy/session/Projection.h>
+#include <fixy/session/Subtype.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -120,12 +121,16 @@ static_assert(std::is_same_v<g::remove_role_t<Logging, L>, g::RemovalUndefined>)
 static_assert(std::is_same_v<g::remove_role_t<LoggingWithoutC, C>, g::RemovalUndefined>);
 // The projections of the state after the crash.  I has not detected the
 // crash, so it projects as before: the whole choice with its crash
-// branch.  L takes no part in the choice and merges both branches, as
-// before.
+// branch.  L takes no part in the choice.  The crash label is the chosen
+// branch, and only the chosen branch of an en-route node is live, so L
+// projects the crash branch alone.  The Offer of L before the crash
+// still refines this type, because an Offer can accept more branches.
 static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, C, LoggerAndInterface>,
                              s::NotProjectable<s::projection_failure::ProjectionOntoCrashedRole>>);
 static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, I, LoggerAndInterface>::local, ProjI::local>);
-static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, L, LoggerAndInterface>::local, ProjL::local>);
+static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, L, LoggerAndInterface>::local,
+                             s::Send<s::PeerMsg<I, Trigger, void>, s::Recv<s::PeerMsg<I, Fatal, void>, s::End>>>);
+static_assert(s::is_subtype_sync_v<ProjL::local, s::project_crash_t<LoggingWithoutC, L, LoggerAndInterface>::local>);
 // The theorem covers a design-time type only.
 static_assert(!s::crash_live_by_construction_v<LoggingWithoutC, LoggerAndInterface>);
 

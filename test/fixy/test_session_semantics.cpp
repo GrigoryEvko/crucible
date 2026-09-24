@@ -12,9 +12,11 @@
 // depth.  At each state the two sides must allow the same labels, and
 // after each label the context must stay associated with G (Definition
 // 21 of Pischke, Masters and Yoshida).  That is Theorems 4.20 and 4.21 of
-// the crash-stop paper for the reliable case.  A context that is not
-// associated must make the walk report a fault, and the self-attack at
-// the foot checks that it does.
+// the crash-stop paper for the reliable case.  The corpus includes a
+// sender that acts before its message arrives, where only the chosen
+// branch of the en-route node reduces.  A context that is not associated
+// must make the walk report a fault, and the self-attack at the foot
+// checks that it does.
 
 #include <fixy/Tagged.h>
 #include <fixy/session/Semantics.h>
@@ -105,6 +107,17 @@ static_assert(std::is_same_v<g::state_enabled_t<Start<Chained>, Reliable>, g::Ac
 using SendsTwice = g::EnRoute<P, Q, M, int, g::Msg<P, R, M1, int, g::End>>;
 static_assert(same_labels_v<g::state_enabled_t<Start<SendsTwice>, Reliable>,
                             g::Actions<g::RecvAction<Q, P, M, int>, g::SendAction<P, R, M1, int>>>);
+// Under p ⇝ q : j only branch j is live.  The sender goes on in branch j,
+// though the other branch would send another label, and the other branch
+// stays for the choice of the receiver.
+using SentM1 = g::EnRouteChoice<P, Q, M1, g::Branch<M1, int, g::Msg<P, R, L1, int, g::End>>,
+                                g::Branch<M2, int, g::Msg<P, R, L2, int, g::End>>>;
+static_assert(same_labels_v<g::state_enabled_t<Start<SentM1>, Reliable>,
+                            g::Actions<g::RecvAction<Q, P, M1, int>, g::SendAction<P, R, L1, int>>>);
+static_assert(std::is_same_v<g::state_step_t<Start<SentM1>, g::SendAction<P, R, L1, int>, Reliable>,
+                             Start<g::EnRouteChoice<P, Q, M1, g::Branch<M1, int, g::EnRoute<P, R, L1, int, g::End>>,
+                                                    g::Branch<M2, int, g::Msg<P, R, L2, int, g::End>>>>>);
+static_assert(std::is_same_v<g::state_step_t<Start<SentM1>, g::SendAction<P, R, L2, int>, Reliable>, g::NoTransition>);
 // A role that acts in one branch only cannot act before the choice.
 using OneSided = g::Comm<P, Q, g::Branch<M1, int, g::Msg<R, S, M, int, g::End>>, g::Branch<M2, int, g::End>>;
 static_assert(!holds_v<g::state_enabled_t<Start<OneSided>, Reliable>, g::SendAction<R, S, M, int>>);
@@ -306,21 +319,15 @@ static_assert(is_clean(kSameSends));
 static_assert(is_clean(kNested));
 static_assert(is_clean(kIndependent));
 
-// ── Known failures: the sender acts before its message arrives ───────
+// ── The sender acts before its message arrives ───────────────────────
 //
-// [GR-Ctx-ii] of Figure 7 lets a label pass an en-route prefix only when
-// every branch of the prefix takes it.  After p sends m_j, the branches
-// other than j can never run, but the rule still asks them to move.  The
-// configuration of p is the projection of branch j alone, so it takes
-// the next action of p at once, and G cannot.  In our reading this is a
-// gap in Theorem 4.20: p → q : {m1.p → r : a.end, m2.p → r : b.end} sends
-// m1, and then the configuration can send a while G cannot.  Lemma A.20
-// (1)(b) of the paper names no case for the en-route sender.  Section 5,
-// item 12, of misc/session_types_literature.md gives the derivation.
-//
-// Each entry runs its walk, and the walk must still fail.  An entry
-// whose walk stops failing is stale and fails this test, so the ledger
-// can only shrink.
+// Figure 7 of the crash-stop paper lets a label pass an en-route prefix
+// only when every branch of the prefix takes it.  In our reading that is
+// a gap in its Theorem 4.20: p → q : {m1.p → r : a.end, m2.p → r : b.end}
+// sends m1, and then the configuration can send a while the global type
+// cannot (misc/session_types_literature.md, section 5, item 12).  With
+// the chosen branch as the only live one, the three types that showed
+// the gap now correspond, and the minimal one sends a after m1.
 
 using SenderGoesOn = g::Comm<P, Q, g::Branch<M1, int, g::Msg<P, R, L1, int, g::End>>,
                              g::Branch<M2, int, g::Msg<P, R, L2, int, g::End>>>;
@@ -328,15 +335,13 @@ inline constexpr Tally kSenderGoesOn = explore_projected<SenderGoesOn, 4>();
 inline constexpr Tally kEx4 = explore_projected<Ex4, 6>();
 inline constexpr Tally kTirore3 = explore_projected<Tirore3, 6>();
 
-static_assert(kSenderGoesOn.enabled_mismatches > 0);
-static_assert(kEx4.enabled_mismatches > 0);
-static_assert(kTirore3.enabled_mismatches > 0);
+static_assert(is_clean(kSenderGoesOn));
+static_assert(is_clean(kEx4));
+static_assert(is_clean(kTirore3));
 
-// The first mismatch of the minimal example is the one the comment names.
-using SenderGoesOnSent = g::EnRouteChoice<P, Q, M1, g::Branch<M1, int, g::Msg<P, R, L1, int, g::End>>,
-                                          g::Branch<M2, int, g::Msg<P, R, L2, int, g::End>>>;
-static_assert(std::is_same_v<g::state_enabled_t<Start<SenderGoesOnSent>, Reliable>,
-                             g::Actions<g::RecvAction<Q, P, M1, int>>>);
+static_assert(holds_v<g::state_enabled_t<g::state_step_t<Start<SenderGoesOn>, g::SendAction<P, Q, M1, int>, Reliable>,
+                                         Reliable>,
+                      g::SendAction<P, R, L1, int>>);
 static_assert(holds_v<c::enabled_t<c::step_t<s::projected_context_t<SenderGoesOn>, g::SendAction<P, Q, M1, int>,
                                              Reliable>,
                                    Reliable>,
@@ -385,7 +390,7 @@ int main() {
     int failures = 0;
     failures += check("ring", ring, t::kRing, true);
     failures += check("ping pong", ping_pong, t::kPingPong, true);
-    failures += check("sender goes on", sender_goes_on, t::kSenderGoesOn, false);
+    failures += check("sender goes on", sender_goes_on, t::kSenderGoesOn, true);
     failures += check("wrong label", wrong, t::kWrongLabel, false);
     std::printf("test_session_semantics: ring %d states %d labels, ping pong %d states %d labels\n", t::kRing.states,
                 t::kRing.labels, t::kPingPong.states, t::kPingPong.labels);
