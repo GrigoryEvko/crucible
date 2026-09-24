@@ -19,8 +19,9 @@ Candidates for a header, in this order:
 Within each tier, a candidate that names the gated entity comes first, then
 one that names a declaration of the header that uses the entity, nearest
 first.  A fixture usually calls the door, not the concept the door checks.
-Tier 3 builds with ninja in the build dir, so it runs only for a mutant that
-tiers 1 and 2 leave alive.
+Tier 3 builds with ninja in the build dir, so it runs only for a contract
+gate that tiers 1 and 2 leave alive.  A contract is checked when the program
+runs.  Every other gate refuses at compile time, and a compile witnesses it.
 The run records a baseline of every candidate on the original header first.
 A candidate that fails on the original header can never kill a mutant.
 
@@ -362,7 +363,7 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
         named = [c for rank, c in negs if rank[0] == 0]
         others = [c for rank, c in negs if rank[0] != 0]
         syntax = [c for rank, c in ranked("syntax") if rank[0] < len(names)]
-        runs = [c for rank, c in ranked("run") if rank[0] < len(names)]
+        runs = [c for rank, c in ranked("run") if rank[0] < len(names)] if gate.kind == "contract" else []
         capped = len(others) > neg_cap or len(syntax) > syntax_cap or len(runs) > run_cap
         return named + others[:neg_cap] + syntax[:syntax_cap], runs[:run_cap], capped
 
