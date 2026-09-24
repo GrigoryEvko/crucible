@@ -277,7 +277,7 @@ apply to the row.
 | `mint_consumer_session` | `include/crucible/sessions/ShardedGridSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:367` | HS14: 10 |
 | `mint_consumer_session` | `include/crucible/sessions/SpscSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:114` | HS14: 10 |
 | `mint_coord` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:17` | HS14: 5 |
-| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/SessFederation.h:20` | HS14: 21 |
+| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/SessFederation.h:20` | HS14: 22 |
 | `mint_metalog_consumer` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:206` | HS14: 2 |
 | `mint_metalog_consumer_session` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:208` | HS14: 4 |
 | `mint_metalog_producer` | `include/crucible/sessions/MetaLogSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:205` | HS14: 2 |

@@ -15344,15 +15344,15 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_root_mint_disallowed_ctx
 #
 #   no_admittance — 3-arg call site (ctx, endpoint) omits the witness;
 #                   arity check refuses (no overload takes 2 args).
-#   wrong_org     — admittance witness is `Permission<FederatedPeer<OrgA>>`
-#                   but the session is minted for `OrgB`; the phantom
-#                   tags do not bind across orgs.
+#   wrong_org     — the admittance token is for `OrgA`, and the mint is for
+#                   `OrgB`.  The context and the endpoint fit, so the only
+#                   failure is the token that does not convert.
 crucible_neg_compile_fixy_test(neg_fixy_federation_session_no_admittance
     "no matching function|too few arguments"
     "requires 3 arguments|candidate")
 crucible_neg_compile_fixy_test(neg_fixy_federation_session_wrong_org
-    "cannot bind|no matching function"
-    "FederatedPeer|no known conversion")
+    "no matching function for call to .mint_sender<NegFedWrongOrg_OrgB>\\(FederationFitCtx&, NegFedWrongOrg_Endpoint, crucible::safety::SharedPermission<crucible::permissions::tag::FederatedPeer<NegFedWrongOrg_OrgA> >\\)."
+    "\\(type .crucible::safety::SharedPermission<crucible::permissions::tag::FederatedPeer<NegFedWrongOrg_OrgA> >.\\) to type .crucible::safety::SharedPermission<crucible::permissions::tag::FederatedPeer<NegFedWrongOrg_OrgB> >.")
 
 # FIXY-V-059 HS14 floor — `fixy::sess::assoc::assert_associated<Gamma, G,
 # SessionTag>()` at the fixy umbrella boundary (re-export of
