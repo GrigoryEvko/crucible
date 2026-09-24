@@ -25,6 +25,17 @@
 // asks for the active roles of the loop body, which with nearest-binder
 // recursion are the active roles of every unfolding of the loop.
 //
+// The limit of nearest-binder recursion.  A Var of a global type binds
+// the nearest Rec above it, and a Continue of a local type binds the
+// nearest Loop.  No Var can name a binder farther out.  So a global type
+// whose inner loop jumps back to an outer binder has no spelling here.
+// Equation 7 of Tirore, Bengtson and Carbone (ITP 2023) is such a type:
+// its inner loop continues the inner loop and the outer loop.  Equation 5
+// loops back to an outer binder past an inner binder that binds nothing.
+// Its spelling here leaves the inner binder out, and the two types have
+// the same unfolding.  The limit costs expressiveness, not safety: no
+// check here accepts a type that the tree cannot spell.
+//
 // A role that does not take part in a choice cannot see which branch
 // was taken, so the projections of the branches must merge (rule
 // P-merge).  This header implements the full merge inductively: two
