@@ -347,7 +347,7 @@ inline void write_raw(std::string_view text) noexcept {
     const char* cursor = text.data();
     std::size_t remaining = text.size();
     while (remaining > 0) {
-        const ::ssize_t written = ::write(STDERR_FILENO, cursor, remaining);
+        const ::ssize_t written = ::write(STDERR_FILENO, cursor, remaining);  // SYSCALL-CAP-OK: the report at a fatal signal writes with write(2), which is async-signal-safe
         if (written <= 0) return;
         cursor += written;
         remaining -= static_cast<std::size_t>(written);
@@ -411,7 +411,7 @@ inline void on_fatal_signal(int signal_number, ::siginfo_t* info, void* /*contex
     report_live_on_signal(signal_number);
     for (std::size_t index = 0; index < std::size(fatal_signals); ++index) {
         if (fatal_signals[index] != signal_number) continue;
-        static_cast<void>(::sigaction(signal_number, &g_signal_chain.previous[index], nullptr));
+        static_cast<void>(::sigaction(signal_number, &g_signal_chain.previous[index], nullptr));  // SYSCALL-CAP-OK: puts back the action that the watch replaced
     }
     if (info == nullptr || info->si_code <= 0) static_cast<void>(::raise(signal_number));
 }
@@ -425,9 +425,9 @@ inline void install_signal_handlers() noexcept {
         action.sa_flags = SA_SIGINFO | SA_ONSTACK;
         ::sigemptyset(&action.sa_mask);
         struct sigaction& previous = g_signal_chain.previous[index];
-        if (::sigaction(fatal_signals[index], &action, &previous) != 0) continue;
+        if (::sigaction(fatal_signals[index], &action, &previous) != 0) continue;  // SYSCALL-CAP-OK: installs the report at a fatal signal, once, from the first claim
         if (!(previous.sa_flags & SA_SIGINFO) && previous.sa_handler == SIG_IGN) {
-            static_cast<void>(::sigaction(fatal_signals[index], &previous, nullptr));
+            static_cast<void>(::sigaction(fatal_signals[index], &previous, nullptr));  // SYSCALL-CAP-OK: a signal that the process ignored stays ignored
         }
     }
 }
