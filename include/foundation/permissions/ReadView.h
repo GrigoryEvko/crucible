@@ -148,13 +148,22 @@ using read_view_for_body_t =
 template <typename Body, typename Tag, typename Brand>
 using read_view_result_t = std::invoke_result_t<Body, read_view_for_body_t<Body, Tag, Brand> const&>;
 
-// True for a node that names a ReadView, and for a class whose state the
-// walk cannot read.  GCC 16 reflects no capture of a lambda, so a lambda
+// True for a node that names a ReadView, for an address whose type the
+// walk cannot read, and for a class whose state the walk cannot read.
+// A pointer to void, a pointer to a function and a member function
+// pointer are the parts that type erasure keeps: std::function, std::any
+// and a coroutine handle hold a view through them and show no ReadView
+// in their type.  GCC 16 reflects no capture of a lambda, so a lambda
 // with captures is a complete class that is not empty and shows no base
 // and no member.
-inline constexpr auto names_a_read_view = [](::foundation::reflect::TypeNode node) consteval {
+inline constexpr auto may_carry_a_read_view = [](::foundation::reflect::TypeNode node) consteval {
     const std::meta::info type = node.type;
     if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^ReadView) return true;
+    if (std::meta::is_member_function_pointer_type(type)) return true;
+    if (std::meta::is_pointer_type(type)) {
+        const std::meta::info pointee = std::meta::remove_cv(std::meta::remove_pointer(type));
+        if (std::meta::is_void_type(pointee) || std::meta::is_function_type(pointee)) return true;
+    }
     if (!node.may_read_members || !std::meta::is_class_type(type)) return false;
     if (std::meta::has_template_arguments(type) || std::meta::is_empty_type(type)) return false;
     const auto unchecked = std::meta::access_context::unchecked();
@@ -167,12 +176,14 @@ inline constexpr auto names_a_read_view = [](::foundation::reflect::TypeNode nod
 // the view with it.  A reference result is refused, because a reference
 // that leaves the frame names something that the result does not own.
 // A result that names a ReadView through a pointer, a member or a
-// template argument is refused, and so is a lambda whose captures the
-// walk cannot read.
+// template argument is refused, and so is a result that holds an address
+// the walk cannot type (a type-erased callable, std::any, a coroutine
+// handle) and a lambda whose captures the walk cannot read.
 template <typename R>
 concept ReadViewResultStaysInside =
     std::is_void_v<R>
-    || (!std::is_reference_v<R> && !::foundation::reflect::any_component_satisfies<detail::names_a_read_view>(^^R));
+    || (!std::is_reference_v<R>
+        && !::foundation::reflect::any_component_satisfies<detail::may_carry_a_read_view>(^^R));
 
 // ── The door ─────────────────────────────────────────────────────────
 
@@ -202,9 +213,10 @@ struct read_view_door {
         using View = read_view_for_body_t<Body, Tag, Brand>;
         using Result = read_view_result_t<Body, Tag, Brand>;
         static_assert(ReadViewResultStaysInside<Result>,
-                      "with_read_view: the body returns a reference, a type that names a ReadView, or a lambda "
-                      "whose captures cannot be read.  The result leaves the frame of the door, so return a "
-                      "value that does not hold the view");
+                      "with_read_view: the body returns a reference, a type that names a ReadView, a type that "
+                      "holds an untyped address (a pointer to void or to a function, as in std::function, "
+                      "std::any or a coroutine handle), or a lambda whose captures cannot be read.  The result "
+                      "leaves the frame of the door, so return a value that does not hold the view");
         if constexpr (std::is_same_v<Source, SharedPermissionGuard<Tag, Brand>>) {
             CRUCIBLE_PRE(source.holds_share());
         }

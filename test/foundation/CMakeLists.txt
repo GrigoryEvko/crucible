@@ -422,6 +422,9 @@ foundation_test(test_permissions_compile_foundation test_permissions_compile.cpp
 foundation_test(test_permission_shared_foundation test_permission_shared.cpp)
 foundation_test(test_permission_shared_xor_exclusive_foundation test_permission_shared_xor_exclusive.cpp)
 foundation_test(test_read_view_foundation test_read_view.cpp)
+# Legal C++ that tries to carry a view out of the door.  An attack that
+# still succeeds is a row of the shrink-only ledger in the file.
+foundation_test(test_read_view_escape_attacks)
 
 # A token split into subregions that no can_split_into manifest declares.
 # The location regex proves the rejection came from the split's own
@@ -538,7 +541,15 @@ foundation_neg_compile_test(neg_read_view_body_by_value
   "required for the satisfaction of .ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>.")
 foundation_neg_compile_test(neg_read_view_returned_from_the_body
   "static assertion failed"
-  "the body returns a reference, a type that names a ReadView, or a lambda whose captures cannot be read")
+  "the body returns a reference, a type that names a ReadView, a type that holds an untyped address")
+# A result that holds an untyped address carries the view out of the door
+# through type erasure: std::function and a pointer to void name no view.
+foundation_neg_compile_test(neg_read_view_body_returns_a_type_erased_callable
+  "static assertion failed"
+  "a type that holds an untyped address .a pointer to void or to a function")
+foundation_neg_compile_test(neg_read_view_body_returns_an_untyped_pointer
+  "static assertion failed"
+  "a type that holds an untyped address .a pointer to void or to a function")
 foundation_neg_compile_test(neg_read_view_stored_past_the_callback
   "no matching function for call to .std::optional<foundation::permissions::ReadView<.anonymous.::Region> >::emplace\\("
   "enable_if<false, foundation::permissions::ReadView<.anonymous.::Region>&>")
