@@ -240,7 +240,7 @@ int check_crash_recording() {
     auto q = s::mint_recorded_session(s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p), log_q, kPeer,
                                       kSelf);
 
-    (void)std::move(q).crash(s::CrashCause::Throw, cell_q);
+    (void)std::move(q).crash(s::CrashCause::Throw, s::mint_crash_reporter(cell_q));
     if (log_q.size() != 1 || log_q[0].op() != s::SessionOp::Stop || log_q[0].stop_reason() != s::StopReasonKind::LocalAbort
         || log_q[0].crash_cause() != s::CrashCause::Throw || log_q[0].stopped_role() != kPeer)
         return fail("the local crash was not recorded as a LocalAbort stop");

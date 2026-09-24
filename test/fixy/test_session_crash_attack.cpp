@@ -328,10 +328,17 @@ struct Port {
     Mailbox* out = nullptr;
 };
 
+// The failure detector reports the crash of the peer that `cell` watches:
+// how it stopped, and how many messages it sent before it stopped.
+void report_crash(s::PeerCrashCell& cell, s::CrashCause cause, std::uint64_t messages_sent) {
+    static_cast<void>(s::mint_crash_reporter(cell).report(cause, static_cast<s::MessageCount>(messages_sent)));
+}
+
 // The crash of the endpoint whose inbound queue is `inbox`: the detector
-// cell records it, and the queue closes.
-void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause) {
-    cell.mark_crashed(cause);
+// reports it with the number of messages the endpoint sent, and the queue
+// closes.
+void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause, std::uint64_t messages_sent) {
+    report_crash(cell, cause, messages_sent);
     inbox.is_closed = true;
 }
 
@@ -391,7 +398,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     s::PeerCrashCell cell_q;
     auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
     auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(Port{&to_q, &to_p}, cell_p);
-    (void)std::move(p).crash(s::CrashCause::Abort, cell_p);
+    (void)std::move(p).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
     std::move(q).branch(poll_label, [](auto branch) noexcept {
         auto [value, end] = std::move(branch).recv(read_int);
         (void)value;
@@ -406,7 +413,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_p;
     Mailbox to_q;
     s::PeerCrashCell cell_p;
-    cell_p.mark_crashed(s::CrashCause::Throw);
+    report_crash(cell_p, s::CrashCause::Throw, 0);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
     int returned = 0;
     for (int round = 0; round < 3; ++round) {
@@ -436,7 +443,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
             finish(Outcome::Silent);
         } else {
             auto [token, reply] = std::move(branch).recv(read_token);
-            crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
+            crash_endpoint(cell_p, to_p, s::CrashCause::Abort, 1);
             auto chosen = std::move(reply).template select<0>(push_label);
             auto [end, undelivered] = std::move(chosen).send(std::move(token), push_token);
             came_back_once = undelivered.has_value() && undelivered->value == 7;
@@ -454,7 +461,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_p;
     Mailbox to_q;
     s::PeerCrashCell cell_p;
-    cell_p.mark_crashed(s::CrashCause::ErrorReturn);
+    report_crash(cell_p, s::CrashCause::ErrorReturn, 0);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
     int detections = 0;
     std::move(q).branch(poll_label, [&](auto first) noexcept {
@@ -491,7 +498,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
         to_q.slots.push_back(value);
     }
     s::PeerCrashCell cell_p;
-    cell_p.mark_crashed(s::CrashCause::Abort);
+    report_crash(cell_p, s::CrashCause::Abort, 4);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
     using Loop = decltype(q);
     std::optional<Loop> current{std::move(q)};
@@ -530,14 +537,15 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     finish(Outcome::Silent);
 }
 
-// A transport that fabricates messages after the crash.  The handle
-// trusts the transport, so the crash is never detected.
+// A transport that fabricates messages after the crash.  The report says
+// that the peer sent no message, so a word that the transport reports is
+// past the witness: the decorator refuses it and takes the crash branch.
 [[noreturn]] void transport_fabricates_messages_after_crash() {
     using ProtoQ = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
     s::PeerCrashCell cell_p;
-    cell_p.mark_crashed(s::CrashCause::Abort);
+    report_crash(cell_p, s::CrashCause::Abort, 0);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
     bool took_message = false;
     std::move(q).branch([](Port&) noexcept -> std::optional<std::size_t> { return std::size_t{0}; },
@@ -555,6 +563,170 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
                             }
                         });
     finish(took_message ? Outcome::Silent : Outcome::Correct);
+}
+
+// The peer sent two messages before it crashed, and the transport keeps
+// reporting messages after them.  The decorator takes the two, because
+// the report counts them, and refuses the third.
+[[noreturn]] void transport_fabricates_after_queued_messages() {
+    using ProtoQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    report_crash(cell_p, s::CrashCause::Abort, 2);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    using Loop = decltype(q);
+    std::optional<Loop> current{std::move(q)};
+    int received = 0;
+    bool detected = false;
+    const auto always_a_word = [](Port&) noexcept -> std::optional<std::size_t> { return std::size_t{0}; };
+    const auto always_a_value = [](Port&) noexcept -> std::optional<int> { return 5; };
+    while (current) {
+        Loop handle = std::move(*current);
+        current.reset();
+        std::move(handle).branch(always_a_word, [&](auto branch) noexcept {
+            using Head = typename decltype(branch)::protocol;
+            if constexpr (s::is_crash_branch_v<Head>) {
+                auto [record, end] = std::move(branch).recv();
+                detected = record.cause == s::CrashCause::Abort;
+                (void)std::move(end).close();
+            } else {
+                auto [value, next] = std::move(branch).recv(always_a_value);
+                if (value == 5) ++received;
+                current.emplace(std::move(next));
+            }
+        });
+    }
+    finish(received == 2 && detected ? Outcome::Correct : Outcome::Silent);
+}
+
+// The report counts one message that has not arrived yet.  The queue is
+// not empty, so the decorator waits for it instead of taking the crash
+// branch, and takes the crash branch at the next reception.
+[[noreturn]] void crash_branch_waits_for_an_owed_message() {
+    using ProtoQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    report_crash(cell_p, s::CrashCause::Throw, 1);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    using Loop = decltype(q);
+    std::optional<Loop> current{std::move(q)};
+    int empty_polls = 0;
+    int received = 0;
+    bool detected = false;
+    // The message arrives only after three polls find nothing.
+    const auto late_word = [&empty_polls, &to_q](Port& port) noexcept -> std::optional<std::size_t> {
+        if (empty_polls < 3) {
+            ++empty_polls;
+            if (empty_polls == 3) {
+                to_q.slots.push_back(0);
+                to_q.slots.push_back(11);
+            }
+            return std::nullopt;
+        }
+        return poll_label(port);
+    };
+    while (current) {
+        Loop handle = std::move(*current);
+        current.reset();
+        std::move(handle).branch(late_word, [&](auto branch) noexcept {
+            using Head = typename decltype(branch)::protocol;
+            if constexpr (s::is_crash_branch_v<Head>) {
+                auto [record, end] = std::move(branch).recv();
+                (void)record;
+                detected = true;
+                (void)std::move(end).close();
+            } else {
+                auto [value, next] = std::move(branch).recv(read_int);
+                if (value == 11) ++received;
+                current.emplace(std::move(next));
+            }
+        });
+    }
+    finish(received == 1 && detected && empty_polls == 3 ? Outcome::Correct : Outcome::Silent);
+}
+
+// An endpoint that crashes reports its own count, which its handles kept:
+// three messages.  The survivor receives the three and then takes the crash
+// branch, although its transport keeps reporting messages.
+[[noreturn]] void endpoint_reports_its_own_count() {
+    using ProtoP = s::Loop<s::Select<s::Send<int, s::Continue>>>;
+    using ProtoQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    s::PeerCrashCell cell_q;
+    auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
+    for (int round = 0; round < 3; ++round) {
+        auto chosen = std::move(p).select<0>(push_label);
+        auto [next, undelivered] = std::move(chosen).send(round, push_int);
+        (void)undelivered;
+        p = std::move(next);
+    }
+    if (p.messages_sent() != 3) finish(Outcome::Silent);
+    (void)std::move(p).crash(s::CrashCause::ErrorReturn, s::mint_crash_reporter(cell_p));
+    const std::optional<s::CrashWitness> witness = cell_p.witness();
+    if (!witness || std::to_underlying(witness->messages_sent) != 3) finish(Outcome::Silent);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    using Loop = decltype(q);
+    std::optional<Loop> current{std::move(q)};
+    int received = 0;
+    bool detected = false;
+    // The queue holds the three messages, and the transport invents more
+    // after them.
+    const auto word_or_more = [](Port& port) noexcept -> std::optional<std::size_t> {
+        if (auto word = poll_label(port)) return word;
+        return std::size_t{0};
+    };
+    const auto value_or_more = [](Port& port) noexcept -> std::optional<int> {
+        if (auto value = read_int(port)) return value;
+        return 99;
+    };
+    while (current) {
+        Loop handle = std::move(*current);
+        current.reset();
+        std::move(handle).branch(word_or_more, [&](auto branch) noexcept {
+            using Head = typename decltype(branch)::protocol;
+            if constexpr (s::is_crash_branch_v<Head>) {
+                auto [record, end] = std::move(branch).recv();
+                detected = record.cause == s::CrashCause::ErrorReturn;
+                (void)std::move(end).close();
+            } else {
+                auto [value, next] = std::move(branch).recv(value_or_more);
+                if (value == received) ++received;
+                current.emplace(std::move(next));
+            }
+        });
+    }
+    finish(received == 3 && detected ? Outcome::Correct : Outcome::Silent);
+}
+
+// A bare reception from a crashed reliable peer whose transport invents a
+// value.  The report counts no message, so the decorator refuses the value
+// and ends the wait with Crash_Of_Reliable_Peer.
+[[noreturn]] void bare_recv_refuses_a_fabricated_message() {
+    using ProtoQ = s::Recv<int, s::End>;
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    report_crash(cell_p, s::CrashCause::Abort, 0);
+    auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(Port{&to_q, &to_p}, cell_p);
+    auto [value, end] = std::move(q).recv([](Port&) noexcept -> std::optional<int> { return 99; });
+    (void)value;
+    (void)std::move(end).close();
+    finish(Outcome::Silent);
+}
+
+// A cell has one reporter, so its count has one source.  A second mint
+// for the same cell ends the process with Crash_Reporter_Twice.
+[[noreturn]] void second_reporter_for_one_cell() {
+    s::PeerCrashCell cell;
+    auto first = s::mint_crash_reporter(cell);
+    auto second = s::mint_crash_reporter(cell);
+    static_cast<void>(std::move(first).report(s::CrashCause::Abort, s::MessageCount{0}));
+    static_cast<void>(std::move(second).report(s::CrashCause::Throw, s::MessageCount{9}));
+    finish(Outcome::Silent);
 }
 
 // The check of the crash cell and the write of the transport are two
@@ -582,7 +754,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
             auto chosen = std::move(reply).template select<0>(push_label);
             auto [end, undelivered] =
                 std::move(chosen).send(std::move(token), [&cell_p, &to_p](Port& port, Token&& moved) noexcept {
-                    crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
+                    crash_endpoint(cell_p, to_p, s::CrashCause::Abort, 1);
                     return push_token(port, std::move(moved));
                 });
             // The label went before the crash, so the queue of p holds it
@@ -606,7 +778,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_p;
     Mailbox to_q;
     s::PeerCrashCell cell_p;
-    cell_p.mark_crashed(s::CrashCause::Abort);
+    report_crash(cell_p, s::CrashCause::Abort, 0);
     auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(Port{&to_q, &to_p}, cell_p);
     auto [value, end] = std::move(q).recv(read_int);
     (void)value;
@@ -631,7 +803,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
     auto half_sent = std::move(p).select<0>(push_label);
     std::move(half_sent).detach(s::detach_reason::TestInstrumentation{});
-    crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
+    crash_endpoint(cell_p, to_p, s::CrashCause::Abort, 1);
     std::move(q).branch(poll_label, [](auto branch) noexcept {
         using Head = typename decltype(branch)::protocol;
         if constexpr (s::is_crash_branch_v<Head>) {
@@ -652,7 +824,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_p;
     Mailbox to_q;
     s::PeerCrashCell cell_p;
-    cell_p.mark_crashed(s::CrashCause::Throw);
+    report_crash(cell_p, s::CrashCause::Throw, 0);
     s::SessionEventLog log{s::SessionTagId{9}};
     auto q = s::mint_recorded_session(s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p), log,
                                       s::RoleTagId{2}, s::RoleTagId{1});
@@ -724,7 +896,12 @@ constexpr attack_case kAttacks[] = {
     {"crash_detected_twice", Outcome::Correct, crash_detected_twice},
     {"queue_drains_before_detection", Outcome::Correct, queue_drains_before_detection},
     {"peer_sends_the_crash_label", Outcome::Caught, peer_sends_the_crash_label},
-    {"transport_fabricates_messages_after_crash", Outcome::Silent, transport_fabricates_messages_after_crash},
+    {"transport_fabricates_messages_after_crash", Outcome::Correct, transport_fabricates_messages_after_crash},
+    {"transport_fabricates_after_queued_messages", Outcome::Correct, transport_fabricates_after_queued_messages},
+    {"crash_branch_waits_for_an_owed_message", Outcome::Correct, crash_branch_waits_for_an_owed_message},
+    {"endpoint_reports_its_own_count", Outcome::Correct, endpoint_reports_its_own_count},
+    {"bare_recv_refuses_a_fabricated_message", Outcome::Caught, bare_recv_refuses_a_fabricated_message},
+    {"second_reporter_for_one_cell", Outcome::Caught, second_reporter_for_one_cell},
     {"crash_between_check_and_write_loses_token", Outcome::Correct, crash_between_check_and_write_loses_token},
     {"bare_recv_from_crashed_reliable_peer", Outcome::Caught, bare_recv_from_crashed_reliable_peer},
     {"peer_dies_between_label_and_payload", Outcome::Caught, peer_dies_between_label_and_payload},
@@ -734,21 +911,16 @@ constexpr attack_case kAttacks[] = {
 
 // ── The ledger ──────────────────────────────────────────────────────
 //
-// Each row is an attack that succeeds, and the condition it breaks.
+// Each row is an attack that succeeds, and the condition it breaks.  The
+// ledger is empty: a transport that invents messages after the crash met
+// the count of the crash report, which the transport cannot write.
 
 struct limitation_row {
     std::string_view attack;
     std::string_view breaks;
 };
 
-constexpr limitation_row known_limitations[] = {
-    {"transport_fabricates_messages_after_crash",
-     "rule r-rcv-⊙ (LMCS 2025, Fig. 4) delivers a message queued before the crash, and only the transport "
-     "knows what is queued.  The detector cell reports that the peer stopped, not what it sent, so a transport "
-     "that invents messages hides the crash for ever.  The same trust covers a transport that reports a write "
-     "into a closed queue as delivered.  Closing it needs a witness of the sends that the transport cannot "
-     "write, for example a final sequence number that the failure detector publishes with the crash"},
-};
+constexpr std::array<limitation_row, 0> known_limitations{};
 
 consteval bool ledger_matches_the_campaign() {
     for (const attack_case& attack : kAttacks) {

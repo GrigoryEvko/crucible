@@ -249,7 +249,7 @@ int run_receiver_crashes_first() {
     auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
 
-    const Port q_port = std::move(q).crash(s::CrashCause::Throw, cell_q);
+    const Port q_port = std::move(q).crash(s::CrashCause::Throw, s::mint_crash_reporter(cell_q));
     if (q_port.in != &to_q) return fail("crash() did not give back the resource");
 
     auto p_sent = std::move(p).select<0>(push_label);
@@ -284,7 +284,7 @@ int run_sender_crashes_after_send() {
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
     if (p_undelivered) return fail("a payload to a live peer came back");
-    (void)std::move(p_wait).crash(s::CrashCause::Abort, cell_p);
+    (void)std::move(p_wait).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
 
     bool took_message = false;
     std::move(q).branch(poll_label, [&](auto q_branch) {
@@ -410,7 +410,7 @@ int run_stream_across_threads() {
             was_payload_returned = was_payload_returned || undelivered.has_value();
             p = std::move(next);
         }
-        (void)std::move(p).crash(s::CrashCause::Abort, cell_p);
+        (void)std::move(p).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
         receiver.join();
 
         if (was_payload_returned) return fail("a payload to a live peer came back");
@@ -421,13 +421,25 @@ int run_stream_across_threads() {
     return 0;
 }
 
-// The cell records the first report and keeps it.
+// The cell keeps the one report of its one reporter, cause and count
+// together, up to the largest count a report can carry.
 int run_cell() {
     s::PeerCrashCell cell;
-    if (cell.has_crashed() || cell.crash_cause()) return fail("a fresh cell reports a crash");
-    if (!cell.mark_crashed(s::CrashCause::ErrorReturn)) return fail("the first report was refused");
-    if (cell.mark_crashed(s::CrashCause::Abort)) return fail("a second report was recorded");
-    if (cell.crash_cause() != s::CrashCause::ErrorReturn) return fail("a second report replaced the cause");
+    if (cell.has_crashed() || cell.crash_cause() || cell.witness()) return fail("a fresh cell reports a crash");
+    if (!s::mint_crash_reporter(cell).report(s::CrashCause::ErrorReturn, s::MessageCount{5}))
+        return fail("the first report was refused");
+    const std::optional<s::CrashWitness> witness = cell.witness();
+    if (!witness || witness->cause != s::CrashCause::ErrorReturn || std::to_underlying(witness->messages_sent) != 5)
+        return fail("the report did not keep its cause and its count");
+    if (cell.crash_cause() != s::CrashCause::ErrorReturn) return fail("the cause did not match the report");
+
+    s::PeerCrashCell full;
+    const auto largest = static_cast<s::MessageCount>(s::PeerCrashCell::max_message_count);
+    if (!s::mint_crash_reporter(full).report(s::CrashCause::Unknown, largest))
+        return fail("the report of the largest count was refused");
+    const std::optional<s::CrashWitness> full_witness = full.witness();
+    if (!full_witness || full_witness->cause != s::CrashCause::Unknown || full_witness->messages_sent != largest)
+        return fail("the largest count did not survive the report");
     return 0;
 }
 

@@ -40,8 +40,28 @@
 // returns the value itself waits inside the transport, where no crash is
 // seen, so the exact return type refuses it.
 //
-// The detector is a PeerCrashCell.  The Keeper's failure detector marks
-// it.  A test marks it by hand.  The decorator only reads it.
+// The detector is a PeerCrashCell.  A CrashReporter writes it, and each
+// cell has one reporter: the Keeper's failure detector, or the endpoint
+// that crashes and reports itself.  The decorator only reads the cell.
+//
+// ── The witness of a crash ──────────────────────────────────────────
+//
+// A crash report carries the number of messages that the peer sent on
+// the session before it stopped.  The decorator counts the messages it
+// receives, and a label with the payload of its branch counts as one.
+// Rule r-rcv-⊙ (LMCS 2025, Fig. 4) takes the crash branch when the peer
+// has crashed and no message of the peer is left in the queue.  The count
+// makes "no message left" a fact the decorator checks: when the received
+// count reaches the reported count, the queue is empty, and a message
+// that the transport reports past that point was never sent.  The
+// decorator refuses such a message and takes the crash branch.  While the
+// received count is below the reported count, a message is still owed,
+// and the decorator waits for it instead of taking the crash branch.
+//
+// The transport cannot write the witness.  It gets only the Resource, the
+// report is fixed once it is published, and only the one reporter of the
+// cell can publish it.  An endpoint that crashes reports its own count,
+// which its handle kept, so the count needs no trust in the caller.
 //
 // ── What the ported source did wrong ────────────────────────────────
 //
@@ -57,18 +77,16 @@
 //
 // ── What the transport is trusted with ──────────────────────────────
 //
-// The detector cell says that the peer stopped.  It does not say what
-// the peer sent.  Only the transport knows what is queued, and rule
-// r-rcv-⊙ delivers a message queued before the crash.  So the decorator
-// trusts the transport on three points: a poll or a read reports only
-// messages that the peer sent, a refusing write refuses when the queue
-// of the peer is closed, and the transport delivers a label and the
-// payload of its branch together.  A transport that breaks one of these
-// can hide a crash, lose a token or split a message, and no type here
-// can see it.  The crash attack campaign pins the first on its ledger.
-// Closing it needs a witness of the sends that the transport cannot
-// write, for example a final sequence number that the failure detector
-// publishes with the crash.
+// After a crash, the witness bounds what the transport can report: no
+// message past the reported count reaches the endpoint.  Before the
+// crash is reported, a message is only what the transport says it is,
+// and a transport that invents messages then is Byzantine, which the
+// crash-stop model excludes.  Two trusts stay.  A refusing write refuses
+// when the queue of the peer is closed: a write that the transport
+// reports as delivered and that the peer never reads is the loss that
+// rule r-↯ defines for a queue into a crashed peer, so the report and
+// the loss look the same.  And the transport delivers a label and the
+// payload of its branch together: a split shows as Crash_Splits_A_Message.
 //
 // A payload that the transport took before the crash and that the peer
 // never read is lost with the queue of the peer (rule r-↯ makes that
@@ -100,36 +118,135 @@ namespace fixy::session {
 
 // ── The crash detector cell ──────────────────────────────────────────
 
-// One byte of state on its own cache line.  The first report wins, so a
-// crash that two detectors report keeps the cause of the first.
-class PeerCrashCell : public ::foundation::Pinned<PeerCrashCell> {
-    static constexpr std::uint8_t alive_state = 0xFF;
+// The number of messages that one endpoint sent to its peer on one
+// session.  A label and the payload of its branch count as one message.
+enum class MessageCount : std::uint64_t {};
 
-    alignas(64) std::atomic<std::uint8_t> state_{alive_state};
+// What a crash report says: how the peer stopped, and how many messages
+// it sent before it stopped.
+struct CrashWitness {
+    CrashCause cause = CrashCause::Unknown;
+    MessageCount messages_sent{};
+};
+
+class CrashReporter;
+
+// One word of state on its own cache line: the cause in the top byte,
+// the message count in the low 56 bits, or all ones while the peer is
+// alive.  A cause is at most crash_cause_top_value, so no report is all
+// ones.  The report is one compare-and-swap, so the first report wins
+// whole, and a reader never sees the cause of one report beside the count
+// of another.
+class PeerCrashCell : public ::foundation::Pinned<PeerCrashCell> {
+    static constexpr std::uint64_t alive_state = ~std::uint64_t{0};
+    static constexpr unsigned count_bits = 56;
+    static constexpr std::uint64_t count_mask = (std::uint64_t{1} << count_bits) - 1;
+
+    alignas(64) std::atomic<std::uint64_t> state_{alive_state};
+    // Set when the one reporter of this cell is minted.
+    std::atomic<bool> has_reporter_{false};
+
+    friend class CrashReporter;
+
+    // Returns true when this report is the first.
+    bool publish_(CrashWitness witness) noexcept {
+        const std::uint64_t packed = (std::uint64_t{static_cast<std::uint8_t>(witness.cause)} << count_bits)
+                                   | std::to_underlying(witness.messages_sent);
+        std::uint64_t expected = alive_state;
+        return state_.compare_exchange_strong(expected, packed, std::memory_order_acq_rel, std::memory_order_acquire);
+    }
 
 public:
-    constexpr PeerCrashCell() noexcept = default;
+    // The largest message count a report can carry.
+    static constexpr std::uint64_t max_message_count = count_mask;
 
-    // Records the crash.  Returns true when this call recorded it, and
-    // false when an earlier report already had.
-    bool mark_crashed(CrashCause cause) noexcept {
-        CRUCIBLE_PRE(static_cast<std::uint8_t>(cause) <= crash_cause_top_value);
-        std::uint8_t expected = alive_state;
-        return state_.compare_exchange_strong(expected, static_cast<std::uint8_t>(cause), std::memory_order_acq_rel,
-                                              std::memory_order_acquire);
-    }
+    constexpr PeerCrashCell() noexcept = default;
 
     [[nodiscard]] bool has_crashed() const noexcept { return state_.load(std::memory_order_acquire) != alive_state; }
 
-    // The cause, or no value while the peer is alive.  Only mark_crashed
-    // writes the state, and its precondition keeps every written value
-    // inside CrashCause, so the cast is total over what can be read.
-    [[nodiscard]] std::optional<CrashCause> crash_cause() const noexcept {
-        const std::uint8_t state = state_.load(std::memory_order_acquire);
+    // The report, or no value while the peer is alive.  Only the reporter
+    // writes the state, and its precondition keeps the cause inside
+    // CrashCause and the count inside 56 bits, so the decode is total over
+    // what can be read.
+    [[nodiscard]] std::optional<CrashWitness> witness() const noexcept {
+        const std::uint64_t state = state_.load(std::memory_order_acquire);
         if (state == alive_state) return std::nullopt;
-        return static_cast<CrashCause>(state);
+        return CrashWitness{static_cast<CrashCause>(state >> count_bits), static_cast<MessageCount>(state & count_mask)};
+    }
+
+    [[nodiscard]] std::optional<CrashCause> crash_cause() const noexcept {
+        const std::optional<CrashWitness> report = witness();
+        if (!report) return std::nullopt;
+        return report->cause;
     }
 };
+
+namespace detail::crash_transport {
+
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_second_reporter() noexcept {
+    std::fprintf(stderr,
+                 "fixy::session: diagnostic [Crash_Reporter_Twice]: a crash reporter was minted for a cell that "
+                 "already has one.  A cell has one author, so that the count it publishes has one source.  Give the "
+                 "one reporter to the failure detector, or to the endpoint that reports its own crash.\n");
+    std::abort();
+}
+
+}  // namespace detail::crash_transport
+
+// The one author of the reports of one cell.  Only mint_crash_reporter
+// builds it, and each cell has one, so a transport that holds the cell
+// cannot write a report: it would need the reporter, and the reporter is
+// held by the failure detector or by the endpoint that crashes.  A report
+// consumes the reporter, because a peer crashes once.
+//
+// The move constructor is user-provided, so the class is not trivially
+// copyable and std::bit_cast cannot build one.  It has no trivial
+// constructor, so it is not an implicit-lifetime type and no lifetime
+// start over bytes can make one.
+class [[nodiscard]] CrashReporter {
+    PeerCrashCell* cell_ = nullptr;
+
+    explicit CrashReporter(PeerCrashCell& cell) noexcept : cell_{&cell} {}
+
+    friend CrashReporter mint_crash_reporter(PeerCrashCell& cell) noexcept;
+
+public:
+    CrashReporter(CrashReporter&& other) noexcept : cell_{std::exchange(other.cell_, nullptr)} {}
+    CrashReporter(const CrashReporter&) = delete("a cell has one reporter, so its count has one source");
+    CrashReporter& operator=(const CrashReporter&) = delete("a cell has one reporter, so its count has one source");
+    CrashReporter& operator=(CrashReporter&&) = delete("a reporter names one cell for its whole life");
+    ~CrashReporter() = default;
+
+    // Publishes the crash: its cause, and the number of messages that the
+    // crashed peer sent on the session.  Returns true when this is the
+    // first report of the cell.
+    bool report(CrashCause cause, MessageCount messages_sent) && noexcept {
+        CRUCIBLE_PRE(cell_ != nullptr);
+        CRUCIBLE_PRE(static_cast<std::uint8_t>(cause) <= crash_cause_top_value);
+        CRUCIBLE_PRE(std::to_underlying(messages_sent) <= PeerCrashCell::max_message_count);
+        PeerCrashCell* const cell = std::exchange(cell_, nullptr);
+        return cell->publish_(CrashWitness{cause, messages_sent});
+    }
+
+private:
+    [[nodiscard]] static bool claim_(PeerCrashCell& cell) noexcept {
+        return !cell.has_reporter_.exchange(true, std::memory_order_acq_rel);
+    }
+};
+
+// Mints the one reporter of a cell.  A second mint for the same cell
+// ends the process with Crash_Reporter_Twice.
+[[nodiscard]] inline CrashReporter mint_crash_reporter(PeerCrashCell& cell) noexcept {
+    if (!CrashReporter::claim_(cell)) [[unlikely]]
+        detail::crash_transport::abort_on_second_reporter();
+    return CrashReporter{cell};
+}
+
+// A const cell is the survivor's view of the detector.  It gives no right
+// to report.
+void mint_crash_reporter(const PeerCrashCell&) noexcept =
+    delete("[Crash_Reporter_From_Const_Cell] a const cell is a view of the detector, and a view gives no right to "
+           "report a crash.  Mint the reporter from the cell that the failure detector owns.");
 
 namespace detach_reason {
 
@@ -245,25 +362,54 @@ struct payload_sender<payload_to_receive<Sender>, Peer> {
     using type = Sender;
 };
 
+// The messages that the decorator counted on its session, one count for
+// each direction.  A label and the payload of its branch are one message.
+// The counts travel from each handle to the next.
+struct message_counts {
+    std::uint64_t received = 0;
+    std::uint64_t sent = 0;
+};
+
+// True when the peer has crashed and every message that its report counts
+// has arrived.  The queue from the peer is then empty, which is the side
+// condition of rule r-rcv-⊙, and a message past this point was never sent.
+[[nodiscard]] inline bool queue_is_drained(const std::optional<CrashWitness>& witness, std::uint64_t received) noexcept {
+    return witness.has_value() && received >= std::to_underlying(witness->messages_sent);
+}
+
 // Waits for a payload that `read` returns, and watches the peer between
-// reads.  A payload queued before the crash wins.  When the peer has
-// crashed and a last read finds nothing, no payload can come, and the
-// wait ends the process with a diagnostic, because the protocol gives the
-// endpoint no branch to take.  A reception from a role that the cell does
-// not watch waits without the check: the mint admits such a role only
-// when it is reliable.
-template <typename Sender, typename Peer, typename Reliable, typename Read, typename Resource>
-[[nodiscard]] constexpr auto await_payload(Read& read, Resource& resource, const PeerCrashCell& cell) {
+// reads.
+//
+// A bare reception is a new message.  It is read only while the report,
+// if any, says that one is still owed, so a message that the transport
+// reports past the count is refused.  When the count is reached, no
+// message can come.  The mint admits a bare reception only from a
+// reliable peer, so the protocol gives no crash branch, and the wait ends
+// the process with Crash_Of_Reliable_Peer.
+//
+// The payload of a label that arrived is part of that message, so the
+// peer sent it.  When the peer has crashed and a last read finds nothing,
+// the transport split the message, and the wait ends the process with
+// Crash_Splits_A_Message.
+//
+// A payload from a role that the cell does not watch waits without the
+// check: the mint admits such a role only when it is reliable.
+template <typename Position, typename Peer, typename Reliable, typename Read, typename Resource>
+[[nodiscard]] constexpr auto await_payload(Read& read, Resource& resource, const PeerCrashCell& cell,
+                                           std::uint64_t received) {
+    using Sender = typename payload_sender<Position, Peer>::type;
+    constexpr bool is_new_message = std::is_same_v<Position, between_messages>;
     for (;;) {
-        if (auto payload = std::invoke(read, resource)) return payload;
-        if constexpr (std::is_same_v<Sender, Peer>) {
+        if constexpr (!std::is_same_v<Sender, Peer>) {
+            if (auto payload = std::invoke(read, resource)) return payload;
+        } else if constexpr (is_new_message) {
+            if (queue_is_drained(cell.witness(), received)) abort_on_reliable_peer_crash();
+            if (auto payload = std::invoke(read, resource)) return payload;
+        } else {
+            if (auto payload = std::invoke(read, resource)) return payload;
             if (cell.has_crashed()) {
                 if (auto payload = std::invoke(read, resource)) return payload;
-                if constexpr (reliable_set_contains_v<Reliable, Peer>) {
-                    abort_on_reliable_peer_crash();
-                } else {
-                    abort_on_split_message();
-                }
+                abort_on_split_message();
             }
         }
         CRUCIBLE_SPIN_PAUSE;
@@ -345,6 +491,7 @@ class [[nodiscard]] CrashWatched {
 
     Handle inner_;
     const PeerCrashCell* peer_cell_;
+    detail::crash_transport::message_counts counts_{};
 
     template <typename, typename, typename, typename, typename>
     friend class CrashWatched;
@@ -353,13 +500,23 @@ class [[nodiscard]] CrashWatched {
     friend constexpr auto detail::crash_transport::make_crash_watched(FHandle, const PeerCrashCell&) noexcept
         -> CrashWatched<FHandle, FSelf, FPeer, FReliable>;
 
-    constexpr CrashWatched(Handle inner, const PeerCrashCell& cell) noexcept
-        : inner_{std::move(inner)}, peer_cell_{&cell} {}
+    constexpr CrashWatched(Handle inner, const PeerCrashCell& cell,
+                           detail::crash_transport::message_counts counts = {}) noexcept
+        : inner_{std::move(inner)}, peer_cell_{&cell}, counts_{counts} {}
 
-    // Wraps the successor, and records where it stands inside a message.
+    // Wraps the successor with the counts after the step, and records where
+    // it stands inside a message.
     template <typename NextPosition = detail::crash_transport::between_messages, typename Next>
-    [[nodiscard]] constexpr auto wrap_(Next next) const noexcept {
-        return CrashWatched<Next, Self, Peer, Reliable, NextPosition>{std::move(next), *peer_cell_};
+    [[nodiscard]] constexpr auto wrap_(Next next, detail::crash_transport::message_counts counts) const noexcept {
+        return CrashWatched<Next, Self, Peer, Reliable, NextPosition>{std::move(next), *peer_cell_, counts};
+    }
+
+    // The counts after a step that moved one more message the given way.
+    [[nodiscard]] constexpr detail::crash_transport::message_counts one_more_sent_() const noexcept {
+        return {counts_.received, counts_.sent + 1};
+    }
+    [[nodiscard]] constexpr detail::crash_transport::message_counts one_more_received_() const noexcept {
+        return {counts_.received + 1, counts_.sent};
     }
 
 public:
@@ -379,6 +536,11 @@ public:
     ~CrashWatched() = default;
 
     [[nodiscard]] bool peer_has_crashed() const noexcept { return peer_cell_->has_crashed(); }
+
+    // The messages this session received from the peer and sent to it, a
+    // label with the payload of its branch counted once.
+    [[nodiscard]] constexpr std::uint64_t messages_received() const noexcept { return counts_.received; }
+    [[nodiscard]] constexpr std::uint64_t messages_sent() const noexcept { return counts_.sent; }
 
     // ── send ─────────────────────────────────────────────────────────
     //
@@ -417,7 +579,13 @@ public:
                 std::invoke(transport, resource, std::move(payload));
             }
         });
-        return CrashSend<decltype(wrap_(std::move(next))), T>{wrap_(std::move(next)), std::move(undelivered)};
+        // The payload of a label is part of the label's message, which the
+        // select counted.  A payload that did not go is no message.
+        constexpr bool is_payload_of_label = std::is_same_v<Position, detail::crash_transport::payload_to_send>;
+        const detail::crash_transport::message_counts counts =
+            (is_payload_of_label || undelivered.has_value()) ? counts_ : one_more_sent_();
+        auto wrapped = wrap_(std::move(next), counts);
+        return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
     }
 
     // ── select ───────────────────────────────────────────────────────
@@ -428,14 +596,19 @@ public:
         requires is_select_v<P> && std::is_invocable_v<Transport, resource_type&, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
         constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, std::size_t>;
+        bool is_written = false;
         auto next = std::move(inner_).template select<I>([&](resource_type& resource, std::size_t label) noexcept(is_nothrow) {
-            if (!peer_cell_->has_crashed()) std::invoke(transport, resource, label);
+            if (!peer_cell_->has_crashed()) {
+                std::invoke(transport, resource, label);
+                is_written = true;
+            }
         });
+        const detail::crash_transport::message_counts counts = is_written ? one_more_sent_() : counts_;
         using Next = decltype(next);
         if constexpr (is_send_v<typename Next::protocol>) {
-            return wrap_<detail::crash_transport::payload_to_send>(std::move(next));
+            return wrap_<detail::crash_transport::payload_to_send>(std::move(next), counts);
         } else {
-            return wrap_(std::move(next));
+            return wrap_(std::move(next), counts);
         }
     }
 
@@ -463,12 +636,16 @@ public:
                       "std::optional<T>.  A read that returns T waits inside the transport, where no crash is "
                       "seen, so a dead peer blocks it for ever.  Return the payload when one is queued, and no "
                       "value otherwise.");
-        using Sender = typename detail::crash_transport::payload_sender<Position, Peer>::type;
-        std::optional<T> payload =
-            detail::crash_transport::await_payload<Sender, Peer, Reliable>(read, inner_.resource(), *peer_cell_);
+        std::optional<T> payload = detail::crash_transport::await_payload<Position, Peer, Reliable>(
+            read, inner_.resource(), *peer_cell_, counts_.received);
         auto [value, next] = std::move(inner_).recv(
-            [&payload](resource_type&) noexcept(std::is_nothrow_move_constructible_v<T>) { return std::move(*payload); });
-        return std::pair{std::move(value), wrap_(std::move(next))};
+            [&payload](resource_type&) noexcept(std::is_nothrow_move_constructible_v<T>) -> std::optional<T> {
+                return std::move(payload);
+            });
+        // A bare reception is a new message.  The payload of a label is part
+        // of the label's message, which the branch counted.
+        constexpr bool is_new_message = std::is_same_v<Position, detail::crash_transport::between_messages>;
+        return std::pair{std::move(value), wrap_(std::move(next), is_new_message ? one_more_received_() : counts_)};
     }
 
     // A crash branch head gives the crash record.  No transport runs.
@@ -480,8 +657,9 @@ public:
                       "fixy::session::diagnostic [Crash_Branch_Unwatched]: this crash branch names a role other "
                       "than the watched peer, so no detector can have triggered it.");
         const CrashCause cause = peer_cell_->crash_cause().value_or(CrashCause::Unknown);
-        auto [record, next] = std::move(inner_).recv([cause](resource_type&) noexcept { return Record{cause}; });
-        return std::pair{record, wrap_(std::move(next))};
+        auto [record, next] =
+            std::move(inner_).recv([cause](resource_type&) noexcept -> std::optional<Record> { return Record{cause}; });
+        return std::pair{record, wrap_(std::move(next), counts_)};
     }
 
     // ── branch ───────────────────────────────────────────────────────
@@ -515,31 +693,38 @@ public:
                       "fixy::session::diagnostic [Crash_Sender_Unwatched]: this Offer has an unreliable sender "
                       "that is not the watched peer.");
 
-        const auto wrapped = [this, &handler](auto branch_handle) {
+        // A word is one more message received.  The crash branch receives
+        // none: it runs because the count of the report was reached.
+        detail::crash_transport::message_counts counts = counts_;
+        const auto wrapped = [this, &handler, &counts](auto branch_handle) {
             using Head = typename decltype(branch_handle)::protocol;
             if constexpr (is_recv_v<Head> && !is_crash_payload_v<typename Head::message_type>) {
-                return std::invoke(handler,
-                                   wrap_<detail::crash_transport::payload_to_receive<OfferSender>>(std::move(branch_handle)));
+                return std::invoke(handler, wrap_<detail::crash_transport::payload_to_receive<OfferSender>>(
+                                                std::move(branch_handle), counts));
             } else {
-                return std::invoke(handler, wrap_(std::move(branch_handle)));
+                return std::invoke(handler, wrap_(std::move(branch_handle), counts));
             }
         };
-        const auto take_word = [this, &wrapped](std::size_t word) {
+        const auto take_word = [this, &wrapped, &counts](std::size_t word) {
             if (!detail::crash_transport::names_message_branch<P>(word)) [[unlikely]]
                 detail::crash_transport::abort_on_crash_label(word, message_branches);
-            return std::move(inner_).branch([word](resource_type&) noexcept { return word; }, wrapped);
+            counts = one_more_received_();
+            return std::move(inner_).branch(
+                [word](resource_type&) noexcept -> std::optional<std::size_t> { return word; }, wrapped);
         };
         resource_type& resource = inner_.resource();
         for (;;) {
-            if (const std::optional<std::size_t> word = std::invoke(poll, resource)) return take_word(*word);
-            if (peer_cell_->has_crashed()) {
-                // A message queued before the crash still wins.
+            // Read the report before the poll.  A word that arrives while the
+            // count of the report is not reached was queued before the crash,
+            // and it wins.  Once the count is reached, the queue is empty, and
+            // a word that the transport still reports was never sent.
+            const std::optional<CrashWitness> witness = peer_cell_->witness();
+            if (!detail::crash_transport::queue_is_drained(witness, counts_.received)) {
                 if (const std::optional<std::size_t> word = std::invoke(poll, resource)) return take_word(*word);
-                if constexpr (is_watched) {
-                    return wrapped(std::move(inner_).template pick_local<crash_branch_index_v<P, Peer>>());
-                } else {
-                    detail::crash_transport::abort_on_reliable_peer_crash();
-                }
+            } else if constexpr (is_watched) {
+                return wrapped(std::move(inner_).template pick_local<crash_branch_index_v<P, Peer>>());
+            } else {
+                detail::crash_transport::abort_on_reliable_peer_crash();
             }
             CRUCIBLE_SPIN_PAUSE;
         }
@@ -554,16 +739,18 @@ public:
 
     // ── crash ────────────────────────────────────────────────────────
     //
-    // Stops the local endpoint and tells the peer through `announce`,
-    // the cell the peer watches.  The endpoint is then at the runtime
-    // type Stop, where no operation exists, so the call gives back the
-    // Resource instead of a handle.  Rule r-↯ does not apply to a
-    // process that has already ended, so End has no crash().  A crash
-    // never falls inside one message: after a label whose branch opens
-    // with a send, the payload goes first.
+    // Stops the local endpoint and tells the peer through `announce`, the
+    // reporter of the cell that the peer watches.  The report carries the
+    // number of messages this endpoint sent, which its handles counted, so
+    // the peer takes its crash branch once every one of them has arrived.
+    // The endpoint is then at the runtime type Stop, where no operation
+    // exists, so the call gives back the Resource instead of a handle.
+    // Rule r-↯ does not apply to a process that has already ended, so End
+    // has no crash().  A crash never falls inside one message: after a
+    // label whose branch opens with a send, the payload goes first.
     template <typename P = protocol>
         requires(!is_terminal_state_v<P>)
-    [[nodiscard]] resource_type crash(CrashCause cause, PeerCrashCell& announce) && {
+    [[nodiscard]] resource_type crash(CrashCause cause, CrashReporter&& announce) && {
         static_assert(!reliable_set_contains_v<Reliable, Self>,
                       "fixy::session::diagnostic [Crash_Of_Reliable_Role]: crash(): the local role is in the "
                       "reliable set.  Rule r-↯ lets only a role outside the reliable set crash.  Remove the "
@@ -575,7 +762,7 @@ public:
                       "crash branch.  Send the payload first, then crash.");
         resource_type resource = std::forward<resource_type>(inner_.resource());
         std::move(inner_).detach(detach_reason::LocalCrashStop{});
-        announce.mark_crashed(cause);
+        static_cast<void>(std::move(announce).report(cause, static_cast<MessageCount>(counts_.sent)));
         return std::forward<resource_type>(resource);
     }
 

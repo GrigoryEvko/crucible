@@ -251,7 +251,7 @@ int run_sender_crashes_after_send() {
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_lost] = std::move(p_sent).send(s::Labelled<M, int>{}, push_value);
     if (p_lost) return fail("a payload to a live peer came back");
-    (void)std::move(p_wait).crash(s::CrashCause::Abort, cell_p);
+    (void)std::move(p_wait).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
 
     bool took_message = false;
     std::move(q).branch(poll_label, [&](auto q_branch) noexcept {
@@ -280,7 +280,7 @@ int run_sender_crashes_first() {
     s::PeerCrashCell cell_q;
     auto p = s::mint_crash_session<BinaryP, P, Q>(Port{&to_p, &to_q}, cell_q);
     auto q = s::mint_crash_session<BinaryQ, Q, P>(Port{&to_q, &to_p}, cell_p);
-    (void)std::move(p).crash(s::CrashCause::ErrorReturn, cell_p);
+    (void)std::move(p).crash(s::CrashCause::ErrorReturn, s::mint_crash_reporter(cell_p));
 
     bool detected = false;
     std::move(q).branch(poll_label, [&](auto q_branch) noexcept {

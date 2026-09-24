@@ -203,8 +203,8 @@ template <typename Inner>
 concept inner_can_close = requires(Inner&& inner) { std::move(inner).close(); };
 
 template <typename Inner>
-concept inner_can_crash = requires(Inner&& inner, CrashCause cause, PeerCrashCell& cell) {
-    std::move(inner).crash(cause, cell);
+concept inner_can_crash = requires(Inner&& inner, CrashCause cause, CrashReporter&& announce) {
+    std::move(inner).crash(cause, std::move(announce));
 };
 
 }  // namespace detail::recording
@@ -384,9 +384,9 @@ public:
 
     template <typename P = protocol>
         requires(!is_terminal_state_v<P>) && detail::recording::inner_can_crash<Inner>
-    [[nodiscard]] resource_type crash(CrashCause cause, PeerCrashCell& announce) && {
+    [[nodiscard]] resource_type crash(CrashCause cause, CrashReporter&& announce) && {
         record_(SessionEvent::stop(self_, peer_, self_, StopReasonKind::LocalAbort, cause));
-        return std::move(inner_).crash(cause, announce);
+        return std::move(inner_).crash(cause, std::move(announce));
     }
 
     [[nodiscard]] constexpr resource_type& resource() & noexcept { return inner_.resource(); }

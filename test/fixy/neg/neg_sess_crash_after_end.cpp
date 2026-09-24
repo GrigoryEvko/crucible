@@ -20,7 +20,7 @@ int main() {
     auto next = std::move(handle).select<0>([](Wire&, std::size_t) noexcept {});
     auto [at_end, undelivered] = std::move(next).send(1, [](Wire&, int&&) noexcept {});
     (void)undelivered;
-    auto resource = std::move(at_end).crash(s::CrashCause::Abort, announce);
+    auto resource = std::move(at_end).crash(s::CrashCause::Abort, s::mint_crash_reporter(announce));
     (void)resource;
     return 0;
 }

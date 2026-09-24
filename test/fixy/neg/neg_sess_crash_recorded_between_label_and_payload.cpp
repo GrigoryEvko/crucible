@@ -23,6 +23,6 @@ int main() {
     auto handle = s::mint_recorded_session(s::mint_crash_session<Proto, Alice, Bob>(Wire{}, peer_cell), log,
                                            s::RoleTagId{1}, s::RoleTagId{2});
     auto half_sent = std::move(handle).template select<0>([](Wire&, std::size_t) noexcept {});
-    (void)std::move(half_sent).crash(s::CrashCause::Abort, own_cell);
+    (void)std::move(half_sent).crash(s::CrashCause::Abort, s::mint_crash_reporter(own_cell));
     return 0;
 }

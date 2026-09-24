@@ -17,7 +17,7 @@ int main() {
     s::PeerCrashCell watched;
     s::PeerCrashCell announce;
     auto handle = s::mint_crash_session<Proto, Alice, Bob, s::ReliableSet<Alice>>(Wire{}, watched);
-    auto resource = std::move(handle).crash(s::CrashCause::Abort, announce);
+    auto resource = std::move(handle).crash(s::CrashCause::Abort, s::mint_crash_reporter(announce));
     (void)resource;
     return 0;
 }

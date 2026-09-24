@@ -1744,6 +1744,21 @@ fixy_neg_compile_test(neg_sess_event_forged_by_start_lifetime_as
   "fixy::session::SessionEvent. is not an implicit-lifetime type")
 
 # ── Crash and checkpoint attacks ──────────────────────────────────────
+
+# The crash reporter is the one author of a cell's report.  No byte route
+# builds one, a const cell mints none, and it does not copy.
+fixy_neg_compile_test(neg_sess_crash_reporter_by_bit_cast
+  "no matching function for call to .bit_cast<fixy::session::CrashReporter>"
+  "is_trivially_copyable_v<_To>")
+fixy_neg_compile_test(neg_sess_crash_reporter_by_start_lifetime_as
+  "static assertion failed"
+  "fixy::session::CrashReporter. is not an implicit-lifetime type")
+fixy_neg_compile_test(neg_sess_crash_reporter_from_const_cell
+  "use of deleted function .void fixy::session::mint_crash_reporter"
+  "\\[Crash_Reporter_From_Const_Cell\\]")
+fixy_neg_compile_test(neg_sess_crash_reporter_copied
+  "use of deleted function .fixy::session::CrashReporter::CrashReporter\\(const fixy::session::CrashReporter&\\)"
+  "a cell has one reporter, so its count has one source")
 #
 # Legal code that tries to defeat the crash transport, the checkpoint
 # session and the event log.  Each runtime attack runs in a child under
