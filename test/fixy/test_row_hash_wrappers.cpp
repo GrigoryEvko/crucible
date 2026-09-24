@@ -870,6 +870,7 @@ inline constexpr std::string_view kMessageMarker =
 
 inline constexpr StatedZero kZeros[] = {
     {^^::foundation::Pinned, "a CRTP marker base: it forbids moves on its deriver and is never a value"},
+    {^^::foundation::ChannelBinding, "a handle's binding to its channel: a member of a handle, never a kernel signature argument"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},
