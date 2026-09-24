@@ -192,6 +192,11 @@ foundation_neg_compile_test(neg_graded_use_counter_dual
 foundation_neg_compile_test(neg_counter_tag_without_orientation
   "template constraint failure for .template<class Tag> +requires +CounterTag<Tag> struct foundation::algebra::lattices::StrongCounterLattice."
   "the required expression .Tag::claim_orientation. is invalid")
+# A counter tag that states a name and an orientation but carries a data
+# member is refused by the emptiness check of CounterTag.
+foundation_neg_compile_test(neg_counter_tag_with_state
+  "template constraint failure for .template<class Tag> +requires +CounterTag<Tag> struct foundation::algebra::lattices::StrongCounterLattice."
+  "the expression .is_empty_v<Tag> \\[with Tag = stateful_step\\]. evaluated to .false.")
 # No array of integers states a clock, and no bytes rebuild one.
 foundation_neg_compile_test(neg_happens_before_clock_from_integers
   "element_type::element_type\\(const std::array<long unsigned int, N>&\\) .with long unsigned int N = 2. Tag = void.* is private within this context"
