@@ -268,6 +268,53 @@ static void test_int64_min_stride() {
     std::printf("  test_int64_min_stride: PASSED\n");
 }
 
+// A negative size is not a valid extent, but a hostile descriptor can hold
+// one.  The screen bounds each product by the largest size less one, which
+// is not a bound when a size is negative: the second case below passes a
+// screen of 1 * 2^40 and then multiplies -(2^40 + 1) by 2^40.  A live size
+// below one therefore goes to the scalar routine.
+static void test_negative_size() {
+    constexpr int64_t kBig = int64_t{1} << 40;
+    check_equiv(make_meta({-3}, {5}), "negative-size");
+    check_equiv(make_meta({2, -kBig}, {0, kBig}), "negative-size-past-the-screen");
+    check_equiv(make_meta({INT64_MIN}, {0}), "int64-min-size-stride0");
+    check_equiv(make_meta({INT64_MIN}, {1}), "int64-min-size-stride1");
+    check_equiv(make_meta({INT64_MIN}, {-1}), "int64-min-size-stride-neg1");
+    check_equiv(make_meta({INT64_MIN}, {7}), "int64-min-size-stride7");
+    check_equiv(make_meta({INT64_MIN, 3}, {INT64_MIN, 2}), "int64-min-size-and-stride");
+
+    // A modular subtraction gives INT64_MAX for INT64_MIN, and a stride of
+    // one keeps the product in range, so the span is one past INT64_MAX: it
+    // saturates.
+    const auto saturated = compute_storage_nbytes_scalar(external_meta(make_meta({INT64_MIN}, {1})));
+    assert(saturated.was_clamped());
+
+    std::printf("  test_negative_size: PASSED\n");
+}
+
+// The lanes past ndim take part in every vector operation, and a hostile
+// descriptor can hold any value in them.  Each lane holds the most negative
+// value here, and the answer must still be the one live dimension alone.
+static void test_dead_lanes_hold_extremes() {
+    TensorMeta m{};
+    m.dtype = ScalarType::Float;
+    for (uint8_t d = 0; d < 8; ++d) {
+        m.sizes[d] = ::crucible::tensor_dim(INT64_MIN);
+        m.strides[d] = ::crucible::tensor_dim(INT64_MIN);
+    }
+    m.ndim = 1;
+    m.sizes[0] = ::crucible::tensor_dim(4);
+    m.strides[0] = ::crucible::tensor_dim(8);
+    check_equiv(m, "dead-lanes-int64-min");
+
+    // Three steps of eight elements past the first, plus the first, of four
+    // bytes each.
+    const auto span = compute_storage_nbytes_simd(external_meta(m));
+    assert(!span.was_clamped() && span.value() == 100);
+
+    std::printf("  test_dead_lanes_hold_extremes: PASSED\n");
+}
+
 // These bounds keep every generated input on the vector fast path, so
 // the fallback never runs here.
 
@@ -329,6 +376,8 @@ int main() {
     test_overflow_multiply();
     test_overflow_add_fold();
     test_int64_min_stride();
+    test_negative_size();
+    test_dead_lanes_hold_extremes();
     test_random_well_bounded();
     test_random_extreme();
 

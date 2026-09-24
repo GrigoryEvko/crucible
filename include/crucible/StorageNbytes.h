@@ -62,10 +62,12 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
         const int64_t size = raw_tensor_dim(raw.sizes[d]);
         const int64_t stride = raw_tensor_dim(raw.strides[d]);
         if (size == 0) return Sat{uint64_t{0}};
+        // A hostile descriptor can hold a negative size. The subtraction is
+        // modular, so it is defined for every size: INT64_MIN gives INT64_MAX.
+        // The product can still overflow.
+        const int64_t size_minus_one = static_cast<int64_t>(static_cast<uint64_t>(size) - uint64_t{1});
         int64_t dim_extent_bytes;
-        // The size is positive here, so the subtraction cannot underflow.
-        // The product still can overflow.
-        if (__builtin_mul_overflow(size - 1, stride, &dim_extent_bytes)) [[unlikely]] {
+        if (__builtin_mul_overflow(size_minus_one, stride, &dim_extent_bytes)) [[unlikely]] {
             return Sat{UINT64_MAX, true};
         }
         if (dim_extent_bytes > 0) {
@@ -120,25 +122,32 @@ compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
 
     auto valid_mask = ::foundation::simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
-    // A size of zero would make this negative, but the caller returns before
-    // reaching here in that case. Dead lanes go to zero so they cannot win
-    // the reduction below.
-    auto sizes_minus_one = ::foundation::simd::select(valid_mask, sizes - i64x8(1), i64x8(0));
+    // Each lane is made safe before any arithmetic, because a dead lane and a
+    // hostile live lane can hold any value. A dead lane becomes size one and
+    // stride zero, so it cannot win either reduction below.
+    const i64x8 one(1);
+    auto live_sizes = ::foundation::simd::select(valid_mask, sizes, one);
 
-    // Negating the most negative int64 does not produce a positive value, so
-    // that one stride is mapped to the largest positive value instead, which
+    // The bound below holds for sizes of one or more only, so a live size
+    // below one sends the input to the scalar routine, which takes every
+    // size. The caller has already returned for a size of zero. The clamp
+    // keeps the subtraction defined on such a lane.
+    const bool every_size_positive = !any_of(live_sizes < one);
+    auto sizes_minus_one = ::foundation::simd::max(live_sizes, one) - one;
+
+    // Negating the most negative int64 is undefined, so that one stride is
+    // clamped to -INT64_MAX first. Its absolute value is then INT64_MAX, which
     // forces the screen to fail and the scalar routine to run.
-    auto strides_neg = -strides;
-    auto strides_abs_raw = ::foundation::simd::select(strides >= i64x8(0), strides, strides_neg);
-    auto is_int64_min = (strides == i64x8(INT64_MIN));
-    auto strides_abs = ::foundation::simd::select(is_int64_min, i64x8(INT64_MAX), strides_abs_raw);
-    strides_abs = ::foundation::simd::select(valid_mask, strides_abs, i64x8(0));
+    auto live_strides = ::foundation::simd::select(valid_mask, strides, i64x8(0));
+    auto strides_clamped = ::foundation::simd::max(live_strides, i64x8(-INT64_MAX));
+    auto strides_abs = ::foundation::simd::select(strides_clamped >= i64x8(0), strides_clamped, -strides_clamped);
 
     const int64_t max_smo = ::foundation::simd::reduce_max(sizes_minus_one);
     const int64_t max_str = ::foundation::simd::reduce_max(strides_abs);
 
     int64_t bound;
-    return !__builtin_mul_overflow(max_smo, max_str, &bound);
+    const bool bound_fits = !__builtin_mul_overflow(max_smo, max_str, &bound);
+    return every_size_positive & bound_fits;
 }
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE fixy::wrap::Saturated<uint64_t>
@@ -166,11 +175,13 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
         return compute_storage_nbytes_scalar(meta);
     }
 
-    // The screen above is what licenses this unchecked multiply. Dead lanes
-    // go to zero so they add nothing to either running offset.
-    auto sizes_minus_one = sizes - i64x8(1);
-    auto extents = sizes_minus_one * strides;
-    extents = ::foundation::simd::select(valid_mask, extents, i64x8(0));
+    // The screen above is what licenses this unchecked multiply: each live
+    // size is one or more, and each live product is bounded. A dead lane
+    // becomes size one and stride zero before any arithmetic, so it
+    // multiplies to zero and adds nothing to either running offset.
+    const i64x8 one(1);
+    auto sizes_minus_one = ::foundation::simd::select(valid_mask, sizes, one) - one;
+    auto extents = sizes_minus_one * ::foundation::simd::select(valid_mask, strides, i64x8(0));
 
     // The store below is the aligned form, hence the explicit alignment.
     alignas(64) fixy::wrap::FixedArray<int64_t, 8> extents_buf{};
