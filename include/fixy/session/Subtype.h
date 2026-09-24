@@ -35,15 +35,27 @@
 // In a positional choice the word is the position, so a Select or an
 // Offer with the same branches in another order is another protocol, and
 // the relation refuses it.  A keyed choice never refines a positional
-// one, because the two put different words on the wire.  A branch that
-// is no label, a crash branch for example, has no word on the wire.  The
-// relation matches it by the payload it receives, wherever it stands
-// (rule Sub-&, Barwell, Hou, Yoshida and Zhou, LMCS 2025, Definition
-// 4.4).  So an Offer of the subtype can add a message branch before its
-// crash branches.  The relation compares the Sender note of an Offer for
-// equality, so each combinator is reflexive, the Offer with a note
-// included.  An operand that is not well-formed is refused,
-// and the reason says so.  An empty choice is not well-formed.
+// one, because the two put different words on the wire.
+//
+// A keyed step is the keyed choice of its one branch.  A Send or a Recv
+// whose payload names a label key is the Select or the Offer of that one
+// label branch, because a message is a choice with one label (Barwell,
+// Hou, Yoshida and Zhou, LMCS 2025, Definition 4.9).  The type graph of
+// foundation/algebra/Transition.h reads the step so, and both relations
+// walk that graph.  A keyed Send refines each keyed Select that has its
+// label.  An Offer that receives the label refines a keyed Recv of it.
+// The Recv takes the Sender note of the peer that its payload names, so
+// only an Offer with that note refines it.  A step whose payload names no
+// label is a plain step, and it never pairs with a choice.
+//
+// A branch that is no label, a crash branch for example, has no word on
+// the wire.  The relation matches it by the payload it receives, wherever
+// it stands (rule Sub-&, Barwell, Hou, Yoshida and Zhou, LMCS 2025,
+// Definition 4.4).  So an Offer of the subtype can add a message branch
+// before its crash branches.  The relation compares the Sender note of an
+// Offer for equality, so each combinator is reflexive, the Offer with a
+// note included.  An operand that is not well-formed is refused, and the
+// reason says so.  An empty choice is not well-formed.
 //
 // One walk gives the verdict and its reason.  subtype_verdict_v names
 // the first failed pair, in the order a depth-first walk reaches it,

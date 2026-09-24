@@ -1128,11 +1128,11 @@ using strip_peers_t = typename detail::proj::strip<Local>::type;
 
 // ── Liveness under crash-stop failures ───────────────────────────────
 //
-// Theorem 4.31 of the crash-stop paper: a typing context associated with
-// a global type G that has no runtime constructs, for a set R of
-// reliable roles, is R-safe, R-deadlock-free and R-live.  R-liveness
-// (Definition 4.28) quantifies over fair paths, and a fair path has
-// three clauses (Definition 4.27): each enabled send eventually fires
+// Theorem 4.31 of the crash-stop paper: a typing context associated
+// (Definition 4.19) with a global type G that has no runtime constructs,
+// for a set R of reliable roles, is R-safe, R-deadlock-free and R-live.
+// R-liveness (Definition 4.28) quantifies over fair paths, and a fair
+// path has three clauses (Definition 4.27): each enabled send eventually fires
 // (F1), each enabled receive eventually fires (F2), and each enabled
 // crash detection eventually fires (F3).  Without F3 a path can ignore
 // a crash for ever and still count as fair.  Definition 17 of the
@@ -1155,9 +1155,13 @@ using strip_peers_t = typename detail::proj::strip<Local>::type;
 //   - G projects under R onto each of its roles (project_crash_t).
 //
 // The context made of these projections, with empty queues, is then
-// R-live.  Association under crashes (Definition 4.19), which relates a
-// context with crashed roles to a global type, is not modelled here.
-// The result covers one session, as in fixy/session/Liveness.h.
+// R-live.  crash_projected_context_t of fixy/session/CrashAssociation.h
+// builds that context.  crash_association_holds_v in the same header is
+// association under crashes (Definition 4.19): it relates a
+// configuration with crashed roles and queued messages to a state
+// ⟨C; G⟩.  The predicate here reads only a G that has no runtime
+// construct, so it reads no configuration.  The result covers one
+// session, as in fixy/session/Liveness.h.
 
 template <typename G, typename Reliable>
 struct CrashLiveness {};

@@ -45,6 +45,15 @@
 // Without that clause a path can ignore a crash for ever and still
 // count as fair.
 //
+// Association.  association_holds_v, which context_is_live_v reads, is
+// the association of Definition 21, where no role crashes.  The
+// association that Theorem 4.31 reads is Definition 4.19 of the
+// crash-stop paper.  It also admits roles at Stop and the crash
+// annotations of G, and it is crash_association_holds_v in
+// fixy/session/CrashAssociation.h.  So context_is_live_v is false for a
+// configuration with a crashed role, and that false tells nothing about
+// its liveness.
+//
 // Runtime monitors.  A monitor that checks liveness on a recorded run
 // checks the obligations of Definition 12 on that run.  A path is fair
 // when:
