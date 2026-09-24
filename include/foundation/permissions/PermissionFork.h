@@ -168,7 +168,16 @@ mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, 
 // declaration in a nested namespace would declare a new function there
 // and befriend that one instead.
 class PermissionForkRunner final {
+    // No object of the runner exists.  Every constructor is deleted and
+    // the destructor is user-provided, so the class is neither trivially
+    // copyable nor an implicit-lifetime type, and no byte route
+    // (std::bit_cast, std::start_lifetime_as) can make one either.
     PermissionForkRunner() = delete("the fork runner holds static members only; no object of it exists");
+    PermissionForkRunner(const PermissionForkRunner&) = delete("the fork runner holds static members only");
+    PermissionForkRunner& operator=(const PermissionForkRunner&) = delete("the fork runner holds static members only");
+    PermissionForkRunner(PermissionForkRunner&&) = delete("the fork runner holds static members only");
+    PermissionForkRunner& operator=(PermissionForkRunner&&) = delete("the fork runner holds static members only");
+    constexpr ~PermissionForkRunner() noexcept {}
 
     template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
         requires CtxFitsPermissionFork<Ctx, Parent, Children...>

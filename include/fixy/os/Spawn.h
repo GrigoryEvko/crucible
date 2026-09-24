@@ -359,7 +359,16 @@ mint_parallel_for(Ctx const& ctx, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
 // A free function in a detail namespace once held this fan-out, and any
 // translation unit could call it with no context at all.
 class ParallelForRunner final {
+    // No object of the runner exists.  Every constructor is deleted and
+    // the destructor is user-provided, so the class is neither trivially
+    // copyable nor an implicit-lifetime type, and no byte route
+    // (std::bit_cast, std::start_lifetime_as) can make one either.
     ParallelForRunner() = delete("the parallel-for runner holds static members only; no object of it exists");
+    ParallelForRunner(const ParallelForRunner&) = delete("the parallel-for runner holds static members only");
+    ParallelForRunner& operator=(const ParallelForRunner&) = delete("the parallel-for runner holds static members only");
+    ParallelForRunner(ParallelForRunner&&) = delete("the parallel-for runner holds static members only");
+    ParallelForRunner& operator=(ParallelForRunner&&) = delete("the parallel-for runner holds static members only");
+    constexpr ~ParallelForRunner() noexcept {}
 
     template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
         requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
