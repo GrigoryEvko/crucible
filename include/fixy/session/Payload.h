@@ -1090,6 +1090,124 @@ inline constexpr bool delegates_to_own_peer_v = detail::delegates_to_own_peer(^^
 template <class Proto>
 concept DelegatesToNoOwnPeer = !delegates_to_own_peer_v<Proto>;
 
+// ── The regions that a protocol delivers ────────────────────────────
+//
+// A receive adds to the set of the receiver each region that its payload
+// moves, lends or releases (receiver_gains of payload_perm_delta below).
+// The receiver then holds a token, a read loan or a returned token of
+// that region.  The row of the tag of a region names the effects that a
+// touch of the region incurs (foundation/permissions/Permission.h).  So
+// the context of the receiver must admit that row, as the context of a
+// mint admits the row of each token that the mint consumes.  The context
+// gate of fixy/session/Handle.h reads the set below for that check.
+//
+// The walk visits each Recv of the protocol, on each branch and in each
+// loop body.  A received DelegatedSession gives the receiver an endpoint,
+// and the receiver runs the protocol of that endpoint.  So the walk also
+// visits each Recv of that protocol, and the tags of the endpoint set
+// count as regions that the message moves.  A Send delivers nothing: the
+// sender held each region that it sends, and the LentOut state of a loan
+// names a region that the sender held.
+//
+// A node that the registry does not know, and a payload that the payload
+// walk refuses, stop the build.  Complexity: one visit for each distinct
+// node of the protocol and of each delegated protocol, and one payload
+// walk for each received payload.
+
+namespace detail {
+
+// Why the walk stopped: a node that the registry does not know, or a
+// payload that the payload walk refuses.  It holds no vector, so a static
+// data member can hold it.
+struct DeliveryVerdict {
+    std::meta::info unregistered_node{};
+    PayloadVerdict payload{};
+};
+
+struct DeliveryWalk {
+    std::vector<std::meta::info> regions;
+    std::vector<std::meta::info> visited;
+    DeliveryVerdict verdict;
+};
+
+[[nodiscard]] consteval bool delivery_is_refused(const DeliveryVerdict& verdict) noexcept {
+    return verdict.unregistered_node != std::meta::info{} || verdict.payload.refusal != PayloadRefusal::None;
+}
+
+// A node gives the same regions on every path that reaches it, so the
+// walk visits each node one time.
+consteval void walk_delivered_regions(std::meta::info protocol, DeliveryWalk& walk) {
+    namespace tr = ::foundation::algebra::transition;
+    if (delivery_is_refused(walk.verdict)) return;
+    const std::meta::info type = std::meta::dealias(protocol);
+    if (holds_type(walk.visited, type)) return;
+    walk.visited.push_back(type);
+    const tr::node view = tr::decompose(protocol_registry, type);
+    if (!view.is_registered) {
+        walk.verdict.unregistered_node = type;
+        return;
+    }
+    const bool is_receive = view.entry.kind == tr::shape_kind::step && view.entry.direction == tr::polarity::input;
+    if (is_receive) {
+        const PayloadAccount account = account_payload(view.payload);
+        if (account.refusal != PayloadRefusal::None) {
+            walk.verdict.payload = PayloadVerdict{account.refusal, account.refused_type};
+            return;
+        }
+        // The set of a delegated endpoint can hold a loan state, and the
+        // region of LentOut<Tag> or BorrowedIn<Tag> is Tag.
+        for (const std::vector<std::meta::info>* gained : {&account.moved, &account.lent, &account.released}) {
+            for (const std::meta::info element : *gained) {
+                const std::meta::info region = region_of(element);
+                if (!holds_type(walk.regions, region)) walk.regions.push_back(region);
+            }
+        }
+        for (const std::meta::info carried : reached_before_delegation(view.payload)) {
+            if (payload_family_is(carried, ^^DelegatedSession)) {
+                walk_delivered_regions(std::meta::template_arguments_of(carried)[0], walk);
+            }
+        }
+    }
+    if (view.next != std::meta::info{}) walk_delivered_regions(view.next, walk);
+    for (const std::meta::info branch : view.branches) walk_delivered_regions(branch, walk);
+}
+
+[[nodiscard]] consteval DeliveryWalk delivery_walk_of(std::meta::info protocol) {
+    DeliveryWalk walk;
+    walk_delivered_regions(protocol, walk);
+    return walk;
+}
+
+[[nodiscard]] consteval DeliveryVerdict delivery_verdict(std::meta::info protocol) {
+    return delivery_walk_of(protocol).verdict;
+}
+
+// The regions as a PermSet, in the order that the walk finds them.
+[[nodiscard]] consteval std::meta::info delivered_region_set(std::meta::info protocol) {
+    return std::meta::substitute(^^::foundation::permissions::PermSet, delivery_walk_of(protocol).regions);
+}
+
+[[nodiscard]] consteval std::string_view delivery_refusal_text(DeliveryVerdict verdict) {
+    if (verdict.payload.refusal != PayloadRefusal::None) return payload_refusal_text(verdict.payload);
+    if (verdict.unregistered_node == std::meta::info{}) return {};
+    return ::foundation::algebra::transition::unregistered_message(unregistered_prefix, verdict.unregistered_node);
+}
+
+}  // namespace detail
+
+// The regions that Proto can deliver to the endpoint that runs it: each
+// region that a Recv of Proto, or of a protocol that Proto receives in a
+// DelegatedSession, moves, lends or releases to the receiver.
+template <class Proto>
+struct protocol_delivered_regions {
+    static constexpr detail::DeliveryVerdict verdict = detail::delivery_verdict(^^Proto);
+    static_assert(!detail::delivery_is_refused(verdict), detail::delivery_refusal_text(verdict));
+    using type = [:detail::delivered_region_set(^^Proto):];
+};
+
+template <class Proto>
+using protocol_delivered_regions_t = typename protocol_delivered_regions<Proto>::type;
+
 // ── The set after one step ──────────────────────────────────────────
 
 template <class PS, class P>

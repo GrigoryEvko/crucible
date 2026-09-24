@@ -18,7 +18,10 @@
 // of the protocol carries (CtxAdmitsProtocolRow of fixy/session/Handle.h).
 // A context with no Alloc capability cannot start a session whose
 // messages carry an Alloc computation, in either direction, or in a
-// protocol that the session delegates.
+// protocol that the session delegates.  The context must also admit the
+// row of each permission that a receive of the protocol delivers.  A
+// context with no IO capability cannot receive a token of a region whose
+// touch does IO.
 //
 // ── A channel handle as the Resource ────────────────────────────────
 //

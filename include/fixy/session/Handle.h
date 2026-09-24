@@ -108,6 +108,7 @@
 
 #include <foundation/Pinned.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
@@ -124,6 +125,7 @@
 #include <optional>
 #include <source_location>
 #include <span>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -2204,9 +2206,10 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
 // The protocol is runnable, the Resource is a SessionResource, and the
 // permission flow of the whole protocol closes from the set of the
 // tokens, on every branch.  The context holds each effect that a payload
-// of the protocol carries (CtxAdmitsProtocolRow).  This mint asks for one
-// tag or more.  mint_session of fixy/session/Entry.h reads the same
-// concept with no tag.
+// of the protocol carries, and the row of each permission that the
+// protocol delivers to the endpoint (CtxAdmitsProtocolRow).  This mint
+// asks for one tag or more.  mint_session of fixy/session/Entry.h reads
+// the same concept with no tag.
 //
 // The tokens are the last parameters, so the mint cannot take a
 // source_location after them.  The session records the site of the mint.
@@ -2241,6 +2244,14 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
 // a header that reads only the payload rules does not include the payload
 // walk.  Complexity: linear in the distinct types that the protocol and
 // its payloads reach.
+//
+// A receive can also give the endpoint a permission: a token, a read loan
+// or a returned token of a region.  A touch of that region incurs the row
+// of its tag, so the row of the protocol also holds the permission row of
+// each region that the protocol delivers to the endpoint
+// (protocol_delivered_regions of fixy/session/Payload.h).  A mint checks
+// the row of each token that it consumes.  This check covers each token
+// that arrives after the mint, in a message or in a delegated endpoint.
 
 namespace detail {
 
@@ -2294,12 +2305,68 @@ inline constexpr std::span<const ::fixy::concurrent::payload_family_rule> sessio
 template <class Proto>
 using protocol_payload_row_t = ::fixy::concurrent::payload_row_under_t<Proto, session_payload_families>;
 
-// The effect row of Proto is a subrow of the row of the context.  A
-// payload that the walk cannot classify stops the build.
+namespace detail {
+
+[[nodiscard]] consteval std::string_view delivered_region_without_row_text(std::meta::info region) {
+    std::string text{"fixy::session::diagnostic [Delivered_Region_Without_Row]: a receive of the protocol delivers a "
+                     "permission of the region "};
+    text += std::meta::display_string_of(region);
+    text += ", and its tag declares no permission row.  No program can mint a token for that tag, and the gate "
+            "cannot name the effects that a touch of the region incurs.  Declare the row of the tag, as "
+            "foundation/permissions/Permission.h states.";
+    return std::define_static_string(text);
+}
+
+// The row of a delivered region, or the empty row when its tag declares
+// none.  The primary does not name permission_row_t, so a tag with no row
+// gives one diagnostic, from union_of_permission_rows below.
+template <class Region, bool = ::foundation::permissions::has_permission_row_v<Region>>
+struct declared_permission_row {
+    using type = ::foundation::effects::Row<>;
+};
+
+template <class Region>
+struct declared_permission_row<Region, true> {
+    using type = ::foundation::permissions::permission_row_t<Region>;
+};
+
+template <class Row, class... Regions>
+struct union_of_permission_rows {
+    using type = Row;
+};
+
+template <class Row, class First, class... Rest>
+struct union_of_permission_rows<Row, First, Rest...> {
+    static_assert(::foundation::permissions::has_permission_row_v<First>, delivered_region_without_row_text(^^First));
+    using type = typename union_of_permission_rows<
+        ::foundation::effects::row_union_t<Row, typename declared_permission_row<First>::type>, Rest...>::type;
+};
+
+template <class Regions>
+struct permission_rows_of_set;
+
+template <class... Regions>
+struct permission_rows_of_set<::foundation::permissions::PermSet<Regions...>>
+    : union_of_permission_rows<::foundation::effects::Row<>, Regions...> {};
+
+}  // namespace detail
+
+// The union of the permission rows of the regions that Proto can deliver
+// to the endpoint that runs it (protocol_delivered_regions of
+// fixy/session/Payload.h).  A delivered tag that declares no row stops
+// the build, because no program can mint a token for it.
+template <class Proto>
+using protocol_delivered_permission_row_t =
+    typename detail::permission_rows_of_set<protocol_delivered_regions_t<Proto>>::type;
+
+// The context admits the effect row of Proto: the row of each payload,
+// and the permission row of each region that Proto delivers to the
+// endpoint.  A payload that the walk cannot classify stops the build.
 template <typename Ctx, typename Proto>
 concept CtxAdmitsProtocolRow =
     ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::is_subrow_v<protocol_payload_row_t<Proto>, typename Ctx::row_type>;
+    && ::foundation::effects::is_subrow_v<protocol_payload_row_t<Proto>, typename Ctx::row_type>
+    && ::foundation::effects::is_subrow_v<protocol_delivered_permission_row_t<Proto>, typename Ctx::row_type>;
 
 template <typename Ctx, typename Proto, typename Resource, typename... Tags>
 concept CtxFitsSessionFrom =
@@ -2413,7 +2480,9 @@ class AsyncChannelDoor;
 
 // The row gate of a channel.  Each channel mint gives one context to the
 // two sides of the channel.  So the context must admit the row of each
-// side, as CtxFitsSessionFrom asks for the one side of a session.  Every
+// side, as CtxFitsSessionFrom asks for the one side of a session.  Each
+// permission that one side sends arrives at the other side, and the row
+// of the other side holds the row of that permission.  Every
 // channel mint reads this concept, so the channel mints and the session
 // mints cannot drift apart.
 template <typename Ctx, typename SelfProto, typename PeerProto>

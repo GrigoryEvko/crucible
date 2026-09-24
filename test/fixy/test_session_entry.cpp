@@ -87,6 +87,69 @@ static_assert(s::CtxFitsSession<BgIoCtx, BranchRows, Counter>);
 static_assert(!s::CtxFitsSession<BgCtx, DelegatesIo, Counter>, "the delegated protocol sends IO");
 static_assert(s::CtxFitsSession<BgIoCtx, DelegatesIo, Counter>);
 
+// A receive can deliver a permission: a token, a read loan or a returned
+// token of a region.  The row of the tag of the region names the effects
+// that a touch of the region incurs, so the context of the receiver must
+// admit it, as a mint admits the row of each token that it consumes.
+struct IoRegion {
+    using permission_row = eff::Row<eff::Effect::IO>;
+};
+struct PureRegion {
+    using permission_row = eff::Row<>;
+};
+
+using Policy = s::DefaultAbandonmentPolicy;
+using ReceivesIoRegion = s::Recv<s::Transferable<int, IoRegion>, s::End>;
+using ReceivesIoEndpoint =
+    s::Recv<s::DelegatedSession<s::End, Counter, Policy, ::foundation::permissions::PermSet<IoRegion>>, s::End>;
+using ReceivesIoThroughEndpoint =
+    s::Recv<s::DelegatedSession<ReceivesIoRegion, Counter, Policy, ::foundation::permissions::EmptyPermSet>, s::End>;
+using ReceivesIoInBranch = s::Offer<s::Recv<int, s::End>, s::Recv<s::Transferable<int, IoRegion>, s::End>>;
+using ReceivesPureEndpoint =
+    s::Recv<s::DelegatedSession<s::End, Counter, Policy, ::foundation::permissions::PermSet<PureRegion>>, s::End>;
+using ReceivesLoanInEndpoint =
+    s::Recv<s::DelegatedSession<s::Send<s::Released<int, IoRegion>, s::End>, Counter, Policy,
+                                ::foundation::permissions::PermSet<s::BorrowedIn<IoRegion>>>,
+            s::End>;
+
+static_assert(std::is_same_v<s::protocol_delivered_regions_t<Once>, ::foundation::permissions::PermSet<>>);
+static_assert(std::is_same_v<s::protocol_delivered_regions_t<SendsRegion>, ::foundation::permissions::PermSet<>>,
+              "a send delivers nothing: the sender held the region");
+static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoRegion>,
+                             ::foundation::permissions::PermSet<IoRegion>>);
+static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoEndpoint>,
+                             ::foundation::permissions::PermSet<IoRegion>>,
+              "the permission set of a delegated endpoint moves with it");
+static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoThroughEndpoint>,
+                             ::foundation::permissions::PermSet<IoRegion>>,
+              "the receiver runs the protocol of the delegated endpoint");
+static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoInBranch>,
+                             ::foundation::permissions::PermSet<IoRegion>>,
+              "each branch counts");
+static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesLoanInEndpoint>,
+                             ::foundation::permissions::PermSet<IoRegion>>,
+              "a loan state in the set of a delegated endpoint delivers its region");
+static_assert(std::is_same_v<s::protocol_delivered_permission_row_t<ReceivesIoRegion>, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<s::protocol_delivered_permission_row_t<ReceivesLoanInEndpoint>, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<s::protocol_delivered_permission_row_t<ReceivesPureEndpoint>, eff::Row<>>);
+
+static_assert(!s::CtxFitsSession<BgCtx, ReceivesIoRegion, Counter>, "the background context holds no IO");
+static_assert(s::CtxFitsSession<BgIoCtx, ReceivesIoRegion, Counter>);
+static_assert(!s::CtxFitsSession<BgCtx, ReceivesIoEndpoint, Counter>, "the delegated endpoint holds an IO region");
+static_assert(s::CtxFitsSession<BgIoCtx, ReceivesIoEndpoint, Counter>);
+static_assert(!s::CtxFitsSession<BgCtx, ReceivesIoThroughEndpoint, Counter>,
+              "the delegated protocol receives an IO region");
+static_assert(s::CtxFitsSession<BgIoCtx, ReceivesIoThroughEndpoint, Counter>);
+static_assert(!s::CtxFitsSession<BgCtx, ReceivesIoInBranch, Counter>, "a branch that no run takes counts too");
+static_assert(s::CtxFitsSession<BgIoCtx, ReceivesIoInBranch, Counter>);
+static_assert(s::CtxFitsSession<BgCtx, ReceivesPureEndpoint, Counter>, "a pure region needs no effect");
+
+// One context runs the two sides of a channel.  A permission that one
+// side sends arrives at the other side, so the row gate of the channel
+// holds its row.
+static_assert(!s::CtxAdmitsChannelRow<BgCtx, s::Send<s::Transferable<int, IoRegion>, s::End>, ReceivesIoRegion>);
+static_assert(s::CtxAdmitsChannelRow<BgIoCtx, s::Send<s::Transferable<int, IoRegion>, s::End>, ReceivesIoRegion>);
+
 [[nodiscard]] int mint_walks_to_end() {
     const BgCtx ctx{eff::testing::bg()};
     auto head = s::mint_session<Once>(ctx, Counter{});

@@ -1946,6 +1946,20 @@ fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
   "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
   "The refused type: unclassified_fixture::Envelope<int>"
   "In instantiation of .struct fixy::concurrent::payload_row_under<fixy::session::Send<unclassified_fixture::Envelope<int>, fixy::session::End>, fixy::session::session_payload_families>.")
+# A receive can deliver a permission, in a message or in the set of a
+# delegated endpoint.  The context must admit the row of each delivered
+# region, and a delivered tag that declares no row stops the build.
+fixy_neg_compile_test(neg_sess_mint_session_receives_region_outside_ctx
+  "no matching function for call to .mint_session<receives_region_fixture::Proto>"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>."
+  "is_subrow_v<typename fixy::session::detail::permission_rows_of_set<typename fixy::session::protocol_delivered_regions<Proto>::type>::type, typename Ctx::row_type> .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>")
+fixy_neg_compile_test(neg_sess_mint_session_delegated_region_outside_ctx
+  "no matching function for call to .mint_session<delegated_region_fixture::Proto>"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::DelegatedSession<fixy::session::End, delegated_region_fixture::Wire, "
+  "is_subrow_v<typename fixy::session::detail::permission_rows_of_set<typename fixy::session::protocol_delivered_regions<Proto>::type>::type, typename Ctx::row_type> .with Proto = fixy::session::Recv<fixy::session::DelegatedSession<")
+fixy_neg_compile_test(neg_sess_mint_session_delivered_region_without_row
+  "static assertion failed: fixy::session::diagnostic \\[Delivered_Region_Without_Row\\]: a receive of the protocol delivers a permission of the region region_without_row_fixture::BareRegion, and its tag declares no permission row"
+  "In instantiation of .struct fixy::session::detail::union_of_permission_rows<foundation::effects::Row<>, region_without_row_fixture::BareRegion>.")
 # The context-bound with_session lends its Resource for the body only.
 # A body that returns before End, keeps the handle, or returns the End
 # handle of another session fails the body gate, and a Resource passed as
