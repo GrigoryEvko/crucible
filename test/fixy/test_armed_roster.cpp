@@ -311,6 +311,21 @@ struct foundation::contracts::armed_instances<^^fp::detail::is_each_tag_distinct
                               fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight, w::SpawnLeft>>;
 };
 
+// A fork body takes the token of its own child and the context without
+// throwing.  Bodies in the wrong order, too few bodies, or a shape that
+// is not two tuples take nothing.
+template <>
+struct foundation::contracts::armed_instances<^^fp::detail::can_each_body_take_its_child> {
+    using accepts = witnesses<fp::detail::can_each_body_take_its_child<
+        w::BgCtx, std::tuple<w::SpawnLeft, w::SpawnRight>, std::tuple<w::LeftBody, w::RightBody>>>;
+    using refuses = witnesses<
+        fp::detail::can_each_body_take_its_child<w::BgCtx, std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                 std::tuple<w::RightBody, w::LeftBody>>,
+        fp::detail::can_each_body_take_its_child<w::BgCtx, std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                 std::tuple<w::LeftBody>>,
+        fp::detail::can_each_body_take_its_child<w::BgCtx, int, int>>;
+};
+
 // ── fixy: the throws atom, spawn and io ─────────────────────────────
 
 template <>
@@ -741,6 +756,18 @@ struct foundation::contracts::armed_instances<^^gd::is_role_in> {
                               gd::is_role_in<w::RoleQ, w::gl::Roles<w::RoleP, w::RoleQ>>>;
     using refuses =
         witnesses<gd::is_role_in<w::RoleR, w::gl::Roles<w::RoleP, w::RoleQ>>, gd::is_role_in<w::RoleP, w::gl::Roles<>>>;
+};
+
+// A projection domain covers a role list when each role of the list is in
+// the domain.  A list that is not a Roles list is covered by nothing.
+template <>
+struct foundation::contracts::armed_instances<^^::fixy::session::detail::proj::is_each_role_in_domain> {
+    using accepts = witnesses<
+        ::fixy::session::detail::proj::is_each_role_in_domain<w::gl::Roles<w::RoleP, w::RoleQ>, w::gl::Roles<w::RoleP>>,
+        ::fixy::session::detail::proj::is_each_role_in_domain<w::gl::Roles<w::RoleP>, w::gl::Roles<>>>;
+    using refuses = witnesses<
+        ::fixy::session::detail::proj::is_each_role_in_domain<w::gl::Roles<w::RoleP>, w::gl::Roles<w::RoleP, w::RoleQ>>,
+        ::fixy::session::detail::proj::is_each_role_in_domain<w::gl::Roles<w::RoleP>, int>>;
 };
 
 // A Var is free unless a Rec above it binds it.

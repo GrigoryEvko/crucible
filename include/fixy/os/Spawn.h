@@ -291,8 +291,8 @@ struct can_ctx_fit_spawn : std::false_type {};
 template <typename Ctx, typename Parent, typename... Children, typename... Callables>
 struct can_ctx_fit_spawn<Ctx, Parent, std::tuple<Children...>, std::tuple<Callables...>>
     : std::bool_constant<perm::CtxFitsPermissionFork<Ctx, Parent, Children...>
-                         && perm::detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>,
-                                                                          std::tuple<Callables...>>> {};
+                         && perm::detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>,
+                                                                         std::tuple<Callables...>>> {};
 
 // True when no callable's type carries the throws atom anywhere in its
 // type tree.  Read by the mint's body, per deviation 1.

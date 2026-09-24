@@ -885,9 +885,9 @@ template <typename... Tos, typename... Ls, typename... Ps>
 inline constexpr bool is_queue_shape_v<OutQueue<Queued<Tos, Ls, Ps>...>> = true;
 
 template <typename Domain, typename RL>
-struct domain_covers;
+struct is_each_role_in_domain : std::false_type {};
 template <typename Domain, typename... Rs>
-struct domain_covers<Domain, g::Roles<Rs...>> : std::bool_constant<(g::role_in_v<Rs, Domain> && ...)> {};
+struct is_each_role_in_domain<Domain, g::Roles<Rs...>> : std::bool_constant<(g::role_in_v<Rs, Domain> && ...)> {};
 
 enum class AssociationFault : std::uint8_t {
     None,
@@ -944,7 +944,7 @@ struct association_walk<TypingContext<RoleState<Rs, Qs, Ts>...>, G> {
             return AssociationFault::NotAContext;
         } else if constexpr (domain::size != sizeof...(Rs)) {
             return AssociationFault::DuplicateRole;
-        } else if constexpr (!domain_covers<domain, g::roles_t<G>>::value) {
+        } else if constexpr (!is_each_role_in_domain<domain, g::roles_t<G>>::value) {
             return AssociationFault::MissingRole;
         } else {
             AssociationFault fault = AssociationFault::None;

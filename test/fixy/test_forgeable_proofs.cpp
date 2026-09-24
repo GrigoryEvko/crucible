@@ -203,7 +203,7 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fp::detail::is_permission_impl,
     ^^fp::detail::is_shared_permission_impl,
     ^^fp::detail::perm_brand_or_void,
-    ^^fp::detail::permission_fork_ctx_callables,
+    ^^fp::detail::can_each_body_take_its_child,
     ^^fp::detail::permission_row_lookup,
     ^^fp::detail::row_payload_of_tag,
     ^^fp::PermSet,
