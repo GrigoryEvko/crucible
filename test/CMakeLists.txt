@@ -741,16 +741,18 @@ add_test(NAME fixy_hw_discipline
 set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# The hardening grant set.  scripts/check-syscall-grant-coverage.sh
-# derives the system calls that the hardening apply path issues, and fails
-# when that set and the declared hardening_syscall_atoms tuple disagree.
+# The hardening grant set.  scripts/check-syscall-grant-coverage.py
+# derives the system calls that the hardening apply path issues from the
+# parse tree, and fails when that set and the declared
+# hardening_syscall_atoms tuple disagree.  Exit 3 when the kit is absent
+# reports a skip.
 add_test(NAME syscall_grant_coverage_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.sh
-          --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.py --self-test)
 add_test(NAME syscall_grant_coverage
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.py)
 set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # A script that writes to a git repository names it and clears the
 # caller's repository variables.  scripts/check-git-isolation.py refuses a
 # script under scripts/ or tools/ that runs git init, commit, update-ref,

@@ -182,8 +182,8 @@ jobs:
 
       - name: hardening grant coverage (self-test + scan)
         run: |
-          bash scripts/check-syscall-grant-coverage.sh --self-test
-          bash scripts/check-syscall-grant-coverage.sh
+          python3 scripts/check-syscall-grant-coverage.py --self-test
+          python3 scripts/check-syscall-grant-coverage.py
 
       - name: git writes only to a named, isolated repository (self-test + scan)
         run: |
