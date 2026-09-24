@@ -45,14 +45,15 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | · | HS14: 4 |
+| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | Y | Y | · | member | · | · | HS14: 6 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | · | HS14: 3 |
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | · | HS14: 17 |
-| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | · | Y | · | member | · | · | HS14: 2 |
-| `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | · | Y | · | member | · | · | HS14: 2 |
-| `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | · | Y | · | member | · | · | HS14: 2 |
-| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 4 |
+| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
+| `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
+| `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
+| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | Y | Y | · | member | · | · | HS14: 6 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 3 |
+| `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | Y | Y | · | member | · | · | HS14: 1 ⚠ |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 8 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
@@ -482,5 +483,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 213 | 107 | 98 | 8 | 0 | 74 | 41 |
+| old (`include/crucible/`) | 214 | 107 | 98 | 9 | 0 | 74 | 42 |
 | new (`include/foundation/`, `include/fixy/`) | 94 | 38 | 55 | 1 | 0 | · | 30 |
