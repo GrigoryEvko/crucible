@@ -314,8 +314,9 @@ public:
     // The context of the thread that holds this Vigil's producer claim.  The
     // first call claims the calling thread, and a call from any other thread
     // then ends the process, as dispatch_op does.  The output, input and
-    // external-slot surfaces below ask for it.
-    [[nodiscard]] CRUCIBLE_INLINE constexpr VigilFgCtx mint_producer_context() noexcept {
+    // external-slot surfaces below ask for it.  Not constexpr: the claim
+    // reads the thread id and an atomic.
+    [[nodiscard]] CRUCIBLE_INLINE VigilFgCtx mint_producer_context() noexcept {
         return assert_producer_thread_();
     }
 

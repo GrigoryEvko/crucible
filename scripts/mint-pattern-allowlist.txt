@@ -134,6 +134,10 @@
 # category is how a real drift gets absorbed without anyone noticing.
 
 # ── Class-method / allocating view mints ─────────────────────────────
+# Vigil.h: the producer-context mint reads the thread id and the atomic
+# claim word.  The body reads runtime state and -Winvalid-constexpr refuses
+# constexpr.
+include/crucible/Vigil.h:mint_producer_context:constexpr-ok
 # The mutable view mints of the two registration tables read the atomic
 # seal word of the table.  No constant evaluation can read an atomic, and
 # -Winvalid-constexpr refuses a constexpr function that always calls a

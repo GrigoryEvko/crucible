@@ -200,7 +200,7 @@ public:
     Cipher(Cipher&&) = default;
     Cipher& operator=(Cipher&&) = default;
 
-    [[nodiscard]] bool is_open() const noexcept { return root_.has_value(); }
+    [[nodiscard]] constexpr bool is_open() const noexcept { return root_.has_value(); }
 
     using OpenView = ::crucible::CipherOpenView;
 

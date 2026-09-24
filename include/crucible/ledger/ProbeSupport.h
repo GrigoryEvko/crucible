@@ -189,7 +189,7 @@ inline void set_probe_settings(ProbeSettings settings) noexcept { g_probe_settin
 // candidate took twice as long. Saturates rather than wrapping, and
 // answers zero when either input is unusable, which reads as a refusal
 // downstream instead of as a tie.
-[[nodiscard]] inline std::uint32_t gain_percent(double baseline_ns, double candidate_ns) noexcept {
+[[nodiscard]] constexpr std::uint32_t gain_percent(double baseline_ns, double candidate_ns) noexcept {
     if (!(baseline_ns > 0.0) || !(candidate_ns > 0.0)) {
         return 0u;
     }

@@ -56,7 +56,7 @@ struct CoverageReport {
     bool sched_tp_btf_attached = false;
     bool syscall_tp_btf_attached = false;
 
-    [[nodiscard]] std::size_t attached_count() const noexcept {
+    [[nodiscard]] constexpr std::size_t attached_count() const noexcept {
         return (sense_hub_attached ? 1u : 0u) + (sched_switch_attached ? 1u : 0u) + (pmu_sample_attached ? 1u : 0u)
              + (lock_contention_attached ? 1u : 0u) + (syscall_latency_attached ? 1u : 0u)
              + (sched_tp_btf_attached ? 1u : 0u) + (syscall_tp_btf_attached ? 1u : 0u);
