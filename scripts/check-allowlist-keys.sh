@@ -27,7 +27,7 @@
 # Scope: the PATH half of the key, and nothing else.  Whether the line
 # or the code text beside it still matches is each owning guard's
 # business — check-syscall-allowlist-prose.sh holds the sentence,
-# check-fullness-guard.sh reports its own stale line numbers.  This one
+# check-fullness-guard.py reports its own stale rows.  This one
 # answers the single question none of them can answer once the file is
 # gone.
 #
@@ -83,8 +83,7 @@ SCAN_ROOT="${SCAN_ROOT:-$REPO_ROOT}"
 # ── Extracting the path half of a key ────────────────────────────────
 #
 # Three shapes are in use, and all three put the path first:
-#   path:code text  — prose        (syscall, no-reserve, no-reinterpret)
-#   path:line — prose              (fullness)
+#   path:code text  — prose        (syscall, no-reserve, no-reinterpret, fullness)
 #   path  — prose                  (ctx-testing-boundary)
 #   path                           (fixy-discipline)
 # plus one that puts a name in front of it:

@@ -946,28 +946,21 @@ add_test(NAME syscall_capability
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# oob-62 fullness discipline.  `if (count == Capacity) return false;` reads
-# as a bounds check but only rejects the exact boundary: a count already
-# past Capacity compares unequal, the guard passes, and the next push
-# writes out of bounds.  Seven true positives were found this way, three of
-# them out-of-bounds WRITES that the differential fuzzer could not reach
-# because its oracle transcribed the same `==` semantics the code had wrong.
-# All seven are fixed; the counts are now structural, so the idiom is gone
-# rather than corrected in place, and the fuzzer asserts the bound after
-# every push instead of once at the end of a sequence.
-# scripts/check-fullness-guard.sh flags the idiom on public counters,
-# discriminating on the house trailing-underscore convention: every
-# invariant-protected counter in this tree ends in `_`, every unprotected
-# public one does not.  scripts/fullness-guard-allowlist.txt is down to six
-# entries, all sentinels — no defect is grandfathered.  Self-test verifies
-# detection, allowlist exemption and stale-entry reporting.
+# The fullness discipline.  `if (count == Capacity) return false;` reads as
+# a bounds check, but it refuses only the exact bound: a count already past
+# Capacity compares unequal, and the next push writes out of bounds.
+# scripts/check-fullness-guard.py reads each `==` between a counter and a
+# capacity bound from the parse tree.  A counter whose name ends in `_` is
+# protected by a class invariant, by the house convention.  The content-keyed
+# rows of scripts/fullness-guard-allowlist.txt are all not-found sentinels.
+# Exit 3 when the kit is absent reports a skip.
 add_test(NAME fullness_guard_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.sh
-          --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.py --self-test)
 add_test(NAME fullness_guard
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.py)
 set_tests_properties(fullness_guard fullness_guard_self_test PROPERTIES
-    LABELS "ci_guard;oob-62")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # #66 DetSafe discipline on the hardware-ledger hashing path.  A host
 # fingerprint decides whether a cached measurement verdict is still
 # valid, so anything that reaches the fold has to be deterministic:
