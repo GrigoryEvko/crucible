@@ -170,14 +170,10 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_affinity` | `include/crucible/fixy/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_asm_grant` | `include/crucible/fixy/Hw.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_async_copy` | `include/crucible/fixy/Async.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_async_pipeline` | `include/crucible/fixy/AsyncPipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_federation_channel` | `include/crucible/fixy/SessFederation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
-| `mint_fn` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 35 |
+| `mint_fn` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 32 |
 | `mint_fn_for(Type)` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
 | `mint_fn_for(Type)` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
-| `mint_mbarrier_arrive` | `include/crucible/fixy/Async.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_mbarrier_wait` | `include/crucible/fixy/Async.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_mpsc_consumer_endpoint` | `include/crucible/fixy/Substr.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_mpsc_consumer_session` | `include/crucible/fixy/Substr.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_mpsc_producer_endpoint` | `include/crucible/fixy/Substr.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
@@ -246,8 +242,8 @@ apply to the row.
 | `mint_barrier_guarded` | `include/crucible/safety/BarrierGuarded.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:250` | HS14: 2 |
 | `mint_call_shape` | `include/crucible/safety/CallShape.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:274` | HS14: 2 |
 | `mint_control_flow` | `include/crucible/safety/ControlFlow.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:279` | HS14: 2 |
-| `mint_fn` | `include/crucible/safety/Fn.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 35 |
-| `mint_fp_mode_composite` | `include/crucible/safety/FpMode.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Fp.h:200` | HS14: 2 |
+| `mint_fn` | `include/crucible/safety/Fn.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 32 |
+| `mint_fp_mode_composite` | `include/crucible/safety/FpMode.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_global_state` | `include/crucible/safety/GlobalState.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:284` | HS14: 2 |
 | `mint_grid_permissions` | `include/crucible/safety/PermissionGridGenerator.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Perm.h:46` | HS14: 12 |
 | `mint_hw` | `include/crucible/safety/Hw.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:245` | HS14: 2 |
@@ -482,5 +478,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 214 | 107 | 98 | 9 | 0 | 74 | 41 |
+| old (`include/crucible/`) | 210 | 103 | 98 | 9 | 0 | 75 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 93 | 37 | 55 | 1 | 0 | · | 28 |

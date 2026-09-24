@@ -268,7 +268,6 @@ crucible_test(test_fixy_v_088_fp_mode)  # FIXY-V-088 DimensionAxis::FpMode + 11 
 crucible_test(test_fixy_v_089_fp_lattices)  # FIXY-V-089 11 FP-mode ChainLattice algebras + umbrella registration
 crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrappers + composite + row_hash + DimensionTraits
 crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog F101-F105 — FP-mode cross-axis rules
-crucible_test(test_fixy_v_092_fp_grants)  # FIXY-V-092 fixy/Fp.h — 12 FP-mode grant tags + per-tag which_dim
 crucible_test(test_fixy_v_093_fp_canonicalize)  # FIXY-V-093 fixy::fp::canonicalize — merkle-hash-safe FP canonicalization
 crucible_test(test_fixy_v_094_fp_strict_floor)  # FIXY-V-094 crucible_fp_strict INTERFACE floor — compile-def + runtime witness
 crucible_test(test_fixy_v_095_box_muller_polynomial)  # FIXY-V-095 Philox::box_muller_polynomial_det runtime witness + tier wiring
@@ -276,9 +275,6 @@ crucible_test(test_fixy_v_096_welford_variance)  # FIXY-V-096 bench_harness Welf
 target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 crucible_test(test_fixy_v_097_syscall_family)  # FIXY-V-097 DimensionAxis::SyscallSurface + SyscallFamilyLattice 9-tier chain
-crucible_test(test_fixy_v_098_syscall_grants)  # FIXY-V-098 fixy/syscall/Family.h + Per.h — coarse + per-syscall grants
-crucible_test(test_fixy_v_099_syscall_ioctl)   # FIXY-V-099 fixy/syscall/Ioctl.h   — per-vendor + per-subsystem ioctl grants
-crucible_test(test_fixy_v_100_syscall_bridge)  # FIXY-V-100 fixy/syscall/Bridge.h — SyscallSurface → Met(X) effect-row lift
 crucible_test(test_fixy_v_239_control_flow)    # FIXY-V-239 DimensionAxis::ControlFlow + ControlFlowLattice 5-tier escape chain
 crucible_test(test_fixy_v_240_call_shape)      # FIXY-V-240 DimensionAxis::CallShape + CallShapeLattice 5-tier dispatch chain
 crucible_test(test_fixy_v_241_stack_global_stdio) # FIXY-V-241 StackUse/GlobalState/Stdio — 3 hazard-axis 4-tier chains
@@ -301,14 +297,11 @@ crucible_test(test_fixy_v_189_thread_name)              # FIXY-V-189 safety/Thre
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
-crucible_test(test_fixy_v_270_async)                    # FIXY-V-270 fixy/Async.h — grant::async::{copy,mbarrier_arrive,mbarrier_wait} → Synchronization + 3 §XXI mints (accel-scope gated)
 crucible_test(test_fixy_v_190_time)                     # FIXY-V-190 fixy/Time.h — grant::time::{clock_read,tsc_read,sleep} + mint_clock_reader / mint_tsc_reader (single-core pin) / mint_bounded_sleep (Agent 6 §3.4)
 crucible_test(test_fixy_v_191_sched)                    # FIXY-V-191 fixy/Sched.h — grant::sched::{affinity,scheduler_policy,priority,thread_name} + mint_affinity (→CpuPinned) / mint_scheduler_policy (→SchedClass, CBS) / mint_priority (Agent 6 §3.5)
 crucible_test(test_fixy_v_272_fence)                    # FIXY-V-272 mimic/Fence.h — lower_fence<Strength,Scope,Arch>() consteval lowering table (V401/V402 gated) + fence_mnemonic
 crucible_test(test_fixy_v_273_async_pipeline_session)   # FIXY-V-273 sessions/AsyncPipelineSession.h — binary producer/consumer mbarrier protocol + Linear<SmemSlot> + 2 ctx-bound mints
-crucible_test(test_fixy_v_274_async_pipeline)           # FIXY-V-274 fixy/AsyncPipeline.h — mint_async_pipeline derives Stages from live-set width + Bytes=Refined<equals_slot_size> from the MemoryPlan
 crucible_test(test_fixy_v_203_spawn_join_policy)        # FIXY-V-203 fixy/spawn/JoinPolicy.h — spawn-MECHANISM phantom tag tree (AutoJoin/ManualJoin/Detached/Cloned/Forked/PosixSpawn) + IsJoinMechanismTag identity allowlist (Agent 7 §fixy::spawn::; orthogonal to V-078 strictness lattice)
-crucible_test(test_fixy_v_204_spawn_grant)              # FIXY-V-204 fixy/spawn/SpawnGrant.h — 5 engagement grants (detach_with/syscall_only/subprocess/fork_parent/exec_ctx) + rationale_nonempty_v in-class static_assert + JoinPolicyGrantsCoherent V-203×V-204 bridge concept (Agent 7 §fixy::spawn::)
 crucible_test(test_hardening_syscall_atoms) # warden/Hardening.h: the syscall atoms of the apply path, their ordinals and the rows they lift to
 crucible_test(test_perf_syscall_atoms) # perf/*.h: the syscall atoms of the seven hub load paths and the context gate of each mint
 crucible_test(test_fixy_v_004_wrapper_for)              # FIXY-V-004 safety/DimensionTraits.h + fixy/Dim.h — WrapperKind enum (33 entries, append-only) + wrapper_kind_to_axis switch + count_wrappers_on_axis + wrapper_for<DimensionAxis>() reverse-lookup metafunction (one-to-many inverse of wrapper_dimension<W>::value, reflection-driven via template for over enumerators_of)
@@ -316,8 +309,6 @@ crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
 crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h — 10 grant::hw::* families (cache/barrier/tsc/rng/cpuid/msr/port_io/asm_/simd_width/vendor_intrinsic) + 5 §XXI mints
-crucible_test(test_fixy_v_258_vendor_intrinsic)         # FIXY-V-258 fixy/Vendor.h — IsaTag enum (22 ISA families) + strong-typed grant::vendor::intrinsic<V,I> + 7 canonical aliases
-crucible_test(test_fixy_v_259_simd_width)               # FIXY-V-259 fixy/Simd.h — WidthBits enum (6 width classes) + strong-typed grant::simd::width<W> + 4 canonical aliases
 crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
 crucible_test(test_hardware_axis_pins)  # the hot headers pin their compile-time hardware constructs as fixy atoms
 # test_fec_hardware_axis_pin / test_cntp_fec instantiate cntp/Fec.h's `#if __AVX2__` kernels, which
@@ -329,9 +320,6 @@ if(CRUCIBLE_FEC_CONST_SIMD_OK)
 crucible_test(test_fec_hardware_axis_pin)  # cntp/Fec.h pins its kernel arm as fixy atoms, with the stride one register wide
 endif()
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
-crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
-crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
-crucible_test(test_fixy_v_248_singleton_init_graph)  # safety/_SingletonInitGraph.h: the superseded registry and its acyclic proof
 crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
@@ -2625,32 +2613,6 @@ crucible_neg_compile_fixy_test(neg_fixy_scope_cross_trunk
     "constraints.*not satisfied"
     "CtxFitsScopedFenceMint")
 
-# FIXY-V-270 — HS14 floor for the fixy/Async.h grant mints (3 mints × 2
-# fixtures).  Each mint's distinct rejection classes:
-#   mint_async_copy      : ARM-trunk scope (accel clause) + Stages==0
-#   mint_mbarrier_arrive : ARM-trunk scope + System (⊤) sentinel scope
-#   mint_mbarrier_wait   : ARM-trunk scope + non-ExecCtx argument
-# All gate via async_scope_realizable (mem_scope_is_accel, V-265) — async
-# copy / mbarrier are GPU-only, so any non-accel scope is rejected.
-crucible_neg_compile_fixy_test(neg_fixy_v_270_async_copy_arm_scope
-    "constraints.*not satisfied"
-    "CtxFitsAsyncCopyMint")
-crucible_neg_compile_fixy_test(neg_fixy_v_270_async_copy_zero_stages
-    "constraints.*not satisfied"
-    "CtxFitsAsyncCopyMint")
-crucible_neg_compile_fixy_test(neg_fixy_v_270_mbarrier_arrive_arm_scope
-    "constraints.*not satisfied"
-    "CtxFitsMbarrierMint")
-crucible_neg_compile_fixy_test(neg_fixy_v_270_mbarrier_arrive_system_scope
-    "constraints.*not satisfied"
-    "CtxFitsMbarrierMint")
-crucible_neg_compile_fixy_test(neg_fixy_v_270_mbarrier_wait_arm_scope
-    "constraints.*not satisfied"
-    "CtxFitsMbarrierMint")
-crucible_neg_compile_fixy_test(neg_fixy_v_270_mbarrier_wait_non_ctx
-    "constraints.*not satisfied"
-    "IsExecCtx|CtxFitsMbarrierMint")
-
 # FIXY-V-272 — lower_fence consistency gates.  Four fixtures cover the
 # distinct failure classes the consteval lowering table refuses:
 #   3 × V402 cross-trunk (X86×accel, Arm×accel, Gpu×ARM) + 1 × V401
@@ -2682,21 +2644,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_273_arm_scope_reject
 crucible_neg_compile_fixy_test(neg_fixy_v_273_unclosed_slot
     "constraints.*not satisfied|static assertion failed"
     "permission_flow_closes")
-# FIXY-V-274 — HS14 floor for mint_async_pipeline (fixy/AsyncPipeline.h).
-# Three orthogonal rejection classes:
-#   1. expect_tx_mismatch — Bytes != handle slot_bytes (the §XXI gate clause).
-#   2. nonctx — first arg not an effects::IsExecCtx (ctx-bound discipline).
-#   3. consteval_slot_mismatch — Bytes != constexpr-plan slot nbytes
-#      (the compile-time Refined<equals_slot_size> VC poison).
-crucible_neg_compile_fixy_test(neg_fixy_v_274_expect_tx_mismatch
-    "constraints.*not satisfied|no matching function"
-    "CtxFitsAsyncPipeline")
-crucible_neg_compile_fixy_test(neg_fixy_v_274_nonctx
-    "constraints.*not satisfied|no matching function"
-    "IsExecCtx")
-crucible_neg_compile_fixy_test(neg_fixy_v_274_consteval_slot_mismatch
-    "non-constant"
-    "constant expression|__builtin_trap")
 
 # FIXY-V-178 — HS14 floor for the signature_traits / GradedExtract /
 # DecideOracle surfaces.  Three fixtures cover orthogonal rejection
@@ -2717,26 +2664,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_178_decide_oracle_nonintegral
     "no matching function|constraints.*not satisfied"
     "integral")
 
-# FIXY-V-092 — HS14 floor for FpMode grant tags.  Two fixtures cover
-# orthogonal rejection classes that are FpMode-specific:
-#   1. NTTP-enum-type mismatch — substituting an FpFtz value for a
-#      with_fp_rounding<...> NTTP rejects at template-id formation,
-#      BEFORE the grant reaches the IsAcceptedGrants well-formedness
-#      gate.  Distinct from cv-ref or non-grant rejection paths.
-#   2. Duplicate engagement — pairing fp_strict_ieee with
-#      with_fp_rounding<...> in one Grants pack engages FpMode twice;
-#      Reject.h's UniqueEngagementPerAxis concept must fire.  The
-#      aggregate + per-axis combination is the V-092-specific bug
-#      class the discipline forbids.
-# Together they pin the new FpMode-axis surface from both sides:
-# pre-engagement template formation and post-pack engagement walk.
-crucible_neg_compile_fixy_test(neg_fixy_grant_fp_wrong_nttp_enum
-    "could not convert|cannot convert"
-    "FpRounding|FpFtz|enumeration type|wrong type")
-crucible_neg_compile_fixy_test(neg_fixy_grant_fp_duplicate_engagement
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "UniqueEngagementPerAxis|FixyDuplicate_FpMode")
-
 # FIXY-V-244 — HS14 floor for the fixy/grant/Ctrl.h control-flow grants.
 # Three fixtures cover orthogonal rejection classes around the
 # LOAD-BEARING abort<Rationale> grant + the shared grant cv-purity gate:
@@ -2755,50 +2682,6 @@ crucible_neg_compile_fixy_test(neg_fixy_ctrl_abort_rationale_not_string
     "could not convert|cannot convert|no matching function"
     "deduction failed|rationale|conversion")
 crucible_neg_compile_fixy_test(neg_fixy_ctrl_cv_qualified
-    "static assertion"
-    "IsGrantTag|cv-qualified")
-
-# FIXY-V-245 — HS14 floor for the fixy/grant/Dispatch.h CallShape grants.
-# Three fixtures cover orthogonal rejection classes around the
-# LOAD-BEARING recurses<MaxDepth> grant + the shared grant cv-purity gate:
-#   1. recurses missing-bound ARITY — recurses carries no default NTTP,
-#      so a bare recurses<> is "wrong number of template arguments".
-#      Witnesses that every recursion grant MUST declare a depth ceiling.
-#   2. virtual_call value-where-TYPE — virtual_call<42> substitutes a
-#      value where a base-class type is expected; rejected at template-id
-#      formation.  Witnesses the grant is parameterized by a hierarchy.
-#   3. IsGrantTag CV-PURITY — a const-qualified dispatch grant tag is
-#      rejected by IsGrantTag (fixy-A4-033), exercised from the dispatch side.
-crucible_neg_compile_fixy_test(neg_fixy_dispatch_recurses_requires_bound
-    "wrong number of template arguments"
-    "grant::dispatch::recurs")
-crucible_neg_compile_fixy_test(neg_fixy_dispatch_virtual_call_value_arg
-    "type/value mismatch at argument|wrong number of template arguments"
-    "grant::dispatch")
-crucible_neg_compile_fixy_test(neg_fixy_dispatch_cv_qualified
-    "static assertion"
-    "IsGrantTag|cv-qualified")
-
-# FIXY-V-246 — HS14 floor for the 3 hazard-axis grant headers (Stack /
-# Global / Stdio).  Two fixtures per header, each a distinct rejection
-# class: a mandatory-parameter ARITY or value-where-TYPE check on the
-# axis's central grant, plus the shared IsGrantTag cv-purity gate.
-crucible_neg_compile_fixy_test(neg_fixy_stack_alloc_requires_bound
-    "wrong number of template arguments"
-    "grant::stack::alloc")
-crucible_neg_compile_fixy_test(neg_fixy_stack_cv_qualified
-    "static assertion"
-    "IsGrantTag|cv-qualified")
-crucible_neg_compile_fixy_test(neg_fixy_global_thread_local_requires_tag
-    "wrong number of template arguments"
-    "grant::global::thread_local_")
-crucible_neg_compile_fixy_test(neg_fixy_global_singleton_value_arg
-    "type/value mismatch at argument|wrong number of template arguments"
-    "grant::global")
-crucible_neg_compile_fixy_test(neg_fixy_stdio_write_value_arg
-    "type/value mismatch at argument|wrong number of template arguments"
-    "grant::stdio")
-crucible_neg_compile_fixy_test(neg_fixy_stdio_cv_qualified
     "static assertion"
     "IsGrantTag|cv-qualified")
 
@@ -8557,110 +8440,11 @@ crucible_neg_compile_test(neg_fp_mode_tier_misclassify
 #      assertion fires and build reddens.  Catches accidental tier
 #      reclassification that would silently disable the hot-path
 #      admission gate's par=join composition law for syscall surface
-#      and the V-100 effect-row bridge that lifts SyscallSurface into
-#      Met(X) rows.
+#      and the lift of each syscall atom into its effect row.
 crucible_neg_compile_test(neg_syscall_family_cardinality_stale
   "static assertion failed|DIMENSION_AXIS_COUNT|FIXY-V-097|23")
 crucible_neg_compile_test(neg_syscall_family_tier_misclassify
   "static assertion failed|SyscallSurface|TierKind|Foundational|Semiring|FIXY-V-097")
-
-# ─── FIXY-V-098 syscall grant neg-compile fixtures (2) ────────────────
-#
-# V-098 ships fixy/syscall/Family.h (9 family-tier grants) +
-# fixy/syscall/Per.h (parametric per<SyscallId> over a 36-enumerator
-# catalog).  Both surfaces route which_dim<> → SyscallSurface (V-097
-# axis); both expose family_tier_v<> metadata for V-100's bridge.
-# HS14: 2 fixtures across distinct mismatch classes:
-#
-#   1. wrong-axis (NTTP-enum-type mismatch) — substituting a
-#      SyscallFamily value for the SyscallId NTTP on per<...>.
-#      Template-id formation rejects BEFORE the grant reaches the
-#      pack; rejection path is the C++ overload-deduction surface
-#      ("cannot convert" / "expected enum type SyscallId").  Mirrors
-#      V-092's neg_fixy_grant_fp_wrong_nttp_enum.cpp pattern.
-#
-#   2. family-per-duplicate-engagement — a Grants pack containing
-#      BOTH `family_file_mutation` (Family.h) AND
-#      `per<SyscallId::pwrite>` (Per.h).  Both route to SyscallSurface;
-#      UniqueEngagementPerAxis concept fires AFTER the pack is fully
-#      formed; rejection path is the `mint_fn` requires-clause
-#      ("UniqueEngagementPerAxis" / "FixyDuplicate_SyscallSurface").
-#      Catches the "I read Family.h, picked the coarse grant, then
-#      added the per<> 'for documentation'" contributor mistake that
-#      would be silently lossy under any first-wins resolver rule.
-crucible_neg_compile_fixy_test(neg_fixy_v_098_wrong_axis
-  "could not convert|cannot convert"
-    "SyscallId|SyscallFamily|enumeration type|wrong type")
-crucible_neg_compile_fixy_test(neg_fixy_v_098_family_per_duplicate
-  "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "UniqueEngagementPerAxis|FixyDuplicate_SyscallSurface")
-
-# ─── FIXY-V-099 syscall ioctl neg-compile fixtures (2) ────────────────
-#
-# V-099 ships fixy/syscall/Ioctl.h: two parametric grants
-# `ioctl::vendor<IoctlVendor>` (12-element device-file catalog) and
-# `ioctl::subsystem<IoctlSubsystem>` (15-element kernel-subsystem
-# catalog), both routing which_dim<> → SyscallSurface and pinning
-# family_tier_v<> uniformly to Privilege (all ioctls go through
-# ioctl(2), top of V-097's chain).  HS14: 2 fixtures across distinct
-# mismatch classes:
-#
-#   1. wrong-axis (NTTP-enum-type mismatch) — substituting an
-#      IoctlSubsystem value for the IoctlVendor NTTP on
-#      ioctl::vendor<...>.  Template-id formation rejects BEFORE the
-#      grant reaches the pack; rejection path is the C++ overload-
-#      deduction surface ("cannot convert" / "IoctlVendor"). Mirrors
-#      V-098's neg_fixy_v_098_wrong_axis.cpp pattern.
-#
-#   2. vendor-subsystem-duplicate-engagement — a Grants pack containing
-#      BOTH `ioctl::vendor<IoctlVendor::nvidia_ctl>` AND
-#      `ioctl::subsystem<IoctlSubsystem::drm>`.  Both route to
-#      SyscallSurface; UniqueEngagementPerAxis concept fires AFTER the
-#      pack is fully formed; rejection path is the `mint_fn` requires-
-#      clause ("UniqueEngagementPerAxis" / "FixyDuplicate_SyscallSurface").
-#      Catches the "I added a per-vendor lock, then added the per-
-#      subsystem framing for portability documentation" contributor
-#      mistake that would be silently lossy under any first-wins rule.
-crucible_neg_compile_fixy_test(neg_fixy_v_099_wrong_axis
-  "could not convert|cannot convert"
-    "IoctlVendor|IoctlSubsystem|enumeration type|wrong type")
-crucible_neg_compile_fixy_test(neg_fixy_v_099_vendor_subsystem_duplicate
-  "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "UniqueEngagementPerAxis|FixyDuplicate_SyscallSurface")
-
-# ─── FIXY-V-100 syscall→Met(X) bridge neg-compile fixtures (2) ────────
-#
-# V-100 ships fixy/syscall/Bridge.h: the concept-gated lift from any
-# V-098/V-099 syscall grant to its `effects::Row<...>` contribution.
-# The IsSyscallGrantTag<G> concept has TWO orthogonal arms (IsGrantTag
-# structural gate + which_dim == SyscallSurface axis gate); HS14 covers
-# both at distinct call-site shapes.
-#
-#   1. non-grant — passing a non-grant type (here: plain `int`) to
-#      lift_syscall_grant_row_t<>. IsGrantTag arm fails first; the
-#      concept's structural-validity gate emits the named-concept
-#      satisfaction-failure diagnostic before the SyscallSurface arm
-#      ever evaluates.
-#
-#   2. wrong-axis — passing a well-formed grant tag (V-092's
-#      fp_strict_ieee, which routes to FpMode) to
-#      lift_syscall_grant_row_t<>.  IsGrantTag PASSES (the grant is
-#      structurally valid) but which_dim != SyscallSurface FAILS;
-#      the concept's axis-routing gate emits the named-concept
-#      satisfaction-failure diagnostic citing the SyscallSurface
-#      requirement.
-#
-# Both arms protect against different bug-classes a contributor might
-# hit when integrating V-100 into a new call site; together they
-# witness the concept gate names the correct mismatch class in each
-# case (rather than degrading into a cryptic "undefined family_tier"
-# template error deep in the alias-template expansion).
-crucible_neg_compile_fixy_test(neg_fixy_v_100_non_grant
-  "constraints.*not satisfied"
-    "IsSyscallGrantTag|IsGrantTag|lift_syscall_grant_row|requires")
-crucible_neg_compile_fixy_test(neg_fixy_v_100_wrong_axis
-  "constraints.*not satisfied"
-    "IsSyscallGrantTag|SyscallSurface|lift_syscall_grant_row|requires")
 
 # ─── FIXY-V-090 FpModePinned wrapper neg-compile fixtures (2) ─────────
 #
@@ -15253,47 +15037,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_257_msr_wrong_permission
     "no matching function|could not convert|cannot bind"
     "Permission")
 
-# ── FIXY-V-258 — fixy/Vendor.h cross-vendor intrinsic mismatch (HS14) ─
-# Three fixtures cover three distinct vendor↔ISA-family mismatch classes,
-# witnessing the `vendor_isa_consistent_v<V, I>` strong-typing gate fires
-# at the grant template-id:
-#   nv_x86   : intrinsic<NV, AVX2>          → GPU backend + host x86 ISA
-#   cpu_ptx  : intrinsic<CPU, CUDA_PTX_SM90> → host backend + GPU ISA
-#   amd_neon : intrinsic<AMD, NEON>         → GPU backend + host ARM ISA
-crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_nv_x86
-    "constraints.*not satisfied"
-    "vendor_isa_consistent|intrinsic|no matching")
-crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_cpu_ptx
-    "constraints.*not satisfied"
-    "vendor_isa_consistent|intrinsic|no matching")
-crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_amd_neon
-    "constraints.*not satisfied"
-    "vendor_isa_consistent|intrinsic|no matching")
-
-# ─── FIXY-V-262 SwissTable hardware-grant declaration discipline ────
-# Two distinct mismatch classes: (1) V-262's own width↔group-bytes
-# consistency invariant (static_assert reds on a mismatched width grant);
-# (2) the V-258 vendor↔ISA template-id gate the vendor declarations rely
-# on (NV backend + x86 AVX2 ISA is ill-formed).
-crucible_neg_compile_fixy_test(neg_fixy_v_262_width_byte_mismatch
-    "static assertion"
-    "FIXY-V-262")
-crucible_neg_compile_fixy_test(neg_fixy_v_262_vendor_arch_mismatch
-    "constraints.*not satisfied"
-    "vendor_isa_consistent|intrinsic|no matching")
-
-# ─── FIXY-V-263 cntp/Fec.h hardware-grant declaration discipline ────
-# Same two mismatch classes as V-262, FEC-framed with distinct values:
-# (1) stride↔width consistency (32-byte AVX2 block must declare
-# width_256); (2) the V-258 vendor↔ISA gate (AMD GPU + ARM NEON is
-# ill-formed — the FEC-relevant trap since FEC has a NEON arm).
-crucible_neg_compile_fixy_test(neg_fixy_v_263_width_byte_mismatch
-    "static assertion"
-    "FIXY-V-263")
-crucible_neg_compile_fixy_test(neg_fixy_v_263_vendor_arch_mismatch
-    "constraints.*not satisfied"
-    "vendor_isa_consistent|intrinsic|no matching")
-
 # ── FIXY-V-264 — TraceRing prefetch + ChaseLevDeque fence grants ────
 # Two fixtures witness the HwInstruction cache grant's NTTP-range gate
 # and the BarrierStrength fence grant's axis routing (distinct classes).
@@ -15303,31 +15046,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_264_cache_locality_overflow
 crucible_neg_compile_fixy_test(neg_fixy_v_264_barrier_axis_mismatch
     "static assertion"
     "FIXY-V-264|SimdIsa|BarrierStrength")
-
-# ── FIXY-V-259 — fixy/Simd.h is_known_width gate (HS14 structural) ───
-# Two fixtures witness the `is_known_width_v<W>` strong-typing gate at
-# the grant template-id:
-#   out_of_enum  : width<WidthBits{777}> → garbage width value
-#   unlisted_64  : width<WidthBits{64}>  → plausible-but-unenumerated
-# The width<512>-on-AVX2 COMPOSITION fixture (Agent 11 4.2) ships with
-# V-260's S001 collision rule (cross-grant value compatibility).
-crucible_neg_compile_fixy_test(neg_fixy_v_259_width_out_of_enum
-    "constraints.*not satisfied"
-    "is_known_width|width|no matching")
-crucible_neg_compile_fixy_test(neg_fixy_v_259_width_unlisted_64
-    "constraints.*not satisfied"
-    "is_known_width|width|no matching")
-
-# ── FIXY-FOUND-039 — SimdIsa duplicate-engagement rejection (HS14) ──
-# Witnesses that fixy::fn rejects a Grants pack containing BOTH
-# `hw::simd_width<W>` (V-257) AND `simd::width<W>` (V-259) — both route
-# to DimensionAxis::SimdIsa, so the wrapper's tier-4
-# UniqueEngagementPerAxis gate must fire with FixyDuplicate_SimdIsa.
-# Anchored against Reject.h §1284 (the gate concept) AND the structural
-# witness block in Simd.h's self-test (`v039_simd_isa_duplicate_witness`).
-crucible_neg_compile_fixy_test(neg_fixy_v_039_simd_isa_duplicate
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "UniqueEngagementPerAxis|first_duplicate_axis_v|FixyDuplicate_|Duplicate-axis")
 
 # ── FIXY-V-226 — fixy/Io.h HS14 neg-compile fixtures (#2104) ────────
 #
@@ -15998,30 +15716,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_203_join_concept_rejects_non_tag
 crucible_neg_compile_fixy_test(neg_fixy_v_203_join_imposter_struct
     "constraints.*not satisfied|constraints.*not satisfied"
     "IsJoinMechanismTag")
-
-# ── FIXY-V-204 — fixy/spawn/SpawnGrant.h engagement-grant tree
-#                 HS14 floor (Agent 7 §fixy::spawn::).
-#
-# Three fixtures cover orthogonal rejection axes:
-#   1. empty_rationale — in-class static_assert(rationale_nonempty_v)
-#      fires on `detach_with<"">` BEFORE the grant reaches any
-#      consumer.  Mismatch class: in-class static_assert.
-#   2. detached_missing_detach_with — JoinPolicyGrantsCoherent
-#      concept rejects Detached + grant pack lacking detach_with<>.
-#      Mismatch class: detach-spawn axis missing audit grant.
-#   3. forked_missing_subprocess — JoinPolicyGrantsCoherent concept
-#      rejects Forked + grant pack lacking subprocess<>.  Mismatch
-#      class: process-spawn axis (distinct syscall family +
-#      CMake-level CRUCIBLE_SPAWN_ALLOW_PROCESS opt-in).
-crucible_neg_compile_fixy_test(neg_fixy_v_204_grant_empty_rationale
-    "static assertion failed"
-    "rationale_nonempty_v|Rationale must be")
-crucible_neg_compile_fixy_test(neg_fixy_v_204_grant_detached_missing_detach_with
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "JoinPolicyGrantsCoherent")
-crucible_neg_compile_fixy_test(neg_fixy_v_204_grant_forked_missing_subprocess
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "JoinPolicyGrantsCoherent")
 
 # ── FIXY-V-180 — warden/Hardening.h syscall-grant annotation
 #                 HS14 floor (Agent 3 Phase Σ4).

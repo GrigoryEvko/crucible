@@ -20,9 +20,7 @@
 #
 #   * include/crucible/fixy/_Grant.h              — the canonical authoring site
 #                                                    (superseded by fixy/Atom.h).
-#   * include/crucible/fixy/Fp.h                  — FpMode axis-specialized catalog
-#                                                    (12 with_fp_* parametric grants + fp_strict_ieee).
-#   * include/crucible/fixy/_Fs.h                  — SyscallSurface axis-specialized
+#   * include/crucible/fixy/_Fs.h                 — SyscallSurface axis-specialized
 #                                                    catalog (4 fs::* parametric grants:
 #                                                    mode<>/with_flag<>/durable<>/atomic_write<>).
 #   * include/crucible/fixy/_Mmap.h                 — SyscallSurface axis-specialized
@@ -33,13 +31,6 @@
 #                                                    catalog (5 io::* parametric grants:
 #                                                    engine<>/zerocopy<>/ring_flag<>/
 #                                                    sq_entries<N>/cq_entries<N>).
-#   * include/crucible/fixy/syscall/Family.h      — SyscallSurface axis-specialized
-#                                                    catalog (9 family-tier grants).
-#   * include/crucible/fixy/syscall/Per.h         — SyscallSurface axis-specialized
-#                                                    catalog (per<SyscallId> parametric grants).
-#   * include/crucible/fixy/syscall/Ioctl.h       — SyscallSurface axis-specialized
-#                                                    catalog (ioctl::vendor<> + ioctl::subsystem<>
-#                                                    parametric grants).
 #
 # The allowlisted headers all SPECIALIZE which_dim<>; they do NOT
 # extend the grant_base hierarchy or introduce new structural-validation
@@ -127,7 +118,7 @@ struct planted_canonical final {};
 CANON
 
         # EXEMPT (path allowlist) — a per-axis which_dim<> catalog.
-        cat >"$tmp_root/include/crucible/fixy/Fp.h" <<'AXIS'
+        cat >"$tmp_root/include/crucible/fixy/_Io.h" <<'AXIS'
 // Synthetic per-axis catalog for --self-test.
 namespace crucible::fixy::grant {
 struct planted_axis_catalog final {};
@@ -212,8 +203,8 @@ MISC
         fi
 
         # The per-axis catalog must NOT be flagged.
-        if grep -qF 'reopen at include/crucible/fixy/Fp.h:' "$result_file"; then
-            self_test_fail 'path allowlist leaked — per-axis catalog Fp.h was flagged.'
+        if grep -qF 'reopen at include/crucible/fixy/_Io.h:' "$result_file"; then
+            self_test_fail 'path allowlist leaked — per-axis catalog _Io.h was flagged.'
         fi
 
         # The acknowledged attack fixture must NOT be flagged.
@@ -262,40 +253,6 @@ while IFS=: read -r file line text; do
             # hierarchy or introduce new structural-validation concepts.
             continue
             ;;
-        include/crucible/fixy/grant/_Dispatch.h)
-            # CallShape axis-specialized catalog (4 grant::dispatch::*
-            # grants: indirect_call<FnPtrFamily>/virtual_call<BaseClass>/
-            # recurses<MaxDepth>/tail_call + accept_default_strict_for_CallShape).
-            # Specializes which_dim<> only; does NOT extend grant_base
-            # hierarchy or introduce new structural-validation concepts.
-            continue
-            ;;
-        include/crucible/fixy/grant/_Stack.h)
-            # StackUse axis-specialized catalog (grant::stack::alloc
-            # <MaxBytes>/vla_ok/alloca_ok + accept_default_strict_for_StackUse).
-            # Specializes which_dim<> only.
-            continue
-            ;;
-        include/crucible/fixy/grant/_Global.h)
-            # GlobalState axis-specialized catalog (grant::global::
-            # singleton<Tag>/thread_local_<Tag>/namespace_static<Tag>/
-            # atexit_handler + accept_default_strict_for_GlobalState).
-            # Specializes which_dim<> only.
-            continue
-            ;;
-        include/crucible/fixy/grant/_Stdio.h)
-            # Stdio axis-specialized catalog (grant::stdio::write<Stream>
-            # + streams::* policy tags + accept_default_strict_for_Stdio).
-            # Specializes which_dim<> only.
-            continue
-            ;;
-        include/crucible/fixy/Fp.h)
-            # FpMode axis-specialized catalog (12 with_fp_* parametric
-            # grants + fp_strict_ieee).  Specializes which_dim<> only;
-            # does NOT extend grant_base hierarchy or introduce structural
-            # validation concepts.
-            continue
-            ;;
         include/crucible/fixy/_Fs.h)
             # SyscallSurface axis-specialized catalog (4 fs::*
             # parametric grants: mode<>/with_flag<>/durable<>/atomic_write<>
@@ -334,15 +291,6 @@ while IFS=: read -r file line text; do
             # hierarchy or introduce new structural-validation concepts.
             continue
             ;;
-        include/crucible/fixy/Async.h)
-            # Synchronization axis-specialized catalog (3 grant::async::*
-            # families: copy<Stages,Scope,Bytes>/mbarrier_arrive<Scope>/
-            # mbarrier_wait<Scope> routing onto DimensionAxis::Synchronization,
-            # plus the accept_default_strict_for_Synchronization named alias).
-            # Specializes which_dim<> only; does NOT extend grant_base hierarchy
-            # or introduce new structural-validation concepts.
-            continue
-            ;;
         include/crucible/fixy/_Time.h)
             # SyscallSurface / HwInstruction axis-specialized catalog
             # (3 grant::time::* families: clock_read<Source>/sleep<MaxNanos>
@@ -355,47 +303,6 @@ while IFS=: read -r file line text; do
             # families: affinity / scheduler_policy<Policy> / priority<Nice> /
             # thread_name → SyscallSurface).  Specializes which_dim<> only;
             # does NOT extend grant_base hierarchy.
-            continue
-            ;;
-        include/crucible/fixy/spawn/_SpawnGrant.h)
-            # Spawn engagement-grant catalog (5 spawn::grant::* grants:
-            # detach_with<R>/syscall_only<R>/subprocess<R>/fork_parent<Tag>/
-            # exec_ctx<Ctx> → DimensionAxis::Protocol).  The grant_base
-            # derivation lives in `crucible::fixy::spawn::grant`; the reopen
-            # of `crucible::fixy::grant` here specializes which_dim<> ONLY,
-            # same discipline as the grant/* and axis catalogs above.
-            continue
-            ;;
-        include/crucible/fixy/Vendor.h)
-            # HwInstruction axis-specialized catalog (grant::vendor::
-            # intrinsic<V, I> over the IsaTag per-vendor ISA-family enum,
-            # gated by vendor_isa_consistent_v<V, I>).  Specializes
-            # which_dim<> only; does NOT extend grant_base hierarchy.
-            continue
-            ;;
-        include/crucible/fixy/Simd.h)
-            # SimdIsa axis-specialized catalog (grant::simd::width<W>
-            # over the WidthBits register-width enum, gated by
-            # is_known_width_v<W>).  Specializes which_dim<> only; does NOT
-            # extend grant_base hierarchy.
-            continue
-            ;;
-        include/crucible/fixy/syscall/Family.h)
-            # SyscallSurface axis-specialized catalog (9 family-tier
-            # grants).  Specializes which_dim<> + family_tier<> only.
-            continue
-            ;;
-        include/crucible/fixy/syscall/Per.h)
-            # SyscallSurface axis-specialized catalog
-            # (per<SyscallId> parametric grants).  Specializes which_dim<>
-            # + family_tier<> only.
-            continue
-            ;;
-        include/crucible/fixy/syscall/Ioctl.h)
-            # SyscallSurface axis-specialized catalog
-            # (ioctl::vendor<IoctlVendor> + ioctl::subsystem<IoctlSubsystem>
-            # parametric grants).  Specializes which_dim<> + family_tier<>
-            # only.
             continue
             ;;
         test/safety_attack/attack_fixy_grant_*.cpp)
