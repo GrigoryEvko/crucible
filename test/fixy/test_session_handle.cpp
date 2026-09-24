@@ -403,10 +403,22 @@ static_assert(!s::DetachReason<int>);
 // its wire word is the label word, and the peer enters the branch of the
 // same label in whatever position it holds.  A choice of plain payloads
 // is positional: its word is the position.
+//
+// A role and a label key feed a stable id, so each has external linkage.
 
+}  // namespace
+
+namespace test_session_handle_labels {
 struct Bob {};
 struct Hello {};
 struct Bye {};
+}  // namespace test_session_handle_labels
+
+namespace {
+
+using test_session_handle_labels::Bob;
+using test_session_handle_labels::Bye;
+using test_session_handle_labels::Hello;
 
 using KeyedSelect = s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::End>, s::Send<s::PeerMsg<Bob, Bye, int>, s::End>>;
 using KeyedOfferSwapped =

@@ -1078,11 +1078,28 @@ void expect_live_global(std::string_view label) {
 }
 
 // ── Roles, labels and payloads ───────────────────────────────────────
+//
+// A role feeds a stable id, so each role has external linkage.
 
+}  // namespace
+
+namespace test_session_global_attack_roles {
 struct P {};
 struct Q {};
 struct R {};
 struct S {};
+struct GenA {};
+struct GenB {};
+struct GenC {};
+struct GenD {};
+}  // namespace test_session_global_attack_roles
+
+namespace {
+
+using test_session_global_attack_roles::P;
+using test_session_global_attack_roles::Q;
+using test_session_global_attack_roles::R;
+using test_session_global_attack_roles::S;
 struct M {};
 struct M0 {};
 struct M1 {};
@@ -1351,10 +1368,10 @@ static_assert(admits_binary_view<typename s::project_t<SessionOne, P>::local>);
 // each capacity.  Most generated types are refused, and the counts are
 // printed.
 
-struct GenA {};
-struct GenB {};
-struct GenC {};
-struct GenD {};
+using test_session_global_attack_roles::GenA;
+using test_session_global_attack_roles::GenB;
+using test_session_global_attack_roles::GenC;
+using test_session_global_attack_roles::GenD;
 struct GenL0 {};
 struct GenL1 {};
 struct GenL2 {};
