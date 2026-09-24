@@ -182,6 +182,7 @@ All three defects of this table are fixed. The table keeps them as a record of t
 9. **Links, effect handlers and linearity.** Handlers let a continuation that holds a linear channel break linearity. (Tang, Hillerström, Lindley and Morris, POPL 2024.)
 10. **Synthetic MPST, POPL 2026.** What it proves is progress, not liveness. (Pischke and Yoshida, OOPSLA 2026, page 24.)
 11. **Basu and Bultan synchronisability.** It is flawed. (Finkel and Lozes. Delpy et al.)
+12. **Barwell, Hou, Yoshida and Zhou, LMCS 2025, Theorem 4.20.** Completeness of association fails as the paper states it. After p sends m_j, rule [GR-Ctx-ii] asks every branch of p ⇝ q : j to take the next label of p. The configuration of p holds only branch j. For p → q : {m1.p → r : a.end, m2.p → r : b.end}, the configuration sends a after m1, and the global type cannot. Lemma A.20 (1)(b) leaves out the case where the role is the en-route sender. (Our correspondence test, `test/fixy/test_session_semantics.cpp`, found it.)
 
 ## 6. Corrections to our own design documents
 

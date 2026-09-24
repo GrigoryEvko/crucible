@@ -1931,6 +1931,47 @@ fixy_test(test_session_crash_attack)
 fixy_test(test_session_global_types)
 fixy_test(test_session_global_attack)
 
+# ── Transition systems and operational correspondence ─────────────────
+#
+# Semantics.h gives the transition systems of global types and of
+# configurations under crash-stop failures (Barwell, Hou, Yoshida and
+# Zhou, LMCS 2025, Definitions 4.12 and 4.18).  The test checks each rule,
+# and it checks operational correspondence on a corpus of global types.
+fixy_test(test_session_semantics)
+
+# Two fixtures for each input predicate of the public aliases.  A state
+# holds a well-formed global type and a set of crashed roles.
+fixy_neg_compile_test(neg_sess_semantics_state_self_communication
+  "template constraint failure for .template<class S, class Reliable>  requires \\(is_global_state_v<S>\\)"
+  "the expression .is_global_state_v<S> .with S = fixy::session::global::State<fixy::session::global::Roles<>, fixy::session::global::Comm<<unnamed>::P, <unnamed>::P,")
+fixy_neg_compile_test(neg_sess_semantics_state_crashed_twice
+  "template constraint failure for .template<class S, class A, class Reliable>  requires \\(is_global_state_v<S>\\)"
+  "the expression .is_global_state_v<S> .with S = fixy::session::global::State<fixy::session::global::Roles<<unnamed>::P, <unnamed>::P>,")
+
+# A configuration holds local types that the rules read.
+fixy_neg_compile_test(neg_sess_semantics_config_bare_payload
+  "template constraint failure for .template<class Ctx, class Reliable>  requires \\(is_configuration_v<Ctx>\\)"
+  "the expression .is_configuration_v<Ctx> .with Ctx = fixy::session::TypingContext<fixy::session::RoleState<<unnamed>::P, fixy::session::OutQueue<>, fixy::session::Recv<int, fixy::session::End> > >.. evaluated to .false.")
+fixy_neg_compile_test(neg_sess_semantics_config_unguarded_loop
+  "template constraint failure for .template<class Ctx, class A, class Reliable>  requires \\(is_configuration_v<Ctx>\\)"
+  "the expression .is_configuration_v<Ctx> .with Ctx = fixy::session::TypingContext<fixy::session::RoleState<<unnamed>::P, fixy::session::OutQueue<>, fixy::session::Loop<fixy::session::Continue> > >.. evaluated to .false.")
+
+# A step takes a label of Definition 4.9.
+fixy_neg_compile_test(neg_sess_semantics_global_step_not_a_label
+  "template constraint failure for .template<class S, class A, class Reliable>  requires"
+  "the expression .is_transition_label_v<A> .with A = int.. evaluated to .false.")
+fixy_neg_compile_test(neg_sess_semantics_config_step_not_a_label
+  "template constraint failure for .template<class Ctx, class A, class Reliable>  requires"
+  "the expression .is_transition_label_v<A> .with A = fixy::session::global::Actions<>.. evaluated to .false.")
+
+# The reliability assumption is a ReliableSet or EveryRoleReliable.
+fixy_neg_compile_test(neg_sess_semantics_global_reliability_malformed
+  "template constraint failure for .template<class S, class Reliable>  requires"
+  "the expression .is_reliability_v<Reliable> .with Reliable = fixy::session::global::Roles<<unnamed>::P>.. evaluated to .false.")
+fixy_neg_compile_test(neg_sess_semantics_config_reliability_malformed
+  "template constraint failure for .template<class Ctx, class Reliable>  requires"
+  "the expression .is_reliability_v<Reliable> .with Reliable = <unnamed>::P.. evaluated to .false.")
+
 # Two fixtures for each gate.  Each refused type satisfies each earlier
 # clause of its gate, so only the named clause can refuse it.
 fixy_neg_compile_test(neg_sess_global_self_communication
