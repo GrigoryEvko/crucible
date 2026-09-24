@@ -17,11 +17,18 @@
 // half and not the second.  This binding makes the second half hold at
 // run time.  The move hands the pointer on and leaves the source empty,
 // and every use checks that the binding is still there.  The check is one
-// comparison on the pointer that the operation loads anyway.  In a
-// translation unit built with the ignore semantic the check compiles to
-// nothing, and a use of the empty binding then reads through a null
-// pointer.  That read traps, because the tree builds with
-// -fno-delete-null-pointer-checks, so the use still fails closed.
+// comparison on the pointer that the operation loads anyway, and a failed
+// check ends the process through a cold path that does not return.
+//
+// The check is a fatal invariant and not a contract, because it must hold
+// under every contract semantic.  Under ignore a contract check is absent.
+// Under observe and enforce GCC does not treat the violation as the end of
+// the path, and at -O3 it then sees the use go on through the null pointer.
+// A use through a null pointer is undefined behaviour, and no build flag
+// makes it a reliable trap: it reads or writes the channel member at its
+// offset from address zero, and the member of a large channel lies far
+// past the unmapped first page.  The failed check calls a function that
+// does not return, and no path reaches the use.
 //
 // A handle that declares its own move operations defaulted gets this
 // behaviour with no further code.  A handle that turns into a handle of
@@ -68,14 +75,14 @@ public:
     // const initializer, which every inline function here is exposed to.
     [[nodiscard, gnu::always_inline]] constexpr Channel* operator->() const noexcept {
         if !consteval {
-            CRUCIBLE_ASSERT(channel_ != nullptr);
+            CRUCIBLE_FATAL_INVARIANT(channel_ != nullptr);
         }
         return channel_;
     }
 
     [[nodiscard, gnu::always_inline]] constexpr Channel& operator*() const noexcept {
         if !consteval {
-            CRUCIBLE_ASSERT(channel_ != nullptr);
+            CRUCIBLE_FATAL_INVARIANT(channel_ != nullptr);
         }
         return *channel_;
     }
