@@ -4,10 +4,13 @@
 #include <crucible/Platform.h>
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Post.h>
-
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/ScopedView.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 
 #include <algorithm>
@@ -212,9 +215,12 @@ enum class CKernelId : uint8_t {
 // recovered from a trace file or across a foreign-runtime boundary can be out
 // of range after version skew or corruption, and a bare static_cast would turn
 // it into an enum value no switch handles. Admitting only [0, NUM_KERNELS)
-// makes the widening below total.
-using ValidCKernelIdRaw = ::crucible::fixy::wrap::Refined<
-    ::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1}>, uint8_t>;
+// makes the widening below total.  The one door into the type is
+// ::fixy::mint_refined<kValidCKernelIdBound>(byte).
+inline constexpr auto kValidCKernelIdBound =
+    ::fixy::bounded_above<static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1}>;
+
+using ValidCKernelIdRaw = ::fixy::Refined<kValidCKernelIdBound, uint8_t>;
 
 [[nodiscard, gnu::const]] inline constexpr CKernelId make_ckernel_id(ValidCKernelIdRaw raw) noexcept {
     return static_cast<CKernelId>(raw.value());
@@ -240,7 +246,7 @@ struct Sealed {};
 // write that no view and no seal can refuse.
 class CKernelTable {
 public:
-    using SizeCounter = ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP>;
+    using SizeCounter = ::fixy::BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP>;
 
     CKernelTable() = default;
 
@@ -261,8 +267,10 @@ public:
     // read it.  The same holds for every function below that calls it.
     [[nodiscard]] bool is_sealed() const noexcept { return seal_.is_sealed(); }
 
-    using MutableView = crucible::fixy::wrap::ScopedView<CKernelTable, ckernel_state::Mutable>;
-    using SealedView = crucible::fixy::wrap::ScopedView<CKernelTable, ckernel_state::Sealed>;
+    // A view is minted with a fresh brand and kept on the erased identity,
+    // so the table hands out one view type for each state.
+    using MutableView = ::fixy::ScopedView<CKernelTable, ckernel_state::Mutable>;
+    using SealedView = ::fixy::ScopedView<CKernelTable, ckernel_state::Sealed>;
 
     // A contract predicate that reads a member through `this` is skipped when
     // the compiler folds the body at compile time, so every such check in this
@@ -278,12 +286,12 @@ public:
     [[nodiscard]] std::optional<MutableView> mint_mutable_view(VigilFgCtx const& fg) const noexcept {
         ::foundation::effects::host::require_brand_thread(fg);
         if (is_sealed()) return std::nullopt;
-        return crucible::fixy::wrap::mint_view<ckernel_state::Mutable>(*this);
+        return ::fixy::mint_view<ckernel_state::Mutable>(*this);
     }
 
     [[nodiscard]] SealedView mint_sealed_view() const noexcept {
         CRUCIBLE_PRE(is_sealed());
-        return crucible::fixy::wrap::mint_view<ckernel_state::Sealed>(*this);
+        return ::fixy::mint_view<ckernel_state::Sealed>(*this);
     }
 
     // Found by argument-dependent lookup from mint_view.
@@ -337,7 +345,7 @@ public:
     // otherwise forbids, so the counter is reconstructed in place rather than
     // assigned, re-establishing its bound and its ordering from a known floor.
     void clear(::foundation::effects::Test const& test) noexcept {
-        std::construct_at(&size_, SizeCounter{0u});
+        std::construct_at(&size_, ::fixy::mint_bounded_monotonic<uint32_t, CKERNEL_TABLE_CAP>(0u));
         seal_.reopen(test);
         CRUCIBLE_POST(0, size_.get() == 0u);
         CRUCIBLE_POST(0, !is_sealed());
@@ -369,26 +377,25 @@ private:
     }
 
     std::array<CKernelEntry, CKERNEL_TABLE_CAP> entries_{};
-    SizeCounter size_{0u};
+    SizeCounter size_ = ::fixy::mint_bounded_monotonic<uint32_t, CKERNEL_TABLE_CAP>(0u);
     RegistrationSeal seal_;
 };
 
-static_assert(crucible::fixy::wrap::no_scoped_view_field_check<CKernelTable>());
+static_assert(::fixy::no_scoped_view_field_check<CKernelTable>());
 
-using CKernelTableSingleton = crucible::fixy::wrap::Tagged<CKernelTable*, crucible::fixy::tags::source::Singleton>;
+using CKernelTableSingleton = ::fixy::Tagged<CKernelTable*, ::fixy::tags::source::Singleton>;
 static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
 
 [[nodiscard]] inline CKernelTableSingleton global_ckernel_table() {
     static CKernelTable table;
-    return CKernelTableSingleton{&table};
+    return ::fixy::mint_tagged<::fixy::tags::source::Singleton>(&table);
 }
 
 // False when the table is sealed, before the view or before the write, and
 // then nothing is registered.
-[[nodiscard]] inline bool
-register_schema_hash(VigilFgCtx const& fg,
-                     crucible::fixy::wrap::Tagged<SchemaHash, crucible::fixy::tags::source::External> schema_hash,
-                     CKernelId id) {
+[[nodiscard]] inline bool register_schema_hash(VigilFgCtx const& fg,
+                                               ::fixy::Tagged<SchemaHash, ::fixy::tags::source::External> schema_hash,
+                                               CKernelId id) {
     CKernelTable* table = global_ckernel_table().value();
     const auto view = table->mint_mutable_view(fg);
     if (!view) return false;

@@ -1,6 +1,8 @@
 #include <crucible/CKernel.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 #include "test_assert.h"
 #include <cstdio>
 #include <cstring>
@@ -16,9 +18,13 @@ static const crucible::SchemaHash HASH_EWISE_ADD{0xEEEE000000000005ULL};
 static const crucible::SchemaHash HASH_UNKNOWN{0xDEAD000000000000ULL};
 
 // Registration demands a hash carrying external provenance, so every
-// fixture below retags its value to stand in for one that arrived from
+// fixture below tags its value to stand in for one that arrived from
 // outside.
-using ExtHash = crucible::safety::Tagged<crucible::SchemaHash, crucible::safety::source::External>;
+using ExtHash = ::fixy::Tagged<crucible::SchemaHash, ::fixy::tags::source::External>;
+
+[[nodiscard]] static ExtHash external_hash(crucible::SchemaHash schema_hash) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::External>(schema_hash);
+}
 
 // A mutable view asks for the context of a Vigil's producer claim.  These
 // tests use no Vigil, so they take that context from the test door.
@@ -37,11 +43,11 @@ int main() {
         const bool was_registered = register_schema_hash(kVigilForeground, schema_hash, id);
         assert(was_registered);
     };
-    register_or_fail(ExtHash{HASH_LINEAR}, CKernelId::GEMM_LINEAR);
-    register_or_fail(ExtHash{HASH_CONV2D}, CKernelId::CONV2D);
-    register_or_fail(ExtHash{HASH_SDPA}, CKernelId::SDPA);
-    register_or_fail(ExtHash{HASH_RELU}, CKernelId::ACT_RELU);
-    register_or_fail(ExtHash{HASH_EWISE_ADD}, CKernelId::EWISE_ADD);
+    register_or_fail(external_hash(HASH_LINEAR), CKernelId::GEMM_LINEAR);
+    register_or_fail(external_hash(HASH_CONV2D), CKernelId::CONV2D);
+    register_or_fail(external_hash(HASH_SDPA), CKernelId::SDPA);
+    register_or_fail(external_hash(HASH_RELU), CKernelId::ACT_RELU);
+    register_or_fail(external_hash(HASH_EWISE_ADD), CKernelId::EWISE_ADD);
 
     assert(classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
     assert(classify_kernel(HASH_CONV2D) == CKernelId::CONV2D);
@@ -59,7 +65,7 @@ int main() {
     assert(classify_kernel(SchemaHash{0xFFFF000000000010ULL}) == CKernelId::OPAQUE);
 
     // Registering the same pair twice must leave the answer unchanged.
-    register_or_fail(ExtHash{HASH_LINEAR}, CKernelId::GEMM_LINEAR);
+    register_or_fail(external_hash(HASH_LINEAR), CKernelId::GEMM_LINEAR);
     assert(classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
 
     assert(std::strcmp(ckernel_name(CKernelId::OPAQUE), "OPAQUE") == 0);
@@ -98,14 +104,14 @@ int main() {
 
         // Zero is the lowest valid value, and the default of the field.
         {
-            ValidCKernelIdRaw raw{uint8_t{0}};
+            const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(uint8_t{0});
             assert(make_ckernel_id(raw) == CKernelId::OPAQUE);
         }
 
         // One below the kernel count is the highest valid value.
         {
             constexpr uint8_t LAST = static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1};
-            ValidCKernelIdRaw raw{LAST};
+            const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(LAST);
             assert(make_ckernel_id(raw) == CKernelId::COMM_BARRIER);
             assert(static_cast<uint8_t>(make_ckernel_id(raw)) == LAST);
         }
@@ -113,7 +119,7 @@ int main() {
         // Widening must preserve the underlying byte, not renumber it.
         for (uint8_t v : {uint8_t{1}, uint8_t{42}, uint8_t{100}, static_cast<uint8_t>(CKernelId::SDPA),
                           static_cast<uint8_t>(CKernelId::CONV2D), static_cast<uint8_t>(CKernelId::ACT_RELU)}) {
-            ValidCKernelIdRaw raw{v};
+            const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(v);
             const CKernelId id = make_ckernel_id(raw);
             assert(static_cast<uint8_t>(id) == v && "make_ckernel_id must preserve underlying byte");
         }
@@ -194,7 +200,7 @@ int main() {
     // A registration after the seal is refused and changes nothing.
     global_ckernel_table().value()->seal();
     const bool was_registered_after_seal =
-        register_schema_hash(kVigilForeground, ExtHash{HASH_UNKNOWN}, CKernelId::SDPA);
+        register_schema_hash(kVigilForeground, external_hash(HASH_UNKNOWN), CKernelId::SDPA);
     assert(!was_registered_after_seal);
     assert(classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
 

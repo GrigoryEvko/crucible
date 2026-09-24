@@ -1,41 +1,25 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: constructing ValidCKernelIdRaw with UINT8_MAX in a
-// constexpr context — the wide-miss fixture for the
-// uint8_t → CKernelId widening gate.
+// ValidCKernelIdRaw is Refined<bounded_above<NUM_KERNELS - 1>, uint8_t>.
+// The byte 0xFF is past every kernel id, and it would name a CKernelId
+// enumerator that does not exist.  The door mint_refined must refuse it.
 //
-// Per WRAP-CKernel-4 (#892), ValidCKernelIdRaw is
-// safety::Refined<safety::bounded_above<NUM_KERNELS - 1>, uint8_t>.
-// 0xFF is past every plausible kernel id and would alias to a
-// CKernelId enumerator that does not exist; the gate must reject.
+// This fixture is the wide miss.  It fails when ValidCKernelIdRaw becomes
+// a plain uint8_t alias, which would admit every byte from a damaged
+// trace file.  The companion fixture neg_ckernel_id_raw_at_sentinel is
+// the edge of the bound.
 //
-// In constexpr context (constant evaluation), a contract violation
-// makes the expression non-constant per P1494R5 — using it where a
-// constant is required is ill-formed.
-//
-// Companion fixture: neg_ckernel_id_raw_at_sentinel.cpp
-//   * That one is the boundary edge (= NUM_KERNELS, off-by-one).
-//   * This one is the wide miss (= UINT8_MAX).  Catches "drop the
-//     bound entirely" regression where ValidCKernelIdRaw degenerates
-//     into a plain uint8_t alias (e.g. someone replaces the Refined
-//     wrap with a `using ValidCKernelIdRaw = uint8_t;` typedef);
-//     under that drift any byte from a corrupted Cipher file is
-//     silently accepted and classify() returns garbage.
-//
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate,
-// each demonstrating a distinct mismatch class.
+// Expected diagnostic: the bounded_above precondition of mint_refined
+// fails in a constant expression.
 
 #include <crucible/CKernel.h>
+#include <fixy/Refined.h>
 
 #include <climits>
 #include <cstdint>
 
 int main() {
-    // Constant evaluation forces the Refined ctor's pre-clause to be
-    // exercised at compile time.  v == 0xFF → predicate(v) == false →
-    // contract violation → the expression is not a constant
-    // expression → ill-formed.
-    constexpr crucible::ValidCKernelIdRaw bad{uint8_t{UINT8_MAX}};
+    constexpr crucible::ValidCKernelIdRaw bad = ::fixy::mint_refined<crucible::kValidCKernelIdBound>(uint8_t{UINT8_MAX});
     (void)bad;
     return 0;
 }

@@ -15,6 +15,7 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
+#include <fixy/Refined.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
@@ -567,7 +568,7 @@ inline Header read_header(Reader& r) {
             if (raw_kernel_id >= static_cast<uint8_t>(CKernelId::NUM_KERNELS)) [[unlikely]] {
                 return LoadedRegionNode{nullptr};
             }
-            te.kernel_id = make_ckernel_id(ValidCKernelIdRaw{raw_kernel_id});
+            te.kernel_id = make_ckernel_id(::fixy::mint_refined<kValidCKernelIdBound>(raw_kernel_id));
         }
 
         te.input_metas = (te.num_inputs > 0) ? arena.alloc_array<TensorMeta>(a, te.num_inputs) : nullptr;

@@ -90,7 +90,6 @@ fuzz/property/prop_memory_plan_no_overlap.cpp
 fuzz/property/prop_monotonic_predicates.cpp
 fuzz/property/prop_trace_graph_csr.cpp
 include/crucible/BackgroundThread.h
-include/crucible/CKernel.h
 include/crucible/CallSiteTable.h
 include/crucible/Cipher.h
 include/crucible/CostModel.h

@@ -6562,55 +6562,40 @@ crucible_neg_compile_test(neg_merkle_dag_variant_id_regression
 crucible_neg_compile_test(neg_merkle_dag_variant_id_overflow
   "contract|max|Monotonic|not a constant|non-constant|constexpr")
 
-# WRAP-CKernel-4 (#892) — ValidCKernelIdRaw =
-# Refined<bounded_above<NUM_KERNELS - 1>, uint8_t>; constructing the
-# Refined with an out-of-range byte fires the predicate's pre-clause
-# in constant evaluation.  This is the type-system gate for every
-# uint8_t → CKernelId widening at FFI / deserialize boundaries
-# (Cipher.deserialize_region in particular — Serialize.h:385).
-# Two fixtures per HS14:
-#   * _at_sentinel — boundary edge (= NUM_KERNELS, off-by-one).
-#     Catches drift where the bound widens from `NUM_KERNELS - 1` to
-#     `NUM_KERNELS`, silently admitting the count sentinel as a real
-#     opcode (cascades into classify() returning sentinel and switch
-#     fallthrough to UB).
-#   * _uint8_max  — wide miss (= UINT8_MAX).  Catches "drop the bound
-#     entirely" regression where ValidCKernelIdRaw degenerates into a
-#     plain uint8_t typedef and admits any byte from a corrupted
-#     Cipher file.
-crucible_neg_compile_test(neg_ckernel_id_raw_at_sentinel
-  "contract|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_ckernel_id_raw_uint8_max
-  "contract|bounded_above|not a constant|non-constant|constexpr")
+# ValidCKernelIdRaw is Refined<bounded_above<NUM_KERNELS - 1>, uint8_t>.
+# It is the gate at each widening of a uint8_t to a CKernelId.  The door
+# mint_refined must refuse the NUM_KERNELS sentinel (the edge of the
+# bound) and UINT8_MAX (the wide miss).  The first regex says that the
+# precondition of the door failed.  The second names the door and the
+# refused value.
+crucible_neg_compile_multi_test(neg_ckernel_id_raw_at_sentinel
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<[0-9]+>\\(\\), unsigned char>\\(\\(\\(uint8_t\\)crucible::CKernelId::NUM_KERNELS\\)\\)")
+crucible_neg_compile_multi_test(neg_ckernel_id_raw_uint8_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<[0-9]+>\\(\\), unsigned char>\\(255\\)")
 
-# WRAP-CKernel-2 (#890) — CKernelTable::SizeCounter =
-# BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP=256>; constructing it
-# with an out-of-range initial value fires the BoundedMonotonic ctor's
-# pre-clause `!(T(Max) < initial)` in constant evaluation.  Pins the
-# size counter as monotonic-and-capped at the type level — register_op's
-# explicit `if (size >= CAP) std::abort()` becomes defense-in-depth.
-# Two fixtures per HS14:
-#   * _above_cap     — boundary edge (= CAP + 1 = 257, off-by-two).
-#     Catches drift where the bound widens from
-#     `BoundedMonotonic<..., CKERNEL_TABLE_CAP>` to
-#     `BoundedMonotonic<..., CKERNEL_TABLE_CAP + N>` for any N >= 1.
-#   * _uint32_max    — wide miss (= UINT32_MAX).  Catches "drop the
-#     bound entirely" regression where SizeCounter degenerates from
-#     BoundedMonotonic into a plain Monotonic<uint32_t>; under that
-#     drift register_op's runtime check is the only defense and the
-#     compile-time witness disappears.
-crucible_neg_compile_test(neg_ckernel_table_size_above_cap
-  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_ckernel_table_size_uint32_max
-  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+# CKernelTable::SizeCounter is BoundedMonotonic<uint32_t,
+# CKERNEL_TABLE_CAP>.  The door mint_bounded_monotonic must refuse CAP + 1
+# (the edge of the bound) and UINT32_MAX (the wide miss).  GCC names
+# neither the door nor the value when a precondition of a constructor
+# fails in a constant expression.  So the second regex pins the header
+# that holds the precondition.
+crucible_neg_compile_multi_test(neg_ckernel_table_size_above_cap
+  "contract predicate is false in constant expression"
+  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+crucible_neg_compile_multi_test(neg_ckernel_table_size_uint32_max
+  "contract predicate is false in constant expression"
+  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
 
-# WRAP-CKernel-5 (#893) — global CKernelTable access carries
-# source::Singleton provenance. Raw pointers and differently tagged
-# pointers cannot satisfy singleton-only consumers.
+# The global CKernelTable carries source::Singleton provenance.  A raw
+# pointer and a pointer with a different tag must not satisfy a consumer
+# of the singleton.
 crucible_neg_compile_test(neg_ckernel_singleton_raw_pointer
   "could not convert|cannot convert|no matching function")
-crucible_neg_compile_test(neg_ckernel_singleton_cross_tag
-  "could not convert|cannot convert|no matching function")
+crucible_neg_compile_multi_test(neg_ckernel_singleton_cross_tag
+  "could not convert .external. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
+  "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Singleton>.")
 
 # WRAP-SchemaTab-1 (#1003) — SchemaTable::SizeCounter =
 # BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP=512>; constructing it
@@ -11093,8 +11078,9 @@ crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
 #     (MutableView is a typedef of ScopedView<CKernelTable, Mutable>).
 crucible_neg_compile_test(neg_ckernel_mint_mutable_view_to_sealed_overload
   "invalid initialization of reference.*SealedView.*Mutable|cannot convert.*Mutable.*Sealed")
-crucible_neg_compile_test(neg_ckernel_mint_mutable_view_in_field
-  "Type contains a safety::ScopedView<> in some field")
+crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_in_field
+  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
+  "! fixy::contains_scoped_view<OffendingContainer>\\(\\). evaluates to false")
 
 # FIXY-U-136 — HS14 spirit gap closure for SchemaTable::mint_mutable_view.
 # U-135's CKernelTable fixtures bumped SchemaTable::mint_mutable_view's
@@ -11118,7 +11104,7 @@ crucible_neg_compile_multi_test(neg_schema_mutable_view_unchecked
   "cannot convert .std::optional<crucible::safety::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable> >."
   "neg_schema_mutable_view_unchecked.cpp:12")
 crucible_neg_compile_multi_test(neg_ckernel_mutable_view_unchecked
-  "cannot convert .std::optional<crucible::safety::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
+  "cannot convert .std::optional<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
   "neg_ckernel_mutable_view_unchecked.cpp:12")
 
 # Lock-free readers read a sealed table, so every write goes through the

@@ -10,6 +10,6 @@
 int main() {
     crucible::CKernelTable table;
     table.seal();
-    table.entries_[0].kernel_id = crucible::CKernelId::GEMM_MM;
+    table.entries_[0].id = crucible::CKernelId::GEMM_MM;
     return 0;
 }

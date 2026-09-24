@@ -1,16 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-CKernel-5 (#893): source::Singleton is distinct from other
-// provenance lanes.  A value tagged as External must not satisfy a
-// singleton-only CKernelTable consumer.
+// source::Singleton is a provenance tag of its own.  A table pointer
+// tagged source::External must not satisfy a consumer that requires the
+// singleton CKernelTable.
+//
+// Expected diagnostic: no conversion from the External pointer to
+// CKernelTableSingleton.
 
 #include <crucible/CKernel.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 static void needs_singleton(crucible::CKernelTableSingleton) {}
 
 int main() {
     crucible::CKernelTable table{};
-    crucible::safety::Tagged<crucible::CKernelTable*, crucible::safety::source::External> external{&table};
+    auto external = ::fixy::mint_tagged<::fixy::tags::source::External>(&table);
     needs_singleton(external);
     return 0;
 }
