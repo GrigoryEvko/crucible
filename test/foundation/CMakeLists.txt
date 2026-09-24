@@ -528,6 +528,11 @@ foundation_neg_compile_test(neg_read_view_look_alike_source_refused
 foundation_neg_compile_test(neg_read_view_brand_not_empty
   "static assertion failed"
   "Brand must be an empty class type")
+# A const source is refused by the deleted twin and its std::move message.
+# Without the non-const condition on the primary door the call is ambiguous.
+foundation_neg_compile_test(neg_read_view_const_source_refused
+  "use of deleted function"
+  "Pass the source with std::move")
 foundation_neg_compile_test(neg_read_view_body_by_value
   "no matching function for call to .with_read_view\\("
   "required for the satisfaction of .ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>.")
