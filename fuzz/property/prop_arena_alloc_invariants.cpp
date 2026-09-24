@@ -25,8 +25,8 @@
 #include "random_input.h"
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Refined.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstdint>
@@ -68,14 +68,14 @@ int main(int argc, char** argv) {
             // Use a small arena (4 KB blocks) to force frequent
             // alloc_slow_ engagement on the larger requests.
             Arena arena{4 * 1024};
-            auto test = crucible::effects::testing::test();
+            auto test = ::foundation::effects::testing::test();
 
             std::array<void*, 32> ptrs{};
             std::array<size_t, 32> sizes{};
 
             for (uint8_t i = 0; i < plan.count; ++i) {
-                void* p = arena.alloc(test.alloc, safety::Positive<size_t>{plan.sizes[i]},
-                                      safety::PowerOfTwo<size_t>{plan.aligns[i]});
+                void* p = arena.alloc(test.alloc, ::fixy::mint_refined<::fixy::positive>(plan.sizes[i]),
+                                      ::fixy::mint_refined<::fixy::power_of_two>(plan.aligns[i]));
                 if (p == nullptr) return false;
 
                 // Property 1: alignment.

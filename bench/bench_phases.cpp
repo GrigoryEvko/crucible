@@ -345,8 +345,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
         char* aux = (aux_bytes > 0)
-                      ? static_cast<char*>(bg.arena.alloc(A, crucible::safety::Positive<size_t>{aux_bytes},
-                                                          crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)}))
+                      ? static_cast<char*>(bg.arena.alloc(A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
+                                                          ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
                       : nullptr;
         bg.ensure_scratch_buffers(total_inputs, total_outputs);
         const uint32_t slot_cap =
@@ -403,8 +403,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
         char* aux_cursor =
-            (aux_bytes > 0) ? static_cast<char*>(bg.arena.alloc(A, crucible::safety::Positive<size_t>{aux_bytes},
-                                                                crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)}))
+            (aux_bytes > 0) ? static_cast<char*>(bg.arena.alloc(A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
+                                                                ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
                             : nullptr;
 
         const uint64_t t0 = bench::rdtsc_start();

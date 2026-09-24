@@ -16,6 +16,7 @@
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Pre.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cstddef>
@@ -45,7 +46,7 @@ public:
         pre(initial_capacity >= 8)
             pre(::crucible::decide::is_power_of_two_le<std::uint32_t>(initial_capacity, UINT32_MAX))
         : arena_{arena}, capacity_{initial_capacity}, size_{0} {
-        const effects::Alloc a = init.alloc;
+        const ::foundation::effects::Alloc a = init.alloc;
         slots_ = arena_->alloc_array_nonzero<Slot>(a, initial_capacity);
         for (uint32_t i = 0; i < initial_capacity; ++i) {
             slots_[i] = Slot{};
@@ -66,7 +67,7 @@ public:
     // Two calls return the same pointer exactly when their arguments agree
     // on every field but the hash. The hash of the argument is ignored: the
     // pool computes and owns that field.
-    [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* intern(effects::Alloc a, const NumericalRecipe& fields)
+    [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* intern(::foundation::effects::Alloc a, const NumericalRecipe& fields)
         CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
         const RecipeHash h = compute_recipe_hash(fields);
         const uint64_t hv = h.raw();
@@ -112,7 +113,7 @@ private:
             && a.determinism == b.determinism && a.flags == b.flags;
     }
 
-    [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* install_(effects::Alloc a, uint32_t i,
+    [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* install_(::foundation::effects::Alloc a, uint32_t i,
                                                                         const NumericalRecipe& fields, RecipeHash h) {
         NumericalRecipe* r = arena_->alloc_obj<NumericalRecipe>(a);
         *r = fields;
@@ -124,7 +125,7 @@ private:
     }
 
     [[gnu::cold, gnu::noinline]]
-    void grow_(effects::Alloc a) {
+    void grow_(::foundation::effects::Alloc a) {
         const uint32_t old_cap = capacity_.value();
         const uint32_t old_size = size_.get();
         Slot* old_slots = slots_;

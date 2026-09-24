@@ -15,6 +15,7 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <array>
@@ -450,7 +451,7 @@ inline Header read_header(Reader& r) {
 
 // Returns a tagged null pointer on a parse error or a version mismatch. Every
 // structure it builds lives in the arena.
-[[nodiscard]] inline LoadedRegionNode deserialize_region(effects::Alloc a, std::span<const uint8_t> buf, Arena& arena) {
+[[nodiscard]] inline LoadedRegionNode deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf, Arena& arena) {
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
 
@@ -672,7 +673,7 @@ inline Header read_header(Reader& r) {
 // Returns null on a parse error.
 template <typename Resolve>
     requires std::is_invocable_r_v<TraceNode*, Resolve&, MerkleHash>
-[[nodiscard]] inline BranchNode* deserialize_branch(effects::Alloc a, std::span<const uint8_t> buf,
+[[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
                                                     Arena& arena CRUCIBLE_LIFETIMEBOUND, Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
@@ -724,7 +725,7 @@ template <typename Resolve>
     return node;
 }
 
-[[nodiscard]] inline BranchNode* deserialize_branch(effects::Alloc a, std::span<const uint8_t> buf,
+[[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
                                                     Arena& arena CRUCIBLE_LIFETIMEBOUND, std::nullptr_t) {
     return deserialize_branch(a, buf, arena, [](MerkleHash) noexcept -> TraceNode* { return nullptr; });
 }

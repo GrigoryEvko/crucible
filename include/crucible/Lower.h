@@ -6,6 +6,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
+#include <foundation/effects/Effect.h>
 
 #include <concepts>
 #include <cstring>
@@ -31,7 +32,7 @@ using lower_trace_required_row = effects::Row<effects::Effect::Bg, effects::Effe
 // inputs than the entry it came from. The slot list is compacted to match.
 template <typename CallerRow, LowerTraceSource Source>
     requires effects::Subrow<lower_trace_required_row, CallerRow>
-[[nodiscard]] inline LoweredGraph<Source> lower_trace_to_graph(effects::Alloc a, LowerTraceGraph<Source> trace,
+[[nodiscard]] inline LoweredGraph<Source> lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> trace,
                                                                ExprPool& pool, Graph& graph)
     pre(trace.value() != nullptr) {
     const TraceGraph& tg = *trace.value();

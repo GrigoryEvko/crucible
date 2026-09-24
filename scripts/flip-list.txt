@@ -42,7 +42,6 @@
 #     examples/fn.
 
 bench/bench_adaptive_scheduler.cpp
-bench/bench_arena.cpp
 bench/bench_auto_router.cpp
 bench/bench_auto_split.cpp
 bench/bench_auto_split_compare.cpp
@@ -82,7 +81,6 @@ bench/bench_session_persistence.cpp
 bench/bench_spsc_session.cpp
 bench/bench_swmr_session.cpp
 fuzz/boundary/old_tree.h
-fuzz/property/prop_arena_alloc_invariants.cpp
 fuzz/property/prop_callsite_table_dedup.cpp
 fuzz/property/prop_checked_arith.cpp
 fuzz/property/prop_expr_pool_intern.cpp
@@ -95,7 +93,6 @@ fuzz/property/prop_monotonic_predicates.cpp
 fuzz/property/prop_recipe_pool_intern.cpp
 fuzz/property/prop_recipe_registry_roundtrip.cpp
 fuzz/property/prop_trace_graph_csr.cpp
-include/crucible/Arena.h
 include/crucible/BackgroundThread.h
 include/crucible/CKernel.h
 include/crucible/CallSiteTable.h

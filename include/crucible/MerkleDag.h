@@ -19,6 +19,7 @@
 #include <crucible/safety/_Pre.h>
 
 #include <crucible/Types.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <atomic>
@@ -1122,7 +1123,7 @@ private:
 // out: a region hashed under the wrong numerics shares a kernel-cache slot
 // with one hashed under the right ones, and the runtime would serve either
 // kernel to either caller.
-[[nodiscard]] inline RegionNode* make_region(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
+[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops) noexcept
     pre(::crucible::decide::valid_span(num_ops, ops)) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
@@ -1143,7 +1144,7 @@ private:
 }
 
 // For a caller that has already folded the hash while streaming the ops.
-[[nodiscard]] inline RegionNode* make_region(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
+[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops, ContentHash precomputed_hash) noexcept
     pre(::crucible::decide::valid_span(num_ops, ops))
         pre(::crucible::decide::is_non_zero(precomputed_hash) || num_ops == 0) {
@@ -1166,7 +1167,7 @@ private:
 // the content hash and is then dropped, so a caller that needs to recover the
 // recipe later must track it separately.  A null recipe is rejected rather
 // than accepted, because the overload above already covers that case.
-[[nodiscard]] inline RegionNode* make_region(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
+[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops, const NumericalRecipe* recipe) noexcept
     pre(::crucible::decide::valid_span(num_ops, ops)) pre(recipe != nullptr)
         pre(::crucible::decide::is_non_zero(recipe->hash)) pre(!recipe->hash.is_sentinel()) {
@@ -1185,7 +1186,7 @@ private:
     return node;
 }
 
-[[nodiscard]] inline TraceNode* make_terminal(effects::Alloc a, Arena& arena) noexcept {
+[[nodiscard]] inline TraceNode* make_terminal(::foundation::effects::Alloc a, Arena& arena) noexcept {
     auto* node = new(arena.alloc_obj<TraceNode>(a)) TraceNode{};
     node->kind = TraceNodeKind::TERMINAL;
     CRUCIBLE_POST(node, node != nullptr);
@@ -1195,7 +1196,7 @@ private:
 
 // The body must be a complete sub-DAG ending in TERMINAL, and
 // body_content_hash must already be folded from that body's region chain.
-[[nodiscard]] inline LoopNode* make_loop(effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode* body,
+[[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode* body,
                                          ContentHash body_content_hash, FeedbackEdge* feedback, uint16_t num_feedback,
                                          LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept
     pre(body != nullptr) pre(::crucible::decide::valid_span(num_feedback, feedback))
@@ -1356,7 +1357,7 @@ inline void recompute_merkle(TraceNode* node) {
 // So this is the one parameter on this signature that cannot be defaulted.
 // It has no caller today -- this whole function does not -- and a default
 // would hand the first one a wrong-kernel path it never had to think about.
-[[nodiscard]] inline BranchNode* add_branch(effects::Alloc a, Arena& arena, KernelCache& kernel_cache,
+[[nodiscard]] inline BranchNode* add_branch(::foundation::effects::Alloc a, Arena& arena, KernelCache& kernel_cache,
                                             TraceNode* divergence_point, TraceEntry* new_ops, uint32_t new_n,
                                             int64_t old_guard_value, int64_t new_guard_value, Guard guard,
                                             TraceNode* existing_suffix, const NumericalRecipe* recipe)

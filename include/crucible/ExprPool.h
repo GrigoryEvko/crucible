@@ -10,6 +10,7 @@
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Post.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <array>
@@ -377,7 +378,7 @@ public:
     static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(kDefaultInitialCapacity, std::size_t{1} << 30),
                   "kDefaultInitialCapacity must be a power of two ≤ 1<<30");
 
-    explicit ExprPool(effects::Alloc a, size_t initial_capacity = kDefaultInitialCapacity)
+    explicit ExprPool(::foundation::effects::Alloc a, size_t initial_capacity = kDefaultInitialCapacity)
         pre(initial_capacity <= (std::size_t{1} << 30))
         : arena_(), capacity_{rounded_capacity_(initial_capacity)}, intern_count_{0} {
         alloc_tables_(capacity_.value());
@@ -414,12 +415,12 @@ public:
 
     // ---- Atom construction ----
 
-    [[nodiscard]] const Expr* integer(effects::Alloc a, int64_t val) {
+    [[nodiscard]] const Expr* integer(::foundation::effects::Alloc a, int64_t val) {
         if (val >= kIntCacheLow && val <= kIntCacheHigh) return cached_integer(IntCacheLiteral{val});
         return make_integer(a, val);
     }
 
-    [[nodiscard]] const Expr* float_(effects::Alloc a, double val) {
+    [[nodiscard]] const Expr* float_(::foundation::effects::Alloc a, double val) {
         int64_t bit_payload = std::bit_cast<int64_t>(val);
         uint16_t assumption_flags_combined = ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
         if (val > 0)
@@ -434,13 +435,13 @@ public:
         return intern_node(a, Op::FLOAT, nullptr, 0, assumption_flags_combined, SymbolId{}, bit_payload);
     }
 
-    [[nodiscard]] const Expr* symbol(effects::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
+    [[nodiscard]] const Expr* symbol(::foundation::effects::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
         if (id.raw() >= symbol_names_.size()) symbol_names_.resize(id.raw() + 1, nullptr);
         if (symbol_names_[id.raw()] == nullptr) {
             size_t name_len_with_null = std::strlen(name) + 1;
             char* name_buf =
-                static_cast<char*>(arena_.alloc(a, crucible::fixy::wrap::Positive<size_t>{name_len_with_null},
-                                                crucible::fixy::wrap::PowerOfTwo<size_t>{1}));
+                static_cast<char*>(arena_.alloc(a, ::fixy::mint_refined<::fixy::positive>(name_len_with_null),
+                                                ::fixy::mint_refined<::fixy::power_of_two>(size_t{1})));
             std::memcpy(name_buf, name, name_len_with_null);
             symbol_names_[id.raw()] = name_buf;
         }
@@ -468,7 +469,7 @@ public:
 
     // ---- Arithmetic ----
 
-    [[nodiscard]] const Expr* add(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* add(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         // ADD needs flattening, MUL needs coefficient extraction for term
         // combining, and the two constant kinds need folding.  Everything
         // else can go straight to the intern table.
@@ -496,7 +497,7 @@ public:
         return add_n(a, binary_args);
     }
 
-    [[nodiscard]] const Expr* mul(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* mul(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         // Two non-constant, non-MUL children need none of the flatten, fold
         // and sort work below.
         if (lhs->op != Op::MUL && rhs->op != Op::MUL && lhs->op != Op::INTEGER && rhs->op != Op::INTEGER
@@ -517,7 +518,7 @@ public:
         return mul_n(a, binary_args);
     }
 
-    [[nodiscard]] const Expr* pow(effects::Alloc a, const Expr* base, const Expr* exp) {
+    [[nodiscard]] const Expr* pow(::foundation::effects::Alloc a, const Expr* base, const Expr* exp) {
         if (exp->is_zero_int()) return integer(a, 1);
         if (exp->is_one()) return base;
         // Only small exponents fold, to keep the repeated product bounded.
@@ -536,7 +537,7 @@ public:
 
     // The canonical form of a negation is MUL(-1, x).  No NEG node ever
     // reaches the intern table.
-    [[nodiscard]] const Expr* neg(effects::Alloc a, const Expr* expr) {
+    [[nodiscard]] const Expr* neg(::foundation::effects::Alloc a, const Expr* expr) {
         // Negating the most negative int64 has no result in the type, so the
         // subtraction saturates at the top instead.
         if (expr->op == Op::INTEGER) return integer(a, ::crucible::sat::sub_sat(int64_t{0}, expr->payload));
@@ -546,7 +547,7 @@ public:
 
     // ---- Relational ----
 
-    [[nodiscard]] const Expr* eq(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* eq(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return true_;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload == rhs->payload) ? true_ : false_;
         // Equality is commutative, so order the operands canonically.
@@ -555,7 +556,7 @@ public:
         return intern_node(a, Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
-    [[nodiscard]] const Expr* ne(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* ne(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return false_;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload != rhs->payload) ? true_ : false_;
         if (lhs > rhs) std::swap(lhs, rhs);
@@ -563,28 +564,28 @@ public:
         return intern_node(a, Op::NE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
-    [[nodiscard]] const Expr* lt(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* lt(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return false_;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload < rhs->payload) ? true_ : false_;
         const Expr* args[] = {lhs, rhs};
         return intern_node(a, Op::LT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
-    [[nodiscard]] const Expr* le(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* le(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return true_;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload <= rhs->payload) ? true_ : false_;
         const Expr* args[] = {lhs, rhs};
         return intern_node(a, Op::LE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
-    [[nodiscard]] const Expr* gt(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* gt(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return false_;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload > rhs->payload) ? true_ : false_;
         const Expr* args[] = {lhs, rhs};
         return intern_node(a, Op::GT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
-    [[nodiscard]] const Expr* ge(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* ge(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return true_;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload >= rhs->payload) ? true_ : false_;
         const Expr* args[] = {lhs, rhs};
@@ -593,7 +594,7 @@ public:
 
     // ---- Logic ----
 
-    [[nodiscard]] const Expr* and_(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* and_(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == false_ || rhs == false_) return false_;
         if (lhs == true_) return rhs;
         if (rhs == true_) return lhs;
@@ -602,7 +603,7 @@ public:
         return and_n(a, binary_args);
     }
 
-    [[nodiscard]] const Expr* or_(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* or_(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == true_ || rhs == true_) return true_;
         if (lhs == false_) return rhs;
         if (rhs == false_) return lhs;
@@ -611,7 +612,7 @@ public:
         return or_n(a, binary_args);
     }
 
-    [[nodiscard]] const Expr* not_(effects::Alloc a, const Expr* expr) {
+    [[nodiscard]] const Expr* not_(::foundation::effects::Alloc a, const Expr* expr) {
         if (expr == true_) return false_;
         if (expr == false_) return true_;
         if (expr->op == Op::NOT) return expr->args[0];
@@ -621,7 +622,7 @@ public:
 
     // ---- Division / Modular ----
 
-    [[nodiscard]] const Expr* floor_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* floor_div(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && is_foldable_division_(lhs->as_int(), rhs->as_int())) {
             int64_t dividend = lhs->as_int();
             int64_t divisor = rhs->as_int();
@@ -684,11 +685,11 @@ public:
         return intern_node(a, Op::FLOOR_DIV, args, 2, composite_flag_bits, SymbolId{}, 0);
     }
 
-    [[nodiscard]] const Expr* clean_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* clean_div(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         return floor_div(a, lhs, rhs);
     }
 
-    [[nodiscard]] const Expr* ceil_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* ceil_div(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && is_foldable_division_(lhs->as_int(), rhs->as_int())) {
             int64_t dividend = lhs->as_int();
             int64_t divisor = rhs->as_int();
@@ -705,7 +706,7 @@ public:
         return floor_div(a, add(a, lhs, add(a, rhs, integer(a, -1))), rhs);
     }
 
-    [[nodiscard]] const Expr* mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* mod(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() > 0)
             return integer(a, lhs->as_int() % rhs->as_int());
         if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
@@ -718,7 +719,7 @@ public:
         return intern_node(a, Op::MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
     }
 
-    [[nodiscard]] const Expr* python_mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* python_mod(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && is_foldable_division_(lhs->as_int(), rhs->as_int())) {
             int64_t dividend = lhs->as_int();
             int64_t divisor = rhs->as_int();
@@ -739,7 +740,7 @@ public:
         return intern_node(a, Op::PYTHON_MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
     }
 
-    [[nodiscard]] const Expr* modular_indexing(effects::Alloc a, const Expr* base, const Expr* div,
+    [[nodiscard]] const Expr* modular_indexing(::foundation::effects::Alloc a, const Expr* base, const Expr* div,
                                                const Expr* modulus) {
         if (base->is_zero_int() || modulus->is_one()) return integer(a, 0);
         // Two divisions fold here, and each needs its own guard: the second
@@ -808,7 +809,7 @@ public:
 
     // ---- Conditional ----
 
-    [[nodiscard]] const Expr* where(effects::Alloc a, const Expr* cond, const Expr* then_branch,
+    [[nodiscard]] const Expr* where(::foundation::effects::Alloc a, const Expr* cond, const Expr* then_branch,
                                     const Expr* else_branch) {
         if (cond == true_) return then_branch;
         if (cond == false_) return else_branch;
@@ -820,14 +821,14 @@ public:
 
     // ---- Min / Max ----
 
-    [[nodiscard]] const Expr* min_expr(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* min_expr(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return lhs;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, std::min(lhs->as_int(), rhs->as_int()));
         const Expr* binary_args[] = {lhs, rhs};
         return min_n(a, binary_args);
     }
 
-    [[nodiscard]] const Expr* max_expr(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+    [[nodiscard]] const Expr* max_expr(::foundation::effects::Alloc a, const Expr* lhs, const Expr* rhs) {
         if (lhs == rhs) return lhs;
         if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, std::max(lhs->as_int(), rhs->as_int()));
         const Expr* binary_args[] = {lhs, rhs};
@@ -843,7 +844,7 @@ public:
     // bulky n-ary bodies, which inflates the stack frame and the instruction
     // footprint enough to make the hit path several times slower.  Default
     // inlining already pulls in the small binary helpers.
-    [[nodiscard]] PureInternedExpr make(effects::Alloc a, Op op, std::span<const Expr* const> args) {
+    [[nodiscard]] PureInternedExpr make(::foundation::effects::Alloc a, Op op, std::span<const Expr* const> args) {
         return PureInternedExpr{InternedExpr{make_raw_(a, op, args)}};
     }
 
@@ -856,7 +857,7 @@ private:
     // outside the band is a caller defect with no defined result, and
     // continuing past it reads or writes out of bounds, so the check holds in
     // every build mode rather than only where contracts are enforced.
-    [[nodiscard]] const Expr* make_raw_(effects::Alloc a, Op op, std::span<const Expr* const> args) {
+    [[nodiscard]] const Expr* make_raw_(::foundation::effects::Alloc a, Op op, std::span<const Expr* const> args) {
         const detail::ArityBand band = detail::op_arity_band(op);
         CRUCIBLE_FATAL_INVARIANT(args.size() >= static_cast<std::size_t>(band.min));
         CRUCIBLE_FATAL_INVARIANT(args.size() <= static_cast<std::size_t>(band.max));
@@ -1047,7 +1048,7 @@ private:
         return int_cache_[raw_int_cache_index(int_cache_index(literal))];
     }
 
-    const Expr* make_integer(effects::Alloc a, int64_t val) {
+    const Expr* make_integer(::foundation::effects::Alloc a, int64_t val) {
         return intern_node(a, Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
     }
 
@@ -1099,7 +1100,7 @@ private:
     }
 
     // Divide all integer coefficients in expression by `divisor`.
-    const Expr* divide_coefficients_(effects::Alloc a, const Expr* expr, int64_t divisor) {
+    const Expr* divide_coefficients_(::foundation::effects::Alloc a, const Expr* expr, int64_t divisor) {
         if (divisor <= 1) return expr;
         if (expr->op == Op::INTEGER) return integer(a, expr->as_int() / divisor);
         if (expr->op == Op::MUL) {
@@ -1135,7 +1136,7 @@ private:
     // written.  make_raw_ rejects the empty list at the boundary; the check
     // here is the second of the two and holds in every build mode, because
     // the read it guards is the return value.
-    const Expr* min_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+    const Expr* min_n(::foundation::effects::Alloc a, std::span<const Expr* const> inputs) {
         CRUCIBLE_FATAL_INVARIANT(!inputs.empty());
         CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
 
@@ -1167,7 +1168,7 @@ private:
         return intern_node(a, Op::MIN, scratch_buf, arg_count, composite_flag_bits, SymbolId{}, 0);
     }
 
-    const Expr* max_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+    const Expr* max_n(::foundation::effects::Alloc a, std::span<const Expr* const> inputs) {
         CRUCIBLE_FATAL_INVARIANT(!inputs.empty());
         CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
 
@@ -1198,7 +1199,7 @@ private:
     // Flattens nested ADD, folds integer constants, combines like terms,
     // sorts and interns.  Term combining is what keeps expansion tractable:
     // (a+b)^n yields n+1 binomial terms instead of 2^n unmerged products.
-    const Expr* add_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+    const Expr* add_n(::foundation::effects::Alloc a, std::span<const Expr* const> inputs) {
         CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
 
         const Expr* term_scratch_buf[kScratchArgs];
@@ -1341,7 +1342,7 @@ private:
     // Interns a full-width operand list and pairs it with the folded constant
     // one level up.  Used by add_n and mul_n when the terms alone reach the
     // arity ceiling, which leaves the constant no sibling slot.
-    const Expr* nest_folded_constant_(effects::Alloc a, Op op, const Expr* const* terms, int64_t folded_constant) {
+    const Expr* nest_folded_constant_(::foundation::effects::Alloc a, Op op, const Expr* const* terms, int64_t folded_constant) {
         const uint16_t inner_flags = detail::composite_flags(op, terms, Expr::kMaxArgs);
         const Expr* inner = intern_node(a, op, terms, Expr::kMaxArgs, inner_flags, SymbolId{}, 0);
         const Expr* constant = integer(a, folded_constant);
@@ -1352,7 +1353,7 @@ private:
         return intern_node(a, op, outer_args, 2, outer_flags, SymbolId{}, 0);
     }
 
-    const Expr* mul_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+    const Expr* mul_n(::foundation::effects::Alloc a, std::span<const Expr* const> inputs) {
         CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
 
         const Expr* factor_scratch_buf[kScratchCollect];
@@ -1405,7 +1406,7 @@ private:
     // short-circuit opportunity.  A constant operand never survives into an
     // interned AND: the loop below returns the false singleton on one and
     // skips the true one, so a child that is already interned holds neither.
-    const Expr* and_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+    const Expr* and_n(::foundation::effects::Alloc a, std::span<const Expr* const> inputs) {
         CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
 
         const Expr* operand_scratch_buf[kScratchArgs];
@@ -1440,7 +1441,7 @@ private:
         return intern_node(a, Op::AND, operand_scratch_buf, arg_count, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
 
-    const Expr* or_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+    const Expr* or_n(::foundation::effects::Alloc a, std::span<const Expr* const> inputs) {
         CRUCIBLE_FATAL_INVARIANT(inputs.size() <= kScratchArgs);
 
         const Expr* operand_scratch_buf[kScratchArgs];
@@ -1484,7 +1485,7 @@ private:
     // nargs, flags, symbol_id and payload, so re-checking them on a hash
     // match is redundant.  They are checked anyway, packed into one word so
     // the check is a single comparison.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE CRUCIBLE_INLINE const Expr* intern_node(effects::Alloc a, Op op,
+    CRUCIBLE_UNSAFE_BUFFER_USAGE CRUCIBLE_INLINE const Expr* intern_node(::foundation::effects::Alloc a, Op op,
                                                                          const Expr* const* args, uint8_t nargs,
                                                                          uint16_t flags, SymbolId symbol_id,
                                                                          int64_t payload) {

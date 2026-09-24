@@ -1,30 +1,14 @@
 #pragma once
 
-#include "effects/_Capabilities.h"
-#include "Platform.h"
-#include "_Saturate.h"
-// The umbrella header that re-exports these wrappers pulls in a header that
-// includes this one and uses a complete Arena, so including the umbrella here
-// cycles and leaves Arena undeclared in every consuming translation unit.
-// Instead: include the narrow substrate headers and re-open the wrapper
-// namespace below with the using declarations Arena needs. Naming one entity
-// from two using declarations in one namespace is not a redeclaration, so the
-// umbrella's own declarations stay compatible.
-#include "safety/_AllocClass.h"
-#include "safety/_Decide.h"
-#include "safety/_Mutation.h"
-#include "safety/_Post.h"
-#include "safety/_Pre.h"
-#include "safety/_Refined.h"
-
-namespace crucible::fixy::wrap {
-using ::crucible::safety::AllocClass;
-using ::crucible::safety::AllocClassTag_v;
-using ::crucible::safety::AppendOnly;
-using ::crucible::safety::Monotonic;
-using ::crucible::safety::Positive;
-using ::crucible::safety::PowerOfTwo;
-}  // namespace crucible::fixy::wrap
+#include <fixy/Bands.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/Platform.h>
+#include <foundation/Saturate.h>
 
 #include <array>
 #include <bit>
@@ -39,7 +23,7 @@ namespace crucible {
 
 class CRUCIBLE_OWNER Arena {
 public:
-    explicit Arena(size_t block_size = size_t{1} << 20) pre(::crucible::decide::positive(block_size))
+    explicit Arena(size_t block_size = size_t{1} << 20) pre(::foundation::decide::positive(block_size))
         : block_size_{block_size} {
         alloc_new_block_(block_size_);
         // A post clause whose predicate reads a member through `this` is
@@ -70,8 +54,8 @@ public:
     // the index of a scalar size_t parameter, and both parameters are class
     // wrappers. The size invariant is carried by the parameter type instead.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::malloc, gnu::returns_nonnull]]
-    CRUCIBLE_INLINE void* alloc(effects::Alloc, crucible::fixy::wrap::Positive<size_t> size,
-                                crucible::fixy::wrap::PowerOfTwo<size_t> align) noexcept CRUCIBLE_LIFETIMEBOUND {
+    CRUCIBLE_INLINE void* alloc(::foundation::effects::Alloc, ::fixy::Positive<size_t> size,
+                                ::fixy::PowerOfTwo<size_t> align) noexcept CRUCIBLE_LIFETIMEBOUND {
         const size_t s = size.value();
         const size_t a = align.value();
         // The parameter types already hold these. Restating them as
@@ -92,29 +76,31 @@ public:
     }
 
     [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE void*
-    alloc(effects::Alloc a, crucible::fixy::wrap::Positive<size_t> size) noexcept CRUCIBLE_LIFETIMEBOUND {
-        return alloc(a, size, crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(std::max_align_t)});
+    alloc(::foundation::effects::Alloc a, ::fixy::Positive<size_t> size) noexcept CRUCIBLE_LIFETIMEBOUND {
+        return alloc(a, size, ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(std::max_align_t)}));
     }
 
     // Returns storage only. A T that needs construction must be
     // placement-new'd by the caller.
     template <typename T>
-    [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_obj(effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_obj(::foundation::effects::Alloc a) noexcept
+        CRUCIBLE_LIFETIMEBOUND {
         static_assert(sizeof(T) > 0, "alloc_obj<T> requires complete T");
         static_assert(std::has_single_bit(alignof(T)), "alignof(T) must be a power of two");
-        return static_cast<T*>(alloc(a, crucible::fixy::wrap::Positive<size_t>{sizeof(T)},
-                                     crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
+        return static_cast<T*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(size_t{sizeof(T)}),
+                                     ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(T)})));
     }
 
     // An overflowing element count saturates to SIZE_MAX, which makes the
     // eventual malloc fail and abort rather than wrap to a small block.
     template <typename T>
-    [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(::foundation::effects::Alloc a, size_t n) noexcept
+        CRUCIBLE_LIFETIMEBOUND {
         if (n == 0) [[unlikely]]
             return nullptr;
-        const size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
-        return static_cast<T*>(alloc(a, crucible::fixy::wrap::Positive<size_t>{nbytes},
-                                     crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
+        const size_t nbytes = ::foundation::sat::mul_sat(n, sizeof(T));
+        return static_cast<T*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(nbytes),
+                                     ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(T)})));
     }
 
     // A caller that already knows the count is nonzero uses this instead of
@@ -123,12 +109,13 @@ public:
     // has to be maintained, and dropping either one yields a nonzero count
     // paired with null.
     template <typename T>
-    [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_array_nonzero(effects::Alloc a, size_t n) noexcept
-        CRUCIBLE_LIFETIMEBOUND pre(::crucible::decide::positive(n)) {
+    [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_array_nonzero(::foundation::effects::Alloc a,
+                                                                               size_t n) noexcept
+        CRUCIBLE_LIFETIMEBOUND pre(::foundation::decide::positive(n)) {
         [[assume(n > 0)]];
-        const size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
-        return static_cast<T*>(alloc(a, crucible::fixy::wrap::Positive<size_t>{nbytes},
-                                     crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
+        const size_t nbytes = ::foundation::sat::mul_sat(n, sizeof(T));
+        return static_cast<T*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(nbytes),
+                                     ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(T)})));
     }
 
     // The pinned variants exist alongside the raw ones rather than replacing
@@ -136,29 +123,29 @@ public:
     // pays for the wrapper, and the raw surface stays available everywhere
     // else.
     template <typename T>
-    [[nodiscard]] CRUCIBLE_INLINE fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
-    alloc_obj_pinned(effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
-        return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{alloc_obj<T>(a)};
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
+    alloc_obj_pinned(::foundation::effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
+        return ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>{alloc_obj<T>(a), {}};
     }
 
     template <typename T>
-    [[nodiscard]] CRUCIBLE_INLINE fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
-    alloc_array_pinned(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
-        return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{alloc_array<T>(a, n)};
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
+    alloc_array_pinned(::foundation::effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
+        return ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>{alloc_array<T>(a, n), {}};
     }
 
     template <typename T>
-    [[nodiscard]] CRUCIBLE_INLINE fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
-    alloc_array_nonzero_pinned(effects::Alloc a, size_t n) noexcept
-        CRUCIBLE_LIFETIMEBOUND pre(::crucible::decide::positive(n)) {
-        return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{alloc_array_nonzero<T>(a, n)};
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
+    alloc_array_nonzero_pinned(::foundation::effects::Alloc a, size_t n) noexcept
+        CRUCIBLE_LIFETIMEBOUND pre(::foundation::decide::positive(n)) {
+        return ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>{alloc_array_nonzero<T>(a, n), {}};
     }
 
-    [[nodiscard]] const char* copy_string(effects::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard]] const char* copy_string(::foundation::effects::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
         if (src == nullptr) return nullptr;
         const size_t len = std::strlen(src) + 1;
-        auto* dst = static_cast<char*>(
-            alloc(a, crucible::fixy::wrap::Positive<size_t>{len}, crucible::fixy::wrap::PowerOfTwo<size_t>{1}));
+        auto* dst = static_cast<char*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(len),
+                                             ::fixy::mint_refined<::fixy::power_of_two>(size_t{1})));
         std::memcpy(dst, src, len);
         return dst;
     }
@@ -173,7 +160,7 @@ public:
     // cannot underflow.
     [[nodiscard, gnu::pure]] size_t total_allocated() const noexcept {
         const std::array<size_t, 3> chain = {offset_, end_offset_, total_block_bytes_.get()};
-        CRUCIBLE_PRE(::crucible::decide::weakly_increasing(std::span<const size_t>(chain)));
+        CRUCIBLE_PRE(::foundation::decide::weakly_increasing(std::span<const size_t>(chain)));
         const size_t result = total_block_bytes_.get() - (end_offset_ - offset_);
         CRUCIBLE_POST(result, result <= total_block_bytes_.get());
         return result;
@@ -187,7 +174,7 @@ private:
         // A size near SIZE_MAX saturates instead of wrapping, so the block
         // request stays large and malloc fails rather than handing back a
         // tiny block that the caller would then overrun.
-        const size_t needed = crucible::sat::add_sat(size, align);
+        const size_t needed = ::foundation::sat::add_sat(size, align);
         const size_t new_size = (needed > block_size_) ? needed : block_size_;
         alloc_new_block_(new_size);
 
@@ -201,7 +188,7 @@ private:
     }
 
     [[gnu::cold]]
-    void alloc_new_block_(size_t nbytes) pre(::crucible::decide::positive(nbytes)) {
+    void alloc_new_block_(size_t nbytes) pre(::foundation::decide::positive(nbytes)) {
         auto* p = static_cast<char*>(std::malloc(nbytes));
         if (p == nullptr) [[unlikely]]
             std::abort();
@@ -213,7 +200,7 @@ private:
 
         // advance() rejects a decrease. A saturating add never decreases, so
         // the contract holds for any nbytes, including one that saturates.
-        total_block_bytes_.advance(crucible::sat::add_sat(total_block_bytes_.get(), nbytes));
+        total_block_bytes_.advance(::foundation::sat::add_sat(total_block_bytes_.get(), nbytes));
         CRUCIBLE_POST(0, cur_block_ == p);
         CRUCIBLE_POST(0, offset_ == 0u);
         CRUCIBLE_POST(0, end_offset_ == nbytes);
@@ -226,8 +213,8 @@ private:
 
     // Cold fields, read on the slow path and by the size queries only.
     size_t block_size_ = 0;
-    crucible::fixy::wrap::Monotonic<size_t> total_block_bytes_{0};
-    crucible::fixy::wrap::AppendOnly<char*> blocks_{};
+    ::fixy::Monotonic<size_t> total_block_bytes_ = ::fixy::mint_monotonic<size_t>(0);
+    ::fixy::AppendOnly<char*> blocks_ = ::fixy::mint_append_only<char*>();
 };
 
 static_assert(sizeof(Arena) == 64, "Arena must fit within one cache line");

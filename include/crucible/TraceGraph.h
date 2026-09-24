@@ -11,6 +11,7 @@
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Pre.h>
+#include <foundation/effects/Effect.h>
 
 namespace crucible {
 
@@ -136,13 +137,13 @@ struct TraceGraph {
     }
 };
 
-[[nodiscard]] inline TraceGraph* alloc_trace_graph(effects::Alloc a, Arena& arena) noexcept CRUCIBLE_LIFETIMEBOUND {
+[[nodiscard]] inline TraceGraph* alloc_trace_graph(::foundation::effects::Alloc a, Arena& arena) noexcept CRUCIBLE_LIFETIMEBOUND {
     return ::new(arena.alloc_obj<TraceGraph>(a)) TraceGraph{};
 }
 
 // Counting sort into both adjacency arrays, linear in ops plus edges. The
 // caller owns the graph struct. Only the arrays inside it are allocated here.
-inline void build_csr(effects::Alloc a, Arena& arena, TraceGraph* graph, const Edge* edges, uint32_t num_edges,
+inline void build_csr(::foundation::effects::Alloc a, Arena& arena, TraceGraph* graph, const Edge* edges, uint32_t num_edges,
                       uint32_t num_ops) {
     graph->num_edges.set(num_edges);
     graph->num_ops.set(num_ops);

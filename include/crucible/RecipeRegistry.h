@@ -8,6 +8,7 @@
 #include <crucible/Types.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstddef>
@@ -128,7 +129,7 @@ public:
     // The pool stays owned by the caller and must outlive the registry: after
     // construction the registry holds only non-owning pointers into it, and
     // never mutates or destroys it.
-    [[gnu::cold]] explicit RecipeRegistry(PoolBorrow pool, effects::Alloc a) noexcept;
+    [[gnu::cold]] explicit RecipeRegistry(PoolBorrow pool, ::foundation::effects::Alloc a) noexcept;
 
     RecipeRegistry(const RecipeRegistry&) =
         delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");
@@ -353,7 +354,7 @@ inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarter
 
 }  // namespace detail_recipe_registry
 
-inline RecipeRegistry::RecipeRegistry(PoolBorrow pool, effects::Alloc a) noexcept {
+inline RecipeRegistry::RecipeRegistry(PoolBorrow pool, ::foundation::effects::Alloc a) noexcept {
     for (std::size_t i = 0; i < STARTER_COUNT; ++i) {
         const auto& spec = detail_recipe_registry::kStarterRecipes[i];
         entries_[i].name = spec.name;

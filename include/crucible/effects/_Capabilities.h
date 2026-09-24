@@ -22,6 +22,8 @@
 //     through IO, Alloc or Block is a timing-observable side channel.
 //     An atom for it would imply such code may opt into those three.
 
+#include <foundation/effects/Effect.h>
+
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -187,14 +189,7 @@ template <Effect E>
 // body into a compile error rather than a silent change of contract.
 namespace cap {
 
-struct Alloc {
-    constexpr Alloc() noexcept = default;
-    constexpr Alloc(const Alloc&) noexcept = default;
-    constexpr Alloc(Alloc&&) noexcept = default;
-    constexpr Alloc& operator=(const Alloc&) noexcept = default;
-    constexpr Alloc& operator=(Alloc&&) noexcept = default;
-    ~Alloc() = default;
-};
+using Alloc = ::foundation::effects::cap::Alloc;
 
 struct IO {
     constexpr IO() noexcept = default;

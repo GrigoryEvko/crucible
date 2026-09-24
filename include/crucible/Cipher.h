@@ -36,6 +36,7 @@
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Pre.h>
 #include <fixy/session/EventLog.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <fcntl.h>
@@ -355,7 +356,7 @@ public:
     // durable Cipher state.  A hit materializes from bytes already seen
     // under this hash and touches no filesystem.
     [[nodiscard]] LoadedContentAddressedRegionPayload
-    load_content_addressed(OpenView const&, effects::Alloc a, ContentHash content_hash, Arena& arena) const {
+    load_content_addressed(OpenView const&, ::foundation::effects::Alloc a, ContentHash content_hash, Arena& arena) const {
         if (!content_hash) return nullptr;
 
         const std::span<const uint8_t> cached = cached_bytes(content_hash);

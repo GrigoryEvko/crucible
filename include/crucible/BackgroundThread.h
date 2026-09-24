@@ -31,6 +31,7 @@
 #include <crucible/TraceGraph.h>
 #include <foundation/AlignedBuffer.h>
 #include <foundation/Lifetime.h>
+#include <foundation/effects/Effect.h>
 
 namespace crucible {
 
@@ -571,7 +572,7 @@ struct BackgroundThread {
         }
     }
 
-    void publish_trace_graph(effects::Alloc a, PublishStage const& stage, TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY {
+    void publish_trace_graph(::foundation::effects::Alloc a, PublishStage const& stage, TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY {
         if (!graph) return;
 
         const uint32_t num_ops = graph->num_ops.get_assuming_set();
@@ -1188,14 +1189,14 @@ public:
 
     // Turns ring entries plus tensor metadata into a CSR property graph.
     // Returns nullptr on metadata-log overflow.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceGraph* build_trace(effects::Alloc a, uint32_t count)
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceGraph* build_trace(::foundation::effects::Alloc a, uint32_t count)
         CRUCIBLE_NO_THREAD_SAFETY {
         return build_trace_from(a, count, current_trace.data(), current_meta_starts.data(), current_scope_hashes.data(),
                                 current_callsite_hashes.data());
     }
 
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceGraph*
-    build_trace_from(effects::Alloc a, uint32_t count, const TraceRing::Entry* trace_data, const MetaIndex* meta_data,
+    build_trace_from(::foundation::effects::Alloc a, uint32_t count, const TraceRing::Entry* trace_data, const MetaIndex* meta_data,
                      const ScopeHash* scope_data, const CallsiteHash* callsite_data) CRUCIBLE_NO_THREAD_SAFETY {
         // Scan for totals and for metadata-log overflow.
         uint32_t max_meta_end = 0;
@@ -1251,8 +1252,8 @@ public:
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
         char* aux_cursor =
             (aux_bytes > 0)
-                ? static_cast<char*>(arena.alloc(a, crucible::fixy::wrap::Positive<size_t>{aux_bytes},
-                                                 crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(int64_t)}))
+                ? static_cast<char*>(arena.alloc(a, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
+                                                 ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
                 : nullptr;
 
         map_gen_++;
@@ -1531,7 +1532,7 @@ public:
     // Orders birth and death events with an O(n + k) counting sort, then
     // assigns offsets with a sweep line.  The alignment is what the GPU
     // needs for coalesced access.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan* compute_memory_plan(effects::Alloc a, TensorSlot* slots,
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan* compute_memory_plan(::foundation::effects::Alloc a, TensorSlot* slots,
                                                                                uint32_t num_slots)
         CRUCIBLE_NO_THREAD_SAFETY {
         static constexpr uint32_t ALIGNMENT = 256;

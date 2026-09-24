@@ -12,20 +12,22 @@
 // than it is.
 
 #include <crucible/Arena.h>
-#include <crucible/safety/_AllocClass.h>
+#include <fixy/Bands.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 
-#include <array>
 #include <bit>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <type_traits>
 #include <utility>
 
-using namespace crucible;
-using safety::AllocClass;
-using safety::AllocClassTag_v;
+using crucible::Arena;
+using ::fixy::AllocClass;
+using ::fixy::AllocClassTag_v;
+
+namespace {
 
 struct alignas(64) HotPathStruct {
     uint64_t a = 0;
@@ -38,11 +40,15 @@ struct SmallStruct {
     uint32_t v = 0xDEADBEEFu;
 };
 
+using AllocCap = ::foundation::effects::Alloc;
+
+}  // namespace
+
 static void test_alloc_obj_pinned_returns_arena_pointer() {
     std::printf("  alloc_obj_pinned returns valid arena pointer...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto wrapped = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);
     HotPathStruct* unwrapped = wrapped.peek();
@@ -67,7 +73,7 @@ static void test_alloc_array_pinned_zero_yields_null_wrapper() {
     std::printf("  alloc_array_pinned(0) yields null wrapper...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     // A wrapper around nullptr is well-formed.  The tier is a claim
     // about where the bytes would come from, which stays true of a
@@ -80,7 +86,7 @@ static void test_alloc_array_pinned_nonzero_yields_writeable_array() {
     std::printf("  alloc_array_pinned(N>0) yields writeable array...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     constexpr size_t N = 16;
     auto wrapped = arena.alloc_array_pinned<uint32_t>(bg.alloc, N);
@@ -97,7 +103,7 @@ static void test_alloc_array_nonzero_pinned_returns_nonnull() {
     std::printf("  alloc_array_nonzero_pinned returns non-null...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto wrapped = arena.alloc_array_nonzero_pinned<SmallStruct>(bg.alloc, 32);
     SmallStruct* arr = wrapped.peek();
@@ -114,38 +120,38 @@ static void test_alloc_array_nonzero_pinned_returns_nonnull() {
     }
 }
 
-static_assert(decltype(std::declval<Arena&>().alloc_obj_pinned<int>(std::declval<effects::Alloc>()))::tag
+static_assert(::fixy::band_tier_v<decltype(std::declval<Arena&>().alloc_obj_pinned<int>(std::declval<AllocCap>()))>
                   == AllocClassTag_v::Arena,
               "alloc_obj_pinned must return AllocClass<Arena, T*>.  The tier pin "
               "production call sites fence on is gone.");
 
-static_assert(decltype(std::declval<Arena&>().alloc_array_pinned<int>(std::declval<effects::Alloc>(), size_t{0}))::tag
+static_assert(::fixy::band_tier_v<decltype(std::declval<Arena&>().alloc_array_pinned<int>(std::declval<AllocCap>(),
+                                                                                           size_t{0}))>
                   == AllocClassTag_v::Arena,
               "alloc_array_pinned MUST return AllocClass<Arena, T*>.");
 
-static_assert(decltype(std::declval<Arena&>().alloc_array_nonzero_pinned<int>(std::declval<effects::Alloc>(),
-                                                                              size_t{1}))::tag
+static_assert(::fixy::band_tier_v<decltype(std::declval<Arena&>().alloc_array_nonzero_pinned<int>(
+                  std::declval<AllocCap>(), size_t{1}))>
                   == AllocClassTag_v::Arena,
               "alloc_array_nonzero_pinned MUST return AllocClass<Arena, T*>.");
 
-static_assert(
-    std::is_same_v<decltype(std::declval<Arena&>().alloc_obj_pinned<HotPathStruct>(std::declval<effects::Alloc>())),
-                   AllocClass<AllocClassTag_v::Arena, HotPathStruct*>>,
-    "alloc_obj_pinned<HotPathStruct> MUST return EXACTLY "
-    "AllocClass<Arena, HotPathStruct*>.  If this fires, the wrapper "
-    "return type has drifted (e.g., a refactor changed T → T or wrapped "
-    "the pointer differently).");
+static_assert(std::is_same_v<decltype(std::declval<Arena&>().alloc_obj_pinned<HotPathStruct>(std::declval<AllocCap>())),
+                             AllocClass<AllocClassTag_v::Arena, HotPathStruct*>>,
+              "alloc_obj_pinned<HotPathStruct> MUST return EXACTLY "
+              "AllocClass<Arena, HotPathStruct*>.  If this fires, the wrapper "
+              "return type has drifted (e.g., a refactor changed T → T or wrapped "
+              "the pointer differently).");
 
 static_assert(
-    std::is_same_v<decltype(std::declval<Arena&>().alloc_array_pinned<int>(std::declval<effects::Alloc>(), size_t{0})),
+    std::is_same_v<decltype(std::declval<Arena&>().alloc_array_pinned<int>(std::declval<AllocCap>(), size_t{0})),
                    AllocClass<AllocClassTag_v::Arena, int*>>,
     "alloc_array_pinned<int> MUST return EXACTLY AllocClass<Arena, int*>.");
 
-static_assert(std::is_same_v<decltype(std::declval<Arena&>().alloc_array_nonzero_pinned<int>(
-                                 std::declval<effects::Alloc>(), size_t{1})),
-                             AllocClass<AllocClassTag_v::Arena, int*>>,
-              "alloc_array_nonzero_pinned<int> MUST return EXACTLY "
-              "AllocClass<Arena, int*>.");
+static_assert(
+    std::is_same_v<decltype(std::declval<Arena&>().alloc_array_nonzero_pinned<int>(std::declval<AllocCap>(), size_t{1})),
+                   AllocClass<AllocClassTag_v::Arena, int*>>,
+    "alloc_array_nonzero_pinned<int> MUST return EXACTLY "
+    "AllocClass<Arena, int*>.");
 
 // value_type is the pointer type itself, which is what lets a caller
 // name the unwrapped type without unwrapping a value first.
@@ -156,7 +162,8 @@ static_assert(std::is_same_v<AllocClass<AllocClassTag_v::Arena, int*>::value_typ
 // tier, evaluated per call.
 
 template <typename W>
-concept admissible_at_arena_fence = W::template satisfies<AllocClassTag_v::Arena>;
+concept admissible_at_arena_fence = ::fixy::IsBandOf<::fixy::AllocClassLattice, W>
+                                 && ::fixy::satisfies_v<W, AllocClassTag_v::Arena>;
 
 static_assert(admissible_at_arena_fence<AllocClass<AllocClassTag_v::Arena, int*>>,
               "Arena-tier wrapper MUST pass an Arena-or-stronger fence "
@@ -187,13 +194,17 @@ static_assert(!admissible_at_arena_fence<AllocClass<AllocClassTag_v::HugePage, i
               "HugePage is the bottom of the lattice and only a consumer that "
               "demands nothing admits it.");
 
+// A raw pointer is not a band, so the fence refuses it instead of
+// failing inside satisfies_v.
+static_assert(!admissible_at_arena_fence<int*>);
+
 // The other direction matters just as much.  An arena bump occasionally
 // takes a new chunk from the heap, so it cannot promise the bounded
 // latency a pool-tier consumer is relying on, and an Arena wrapper must
 // fail a pool-or-stronger gate.
 
 template <typename W>
-concept admissible_at_pool_fence = W::template satisfies<AllocClassTag_v::Pool>;
+concept admissible_at_pool_fence = ::fixy::satisfies_v<W, AllocClassTag_v::Pool>;
 
 static_assert(admissible_at_pool_fence<AllocClass<AllocClassTag_v::Pool, int*>>,
               "Pool reflexively passes its own gate.");
@@ -206,7 +217,7 @@ static_assert(!admissible_at_pool_fence<AllocClass<AllocClassTag_v::Arena, int*>
               "direction.");
 
 template <typename W>
-concept admissible_at_stack_fence = W::template satisfies<AllocClassTag_v::Stack>;
+concept admissible_at_stack_fence = ::fixy::satisfies_v<W, AllocClassTag_v::Stack>;
 
 static_assert(admissible_at_stack_fence<AllocClass<AllocClassTag_v::Stack, int*>>);
 static_assert(!admissible_at_stack_fence<AllocClass<AllocClassTag_v::Pool, int*>>);
@@ -228,7 +239,7 @@ static void test_pointer_lifetime_through_wrapper() {
     std::printf("  pointer lifetime preserved through AllocClass...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto wrapped = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);
     HotPathStruct* via_peek = wrapped.peek();
@@ -252,7 +263,7 @@ static void test_move_semantics_through_wrapper() {
     std::printf("  move-semantics through AllocClass wrapper...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto wrapped = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);
     HotPathStruct* before = wrapped.peek();
@@ -278,7 +289,7 @@ static void test_null_on_zero_contract() {
     std::printf("  null-on-zero contract preserved through wrapper...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto w0 = arena.alloc_array_pinned<int>(bg.alloc, 0);
     assert(w0.peek() == nullptr);
@@ -291,27 +302,28 @@ static void test_null_on_zero_contract() {
 }
 
 static_assert(
-    requires { AllocClass<AllocClassTag_v::Arena, int*>{nullptr}; },
-    "AllocClass<Arena, T*>{nullptr} MUST be constructible.  "
+    requires { AllocClass<AllocClassTag_v::Arena, int*>{nullptr, {}}; },
+    "AllocClass<Arena, T*>{nullptr, {}} MUST be constructible.  "
     "NullSafe + AllocClass are orthogonal axes.");
 
 static_assert(AllocClass<AllocClassTag_v::Arena, int*>{}.peek() == nullptr,
               "AllocClass<Arena, T*> default-construction MUST yield wrapped nullptr.");
 
 using ArenaIntPtr = AllocClass<AllocClassTag_v::Arena, int*>;
-static_assert(ArenaIntPtr::satisfies<AllocClassTag_v::Arena>,
+static_assert(::fixy::satisfies_v<ArenaIntPtr, AllocClassTag_v::Arena>,
               "Arena reflexively satisfies Arena (lattice reflexivity at the "
               "production-instantiated tier).");
-static_assert(ArenaIntPtr::satisfies<AllocClassTag_v::Heap>, "Arena ⊒ Heap; satisfies any Heap-or-weaker consumer.");
-static_assert(ArenaIntPtr::satisfies<AllocClassTag_v::Mmap>);
-static_assert(ArenaIntPtr::satisfies<AllocClassTag_v::HugePage>,
+static_assert(::fixy::satisfies_v<ArenaIntPtr, AllocClassTag_v::Heap>,
+              "Arena ⊒ Heap; satisfies any Heap-or-weaker consumer.");
+static_assert(::fixy::satisfies_v<ArenaIntPtr, AllocClassTag_v::Mmap>);
+static_assert(::fixy::satisfies_v<ArenaIntPtr, AllocClassTag_v::HugePage>,
               "Arena must satisfy HugePage, the bottom of the chain.  If this "
               "fires, the downward subsumption direction of the lattice is "
               "broken.");
-static_assert(!ArenaIntPtr::satisfies<AllocClassTag_v::Pool>,
+static_assert(!::fixy::satisfies_v<ArenaIntPtr, AllocClassTag_v::Pool>,
               "Arena must not satisfy Pool (the arena's slow-path chunk acquisition "
               "violates Pool's bounded-latency claim).");
-static_assert(!ArenaIntPtr::satisfies<AllocClassTag_v::Stack>,
+static_assert(!::fixy::satisfies_v<ArenaIntPtr, AllocClassTag_v::Stack>,
               "Arena must not satisfy Stack (any arena pointer costs at least a "
               "bump-pointer call, and the Stack tier admits no allocator call at "
               "all).");
@@ -320,22 +332,23 @@ static void test_relax_arena_to_weaker() {
     std::printf("  relax Arena → Heap (down-the-lattice)...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto wrapped = arena.alloc_obj_pinned<int>(bg.alloc);
     int* before = wrapped.peek();
 
     // The bytes are still arena-allocated afterwards.  Relaxing weakens
     // the claim the wrapper makes, and does nothing to the pointer.
-    auto relaxed = std::move(wrapped).relax<AllocClassTag_v::Heap>();
-    static_assert(decltype(relaxed)::tag == AllocClassTag_v::Heap);
+    auto relaxed = ::fixy::relax<AllocClassTag_v::Heap>(std::move(wrapped));
+    static_assert(::fixy::band_tier_v<decltype(relaxed)> == AllocClassTag_v::Heap);
+    assert(::fixy::tier_of(relaxed) == AllocClassTag_v::Heap);
 
     assert(relaxed.peek() == before);
 }
 
 template <typename W, AllocClassTag_v T_target>
 concept can_relax_to = requires(W&& w) {
-    { std::move(w).template relax<T_target>() };
+    { ::fixy::relax<T_target>(std::move(w)) };
 };
 
 static_assert(can_relax_to<ArenaIntPtr, AllocClassTag_v::Arena>, "Arena → Arena (self) admissible.");
@@ -359,7 +372,7 @@ static void test_e2e_fence_checked_consumer() {
     std::printf("  end-to-end fence-checked consumer accepts Arena...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto wrapped = arena.alloc_array_nonzero_pinned<int>(bg.alloc, 4);
     int* arr = consume_arena_or_stronger(std::move(wrapped));
@@ -375,7 +388,7 @@ static void test_e2e_fence_checked_consumer() {
     // A stronger tier passes the same fence.  The rejection of a weaker
     // one cannot be witnessed at runtime, and is pinned by the
     // static_asserts instead.
-    AllocClass<AllocClassTag_v::Stack, int*> stack_wrapper{arr};
+    AllocClass<AllocClassTag_v::Stack, int*> stack_wrapper{arr, {}};
     int* p2 = consume_arena_or_stronger(std::move(stack_wrapper));
     assert(p2 == arr);
 }
@@ -387,7 +400,7 @@ static void test_slow_path_preserves_wrapper() {
     std::printf("  slow-path large allocation preserves wrapper...\n");
 
     Arena arena{/*block_size=*/256};
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto wrapped = arena.alloc_array_nonzero_pinned<uint64_t>(bg.alloc, 64);
     uint64_t* arr = wrapped.peek();
@@ -398,14 +411,14 @@ static void test_slow_path_preserves_wrapper() {
     for (size_t i = 0; i < 64; ++i)
         assert(arr[i] == i * 0xDEADBEEFull + 1);
 
-    static_assert(decltype(wrapped)::tag == AllocClassTag_v::Arena);
+    static_assert(::fixy::band_tier_v<decltype(wrapped)> == AllocClassTag_v::Arena);
 }
 
 static void test_sequential_allocations_distinct() {
     std::printf("  sequential pinned allocations yield distinct pointers...\n");
 
     Arena arena;
-    auto bg = effects::testing::bg();
+    auto bg = ::foundation::effects::testing::bg();
 
     auto w1 = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);
     auto w2 = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);

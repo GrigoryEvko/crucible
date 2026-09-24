@@ -1,16 +1,24 @@
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
+#include <fixy/Refined.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 
-using crucible::safety::Positive;
-using crucible::safety::PowerOfTwo;
+namespace {
+
+// A byte count the arena accepts: the predicate runs here, at the door.
+[[nodiscard]] fixy::Positive<size_t> bytes(size_t n) { return fixy::mint_refined<fixy::positive>(n); }
+
+// An alignment the arena accepts.
+[[nodiscard]] fixy::PowerOfTwo<size_t> align_to(size_t a) { return fixy::mint_refined<fixy::power_of_two>(a); }
+
+}  // namespace
 
 [[gnu::cold]] int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = foundation::effects::testing::test();
 
     crucible::Arena arena(4096);
     int* a = arena.alloc_obj<int>(test.alloc);
@@ -22,19 +30,19 @@ using crucible::safety::PowerOfTwo;
         arr[i] = i * 1.5;
     assert(arr[99] >= 148.4 && arr[99] <= 148.6);  // 99 * 1.5 = 148.5
 
-    void* aligned = arena.alloc(test.alloc, Positive<size_t>{128}, PowerOfTwo<size_t>{16});
+    void* aligned = arena.alloc(test.alloc, bytes(128), align_to(16));
     assert(std::bit_cast<uintptr_t>(aligned) % 16 == 0);
 
     // The 32-byte and 64-byte requests together exceed the 64-byte block, so p2
     // lands in a new block.
     crucible::Arena small_arena(64);
-    char* p1 = static_cast<char*>(small_arena.alloc(test.alloc, Positive<size_t>{32}, PowerOfTwo<size_t>{1}));
-    char* p2 = static_cast<char*>(small_arena.alloc(test.alloc, Positive<size_t>{64}, PowerOfTwo<size_t>{1}));
+    char* p1 = static_cast<char*>(small_arena.alloc(test.alloc, bytes(32), align_to(1)));
+    char* p2 = static_cast<char*>(small_arena.alloc(test.alloc, bytes(64), align_to(1)));
     assert(p1 != nullptr);
     assert(p2 != nullptr);
 
     crucible::Arena tiny_arena(32);
-    void* big = tiny_arena.alloc(test.alloc, Positive<size_t>{1024}, PowerOfTwo<size_t>{1});
+    void* big = tiny_arena.alloc(test.alloc, bytes(1024), align_to(1));
     assert(big != nullptr);
 
     int* empty = tiny_arena.alloc_array<int>(test.alloc, 0);
@@ -42,14 +50,14 @@ using crucible::safety::PowerOfTwo;
 
     crucible::Arena tracker(1024);
     size_t before = tracker.total_allocated();
-    (void)tracker.alloc(test.alloc, Positive<size_t>{256}, PowerOfTwo<size_t>{1});
+    (void)tracker.alloc(test.alloc, bytes(256), align_to(1));
     assert(tracker.total_allocated() > before);
 
     // A dedicated block larger than the block size must be counted in full.
     // Counting (blocks - 1) * block_size + offset undercounts it.
     {
         crucible::Arena oversized(64);
-        (void)oversized.alloc(test.alloc, Positive<size_t>{1 << 20}, PowerOfTwo<size_t>{1});
+        (void)oversized.alloc(test.alloc, bytes(1 << 20), align_to(1));
         assert(oversized.total_allocated() >= (1 << 20));
         assert(oversized.block_count() == 2);  // the initial block plus one dedicated block
     }
@@ -58,8 +66,8 @@ using crucible::safety::PowerOfTwo;
     // reaches three with the initial block.
     {
         crucible::Arena multi(32);
-        (void)multi.alloc(test.alloc, Positive<size_t>{4096}, PowerOfTwo<size_t>{1});
-        (void)multi.alloc(test.alloc, Positive<size_t>{8192}, PowerOfTwo<size_t>{1});
+        (void)multi.alloc(test.alloc, bytes(4096), align_to(1));
+        (void)multi.alloc(test.alloc, bytes(8192), align_to(1));
         assert(multi.total_allocated() >= 4096 + 8192);
         assert(multi.block_count() == 3);
     }
@@ -67,9 +75,9 @@ using crucible::safety::PowerOfTwo;
     // With no slow path, total_allocated is exactly the sum of the bump offsets.
     {
         crucible::Arena steady(1 << 16);
-        (void)steady.alloc(test.alloc, Positive<size_t>{100}, PowerOfTwo<size_t>{1});
-        (void)steady.alloc(test.alloc, Positive<size_t>{200}, PowerOfTwo<size_t>{1});
-        (void)steady.alloc(test.alloc, Positive<size_t>{300}, PowerOfTwo<size_t>{1});
+        (void)steady.alloc(test.alloc, bytes(100), align_to(1));
+        (void)steady.alloc(test.alloc, bytes(200), align_to(1));
+        (void)steady.alloc(test.alloc, bytes(300), align_to(1));
         assert(steady.total_allocated() == 600);
         assert(steady.block_count() == 1);
     }
@@ -99,7 +107,7 @@ using crucible::safety::PowerOfTwo;
     {
         crucible::Arena align_arena(1 << 16);
         for (size_t align : {1u, 2u, 4u, 8u, 16u, 32u, 64u, 128u, 256u}) {
-            void* p = align_arena.alloc(test.alloc, Positive<size_t>{8}, PowerOfTwo<size_t>{align});
+            void* p = align_arena.alloc(test.alloc, bytes(8), align_to(align));
             assert(std::bit_cast<uintptr_t>(p) % align == 0);
         }
     }

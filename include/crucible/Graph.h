@@ -16,6 +16,7 @@
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Pre.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cassert>
@@ -317,7 +318,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 // in a flat array indexed by id, so nodes_[id] is that node.
 class CRUCIBLE_OWNER Graph {
 public:
-    [[gnu::cold]] explicit Graph(effects::Alloc a, ExprPool* pool, SymbolTable* tab = nullptr)
+    [[gnu::cold]] explicit Graph(::foundation::effects::Alloc a, ExprPool* pool, SymbolTable* tab = nullptr)
         : pool_(pool),
           tab_(tab),
           nodes_(nullptr),
@@ -336,7 +337,7 @@ public:
     Graph(Graph&&) = delete("interior GraphNode* pointers into arena would dangle");
     Graph& operator=(Graph&&) = delete("interior GraphNode* pointers into arena would dangle");
 
-    [[nodiscard]] GraphNode* add_input(effects::Alloc a, ScalarType dtype, int8_t device_idx,
+    [[nodiscard]] GraphNode* add_input(::foundation::effects::Alloc a, ScalarType dtype, int8_t device_idx,
                                        std::span<const Expr* const> size) {
         GraphNode* n = alloc_node_(a);
         n->kind = NodeKind::INPUT;
@@ -347,7 +348,7 @@ public:
         return n;
     }
 
-    [[nodiscard]] GraphNode* add_pointwise(effects::Alloc a, std::span<const Expr* const> ranges, ScalarType dtype,
+    [[nodiscard]] GraphNode* add_pointwise(::foundation::effects::Alloc a, std::span<const Expr* const> ranges, ScalarType dtype,
                                            int8_t device_idx, ComputeBody* body, std::span<GraphNode* const> inputs) {
         GraphNode* n = alloc_node_(a);
         n->kind = NodeKind::POINTWISE;
@@ -360,7 +361,7 @@ public:
         return n;
     }
 
-    [[nodiscard]] GraphNode* add_reduction(effects::Alloc a, std::span<const Expr* const> ranges,
+    [[nodiscard]] GraphNode* add_reduction(::foundation::effects::Alloc a, std::span<const Expr* const> ranges,
                                            std::span<const Expr* const> red_ranges, ReduceOp reduce_op, ReduceHint hint,
                                            ScalarType dtype, ScalarType src_dtype, int8_t device_idx, ComputeBody* body,
                                            std::span<GraphNode* const> inputs) {
@@ -389,7 +390,7 @@ public:
         return n;
     }
 
-    [[nodiscard]] GraphNode* add_extern(effects::Alloc a, const char* py_name, const char* cpp_name, ScalarType dtype,
+    [[nodiscard]] GraphNode* add_extern(::foundation::effects::Alloc a, const char* py_name, const char* cpp_name, ScalarType dtype,
                                         int8_t device_idx, std::span<const Expr* const> size,
                                         std::span<GraphNode* const> inputs,
                                         std::span<const int64_t> constant_args = {}) {
@@ -415,7 +416,7 @@ public:
         return n;
     }
 
-    [[nodiscard]] ComputeBody* alloc_body(effects::Alloc a, uint16_t num_ops) {
+    [[nodiscard]] ComputeBody* alloc_body(::foundation::effects::Alloc a, uint16_t num_ops) {
         auto* b = arena_.alloc_obj<ComputeBody>(a);
         b->ops = arena_.alloc_array<Inst>(a, num_ops);
         b->num_ops = num_ops;
@@ -428,14 +429,14 @@ public:
 
     // The aux array is allocated on demand, since only CONSTANT, TO_DTYPE
     // and INDEX_EXPR use it.
-    void alloc_body_aux(effects::Alloc a, ComputeBody* body) {
+    void alloc_body_aux(::foundation::effects::Alloc a, ComputeBody* body) {
         if (!body->aux) {
             body->aux = arena_.alloc_array<int64_t>(a, body->num_ops);
             std::memset(body->aux, 0, body->num_ops * sizeof(int64_t));
         }
     }
 
-    void set_graph_inputs(effects::Alloc a, std::span<const NodeId> ids) {
+    void set_graph_inputs(::foundation::effects::Alloc a, std::span<const NodeId> ids) {
         num_inputs_ = static_cast<uint32_t>(ids.size());
         if (ids.empty()) {
             input_ids_ = nullptr;
@@ -445,7 +446,7 @@ public:
         std::memcpy(input_ids_, ids.data(), ids.size_bytes());
     }
 
-    void set_graph_outputs(effects::Alloc a, std::span<const NodeId> ids) {
+    void set_graph_outputs(::foundation::effects::Alloc a, std::span<const NodeId> ids) {
         num_outputs_ = static_cast<uint32_t>(ids.size());
         if (ids.empty()) {
             output_ids_ = nullptr;
@@ -467,7 +468,7 @@ public:
     // silently skipped at consteval for exactly that shape.  The macro also
     // collapses to [[assume]] under NDEBUG, which is the optimizer hint the
     // bodies need anyway.
-    void set_input_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
+    void set_input_slots(::foundation::effects::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
         CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
         if (slots.empty()) {
             input_slots_[node_id.raw()] = nullptr;
@@ -482,7 +483,7 @@ public:
         CRUCIBLE_POST(0, input_slots_[node_id.raw()] != nullptr);
     }
 
-    void set_output_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
+    void set_output_slots(::foundation::effects::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
         CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
         if (slots.empty()) {
             output_slots_[node_id.raw()] = nullptr;
@@ -551,7 +552,7 @@ public:
 
     // Kahn's algorithm over a flat successor array built from the nodes'
     // input lists.  Sets schedule_order on every live node.
-    void topological_sort(effects::Alloc a) {
+    void topological_sort(::foundation::effects::Alloc a) {
         const uint32_t n_nodes = num_nodes_.get();
         auto* in_deg = arena_.alloc_array<uint32_t>(a, n_nodes);
         auto* succ_cnt = arena_.alloc_array<uint32_t>(a, n_nodes);
@@ -613,7 +614,7 @@ public:
     // than rewriting pointers as it goes.  One sweep at the end patches
     // every live node, which is what keeps this linear instead of running a
     // full use-replacement scan per elimination.
-    [[nodiscard]] uint32_t eliminate_common_subexpressions(effects::Alloc a) {
+    [[nodiscard]] uint32_t eliminate_common_subexpressions(::foundation::effects::Alloc a) {
         topological_sort(a);
 
         const uint32_t n_nodes = num_nodes_.get();
@@ -690,7 +691,7 @@ public:
     //
     // It also leaves group_hash on each node so later passes can reject an
     // incompatible pair without walking the ranges.
-    [[nodiscard]] uint32_t compute_fusion_groups(effects::Alloc a) {
+    [[nodiscard]] uint32_t compute_fusion_groups(::foundation::effects::Alloc a) {
         topological_sort(a);
 
         const uint32_t n_nodes = num_nodes_.get();
@@ -793,7 +794,7 @@ public:
     [[nodiscard]] Arena& arena() noexcept CRUCIBLE_LIFETIMEBOUND { return arena_; }
 
 private:
-    GraphNode* alloc_node_(effects::Alloc a) {
+    GraphNode* alloc_node_(::foundation::effects::Alloc a) {
         if (num_nodes_.get() >= capacity_) grow_(a, capacity_ * 2);
         auto* n = ::new(arena_.alloc_obj<GraphNode>(a)) GraphNode{};
         n->id = NodeId{num_nodes_.get()};
@@ -802,7 +803,7 @@ private:
         return n;
     }
 
-    void grow_(effects::Alloc a, uint32_t new_cap) {
+    void grow_(::foundation::effects::Alloc a, uint32_t new_cap) {
         auto** buf = arena_.alloc_array<GraphNode*>(a, new_cap);
         auto** is_buf = arena_.alloc_array<SlotId*>(a, new_cap);
         auto** os_buf = arena_.alloc_array<SlotId*>(a, new_cap);
@@ -821,7 +822,7 @@ private:
         capacity_ = new_cap;
     }
 
-    void set_inputs_(effects::Alloc a, GraphNode* n, std::span<GraphNode* const> inputs) {
+    void set_inputs_(::foundation::effects::Alloc a, GraphNode* n, std::span<GraphNode* const> inputs) {
         n->num_inputs = static_cast<uint16_t>(inputs.size());
         if (!inputs.empty()) {
             n->inputs = arena_.alloc_array<GraphNode*>(a, inputs.size());
@@ -831,18 +832,18 @@ private:
         }
     }
 
-    const Expr** copy_exprs_(effects::Alloc a, std::span<const Expr* const> src) {
+    const Expr** copy_exprs_(::foundation::effects::Alloc a, std::span<const Expr* const> src) {
         if (src.empty()) return nullptr;
         auto** dst = arena_.alloc_array<const Expr*>(a, src.size());
         std::memcpy(dst, src.data(), src.size_bytes());
         return dst;
     }
 
-    const char* copy_string_(effects::Alloc a, const char* src) {
+    const char* copy_string_(::foundation::effects::Alloc a, const char* src) {
         if (!src) return nullptr;
         size_t len = std::strlen(src) + 1;
         auto* dst = static_cast<char*>(
-            arena_.alloc(a, crucible::fixy::wrap::Positive<size_t>{len}, crucible::fixy::wrap::PowerOfTwo<size_t>{1}));
+            arena_.alloc(a, ::fixy::mint_refined<::fixy::positive>(len), ::fixy::mint_refined<::fixy::power_of_two>(size_t{1})));
         std::memcpy(dst, src, len);
         return dst;
     }
