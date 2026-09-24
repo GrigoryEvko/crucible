@@ -59,8 +59,8 @@ SYSCALLS = frozenset("""
     sched_setaffinity sched_getaffinity sched_setattr sched_getattr sched_yield prctl syscall
     epoll_create1 epoll_ctl epoll_wait eventfd ioctl open openat close read write pread pwrite readv writev
     fsync fdatasync stat fstat lstat unlink rename mkdir rmdir fork vfork clone execve waitpid kill
-    sigaction signal sigprocmask clock_gettime clock_settime nanosleep gettimeofday pipe pipe2 dup dup2 dup3
-    fcntl flock poll select pselect futex bpf getrandom getrlimit setrlimit chmod chown access faccessat
+    sigaction signal sigprocmask clock_gettime clock_settime nanosleep clock_nanosleep gettimeofday pipe pipe2 dup
+    dup2 dup3 fcntl flock poll select pselect futex bpf getrandom getrlimit setrlimit chmod chown access faccessat
 """.split())
 # The names that no C++ identifier in this tree shares.  A syscall with an
 # ambiguous name (close, read, send, socket and the like) must be spelled
@@ -70,8 +70,8 @@ KERNEL_ONLY = frozenset("""
     mlockall madvise mincore mprotect sched_setaffinity sched_getaffinity sched_setattr sched_getattr
     sched_yield prctl syscall epoll_create1 epoll_ctl epoll_wait eventfd ioctl openat pread pwrite readv
     writev fsync fdatasync fstat lstat unlink mkdir rmdir vfork execve waitpid sigaction sigprocmask
-    clock_gettime clock_settime nanosleep gettimeofday pipe2 dup2 dup3 fcntl flock pselect futex bpf
-    getrandom getrlimit setrlimit chmod chown faccessat
+    clock_gettime clock_settime nanosleep clock_nanosleep gettimeofday pipe2 dup2 dup3 fcntl flock pselect futex
+    bpf getrandom getrlimit setrlimit chmod chown faccessat
 """.split())
 assert KERNEL_ONLY <= SYSCALLS, "a kernel-only name is missing from SYSCALLS"
 

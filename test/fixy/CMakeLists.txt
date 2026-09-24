@@ -298,6 +298,12 @@ fixy_neg_compile_test(neg_rule_w001_hot_blocking_syscall
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) W001:"
   "${_fixy_tier5_member}")
+# A wait on a descriptor lifts Block through the ThreadSync family, as a
+# futex call does, so W001 refuses it with no edit to the rule.
+fixy_neg_compile_test(neg_rule_w001_hot_epoll_wait
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) W001:"
+  "${_fixy_tier5_member}")
 fixy_neg_compile_test(neg_rule_w002_bg_row_core_burning_spin
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) W002:"

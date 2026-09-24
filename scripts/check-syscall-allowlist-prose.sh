@@ -76,7 +76,7 @@ USAGE
 # nothing shorter.  Order matters: a leftmost-first PCRE alternation
 # would otherwise report `recv` for a `::recvmsg(` call and then blame
 # prose that correctly says recvmsg.
-SYSCALL_ALT='sched_setaffinity|sched_getaffinity|epoll_create1|clock_settime|clock_gettime|perf_event_open|sched_setattr|sched_getattr|gettimeofday|sigprocmask|munlockall|setsockopt|getsockopt|faccessat|fdatasync|epoll_wait|sched_yield|recvfrom|recvmsg|sendmsg|shutdown|nanosleep|sigaction|epoll_ctl|getrandom|getrlimit|setrlimit|mprotect|mlockall|mincore|madvise|munlock|eventfd|waitpid|openat|execve|unlink|rename|pselect|munmap|mremap|connect|listen|accept|socket|sendto|mlock2|prctl|ioctl|mkdir|rmdir|fsync|pread|write|pwrite|readv|writev|fstat|lstat|fcntl|flock|futex|chmod|chown|access|clone|vfork|pipe2|dup2|dup3|mlock|mmap|bind|send|recv|open|close|read|stat|fork|kill|signal|poll|select|pipe|dup|brk|sbrk|bpf|syscall'
+SYSCALL_ALT='sched_setaffinity|sched_getaffinity|clock_nanosleep|epoll_create1|clock_settime|clock_gettime|perf_event_open|sched_setattr|sched_getattr|gettimeofday|sigprocmask|munlockall|setsockopt|getsockopt|faccessat|fdatasync|epoll_wait|sched_yield|recvfrom|recvmsg|sendmsg|shutdown|nanosleep|sigaction|epoll_ctl|getrandom|getrlimit|setrlimit|mprotect|mlockall|mincore|madvise|munlock|eventfd|waitpid|openat|execve|unlink|rename|pselect|munmap|mremap|connect|listen|accept|socket|sendto|mlock2|prctl|ioctl|mkdir|rmdir|fsync|pread|write|pwrite|readv|writev|fstat|lstat|fcntl|flock|futex|chmod|chown|access|clone|vfork|pipe2|dup2|dup3|mlock|mmap|bind|send|recv|open|close|read|stat|fork|kill|signal|poll|select|pipe|dup|brk|sbrk|bpf|syscall'
 
 resolve_syscalls() {
     # $1 = the source line.  Prints one effective syscall name per line.

@@ -39,6 +39,8 @@ include/crucible/fixy/_Io.h:::munmap(sq_ring_, sq_size_);  — effects::IO via I
 include/crucible/fixy/_Io.h:::close(ring_fd_);  — effects::IO via IoUringRing::release_ (close ring fd, RAII, cap inherited)
 include/crucible/fixy/_Time.h:(void)::clock_gettime(clockid_for(Source), &now);  — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
 include/fixy/os/Time.h:(void)::clock_gettime(clockid_for(Source), &now);  — clock_gettime via ClockReader<Source>::read under the effects::* context that minted the reader, the ported copy of the entry above (the reader holds no context of its own, and mint_clock_reader checked one through CtxFitsClockReaderMint)
+include/crucible/fixy/_Time.h:(void)::clock_nanosleep(CLOCK_MONOTONIC, 0, &request, nullptr);  — effects::Block via BoundedSleeper<MaxNanos>::sleep_for (clock_nanosleep on CLOCK_MONOTONIC, at most MaxNanos, under the context that minted the sleeper through CtxFitsBoundedSleepMint)
+include/fixy/os/Time.h:(void)::clock_nanosleep(CLOCK_MONOTONIC, 0, &request, nullptr);  — effects::Block via BoundedSleeper<MaxNanos>::sleep_for, the ported copy of the entry above (clock_nanosleep on CLOCK_MONOTONIC. The sleeper holds no context of its own, and mint_bounded_sleep checked one through CtxFitsBoundedSleepMint)
 include/crucible/handles/FileHandle.h:(void)::close(fd_);  — effects::IO via FileHandle::~FileHandle (close on RAII drop)
 include/crucible/handles/FileHandle.h:if (fd_ >= 0) (void)::close(fd_);  — effects::IO via FileHandle::operator= (close the old fd before taking the moved-from one)
 include/crucible/handles/FileHandle.h:return ::close(fd) == 0 ? 0 : errno;  — effects::IO via FileHandle::close_explicit (close and report errno)

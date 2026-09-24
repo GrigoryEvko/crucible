@@ -290,6 +290,17 @@ static_assert(!hot_pack<at::syscall::per<SyscallId::recvmsg>>::W001_ok);
 static_assert(!hot_pack<at::syscall::family<SyscallFamily::ThreadSync>>::W001_ok);
 static_assert(!hot_pack<at::fs::durable<::fixy::fs::sync_op::Fsync>>::W001_ok, "an OS atom lifts Block as well");
 
+// The waits on a descriptor, the sleeps and eventfd are ThreadSync calls,
+// so each lifts Block and W001 refuses each alone on the hot path.  A warm
+// binding with the same call is admitted.
+static_assert(hot_pack<at::syscall::per<SyscallId::poll>>::failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::epoll_wait>>::failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::eventfd>>::failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::nanosleep>>::failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::clock_nanosleep>>::failing_codes() == "W001");
+static_assert(live_rules<at::regime::warm, at::syscall::per<SyscallId::epoll_wait>>::valid);
+static_assert(live_rules<at::regime::cold, at::syscall::per<SyscallId::clock_nanosleep>>::valid);
+
 // The two fixtures' packs trip W001 and no other rule.
 static_assert(hot_pack<at::with<Eff::Block>>::failing_codes() == "W001");
 static_assert(hot_pack<at::syscall::per<SyscallId::futex>>::failing_codes() == "W001");
