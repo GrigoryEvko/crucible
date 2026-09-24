@@ -54,8 +54,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         Arena arena_b{};
         RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
         RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
-        RecipeRegistry reg_a{RecipeRegistry::PoolBorrow{pool_a}, alloc_cap()};
-        RecipeRegistry reg_b{RecipeRegistry::PoolBorrow{pool_b}, alloc_cap()};
+        RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
+        RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
 
         auto a = reg_a.by_name(names::kF16F32AccumTc);
         auto b = reg_b.by_name(names::kF16F32AccumTc);
@@ -77,7 +77,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         auto rec_tc = registry.by_name(names::kF16F32AccumTc);
         auto rec_strict = registry.by_name(names::kF32Strict);
@@ -110,7 +110,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         // Persistence time: the original process pins a recipe and takes
         // the region's content hash.
@@ -151,7 +151,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         // The original process.
         Arena arena_a{};
         RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
-        RecipeRegistry reg_a{RecipeRegistry::PoolBorrow{pool_a}, alloc_cap()};
+        RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
         auto rec_a = reg_a.by_name(names::kFp8E4m3F32AccumMxOrd);
         assert(rec_a.has_value());
 
@@ -164,7 +164,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         // with different addresses throughout.
         Arena arena_b{};
         RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
-        RecipeRegistry reg_b{RecipeRegistry::PoolBorrow{pool_b}, alloc_cap()};
+        RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
         auto rec_b = reg_b.by_name(names::kFp8E4m3F32AccumMxOrd);
         assert(rec_b.has_value());
         // Different pointers, so the two pools really are independent.
@@ -189,7 +189,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         auto rec_tc = registry.by_name(names::kF16F32AccumTc);
         auto rec_ord = registry.by_name(names::kF16F32AccumOrdered);

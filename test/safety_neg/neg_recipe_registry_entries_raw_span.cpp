@@ -1,8 +1,11 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-RecipeReg-3 fixture #1: RecipeRegistry::entries() exposes a
-// source::JsonRegistry-tagged span.  A raw span must not implicitly
-// satisfy a consumer that requires registry-origin provenance.
+// RecipeRegistry::entries() gives a span tagged source::JsonRegistry.  A
+// raw span must not satisfy a consumer that requires the provenance of
+// the registry.
+//
+// Expected diagnostic: no conversion from a raw span to
+// RecipeRegistry::Entries.
 
 #include <crucible/RecipeRegistry.h>
 

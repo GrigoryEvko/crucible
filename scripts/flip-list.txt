@@ -101,7 +101,6 @@ include/crucible/IterationDetectorState.h
 include/crucible/MerkleDag.h
 include/crucible/Philox.h
 include/crucible/PoolAllocator.h
-include/crucible/RecipeRegistry.h
 include/crucible/RegionCache.h
 include/crucible/ReplayEngine.h
 include/crucible/SchemaTable.h

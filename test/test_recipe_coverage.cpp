@@ -401,7 +401,7 @@ int main() {
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         for (const auto& cell : kCoverageMatrix) {
             if (cell.covered) {

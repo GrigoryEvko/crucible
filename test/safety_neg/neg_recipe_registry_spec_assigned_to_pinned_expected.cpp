@@ -1,50 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-G78-AUDIT — cross-API result-type fence.  Companion to
-// neg_recipe_registry_pinned_with_family_template_arg (FOUND-G78
-// baseline) which fences the wrong-template-kind misuse.  This
-// fixture pins the symmetric mistake: the consumer correctly
-// reaches for `by_name_spec` (regime-4 two-axis runtime spec) but
-// then types the result slot as if `by_name_pinned` (regime-1
-// single-axis static admission) was called.  The two return types
-// are STRUCTURALLY DISTINCT — `RecipeSpec<T>` carries a 2-byte
-// runtime grade pair while `NumericalTier<T_static, T>` carries
-// the tier as a non-type template parameter (zero-byte EBO-collapsed
-// grade).  The compiler must reject the std::expected conversion
-// because the inner E template arguments do not match.
+// A consumer calls by_name_spec, which gives the RecipeSpec of the two
+// axes, but it types the result as the NumericalTier of by_name_pinned.
+// The two types are different.  RecipeSpec<T> stores its two-byte grade
+// per value, and NumericalTier<T_static, T> pins its tier in the type.
+// The conversion of the std::expected must fail.
 //
-// THE BUG CLASS this catches:  a Forge Phase E.RecipeSelect
-// integration that already wired by_name_spec for the two-axis
-// admission gate gets refactored — someone copies the result-type
-// declaration from a sibling call site that uses by_name_pinned,
-// and now `auto&& spec = reg.by_name_spec(...)` becomes
-// `expected<NumericalTier<BITEXACT, const Recipe*>, RecipeError> spec
-//   = reg.by_name_spec(...)`.  Without this fence the silent
-// convertible-from-anything trap could mask the type drift; with
-// it, the compiler names the mismatched expected<> templates.
+// The sibling fixture pinned_assigned_to_spec_expected catches the other
+// direction.
 //
-// Why this is G78-distinct (not G04 or G75/76 territory):
-//   - G04's wrapper-level fences cover NumericalTier compile-time
-//     admission.
-//   - G75/76's wrapper-level fences cover RecipeSpec axis-swap at
-//     constructor / admits().
-//   - G78 baseline covered template-arg-kind mismatch on the
-//     pinned API.
-//   - This G78-AUDIT fence is the SYMMETRIC misuse: correct
-//     two-axis API call + wrong single-axis result type.  Catches
-//     the "I copy-pasted a sibling call site's return type"
-//     refactor footgun.
-//
-// [GCC-WRAPPER-TEXT] — std::expected<RecipeSpec<T>, _> →
-// std::expected<NumericalTier<T_static, T>, _> conversion
-// rejection.
+// Expected diagnostic: no conversion from the expected of the RecipeSpec
+// to the expected of the NumericalTier.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <crucible/safety/_NumericalTier.h>
-#include <crucible/safety/_RecipeSpec.h>
+#include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
 #include <foundation/effects/Effect.h>
 
@@ -54,23 +25,13 @@ using namespace crucible;
 
 int main() {
     Arena arena{};
-    auto test_ctx = effects::testing::test();
+    auto test_ctx = ::foundation::effects::testing::test();
     auto init_ctx = ::foundation::effects::testing::init();
     RecipePool pool{::fixy::mint_borrowed_ref(arena), init_ctx};
-    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, test_ctx.alloc};
+    RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), test_ctx.alloc};
 
-    // Should FAIL: by_name_spec returns
-    //   std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
-    // but the consumer typed the result slot as
-    //   std::expected<safety::NumericalTier<BITEXACT, const NumericalRecipe*>, RecipeError>
-    // The two are structurally distinct — RecipeSpec is regime-4
-    // (per-instance 2-byte grade), NumericalTier is regime-1 (zero-
-    // byte EBO-collapsed static grade).  No implicit conversion
-    // exists between them; the compiler rejects the
-    // std::expected<T, E> template argument deduction with a
-    // structured diagnostic naming both result types.
-    std::expected<safety::NumericalTier<safety::Tolerance::BITEXACT, const NumericalRecipe*>, RecipeError> wrong_slot =
-        reg.by_name_spec(recipe_names::kF32Strict);
+    std::expected<::fixy::NumericalTier<::fixy::Tolerance::BITEXACT, const NumericalRecipe*>, RecipeError>
+        wrong_slot = reg.by_name_spec(recipe_names::kF32Strict);
     (void)wrong_slot;
     return 0;
 }

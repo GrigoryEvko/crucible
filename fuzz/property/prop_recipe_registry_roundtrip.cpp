@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
             // interns the starter recipes into the pool at construction.
             const ::foundation::effects::Init init = ::foundation::effects::testing::init();
             RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
-            RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, init.alloc};
+            RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), init.alloc};
 
             // Phase 1: every starter name → canonical pointer →
             // by_hash recovers the same pointer.

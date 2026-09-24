@@ -9,11 +9,12 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
-#include <crucible/safety/_RecipeSpec.h>
+#include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
 #include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
+#include <array>
 #include <cassert>
 #include <cstdio>
 #include <type_traits>
@@ -32,9 +33,11 @@ using crucible::ReductionDeterminism;
 using crucible::ScalarType;
 using crucible::recipe_family_of;
 using crucible::tolerance_of;
-using safety_Tolerance = crucible::safety::Tolerance;
-using safety_RecipeFamily = crucible::safety::RecipeFamily;
-using crucible::safety::RecipeSpec;
+using ::fixy::RecipeFamily;
+using ::fixy::RecipeFamilyLattice;
+using ::fixy::RecipeSpec;
+using ::fixy::Tolerance;
+using ::fixy::ToleranceLattice;
 
 namespace names = crucible::recipe_names;
 
@@ -45,6 +48,12 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
 [[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries().value(); }
 
+// Two specs are the same when the pointer and both axes agree.
+template <class T>
+[[nodiscard]] constexpr bool same_spec(RecipeSpec<T> const& lhs, RecipeSpec<T> const& rhs) noexcept {
+    return lhs.peek() == rhs.peek() && lhs.grade() == rhs.grade();
+}
+
 }  // namespace
 
 [[gnu::cold]] int main() {
@@ -53,26 +62,26 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         NumericalRecipe r_pairwise{};
         r_pairwise.reduction_algo = ReductionAlgo::PAIRWISE;
-        assert(recipe_family_of(r_pairwise) == safety_RecipeFamily::Pairwise);
+        assert(recipe_family_of(r_pairwise) == RecipeFamily::Pairwise);
 
         NumericalRecipe r_linear{};
         r_linear.reduction_algo = ReductionAlgo::LINEAR;
-        assert(recipe_family_of(r_linear) == safety_RecipeFamily::Linear);
+        assert(recipe_family_of(r_linear) == RecipeFamily::Linear);
 
         NumericalRecipe r_kahan{};
         r_kahan.reduction_algo = ReductionAlgo::KAHAN;
-        assert(recipe_family_of(r_kahan) == safety_RecipeFamily::Kahan);
+        assert(recipe_family_of(r_kahan) == RecipeFamily::Kahan);
 
         NumericalRecipe r_block{};
         r_block.reduction_algo = ReductionAlgo::BLOCK_STABLE;
-        assert(recipe_family_of(r_block) == safety_RecipeFamily::BlockStable);
+        assert(recipe_family_of(r_block) == RecipeFamily::BlockStable);
 
         static_assert(noexcept(recipe_family_of(std::declval<const NumericalRecipe&>())));
     }
 
     Arena arena{};
     RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+    RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
     {
         auto spec = reg.by_name_spec(names::kF32Strict);
@@ -81,8 +90,8 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         assert(spec->peek() != nullptr);
         assert(spec->peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
         assert(spec->peek()->reduction_algo == ReductionAlgo::PAIRWISE);
-        assert(spec->tolerance() == safety_Tolerance::BITEXACT);
-        assert(spec->recipe_family() == safety_RecipeFamily::Pairwise);
+        assert(::fixy::tolerance_of(*spec) == Tolerance::BITEXACT);
+        assert(::fixy::recipe_family_of(*spec) == RecipeFamily::Pairwise);
     }
 
     // The lookup pairs the recipe with its two axes and transforms neither, so
@@ -92,8 +101,8 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
             auto spec = reg.by_name_spec(entry.name);
             assert(spec.has_value());
             assert(spec->peek() == entry.recipe);
-            assert(spec->tolerance() == tolerance_of(*entry.recipe));
-            assert(spec->recipe_family() == recipe_family_of(*entry.recipe));
+            assert(::fixy::tolerance_of(*spec) == tolerance_of(*entry.recipe));
+            assert(::fixy::recipe_family_of(*spec) == recipe_family_of(*entry.recipe));
         }
     }
 
@@ -115,8 +124,8 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         auto spec = reg.by_hash_spec(hash);
         assert(spec.has_value());
         assert(spec->peek()->hash == hash);
-        assert(spec->tolerance() == safety_Tolerance::ULP_FP16);
-        assert(spec->recipe_family() == safety_RecipeFamily::Pairwise);
+        assert(::fixy::tolerance_of(*spec) == Tolerance::ULP_FP16);
+        assert(::fixy::recipe_family_of(*spec) == RecipeFamily::Pairwise);
     }
 
     {
@@ -136,9 +145,9 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
             assert(by_n.has_value());
             assert(by_h.has_value());
             assert(by_n->peek() == by_h->peek());
-            assert(by_n->tolerance() == by_h->tolerance());
-            assert(by_n->recipe_family() == by_h->recipe_family());
-            assert(*by_n == *by_h);
+            assert(::fixy::tolerance_of(*by_n) == ::fixy::tolerance_of(*by_h));
+            assert(::fixy::recipe_family_of(*by_n) == ::fixy::recipe_family_of(*by_h));
+            assert(same_spec(*by_n, *by_h));
         }
     }
 
@@ -147,62 +156,62 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         auto spec = reg.by_name_spec(names::kF16F32AccumTc).value();
 
         // Exact match on both axes.
-        assert(spec.admits(safety_Tolerance::ULP_FP16, safety_RecipeFamily::Pairwise));
+        assert(::fixy::admits(spec, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
 
         // A weaker tolerance request: ULP_FP8 sits below ULP_FP16 on the chain.
-        assert(spec.admits(safety_Tolerance::ULP_FP8, safety_RecipeFamily::Pairwise));
+        assert(::fixy::admits(spec, Tolerance::ULP_FP8, RecipeFamily::Pairwise));
 
         // None is the family bottom, so a consumer that pins no family is
         // admitted by any producer.
-        assert(spec.admits(safety_Tolerance::ULP_FP16, safety_RecipeFamily::None));
+        assert(::fixy::admits(spec, Tolerance::ULP_FP16, RecipeFamily::None));
     }
 
     // The named families are siblings, incomparable in the partial order, so
     // agreeing on tolerance is not enough to be admitted.
     {
         auto spec = reg.by_name_spec(names::kF32Strict).value();
-        assert(spec.tolerance() == safety_Tolerance::BITEXACT);
-        assert(spec.recipe_family() == safety_RecipeFamily::Pairwise);
+        assert(::fixy::tolerance_of(spec) == Tolerance::BITEXACT);
+        assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
 
-        assert(!spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::Kahan));
-        assert(!spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::BlockStable));
-        assert(!spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::Linear));
+        assert(!::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Kahan));
+        assert(!::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::BlockStable));
+        assert(!::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Linear));
     }
 
     // The mirror case: a relaxed producer sits below a bit-exact request on the
     // tolerance chain, so agreeing on family is not enough either.
     {
         auto spec = reg.by_name_spec(names::kF32Ordered).value();
-        assert(spec.tolerance() == safety_Tolerance::RELAXED);
-        assert(spec.recipe_family() == safety_RecipeFamily::Pairwise);
+        assert(::fixy::tolerance_of(spec) == Tolerance::RELAXED);
+        assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
 
-        assert(!spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::Pairwise));
-        assert(!spec.admits(safety_Tolerance::ULP_FP16, safety_RecipeFamily::Pairwise));
+        assert(!::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
+        assert(!::fixy::admits(spec, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
     }
 
     {
         // No starter recipe carries a sentinel family, so both specs here are
         // synthesized. This one sits at the family bottom.
-        RecipeSpec<const NumericalRecipe*> bottom_spec{nullptr, safety_Tolerance::RELAXED, safety_RecipeFamily::None};
-        assert(bottom_spec.admits(safety_Tolerance::RELAXED, safety_RecipeFamily::None));
-        assert(!bottom_spec.admits(safety_Tolerance::RELAXED, safety_RecipeFamily::Pairwise));
-        assert(!bottom_spec.admits(safety_Tolerance::ULP_FP16, safety_RecipeFamily::None));
+        RecipeSpec<const NumericalRecipe*> bottom_spec{nullptr, {Tolerance::RELAXED, RecipeFamily::None}};
+        assert(::fixy::admits(bottom_spec, Tolerance::RELAXED, RecipeFamily::None));
+        assert(!::fixy::admits(bottom_spec, Tolerance::RELAXED, RecipeFamily::Pairwise));
+        assert(!::fixy::admits(bottom_spec, Tolerance::ULP_FP16, RecipeFamily::None));
 
         // And this one at the family top.
-        RecipeSpec<const NumericalRecipe*> top_spec{nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::Any};
-        assert(top_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::Pairwise));
-        assert(top_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::Kahan));
-        assert(top_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::BlockStable));
-        assert(top_spec.admits(safety_Tolerance::ULP_FP8, safety_RecipeFamily::Linear));
+        RecipeSpec<const NumericalRecipe*> top_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::Any}};
+        assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
+        assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::Kahan));
+        assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::BlockStable));
+        assert(::fixy::admits(top_spec, Tolerance::ULP_FP8, RecipeFamily::Linear));
     }
 
     // The join is idempotent on both axes.
     {
         auto a = reg.by_name_spec(names::kF16F32AccumTc).value();
         auto b = reg.by_name_spec(names::kF16F32AccumTc).value();
-        auto c = a.combine_max(b);
-        assert(c.tolerance() == safety_Tolerance::ULP_FP16);
-        assert(c.recipe_family() == safety_RecipeFamily::Pairwise);
+        auto c = a.compose(b);
+        assert(::fixy::tolerance_of(c) == Tolerance::ULP_FP16);
+        assert(::fixy::recipe_family_of(c) == RecipeFamily::Pairwise);
     }
 
     // Two siblings have no common family below the wildcard, so their join
@@ -210,12 +219,11 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     // spec is synthesized.
     {
         auto a = reg.by_name_spec(names::kF32Strict).value();
-        RecipeSpec<const NumericalRecipe*> synth_kahan{a.peek(), safety_Tolerance::ULP_FP16,
-                                                       safety_RecipeFamily::Kahan};
+        RecipeSpec<const NumericalRecipe*> synth_kahan{a.peek(), {Tolerance::ULP_FP16, RecipeFamily::Kahan}};
 
-        auto joined = a.combine_max(synth_kahan);
-        assert(joined.tolerance() == safety_Tolerance::BITEXACT);
-        assert(joined.recipe_family() == safety_RecipeFamily::Any);
+        auto joined = a.compose(synth_kahan);
+        assert(::fixy::tolerance_of(joined) == Tolerance::BITEXACT);
+        assert(::fixy::recipe_family_of(joined) == RecipeFamily::Any);
     }
 
     // Both axes are runtime data, so neither can collapse away. One byte per
@@ -240,51 +248,48 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         assert(moved == expected_ptr);
     }
 
-    // Equality compares the pointer and both axes. Repeated lookups that
-    // carried any hidden state would fail here, which replay depends on.
+    // Two specs are the same when the pointer and both axes agree. Repeated
+    // lookups that carried any hidden state would fail here, which replay
+    // depends on.
     {
         auto s1 = reg.by_name_spec(names::kBf16F32AccumTc).value();
         auto s2 = reg.by_name_spec(names::kBf16F32AccumTc).value();
         auto s3 = reg.by_hash_spec(s1.peek()->hash).value();
-        assert(s1 == s2);
-        assert(s1 == s3);
+        assert(same_spec(s1, s2));
+        assert(same_spec(s1, s3));
 
-        // A different recipe must compare unequal, or the operator would be
+        // A different recipe must compare unequal, or the comparison would be
         // vacuous.
         auto s4 = reg.by_name_spec(names::kF32Strict).value();
-        assert(!(s1 == s4));
+        assert(!same_spec(s1, s4));
     }
 
     // Every cell of the grid is checked against the pointwise ordering on each
     // axis, so any drift between the admission body and the two lattices shows
     // up here. The sentinel families are left out and probed on their own.
     {
-        using crucible::algebra::lattices::ToleranceLattice;
-        using crucible::algebra::lattices::RecipeFamilyLattice;
-
-        constexpr safety_Tolerance kTiers[] = {
-            safety_Tolerance::RELAXED,  safety_Tolerance::ULP_INT8, safety_Tolerance::ULP_FP8,
-            safety_Tolerance::ULP_FP16, safety_Tolerance::ULP_FP32, safety_Tolerance::ULP_FP64,
-            safety_Tolerance::BITEXACT,
+        constexpr Tolerance kTiers[] = {
+            Tolerance::RELAXED,  Tolerance::ULP_INT8, Tolerance::ULP_FP8,  Tolerance::ULP_FP16,
+            Tolerance::ULP_FP32, Tolerance::ULP_FP64, Tolerance::BITEXACT,
         };
-        constexpr safety_RecipeFamily kFamilies[] = {
-            safety_RecipeFamily::Linear,
-            safety_RecipeFamily::Pairwise,
-            safety_RecipeFamily::Kahan,
-            safety_RecipeFamily::BlockStable,
+        constexpr RecipeFamily kFamilies[] = {
+            RecipeFamily::Linear,
+            RecipeFamily::Pairwise,
+            RecipeFamily::Kahan,
+            RecipeFamily::BlockStable,
         };
 
         int total_decisions = 0;
         for (const auto& entry : entries_view(reg)) {
             auto spec = reg.by_name_spec(entry.name).value();
-            const auto spec_tier = spec.tolerance();
-            const auto spec_fam = spec.recipe_family();
+            const auto spec_tier = ::fixy::tolerance_of(spec);
+            const auto spec_fam = ::fixy::recipe_family_of(spec);
             for (auto req_tier : kTiers) {
                 for (auto req_fam : kFamilies) {
                     const bool tier_ok = ToleranceLattice::leq(req_tier, spec_tier);
                     const bool fam_ok = RecipeFamilyLattice::leq(req_fam, spec_fam);
                     const bool expected = tier_ok && fam_ok;
-                    assert(spec.admits(req_tier, req_fam) == expected);
+                    assert(::fixy::admits(spec, req_tier, req_fam) == expected);
                     ++total_decisions;
                 }
             }
@@ -296,20 +301,20 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     // directions, must reject. Holding the tolerance tier equal isolates the
     // family axis.
     {
-        constexpr safety_RecipeFamily kFamilies[] = {
-            safety_RecipeFamily::Linear,
-            safety_RecipeFamily::Pairwise,
-            safety_RecipeFamily::Kahan,
-            safety_RecipeFamily::BlockStable,
+        constexpr RecipeFamily kFamilies[] = {
+            RecipeFamily::Linear,
+            RecipeFamily::Pairwise,
+            RecipeFamily::Kahan,
+            RecipeFamily::BlockStable,
         };
 
         int rejection_count = 0;
         for (size_t i = 0; i < 4; ++i) {
             for (size_t j = i + 1; j < 4; ++j) {
-                RecipeSpec<const NumericalRecipe*> spec_i{nullptr, safety_Tolerance::BITEXACT, kFamilies[i]};
-                RecipeSpec<const NumericalRecipe*> spec_j{nullptr, safety_Tolerance::BITEXACT, kFamilies[j]};
-                assert(!spec_i.admits(safety_Tolerance::BITEXACT, kFamilies[j]));
-                assert(!spec_j.admits(safety_Tolerance::BITEXACT, kFamilies[i]));
+                RecipeSpec<const NumericalRecipe*> spec_i{nullptr, {Tolerance::BITEXACT, kFamilies[i]}};
+                RecipeSpec<const NumericalRecipe*> spec_j{nullptr, {Tolerance::BITEXACT, kFamilies[j]}};
+                assert(!::fixy::admits(spec_i, Tolerance::BITEXACT, kFamilies[j]));
+                assert(!::fixy::admits(spec_j, Tolerance::BITEXACT, kFamilies[i]));
                 rejection_count += 2;
             }
         }
@@ -319,11 +324,11 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     // Every sibling pair joins to the wildcard, and the tolerance axis is left
     // untouched by that promotion.
     {
-        constexpr safety_RecipeFamily kFamilies[] = {
-            safety_RecipeFamily::Linear,
-            safety_RecipeFamily::Pairwise,
-            safety_RecipeFamily::Kahan,
-            safety_RecipeFamily::BlockStable,
+        constexpr RecipeFamily kFamilies[] = {
+            RecipeFamily::Linear,
+            RecipeFamily::Pairwise,
+            RecipeFamily::Kahan,
+            RecipeFamily::BlockStable,
         };
 
         auto base_recipe = reg.by_name_spec(names::kF32Strict).value().peek();
@@ -331,11 +336,11 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         int join_count = 0;
         for (size_t i = 0; i < 4; ++i) {
             for (size_t j = i + 1; j < 4; ++j) {
-                RecipeSpec<const NumericalRecipe*> spec_i{base_recipe, safety_Tolerance::ULP_FP16, kFamilies[i]};
-                RecipeSpec<const NumericalRecipe*> spec_j{base_recipe, safety_Tolerance::ULP_FP16, kFamilies[j]};
-                auto joined = spec_i.combine_max(spec_j);
-                assert(joined.tolerance() == safety_Tolerance::ULP_FP16);
-                assert(joined.recipe_family() == safety_RecipeFamily::Any);
+                RecipeSpec<const NumericalRecipe*> spec_i{base_recipe, {Tolerance::ULP_FP16, kFamilies[i]}};
+                RecipeSpec<const NumericalRecipe*> spec_j{base_recipe, {Tolerance::ULP_FP16, kFamilies[j]}};
+                auto joined = spec_i.compose(spec_j);
+                assert(::fixy::tolerance_of(joined) == Tolerance::ULP_FP16);
+                assert(::fixy::recipe_family_of(joined) == RecipeFamily::Any);
                 ++join_count;
             }
         }
@@ -345,43 +350,40 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     // The two caps of the family axis: the wildcard admits every named family,
     // and the bottom admits nothing but itself.
     {
-        constexpr safety_RecipeFamily kFamilies[] = {
-            safety_RecipeFamily::Linear,
-            safety_RecipeFamily::Pairwise,
-            safety_RecipeFamily::Kahan,
-            safety_RecipeFamily::BlockStable,
+        constexpr RecipeFamily kFamilies[] = {
+            RecipeFamily::Linear,
+            RecipeFamily::Pairwise,
+            RecipeFamily::Kahan,
+            RecipeFamily::BlockStable,
         };
 
-        RecipeSpec<const NumericalRecipe*> any_spec{nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::Any};
+        RecipeSpec<const NumericalRecipe*> any_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::Any}};
         for (auto fam : kFamilies) {
-            assert(any_spec.admits(safety_Tolerance::BITEXACT, fam));
+            assert(::fixy::admits(any_spec, Tolerance::BITEXACT, fam));
         }
-        assert(any_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::None));
+        assert(::fixy::admits(any_spec, Tolerance::BITEXACT, RecipeFamily::None));
 
-        RecipeSpec<const NumericalRecipe*> none_spec{nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::None};
+        RecipeSpec<const NumericalRecipe*> none_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::None}};
         for (auto fam : kFamilies) {
-            assert(!none_spec.admits(safety_Tolerance::BITEXACT, fam));
+            assert(!::fixy::admits(none_spec, Tolerance::BITEXACT, fam));
         }
-        assert(none_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::None));
+        assert(::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::None));
     }
 
     // A spec recovered from nothing but a persisted hash must admit exactly
     // what the live one admits. The second arena and registry below stand in
     // for a process that starts with no registry of its own.
     {
-        using crucible::algebra::lattices::ToleranceLattice;
-        using crucible::algebra::lattices::RecipeFamilyLattice;
-
-        constexpr safety_Tolerance kTiers[] = {
-            safety_Tolerance::RELAXED,
-            safety_Tolerance::ULP_FP16,
-            safety_Tolerance::BITEXACT,
+        constexpr Tolerance kTiers[] = {
+            Tolerance::RELAXED,
+            Tolerance::ULP_FP16,
+            Tolerance::BITEXACT,
         };
-        constexpr safety_RecipeFamily kFamilies[] = {
-            safety_RecipeFamily::None,
-            safety_RecipeFamily::Pairwise,
-            safety_RecipeFamily::Kahan,
-            safety_RecipeFamily::Any,
+        constexpr RecipeFamily kFamilies[] = {
+            RecipeFamily::None,
+            RecipeFamily::Pairwise,
+            RecipeFamily::Kahan,
+            RecipeFamily::Any,
         };
 
         std::array<RecipeHash, RecipeRegistry::STARTER_COUNT> persisted{};
@@ -391,18 +393,18 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
         Arena arena2{};
         RecipePool pool2{::fixy::mint_borrowed_ref(arena2), init_cap()};
-        RecipeRegistry reg2{RecipeRegistry::PoolBorrow{pool2}, alloc_cap()};
+        RecipeRegistry reg2{::fixy::mint_borrowed_ref(pool2), alloc_cap()};
 
         for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
             auto live_spec = reg.by_name_spec(entries_view(reg)[i].name).value();
             auto recovered = reg2.by_hash_spec(persisted[i]).value();
 
-            assert(live_spec.tolerance() == recovered.tolerance());
-            assert(live_spec.recipe_family() == recovered.recipe_family());
+            assert(::fixy::tolerance_of(live_spec) == ::fixy::tolerance_of(recovered));
+            assert(::fixy::recipe_family_of(live_spec) == ::fixy::recipe_family_of(recovered));
 
             for (auto t : kTiers) {
                 for (auto f : kFamilies) {
-                    assert(live_spec.admits(t, f) == recovered.admits(t, f));
+                    assert(::fixy::admits(live_spec, t, f) == ::fixy::admits(recovered, t, f));
                 }
             }
         }
@@ -425,17 +427,17 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         static_assert(!std::is_copy_constructible_v<RecipeSpec<MoveOnlyT>>);
         static_assert(std::is_move_constructible_v<RecipeSpec<MoveOnlyT>>);
 
-        RecipeSpec<MoveOnlyT> a{MoveOnlyT{42}, safety_Tolerance::ULP_FP16, safety_RecipeFamily::Kahan};
-        RecipeSpec<MoveOnlyT> b{MoveOnlyT{99}, safety_Tolerance::BITEXACT, safety_RecipeFamily::Kahan};
+        RecipeSpec<MoveOnlyT> a{MoveOnlyT{42}, {Tolerance::ULP_FP16, RecipeFamily::Kahan}};
+        RecipeSpec<MoveOnlyT> b{MoveOnlyT{99}, {Tolerance::BITEXACT, RecipeFamily::Kahan}};
 
         // The join takes the maximum on each axis and keeps the left carrier.
-        auto joined = std::move(a).combine_max(b);
-        assert(joined.tolerance() == safety_Tolerance::BITEXACT);
-        assert(joined.recipe_family() == safety_RecipeFamily::Kahan);
+        auto joined = std::move(a).compose(b);
+        assert(::fixy::tolerance_of(joined) == Tolerance::BITEXACT);
+        assert(::fixy::recipe_family_of(joined) == RecipeFamily::Kahan);
         assert(joined.peek().v == 42);
 
-        assert(joined.admits(safety_Tolerance::ULP_FP8, safety_RecipeFamily::Kahan));
-        assert(!joined.admits(safety_Tolerance::ULP_FP16, safety_RecipeFamily::Pairwise));
+        assert(::fixy::admits(joined, Tolerance::ULP_FP8, RecipeFamily::Kahan));
+        assert(!::fixy::admits(joined, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
     }
 
     // The sentinels on the request side, rather than on the spec side. A None
@@ -444,10 +446,10 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     // nothing but itself, so only a wildcard spec admits it.
     {
         auto strict_spec = reg.by_name_spec(names::kF32Strict).value();
-        assert(strict_spec.recipe_family() == safety_RecipeFamily::Pairwise);
+        assert(::fixy::recipe_family_of(strict_spec) == RecipeFamily::Pairwise);
 
-        assert(strict_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::None));
-        assert(!strict_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::Any));
+        assert(::fixy::admits(strict_spec, Tolerance::BITEXACT, RecipeFamily::None));
+        assert(!::fixy::admits(strict_spec, Tolerance::BITEXACT, RecipeFamily::Any));
 
         int none_admits = 0;
         int any_rejects = 0;
@@ -455,22 +457,22 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
             auto spec = reg.by_name_spec(entry.name).value();
             // The spec's own tier is the tightest one it admits, so probing at that
             // tier isolates the family axis.
-            if (spec.admits(spec.tolerance(), safety_RecipeFamily::None)) ++none_admits;
-            if (!spec.admits(spec.tolerance(), safety_RecipeFamily::Any)) ++any_rejects;
+            if (::fixy::admits(spec, ::fixy::tolerance_of(spec), RecipeFamily::None)) ++none_admits;
+            if (!::fixy::admits(spec, ::fixy::tolerance_of(spec), RecipeFamily::Any)) ++any_rejects;
         }
         assert(none_admits == int{RecipeRegistry::STARTER_COUNT});
         assert(any_rejects == int{RecipeRegistry::STARTER_COUNT});
 
         // A wildcard spec admits both sentinel requests.
-        RecipeSpec<const NumericalRecipe*> wildcard_spec{nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::Any};
-        assert(wildcard_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::None));
-        assert(wildcard_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::Any));
+        RecipeSpec<const NumericalRecipe*> wildcard_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::Any}};
+        assert(::fixy::admits(wildcard_spec, Tolerance::BITEXACT, RecipeFamily::None));
+        assert(::fixy::admits(wildcard_spec, Tolerance::BITEXACT, RecipeFamily::Any));
 
         // A bottom spec admits only the bottom request. An Any request is above
         // it, and the ordering runs from request to spec, so it is rejected.
-        RecipeSpec<const NumericalRecipe*> none_spec{nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::None};
-        assert(none_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::None));
-        assert(!none_spec.admits(safety_Tolerance::BITEXACT, safety_RecipeFamily::Any));
+        RecipeSpec<const NumericalRecipe*> none_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::None}};
+        assert(::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::None));
+        assert(!::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::Any));
     }
 
     std::puts("ok");

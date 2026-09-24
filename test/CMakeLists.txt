@@ -9244,83 +9244,66 @@ crucible_neg_compile_test(neg_mem_order_acquire_at_release_fence
 crucible_neg_compile_test(neg_mem_order_relax_acquire_to_release
   "no matching function for call to .crucible::safety::MemOrder<crucible::algebra::lattices::MemOrderTag::Acquire, int>::relax<crucible::algebra::lattices::MemOrderTag::Release>")
 
-# ─── FOUND-G04 NumericalTier production-call-site neg-compile ──────
-#
-# Load-bearing rejection at the consumer-fence level: a RELAXED-tier
-# value (origin = ORDERED or UNORDERED recipe via tolerance_of() →
-# RELAXED mapping) cannot reach a BITEXACT-fence consumer (the CPU-
-# oracle / deterministic-replay / cross-vendor numerics CI pattern
-# that FOUND-G04 production sites flow into).  Captures the
-# "tolerance downgrade silently flowed into BITEXACT-tier consumer"
-# bug class — strongest possible rejection across the 7-tier lattice.
-crucible_neg_compile_test(neg_recipe_registry_relaxed_at_bitexact_fence
-  "constraints not satisfied|no matching function|associated constraints")
+# A NumericalTier below BITEXACT must not reach a consumer that requires
+# BITEXACT.  The three fixtures refuse a gap of six tiers (RELAXED), one
+# tier (ULP_FP64) and three tiers (ULP_FP16), so the refusal is
+# structural along the whole lattice.  The first regex names the tier of
+# the value, and the second names the gate of the consumer.
+crucible_neg_compile_multi_test(neg_recipe_registry_relaxed_at_bitexact_fence
+  "no matching function for call to .bitexact_fence_consumer\\(.*ToleranceLattice::At<foundation::algebra::lattices::Tolerance::RELAXED>, int>"
+  "requires +satisfies_v<W, foundation::algebra::lattices::Tolerance::BITEXACT>")
+crucible_neg_compile_multi_test(neg_recipe_registry_fp64_at_bitexact_fence
+  "no matching function for call to .bitexact_fence_consumer\\(.*ToleranceLattice::At<foundation::algebra::lattices::Tolerance::ULP_FP64>, int>"
+  "requires +satisfies_v<W, foundation::algebra::lattices::Tolerance::BITEXACT>")
+crucible_neg_compile_multi_test(neg_recipe_registry_fp16_at_bitexact_fence
+  "no matching function for call to .bitexact_fence_consumer\\(.*ToleranceLattice::At<foundation::algebra::lattices::Tolerance::ULP_FP16>, int>"
+  "requires +satisfies_v<W, foundation::algebra::lattices::Tolerance::BITEXACT>")
 
-# FOUND-G04-AUDIT companion fixtures — span the lattice rejection
-# surface across the 7-tier ToleranceLattice:
-#   - relaxed_at_bitexact_fence  (FOUND-G04 baseline) — 6-tier-gap (max)
-#   - fp64_at_bitexact_fence     (FOUND-G04-AUDIT)    — 1-tier-gap (adjacent)
-#   - fp16_at_bitexact_fence     (FOUND-G04-AUDIT)    — 3-tier-gap (mid;
-#                                                       matches starter
-#                                                       BITEXACT_TC + FP16
-#                                                       starter recipes)
-# Together: adjacent / mid-range / max gaps prove rejection is
-# structural across the entire lattice, not boundary-special-cased.
-crucible_neg_compile_test(neg_recipe_registry_fp64_at_bitexact_fence
-  "constraints not satisfied|no matching function|associated constraints")
-crucible_neg_compile_test(neg_recipe_registry_fp16_at_bitexact_fence
-  "constraints not satisfied|no matching function|associated constraints")
+# by_name_pinned takes a Tolerance.  A RecipeFamily enumerator in its
+# place must fail at the template parameter.  Admission on the two axes
+# uses by_name_spec and then fixy::admits.
+crucible_neg_compile_multi_test(neg_recipe_registry_pinned_with_family_template_arg
+  "no matching function for call to .crucible::RecipeRegistry::by_name_pinned<foundation::algebra::lattices::RecipeFamily::Kahan>"
+  "could not convert .foundation::algebra::lattices::RecipeFamily::Kahan. from .foundation::algebra::lattices::RecipeFamily. to .foundation::algebra::lattices::Tolerance.")
 
-# FOUND-G78 production-call-site fence — distinct axis-kind from
-# the regime-1 by_name_pinned<Tolerance T> overload.  A consumer
-# wanting two-axis admission (Tolerance × RecipeFamily) must use
-# `by_name_spec(name)` then `.admits(req_tier, req_family)`; reaching
-# for `by_name_pinned<RecipeFamily::Kahan>` is a substitution failure
-# at the template parameter.  Catches the canonical "wrong-API-for-
-# wrong-axis" bug class at the registry boundary.
-crucible_neg_compile_test(neg_recipe_registry_pinned_with_family_template_arg
-  "could not convert|cannot convert|no matching function|enum class|conversion from")
+# The RecipeSpec of by_name_spec and the NumericalTier of by_name_pinned
+# are different types.  The expected of one does not convert to the
+# expected of the other, in each direction.
+crucible_neg_compile_multi_test(neg_recipe_registry_spec_assigned_to_pinned_expected
+  "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::ToleranceLattice, foundation::algebra::lattices::RecipeFamilyLattice>"
+  "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>")
+crucible_neg_compile_multi_test(neg_recipe_registry_pinned_assigned_to_spec_expected
+  "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>"
+  "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::ToleranceLattice, foundation::algebra::lattices::RecipeFamilyLattice>")
 
-# FOUND-G78-AUDIT — symmetric misuse: correct two-axis API
-# (by_name_spec) called but result-type slot typed as the
-# regime-1 single-axis NumericalTier overload's return.
-# RecipeSpec<T> ≠ NumericalTier<T_static, T> structurally; the
-# std::expected<T, E> conversion is rejected.  Catches the
-# "copy-pasted a sibling call site's return type" refactor
-# footgun in Forge Phase E.RecipeSelect integration.
-crucible_neg_compile_test(neg_recipe_registry_spec_assigned_to_pinned_expected
-  "conversion from|could not convert|cannot convert|no viable conversion|non-scalar type")
+# The lookups of the registry are pure projections.  by_name, by_hash,
+# entries, the pinned lookups and the spec lookups each refuse a caller
+# row that is not empty.  The first regex names the lookup and the row,
+# and the second names the Subrow gate that refused the row.
+crucible_neg_compile_multi_test(neg_recipe_registry_by_name_io_row
+  "no matching function for call to .crucible::RecipeRegistry::by_name<foundation::effects::Row<foundation::effects::Effect::IO> >"
+  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO>\\]")
+crucible_neg_compile_multi_test(neg_recipe_registry_by_hash_init_row
+  "no matching function for call to .crucible::RecipeRegistry::by_hash<foundation::effects::Row<foundation::effects::Effect::Init> >"
+  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Init>\\]")
+crucible_neg_compile_multi_test(neg_recipe_registry_entries_bg_row
+  "no matching function for call to .crucible::RecipeRegistry::entries<foundation::effects::Row<foundation::effects::Effect::Bg> >"
+  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>\\]")
+crucible_neg_compile_multi_test(neg_recipe_registry_pinned_alloc_row
+  "no matching function for call to .crucible::RecipeRegistry::by_name_pinned<foundation::algebra::lattices::Tolerance::BITEXACT, foundation::effects::Row<foundation::effects::Effect::Alloc> >"
+  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>\\]")
+crucible_neg_compile_multi_test(neg_recipe_registry_spec_block_row
+  "no matching function for call to .crucible::RecipeRegistry::by_name_spec<foundation::effects::Row<foundation::effects::Effect::Block> >"
+  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Block>\\]")
 
-# FOUND-G78-AUDIT-2 — symmetric companion fence.  Where the
-# spec→pinned fence above catches the two-axis-call → one-axis-
-# slot drift, this catches the OTHER direction: single-axis
-# (by_name_pinned<>) called but result-type slot typed as the
-# two-axis (RecipeSpec) return.  Closes the cross-API result-type
-# bug class in BOTH directions.
-crucible_neg_compile_test(neg_recipe_registry_pinned_assigned_to_spec_expected
-  "conversion from|could not convert|cannot convert|no viable conversion|non-scalar type")
-
-# WRAP-RecipeReg-6 (#981) — registry lookup APIs are pure projections.
-# by_name/by_hash/entries, the NumericalTier-pinned lookups, and the
-# RecipeSpec lookups all reject non-empty caller rows.
-crucible_neg_compile_test(neg_recipe_registry_by_name_io_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_recipe_registry_by_hash_init_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_recipe_registry_entries_bg_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_recipe_registry_pinned_alloc_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_recipe_registry_spec_block_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-
-# WRAP-RecipeReg-3 — entries() span carries source::JsonRegistry
-# provenance. Raw spans and differently tagged spans must not reach a
-# registry-entry consumer without an explicit trusted unwrap.
-crucible_neg_compile_test(neg_recipe_registry_entries_raw_span
-  "could not convert|cannot convert|no viable conversion|conversion from")
-crucible_neg_compile_test(neg_recipe_registry_entries_cross_tag
-  "conversion from|could not convert|cannot convert|no viable conversion")
+# entries() gives a span tagged source::JsonRegistry.  A raw span and a
+# span with a different tag must not reach a consumer of the entries.
+crucible_neg_compile_multi_test(neg_recipe_registry_entries_raw_span
+  "could not convert .raw. from .std::span<const crucible::RecipeRegistry::Entry>. to .crucible::RecipeRegistry::Entries."
+  "fixy::Tagged<std::span<const crucible::RecipeRegistry::Entry>, fixy::tags::source::JsonRegistry>")
+crucible_neg_compile_multi_test(neg_recipe_registry_entries_cross_tag
+  "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
+  "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::JsonRegistry>. requested")
 
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #
@@ -9660,13 +9643,15 @@ crucible_neg_compile_multi_test(neg_recipe_pool_ctor_bg_only_row
   "constraints.*not satisfied"
   "Subrow<foundation::effects::Row<foundation::effects::Effect::Init>, CallerRow>. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>\\]")
 
-# WRAP-RecipeReg-5 (#980) — RecipeRegistry seeds from
-# BorrowedRef<RecipePool>. Raw RecipePool* and wrong-owner borrowed
-# references must fail at the constructor boundary.
-crucible_neg_compile_test(neg_recipe_registry_pool_raw_pointer
-  "no matching function|no known conversion|cannot convert")
-crucible_neg_compile_test(neg_recipe_registry_pool_wrong_borrow
-  "no matching function|no known conversion|cannot convert")
+# The RecipeRegistry constructor takes a minted BorrowedRef<RecipePool,
+# Brand>.  A raw RecipePool* and a borrow of a different type must fail
+# at the constructor.
+crucible_neg_compile_multi_test(neg_recipe_registry_pool_raw_pointer
+  "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
+  "mismatched types .fixy::BorrowedRef<crucible::RecipePool, Brand>. and .crucible::RecipePool\\*.")
+crucible_neg_compile_multi_test(neg_recipe_registry_pool_wrong_borrow
+  "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
+  "mismatched types .crucible::RecipePool. and .crucible::Arena.")
 
 # GAPS-174 — forge/recipes/Network.h network-kernel recipe constraints.
 #   * neg_network_recipe_strict_sharp: BITEXACT_STRICT cannot enter SHARP.

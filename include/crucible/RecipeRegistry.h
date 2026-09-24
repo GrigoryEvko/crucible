@@ -1,14 +1,16 @@
 #pragma once
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include <crucible/RecipePool.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>
-#include <crucible/fixy/Wrap.h>
+#include <fixy/Bands.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Brand.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
 #include <cstddef>
@@ -32,25 +34,25 @@ enum class RecipeError : uint8_t {
 // Each tier here is the strongest one that dtype's 1-ULP error budget can
 // sustain. A coarser budget must never be mapped into a per-dtype 1-ULP class,
 // because that is exactly what the admission gate downstream exists to reject.
-[[nodiscard, gnu::const]] constexpr fixy::wrap::Tolerance tolerance_for_dtype(ScalarType dtype) noexcept {
+[[nodiscard, gnu::const]] constexpr ::fixy::Tolerance tolerance_for_dtype(ScalarType dtype) noexcept {
     switch (dtype) {
         case ScalarType::Double:
-            return fixy::wrap::Tolerance::ULP_FP64;
+            return ::fixy::Tolerance::ULP_FP64;
         case ScalarType::Float:
-            return fixy::wrap::Tolerance::ULP_FP32;
+            return ::fixy::Tolerance::ULP_FP32;
         case ScalarType::Half:
-            return fixy::wrap::Tolerance::ULP_FP16;
+            return ::fixy::Tolerance::ULP_FP16;
         case ScalarType::BFloat16:
-            return fixy::wrap::Tolerance::ULP_FP16;
+            return ::fixy::Tolerance::ULP_FP16;
         case ScalarType::Float8_e4m3fn:
-            return fixy::wrap::Tolerance::ULP_FP8;
+            return ::fixy::Tolerance::ULP_FP8;
         case ScalarType::Float8_e5m2:
-            return fixy::wrap::Tolerance::ULP_FP8;
+            return ::fixy::Tolerance::ULP_FP8;
         case ScalarType::Char:
         case ScalarType::Byte:
-            return fixy::wrap::Tolerance::ULP_INT8;
+            return ::fixy::Tolerance::ULP_INT8;
         default:
-            return fixy::wrap::Tolerance::RELAXED;
+            return ::fixy::Tolerance::RELAXED;
     }
 }
 
@@ -60,10 +62,10 @@ enum class RecipeError : uint8_t {
 // promises the result depends on argument values alone with no memory access,
 // and claiming it here lets the optimiser treat a preceding write to one of
 // those fields as dead and read a value-initialised field instead.
-[[nodiscard, gnu::pure]] constexpr fixy::wrap::Tolerance tolerance_of(NumericalRecipe const& r) noexcept {
+[[nodiscard, gnu::pure]] constexpr ::fixy::Tolerance tolerance_of(NumericalRecipe const& r) noexcept {
     switch (r.determinism) {
         case ReductionDeterminism::BITEXACT_STRICT:
-            return fixy::wrap::Tolerance::BITEXACT;
+            return ::fixy::Tolerance::BITEXACT;
         case ReductionDeterminism::BITEXACT_TC:
             return tolerance_for_dtype(r.out_dtype);
         case ReductionDeterminism::ORDERED:
@@ -72,12 +74,12 @@ enum class RecipeError : uint8_t {
             // lattice means 1 ULP at that precision. Mapping ORDERED onto the
             // dtype's ULP class would let a 4-ULP recipe satisfy a consumer
             // that asked for 1 ULP, so both land at the lattice bottom.
-            return fixy::wrap::Tolerance::RELAXED;
+            return ::fixy::Tolerance::RELAXED;
         default:
             // Unreachable for the tiers above, and required by the build's
             // switch-default warning. A tier added later admits at the bottom
             // of the lattice until its tolerance class is mapped explicitly.
-            return fixy::wrap::Tolerance::RELAXED;
+            return ::fixy::Tolerance::RELAXED;
     }
 }
 
@@ -87,22 +89,22 @@ enum class RecipeError : uint8_t {
 // which always names one concrete algorithm.
 //
 // gnu::pure, not gnu::const, for the same reason as tolerance_of.
-[[nodiscard, gnu::pure]] constexpr fixy::wrap::RecipeFamily recipe_family_of(NumericalRecipe const& r) noexcept {
+[[nodiscard, gnu::pure]] constexpr ::fixy::RecipeFamily recipe_family_of(NumericalRecipe const& r) noexcept {
     switch (r.reduction_algo) {
         case ReductionAlgo::PAIRWISE:
-            return fixy::wrap::RecipeFamily::Pairwise;
+            return ::fixy::RecipeFamily::Pairwise;
         case ReductionAlgo::LINEAR:
-            return fixy::wrap::RecipeFamily::Linear;
+            return ::fixy::RecipeFamily::Linear;
         case ReductionAlgo::KAHAN:
-            return fixy::wrap::RecipeFamily::Kahan;
+            return ::fixy::RecipeFamily::Kahan;
         case ReductionAlgo::BLOCK_STABLE:
-            return fixy::wrap::RecipeFamily::BlockStable;
+            return ::fixy::RecipeFamily::BlockStable;
         default:
             // Unreachable for the algorithms above, and required by the
             // build's switch-default warning. An algorithm added later lands
             // at the lattice bottom, which subsumes nothing, so any specific
             // family request is refused until the mapping is written.
-            return fixy::wrap::RecipeFamily::None;
+            return ::fixy::RecipeFamily::None;
     }
 }
 
@@ -110,10 +112,10 @@ enum class RecipeError : uint8_t {
 // lookups race only against each other and need no synchronisation.
 class CRUCIBLE_OWNER RecipeRegistry {
 public:
-    using PoolBorrow = fixy::wrap::BorrowedRef<RecipePool>;
-    using pure_projection_row = effects::Row<>;
+    using PoolBorrow = ::fixy::BorrowedRef<RecipePool>;
+    using pure_projection_row = ::foundation::effects::Row<>;
 
-    static_assert(fixy::wrap::IsBorrowedRef<PoolBorrow>);
+    static_assert(::fixy::IsBorrowedRef<PoolBorrow>);
 
     // The name points into read-only storage and the recipe into the pool's
     // arena, so neither is owned here and both outlive the registry.
@@ -122,14 +124,22 @@ public:
         const NumericalRecipe* recipe = nullptr;
     };
 
-    using Entries = fixy::wrap::Tagged<std::span<const Entry>, fixy::tags::source::JsonRegistry>;
+    using Entries = ::fixy::Tagged<std::span<const Entry>, ::fixy::tags::source::JsonRegistry>;
 
     static constexpr std::size_t STARTER_COUNT = 8;
 
     // The pool stays owned by the caller and must outlive the registry: after
     // construction the registry holds only non-owning pointers into it, and
     // never mutates or destroys it.
-    [[gnu::cold]] explicit RecipeRegistry(PoolBorrow pool, ::foundation::effects::Alloc a) noexcept;
+    //
+    // The pool comes through ::fixy::mint_borrowed_ref, and the constructor
+    // refuses a borrow that names no brand.  Each mint site is a new brand,
+    // so this constructor only forwards to the one body below.
+    template <typename Brand>
+        requires ::foundation::brand::IsFreshBrand<Brand>
+    [[gnu::cold]] explicit RecipeRegistry(::fixy::BorrowedRef<RecipePool, Brand> pool,
+                                          ::foundation::effects::Alloc a) noexcept
+        : RecipeRegistry{erased_door_{}, PoolBorrow{pool}, a} {}
 
     RecipeRegistry(const RecipeRegistry&) =
         delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");
@@ -141,7 +151,7 @@ public:
     // Comparison is exact and case-sensitive. The whole table fits in a couple
     // of cache lines, so a linear scan beats hashing the name.
     template <typename CallerRow = pure_projection_row>
-        requires effects::Subrow<CallerRow, pure_projection_row>
+        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
     [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
     by_name(std::string_view name) const noexcept;
 
@@ -150,15 +160,16 @@ public:
     // replays the run under different numerics. The miss has to abort the load
     // and say which recipe could not be resolved.
     template <typename CallerRow = pure_projection_row>
-        requires effects::Subrow<CallerRow, pure_projection_row>
+        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
     [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError> by_hash(RecipeHash hash) const noexcept;
 
     // Order matches the starter table's declaration order and is stable for
     // the lifetime of the registry.
     template <typename CallerRow = pure_projection_row>
-        requires effects::Subrow<CallerRow, pure_projection_row>
+        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
     [[nodiscard, gnu::pure]] Entries entries() const noexcept CRUCIBLE_LIFETIMEBOUND {
-        return Entries{std::span<const Entry>{entries_.data(), STARTER_COUNT}};
+        return ::fixy::mint_tagged<::fixy::tags::source::JsonRegistry>(
+            std::span<const Entry>{entries_.data(), STARTER_COUNT});
     }
 
     [[nodiscard, gnu::const]] static constexpr std::size_t size() noexcept { return STARTER_COUNT; }
@@ -173,32 +184,32 @@ public:
     // bottom always succeeds. A failure to resolve the name or hash is
     // reported ahead of any tier mismatch.
 
-    template <fixy::wrap::Tolerance T, typename CallerRow = pure_projection_row>
-        requires effects::Subrow<CallerRow, pure_projection_row>
+    template <::fixy::Tolerance T, typename CallerRow = pure_projection_row>
+        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
     [[nodiscard, gnu::pure]]
-    std::expected<fixy::wrap::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+    std::expected<::fixy::NumericalTier<T, const NumericalRecipe*>, RecipeError>
     by_name_pinned(std::string_view name) const noexcept {
         auto base = by_name<CallerRow>(name);
         if (!base) return std::unexpected(base.error());
         const NumericalRecipe* recipe = *base;
-        if (!fixy::wrap::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+        if (!::fixy::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
             return std::unexpected(RecipeError::ToleranceMismatch);
         }
-        return fixy::wrap::NumericalTier<T, const NumericalRecipe*>{recipe};
+        return ::fixy::NumericalTier<T, const NumericalRecipe*>{recipe, {}};
     }
 
-    template <fixy::wrap::Tolerance T, typename CallerRow = pure_projection_row>
-        requires effects::Subrow<CallerRow, pure_projection_row>
+    template <::fixy::Tolerance T, typename CallerRow = pure_projection_row>
+        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
     [[nodiscard, gnu::pure]]
-    std::expected<fixy::wrap::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+    std::expected<::fixy::NumericalTier<T, const NumericalRecipe*>, RecipeError>
     by_hash_pinned(RecipeHash hash) const noexcept {
         auto base = by_hash<CallerRow>(hash);
         if (!base) return std::unexpected(base.error());
         const NumericalRecipe* recipe = *base;
-        if (!fixy::wrap::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+        if (!::fixy::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
             return std::unexpected(RecipeError::ToleranceMismatch);
         }
-        return fixy::wrap::NumericalTier<T, const NumericalRecipe*>{recipe};
+        return ::fixy::NumericalTier<T, const NumericalRecipe*>{recipe, {}};
     }
 
     // Lookups that carry both axes as runtime state instead of pinning one in
@@ -208,28 +219,34 @@ public:
     // a specific one gets the wrong answer with no numerical warning.
 
     template <typename CallerRow = pure_projection_row>
-        requires effects::Subrow<CallerRow, pure_projection_row>
+        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
     [[nodiscard, gnu::pure]]
-    std::expected<fixy::wrap::RecipeSpec<const NumericalRecipe*>, RecipeError>
+    std::expected<::fixy::RecipeSpec<const NumericalRecipe*>, RecipeError>
     by_name_spec(std::string_view name) const noexcept {
         auto base = by_name<CallerRow>(name);
         if (!base) return std::unexpected(base.error());
         const NumericalRecipe* recipe = *base;
-        return fixy::wrap::RecipeSpec<const NumericalRecipe*>{recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
+        return ::fixy::RecipeSpec<const NumericalRecipe*>{recipe, {tolerance_of(*recipe), recipe_family_of(*recipe)}};
     }
 
     template <typename CallerRow = pure_projection_row>
-        requires effects::Subrow<CallerRow, pure_projection_row>
+        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
     [[nodiscard, gnu::pure]]
-    std::expected<fixy::wrap::RecipeSpec<const NumericalRecipe*>, RecipeError>
+    std::expected<::fixy::RecipeSpec<const NumericalRecipe*>, RecipeError>
     by_hash_spec(RecipeHash hash) const noexcept {
         auto base = by_hash<CallerRow>(hash);
         if (!base) return std::unexpected(base.error());
         const NumericalRecipe* recipe = *base;
-        return fixy::wrap::RecipeSpec<const NumericalRecipe*>{recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
+        return ::fixy::RecipeSpec<const NumericalRecipe*>{recipe, {tolerance_of(*recipe), recipe_family_of(*recipe)}};
     }
 
 private:
+    // Only the public constructor names this tag, so no caller reaches the
+    // erased borrow below.
+    struct erased_door_ {};
+
+    [[gnu::cold]] RecipeRegistry(erased_door_, PoolBorrow pool, ::foundation::effects::Alloc a) noexcept;
+
     std::array<Entry, STARTER_COUNT> entries_{};
 };
 
@@ -354,7 +371,7 @@ inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarter
 
 }  // namespace detail_recipe_registry
 
-inline RecipeRegistry::RecipeRegistry(PoolBorrow pool, ::foundation::effects::Alloc a) noexcept {
+inline RecipeRegistry::RecipeRegistry(erased_door_, PoolBorrow pool, ::foundation::effects::Alloc a) noexcept {
     for (std::size_t i = 0; i < STARTER_COUNT; ++i) {
         const auto& spec = detail_recipe_registry::kStarterRecipes[i];
         entries_[i].name = spec.name;
@@ -363,7 +380,7 @@ inline RecipeRegistry::RecipeRegistry(PoolBorrow pool, ::foundation::effects::Al
 }
 
 template <typename CallerRow>
-    requires effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
+    requires ::foundation::effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
 inline std::expected<const NumericalRecipe*, RecipeError>
 RecipeRegistry::by_name(std::string_view name) const noexcept {
     for (const auto& e : entries_) {
@@ -375,7 +392,7 @@ RecipeRegistry::by_name(std::string_view name) const noexcept {
 }
 
 template <typename CallerRow>
-    requires effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
+    requires ::foundation::effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
 inline std::expected<const NumericalRecipe*, RecipeError> RecipeRegistry::by_hash(RecipeHash hash) const noexcept {
     // Comparing the stored hash is the identity the caller means, because
     // interning is what wrote it and it is authoritative from then on.

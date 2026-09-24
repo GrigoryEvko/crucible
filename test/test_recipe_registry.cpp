@@ -12,12 +12,14 @@
 // hash it produces are both pinned below.
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include "test_assert.h"
 #include <cinttypes>
@@ -26,6 +28,7 @@
 #include <string_view>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 
 namespace {
 
@@ -43,10 +46,15 @@ using crucible::SoftmaxRecurrence;
 
 namespace names = crucible::recipe_names;
 
-auto g_test = ::foundation::effects::testing::test();
-auto g_init = ::foundation::effects::testing::init();
-inline ::foundation::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
-inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
+namespace eff = ::foundation::effects;
+
+auto g_test = eff::testing::test();
+auto g_init = eff::testing::init();
+inline eff::Alloc alloc_cap() noexcept { return g_test.alloc; }
+inline eff::Init init_cap() noexcept { return g_init; }
+
+// The borrow that the mint door gives.
+using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipePool&>()));
 
 [[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries().value(); }
 
@@ -63,18 +71,19 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
         static_assert(RecipeRegistry::STARTER_COUNT == 8);
         static_assert(RecipeRegistry::size() == 8);
-        static_assert(std::is_same_v<RecipeRegistry::PoolBorrow, crucible::safety::BorrowedRef<RecipePool>>);
+        static_assert(std::is_same_v<RecipeRegistry::PoolBorrow, ::fixy::BorrowedRef<RecipePool>>);
         static_assert(sizeof(RecipeRegistry::PoolBorrow) == sizeof(RecipePool*));
-        static_assert(
-            std::is_same_v<RecipeRegistry::Entries, crucible::safety::Tagged<std::span<const RecipeRegistry::Entry>,
-                                                                             crucible::safety::source::JsonRegistry>>);
+        static_assert(std::is_constructible_v<RecipeRegistry, MintedPoolBorrow, eff::Alloc>,
+                      "RecipeRegistry takes the borrow that mint_borrowed_ref gives");
+        static_assert(!std::is_constructible_v<RecipeRegistry, RecipeRegistry::PoolBorrow, eff::Alloc>,
+                      "RecipeRegistry refuses a borrow that names no brand");
+        static_assert(std::is_same_v<RecipeRegistry::Entries, ::fixy::Tagged<std::span<const RecipeRegistry::Entry>,
+                                                                             ::fixy::tags::source::JsonRegistry>>);
         static_assert(sizeof(RecipeRegistry::Entries) == sizeof(std::span<const RecipeRegistry::Entry>));
         static_assert(!std::is_convertible_v<std::span<const RecipeRegistry::Entry>, RecipeRegistry::Entries>);
-        static_assert(crucible::effects::Subrow<RecipeRegistry::pure_projection_row, crucible::effects::Row<>>);
-        static_assert(!crucible::effects::Subrow<crucible::effects::Row<crucible::effects::Effect::IO>,
-                                                 RecipeRegistry::pure_projection_row>);
-        static_assert(!crucible::effects::Subrow<crucible::effects::Row<crucible::effects::Effect::Init>,
-                                                 RecipeRegistry::pure_projection_row>);
+        static_assert(eff::Subrow<RecipeRegistry::pure_projection_row, eff::Row<>>);
+        static_assert(!eff::Subrow<eff::Row<eff::Effect::IO>, RecipeRegistry::pure_projection_row>);
+        static_assert(!eff::Subrow<eff::Row<eff::Effect::Init>, RecipeRegistry::pure_projection_row>);
 
         static_assert(crucible::detail_recipe_registry::kStarterRecipes.size() == RecipeRegistry::STARTER_COUNT);
     }
@@ -82,7 +91,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         assert(entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
         assert(pool.size() == RecipeRegistry::STARTER_COUNT);
@@ -100,7 +109,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         std::unordered_set<const NumericalRecipe*> entry_ptrs;
         for (const auto& e : entries_view(reg)) {
@@ -139,7 +148,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         const std::string_view missing[] = {
             "F32_STRICT",  // wrong case
@@ -166,7 +175,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         {
             auto r = reg.by_name(names::kF32Strict);
@@ -233,7 +242,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         std::unordered_set<std::string_view> seen;
         for (const auto& e : entries_view(reg)) {
@@ -249,7 +258,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         std::unordered_set<const NumericalRecipe*> ptrs;
         std::unordered_set<uint64_t> hashes;
@@ -275,7 +284,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         struct Golden {
             std::string_view name;
@@ -318,7 +327,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         for (const auto& spec : crucible::detail_recipe_registry::kStarterRecipes) {
             // Re-intern the starter spec's fields → must hit the canonical
@@ -337,7 +346,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         Arena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
-        RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
+        RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         for (const auto& entry : entries_view(reg)) {
             auto via_hash = reg.by_hash(entry.recipe->hash);
@@ -380,8 +389,8 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         Arena arena_b{};
         RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
         RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
-        RecipeRegistry reg_a{RecipeRegistry::PoolBorrow{pool_a}, alloc_cap()};
-        RecipeRegistry reg_b{RecipeRegistry::PoolBorrow{pool_b}, alloc_cap()};
+        RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
+        RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
 
         auto a = reg_a.by_name(names::kF16F32AccumTc);
         auto b = reg_b.by_name(names::kF16F32AccumTc);
