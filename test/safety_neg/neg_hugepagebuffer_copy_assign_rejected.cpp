@@ -45,7 +45,7 @@
 // HugePageBuffer (paired with neg_swisstablebuffer_copy_rejected
 // for SwissTableBuffer).
 
-#include <crucible/safety/HugePageBuffer.h>
+#include <crucible/safety/_HugePageBuffer.h>
 
 #include <cstdint>
 

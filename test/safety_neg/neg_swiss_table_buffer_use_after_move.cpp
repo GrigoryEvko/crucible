@@ -8,7 +8,7 @@
 // the deleted-copy-ctor fixture by exercising the assignment-operator
 // side of the move-only-RAII gate.
 
-#include <crucible/safety/SwissTableBuffer.h>
+#include <crucible/safety/_SwissTableBuffer.h>
 
 int main() {
     auto a = crucible::safety::SwissTableBuffer<void*>::allocate(64);

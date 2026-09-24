@@ -37,7 +37,7 @@
 // neg-compile coverage before this ship; closes its slice of #146
 // A8-P2 alongside U-153 + U-156).
 
-#include <crucible/safety/AlignedBuffer.h>
+#include <crucible/safety/_AlignedBuffer.h>
 
 #include <cstdint>
 

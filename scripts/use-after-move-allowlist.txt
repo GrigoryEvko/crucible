@@ -105,3 +105,10 @@ test/test_warden_policy.cpp:test_revert_clears_observers:rhs
 # Probe: a share guard moved out of an optional holds no share, and
 # with_read_view must abort when it is lent.
 test/foundation/test_read_view_lend_needs_a_share.cpp:lend_a_guard_that_gave_its_share_away:*lent
+
+# Probe: a moved-from buffer is empty and owns no storage, and a move
+# assignment hands the storage on to its target.
+test/foundation/test_aligned_buffer.cpp:move_hands_the_storage_on:first
+test/foundation/test_aligned_buffer.cpp:move_hands_the_storage_on:second
+test/foundation/test_swiss_table_buffer.cpp:move_hands_the_block_on:first
+test/foundation/test_swiss_table_buffer.cpp:move_hands_the_block_on:second

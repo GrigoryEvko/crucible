@@ -412,3 +412,9 @@ crucible/safety/_ClockSource.h:mint_clock_source  — Removed, not ported, for t
 # runtime check in a public namespace, moved to a registered test.
 crucible/safety/_PipelineStage.h:pipeline_stage_smoke_test  — An inline smoke test in a public namespace; its body moved to test/fixy/test_stage_shape.cpp, which adds a real channel-handle cell the old fakes could not state.
 crucible/safety/_SignatureTraits.h:signature_traits_smoke_test  — An inline smoke test in a public namespace; its body moved to test/foundation/test_signature.cpp, which checks each result rather than returning a bool no caller consumed.
+#
+# The huge-page buffer was the aligned buffer at one alignment, so it folds
+# into foundation::AlignedBuffer<T, huge_page_bytes>, and its abort path
+# into the one abort of that buffer.
+crucible/safety/_HugePageBuffer.h:HugePageBuffer  → include/foundation/AlignedBuffer.h  — Folded into AlignedBuffer<T, huge_page_bytes>, which rounds to the same page, keeps the same abort, and starts each element's lifetime where the old buffer cast raw storage.
+crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → include/foundation/AlignedBuffer.h  — Folded into detail::aligned_allocation_failed_abort_, which prints the HugePageAllocationFailed diagnostic at huge-page alignment.

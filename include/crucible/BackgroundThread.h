@@ -29,6 +29,7 @@
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/TraceGraph.h>
+#include <foundation/AlignedBuffer.h>
 #include <foundation/Lifetime.h>
 
 namespace crucible {
@@ -960,9 +961,9 @@ private:
         SlotId old_slot;
     };
 
-    ::crucible::fixy::handle::AlignedBuffer<PtrSlot> scratch_map_;
-    ::crucible::fixy::handle::AlignedBuffer<SlotInfo> scratch_slots_;
-    ::crucible::fixy::handle::AlignedBuffer<Edge> scratch_edges_;
+    ::foundation::AlignedBuffer<PtrSlot> scratch_map_;
+    ::foundation::AlignedBuffer<SlotInfo> scratch_slots_;
+    ::foundation::AlignedBuffer<Edge> scratch_edges_;
     uint8_t map_gen_ = 0;
 
     // Zero means not yet allocated.  ptr_mask_ is a derived view of map_cap_
@@ -991,19 +992,19 @@ private:
         if (needed_map > map_cap_.get()) {
             map_cap_.advance(needed_map);
             ptr_mask_ = map_cap_.get() - 1;
-            scratch_map_ = ::crucible::fixy::handle::AlignedBuffer<PtrSlot>::allocate_zeroed(map_cap_.get());
+            scratch_map_ = ::foundation::AlignedBuffer<PtrSlot>::allocate_value_initialized(map_cap_.get());
             // The fresh buffer is zeroed, so generation zero is unused.
             map_gen_ = 0;
         }
 
         if (needed_slots > slot_cap_max_.get()) {
             slot_cap_max_.advance(needed_slots);
-            scratch_slots_ = ::crucible::fixy::handle::AlignedBuffer<SlotInfo>::allocate_zeroed(slot_cap_max_.get());
+            scratch_slots_ = ::foundation::AlignedBuffer<SlotInfo>::allocate_value_initialized(slot_cap_max_.get());
         }
 
         if (needed_edges > edge_cap_max_.get()) {
             edge_cap_max_.advance(needed_edges);
-            scratch_edges_ = ::crucible::fixy::handle::AlignedBuffer<Edge>::allocate_zeroed(edge_cap_max_.get());
+            scratch_edges_ = ::foundation::AlignedBuffer<Edge>::allocate_value_initialized(edge_cap_max_.get());
         }
     }
 

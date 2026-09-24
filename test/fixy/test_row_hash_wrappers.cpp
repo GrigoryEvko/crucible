@@ -107,6 +107,7 @@
 #include <fixy/Tags.h>
 #include <fixy/Throws.h>
 #include <fixy/Witnessed.h>
+#include <foundation/AlignedBuffer.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/Lattice.h>
@@ -175,6 +176,7 @@
 #include <foundation/reflect/Signature.h>
 #include <foundation/Saturate.h>
 #include <foundation/Simd.h>
+#include <foundation/SwissTableBuffer.h>
 
 #include <array>
 #include <cstddef>
@@ -885,6 +887,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::ChannelBinding, "a handle's binding to its channel: a member of a handle, never a kernel signature argument"},
     {^^::foundation::simd::vec, kPayload},
     {^^::foundation::simd::mask, kPayload},
+    {^^::foundation::AlignedBuffer, "an owned allocation of elements: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::SwissTableBuffer, "the one allocation of an open-addressing table: it holds storage and makes no claim about the slots"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},

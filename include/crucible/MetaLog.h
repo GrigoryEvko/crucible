@@ -14,7 +14,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
 
 #include <crucible/Platform.h>
 #include <crucible/MerkleDag.h>
@@ -23,18 +22,17 @@
 #include <crucible/warden/Registry.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_HotPath.h>
-#include <crucible/safety/HugePageBuffer.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_Stale.h>
+#include <foundation/AlignedBuffer.h>
 
 namespace crucible::fixy::wrap {
 using ::crucible::safety::AtomicMonotonic;
 using ::crucible::safety::bounded_above;
 using ::crucible::safety::HotPath;
 using ::crucible::safety::HotPathTier_v;
-using ::crucible::safety::HugePageBuffer;
 using ::crucible::safety::Monotonic;
 using ::crucible::safety::Refined;
 using ::crucible::safety::Stale;
@@ -76,7 +74,7 @@ struct CRUCIBLE_OWNER MetaLog {
     // free space, so acting on it is safe. The type enforces the direction,
     // since a value that moved backwards would mean a lost acquire.
     crucible::fixy::wrap::Monotonic<uint32_t> cached_tail_{0};
-    crucible::fixy::wrap::HugePageBuffer<TensorMeta> entries_buffer_;
+    ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes> entries_buffer_;
     // A cached projection of the buffer's base, so an indexed access on the
     // hot path stays one load with no indirection through the owner.
     TensorMeta* entries = nullptr;
@@ -84,10 +82,11 @@ struct CRUCIBLE_OWNER MetaLog {
     alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint32_t> tail{0};
 
     MetaLog()
-        : entries_buffer_{crucible::fixy::wrap::HugePageBuffer<TensorMeta>::allocate(CAPACITY)},
+        : entries_buffer_{::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes>::
+                              allocate_value_initialized(CAPACITY)},
           entries{entries_buffer_.data()} {
-        // Fault the whole buffer in here rather than one page at a time
-        // under the recording thread.
+        // The allocation faults the whole buffer in here rather than one page
+        // at a time under the recording thread.
         //
         // TensorMeta is 168 bytes and CAPACITY is 1<<20, so this is
         // 176,160,768 bytes, or 43,008 pages of 4 KiB. Left untouched, every
@@ -109,17 +108,12 @@ struct CRUCIBLE_OWNER MetaLog {
         // Measured end to end: constructing a Vigil, which builds one of
         // these, goes from 0.9 ms to 37.8 ms.
         //
-        // Value-construction rather than a memset over the bytes. TensorMeta
-        // is trivially copyable, which is what lets try_append memcpy into
-        // it, but it carries member initializers and so is not trivially
-        // default-constructible; memset on it is what -Wclass-memaccess
-        // exists to reject. This form says the same thing to the optimizer,
-        // which lowers an all-zero initializer to the same stores, and it
-        // additionally begins the lifetime of every slot instead of leaving
-        // the buffer as raw storage.
-        if (entries != nullptr) {
-            std::uninitialized_value_construct_n(entries, CAPACITY);
-        }
+        // Value initialization, not a memset over the bytes. TensorMeta is
+        // trivially copyable, which is what lets try_append memcpy into it,
+        // but it carries member initializers and so is not trivially
+        // default-constructible. A memset on it is what -Wclass-memaccess
+        // exists to reject. The optimizer lowers an all-zero initializer to
+        // the same stores.
 
         // Registering the region records it in a process-wide table. It
         // issues no system call, so despite the flag below nothing here
@@ -127,8 +121,8 @@ struct CRUCIBLE_OWNER MetaLog {
         // transparent_hugepage=madvise — the common setting, and this
         // one — the buffer gets 4 KiB pages: measured AnonHugePages is 0 kB
         // and THPeligible is 0, so khugepaged will not collapse it later
-        // either. The 2 MiB alignment HugePageBuffer provides is necessary
-        // for the advice and not sufficient on its own.
+        // either. The huge-page alignment of the buffer is necessary for the
+        // advice and not sufficient on its own.
         //
         // The advice itself lives in warden::Hardening::hint_hugepage, which
         // only a benchmark that opts into a hardening policy ever reaches.

@@ -14,7 +14,7 @@
 //   * This fixture: COPY-side gate (deleted copy ctor with reason).
 //   * Companion:    MOVE-side gate (use-after-move under -Werror).
 
-#include <crucible/safety/SwissTableBuffer.h>
+#include <crucible/safety/_SwissTableBuffer.h>
 
 int main() {
     auto buf = crucible::safety::SwissTableBuffer<void*>::allocate(64);

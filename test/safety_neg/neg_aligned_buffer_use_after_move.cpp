@@ -14,7 +14,7 @@
 //   * Companion:    COPY-CTOR-side gate (initialization).
 //   * This fixture: COPY-ASSIGN-side gate (assignment).
 
-#include <crucible/safety/AlignedBuffer.h>
+#include <crucible/safety/_AlignedBuffer.h>
 
 int main() {
     auto a = crucible::safety::AlignedBuffer<int>::allocate(64);

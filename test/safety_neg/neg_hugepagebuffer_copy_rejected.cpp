@@ -45,7 +45,7 @@
 // (closes their slice of #146 A8-P2; both wrappers had zero
 // fixtures before this ship).
 
-#include <crucible/safety/HugePageBuffer.h>
+#include <crucible/safety/_HugePageBuffer.h>
 
 #include <cstdint>
 

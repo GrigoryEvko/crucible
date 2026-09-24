@@ -13,7 +13,7 @@
 //   * This fixture: COPY-side gate (deleted copy ctor with reason).
 //   * Companion:    MOVE-side gate (use-after-move via -Werror=use-after-move).
 
-#include <crucible/safety/AlignedBuffer.h>
+#include <crucible/safety/_AlignedBuffer.h>
 
 int main() {
     auto buf = crucible::safety::AlignedBuffer<int>::allocate(64);

@@ -50,7 +50,7 @@
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Stale.h>
-#include <crucible/safety/SwissTableBuffer.h>
+#include <crucible/safety/_SwissTableBuffer.h>
 #include <crucible/safety/SwmrReader.h>
 #include <crucible/safety/SwmrWriter.h>
 #include <crucible/safety/_SignatureTraits.h>

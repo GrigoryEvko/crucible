@@ -42,7 +42,7 @@
 // FIXY-U-153 — second of the HugePageBuffer / SwissTableBuffer pair
 // (closes their slice of #146 A8-P2).
 
-#include <crucible/safety/SwissTableBuffer.h>
+#include <crucible/safety/_SwissTableBuffer.h>
 
 #include <cstdint>
 

@@ -8,7 +8,7 @@
 // deleted-copy-ctor fixture by exercising the assignment-operator
 // side of the move-only-RAII gate.
 
-#include <crucible/safety/HugePageBuffer.h>
+#include <crucible/safety/_HugePageBuffer.h>
 
 int main() {
     auto a = crucible::safety::HugePageBuffer<int>::allocate(1024);

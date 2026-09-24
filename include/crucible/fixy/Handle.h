@@ -9,9 +9,9 @@
 #include <crucible/handles/_Once.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/handles/PublishOnce.h>
-#include <crucible/safety/AlignedBuffer.h>
+#include <crucible/safety/_AlignedBuffer.h>
 #include <crucible/safety/EpochVersioned.h>
-#include <crucible/safety/HugePageBuffer.h>
+#include <crucible/safety/_HugePageBuffer.h>
 #include <crucible/safety/_OwnedFile.h>
 #include <crucible/safety/PublishCommit.h>
 

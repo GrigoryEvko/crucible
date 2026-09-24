@@ -1245,49 +1245,37 @@ struct SharedPermissionPoolSaturated : tag_base {
 
 struct HugePageAllocationFailed : tag_base {
     static constexpr std::string_view name = "HugePageAllocationFailed";
-    static constexpr std::string_view description = "safety::HugePageBuffer<T>::allocate(count) observed a null "
-                                                    "return from std::aligned_alloc(huge_page_bytes, "
-                                                    "round_up_huge(count * sizeof(T))).  The kernel could not "
-                                                    "satisfy a 2-MB-aligned heap allocation — typical causes are "
-                                                    "(a) the transparent-hugepage pool is depleted (nr_hugepages "
-                                                    "exhausted under sustained hot-region pressure), (b) the "
-                                                    "process address space is fragmented enough that no aligned "
-                                                    "extent of the requested size exists, or (c) RLIMIT_AS / "
-                                                    "cgroup memory.max has been hit.  Reaching this site is "
-                                                    "fatal for the SPSC buffers (TraceRing / MetaLog) that back "
-                                                    "Crucible's foreground recording pipeline — bootstrap cannot "
-                                                    "complete without them.";
-    static constexpr std::string_view remediation = "Audit /proc/sys/vm/nr_hugepages and /proc/meminfo:HugePages_Free "
-                                                    "on the host.  Raise the reservation if persistent demand "
-                                                    "exceeds the kernel's current pool, or fall back to the "
-                                                    "non-hugepage allocation path at a higher boundary.  For "
-                                                    "containerized workloads verify that memory.max admits the "
-                                                    "requested allocation AND that the hugepage cgroup controller "
-                                                    "(if enabled) does not zero the per-cgroup reservation.  At "
-                                                    "the architectural level: callers that can tolerate small "
-                                                    "pages with TLB pressure should consume HugePageBuffer via "
-                                                    "try_allocate (returning std::expected) — this abort path is "
-                                                    "reserved for the foundational SPSC backings that genuinely "
-                                                    "cannot proceed without a 2-MB-aligned region.";
+    static constexpr std::string_view description = "foundation::AlignedBuffer<T, huge_page_bytes>::allocate(count) "
+                                                    "received a null pointer from std::aligned_alloc(huge_page_bytes, "
+                                                    "bytes), where bytes is count * sizeof(T) rounded up to the "
+                                                    "huge-page size.  The heap could not supply an extent of that "
+                                                    "size at 2 MiB alignment.  The usual causes are an address space "
+                                                    "too fragmented to hold such an extent, and a memory limit "
+                                                    "(RLIMIT_AS or the memory.max of the cgroup) that the request "
+                                                    "is more than.  The metadata log of the recording path lives in "
+                                                    "this buffer, so the runtime cannot start without it.";
+    static constexpr std::string_view remediation = "Examine the memory limits of the process: ulimit -v, and the "
+                                                    "memory.max of its cgroup.  Increase the limit that the request "
+                                                    "is more than, or decrease the capacity of the buffer.  The "
+                                                    "alignment does not ask the kernel for huge pages, so the "
+                                                    "huge-page pool (/proc/sys/vm/nr_hugepages) has no effect on "
+                                                    "this failure.";
 
     static constexpr Severity severity = Severity::Fatal;
-    static constexpr std::string_view why_this_matters = "Crucible's SPSC backings (TraceRing, MetaLog) require "
-                                                         "2-MB-aligned regions for TLB efficiency — every page miss on "
-                                                         "the recording hot path is amortized across 512 small pages.  "
-                                                         "std::aligned_alloc(2 MB, n) returns nullptr when the kernel "
-                                                         "cannot satisfy a 2-MB-aligned extent: depleted "
-                                                         "/proc/sys/vm/nr_hugepages, fragmented address space, or "
-                                                         "RLIMIT_AS / cgroup memory.max exhaustion.  Bootstrap cannot "
-                                                         "complete without these buffers — recording is structural to "
-                                                         "the runtime, not an optional optimization.";
+    static constexpr std::string_view why_this_matters = "The metadata log of the recording path lives in this "
+                                                         "buffer.  The runtime cannot record without it, so a failed "
+                                                         "allocation stops the process while it starts.  The 2 MiB "
+                                                         "alignment is necessary for the kernel to back the region "
+                                                         "with huge pages, and it is not sufficient: the advice that "
+                                                         "asks for them is a separate step.";
     static constexpr std::string_view symptom_pattern =
-        "First-boot failure on a host where nr_hugepages was never "
-        "tuned, or a container where the hugepage cgroup controller "
-        "zeroed the per-cgroup reservation.  /proc/meminfo:HugePages_Free "
-        "shows 0 at the moment of failure.";
-    static constexpr std::string_view correct_example = "// Tune host: echo 256 > /proc/sys/vm/nr_hugepages then start";
+        "An abort while the first Vigil is constructed, on a host or in a "
+        "container whose memory limit is less than the capacity of the "
+        "metadata log.";
+    static constexpr std::string_view correct_example =
+        "// Increase memory.max of the container, or decrease the capacity of the log";
     static constexpr std::string_view violating_example =
-        "auto* ring = HugePageBuffer<T>::allocate(n);  // no host pool tune";
+        "auto log = AlignedBuffer<TensorMeta, huge_page_bytes>::allocate(1u << 20);  // memory.max is 128M";
 };
 
 struct PublishOnceDoublePublish : tag_base {

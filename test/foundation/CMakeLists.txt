@@ -827,3 +827,39 @@ foundation_neg_compile_test(neg_stable_id_refuses_an_address_inside_a_class_valu
 foundation_neg_compile_test(neg_stable_id_refuses_a_reflection_of_an_internal_entity
   "a stable id refuses the type"
   "has internal linkage")
+
+# ── The owned buffers ─────────────────────────────────────────────────
+#
+# A buffer starts the lifetime of its elements through the checked start
+# or by a value initialization, so a proof element is refused by each
+# route, and a copy, which would free one allocation twice, is deleted.
+# The second regex of each fixture is the constraint or the deletion as
+# the compiler spells it, which the fixture source does not contain.
+foundation_test(test_swiss_table_buffer)
+foundation_test(test_aligned_buffer)
+
+foundation_neg_compile_test(neg_swiss_table_buffer_proof_slot
+  "template constraint failure for .template<class SlotPtr>  requires  SwissTableSlot<SlotPtr> class foundation::SwissTableBuffer."
+  "required for the satisfaction of .ImplicitLifetimeThroughout<SlotPtr>. .with SlotPtr = <unnamed>::HoldsToken\\]")
+foundation_neg_compile_test(neg_swiss_table_buffer_overaligned_slot
+  "template constraint failure for .template<class SlotPtr>  requires  SwissTableSlot<SlotPtr> class foundation::SwissTableBuffer."
+  "the expression .alignof \\(SlotPtr\\) <= foundation::swiss_table_group_width \\[with SlotPtr = <unnamed>::WideSlot\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_swiss_table_buffer_copied
+  "use of deleted function .foundation::SwissTableBuffer<SlotPtr>::SwissTableBuffer\\(const foundation::SwissTableBuffer<SlotPtr>&\\) \\[with SlotPtr = const int\\*\\]."
+  "SwissTableBuffer is move-only")
+
+foundation_neg_compile_test(neg_aligned_buffer_proof_element
+  "no matching function for call to .foundation::AlignedBuffer<\\{anonymous\\}::HoldsToken>::allocate\\(int\\)."
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = <unnamed>::HoldsToken\\]")
+foundation_neg_compile_test(neg_aligned_buffer_value_initialized_proof
+  "no matching function for call to .foundation::AlignedBuffer<foundation::permissions::Permission<\\{anonymous\\}::Region> >::allocate_value_initialized\\(int\\)."
+  "the expression .is_nothrow_default_constructible_v<T> \\[with T = foundation::permissions::Permission<<unnamed>::Region, foundation::brand::DefaultBrand>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_aligned_buffer_alignment_not_a_power_of_two
+  "template constraint failure for .template<class T, long unsigned int Alignment>"
+  "the expression .has_single_bit\\(long unsigned int\\)\\(Alignment\\) \\[with Alignment = 24\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_aligned_buffer_alignment_below_the_element
+  "template constraint failure for .template<class T, long unsigned int Alignment>"
+  "the expression .Alignment >= alignof \\(T\\) \\[with Alignment = 4; T = double\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_aligned_buffer_copied
+  "use of deleted function .foundation::AlignedBuffer<T, Alignment>::AlignedBuffer\\(const foundation::AlignedBuffer<T, Alignment>&\\) \\[with T = int; long unsigned int Alignment = 4\\]."
+  "AlignedBuffer owns its storage alone and is move-only")

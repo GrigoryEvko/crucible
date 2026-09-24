@@ -5,7 +5,6 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/AlignedBuffer.h>
 #include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Pinned.h>
@@ -13,6 +12,7 @@
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/_Tagged.h>
+#include <foundation/AlignedBuffer.h>
 
 #include <array>
 #include <bit>
@@ -168,7 +168,7 @@ template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRi
 class AfXdpSocket : public safety::Pinned<AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>> {
 public:
     using byte_type = std::byte;
-    using umem_type = safety::AlignedBuffer<byte_type, 4096>;
+    using umem_type = ::foundation::AlignedBuffer<byte_type, 4096>;
     using linear_umem_type = safety::Linear<umem_type>;
     using packet_view = safety::Borrowed<byte_type, AfXdpSocket>;
 
