@@ -819,6 +819,58 @@ foundation_neg_compile_test(neg_permission_row_declared_twice
   "static assertion failed: permission_row: a tag declares its row twice"
   "\\(\\(!\\(bool\\)by_edge\\) \\|\\| \\(!\\(bool\\)by_member\\)\\). evaluates to false")
 
+# The public row alias refuses a tag with no row, rather than read as
+# void, and it refuses a member that names a type which is not a row.
+foundation_neg_compile_test(neg_permission_row_t_undeclared_tag
+  "static assertion failed: permission_row: no effect row is declared for this permission tag"
+  "permission_row_lookup<\\{anonymous\\}::Undeclared>"
+  "the comparison reduces to .\\(\\^\\^void != \\^\\^void\\).")
+foundation_neg_compile_test(neg_permission_row_not_a_row
+  "static assertion failed: permission_row: the row declared for this permission tag is not a foundation::effects::Row"
+  "permission_row_lookup<\\{anonymous\\}::RowIsAnInt>"
+  "IsInstanceOf<int, \\^\\^foundation::effects::Row>\\)?. evaluates to false")
+
+# ── The tag, the context and the token concepts ───────────────────────
+
+# A tag with a data member is a class, and the emptiness half of
+# PermissionTag is what refuses it.
+foundation_neg_compile_test(neg_permission_tag_not_empty
+  "static assertion failed: Permission<Tag>: Tag must be an empty non-union class type"
+  "is_empty_v<T> \\[with T = <unnamed>::Stateful\\]. evaluated to .false."
+  ".\\{anonymous\\}::Stateful. is not an empty class")
+
+# A class that declares a row_type is not an execution context, so it
+# cannot claim an effect for a root mint.
+foundation_neg_compile_test(neg_permission_root_ctx_forged
+  "constraints not satisfied"
+  "satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. \\[with Tag = <unnamed>::NeedsIo. Args = \\{<unnamed>::LooksLikeACtx\\}\\]")
+
+# IsPermission holds for an exclusive token only, and IsSharedPermission
+# for a shared token only.
+foundation_neg_compile_test(neg_permission_is_permission_refuses_plain
+  "no matching function for call to .takes_a_token\\(int\\)."
+  "is_permission_v<T> \\[with T = int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_permission_is_shared_permission_refuses_exclusive
+  "no matching function for call to .takes_a_shared_token"
+  "is_shared_permission_v<T> \\[with T = foundation::permissions::Permission<<unnamed>::Region, .*\\]. evaluated to .false.")
+
+# ── The fit of a combine and of the n-ary mints ───────────────────────
+
+# A ctx-bound combine rebuilds the parent under its context, so the
+# context must admit every row the call names.
+foundation_neg_compile_test(neg_permission_combine_ctx_refuses_row
+  "constraints not satisfied"
+  "satisfaction of .PermissionCombineArgs<In, Args \\.\\.\\.>. \\[with In = <unnamed>::Whole. Args = \\{foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg")
+
+# The n-ary mints consume their tokens, so an lvalue token would stay
+# live beside what the mint returns.  The shape check refuses it.
+foundation_neg_compile_test(neg_permission_split_n_lvalue_token
+  "satisfaction of .PermissionSplitNArgs<std::tuple<[A-Za-z_]+ \\.\\.\\.>, Args \\.\\.\\.>."
+  "mint_args_shaped_<MaxCtx, NPerms, Args \\.\\.\\.>\\)\\(\\) \\[with MaxCtx = 1. NPerms = 1. Args = \\{foundation::permissions::Permission<<unnamed>::Whole, [^}]*>&\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_permission_combine_n_lvalue_token
+  "satisfaction of .PermissionCombineNArgs<Parent, Args \\.\\.\\.>."
+  "mint_args_shaped_<MaxCtx, NPerms, Args \\.\\.\\.>\\)\\(\\) \\[with MaxCtx = 1. NPerms = 0. Args = \\{foundation::permissions::Permission<<unnamed>::Left, [^}]*>&, ")
+
 # ── The row-mismatch message builder ──────────────────────────────────
 #
 # The static_assert message a mint hands the compiler when a row is not
