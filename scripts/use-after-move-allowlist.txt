@@ -101,3 +101,7 @@ test/test_perf_senses_smoke.cpp:main:s
 # Probe: a moved-from warden guard is disarmed and reports each observer
 # as not applied.
 test/test_warden_policy.cpp:test_revert_clears_observers:rhs
+
+# Probe: a share guard moved out of an optional holds no share, and
+# with_read_view must abort when it is lent.
+test/foundation/test_read_view_lend_needs_a_share.cpp:lend_a_guard_that_gave_its_share_away:*lent

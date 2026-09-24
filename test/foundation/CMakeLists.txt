@@ -688,6 +688,11 @@ foundation_neg_compile_test(neg_lifetime_start_as_proof_array
 # child process, and the test passes only on that diagnostic.
 foundation_test(test_share_pool_outlived_aborts)
 
+# A share guard that gave its share away cannot lend a read view: the door
+# checks holds_share() and aborts.  The attack runs in a child process,
+# and a positive control lends from a guard that holds its share.
+foundation_test(test_read_view_lend_needs_a_share)
+
 # The children of two regions do not fold into one parent.
 foundation_neg_compile_test(neg_brand_combine_children_of_two_regions
   "static assertion failed"
