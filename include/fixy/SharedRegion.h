@@ -129,6 +129,18 @@ mint_shared_read(Ctx const&, ::foundation::permissions::SharedPermissionGuard<Ta
     delete("the guard is released at the end of the full expression, so the read would outlive the share it "
            "stands on; bind the guard to a name that outlives the read");
 
+// A region that dies at the end of the statement leaves the read pointing
+// into storage that is gone, so this twin refuses an rvalue region.  A
+// guard and a region that are both rvalues match the two twins equally,
+// and the call is ambiguous, which refuses it too.
+template <typename T, typename Tag, typename Brand, typename Ctx>
+    requires CtxFitsSharedRead<T, Tag, Brand, Ctx>
+constexpr SharedRead<T, Tag, Brand>
+mint_shared_read(Ctx const&, ::foundation::permissions::SharedPermissionGuard<Tag, Brand> const&,
+                 SharedRegion<T, Tag, Brand> const&&) =
+    delete("the region is destroyed at the end of the full expression, so the read would point into storage "
+           "that is gone; bind the region to a name that outlives the read");
+
 // A region whose exclusive permission is parked in a pool, so several
 // readers may hold a share of it at once.  It is Pinned twice over: the
 // pool's atomic state is the channel identity, and a read handed out

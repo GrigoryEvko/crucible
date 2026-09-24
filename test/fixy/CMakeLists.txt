@@ -3806,6 +3806,12 @@ fixy_neg_compile_test(neg_shared_read_from_a_temporary_share
   "mint_shared_read\\(const Ctx&, const foundation::permissions::SharedPermissionGuard<Tag, Brand>&&"
   "the guard is released at the end of the full expression")
 
+# The region a read points into has to outlive it.
+fixy_neg_compile_test(neg_shared_read_from_a_temporary_region
+  "use of deleted function"
+  "mint_shared_read\\(const Ctx&, const foundation::permissions::SharedPermissionGuard<Tag, Brand>&, const SharedRegion<T, Tag, Brand>&&"
+  "the region is destroyed at the end of the full expression")
+
 # ── The consume tracker ───────────────────────────────────────────────
 #
 # test_qtt is fixy/Qtt.h with CRUCIBLE_QTT_TRACK_CONSUME off, which is

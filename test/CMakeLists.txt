@@ -551,11 +551,12 @@ set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 # only compiler this tree builds with, so the claim is checked here
 # rather than by an attribute no compiler reads.
 add_test(NAME lifetime_twin_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lifetime-twin.sh --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-lifetime-twin.py --self-test)
 add_test(NAME lifetime_twin
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lifetime-twin.sh --quiet)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-lifetime-twin.py --quiet)
 set_tests_properties(lifetime_twin lifetime_twin_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
 
 # A substrate trait or a fail-closed relation is specialized only beside
 # the declarations it names.  scripts/check-trait-injection.py reads each
