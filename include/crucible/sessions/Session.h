@@ -1012,7 +1012,9 @@ public:
         return *this;
     }
 
-    ~SessionHandleBase() {
+    // A handle can live in a constant evaluation.  There, a handle that
+    // was abandoned reaches fprintf, and the evaluation fails.
+    constexpr ~SessionHandleBase() {
 #ifndef NDEBUG
         if (!tracker_.was_marked() && !is_terminal_state_v<Proto>) {
             constexpr auto pname = detail::type_name<Proto>();

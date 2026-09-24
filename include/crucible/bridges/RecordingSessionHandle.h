@@ -67,7 +67,8 @@ template <typename PeerTag, CrashClass C, typename NextHandle>
 // A crash seen through the flag reaches no crash terminal, so the tier is not
 // carried by the protocol at that point.  Callers pass the tolerated tier
 // explicitly, otherwise replay cannot tell the recovery families apart.
-constexpr void record_crash_stop_(
+// Not constexpr: the append mints its step from an atomic counter.
+inline void record_crash_stop_(
     SessionEventLog& log, RoleTagId self_role, RoleTagId peer_role,
     ::crucible::algebra::lattices::CrashClass crash_class = ::crucible::algebra::lattices::CrashClass::Abort) {
     log.append_event(SessionEvent::stop(self_role, peer_role, peer_role, StopReasonKind::PeerCrashed,

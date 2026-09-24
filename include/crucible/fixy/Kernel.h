@@ -306,8 +306,8 @@ static_assert(::crucible::fixy::kernel::canonical_shape_name_of_v<&kp_f_two_ints
 // Composability does not depend on a region or an accumulator, so unlike the
 // shape recognizers above this one gets a positive witness here.
 
-inline int kp_p_double(int x) noexcept { return x * 2; }
-inline int kp_p_inc(int x) noexcept { return x + 1; }
+constexpr int kp_p_double(int x) noexcept { return x * 2; }
+constexpr int kp_p_inc(int x) noexcept { return x + 1; }
 
 static_assert(::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_p_inc>
                   == ::crucible::safety::can_fuse_v<&kp_p_double, &kp_p_inc>,

@@ -75,7 +75,7 @@ private:
     graded_type impl_;
 
 public:
-    AppendOnly() : impl_{Storage<T>{}} {}
+    constexpr AppendOnly() : impl_{Storage<T>{}} {}
 
     // The lattice grade is derived from the container size, so growing
     // the tail updates it with no separate field to maintain.

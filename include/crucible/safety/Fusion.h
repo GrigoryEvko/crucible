@@ -88,10 +88,10 @@ template <auto Fn1, auto Fn2>
 
 namespace detail::fuse_self_test {
 
-inline int p_double(int x) noexcept { return x * 2; }
-inline int p_inc(int x) noexcept { return x + 1; }
-inline double p_to_double(int x) noexcept { return static_cast<double>(x); }
-inline int p_to_int(double x) noexcept { return static_cast<int>(x); }
+constexpr int p_double(int x) noexcept { return x * 2; }
+constexpr int p_inc(int x) noexcept { return x + 1; }
+constexpr double p_to_double(int x) noexcept { return static_cast<double>(x); }
+constexpr int p_to_int(double x) noexcept { return static_cast<int>(x); }
 
 constexpr auto fused_double_then_inc = fuse<&p_double, &p_inc>();
 static_assert(fused_double_then_inc(7) == 15);
