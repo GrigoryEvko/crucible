@@ -39,6 +39,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Refined.h>
+#include <fixy/Stale.h>
 
 #include <atomic>
 #include <chrono>
@@ -511,7 +512,7 @@ public:
     // snapshot, and it can be stale by the time the caller reads it.
     [[nodiscard]] ::fixy::Stale<uint32_t> ring_size() const noexcept { return ring_->size(); }
     [[nodiscard]] uint64_t ring_total_produced() const noexcept { return ring_->total_produced(); }
-    [[nodiscard]] crucible::fixy::wrap::Stale<uint32_t> meta_log_size() const noexcept { return meta_log_->size(); }
+    [[nodiscard]] ::fixy::Stale<uint32_t> meta_log_size() const noexcept { return meta_log_->size(); }
 
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
     [[nodiscard]] uint32_t bg_last_iteration_length() const { return bg_.last_iteration_length; }
