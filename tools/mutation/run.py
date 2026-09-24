@@ -34,6 +34,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -382,8 +383,14 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         return 1 if failures else 0
 
 
+def _exit_on_term(signum: int, _frame: object) -> None:
+    """Turn SIGTERM into SystemExit, so the finally block restores the mutated header."""
+    raise SystemExit(128 + signum)
+
+
 def main() -> int:
     """Parse the command line and run one mode."""
+    signal.signal(signal.SIGTERM, _exit_on_term)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="mode", required=True)
     deps = sub.add_parser("deps")
