@@ -485,14 +485,8 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_isa_on_ar
     using refuses = witnesses<at::simd::avx2, at::simd::sse2, int>;
 };
 
-// UMWAIT is neither a kernel entry nor a busy wait, so it is in the
-// refusing list of the two cells.
-template <>
-struct foundation::contracts::armed_cell<::fixy::collision::detail::is_kernel_entry_wait_> {
-    using accepts = witnesses<at::sync::block, at::sync::park, at::sync::acquire_wait>;
-    using refuses = witnesses<at::sync::umwait_c01, at::sync::bounded_spin, at::sync::spin_pause, int>;
-};
-
+// UMWAIT halts the core and does not spin it.  The refusing list holds
+// it beside a kernel wait.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::is_busy_wait_> {
     using accepts = witnesses<at::sync::bounded_spin, at::sync::spin_pause>;

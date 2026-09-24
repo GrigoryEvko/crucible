@@ -14,6 +14,8 @@
 #include <fixy/Fn.h>
 #include <fixy/os/Spawn.h>
 #include <fixy/Secret.h>
+#include <fixy/atoms/Os.h>
+#include <fixy/atoms/Syscall.h>
 
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
@@ -179,6 +181,8 @@ static_assert(live_rules<at::with<Eff::Alloc>, at::cost_unbounded>::H003_ok, "no
 // cell is here so the boundary is a decision on the record.
 static_assert(live_rules<at::regime::hot, at::with<Eff::Block>, at::cost_unbounded>::H003_ok,
               "H003's theorem names Alloc and IO; Block on a hot path belongs to W001");
+static_assert(!live_rules<at::regime::hot, at::with<Eff::Block>, at::cost_unbounded>::W001_ok,
+              "the other side of the boundary: W001 refuses the same pack");
 
 // H010 hot x Row<Bg>.  The cost_constant and refined_with atoms are what
 // make this cell prove H010 rather than H001 or H002 in disguise.
@@ -234,6 +238,51 @@ static_assert(live_rules<at::regime::hot, at::sync::spin_pause, at::cost_constan
 static_assert(live_rules<at::sync::block>::W001_ok);
 static_assert(live_rules<at::regime::cold, at::sync::block>::W001_ok);
 static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+
+// W001 reads the row that the whole pack lifts to, so a kernel wait is
+// one way to trip it and not the only one.  A stated Block and a system
+// call that can park the caller put Block in the same row.  The cost and
+// refinement atoms silence H001 and H002 in each cell.
+template <class... Extra>
+using hot_pack = live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, Extra...>;
+using SyscallId = at::syscall::SyscallId;
+using SyscallFamily = at::syscall::SyscallFamily;
+
+static_assert(!hot_pack<at::with<Eff::Block>>::W001_ok);
+static_assert(!hot_pack<at::with<Eff::IO, Eff::Block>>::W001_ok);
+static_assert(!hot_pack<at::syscall::per<SyscallId::futex>>::W001_ok);
+static_assert(!hot_pack<at::syscall::per<SyscallId::sched_yield>>::W001_ok, "a yield enters the scheduler");
+static_assert(!hot_pack<at::syscall::per<SyscallId::write>>::W001_ok);
+static_assert(!hot_pack<at::syscall::per<SyscallId::recvmsg>>::W001_ok);
+static_assert(!hot_pack<at::syscall::family<SyscallFamily::ThreadSync>>::W001_ok);
+static_assert(!hot_pack<at::fs::durable<::fixy::fs::sync_op::Fsync>>::W001_ok, "an OS atom lifts Block as well");
+
+// The two fixtures' packs trip W001 and no other rule.
+static_assert(hot_pack<at::with<Eff::Block>>::failing_codes() == "W001");
+static_assert(hot_pack<at::syscall::per<SyscallId::futex>>::failing_codes() == "W001");
+static_assert(hot_pack<at::sync::acquire_wait>::failing_codes() == "W001", "and the kernel wait still does");
+
+// A call that cannot park the caller puts no Block in the row.
+static_assert(hot_pack<at::syscall::per<SyscallId::clock_gettime>>::valid, "a vDSO read enters no kernel");
+static_assert(hot_pack<at::syscall::family<SyscallFamily::VdsoOnly>>::valid);
+static_assert(hot_pack<at::syscall::per<SyscallId::getpid>>::W001_ok, "a read of process state does not park");
+static_assert(hot_pack<at::with<Eff::IO>>::W001_ok, "IO without Block is H003's premise, not W001's");
+
+// The lifted row is the union of every lift in the pack.  A spin and
+// UMWAIT lift to the empty row.
+static_assert(std::is_same_v<hot_pack<at::sync::park, at::with<Eff::IO>>::lifted_row, fe::Row<Eff::IO, Eff::Block>>);
+static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>, at::with<Eff::Alloc>>::lifted_row,
+                             fe::Row<Eff::Alloc, Eff::Block>>);
+static_assert(std::is_same_v<live_rules<>::lifted_row, fe::Row<>>);
+static_assert(!live_rules<at::sync::spin_pause>::blocks && !live_rules<at::sync::umwait_c01>::blocks);
+
+// The positive controls: the rules admit a warm or a cold binding with
+// the same row, and a binding that states no tier.
+static_assert(live_rules<at::regime::warm, at::with<Eff::Block>>::valid);
+static_assert(live_rules<at::regime::cold, at::syscall::per<SyscallId::futex>>::valid);
+static_assert(live_rules<at::regime::warm, at::syscall::per<SyscallId::sched_yield>>::valid);
+static_assert(live_rules<at::with<Eff::Block>>::valid);
+static_assert(live_rules<at::syscall::per<SyscallId::futex>>::valid);
 
 // W002 Row<Bg> x a spin that burns the core.  This is narrower than "not
 // a kernel wait" by exactly one grade, and UMWAIT is that grade: it halts
@@ -793,6 +842,15 @@ static_assert(!::fixy::IsAccepted<int, at::capability_usage, at::trust_unverifie
 static_assert(col::CollisionRules<::fixy::fn<int, at::copy>>::valid);
 static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::valid);
 
+// W001 reaches the gate through the lifted row.  The gate admits a cold
+// or a warm binding with the same row.
+static_assert(!::fixy::IsAccepted<int, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
+                                  at::syscall::per<at::syscall::SyscallId::futex>>);
+static_assert(!::fixy::IsAccepted<int, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
+                                  at::with<Eff::Block>>);
+static_assert(::fixy::IsAccepted<int, at::regime::cold, at::syscall::per<at::syscall::SyscallId::futex>>);
+static_assert(::fixy::IsAccepted<int, at::regime::warm, at::with<Eff::Block>>);
+
 // The constant-time family and the failure family reach the same gate.
 // The failure rules read the payload, which only the bound view carries,
 // so these cells name it.
@@ -861,8 +919,7 @@ static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::latti
 static_assert(!col::detail::is_scope_at_or_above_<::foundation::algebra::lattices::MemoryScope::Cluster,
                                                   at::scope::outer>::value);
 // UMWAIT is neither a kernel entry nor a busy wait.
-static_assert(!col::detail::is_kernel_entry_wait_<at::sync::umwait_c01>::value
-              && !col::detail::is_busy_wait_<at::sync::umwait_c01>::value);
+static_assert(!live_rules<at::sync::umwait_c01>::blocks && !col::detail::is_busy_wait_<at::sync::umwait_c01>::value);
 // A setting of a different enum with the same underlying value is not named.
 static_assert(!col::detail::fp_mode_has_setting_<at::fp::FpFtz{}, at::fp::mode<at::fp::FpContract{}>>::value);
 // A const member function names its signature, and it is not noexcept.

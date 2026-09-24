@@ -265,15 +265,24 @@ fixy_neg_compile_test(neg_rule_s001_stdio_hot
 
 # ── The wait family ───────────────────────────────────────────────────
 #
-# Two rules that need fixy/atoms/Sync.h.  W001 reads a tier and a wait
-# strategy, so it fires only when both the Regime and the
-# Synchronization axes have atoms.
+# Two rules that need fixy/atoms/Sync.h.  W001 reads a tier and the row
+# that the whole pack lifts to, so three kinds of atom put Block there: a
+# wait strategy that enters the kernel, a stated with<Block>, and a
+# system call that can park the caller.  Each has its own fixture.
 #
-# W001's pack carries a cost grade and a refinement witness, like the
-# regime fixtures above, so it floors on W001 rather than on H001 or H002.
+# W001's packs carry a cost grade and a refinement witness, like the
+# regime fixtures above, so they floor on W001 rather than on H001 or H002.
 # W002's does not need them: its premises are a Bg row and a spin, and
 # neither H rule reads a tier the pack never names.
 fixy_neg_compile_test(neg_rule_w001_hot_kernel_wait
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) W001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_w001_hot_block_row
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) W001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_w001_hot_blocking_syscall
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) W001:"
   "${_fixy_tier5_member}")

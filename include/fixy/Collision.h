@@ -76,6 +76,7 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/diag/Catalog.h>
+#include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 
 #include <array>
@@ -305,7 +306,7 @@ enum class RuleCode : std::uint8_t {
     // session handle.
     R004,
     // Written here, not inherited.  It reads the same live handle as
-    // R004, against the regime and the wait strategy that W001 reads.
+    // R004, against the regime and a stated wait strategy.
     W003,
 };
 
@@ -323,12 +324,13 @@ struct pending_rule {
 //
 // Every rule that reads an axis family is live, because every axis has
 // its atoms: H001, H002, H003, H010, R001 and S001 read
-// fixy/atoms/Regime.h, W001 and W002 read Sync.h, B001 reads Observe.h,
+// fixy/atoms/Regime.h, W002 reads Sync.h, W001 reads the row that the
+// atoms of Sync.h, Syscall.h and Os.h lift to, B001 reads Observe.h,
 // V201, V202 and V203 read Hw.h, V301 reads Barrier.h, V401 reads
 // Scope.h, V101 and V402 read Simd.h, and F101 and F102 read Fp.h.  Each
 // is a live_rules member below and a Live row in rule_corpus.  Three of
-// them read two families: W001 a tier AND a wait strategy, V401 a scope
-// AND a strength, V402 a scope AND a pinned ISA.
+// them read more than one family: W001 a tier AND a lifted row, V401 a
+// scope AND a strength, V402 a scope AND a pinned ISA.
 //
 // Four sit in rule_corpus instead, because the FpMode or SimdIsa atom is
 // not all they read.  F103, F104 and F105, which read an FP mode against
@@ -397,9 +399,11 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"S001", Disposition::Live, "stdio x hot"},
 
     // The wait family, which reads the six WaitStrategy atoms of
-    // fixy/atoms/Sync.h.  W001 reads a tier and a wait, so it reads the
-    // Regime family too.
-    {"W001", Disposition::Live, "hot x a kernel wait"},
+    // fixy/atoms/Sync.h.  W001 reads a tier and the row that the pack
+    // lifts to, so it reads the Regime family too, and every family whose
+    // atoms lift to a row: a kernel wait, a system call that can park the
+    // caller, and a stated Block each put Block in that row.
+    {"W001", Disposition::Live, "hot x a kernel wait: Block in the row that the pack lifts to"},
     {"W002", Disposition::Live, "Row<Bg> x a spin that burns the core"},
 
     // The observability family, which reads the surface atom of
@@ -1003,10 +1007,6 @@ struct row_admits_observable_<::fixy::atom::with<Es...>>
     : std::bool_constant<((::foundation::effects::is_observable<Es>() && Es != ::foundation::effects::Effect::Bg)
                           || ...)> {};
 
-// H003's theorem names Alloc and IO specifically, so it gets its own
-// predicate rather than reusing row_admits_observable_ above, which also
-// admits Block.  A blocking hot path is just as wrong, but it is W001's
-// theorem and W001 cites the futex cost, not the allocator's.
 // The payload's replay claim.
 //
 // A payload carrying a DetSafe band at PhiloxRng or Pure claims that its
@@ -1163,21 +1163,17 @@ template <::foundation::effects::Effect... Es>
 struct row_admits_init_<::fixy::atom::with<Es...>>
     : std::bool_constant<((Es == ::foundation::effects::Effect::Init) || ...)> {};
 
-// The two wait classifications, lifted from a grade to a type-level
-// answer.  The primaries are false because the strict pole of
+// The busy-wait classification, lifted from a grade to a type-level
+// answer.  The primary is false because the strict pole of
 // Synchronization is not a wait at all: a binding that names no strategy
-// makes no claim about waiting, so neither rule fires on it.
+// makes no claim about waiting, so W002 does not fire on it.
 //
-// Both delegate to the consteval predicates in fixy/atoms/Sync.h rather
-// than re-listing the grades, because the atom lift reads those same two
-// functions.  A grade that moved sides would otherwise move for the lift
-// and not for the rules.
-template <class G>
-struct is_kernel_entry_wait_ : std::false_type {};
-template <class G>
-    requires requires { G::strategy; }
-struct is_kernel_entry_wait_<G> : std::bool_constant<::fixy::atom::sync::enters_the_kernel(G::strategy)> {};
-
+// It delegates to the consteval predicate in fixy/atoms/Sync.h and does
+// not list the grades again, so a grade that moves sides moves for the
+// atom header and for the rule together.  W001 has no predicate of this
+// kind.  It reads the lift of a kernel wait, and fixy/atoms/Sync.h
+// asserts that a wait lifts to Row<Block> exactly when it enters the
+// kernel.
 template <class G>
 struct is_busy_wait_ : std::false_type {};
 template <class G>
@@ -1196,12 +1192,50 @@ template <class G>
     }
 struct has_wait_strategy_<G> : std::true_type {};
 
+// H003's theorem names Alloc and IO, so it reads its own predicate and
+// not row_admits_observable_ above, which also admits Block.  Block on a
+// hot path is W001's theorem, which cites the futex cost and not the
+// cost of the allocator.  W001 reads Block in lifted_row_of_pack_ below.
 template <class G>
 struct row_admits_alloc_or_io_ : std::false_type {};
 template <::foundation::effects::Effect... Es>
 struct row_admits_alloc_or_io_<::fixy::atom::with<Es...>>
     : std::bool_constant<((Es == ::foundation::effects::Effect::Alloc || Es == ::foundation::effects::Effect::IO)
                           || ...)> {};
+
+// The row that the whole pack lifts to.
+//
+// An atom that reaches a real operation carries the row of that
+// operation as `lifts_to`, and foundation/effects/Lift.h reads it.  Three
+// kinds of atom lift: the stated with<Es...> of the Effect axis, the
+// waits of fixy/atoms/Sync.h, and the system calls of
+// fixy/atoms/Syscall.h and fixy/atoms/Os.h.  An atom with no lift
+// reaches no operation, so it adds nothing to the union.
+//
+// The Effect grade alone is not this row.  A binding can state a futex
+// call or a park and leave its Effect grade empty, and a rule that read
+// only the grade would admit that binding.
+//
+// Complexity: linear in the length of the pack.  Each union is quadratic
+// in the size of one row, and the effect catalog bounds that size.
+template <class Atom>
+struct lifted_row_of_atom_ {
+    using type = ::foundation::effects::Row<>;
+};
+template <::foundation::effects::LiftsToRow Atom>
+struct lifted_row_of_atom_<Atom> {
+    using type = ::foundation::effects::lift_row_t<Atom>;
+};
+
+template <class... Atoms>
+struct lifted_row_of_pack_ {
+    using type = ::foundation::effects::Row<>;
+};
+template <class First, class... Rest>
+struct lifted_row_of_pack_<First, Rest...> {
+    using type = ::foundation::effects::row_union_t<typename lifted_row_of_atom_<First>::type,
+                                                    typename lifted_row_of_pack_<Rest...>::type>;
+};
 
 template <class G>
 struct repr_is_atomic_ : std::false_type {};
@@ -1551,21 +1585,28 @@ struct rules_of {
 
     // ── The wait family, live since fixy/atoms/Sync.h ─────────────────
     //
-    // Both read the same axis from opposite ends of its ladder, and the
-    // ladder's own header draws the line: the three lowest grades enter
-    // the kernel or the scheduler, the three highest stay in user space.
     // A kernel wait is too slow for the hot path, and a core-burning spin
-    // is too expensive for a background one.
+    // is too expensive for a background one.  The ladder of
+    // fixy/atoms/Sync.h draws the line between them: the three lowest
+    // grades enter the kernel or the scheduler, and the three highest stay
+    // in user space.
     //
-    // The predicates come from fixy/atoms/Sync.h rather than being
-    // rewritten here, so the rules and the atom lift cannot disagree
-    // about where the line falls.
-    static constexpr bool kernel_wait =
-        detail::is_kernel_entry_wait_<typename G::template on<Axis::Synchronization>>::value;
+    // W001 reads the row that the whole pack lifts to, and not the
+    // Synchronization axis alone.  A kernel wait lifts to Row<Block>, a
+    // system call that can park the caller lifts to a row with Block, and
+    // with<Block> states Block on the Effect axis.  The scheduler bounds
+    // each of them.  The three are one theorem.  A new atom that can block
+    // puts Block in its lift, and W001 then refuses it with no edit here.
+    //
+    // W002 reads the axis through the predicate of fixy/atoms/Sync.h.  The
+    // rule and the atom header then cannot disagree about the line.
+    using lifted_row = typename detail::lifted_row_of_pack_<Atoms...>::type;
+    static constexpr bool blocks =
+        ::foundation::effects::row_contains_v<lifted_row, ::foundation::effects::Effect::Block>;
     static constexpr bool core_burning_spin =
         detail::is_busy_wait_<typename G::template on<Axis::Synchronization>>::value;
 
-    static constexpr bool W001_ok = !(hot && kernel_wait);
+    static constexpr bool W001_ok = !(hot && blocks);
 
     // W002 reads burns_the_core rather than "not a kernel wait", which is
     // narrower by one grade: UMWAIT halts the core in C0.1 instead of
@@ -1845,8 +1886,8 @@ struct rules_of {
     // ways.  W001 refuses a hot binding that states a kernel wait, and it
     // has nothing to read on a binding that states no wait at all.  W003
     // refuses that silence: a hot binding that holds a live handle states
-    // its wait strategy, and W001 then judges the strategy it states.  The
-    // rule reads the strategy that W001 reads, not the axis, so a type on
+    // its wait strategy, and W001 then judges the lift of the strategy it
+    // states.  The rule reads a stated strategy, not the axis, so a type on
     // the axis that names no strategy does not satisfy it.
     static constexpr bool states_a_wait =
         detail::has_wait_strategy_<typename G::template on<Axis::Synchronization>>::value;
@@ -1963,9 +2004,11 @@ struct rules_of {
                                "at every suspension point, and one resume breaches the budget.");
         static_assert(S001_ok, "S001: stdio x hot. Buffered stdio takes a lock and may block. Neither belongs on a "
                                "path budgeted in nanoseconds.");
-        static_assert(W001_ok, "W001: hot x a kernel wait. A park or a futex wait costs 1-5 us because it is bounded "
-                               "by the scheduler, against a budget bounded by the cache-coherence fabric at 10-40 "
-                               "ns. Wait with a spin, or leave the hot path.");
+        static_assert(W001_ok, "W001: hot x a kernel wait. Block is in the row that the pack lifts to, from a wait "
+                               "strategy that enters the kernel, a system call that can park the caller, or a stated "
+                               "Block. The scheduler bounds such a wait at 1-5 us, against a budget that the "
+                               "cache-coherence fabric bounds at 10-40 ns. Wait with a spin, move the call off the "
+                               "hot path, or leave the hot path.");
         static_assert(W002_ok, "W002: Row<Bg> x a spin that burns the core. A background body that spins holds a core "
                                "the scheduler could have given to foreground work. Park, or use UMWAIT, which halts "
                                "the core instead of spinning it.");
