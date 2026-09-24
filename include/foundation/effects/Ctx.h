@@ -303,7 +303,8 @@ public:
 
     // The part that inlines is a relaxed load, a comparison and a branch.
     // The claim and the failure report sit out of line and cold.
-    [[nodiscard]] CRUCIBLE_INLINE auto mint_producer_context() noexcept -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr auto mint_producer_context() noexcept
+        -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
         const auto current_tid = std::this_thread::get_id();
         if (holder_.load(std::memory_order_relaxed) != current_tid) [[unlikely]]
             claim_or_reject_(current_tid);
