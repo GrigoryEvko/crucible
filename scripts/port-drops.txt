@@ -385,6 +385,8 @@ crucible/fixy/_Time.h:clock_read  — A grant tag no code outside the old header
 crucible/fixy/_Time.h:sleep  — A grant tag with the same standing as clock_read, replaced by the CtxFitsBoundedSleepMint gate in fixy/os/Time.h:300, which requires the Block effect and a non-zero bound.
 crucible/fixy/_Time.h:tsc_read  — A grant tag with the same standing as clock_read, replaced by the CtxFitsTscReaderMint gate in fixy/os/Time.h:297, which requires a singleton pin proof rather than a tag.
 crucible/fixy/_Time.h:which_dim  — The three specialisations that routed those tags onto an axis. An atom carries the axis it engages as a static member in fixy/Atom.h:54, so there is no separate routing trait left to specialise.
+crucible/fixy/_Time.h:mint_clock_source  — Removed, not ported.  A clock reading is stamped only by the readers of fixy/os/Time.h, through a private door, right after the read of that clock, so a factory that stamped any value with any source has no new spelling.
+crucible/safety/_ClockSource.h:mint_clock_source  — Removed, not ported, for the same reason as the re-export in crucible/fixy/_Time.h: a reading of a clock comes only from a read of that clock, so no factory stamps a value with a source.
 
 # ── safety: one forgeable mint and two inline smoke tests ───────────────
 #

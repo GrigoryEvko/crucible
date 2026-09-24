@@ -206,7 +206,13 @@ public:
                          "fixy::sched::mint_affinity, which returns it only after sched_setaffinity succeeded.");
     CpuPinned(const CpuPinned&) = delete("a pin proof cannot be duplicated — two readers would race one core.");
     CpuPinned& operator=(const CpuPinned&) = delete("a pin proof cannot be duplicated.");
-    constexpr CpuPinned(CpuPinned&&) = default;
+    // User-provided, and not defaulted.  A deleted copy with a defaulted
+    // move still leaves the class trivially copyable, and then
+    // std::bit_cast<CpuPinned<...>>(0) builds a pin with no syscall.  A
+    // user-provided move makes the class neither trivially copyable nor
+    // an implicit-lifetime type, at no cost once it is inlined.
+    constexpr CpuPinned(CpuPinned&& other) noexcept(std::is_nothrow_move_constructible_v<Unit>)
+        : value_{std::move(other.value_)} {}
     constexpr CpuPinned& operator=(CpuPinned&&) = default;
     ~CpuPinned() = default;
 
@@ -226,6 +232,9 @@ static_assert(sizeof(CpuPinned<AffinityMask::single(7), PinningPosture::PinnedEx
 static_assert(!std::is_copy_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
               "CpuPinned MUST be move-only — a pin proof cannot be duplicated.");
 static_assert(std::is_move_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>);
+static_assert(!std::is_trivially_copyable_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>
+                  && !std::is_implicit_lifetime_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
+              "std::bit_cast and std::start_lifetime_as must not build a pin proof");
 
 }  // namespace fixy
 

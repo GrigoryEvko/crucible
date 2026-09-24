@@ -13,6 +13,7 @@
 // Old spelling: include/crucible/safety/_ClockSource.h.
 
 #include <fixy/GradedFacade.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/ClockSourceLattice.h>
@@ -21,6 +22,12 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+
+namespace fixy::time::detail {
+// The door that stamps a value with the clock it came from.  It is
+// defined in fixy/os/Time.h beside the readers, and only they reach it.
+struct clock_stamp_access;
+}  // namespace fixy::time::detail
 
 namespace fixy {
 
@@ -31,7 +38,7 @@ using SuspendBehavior_v = ::foundation::algebra::lattices::SuspendBehavior;
 using PinningRequirement_v = ::foundation::algebra::lattices::PinningRequirement;
 
 template <ClockSource_v Source, typename T>
-class [[nodiscard]] ClockSource
+class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] ClockSource
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute, ClockSourceLattice::At<Source>, T> {
 public:
     // value_type, modality and the two name forwarders arrive from
@@ -54,23 +61,39 @@ public:
 private:
     graded_type impl_;
 
-public:
-    constexpr ClockSource() noexcept(std::is_nothrow_default_constructible_v<T>)
-        : impl_{T{}, typename lattice_type::element_type{}} {}
-
+    // The one constructor that stamps a value with a source, and it is
+    // private.  Its sole friend is fixy::time::detail::clock_stamp_access,
+    // whose stamp is private too and reached only by the readers in
+    // fixy/os/Time.h, right after the read of this same clock.  So a
+    // ClockSource<Boot, T> holds a value that CLOCK_BOOTTIME returned.
     constexpr explicit ClockSource(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
-    template <typename... Args>
-        requires std::is_constructible_v<T, Args...>
-    constexpr explicit ClockSource(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
-                                                                             && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
+    friend struct ::fixy::time::detail::clock_stamp_access;
 
+public:
+    // There is no default constructor, no in_place constructor and no
+    // free mint.  Each built a reading that no clock returned.
+    ClockSource() = delete("a default-constructed ClockSource would claim a reading that no clock returned.  Read "
+                           "the clock through a reader from fixy::time::mint_clock_reader or mint_tsc_reader.");
+
+    // A copy of a reading is still a reading of the same clock, so copies
+    // stay.  The constructors are trivial, so a reading passes in a
+    // register.  The assignments are user-provided, so the class is not
+    // trivially copyable: std::bit_cast refuses to stamp a raw integer
+    // with a source, and -Wclass-memaccess refuses a memcpy into one.
+    // The annotation on the class refuses the checked lifetime start over
+    // bytes, and scripts/check-start-lifetime.sh refuses the raw one.
     constexpr ClockSource(const ClockSource&) = default;
     constexpr ClockSource(ClockSource&&) = default;
-    constexpr ClockSource& operator=(const ClockSource&) = default;
-    constexpr ClockSource& operator=(ClockSource&&) = default;
+    constexpr ClockSource& operator=(const ClockSource& other) noexcept(std::is_nothrow_copy_assignable_v<T>) {
+        impl_ = other.impl_;
+        return *this;
+    }
+    constexpr ClockSource& operator=(ClockSource&& other) noexcept(std::is_nothrow_move_assignable_v<T>) {
+        impl_ = std::move(other.impl_);
+        return *this;
+    }
     ~ClockSource() = default;
 
     [[nodiscard]] friend constexpr bool operator==(ClockSource const& a,
@@ -86,7 +109,9 @@ public:
     [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
-    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
+
+    // There is no peek_mut().  A mutable reference would let a holder
+    // write any value under the source of a real reading.
 
     constexpr void swap(ClockSource& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
     friend constexpr void swap(ClockSource& a, ClockSource& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
@@ -98,13 +123,6 @@ public:
         ClockSourceLattice::leq(::foundation::algebra::lattices::clock_source_project(Required),
                                 ::foundation::algebra::lattices::clock_source_project(Source));
 };
-
-template <ClockSource_v Source, typename T, typename... Args>
-    requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr ClockSource<Source, T>
-mint_clock_source(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
-    return ClockSource<Source, T>{std::in_place, std::forward<Args>(args)...};
-}
 
 template <typename T>
 using RealtimeClockBytes = ClockSource<ClockSource_v::Realtime, T>;
@@ -132,13 +150,39 @@ using PtpHwClockBytes = ClockSource<ClockSource_v::PtpHwClock, T>;
 
 namespace detail::clock_source_layout {
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RealtimeClockBytes, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(MonotonicClockBytes, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockBytes, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockBytes, unsigned long long);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TscBytes, unsigned long long);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PmuBytes, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PtpHwClockBytes, unsigned long long);
+// The layout of the bare value, with one difference on purpose: a reading
+// is not trivially copyable, so no byte pattern becomes a reading.  The
+// shared layout invariant asserts triviality parity, so this header
+// states the other three properties of it one by one.
+template <typename Reading, typename T>
+inline constexpr bool keeps_the_value_layout =
+    sizeof(Reading) == sizeof(T) && alignof(Reading) == alignof(T)
+    && std::is_trivially_destructible_v<Reading> == std::is_trivially_destructible_v<T>;
+
+template <typename Reading>
+inline constexpr bool refuses_every_byte_route =
+    !std::is_trivially_copyable_v<Reading> && !::foundation::lifetime::ImplicitLifetimeThroughout<Reading>
+    && !std::is_default_constructible_v<Reading> && std::is_trivially_copy_constructible_v<Reading>
+    && std::is_trivially_move_constructible_v<Reading>;
+
+static_assert(keeps_the_value_layout<RealtimeClockBytes<int>, int>);
+static_assert(keeps_the_value_layout<MonotonicClockBytes<int>, int>);
+static_assert(keeps_the_value_layout<BootClockBytes<unsigned long long>, unsigned long long>);
+static_assert(keeps_the_value_layout<TscBytes<unsigned long long>, unsigned long long>);
+static_assert(keeps_the_value_layout<PmuBytes<int>, int>);
+static_assert(keeps_the_value_layout<PtpHwClockBytes<unsigned long long>, unsigned long long>);
+
+static_assert(refuses_every_byte_route<BootClockBytes<unsigned long long>>
+                  && refuses_every_byte_route<TscBytes<unsigned long long>>
+                  && refuses_every_byte_route<MonotonicClockBytes<unsigned long long>>,
+              "a clock reading must not be built from bytes, over a buffer, or from nothing, and its "
+              "constructors must stay trivial so that it passes in a register");
+static_assert(!std::is_constructible_v<BootClockBytes<unsigned long long>, unsigned long long>,
+              "the value constructor must be private: a public one stamps any integer as a boot-clock reading");
+static_assert(!std::is_constructible_v<BootClockBytes<unsigned long long>, std::in_place_t, unsigned long long>,
+              "the in_place constructor is removed: it was a second route to the same forgery");
+static_assert(std::is_copy_constructible_v<BootClockBytes<unsigned long long>>,
+              "a copy of a reading is a reading of the same clock, so copies stay");
 
 }  // namespace detail::clock_source_layout
 
@@ -159,15 +203,11 @@ using RealU64 = RealtimeClockBytes<unsigned long long>;
 using TscU64 = TscBytes<unsigned long long>;
 using ThreadU64 = ThreadCpuBytes<unsigned long long>;
 
-inline constexpr BootU64 b_default{};
-static_assert(b_default.peek() == 0);
+// The value cells that stood here built readings out of literals, which
+// is the forgery the closed constructor refuses.  The behavior of a real
+// reading (copy, swap, equality) is exercised in test/fixy/test_os_time.cpp
+// over readings that a clock returned.
 static_assert(BootU64::source == ClockSource_v::Boot);
-
-inline constexpr BootU64 b_explicit{42};
-static_assert(b_explicit.peek() == 42);
-
-inline constexpr BootU64 b_in_place{std::in_place, 7};
-static_assert(b_in_place.peek() == 7);
 
 static_assert(BootU64::modality == ::foundation::algebra::ModalityKind::Absolute);
 
@@ -238,32 +278,6 @@ static_assert(TscU64::lattice_name() == "ClockSourceLattice::At<TscRaw>");
 // suffix.
 static_assert(BootU64::value_type_name().find("long") != std::string_view::npos);
 static_assert(BootClockBytes<int>::value_type_name().ends_with("int"));
-
-[[nodiscard]] consteval bool swap_exchanges_within_same_source() noexcept {
-    BootU64 a{10};
-    BootU64 b{20};
-    a.swap(b);
-    return a.peek() == 20 && b.peek() == 10;
-}
-static_assert(swap_exchanges_within_same_source());
-
-[[nodiscard]] consteval bool peek_mut_works() noexcept {
-    BootU64 a{10};
-    a.peek_mut() = 99;
-    return a.peek() == 99;
-}
-static_assert(peek_mut_works());
-
-[[nodiscard]] consteval bool equality_compares_value_bytes() noexcept {
-    BootU64 a{42};
-    BootU64 b{42};
-    BootU64 c{43};
-    return (a == b) && !(a == c);
-}
-static_assert(equality_compares_value_bytes());
-
-inline constexpr auto minted = mint_clock_source<ClockSource_v::Boot, unsigned long long>(99);
-static_assert(minted.peek() == 99 && minted.source == ClockSource_v::Boot);
 
 template <typename Clock>
 concept keeps_ticking_through_suspend = Clock::template satisfies<ClockSource_v::Boot>;

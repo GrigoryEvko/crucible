@@ -29,8 +29,8 @@ namespace ml = foundation::algebra::lattices;
 
 namespace {
 
-using BootU64 = fixy::BootClockBytes<unsigned long long>;
-using MonoU64 = fixy::MonotonicClockBytes<unsigned long long>;
+using BootU64 = fixy::BootClockBytes<std::uint64_t>;
+using MonoU64 = fixy::MonotonicClockBytes<std::uint64_t>;
 
 // The named contexts these mints are meant to take belong to a header
 // the tree does not have yet.  These two stand in, in the shape
@@ -42,31 +42,39 @@ using BlockWitness =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 
+// Every reading here comes from a clock.  The constructor that stamped a
+// literal with a source is private now, and the reader is the one door,
+// so the round trip starts from two reads rather than from two numbers.
 [[nodiscard]] int clock_source_values_round_trip() {
-    unsigned long long seed = 21;
+    InitWitness init{eff::testing::init()};
+    auto boot_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Boot>(init);
 
-    BootU64 boot{seed * 2};
-    if (boot.peek() != 42) {
-        std::fprintf(stderr, "a clock-source band did not carry its value\n");
-        return 1;
-    }
-    boot.peek_mut() = 9;
-    if (boot.peek() != 9) {
-        std::fprintf(stderr, "peek_mut did not write through\n");
+    const BootU64 earlier = boot_reader.read();
+    const BootU64 later = boot_reader.read();
+    if (later.peek() < earlier.peek()) {
+        std::fprintf(stderr, "two reads through one clamped boot reader went backwards\n");
         return 1;
     }
 
-    auto minted = fixy::mint_clock_source<fixy::ClockSource_v::TscRaw, unsigned long long>(seed);
-    if (std::move(minted).consume() != 21) {
-        std::fprintf(stderr, "consume did not move the value out\n");
+    // A copy of a reading is a reading of the same clock, and compares
+    // equal to the original.
+    BootU64 copied{earlier};
+    if (!(copied == earlier) || copied.peek() != earlier.peek()) {
+        std::fprintf(stderr, "a copied reading lost its value\n");
         return 1;
     }
 
-    BootU64 first{1};
-    BootU64 second{2};
+    BootU64 first{earlier};
+    BootU64 second{later};
     swap(first, second);
-    if (first.peek() != 2 || second.peek() != 1) {
+    if (first.peek() != later.peek() || second.peek() != earlier.peek()) {
         std::fprintf(stderr, "swap did not exchange two same-source readings\n");
+        return 1;
+    }
+
+    const std::uint64_t expected = later.peek();
+    if (BootU64{later}.consume() != expected) {
+        std::fprintf(stderr, "consume did not move the value out\n");
         return 1;
     }
 
@@ -80,12 +88,16 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
         return 1;
     }
 
-    fixy::RealtimeClockBytes<unsigned long long> realtime{123};
-    fixy::PmuBytes<unsigned long long> pmu{456};
-    if (realtime.peek() != 123 || pmu.peek() != 456) {
-        std::fprintf(stderr, "a non-boot source did not carry its value\n");
+    // A second source, read through its own reader.  The PMU and PTP
+    // sources have no reader in this tree, so their readings cannot be
+    // built at all: the types stay nameable for the gates that read them.
+    auto realtime_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(init);
+    const fixy::RealtimeClockBytes<std::uint64_t> realtime = realtime_reader.read();
+    if (realtime.peek() == 0) {
+        std::fprintf(stderr, "the realtime clock read zero, which a running system never does\n");
         return 1;
     }
+    static_assert(!std::is_constructible_v<fixy::PmuBytes<std::uint64_t>, std::uint64_t>);
     return 0;
 }
 

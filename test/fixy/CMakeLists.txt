@@ -2449,6 +2449,30 @@ fixy_neg_compile_test(neg_os_cpu_pinned_copied
   "use of deleted function"
   "a pin proof cannot be duplicated")
 
+# A deleted copy with a defaulted move left the pin trivially copyable,
+# so std::bit_cast built one.  The move is user-provided now.
+fixy_neg_compile_test(neg_os_cpu_pinned_bit_cast
+  "no matching function for call to .bit_cast"
+  "is_trivially_copyable_v<_To>")
+
+# ── A clock reading comes only from a read of that clock ────────────
+#
+# The value constructor, the in_place constructor, the free mint and
+# peek_mut each stamped a value that no clock returned.  The one stamp is
+# private to the readers of fixy/os/Time.h now, and the reading is not
+# trivially copyable, so no byte pattern becomes a reading.
+fixy_neg_compile_test(neg_os_clock_source_value_ctor
+  "is private within this context"
+  "fixy::ClockSource<Source, T>::ClockSource\\(T\\)")
+
+fixy_neg_compile_test(neg_os_clock_source_bit_cast
+  "no matching function for call to .bit_cast"
+  "is_trivially_copyable_v<_To>")
+
+fixy_neg_compile_test(neg_os_clock_source_peek_mut
+  "has no member named .peek_mut"
+  "class fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>")
+
 # ── A thread-name witness comes only from mint_thread_name ──────────
 #
 # The witness was an aggregate.  Its one constructor is private now, the

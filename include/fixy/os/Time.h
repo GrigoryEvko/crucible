@@ -44,7 +44,6 @@ namespace ml = ::foundation::algebra::lattices;
 
 using sf::ClockSource_v;
 using sf::MonotonicClockBytes;
-using sf::mint_clock_source;
 
 // Moved in from include/crucible/fixy/Hw.h, which the port no longer
 // includes.  Hw.h supplied this one enum and nothing else.
@@ -202,6 +201,40 @@ concept CtxFitsClockReaderMint = CtxFitsMonotonicClock<Ctx> && ClockBacked<Sourc
 
 template <ClockSource_v Source>
     requires ClockBacked<Source>
+struct ClockReader;
+
+template <TscMode Mode, typename PinT>
+    requires(Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>
+struct TscReader;
+
+// The one door that stamps a value with the clock it came from.  The
+// constructor of ClockSource is private and this struct is its sole
+// friend.  The stamp here is private too, and the only friends are the
+// two readers below, each of which calls it on the value it has just
+// read from that same clock.  A reading of Boot therefore holds a value
+// that CLOCK_BOOTTIME returned, which is the fact the SuspendBehavior
+// and DetSafe folds rest on.
+namespace detail {
+struct clock_stamp_access final {
+private:
+    template <ClockSource_v Source, typename T>
+    [[nodiscard]] static constexpr sf::ClockSource<Source, T> stamp(T raw) noexcept(
+        std::is_nothrow_move_constructible_v<T>) {
+        return sf::ClockSource<Source, T>{std::move(raw)};
+    }
+
+    template <ClockSource_v Source>
+        requires ClockBacked<Source>
+    friend struct ::fixy::time::ClockReader;
+
+    template <TscMode Mode, typename PinT>
+        requires(Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>
+    friend struct ::fixy::time::TscReader;
+};
+}  // namespace detail
+
+template <ClockSource_v Source>
+    requires ClockBacked<Source>
 struct ClockReader final {
     using result_type = sf::ClockSource<Source, std::uint64_t>;
     static constexpr ClockSource_v source = Source;
@@ -213,9 +246,9 @@ struct ClockReader final {
         const std::uint64_t raw = static_cast<std::uint64_t>(now.tv_sec) * 1000000000ULL
                                   + static_cast<std::uint64_t>(now.tv_nsec);
         if constexpr (is_clamped) {
-            return result_type{clamp_non_decreasing(last_, raw)};
+            return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
         } else {
-            return result_type{raw};
+            return detail::clock_stamp_access::stamp<Source>(raw);
         }
     }
 
@@ -271,9 +304,9 @@ struct TscReader final {
 
     [[nodiscard]] result_type read() const noexcept {
         if constexpr (Mode == TscMode::SerializedPinned) {
-            return result_type{detail::read_raw_tsc_serialized()};
+            return detail::clock_stamp_access::stamp<result_type::source>(detail::read_raw_tsc_serialized());
         } else {
-            return result_type{detail::read_raw_tsc()};
+            return detail::clock_stamp_access::stamp<result_type::source>(detail::read_raw_tsc());
         }
     }
 

@@ -119,6 +119,10 @@ fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2> | fixy/Ow
 
 # -- OS handles: the constructor is the syscall, or it consumes one ---
 fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0} | private | closed
+# A clock reading claims that its clock returned the value.  The value
+# constructor is private, and only the readers of fixy/os/Time.h reach the
+# stamp, right after they read that clock.
+fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, int> | fixy/os/ClockSource.h | fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, int>{0} | private | closed
 # A thread-name witness claims that pthread_setname_np named the calling
 # thread.  Its one constructor is private, and mint_thread_name, which
 # names the thread first, is the sole friend.
