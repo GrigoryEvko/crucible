@@ -30,15 +30,41 @@ WHAT THE PARSER CANNOT READ
     in tsast.UNPARSEABLE gets the same lexical scan over its whole text.  A
     parse error in any other file is a guard failure.
 
-AUTHORING LOCATIONS
-    include/crucible/permissions/*.h, include/foundation/permissions/*.h,
-    include/crucible/concurrent/*.h, include/fixy/concurrent/*.h,
-    include/crucible/safety/PermissionTreeGenerator.h,
-    include/crucible/safety/PermissionGridGenerator.h,
-    include/fixy/OwnedRegion.h, and every file under test/.
+WHERE A SPECIALIZATION IS ADMITTED
+    Beside its tags: in the file that defines every tag it names.  A tag is
+    a top-level template argument of the specialization, and it counts as
+    defined here when this file holds the class definition, with a body,
+    that the spelling resolves to.  A class is defined once in a program,
+    so the file that defines it owns it, and a forward declaration owns
+    nothing.  The spelling resolves by its qualified name: a name written
+    from `::` must equal the qualified name of the definition, and a
+    relative name must name a class of the namespace that holds the
+    specialization, because name lookup there tries that namespace first
+    and the guard cannot see the other headers.  These shapes are no tag,
+    so they refuse the admission:
+      * A template parameter or a pack at the top level, so a
+        specialization for every parent is never beside its tags.
+      * A relative name when the trait name is qualified, because the
+        lookup can then reach the namespace of the qualifier.
+      * A qualifier with template arguments, such as Outer<int>::Tag,
+        because an explicit specialization of Outer in another file can
+        make Tag an alias of a foreign tag.
+      * A class in a preprocessor conditional, a function body or an
+        unnamed class, and a class that an alias or a typedef names.
 
-Exit 0 clean, 1 on an orphan specialization or a parse failure, 2 on a usage
-error or a failed self-test, 3 when the kit is not installed.
+    In an authoring location of the AUTHORING table, each with its reason.
+    A generator over every parent, a partial specialization over a tag
+    family and the frozen channels of the old tree still need it.  A
+    location that no specialization needs is stale, and the check fails
+    until it is removed.
+
+WHAT THE GUARD CANNOT SEE
+    A trait name that a macro builds with `##` is not in the text, so
+    neither the parser nor the lexer finds it.
+
+Exit 0 clean, 1 on an orphan specialization or a parse failure, 2 on a stale
+authoring location, a usage error or a failed self-test, 3 when the kit is
+not installed.
 """
 
 from __future__ import annotations
@@ -50,7 +76,8 @@ import re
 import sys
 import tempfile
 from collections.abc import Iterator
-from pathlib import Path, PurePosixPath
+from dataclasses import dataclass, field
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -62,33 +89,48 @@ TRAITS = frozenset({
     "splits_into", "splits_into_pack", "splits_into_authoring_witness", "splits_into_pack_authoring_witness",
 })
 VARIABLES = frozenset({name + "_v" for name in TRAITS} | {"well_authored_split_v", "well_authored_split_pack_v"})
-# A header directly in one of these directories is an authoring location.
-AUTHORING_DIRS = frozenset({
-    "include/crucible/permissions", "include/foundation/permissions",
-    "include/crucible/concurrent", "include/fixy/concurrent",
-})
-AUTHORING_FILES = frozenset({
-    "include/crucible/safety/PermissionTreeGenerator.h", "include/crucible/safety/PermissionGridGenerator.h",
-    "include/fixy/OwnedRegion.h",
-})
+NEEDLES = re.compile(b"|".join(re.escape(name.encode()) for name in sorted(TRAITS | {"well_authored_split"})))
+# Each authoring location, with the reason that it still needs the exemption.
+# A key that ends in "/" admits every file under it, and any other key admits
+# one file.  A location that no specialization needs is stale, and the check
+# fails until the key is removed, so the table can only shrink.
+FROZEN_CHANNEL = ("a frozen channel of the old tree, which spells its tags relative to crucible::safety, "
+                  "so the lookup reaches a namespace that the guard cannot close without the other headers")
+AUTHORING: dict[str, str] = {
+    "include/crucible/concurrent/PermissionedChainEdge.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/PermissionedChaseLevDeque.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/PermissionedMpmcChannel.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/PermissionedSnapshot.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/PermissionedSpscChannel.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/Queue.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/_PermissionedMpscChannel.h": FROZEN_CHANNEL,
+    "include/crucible/permissions/FederationPermission.h":
+        "the split of a federated peer is partial over its children, which are template parameters",
+    "include/crucible/safety/PermissionTreeGenerator.h": "the generator splits every parent into its slices",
+    "include/crucible/safety/PermissionGridGenerator.h": "the generator splits every parent into its grid cells",
+    "include/fixy/OwnedRegion.h": "the region splits every parent into its slices",
+    "test/": "the tests specialize for local tags on purpose, and a negative fixture forges a split to prove "
+             "that the mint refuses it",
+}
 ROOTS = ("include", "src", "vessel", "bench", "tools", "fuzz", "examples", "test")
 SUFFIXES = (".h", ".hpp", ".cpp", ".cc", ".inl", ".ipp")
 LEXICAL = re.compile(r"\b(?:struct|class)\s+(?:::\s*)?(?:\w+\s*::\s*)*(?P<trait>\w+)\s*<"
                      r"|\b(?P<variable>\w+)\s*<")
 
 
-def authored_at(rel: str) -> bool:
-    """Return True when a repo-relative path is an authoring location.
+def authored_at(rel: str) -> str | None:
+    """Return the authoring location that holds a repo-relative path, or None.
 
     Args:
         rel: The path relative to the scan root
 
     Returns:
-        Whether the file may specialize a split trait
+        The key of AUTHORING that admits the file, or None
     """
-    path = PurePosixPath(rel)
-    return (rel.startswith("test/") or rel in AUTHORING_FILES
-            or (path.suffix == ".h" and str(path.parent) in AUTHORING_DIRS))
+    for entry in AUTHORING:
+        if rel == entry or (entry.endswith("/") and rel.startswith(entry)):
+            return entry
+    return None
 
 
 def final_name(node: tsast.Node | None) -> tuple[str, bool] | None:
@@ -122,26 +164,238 @@ def declared_name(declarator: tsast.Node | None) -> tsast.Node | None:
     return declarator
 
 
-def ast_rows(tree: tsast.Tree) -> Iterator[int]:
-    """Yield the zero-based row of each split-trait specialization in a parsed file.
+CLASS_NODES = ("class_specifier", "struct_specifier", "union_specifier")
+CONDITIONALS = ("preproc_if", "preproc_ifdef", "preproc_else", "preproc_elif", "preproc_elifdef")
+
+
+def template_id(node: tsast.Node | None) -> tsast.Node | None:
+    """Return the template-id node of a declared name, through its qualifiers, or None."""
+    while node is not None:
+        if node.type in ("template_type", "template_function"):
+            return node
+        node = node.child_by_field("name") if node.type == "qualified_identifier" else None
+    return None
+
+
+@dataclass(frozen=True)
+class Site:
+    """One split-trait specialization that the parser reads.
+
+    Attributes:
+        row: The zero-based row where the declaration starts
+        node: The class or variable declaration
+        arguments: The template argument list of the trait, or None
+        qualified: Whether the trait name carries a namespace qualifier
+    """
+
+    row: int
+    node: tsast.Node
+    arguments: tsast.Node | None
+    qualified: bool
+
+
+def site_of(row: int, node: tsast.Node, name: tsast.Node | None) -> Site:
+    """Build a Site from the declared name of a specialization."""
+    named = template_id(name)
+    return Site(row, node, named.child_by_field("arguments") if named is not None else None,
+                name is not None and name.type == "qualified_identifier")
+
+
+def ast_sites(tree: tsast.Tree) -> Iterator[Site]:
+    """Yield each split-trait specialization of a parsed file.
+
+    Complexity: linear in the number of nodes of the file.
 
     Args:
         tree: One parsed file
 
     Yields:
-        The row of each specialization
+        Each specialization, a class head or a trait variable
     """
-    for node in tree.find("struct_specifier", "class_specifier"):
+    for node in tree.find(*CLASS_NODES):
         found = final_name(node.child_by_field("name"))
         if found is not None and found[1] and found[0] in TRAITS:
-            yield node.start[0]
+            yield site_of(node.start[0], node, node.child_by_field("name"))
     for node in tree.find("declaration"):
         for declarator in node.children:
             if declarator.field != "declarator":
                 continue
             found = final_name(declared_name(declarator))
             if found is not None and found[1] and found[0] in VARIABLES:
-                yield declarator.start[0]
+                yield site_of(declarator.start[0], node, declared_name(declarator))
+
+
+def namespace_path(node: tsast.Node) -> list[str]:
+    """Return the names of the namespaces that enclose a node, outermost first."""
+    parts: list[str] = []
+    owner = node.parent
+    while owner is not None:
+        if owner.type == "namespace_definition":
+            named = owner.child_by_field("name")
+            if named is None:
+                parts.insert(0, "(anonymous)")
+            elif named.type == "nested_namespace_specifier":
+                parts[:0] = [part.text for part in named.descendants("namespace_identifier")]
+            else:
+                parts.insert(0, named.text)
+        owner = owner.parent
+    return parts
+
+
+def class_path(node: tsast.Node) -> tuple[str, ...] | None:
+    """Return the qualified name of a class definition, or None when it does not count.
+
+    The name is the enclosing namespaces, the enclosing classes and the
+    class name.  A class in a function body or in an unnamed class has no
+    name that a specialization at namespace scope can spell.  A class in a
+    preprocessor conditional does not count, because the branch can be
+    dead while the class it seems to define comes from another header.
+
+    Args:
+        node: A class, struct or union definition
+
+    Returns:
+        The parts of the qualified name, or None
+    """
+    parts: list[str] = []
+    if node.ancestor_of_type(*CONDITIONALS) is not None:
+        return None
+    owner: tsast.Node | None = node
+    while owner is not None and owner.type != "namespace_definition":
+        if owner.type in ("compound_statement", "function_definition", "lambda_expression"):
+            return None
+        if owner.type in CLASS_NODES and owner.child_by_field("body") is not None:
+            named = owner.child_by_field("name")
+            if named is None or named.type != "type_identifier":
+                return None
+            parts.insert(0, named.text)
+        owner = owner.parent
+    return tuple(namespace_path(node) + parts)
+
+
+def defined_classes(tree: tsast.Tree) -> set[tuple[str, ...]]:
+    """Return the qualified name of each primary class that a file defines with a body.
+
+    Complexity: linear in the number of class nodes times the nesting depth.
+    """
+    found: set[tuple[str, ...]] = set()
+    for node in tree.find(*CLASS_NODES):
+        path = class_path(node) if node.child_by_field("body") is not None else None
+        if path is not None:
+            found.add(path)
+    return found
+
+
+def spelled(node: tsast.Node | None) -> tuple[bool, list[str]] | None:
+    """Read a type name as (written from `::`, its parts), each part without template arguments.
+
+    Args:
+        node: The type of a template argument
+
+    Returns:
+        Whether the spelling starts at `::`, and its parts, or None for a
+        shape that is not a plain class name, such as decltype, a
+        dependent `typename`, or a qualifier with template arguments, whose
+        members an explicit specialization in another file can replace
+    """
+    if node is None:
+        return None
+    if node.type == "qualified_identifier":
+        scope = node.child_by_field("scope")
+        below = spelled(node.child_by_field("name"))
+        if below is None or below[0]:
+            return None
+        if scope is None:
+            return True, below[1]
+        if scope.type not in ("namespace_identifier", "type_identifier"):
+            return None
+        return False, [scope.text] + below[1]
+    if node.type == "template_type":
+        named = node.child_by_field("name")
+        return (False, [named.text]) if named is not None and named.type == "type_identifier" else None
+    if node.type == "type_identifier":
+        return False, [node.text]
+    return None
+
+
+def parameter_names(parameter: tsast.Node) -> Iterator[str]:
+    """Yield the names that one template parameter binds.
+
+    Args:
+        parameter: One child of a template parameter list
+
+    Yields:
+        The parameter name, if it has one
+    """
+    if parameter.type in ("type_parameter_declaration", "variadic_type_parameter_declaration"):
+        yield from (child.text for child in parameter.children_of_type("type_identifier"))
+    elif parameter.type == "optional_type_parameter_declaration":
+        named = parameter.child_by_field("name")
+        if named is not None:
+            yield named.text
+    elif parameter.type == "template_template_parameter_declaration":
+        for inner in parameter.children:
+            if inner.field != "parameters":
+                yield from parameter_names(inner)
+    else:
+        declarator = parameter.child_by_field("declarator")
+        if declarator is not None:
+            yield from (child.text for child in declarator.descendants("identifier"))
+            if declarator.type == "identifier":
+                yield declarator.text
+
+
+def bound_names(node: tsast.Node) -> set[str]:
+    """Return the names that the template parameter lists around a declaration bind."""
+    names: set[str] = set()
+    owner = node.ancestor_of_type("template_declaration")
+    while owner is not None:
+        listed = owner.child_by_field("parameters")
+        if listed is not None:
+            for parameter in listed.children:
+                names.update(parameter_names(parameter))
+        owner = owner.ancestor_of_type("template_declaration")
+    return names
+
+
+def beside_tags(site: Site, defined: set[tuple[str, ...]]) -> bool:
+    """Report whether a specialization sits in the file that defines every tag it names.
+
+    A name written from `::` must equal the qualified name of a definition of
+    this file.  A relative name must name a class of the namespace that
+    holds the specialization.  A specialization whose trait name is itself
+    qualified admits no relative name, because the lookup of its arguments
+    can then reach the namespace of the qualifier, which this file does not
+    show.  A template parameter, a pack, a pointer, a reference or a
+    non-type argument at the top level is no tag, so it refuses the
+    admission.
+
+    Args:
+        site: One specialization
+        defined: The classes that this file defines
+
+    Returns:
+        Whether every top-level argument names a class of this file
+    """
+    if site.arguments is None:
+        return False
+    tags = [child for child in site.arguments.children if child.type != "comment"]
+    if not tags:
+        return False
+    bound = bound_names(site.node)
+    scope = namespace_path(site.node)
+    for tag in tags:
+        if tag.type != "type_descriptor" or tag.child_by_field("declarator") is not None:
+            return False
+        read = spelled(tag.child_by_field("type"))
+        if read is None:
+            return False
+        is_global, parts = read
+        if not is_global and (site.qualified or parts[0] in bound):
+            return False
+        if (tuple(parts) if is_global else tuple(scope + parts)) not in defined:
+            return False
+    return True
 
 
 def lexical_rows(text: str) -> Iterator[int]:
@@ -161,21 +415,41 @@ def lexical_rows(text: str) -> Iterator[int]:
 
 
 def scope_files(root: Path) -> list[Path]:
-    """Return every C++ file under the scan roots that is not an authoring location, sorted."""
+    """Return every C++ file under the scan roots whose bytes name a split trait, sorted.
+
+    A file that does not spell a trait name cannot specialize one, so the
+    parser does not read it.  Complexity: linear in the total size of the
+    files under the scan roots.
+    """
     found: list[Path] = []
     for top in ROOTS:
         base = root / top
         if base.is_dir():
             for path in base.rglob("*"):
-                rel = path.relative_to(root).as_posix()
-                if path.is_file() and path.suffix in SUFFIXES and not authored_at(rel) \
-                        and not any(part.startswith("build") for part in path.relative_to(root).parts):
+                if path.is_file() and path.suffix in SUFFIXES \
+                        and not any(part.startswith("build") for part in path.relative_to(root).parts) \
+                        and NEEDLES.search(path.read_bytes()):
                     found.append(path)
     return sorted(found)
 
 
-def scan(root: Path) -> tuple[list[tuple[str, int, str]], list[str]]:
-    """Find every split-trait specialization outside the authoring locations.
+@dataclass
+class Scan:
+    """The result of one scan.
+
+    Attributes:
+        orphans: Each refused specialization as (path, line, line text)
+        failures: Each file the parser cannot read
+        needed: For each authoring location, the sites that only it admits
+    """
+
+    orphans: list[tuple[str, int, str]] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+    needed: dict[str, list[str]] = field(default_factory=dict)
+
+
+def scan(root: Path) -> Scan:
+    """Find every split-trait specialization that is neither beside its tags nor in an authoring location.
 
     Complexity: linear in the total size of the files in scope.
 
@@ -183,25 +457,31 @@ def scan(root: Path) -> tuple[list[tuple[str, int, str]], list[str]]:
         root: The scan root
 
     Returns:
-        Each orphan as (path, line, line text), and each parse failure
+        The orphans, the parse failures and the use of each authoring location
     """
-    orphans: list[tuple[str, int, str]] = []
-    failures: list[str] = []
+    result = Scan(needed={entry: [] for entry in AUTHORING})
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         source = tree.source.decode("utf-8", "replace")
         if tree.diagnostic is not None and rel not in tsast.UNPARSEABLE:
-            failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
+            result.failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
+        refused: set[int] = set()
         if tree.diagnostic is not None:
-            rows = set(lexical_rows(source))
+            refused.update(lexical_rows(source))
         else:
-            rows = set(ast_rows(tree))
+            defined = defined_classes(tree)
+            refused.update(site.row for site in ast_sites(tree) if not beside_tags(site, defined))
             for body in tree.find("preproc_arg"):
-                rows.update(body.start[0] + row for row in lexical_rows(body.text))
+                refused.update(body.start[0] + row for row in lexical_rows(body.text))
         lines = source.split("\n")
-        orphans.extend((rel, row + 1, lines[row].strip()) for row in sorted(rows))
-    return orphans, failures
+        entry = authored_at(rel)
+        for row in sorted(refused):
+            if entry is None:
+                result.orphans.append((rel, row + 1, lines[row].strip()))
+            else:
+                result.needed[entry].append(f"{rel}:{row + 1}")
+    return result
 
 
 def check(root: Path) -> int:
@@ -211,20 +491,26 @@ def check(root: Path) -> int:
         root: The scan root
 
     Returns:
-        0 clean, 1 on an orphan or a parse failure
+        0 clean, 1 on an orphan or a parse failure, 2 on an authoring
+        location that no site needs
     """
-    orphans, failures = scan(root)
-    for rel, line, text in orphans:
+    result = scan(root)
+    for rel, line, text in result.orphans:
         print(f"splits_into_orphan: forbidden specialization at {rel}:{line}\n  {text}", file=sys.stderr)
-    for failure in failures:
+    for failure in result.failures:
         print(f"splits_into_orphan: parse failure: {failure}", file=sys.stderr)
-    if orphans or failures:
-        print("splits_into_orphan: a split trait is specialized only beside its tags, in "
-              "include/{crucible,foundation}/permissions/, include/{crucible,fixy}/concurrent/, the two "
-              "permission generators, include/fixy/OwnedRegion.h or test/ (CLAUDE.md §IX).", file=sys.stderr)
+    if result.orphans or result.failures:
+        print("splits_into_orphan: a split trait is specialized only in the file that defines every tag it "
+              "names, or in an authoring location of AUTHORING in this script (CLAUDE.md §IX).", file=sys.stderr)
         return 1
-    print("check-splits-orphan: clean — no split trait is specialized outside its authoring locations.",
-          file=sys.stderr)
+    stale = sorted(entry for entry, sites in result.needed.items() if not sites)
+    for entry in stale:
+        print(f"splits_into_orphan: stale authoring location {entry}: every specialization there sits beside "
+              "its tags, so remove it from AUTHORING.", file=sys.stderr)
+    if stale:
+        return 2
+    print("check-splits-orphan: clean — every split trait is specialized beside its tags or in an authoring "
+          "location that still needs its exemption.", file=sys.stderr)
     return 0
 
 
@@ -246,7 +532,7 @@ def self_test() -> int:
             failures.append(name)
 
     planted = (
-        "namespace crucible { struct P {}; struct L {}; struct R {}; }\n"            # 1
+        "namespace crucible { struct P; struct L; struct R; }\n"                    # 1
         "namespace crucible {\n"                                                    # 2
         "template <>\n"                                                             # 3
         "struct splits_into<P, L, R> : std::true_type {};\n"                        # 4
@@ -271,21 +557,74 @@ def self_test() -> int:
         "struct can_split_into_record { int can_split_into = 0; };\n"              # 19
     )
     expected = {4, 7, 10, 11, 12, 13, 14}
+    trait = "template <> struct foundation::permissions::can_split_into"
+    metalog = ("<::crucible::metalog_tag::Whole<U>, ::crucible::metalog_tag::Producer<U>, "
+               "::crucible::metalog_tag::Consumer<U>> : std::true_type {};")
+    # Each line of the file beside its tags, and whether the guard admits it.
+    beside: list[tuple[str, bool | None, str]] = [
+        ("namespace crucible::metalog_tag { template <class U> struct Whole {}; template <class U> struct "
+         "Producer {}; template <class U> struct Consumer {}; }", None, ""),
+        ("struct G {}; struct GL {}; struct GR {};", None, ""),
+        ("namespace n { struct Outer2 { struct Tag {}; }; }", None, ""),
+        ("namespace q { template <class T> struct Outer { struct Tag {}; }; }", None, ""),
+        ("namespace al { using A = ::G; }", None, ""),
+        ("#if 0", None, ""),
+        ("namespace victim { struct V {}; }", None, ""),
+        ("#endif", None, ""),
+        ("void local() { struct Loc {}; }", None, ""),
+        ("namespace foundation::permissions {", None, ""),
+        ("struct Mine {}; struct MineL {}; struct MineR {};", None, ""),
+        ("template <class U> struct can_split_into" + metalog, True,
+         "a family specialization whose tags this file defines, spelled from ::"),
+        ("template <> struct can_split_into<Mine, MineL, MineR> : std::true_type {};", True,
+         "a relative name of a class that this file defines in the namespace of the specialization"),
+        ("template <class U, class X> struct can_split_into<::crucible::metalog_tag::Whole<U>, X, "
+         "::crucible::metalog_tag::Consumer<U>> : std::true_type {};", False,
+         "a template parameter at the top level"),
+        ("template <> struct can_split_into<crucible::metalog_tag::Whole<int>, crucible::metalog_tag::"
+         "Producer<int>, crucible::metalog_tag::Consumer<int>> : std::true_type {};", False,
+         "a relative name that the namespace of the specialization does not define"),
+        ("template <class... Cs> struct can_split_into_pack<::G, Cs...> : std::true_type {};", False,
+         "a pack at the top level"),
+        ("}", None, ""),
+        (trait + "<::G, ::GL, ::GR> : std::true_type {};", True,
+         "a qualified trait name whose tags are spelled from ::"),
+        (trait + "<G, GL, GR> : std::true_type {};", False,
+         "a qualified trait name with relative tags"),
+        (trait + "<::n::Outer2::Tag, ::G, ::GL> : std::true_type {};", True,
+         "a class nested in a class that this file defines"),
+        (trait + "<::q::Outer<int>::Tag, ::G, ::GL> : std::true_type {};", False,
+         "a qualifier with template arguments"),
+        (trait + "<::al::A, ::G, ::GL> : std::true_type {};", False, "an alias of a class of this file"),
+        (trait + "<::victim::V, ::G, ::GL> : std::true_type {};", False,
+         "a class defined only in a preprocessor conditional"),
+        (trait + "<::Loc, ::G, ::GL> : std::true_type {};", False, "a class of a function body"),
+        (trait + "<::G*, ::GL, ::GR> : std::true_type {};", False, "a pointer at the top level"),
+        (trait + "<::G, ::GL, 3> : std::true_type {};", False, "a non-type argument"),
+        ("template <> inline constexpr bool foundation::permissions::can_split_into_v<::G, ::GR, ::GL> = true;",
+         True, "a trait variable whose tags this file defines"),
+    ]
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         for rel, text in (
             ("src/planted/Forge.cpp", planted),
-            ("include/crucible/concurrent/Channel.h", "template <> struct splits_into<P, L, R> {};\n"),
-            ("include/fixy/concurrent/Channel.h",
-             "template <> struct foundation::permissions::can_split_into<P, L, R> {};\n"),
-            ("include/fixy/concurrent/deeper/Channel.h", "template <> struct splits_into<P, L, R> {};\n"),
+            ("src/planted/Beside.h", "\n".join(line for line, _, _ in beside) + "\n"),
+            ("src/planted/Foreign.h",
+             "namespace crucible::metalog_tag { template <class U> struct Whole; template <class U> struct "
+             "Producer; template <class U> struct Consumer; }\n"
+             "namespace foundation::permissions {\n"
+             "template <class U> struct can_split_into" + metalog + "\n"
+             "}\n"),
+            ("include/fixy/OwnedRegion.h", "template <class P, class... S> struct can_split_into_pack<P, S...> {};\n"),
+            ("include/fixy/Other.h", "template <class P, class... S> struct can_split_into_pack<P, S...> {};\n"),
             ("test/fixy/Local.cpp", "template <> struct splits_into<P, L, R> {};\n"),
         ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
-        orphans, broken = scan(root)
+        result = scan(root)
+        orphans, broken = result.orphans, result.failures
         lines = {line for rel, line, _ in orphans if rel == "src/planted/Forge.cpp"}
-        for line, label in ((4, "an unqualified full specialization"),
+        for line, label in ((4, "a full specialization whose tags this file only declares"),
                             (7, "a specialization whose head spans three lines"),
                             (10, "a specialization qualified from the global namespace"),
                             (11, "a partial specialization"),
@@ -297,13 +636,22 @@ def self_test() -> int:
         for line, label in ((15, "a line comment"), (16, "a block comment"), (17, "a string literal"),
                             (18, "a different template name"), (19, "a member with a trait's name")):
             expect(f"not caught: {label}", line not in lines, True)
+        refused = {line for rel, line, _ in orphans if rel == "src/planted/Beside.h"}
+        for line, (_, admitted, label) in enumerate(beside, start=1):
+            if admitted is True:
+                expect(f"admitted beside its tags: {label}", line not in refused, True)
+            elif admitted is False:
+                expect(f"refused beside other classes: {label}", line in refused)
+        expect("nothing else in the file beside its tags is reported",
+               refused <= {line for line, (_, admitted, _) in enumerate(beside, start=1) if admitted is False}, True)
+        expect("refused: a family specialization whose tags this file only declares",
+               ("src/planted/Foreign.h", 3) in {(rel, line) for rel, line, _ in orphans})
         exempt = {rel for rel, _, _ in orphans}
-        expect("the old concurrent tree is an authoring location",
-               "include/crucible/concurrent/Channel.h" not in exempt, True)
-        expect("the new concurrent tree is an authoring location",
-               "include/fixy/concurrent/Channel.h" not in exempt, True)
-        expect("a subdirectory of an authoring directory is not", "include/fixy/concurrent/deeper/Channel.h" in exempt)
+        expect("a listed file is an authoring location", "include/fixy/OwnedRegion.h" not in exempt, True)
+        expect("a file beside a listed file is not", "include/fixy/Other.h" in exempt)
         expect("test/ is an authoring location", "test/fixy/Local.cpp" not in exempt, True)
+        expect("a location that admits a site is not stale", bool(result.needed["include/fixy/OwnedRegion.h"]), True)
+        expect("a location that admits no site is stale", not result.needed["include/crucible/concurrent/Queue.h"])
         expect("the planted tree parses", not broken)
 
         def captured(cwd: Path) -> tuple[int, str]:
@@ -319,10 +667,25 @@ def self_test() -> int:
             return code, buffer.getvalue()
 
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
-        (root / "src/planted/Broken.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
+        (root / "src/planted/Silent.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
+        expect("a file that names no split trait is not parsed", not scan(root).failures, True)
+        (root / "src/planted/Broken.cpp").write_text("void f() { g(1) { } }  // can_split_into\n",
+                                                     encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()):
             code = check(root)
-        expect("a file the parser cannot read fails the check", code == 1 and bool(scan(root)[1]), True)
+        expect("a file the parser cannot read fails the check", code == 1 and bool(scan(root).failures))
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        listed = root / "include/crucible/permissions/FederationPermission.h"
+        listed.parent.mkdir(parents=True)
+        listed.write_text("namespace foundation::permissions {\nstruct W {}; struct A {}; struct B {};\n"
+                          "template <> struct can_split_into<W, A, B> {};\n}\n", encoding="utf-8")
+        buffer = io.StringIO()
+        with contextlib.redirect_stderr(buffer):
+            code = check(root)
+        expect("a listed file whose splits all sit beside their tags is a stale location",
+               code == 2 and "stale authoring location include/crucible/permissions/FederationPermission.h"
+               in buffer.getvalue())
     if failures:
         print(f"check-splits-orphan --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

@@ -1482,12 +1482,12 @@ set_tests_properties(fixy_grant_namespace_purity
     LABELS "safety_attack;ci_guard")
 
 # A specialization of a split trait, or of one of its variables, is legal
-# only beside the tags it names: in the permissions and concurrent
-# headers, the two permission generators, include/fixy/OwnedRegion.h and
-# test/.  C++ has no orphan rule, so a foreign TU could otherwise forge
-# cross-region authority (CLAUDE.md §IX).  scripts/check-splits-orphan.py
-# reads each specialization from the parse tree.  Exit 3 when the kit is
-# absent reports a skip.
+# only in the file that defines every tag it names, or in an authoring
+# location that scripts/check-splits-orphan.py lists with its reason.  C++
+# has no orphan rule, so a foreign TU could otherwise forge cross-region
+# authority (CLAUDE.md §IX).  The guard reads each specialization from the
+# parse tree.  Exit 2 names an authoring location that no specialization
+# needs.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME splits_orphan_self_test
          COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-splits-orphan.py --self-test)
 add_test(NAME splits_orphan
