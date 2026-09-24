@@ -257,12 +257,12 @@ uint32_t crucible_bg_iterations(CrucibleHandle h) noexcept {
 
 uint32_t crucible_ring_size(CrucibleHandle h) noexcept {
     // .peek(): unwrap the Stale<uint32_t> racy snapshot to the C-ABI scalar.
-    return crucible::vessel::as_vigil_typed(h).value()->ring().size().peek();
+    return crucible::vessel::as_vigil_typed(h).value()->ring_size().peek();
 }
 
 uint32_t crucible_metalog_size(CrucibleHandle h) noexcept {
     // .peek(): unwrap the Stale<uint32_t> racy snapshot to the C-ABI scalar.
-    return crucible::vessel::as_vigil_typed(h).value()->meta_log().size().peek();
+    return crucible::vessel::as_vigil_typed(h).value()->meta_log_size().peek();
 }
 
 // Each call proves that it runs on the thread that holds the producer claim.

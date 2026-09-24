@@ -189,12 +189,12 @@ static void test_divergence_drops_the_unobserved_region() {
     // not seen yet, so it must reach the ring.  If the unobserved region is
     // still in the slot, this op is consumed by alignment instead and the
     // ring never grows.
-    const uint64_t produced_before = vigil.ring().total_produced();
+    const uint64_t produced_before = vigil.ring_total_produced();
     auto after_divergence = op_at(7, 0);
     auto result_after =
         vigil.dispatch_op(crucible::test::certify_synthetic_entry(after_divergence.entry), after_divergence.metas, after_divergence.n_metas);
     assert(result_after.action == DispatchResult::Action::RECORD);
-    assert(vigil.ring().total_produced() == produced_before + 1
+    assert(vigil.ring_total_produced() == produced_before + 1
            && "the first op after a divergence must be recorded, not aligned against the region the "
               "background thread published while the context was compiled");
 
@@ -251,12 +251,12 @@ static void test_divergence_drops_a_half_finished_alignment() {
 
     // The claim.  This op continues the abandoned walk if the walk is still
     // open, and reaches the ring if it is not.
-    const uint64_t produced_before = vigil.ring().total_produced();
+    const uint64_t produced_before = vigil.ring_total_produced();
     auto after_divergence = op_at(9, 2);
     auto result_after =
         vigil.dispatch_op(crucible::test::certify_synthetic_entry(after_divergence.entry), after_divergence.metas, after_divergence.n_metas);
     assert(result_after.action == DispatchResult::Action::RECORD);
-    assert(vigil.ring().total_produced() == produced_before + 1
+    assert(vigil.ring_total_produced() == produced_before + 1
            && "the first op after a divergence must be recorded, not fed to an alignment walk the "
               "divergence abandoned");
 
@@ -288,10 +288,30 @@ static void test_record_op_claims_the_producer_role() {
     std::printf("  test_record_op_claims_the_producer_role: PASSED\n");
 }
 
+// The producer surface of the ring and of the metadata log takes the context
+// of the producer claim.  The counters take no context, and they agree with
+// the surface that the context opens.
+static void test_producer_surface_takes_the_claim_context() {
+    crucible::Vigil vigil;
+    auto first = divrig::op_at(0, 0);
+    assert(vigil.record_op(crucible::test::certify_synthetic_entry(first.entry), first.metas, first.n_metas));
+
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    const crucible::TraceRing& ring = vigil.ring(fg);
+    const crucible::MetaLog& meta_log = vigil.meta_log(fg);
+    assert(ring.total_produced() == vigil.ring_total_produced());
+    assert(ring.total_produced() >= 1 && "the recorded op reached the ring");
+    assert(meta_log.size().peek() == vigil.meta_log_size().peek());
+    assert(&vigil.ring(fg) == &ring && "every call opens the same ring");
+
+    std::printf("  test_producer_surface_takes_the_claim_context: PASSED\n");
+}
+
 int main() {
     test_divergence_drops_the_unobserved_region();
     test_divergence_drops_a_half_finished_alignment();
     test_record_op_claims_the_producer_role();
+    test_producer_surface_takes_the_claim_context();
 
     char tmpdir[] = "/tmp/crucible_vigil_XXXXXX";
     char* dir = mkdtemp(tmpdir);

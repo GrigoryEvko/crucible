@@ -11537,6 +11537,20 @@ crucible_neg_compile_multi_test(neg_pool_allocator_initialized_view_other_brand
 crucible_neg_compile_multi_test(neg_vigil_output_ptr_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_output_ptr_unbranded_ctx.cpp:11")
+# ring() and meta_log() hand out the producer surface of the ring and of the
+# metadata log, so each asks for the context of the Vigil's producer claim.
+crucible_neg_compile_multi_test(neg_vigil_ring_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_vigil_ring_unbranded_ctx.cpp:11")
+crucible_neg_compile_multi_test(neg_vigil_ring_other_brand
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_vigil_ring_other_brand.cpp:15")
+crucible_neg_compile_multi_test(neg_vigil_meta_log_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_vigil_meta_log_unbranded_ctx.cpp:11")
+crucible_neg_compile_multi_test(neg_vigil_meta_log_other_brand
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_vigil_meta_log_other_brand.cpp:15")
 crucible_neg_compile_multi_test(neg_vigil_mint_producer_context_const
   "passing .const crucible::Vigil. as .this. argument discards qualifiers"
   "neg_vigil_mint_producer_context_const.cpp:10")

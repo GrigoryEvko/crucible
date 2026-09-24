@@ -494,17 +494,17 @@ public:
     [[nodiscard]] const RegionCache& region_cache() const CRUCIBLE_LIFETIMEBOUND { return region_cache_; }
 
     // These two hand out the producer surface of the ring and of the
-    // metadata log directly, so the thread gate that record_op and
-    // dispatch_op carry does not travel with them.  A caller that appends
-    // through one of these references is the producer, and holds the same
-    // obligation it would have had going through record_op: one thread, for
-    // the life of this Vigil.  is_producer_thread() reports whether the
-    // calling thread already holds that role.
-    //
-    // Reading through them is unconstrained.  Introspection, bench
-    // measurement and the counters are all reads.
-    [[nodiscard]] TraceRing& ring() CRUCIBLE_LIFETIMEBOUND { return *ring_; }
-    [[nodiscard]] MetaLog& meta_log() CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
+    // metadata log.  A caller that appends through one of them is the
+    // producer, so each asks for the context of this Vigil's producer claim,
+    // as record_op and dispatch_op do.
+    [[nodiscard]] TraceRing& ring(VigilFgCtx const&) CRUCIBLE_LIFETIMEBOUND { return *ring_; }
+    [[nodiscard]] MetaLog& meta_log(VigilFgCtx const&) CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
+
+    // Counters that any thread can read with no context.  Each value is a
+    // snapshot, and it can be stale by the time the caller reads it.
+    [[nodiscard]] ::fixy::Stale<uint32_t> ring_size() const noexcept { return ring_->size(); }
+    [[nodiscard]] uint64_t ring_total_produced() const noexcept { return ring_->total_produced(); }
+    [[nodiscard]] crucible::fixy::wrap::Stale<uint32_t> meta_log_size() const noexcept { return meta_log_->size(); }
 
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
     [[nodiscard]] uint32_t bg_last_iteration_length() const { return bg_.last_iteration_length; }
