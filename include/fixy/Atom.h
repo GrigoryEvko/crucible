@@ -364,9 +364,10 @@ using effect_row_of_t = typename detail::effect_grade_row_<Grade>::type;
 //
 // An atom that reaches a real operation carries the row of that
 // operation as `lifts_to`.  The stated with<Es...> of the Effect axis
-// lifts, and so do the waits of fixy/atoms/Sync.h and the system calls
-// of fixy/atoms/Syscall.h and fixy/atoms/Os.h.  An atom with no lift
-// reaches no operation, so it adds nothing to the union.
+// lifts, and so do the waits of fixy/atoms/Sync.h, the system calls of
+// fixy/atoms/Syscall.h and fixy/atoms/Os.h, and the writes of
+// fixy/atoms/Stdio.h.  An atom with no lift reaches no operation, so it
+// adds nothing to the union.
 //
 // The row of a binding is the row that its Effect grade states, joined
 // with the row that its atoms lift to.  The Effect grade alone is not

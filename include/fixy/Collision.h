@@ -1550,6 +1550,9 @@ struct rules_of {
     static constexpr bool H010_ok = !(hot && row_bg);
 
     static constexpr bool R001_ok = !(coroutine && hot);
+    // A stdio write lifts IO and Block, so H003 and W001 refuse the same
+    // pack.  S001 keeps its own theorem and its own code: the write takes
+    // the lock of the stream before it reaches the kernel.
     static constexpr bool S001_ok = !(G::template mentions<Axis::Stdio> && hot);
 
     // ── The wait family, live since fixy/atoms/Sync.h ─────────────────
@@ -1749,10 +1752,12 @@ struct rules_of {
     static constexpr bool L003_ok = !(borrow && spawn_outlives_the_frame);
 
     // P010 reads the row of the binding, which holds the lifts of its
-    // atoms.  A stdio write lifts nothing, and a call through the vDSO
-    // lifts the empty row, but each is emitted code.  So P002 reads the
-    // two axes that such atoms engage.  A ghost binding that engages
-    // either is the same contradiction through a different door.
+    // atoms, so it refuses a ghost stdio write, which lifts IO and Block.
+    // A call through the vDSO lifts the empty row, and a deliberate leak
+    // lifts the empty row too, but each atom still states an emitting
+    // surface.  So P002 reads the two axes that such atoms engage.  A
+    // ghost binding that engages either is the same contradiction through
+    // a different door.
     static constexpr bool emits_outside_the_row = G::template mentions<Axis::Stdio>
                                                || G::template mentions<Axis::SyscallSurface>;
     static constexpr bool P002_ok = !(ghost && emits_outside_the_row);
@@ -1956,8 +1961,9 @@ struct rules_of {
         static_assert(D002_ok, "D002: unbounded recursion x unbounded cost. Recursion with neither a depth bound nor "
                                "a cost bound is a stack overflow the type system could have refused.");
         static_assert(P002_ok, "P002: ghost x an emitting surface. A ghost binding is erased at codegen, and a "
-                               "stdio write or a syscall is emitted code by definition. P010 catches this through "
-                               "the effect row; these two axes are the other doors to the same contradiction.");
+                               "stdio write or a syscall is emitted code by definition. P010 catches the atoms "
+                               "that lift an effect through the row of the binding. A call through the vDSO lifts "
+                               "the empty row, and these two axes are the door that catches it.");
         static_assert(H001_ok, "H001: hot x an unstated or unbounded cost. The hot path must justify its compute "
                                "envelope, so declare cost::Constant or cost::Linear. An unstated cost is the "
                                "Complexity strict pole, which on a hot binding is a claim nobody made.");
@@ -2261,13 +2267,21 @@ static_assert(!live_rules<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine>:
 static_assert(live_rules<::fixy::atom::mut_monotonic, ::fixy::atom::coroutine,
                          ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>>::M012_ok);
 
-// P002 reaches the two emitting axes P010 does not read, so the pair it
-// refuses is one P010 admits.  Both halves alone are fine.
-static_assert(!live_rules<::fixy::atom::ghost, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>>::P002_ok);
-static_assert(live_rules<::fixy::atom::ghost, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>>::P010_ok,
+// P002 reaches the two emitting axes, and a call through the vDSO lifts
+// the empty row, so the pair it refuses is one P010 admits.  Both halves
+// alone are fine.  A stdio write lifts IO and Block, so P010 refuses a
+// ghost write as well.
+namespace p002_cells {
+using VdsoRead = ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::clock_gettime>;
+using StdoutWrite = ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>;
+static_assert(!live_rules<::fixy::atom::ghost, VdsoRead>::P002_ok);
+static_assert(live_rules<::fixy::atom::ghost, VdsoRead>::P010_ok,
               "P002 must be the rule that catches this pair; if P010 already did, P002 would be redundant");
-static_assert(live_rules<::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>>::P002_ok);
+static_assert(live_rules<VdsoRead>::P002_ok);
 static_assert(live_rules<::fixy::atom::ghost>::P002_ok);
+static_assert(!live_rules<::fixy::atom::ghost, StdoutWrite>::P002_ok
+              && !live_rules<::fixy::atom::ghost, StdoutWrite>::P010_ok);
+}  // namespace p002_cells
 
 // The constant-time family.  constant_time alone trips nothing, and each
 // rule needs its second premise.

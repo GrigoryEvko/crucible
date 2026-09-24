@@ -11,6 +11,7 @@
 
 #include <fixy/Corpus.h>
 #include <fixy/Reject.h>
+#include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
 #include <fixy/atoms/Syscall.h>
 
@@ -130,6 +131,10 @@ static_assert(only_this_entry_matches<corpus::internal_io_without_declassify, at
 static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_public, FileWrite>());
 static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, FileWrite>());
 static_assert(!corpus::classified_io_without_declassify::matches<int, FutexCall>(), "a futex call lifts Block alone");
+using StderrWrite = at::stdio::write<at::stdio::streams::Stderr>;
+static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, StderrWrite>(),
+              "a stdio write lifts IO, so a classified value written to a stream needs a declassification");
+static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_public, StderrWrite>());
 static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::park>(),
               "a park lifts Block, which is emitted code");
 static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, FutexCall>());

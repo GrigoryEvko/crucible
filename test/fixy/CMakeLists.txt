@@ -208,7 +208,7 @@ fixy_neg_compile_test(neg_rule_p010_ghost_observable_row
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) P010:"
   "${_fixy_tier5_member}")
-fixy_neg_compile_test(neg_rule_p002_ghost_stdio
+fixy_neg_compile_test(neg_rule_p002_ghost_vdso_call
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) P002:"
   "${_fixy_tier5_member}")
@@ -232,16 +232,22 @@ fixy_neg_compile_test(neg_rule_d002_recursion_unbounded_cost
 # ── The regime family ─────────────────────────────────────────────────
 #
 # Six rules that could not fire until fixy/atoms/Regime.h gave Axis::Regime
-# its first atoms.  Each fixture is isolated to its own code, which takes
-# work rather than luck: H001's and H002's premises are both ABSENCES (the
-# Complexity and Refinement strict poles), so a bare `regime::hot` pack
-# trips both, and every other fixture in this group carries a cost grade
-# and a refinement witness specifically to silence them.  Without those
-# atoms each fixture would floor on a code it does not claim.
+# its first atoms.  Each fixture but one is isolated to its own code, which
+# takes work rather than luck: H001's and H002's premises are both
+# ABSENCES (the Complexity and Refinement strict poles), so a bare
+# `regime::hot` pack trips both, and every other fixture in this group
+# carries a cost grade and a refinement witness specifically to silence
+# them.  Without those atoms each fixture would floor on a code it does
+# not claim.
 #
 # H003 reads Alloc and IO in the row of the binding, and not the cost, so
 # its three fixtures state a constant cost.  One states Alloc, one states
 # IO, and one states getpid, a system call that lifts IO and cannot block.
+#
+# S001 is the one fixture that is not isolated.  A stdio write lifts IO
+# and Block, so H003 and W001 refuse a hot write too, and no pack can
+# avoid them.  The regex names the three codes, so a fourth code or a
+# missing one fails the fixture.
 fixy_neg_compile_test(neg_rule_h001_hot_unstated_cost
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) H001:"
@@ -272,7 +278,7 @@ fixy_neg_compile_test(neg_rule_r001_coroutine_hot
   "${_fixy_tier5_member}")
 fixy_neg_compile_test(neg_rule_s001_stdio_hot
   "${_fixy_tier5_reason}"
-  "Collision rule\\(s\\) S001:"
+  "Collision rule\\(s\\) H003, S001, W001:"
   "${_fixy_tier5_member}")
 
 # ── The wait family ───────────────────────────────────────────────────
@@ -676,6 +682,11 @@ fixy_neg_compile_test(neg_fn_futex_row_under_compile_ctx
 fixy_neg_compile_test(neg_fn_io_syscall_row_under_drain_ctx
   "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
   "R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>")
+# A stdio write lifts IO and Block.  The context holds Block and not IO,
+# so the fixture fails for IO alone.
+fixy_neg_compile_test(neg_fn_stdio_row_under_block_ctx
+  "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
+  "R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Block>")
 
 # The same lift, pointing the other way.  An atom::with in an os mint
 # pack widens the row the context has to admit, and this is the fixture

@@ -140,12 +140,16 @@ static_assert(live_rules<at::dispatch::recurses<0>>::D002_ok);
 static_assert(live_rules<at::cost_unbounded>::D002_ok);
 static_assert(live_rules<at::dispatch::recurses<0>, at::cost_linear<4>>::D002_ok);
 
-// P002 ghost x an emitting surface the effect row does not name.  The
-// pair P010 admits is the pair P002 refuses, which is why both exist.
+// P002 ghost x an emitting surface.  A call through the vDSO lifts the
+// empty row, so P010 admits the pair and P002 refuses it, which is why
+// both exist.  A stdio write lifts IO and Block, so both rules refuse a
+// ghost write.
 static_assert(!live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>::P002_ok);
 static_assert(!live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stderr>>::P002_ok);
-static_assert(live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>::P010_ok,
-              "a stdio write is not an effect-row effect, so P010 cannot see it");
+static_assert(!live_rules<at::ghost, at::stdio::write<at::stdio::streams::Stdout>>::P010_ok,
+              "a stdio write lifts IO and Block, so P010 sees it in the row of the binding");
+static_assert(live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>::failing_codes() == "P002",
+              "a call through the vDSO lifts the empty row, so P002 alone refuses a ghost call");
 static_assert(live_rules<at::ghost>::P002_ok);
 static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>>::P002_ok);
 static_assert(live_rules<at::copy, at::stdio::write<at::stdio::streams::Stdout>>::P002_ok,
@@ -235,6 +239,12 @@ static_assert(!live_rules<at::stdio::write<at::stdio::streams::Stdout>, at::regi
 static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>>::S001_ok);
 static_assert(live_rules<at::regime::hot>::S001_ok);
 static_assert(live_rules<at::stdio::write<at::stdio::streams::Stdout>, at::regime::warm>::S001_ok);
+// A stdio write lifts IO and Block, so a hot write trips H003 and W001
+// beside S001.  A warm write trips none of the three.
+static_assert(hot_bounded<at::stdio::write<at::stdio::streams::Stderr>>::failing_codes() == "H003, S001, W001");
+static_assert(live_rules<at::stdio::write<at::stdio::streams::Stderr>, at::regime::warm, at::cost_constant>::valid);
+static_assert(std::is_same_v<live_rules<at::stdio::write<at::stdio::streams::Stderr>>::binding_row,
+                             fe::Row<Eff::IO, Eff::Block>>);
 
 // The whole family stands down for a binding that claims no tier, which
 // is what keeps the axis's Unconstrained strict pole honest: most of the

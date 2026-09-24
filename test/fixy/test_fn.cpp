@@ -13,6 +13,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/Reject.h>
+#include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
 #include <fixy/atoms/Syscall.h>
 
@@ -197,6 +198,16 @@ static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgDrainCtx, ProcessStateBinding>
 static_assert(!::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, ParkBinding>);
 static_assert(::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, fn<int, ::fixy::atom::sync::spin_pause>>,
               "a spin lifts the empty row, so the foreground context admits it");
+
+// A stdio write lifts IO and Block.  The fixture
+// neg_fn_stdio_row_under_block_ctx takes the same binding to a context
+// that holds Block and not IO.
+using StderrBinding =
+    fn<int, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stderr>, ::fixy::atom::as_public>;
+static_assert(std::is_same_v<::fixy::binding_row_t<StderrBinding>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(::fixy::CtxAdmitsBinding<::fixy::BgLoadCtx, StderrBinding>, "the load context holds IO and Block");
+static_assert(::fixy::CtxAdmitsBinding<::fixy::TestRunnerCtx, StderrBinding>);
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, StderrBinding>, "the compile context lacks Block");
 
 // A static_assert proves the constant-evaluated path only.  These run.
 [[nodiscard]] int check_runtime_paths() {

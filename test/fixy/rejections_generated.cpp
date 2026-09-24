@@ -14,15 +14,13 @@
 //   1. Every atom, alone, passes the STRUCTURAL tiers.  It is an atom
 //      (tier 2) and it names its axis once (tier 4).  Whether tier 5
 //      then refuses it is the rules' and the corpus's business and is
-//      reported below as data, not asserted: four atoms alone ARE
+//      reported below as data, not asserted: many atoms alone ARE
 //      refused, because reject-by-default means a strict pole can be
-//      half of a contradiction.  The run prints which four, so this
-//      comment cannot drift out of step with them; at the time of
-//      writing they are atom::with<IO> and atom::with<Bg, IO> (a
-//      classified value on an observable channel, Security's strict
-//      pole being classified), atom::stale_to<N> (a classified value
-//      behind a replay window) and ctrl::longjmp_unsafe (a linear
-//      value a longjmp can skip).
+//      half of a contradiction.  The run prints which ones, so this
+//      comment names no count that can drift.  Each atom that lifts IO
+//      is one of them, a stated with<IO>, an IO system call and a stdio
+//      write alike: Security's strict pole is classified, so the corpus
+//      reads a classified value on an observable channel.
 //
 //   2. Any two atoms on ONE axis are refused, and refused BY TIER 4.
 //      Asserting the tier rather than the bare rejection is what makes
@@ -34,8 +32,9 @@
 //      exactly when that row is empty.  The foreground context claims
 //      Row<>, so the biconditional below says: a lifting atom with a
 //      non-empty row cannot run there, and one that lifts to nothing
-//      can.  The atoms that lift are the SyscallSurface family of
-//      fixy/atoms/Os.h, the wait strategies of fixy/atoms/Sync.h, and
+//      can.  The atoms that lift are the SyscallSurface families of
+//      fixy/atoms/Os.h and fixy/atoms/Syscall.h, the wait strategies of
+//      fixy/atoms/Sync.h, the writes of fixy/atoms/Stdio.h, and
 //      atom::with<Es...>, the Effect axis's own atom.  The last of those
 //      is what lets a context be gated on a binding's declared effects;
 //      until it lifted, the row nobody computed was the empty row and
@@ -304,7 +303,7 @@ static_assert(every_lifting_atom_needs_its_row(),
 static_assert(lifting_atoms() >= 30, "fewer than thirty rostered atoms carry a lift, so the context-fit walk "
                                      "covers much less than it did.  The SyscallSurface families of "
                                      "fixy/atoms/Os.h and fixy/atoms/Syscall.h are most of what lifts, and "
-                                     "the current count is 102.");
+                                     "the run prints the current count.");
 
 #pragma GCC diagnostic pop
 

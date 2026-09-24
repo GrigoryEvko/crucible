@@ -9,6 +9,11 @@
 // refuses a GHOST binding that emits, because erased code cannot write,
 // and S001 refuses a HOT binding that emits, because the write is too
 // slow.  Neither implies the other.
+//
+// A stdio write lifts IO and Block, so H003 and W001 refuse this pack
+// too, and no pack can avoid them.  The fixture floors on the three
+// codes together.  as_public is in the pack so that the corpus entry
+// classified_io_without_declassify has no classified value to refuse.
 
 #include <fixy/Fn.h>
 
@@ -20,7 +25,7 @@ struct log_rate_proved final {};
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>,
-                                ::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
+                                ::fixy::atom::regime::hot, ::fixy::atom::as_public, ::fixy::atom::cost_constant,
                                 ::fixy::atom::refined_with<log_rate_proved>>
         refused{};
     return 0;
