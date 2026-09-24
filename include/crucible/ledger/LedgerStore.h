@@ -100,7 +100,7 @@ using effects::mint_bg_context;
 // Written through CtxOwnsAllOf rather than as a hand-rolled conjunction of
 // row_contains_v: the named lift costs the same and makes the shape of the
 // authorization recognizable at a glance, which is the discipline
-// check-row-contains-discipline.sh enforces.
+// check-row-contains-discipline.py enforces.
 //
 // Spelled here rather than borrowed from fixy::fs::CtxAdmitsIoBlock so the
 // ledger keeps building while that tree is mid-rewrite. The two are the

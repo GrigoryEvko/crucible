@@ -1075,23 +1075,17 @@ set_tests_properties(port_completeness port_completeness_self_test
     PROPERTIES
   ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
   LABELS "ci_guard")
-# FIXY-U-101 row-membership discipline (closes fixy-A5-039
-# regression-prevention surface).  scripts/check-row-contains-discipline.sh
-# flags inline `effects::row_contains_v<row_type_of_t<Ctx>, ...>` sites
-# that should migrate to the named lifts (CtxOwnsCapability /
-# CtxOwnsAnyOf / CtxOwnsAllOf, shipped in commit c0b53827).  43
-# grandfathered sites live in scripts/row-contains-discipline-allowlist.txt,
-# each annotated with fixy-U-101-MIGRATE: <target lift> — the allowlist
-# IS the migration tracking surface.  When a site migrates to the
-# named lift, its allowlist entry MUST be pruned in the same PR (drift-
-# free invariant).
+# The row-membership discipline.  scripts/check-row-contains-discipline.py
+# reads each row_contains_v whose first argument is the row of a context
+# from the parse tree, with any qualifier, and requires the named lift
+# (CtxOwnsCapability, CtxOwnsAnyOf or CtxOwnsAllOf) instead.  Exit 3 when
+# the kit is absent reports a skip.
 add_test(NAME row_contains_discipline_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.sh
-          --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.py --self-test)
 add_test(NAME row_contains_discipline
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.py)
 set_tests_properties(row_contains_discipline row_contains_discipline_self_test
-    PROPERTIES LABELS "ci_guard")
+    PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # FIXY-U-104 fixy::is:: alias-parity enforcement (closes fixy-L-05 +
 # fixy-L-06 going forward).  scripts/check-isx-parity.sh diffs the
 # public `_v` traits + `_t` slot-extractor aliases in safety/Is*.h

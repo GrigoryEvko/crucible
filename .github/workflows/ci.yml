@@ -217,8 +217,8 @@ jobs:
 
       - name: row-contains discipline (self-test + scan)
         run: |
-          bash scripts/check-row-contains-discipline.sh --self-test
-          bash scripts/check-row-contains-discipline.sh
+          python3 scripts/check-row-contains-discipline.py --self-test
+          python3 scripts/check-row-contains-discipline.py
 
       - name: fixy::is alias parity (self-test + scan)
         run: |
