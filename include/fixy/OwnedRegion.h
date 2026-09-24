@@ -121,16 +121,18 @@ struct split_mint_t {};
 //   in the type, so a receipt written at another site does not convert
 //   to the one recombine asks for.
 //
-// What the receipt cannot catch, and why it is not a matter of trying
-// harder.  A brand names a mint SITE, not a mint CALL: fact 2 of
-// foundation/Brand.h, measured rather than assumed.  So two regions
-// minted by one statement in a loop are one type, their shards are one
-// type, and their receipts are one type, and a tuple that takes shard 0
-// from the first and shard 1 from the second is well typed here.  A
-// borrow checker refuses that because it reasons about the flow of one
-// program point to another, and a template argument does not.  That is
-// the half of use-after-consume C++ cannot type, and the claim this
-// header makes is the narrower one.
+// What the receipt cannot catch, and what catches it instead.  A brand
+// names a mint SITE, not a mint CALL: fact 2 of foundation/Brand.h,
+// measured rather than assumed.  So two regions minted by one statement
+// in a loop are one type, their shards are one type, and their receipts
+// are one type, and a tuple that takes shard 0 from the first and shard
+// 1 from the second is well typed here.  Every region on the erased
+// brand is also one type.  A borrow checker refuses the mix because it
+// reasons about the flow of one program point to another, and a
+// template argument does not.  recombine therefore checks at run time
+// that each shard starts where the one before it ends, and a mix
+// aborts.  The rebuilt region never covers storage that no consumed
+// shard owned.
 // The claims the carriers in this header make that no lattice grades.
 // foundation/diag/RowHash.h folds each identity, so every carrier here
 // takes a cache slot of its own rather than the zero a bare payload has.
@@ -378,6 +380,19 @@ public:
         [[maybe_unused]] Disjoint<Tag, Brand, SplitName, sizeof...(Is)> spent{std::move(witness)};
         // Shard 0 starts at offset 0, so its base is the whole's base.
         T* const base = std::get<0>(shards).base_;
+        // Each shard must start where the one before it ends.  Two regions
+        // split at one site share a brand, so their shards and receipts are
+        // one type, and only their addresses tell them apart.  With the
+        // check the rebuilt span is exactly the storage of the shards that
+        // were consumed.  Complexity: one comparison per shard.
+        T* next = base;
+        auto const follows = [&next](T* shard_base, std::size_t shard_count) noexcept {
+            bool const adjacent = shard_base == next;
+            next = shard_base + shard_count;
+            return adjacent;
+        };
+        bool const contiguous = (follows(std::get<Is>(shards).base_, std::get<Is>(shards).count_) && ...);
+        CRUCIBLE_FATAL_INVARIANT(contiguous);
         std::size_t const total = (std::size_t{0} + ... + std::get<Is>(shards).count_);
         return OwnedRegion{
             base, total,

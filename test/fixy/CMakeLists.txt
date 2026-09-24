@@ -3643,6 +3643,18 @@ fixy_neg_compile_test(neg_shared_read_of_another_region
   "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"
   "deduced conflicting types for parameter .Brand.")
 
+# The erased brand reads nothing.  On the erased brand every region of
+# the tag is one type, so the gate asks for a fresh brand.  One fixture
+# builds the region through the erased door, the other erases a branded
+# region.
+fixy_neg_compile_test(neg_shared_read_on_the_erased_brand
+  "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"
+  "required for the satisfaction of .IsFreshBrand<Brand>. \\[with Brand = foundation::brand::DefaultBrand\\]")
+
+fixy_neg_compile_test(neg_shared_read_of_an_erased_region
+  "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"
+  "required for the satisfaction of .IsFreshBrand<Brand>. \\[with Brand = foundation::brand::DefaultBrand\\]")
+
 # The fractional axis: no guard, no read.
 fixy_neg_compile_test(neg_shared_read_without_a_share
   "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"

@@ -20,6 +20,8 @@
 #include <fixy/OwnedRegion.h>
 #include <foundation/Lifetime.h>
 
+#include "../foundation/abort_probe.h"
+
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
@@ -336,6 +338,43 @@ void test_brand_travels_through_split_and_recombine() {
     CRUCIBLE_TEST_REQUIRE(erased.data() == storage);
 }
 
+// A split inside one function is one split site, so every call gives
+// shards and a receipt of one type.  On the erased brand every region of
+// the tag is also one type.  A rebuild from shard 0 of one region and
+// shard 1 of another is well typed, and recombine aborts on it, because
+// shard 1 does not start where shard 0 ends.
+auto split_erased_in_two(std::uint64_t* storage) {
+    return ::fixy::mint_split<2>(OwnedRegion<std::uint64_t, DataA>::wrap(storage, 4, mint_permission_root<DataA>()));
+}
+
+auto split_branded_in_two(std::uint64_t* storage) {
+    return ::fixy::mint_split<2>(::fixy::mint_owned_region(storage, std::size_t{4}, mint_permission_root<DataA>()));
+}
+
+template <typename Split>
+void require_mixed_rebuild_aborts(Split split) {
+    static std::uint64_t first[4] = {};
+    static std::uint64_t second[4] = {};
+    auto parts_a = split(first);
+    auto parts_b = split(second);
+    static_assert(std::is_same_v<decltype(parts_a), decltype(parts_b)>, "one split site is one type");
+    using Whole = std::remove_cvref_t<decltype(std::get<0>(parts_a.shards))>::brand_type;
+    using Region = OwnedRegion<std::uint64_t, DataA, Whole>;
+    CRUCIBLE_TEST_REQUIRE(::foundation::test::aborts([&] {
+        auto mixed = std::tuple{std::move(std::get<0>(parts_a.shards)), std::move(std::get<1>(parts_b.shards))};
+        (void)Region::recombine(std::move(parts_a.witness), std::move(mixed));
+    }));
+    auto whole = Region::recombine(std::move(parts_b.witness),
+                                   std::tuple{std::move(std::get<0>(parts_b.shards)), std::move(std::get<1>(parts_b.shards))});
+    CRUCIBLE_TEST_REQUIRE(whole.data() == second && whole.size() == 4);
+}
+
+void test_recombine_refuses_shards_of_two_erased_regions() { require_mixed_rebuild_aborts(split_erased_in_two); }
+
+void test_recombine_refuses_shards_of_two_regions_of_one_site() {
+    require_mixed_rebuild_aborts(split_branded_in_two);
+}
+
 // A zero-length request is the one arm of adopt that asks the arena for
 // nothing.  The region it returns has to answer as empty on all three
 // queries, because a null pointer with a non-zero count would read as a
@@ -365,6 +404,10 @@ int main() {
     run_test("test_split_smaller_than_n", test_split_smaller_than_n);
     run_test("test_split_then_rebuild_through_recombine", test_split_then_rebuild_through_recombine);
     run_test("test_brand_travels_through_split_and_recombine", test_brand_travels_through_split_and_recombine);
+    run_test("test_recombine_refuses_shards_of_two_erased_regions",
+             test_recombine_refuses_shards_of_two_erased_regions);
+    run_test("test_recombine_refuses_shards_of_two_regions_of_one_site",
+             test_recombine_refuses_shards_of_two_regions_of_one_site);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

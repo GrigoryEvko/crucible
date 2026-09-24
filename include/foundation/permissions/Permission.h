@@ -1051,6 +1051,15 @@ public:
                "outlives the token");
 
     [[nodiscard]] constexpr bool holds_share() const noexcept { return pool_ != nullptr; }
+
+    // True when this guard holds a share of that one pool.  A door that
+    // pairs a guard with the region of a pool asks this, so a guard of one
+    // pool never stands in for another pool of the same type.  Two pools
+    // are one type when they share a brand, as two pools minted at one
+    // site or two pools on the erased brand do.
+    [[nodiscard]] constexpr bool is_share_of(SharedPermissionPool<Tag, Brand> const& pool) const noexcept {
+        return pool_ == &pool;
+    }
 };
 
 [[noreturn]] CRUCIBLE_COLD inline void shared_permission_pool_saturated_abort_() noexcept {

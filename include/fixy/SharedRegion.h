@@ -47,12 +47,14 @@
 //   for a spent receipt: a borrow checker reasons from one program point
 //   to another, and a template argument does not.
 //
-//   Two regions a compiler cannot tell apart.  A brand names a mint
-//   SITE, not a mint CALL, per fact 2 of foundation/Brand.h, so two
-//   regions built by one statement in a loop are one type and so are
-//   their pools, their guards and their reads.  Mixing those is well
-//   typed, and it is the same limit under a new surface rather than a
-//   new one.
+//   Nothing about two regions a compiler cannot tell apart, at compile
+//   time.  A brand names a mint SITE, not a mint CALL, per fact 2 of
+//   foundation/Brand.h, so two regions built by one statement in a loop
+//   are one type and so are their pools and their guards.  The mint
+//   therefore also asks the guard at run time whether it holds a share
+//   of this region's pool, and a guard of the other region aborts.  The
+//   erased brand would make every region of the tag one type, so the
+//   gate refuses it and a read needs a region of a fresh brand.
 //
 //   What the context claims.  A context is a type minted behind its own
 //   door, and the read weighs that claim without re-checking it at run
@@ -102,8 +104,10 @@ class SharedRegion;
 // inside it.  Brand agreement is not a conjunct here because it is not
 // a predicate: the guard and the region name one Brand parameter, so a
 // mismatch is a deduction conflict before any constraint is checked.
+// The brand must be fresh.  On the erased brand every region of the tag
+// is one type, so the deduction would pair any guard with any region.
 template <typename T, typename Tag, typename Brand, typename Ctx>
-concept CtxFitsSharedRead = std::is_object_v<T> && ::foundation::brand::IsBrand<Brand>
+concept CtxFitsSharedRead = std::is_object_v<T> && ::foundation::brand::IsFreshBrand<Brand>
                          && ::foundation::effects::IsExecCtx<Ctx>
                          && ::foundation::permissions::CtxAdmitsPermission<Tag, Ctx>;
 
@@ -243,12 +247,13 @@ template <typename T, typename Tag, typename Brand, typename Ctx>
     requires CtxFitsSharedRead<T, Tag, Brand, Ctx>
 [[nodiscard]] constexpr SharedRead<T, Tag, Brand>
 mint_shared_read(Ctx const& /*ctx*/,
-                 ::foundation::permissions::SharedPermissionGuard<Tag, Brand> const& /*guard*/
-                     CRUCIBLE_LIFETIMEBOUND,
+                 ::foundation::permissions::SharedPermissionGuard<Tag, Brand> const& guard CRUCIBLE_LIFETIMEBOUND,
                  SharedRegion<T, Tag, Brand> const& region CRUCIBLE_LIFETIMEBOUND) noexcept {
-    // The context is read by the constraint on the declaration and the
-    // guard by the type system.  Neither is read here, which is the
-    // point: after the mint the read runs at the speed of a span.
+    // The context is read by the constraint on the declaration.  The
+    // guard is read once, here: two regions minted at one site share a
+    // brand, so the type cannot tell their guards apart, and one pointer
+    // comparison can.  After the mint the read runs at the speed of a span.
+    CRUCIBLE_FATAL_INVARIANT(guard.is_share_of(region.pool_));
     return SharedRead<T, Tag, Brand>{detail::shared_read_mint_t{}, std::span<T const>{region.base_, region.count_}};
 }
 
@@ -263,13 +268,15 @@ struct io_tag {
 
 using Fg = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
 using Erased = ::foundation::brand::DefaultBrand;
+struct probe_brand {};
 
 // The gate admits a pure tag under a foreground context and refuses an
 // IO tag there, which is the effect axis on its own.
-static_assert(CtxFitsSharedRead<int, probe_tag, Erased, Fg>);
-static_assert(!CtxFitsSharedRead<int, io_tag, Erased, Fg>, "a foreground context does not admit an IO region");
-static_assert(!CtxFitsSharedRead<int, probe_tag, Erased, int>, "a context is a context, not any type");
-static_assert(!CtxFitsSharedRead<void, probe_tag, Erased, Fg>, "a region of void has no elements to read");
+static_assert(CtxFitsSharedRead<int, probe_tag, probe_brand, Fg>);
+static_assert(!CtxFitsSharedRead<int, probe_tag, Erased, Fg>, "the erased brand pairs any guard with any region");
+static_assert(!CtxFitsSharedRead<int, io_tag, probe_brand, Fg>, "a foreground context does not admit an IO region");
+static_assert(!CtxFitsSharedRead<int, probe_tag, probe_brand, int>, "a context is a context, not any type");
+static_assert(!CtxFitsSharedRead<void, probe_tag, probe_brand, Fg>, "a region of void has no elements to read");
 
 // The read is a span and nothing else, and it has no door of its own.
 using Read = SharedRead<int, probe_tag>;
@@ -284,7 +291,6 @@ static_assert(std::is_same_v<Read::brand_type, Erased>);
 // erased one.  A region left at the old arity is DefaultBrand, which
 // scripts/check-brand-drain.sh counts and does not let a new file add,
 // and the claim reads the same at either brand.
-struct probe_brand {};
 using Shared = SharedRegion<int, probe_tag, probe_brand>;
 static_assert(!std::is_copy_constructible_v<Shared>);
 static_assert(!std::is_move_constructible_v<Shared>);

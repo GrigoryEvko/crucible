@@ -8,6 +8,8 @@
 
 #include <fixy/SharedRegion.h>
 
+#include "../foundation/abort_probe.h"
+
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
@@ -168,15 +170,56 @@ void test_a_context_that_refuses_the_row_refuses_the_read() {
     using FgCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
     using IoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
 
-    static_assert(::fixy::CtxFitsSharedRead<std::uint64_t, Cache, ::foundation::brand::DefaultBrand, FgCtx>);
-    static_assert(!::fixy::CtxFitsSharedRead<std::uint64_t, Spilled, ::foundation::brand::DefaultBrand, FgCtx>,
+    struct cell_brand {};
+    static_assert(::fixy::CtxFitsSharedRead<std::uint64_t, Cache, cell_brand, FgCtx>);
+    static_assert(!::fixy::CtxFitsSharedRead<std::uint64_t, Spilled, cell_brand, FgCtx>,
                   "a foreground context does not admit a region whose tag says IO");
-    static_assert(::fixy::CtxFitsSharedRead<std::uint64_t, Spilled, ::foundation::brand::DefaultBrand, IoCtx>,
+    static_assert(::fixy::CtxFitsSharedRead<std::uint64_t, Spilled, cell_brand, IoCtx>,
                   "and a context that carries IO does");
 
     // The cell is a compile-time claim, so the runtime half only proves
     // the claim was instantiated.
     CRUCIBLE_TEST_REQUIRE(true);
+}
+
+// On the erased brand every region of the tag is one type, so the
+// deduction would pair any guard with any region.  The gate refuses it.
+void test_the_erased_brand_reads_nothing() {
+    static std::uint64_t storage[2] = {5, 6};
+    BgCtx ctx{eff::testing::bg()};
+
+    ::fixy::SharedRegion<std::uint64_t, Cache> shared{
+        ::fixy::OwnedRegion<std::uint64_t, Cache>::wrap(storage, std::size_t{2}, perm::mint_permission_root<Cache>())};
+    auto guard = shared.lend(ctx);
+    CRUCIBLE_TEST_REQUIRE(guard.has_value());
+
+    using Guard = std::remove_cvref_t<decltype(*guard)>;
+    using Shared = std::remove_cvref_t<decltype(shared)>;
+    static_assert(!CanRead<BgCtx, Guard, Shared>, "a share on the erased brand reads nothing");
+    CRUCIBLE_TEST_REQUIRE(true);
+}
+
+// A brand names a mint site, so two regions built by one statement are
+// one type, and so are their guards.  The mint asks the guard at run time
+// which pool it holds a share of.
+auto region_at_one_site(std::uint64_t* storage) {
+    return ::fixy::mint_owned_region(storage, std::size_t{2}, perm::mint_permission_root<Cache>());
+}
+
+void test_a_share_of_a_region_of_the_same_site_aborts() {
+    static std::uint64_t storage_a[2] = {7, 8};
+    static std::uint64_t storage_b[2] = {9, 10};
+    BgCtx ctx{eff::testing::bg()};
+
+    ::fixy::SharedRegion shared_a{region_at_one_site(storage_a)};
+    ::fixy::SharedRegion shared_b{region_at_one_site(storage_b)};
+    static_assert(std::is_same_v<decltype(shared_a), decltype(shared_b)>, "one site is one brand");
+
+    auto guard_a = shared_a.lend(ctx);
+    CRUCIBLE_TEST_REQUIRE(guard_a.has_value());
+    auto read = ::fixy::mint_shared_read(ctx, *guard_a, shared_a);
+    CRUCIBLE_TEST_REQUIRE(read[0] == 7);
+    CRUCIBLE_TEST_REQUIRE(::foundation::test::aborts([&] { (void)::fixy::mint_shared_read(ctx, *guard_a, shared_b); }));
 }
 
 }  // namespace
@@ -190,6 +233,8 @@ int main() {
              test_a_share_of_another_region_does_not_read_this_one);
     run_test("test_a_context_that_refuses_the_row_refuses_the_read",
              test_a_context_that_refuses_the_row_refuses_the_read);
+    run_test("test_the_erased_brand_reads_nothing", test_the_erased_brand_reads_nothing);
+    run_test("test_a_share_of_a_region_of_the_same_site_aborts", test_a_share_of_a_region_of_the_same_site_aborts);
     std::fprintf(stderr, "test_shared_region: %d passed, %d failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }
