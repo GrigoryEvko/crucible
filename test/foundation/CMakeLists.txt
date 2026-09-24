@@ -569,6 +569,17 @@ foundation_neg_compile_test(neg_read_view_named_look_alike_refused
 foundation_neg_compile_test(neg_read_view_named_effectful_source_refused
   "no matching function for call to .*with_read_view"
   "ReadViewNeedsNoCtx")
+# A read loan names a region and a brand, as a Permission does, and a parked
+# token keeps its brand: erasure runs one way only.
+foundation_neg_compile_test(neg_read_loan_tag_not_empty
+  "static assertion failed"
+  "ReadLoan<Tag>: Tag must be an empty non-union class type")
+foundation_neg_compile_test(neg_read_loan_brand_not_empty
+  "static assertion failed"
+  "ReadLoan<Tag, Brand>: Brand must be an empty class type")
+foundation_neg_compile_test(neg_lent_permission_does_not_rebrand
+  "no matching function for call to .foundation::permissions::LentPermission<"
+  "is_same_v<Brand, foundation::brand::DefaultBrand>")
 foundation_neg_compile_test(neg_read_view_body_by_value
   "no matching function for call to .with_read_view\\("
   "required for the satisfaction of .ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>.")
