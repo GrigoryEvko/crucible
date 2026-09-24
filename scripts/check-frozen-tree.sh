@@ -43,6 +43,22 @@
 # names the entry.  A ledger that cannot admit the wrong thing is what
 # lets this exception weaken the freeze without dissolving it.
 #
+# A third exception is a macro unification.  The two trees define some
+# CRUCIBLE_ macros under the same name, and a translation unit that
+# includes both definitions fails to compile, because GCC reports a
+# changed macro as a plain redefinition.  A frozen file can give up its
+# own definition and include the foundation header that defines the macro.
+# The scan admits that change by machine and needs no ledger.  Against
+# the base twin, with the superseded marking of includes ignored, the
+# change may do two things only:
+#   - remove the whole of a macro definition, continuation lines
+#     included, whose name a header under include/foundation/ defines;
+#   - add an include of a header that exists under include/foundation/.
+# Any other removed, changed or added line refuses the change, and the
+# refusal names the line.  The exception does not decide that the two
+# definitions mean the same thing.  The author proves that before the
+# change, and review holds the proof.
+#
 # Exit status:
 #   0 — clean
 #   1 — an add or modify under a frozen path, or a rotted ledger entry
@@ -245,9 +261,134 @@ mirror_admits() {
     is_edit_of_ported_frozen "$repo" "$base" "$path"
 }
 
+# $1 = repo, $2 = base, $3 = path in the working tree.  Prints the base
+# twin of the path: the path itself when the base holds it, or dir/Name
+# when the path is dir/_Name and the base holds dir/Name.  Returns 1 when
+# the base holds neither.
+base_twin_of() {
+    local repo="$1" base="$2" path="$3" name twin
+    if git -C "$repo" cat-file -e "${base}:${path}" 2>/dev/null; then
+        printf '%s' "$path"
+        return 0
+    fi
+    name="$(basename "$path")"
+    [[ "$name" == _* ]] || return 1
+    twin="$(dirname "$path")/${name#_}"
+    git -C "$repo" cat-file -e "${base}:${twin}" 2>/dev/null || return 1
+    printf '%s' "$twin"
+}
+
+# $1 = repo, $2 = base, $3 = path in the working tree.  True when the
+# change to the frozen path is a macro unification, the third exception
+# the header describes.  On success it prints one line that names the
+# removed macros and the added includes.  On a refusal it prints one line
+# for each offending line of the change.  O(size of the file times the
+# size of the change) for the line diff, plus one read of every header
+# under include/foundation/.
+unification_admits() {
+    local repo="$1" base="$2" path="$3" twin
+    twin="$(base_twin_of "$repo" "$base" "$path")" || return 1
+    [[ -f "$repo/$path" ]] || return 1
+    python3 - "$repo" <(git -C "$repo" show "${base}:${twin}" | normalize_stream) \
+        <(normalize_stream <"$repo/$path") <<'PY'
+import difflib
+import re
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+old = Path(sys.argv[2]).read_text(errors="replace").splitlines()
+new = Path(sys.argv[3]).read_text(errors="replace").splitlines()
+DEFINE = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)")
+FOUNDATION_INCLUDE = re.compile(r"^\s*#\s*include\s*<(foundation/[^>]+)>\s*$")
+
+# Each line of a definition, continuation lines included, maps to the
+# macro name and to the first and last line of that definition.
+owner = {}
+i = 0
+while i < len(old):
+    match = DEFINE.match(old[i])
+    if match is None:
+        i += 1
+        continue
+    last = i
+    while old[last].rstrip().endswith("\\") and last + 1 < len(old):
+        last += 1
+    for k in range(i, last + 1):
+        owner[k] = (match.group(1), i, last)
+    i = last + 1
+
+foundation_macros = set()
+for header in sorted((repo / "include" / "foundation").rglob("*.h")):
+    for line in header.read_text(errors="replace").splitlines():
+        match = DEFINE.match(line)
+        if match is not None:
+            foundation_macros.add(match.group(1))
+
+removed, added = set(), []
+matcher = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
+for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+    if tag in ("delete", "replace"):
+        removed.update(range(i1, i2))
+    if tag in ("insert", "replace"):
+        added.extend(new[j1:j2])
+
+reasons, macros, includes, seen = [], [], [], set()
+for k in sorted(removed):
+    if k not in owner:
+        reasons.append(f"line {k + 1} of the base is not part of a macro definition: {old[k].strip()}")
+        continue
+    name, first, last = owner[k]
+    if first in seen:
+        continue
+    seen.add(first)
+    if not set(range(first, last + 1)) <= removed:
+        reasons.append(f"the definition of {name} is removed in part, not whole")
+    elif name not in foundation_macros:
+        reasons.append(f"{name} is removed, but no header under include/foundation/ defines it")
+    else:
+        macros.append(name)
+for line in added:
+    match = FOUNDATION_INCLUDE.match(line)
+    if match is None:
+        reasons.append(f"an added line is not an include of a foundation header: {line.strip()}")
+    elif not (repo / "include" / match.group(1)).is_file():
+        reasons.append(f"an added line includes {match.group(1)}, which does not exist")
+    else:
+        includes.append(match.group(1))
+if not reasons and not macros and not includes:
+    reasons.append("the file differs from its base in no admitted way")
+
+if reasons:
+    for reason in reasons:
+        print(reason)
+    sys.exit(1)
+print(f"removes {', '.join(macros) or 'no macro'}, and includes {', '.join(includes) or 'no header'}")
+PY
+}
+
+# Prints the first three refusal reasons of a failed unification check,
+# indented under the violation line that precedes it, and the count of
+# the rest.  An ordinary edit to a frozen file refuses on every line it
+# touches, and three lines are enough to say why.
+print_unification_reasons() {
+    local reasons="$1" line shown=0 total=0
+    [[ -n "$reasons" ]] || return 0
+    while IFS= read -r line; do
+        total=$((total + 1))
+        if ((shown < 3)); then
+            printf '    not a macro unification: %s\n' "$line" >&2
+            shown=$((shown + 1))
+        fi
+    done <<<"$reasons"
+    if ((total > shown)); then
+        printf '    not a macro unification: %d more lines\n' "$((total - shown))" >&2
+    fi
+}
+
 scan() {
     # $1 = repo root, $2 = base commit.  Prints violations to stderr.
-    local repo="$1" base="$2" rc=0 status path dest
+    local repo="$1" base="$2" rc=0 status path dest verdict
     if ! git -C "$repo" cat-file -e "${base}^{commit}" 2>/dev/null; then
         # Exit 3 is "cannot decide", distinct from a violation and from a bad
         # invocation.  ctest registers it as SKIP_RETURN_CODE, so a shallow
@@ -278,9 +419,12 @@ scan() {
                     if mirror_admits "$repo" "$base" "$dest" "$status"; then
                         printf 'check-frozen-tree: ADMITTED soundness mirror: %s — %s (per %s).\n' \
                             "$dest" "$(mirror_reason "$repo" "$dest")" "$FROZEN_MIRROR_LEDGER" >&2
+                    elif verdict="$(unification_admits "$repo" "$base" "$dest")"; then
+                        printf 'check-frozen-tree: ADMITTED macro unification: %s — %s.\n' "$dest" "$verdict" >&2
                     else
                         printf 'FROZEN violation: %s — %s into a frozen path (from %s).  The old substrate only shrinks, or a ported file is marked _Name with its content unchanged.\n' \
                             "$dest" "$status" "$path" >&2
+                        print_unification_reasons "$verdict"
                         rc=1
                     fi
                 fi
@@ -294,9 +438,12 @@ scan() {
                     if mirror_admits "$repo" "$base" "$path" "$status"; then
                         printf 'check-frozen-tree: ADMITTED soundness mirror: %s — %s (per %s).\n' \
                             "$path" "$(mirror_reason "$repo" "$path")" "$FROZEN_MIRROR_LEDGER" >&2
+                    elif verdict="$(unification_admits "$repo" "$base" "$path")"; then
+                        printf 'check-frozen-tree: ADMITTED macro unification: %s — %s.\n' "$path" "$verdict" >&2
                     else
-                        printf 'FROZEN violation: %s — %s under a frozen path.  The old substrate only shrinks; put the change in the new tree.  The one permitted edit is an include of a frozen header gaining the _ marking, or a modify listed in %s.\n' \
+                        printf 'FROZEN violation: %s — %s under a frozen path.  The old substrate only shrinks; put the change in the new tree.  The permitted edits are an include of a frozen header gaining the _ marking, a modify listed in %s, and a macro unification.\n' \
                             "$path" "$status" "$FROZEN_MIRROR_LEDGER" >&2
+                        print_unification_reasons "$verdict"
                         rc=1
                     fi
                 fi
@@ -463,7 +610,90 @@ case "${1:-}" in
             || fail2 "the non-frozen ledger entry was not named"
         rm -f "$out2"
 
-        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught, five in total; deletion, new-tree adds and superseded markings clean; a ledgered soundness mirror on a plain file and on an already-ported file both admitted, and a dead or non-frozen ledger entry rejected.\n' >&2
+        # The macro unification.  The planted tree above becomes a new
+        # base, so the second scan sees only the edits below.  Two
+        # admitted shapes and five refused ones, one refused shape per
+        # rule of the exception.
+        printf '# self-test ledger\n' >"$tmp_root/scripts/frozen-soundness-mirrors.txt"
+        mkdir -p "$tmp_root/include/foundation/contracts"
+        printf '#pragma once\n#define UNI_ONE(c) ((void)(c))\n#define UNI_TWO(c) \\\n    ((void)(c))\n' \
+            >"$tmp_root/include/foundation/contracts/Uni.h"
+        uni_base='#pragma once\n#include <crucible/safety/Old.h>\n#define UNI_ONE(c) ((void)0)\n#define UNI_TWO(c) \\\n    ((void)0)\nint uni = 1;\n'
+        for name in UniPlain UniPorted UniLacks UniNonMacro UniBadInclude UniMissing UniPartial; do
+            # shellcheck disable=SC2059
+            printf "$uni_base" >"$tmp_root/include/crucible/safety/$name.h"
+            printf '// %s\n' "$name" >>"$tmp_root/include/crucible/safety/$name.h"
+        done
+        printf '#pragma once\n#define UNI_OLD_ONLY 1\nint uni = 1;\n// UniLacks\n' \
+            >"$tmp_root/include/crucible/safety/UniLacks.h"
+        git -C "$tmp_root" add -A
+        git -C "$tmp_root" -c user.name=selftest -c user.email=selftest@invalid commit -q -m unification-base
+        base3="$(git -C "$tmp_root" rev-parse HEAD)"
+
+        # Admitted: two whole definitions go and a foundation include
+        # comes in, on a plain file and on a file that is marked _Name in
+        # the same change.
+        uni_edit='#pragma once\n#include <crucible/safety/Old.h>\n#include <foundation/contracts/Uni.h>\nint uni = 1;\n'
+        # shellcheck disable=SC2059
+        printf "$uni_edit" >"$tmp_root/include/crucible/safety/UniPlain.h"
+        printf '// UniPlain\n' >>"$tmp_root/include/crucible/safety/UniPlain.h"
+        git -C "$tmp_root" mv "include/crucible/safety/UniPorted.h" "include/crucible/safety/_UniPorted.h"
+        # shellcheck disable=SC2059
+        printf "$uni_edit" >"$tmp_root/include/crucible/safety/_UniPorted.h"
+        printf '// UniPorted\n' >>"$tmp_root/include/crucible/safety/_UniPorted.h"
+        # Refused: the removed macro has no foundation definition.
+        printf '#pragma once\nint uni = 1;\n// UniLacks\n' >"$tmp_root/include/crucible/safety/UniLacks.h"
+        # Refused: a non-macro line changes beside an admitted removal.
+        printf '#pragma once\n#include <crucible/safety/Old.h>\n#define UNI_TWO(c) \\\n    ((void)0)\nint uni = 2;\n// UniNonMacro\n' \
+            >"$tmp_root/include/crucible/safety/UniNonMacro.h"
+        # Refused: the added include is not a foundation header.
+        printf '#pragma once\n#include <crucible/safety/Old.h>\n#include <crucible/safety/Twin.h>\n#define UNI_TWO(c) \\\n    ((void)0)\nint uni = 1;\n// UniBadInclude\n' \
+            >"$tmp_root/include/crucible/safety/UniBadInclude.h"
+        # Refused: the added foundation include names no file.
+        printf '#pragma once\n#include <crucible/safety/Old.h>\n#include <foundation/contracts/Missing.h>\n#define UNI_TWO(c) \\\n    ((void)0)\nint uni = 1;\n// UniMissing\n' \
+            >"$tmp_root/include/crucible/safety/UniMissing.h"
+        # Refused: the first line of a definition goes and its
+        # continuation line stays.
+        printf '#pragma once\n#include <crucible/safety/Old.h>\n#define UNI_ONE(c) ((void)0)\n    ((void)0)\nint uni = 1;\n// UniPartial\n' \
+            >"$tmp_root/include/crucible/safety/UniPartial.h"
+        git -C "$tmp_root" add -A
+        out3="$(mktemp)"
+        fail3() {
+            printf 'check-frozen-tree: SELF-TEST FAILED — %s\n' "$1" >&2
+            printf '── unification stderr ───\n%s\n────────────────────\n' "$(cat "$out3")" >&2
+            rm -f "$out3"; exit 2
+        }
+        rc=0; scan "$tmp_root" "$base3" 2>"$out3" || rc=$?
+        [[ "$rc" -eq 1 ]] || fail3 "the unification tree reported $rc, want 1"
+        grep -qF 'ADMITTED macro unification: include/crucible/safety/UniPlain.h — removes UNI_ONE, UNI_TWO, and includes foundation/contracts/Uni.h' "$out3" \
+            || fail3 "a unification of a plain file was not admitted"
+        grep -qF 'ADMITTED macro unification: include/crucible/safety/_UniPorted.h' "$out3" \
+            || fail3 "a unification of a file marked in the same change was not admitted"
+        grep -qF 'violation: include/crucible/safety/UniLacks.h' "$out3" \
+            || fail3 "the removal of a macro the new tree lacks was not refused"
+        grep -qF 'UNI_OLD_ONLY is removed, but no header under include/foundation/ defines it' "$out3" \
+            || fail3 "the refusal of UniLacks.h did not name the macro"
+        grep -qF 'violation: include/crucible/safety/UniNonMacro.h' "$out3" \
+            || fail3 "a changed non-macro line was not refused"
+        grep -qF 'not part of a macro definition: int uni = 1;' "$out3" \
+            || fail3 "the refusal of UniNonMacro.h did not name the line"
+        grep -qF 'violation: include/crucible/safety/UniBadInclude.h' "$out3" \
+            || fail3 "an added include outside foundation was not refused"
+        grep -qF 'not an include of a foundation header: #include <crucible/safety/Twin.h>' "$out3" \
+            || fail3 "the refusal of UniBadInclude.h did not name the include"
+        grep -qF 'violation: include/crucible/safety/UniMissing.h' "$out3" \
+            || fail3 "an added include of a missing foundation header was not refused"
+        grep -qF 'violation: include/crucible/safety/UniPartial.h' "$out3" \
+            || fail3 "a definition removed in part was not refused"
+        grep -qF 'the definition of UNI_TWO is removed in part, not whole' "$out3" \
+            || fail3 "the refusal of UniPartial.h did not name the macro"
+        violation_count="$(grep -c 'FROZEN violation:' "$out3" || true)"
+        [[ "$violation_count" -eq 5 ]] || fail3 "expected exactly 5 unification refusals, got $violation_count"
+        admitted_count="$(grep -c 'ADMITTED macro unification:' "$out3" || true)"
+        [[ "$admitted_count" -eq 2 ]] || fail3 "expected exactly 2 admitted unifications, got $admitted_count"
+        rm -f "$out3"
+
+        printf 'check-frozen-tree: self-test passed — modify, add, rename-into, single-file and tampered-marking edits caught, five in total; deletion, new-tree adds and superseded markings clean; a ledgered soundness mirror on a plain file and on an already-ported file both admitted, and a dead or non-frozen ledger entry rejected; a macro unification admitted on a plain and a marked file, and refused for a macro the new tree lacks, a changed non-macro line, a non-foundation include, a missing foundation include and a definition removed in part.\n' >&2
         exit 0
         ;;
     "") ;;
