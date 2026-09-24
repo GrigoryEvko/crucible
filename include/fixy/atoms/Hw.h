@@ -33,6 +33,15 @@
 // PrivilegedMsr needing an Init context, is a collision rule (V202)
 // reading the Effect row rather than a lift, which is where the old
 // catalog read it too.
+//
+// ---------------------------------------------------------------------
+// One atom per tier
+//
+// Each tier has exactly one atom, and the self-test below holds that.
+// As a result, an atom cannot carry an operand of its instruction, for
+// example the locality of a prefetch.  A site that needs one keeps it as
+// a named constant beside its tier pin.  TraceRing.h pins the scalar tier
+// and names its prefetch locality as kPrefetchLocality.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
