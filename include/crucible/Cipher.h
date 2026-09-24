@@ -35,6 +35,8 @@
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Post.h>
 #include <crucible/safety/_Pre.h>
+#include <fixy/session/EventLog.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -389,7 +391,11 @@ public:
 
         const LoadedRegionNode loaded_region = deserialize_region(a, std::span<const uint8_t>{buf}, arena);
         RegionNode* region = loaded_region.value();
-        if (!region) return nullptr;
+        // The file name is the key, and anyone who writes the store can put
+        // any region under any name.  A region whose own hash is not the key
+        // is refused, the same as on the cache path above, so a lookup never
+        // returns another region.
+        if (!region || region->content_hash != content_hash) return nullptr;
         remember_cached_bytes(content_hash, std::span<const uint8_t>{buf});
         return LoadedContentAddressedRegionPayload{region, false};
     }
@@ -656,6 +662,13 @@ public:
 
             const std::size_t n = view->payload.size() / sizeof(SessionEvent);
             if (n != count) continue;
+
+            // The hashes prove only that the batch is the one its writer
+            // stored, and anyone who writes the store can compute them.  So
+            // each record must be one the event decoder accepts, and its
+            // operation byte must name an operation of this event type,
+            // before it is copied into an event.
+            if (!are_session_event_records_valid_(view->payload)) continue;
 
             std::vector<SessionEvent> decoded(n);
             std::memcpy(decoded.data(), view->payload.data(), view->payload.size());
@@ -1171,6 +1184,23 @@ private:
         if (!parse_u64(begin + p2 + 1, begin + p3, 10, count)) return false;
         if (!parse_u64(begin + p3 + 1, end, 16, hash)) return false;
         return first <= last;
+    }
+
+    // True when every record of a session-event batch is one the event
+    // decoder accepts, and its operation byte names an operation of the
+    // event type that this store copies it into.  The decoder is the one
+    // route from bytes to an event, so the records pass the same checks
+    // here as anywhere else.  Complexity: linear in the number of records.
+    [[nodiscard]] static bool are_session_event_records_valid_(std::span<const std::uint8_t> payload) noexcept {
+        if (payload.size() % sizeof(SessionEvent) != 0) return false;
+        for (std::size_t offset = 0; offset < payload.size(); offset += sizeof(SessionEvent)) {
+            const auto record = std::as_bytes(payload.subspan(offset, sizeof(SessionEvent)));
+            if (!::fixy::session::decode_session_event(record)) return false;
+            const auto op = static_cast<crucible::fixy::sess::eventlog::SessionOp>(
+                std::to_integer<std::uint8_t>(record[offsetof(SessionEvent, op)]));
+            if (::foundation::reflect::enumerator_name(op).empty()) return false;
+        }
+        return true;
     }
 
     // Malformed lines are skipped rather than fatal.  A corrupt or
