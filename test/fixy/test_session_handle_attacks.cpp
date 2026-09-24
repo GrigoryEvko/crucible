@@ -46,8 +46,10 @@
 // that was never destroyed, a static object that quick_exit skips.  The
 // watch keeps a record of each live session, and std::exit and
 // std::quick_exit report a live record and abort.  So each leak route
-// below ends through exit or quick_exit and is caught.  The route that
-// ends the process with no hook is one row for all of them:
+// below ends through exit or quick_exit and is caught.  std::abort and the
+// fatal signals report the live records through the signal handler of the
+// watch, and a child that captures its standard error proves each one.
+// The route that runs no code at all is one row for all of them:
 // leak_then_skip_exit_hooks.
 //
 // The watch also follows the waits of polling transports across sessions,
@@ -69,6 +71,7 @@
 #include <atomic>
 #include <chrono>
 #include <coroutine>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -76,6 +79,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <type_traits>
@@ -146,8 +150,9 @@ struct limitation_row {
 // The attacks that succeed, and the condition each one breaks.
 constexpr limitation_row known_limitations[] = {
     {"leak_then_skip_exit_hooks",
-     "linearity: the watch reads the live sessions at std::exit and std::quick_exit.  std::_Exit, std::abort and a "
-     "fatal signal end the process with no hook, and C++ gives no other point to read them"},
+     "linearity: the watch reads the live sessions at std::exit, std::quick_exit, std::abort and each fatal signal.  "
+     "std::_Exit and SIGKILL end the process without running one more instruction of it, so no reader of the watch "
+     "can run"},
     {"detach_with_a_false_reason",
      "linearity: a detach reason states an intent, and no type can check that the intent is true.  The reason is a "
      "tag, so each detach names its class and a search finds it"},
@@ -809,6 +814,121 @@ static_assert(ledger_matches_the_campaign(),
     std::_Exit(2);
 }
 
+// ── The report at a fatal signal ─────────────────────────────────────
+//
+// Each case below ends the process on a signal that runs no exit hook.
+// The child writes its standard error into a pipe, and the parent checks
+// that the child did not exit cleanly and that the watch reported the
+// live session.  Under AddressSanitizer a fault ends with the exit code of
+// the sanitizer instead of the signal, so the check asks for a non-clean
+// end and not for one signal.
+
+[[noreturn]] void leak_then_abort() {
+    [[maybe_unused]] auto* leaked = ::new FreshHandle{fresh()};
+    std::abort();
+}
+
+[[noreturn]] void leak_then_segv() {
+    [[maybe_unused]] auto* leaked = ::new FreshHandle{fresh()};
+    static_cast<void>(std::raise(SIGSEGV));
+    std::_Exit(kSilentExit);
+}
+
+[[noreturn]] void leak_then_bus_error() {
+    [[maybe_unused]] auto* leaked = ::new FreshHandle{fresh()};
+    static_cast<void>(std::raise(SIGBUS));
+    std::_Exit(kSilentExit);
+}
+
+[[noreturn]] void leak_then_floating_point_error() {
+    [[maybe_unused]] auto* leaked = ::new FreshHandle{fresh()};
+    static_cast<void>(std::raise(SIGFPE));
+    std::_Exit(kSilentExit);
+}
+
+// No session is live when the process aborts, so the report stays empty.
+[[noreturn]] void abort_with_no_live_session() {
+    auto handle = fresh();
+    std::move(handle).detach(s::detach_reason::TestInstrumentation{});
+    std::abort();
+}
+
+struct captured_end {
+    bool is_clean_exit = false;
+    std::string output;
+};
+
+[[nodiscard]] captured_end run_capturing(void (*attack)()) {
+    std::fflush(stderr);
+    int channel[2] = {-1, -1};
+    if (::pipe(channel) != 0) {
+        std::fprintf(stderr, "pipe failed\n");
+        std::_Exit(2);
+    }
+    // SPAWN-PROCESS-OK: the signal ends the process, so it runs in a
+    // child whose standard error the parent reads.
+    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: attack harness, see above
+    if (pid < 0) {
+        std::fprintf(stderr, "fork failed\n");
+        std::_Exit(2);
+    }
+    if (pid == 0) {
+        ::close(channel[0]);
+        ::dup2(channel[1], STDERR_FILENO);
+        ::close(channel[1]);
+        attack();
+    }
+    ::close(channel[1]);
+    captured_end end{};
+    std::array<char, 4096> buffer{};
+    for (;;) {
+        const ::ssize_t got = ::read(channel[0], buffer.data(), buffer.size());
+        if (got <= 0) break;
+        end.output.append(buffer.data(), static_cast<std::size_t>(got));
+    }
+    ::close(channel[0]);
+    int status = 0;
+    if (::waitpid(pid, &status, 0) != pid) {  // SPAWN-PROCESS-OK: attack harness, see above
+        std::fprintf(stderr, "waitpid failed\n");
+        std::_Exit(2);
+    }
+    end.is_clean_exit = WIFEXITED(status) != 0 && WEXITSTATUS(status) == 0;
+    return end;
+}
+
+struct signal_case {
+    std::string_view name;
+    bool expects_report;
+    void (*run)();
+};
+
+constexpr signal_case kSignalCases[] = {
+    {"leak_then_abort", true, leak_then_abort},
+    {"leak_then_segv", true, leak_then_segv},
+    {"leak_then_bus_error", true, leak_then_bus_error},
+    {"leak_then_floating_point_error", true, leak_then_floating_point_error},
+    {"abort_with_no_live_session", false, abort_with_no_live_session},
+};
+
+constexpr std::string_view kSignalReport = "LIVE PROTOCOL AT A FATAL SIGNAL";
+
+[[nodiscard]] int run_signal_cases() {
+    int failures = 0;
+    for (const signal_case& entry : kSignalCases) {
+        const captured_end end = run_capturing(entry.run);
+        const bool has_report = end.output.find(kSignalReport) != std::string::npos
+                             && end.output.find("live endpoint") != std::string::npos;
+        const bool is_expected = !end.is_clean_exit && has_report == entry.expects_report;
+        std::fprintf(stderr, "[signal] %-40.*s report %-3s %s\n", static_cast<int>(entry.name.size()),
+                     entry.name.data(), has_report ? "yes" : "no", is_expected ? "as expected" : "UNEXPECTED");
+        if (!is_expected) {
+            ++failures;
+            std::fprintf(stderr, "  child output:\n%s\n", end.output.c_str());
+        }
+    }
+    return failures;
+}
+
 [[nodiscard]] const char* outcome_name(Outcome outcome) noexcept {
     switch (outcome) {
         case Outcome::Caught: return "caught";
@@ -847,5 +967,6 @@ int main() {
         }
     }
     std::fprintf(stderr, "[attack] the default policy caught %zu of %zu drop and reuse routes\n", caught, drop_routes);
+    failures += run_signal_cases();
     return failures == 0 ? 0 : 1;
 }

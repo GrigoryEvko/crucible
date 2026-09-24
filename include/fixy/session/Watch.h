@@ -29,8 +29,17 @@
 //
 // std::exit and std::quick_exit run a hook that walks the table.  A live
 // record is a protocol that nothing will finish, so the hook prints each
-// one and aborts.  A process that ends through std::_Exit, std::abort or
-// a fatal signal runs no hook, and the watch sees nothing there.
+// one and aborts.
+//
+// std::abort and the fatal signals SIGSEGV, SIGBUS, SIGILL and SIGFPE run
+// no exit hook, so the watch also installs a handler for each of them
+// through sigaction.  The handler writes the live records with write(2),
+// which is async-signal-safe, and then gives the signal to the action
+// that was installed before it: a signal that a process sent comes again
+// after the handler returns, and a fault comes again when the faulting
+// instruction runs again.  A signal whose action was to ignore it keeps
+// that action.  std::_Exit and SIGKILL run no code at all, so the watch
+// sees nothing there.
 //
 // ── The deadlock detector ───────────────────────────────────────────
 //
@@ -65,13 +74,17 @@
 #include <foundation/Platform.h>
 
 #include <pthread.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <source_location>
 #include <string_view>
 
@@ -153,9 +166,22 @@ struct registry {
     // Set by the first thread that reports a deadlock.  Every thread on a
     // cycle detects it, and one report is enough.
     std::atomic<std::uint32_t> is_reporting{0};
+    // Set by the first report of the live records, so that the abort that
+    // ends the exit report does not print them again.
+    std::atomic<std::uint32_t> has_reported_live{0};
 };
 
 inline constinit registry g_registry{};
+
+// The signals that end a process with no exit hook, and the action that
+// each had before the watch installed its handler.
+inline constexpr int fatal_signals[] = {SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE};
+
+struct signal_chain {
+    struct sigaction previous[std::size(fatal_signals)]{};
+};
+
+inline constinit signal_chain g_signal_chain{};
 
 // The owner token of this thread, or zero before its first use.
 inline constinit thread_local std::uint64_t tls_owner_token = 0;
@@ -275,17 +301,25 @@ inline void print_endpoint(const char* label, std::uint32_t index) noexcept {
                  has_site ? file : "<unknown site>", has_site ? site.line() : std::uint_least32_t{0});
 }
 
-/// The hook that std::exit and std::quick_exit run.  A live record is a
-/// protocol that nothing will finish: print each one, then abort.
-/// Complexity: linear in the records ever claimed.
-inline void report_live_at_exit() noexcept {
+/// The number of live records.  Complexity: linear in the records ever
+/// claimed.
+[[nodiscard]] inline std::uint32_t count_live() noexcept {
     const std::uint32_t claimed = g_registry.next_unused.load(std::memory_order_acquire);
     const std::uint32_t bound = claimed < endpoint_capacity ? claimed : endpoint_capacity;
     std::uint32_t live = 0;
     for (std::uint32_t index = 1; index <= bound; ++index) {
         if (record_at_(index).is_live.load(std::memory_order_acquire) != 0) ++live;
     }
+    return live;
+}
+
+/// The hook that std::exit and std::quick_exit run.  A live record is a
+/// protocol that nothing will finish: print each one, then abort.
+/// Complexity: linear in the records ever claimed.
+inline void report_live_at_exit() noexcept {
+    const std::uint32_t live = count_live();
     if (live == 0) return;
+    g_registry.has_reported_live.store(1, std::memory_order_release);
     std::fprintf(stderr,
                  "\n"
                  "fixy::session: LIVE PROTOCOL AT EXIT\n"
@@ -293,10 +327,109 @@ inline void report_live_at_exit() noexcept {
                  "  never destroyed: heap storage that was never freed, a released owner, a coroutine\n"
                  "  frame that was never destroyed, or a static object that quick_exit skips.\n",
                  live);
+    const std::uint32_t claimed = g_registry.next_unused.load(std::memory_order_acquire);
+    const std::uint32_t bound = claimed < endpoint_capacity ? claimed : endpoint_capacity;
     for (std::uint32_t index = 1; index <= bound; ++index) {
         if (record_at_(index).is_live.load(std::memory_order_acquire) != 0) print_endpoint("live", index);
     }
     std::abort();
+}
+
+// ── The report at a fatal signal ─────────────────────────────────────
+//
+// A signal handler may call only async-signal-safe functions.  These
+// helpers write with write(2) and format a number by hand, and the
+// records are read through lock-free atomics.
+
+/// Writes `text` to standard error.  A failed write ends the output: the
+/// process is going down, and nothing can report the failure.
+inline void write_raw(std::string_view text) noexcept {
+    const char* cursor = text.data();
+    std::size_t remaining = text.size();
+    while (remaining > 0) {
+        const ::ssize_t written = ::write(STDERR_FILENO, cursor, remaining);
+        if (written <= 0) return;
+        cursor += written;
+        remaining -= static_cast<std::size_t>(written);
+    }
+}
+
+/// Writes a number in decimal.
+inline void write_number(std::uint64_t value) noexcept {
+    char digits[20];
+    std::size_t first = sizeof digits;
+    do {
+        digits[--first] = static_cast<char>('0' + static_cast<int>(value % 10));
+        value /= 10;
+    } while (value != 0);
+    write_raw(std::string_view{digits + first, sizeof digits - first});
+}
+
+/// Writes each live record, once for the process.  Complexity: linear in
+/// the records ever claimed.
+inline void report_live_on_signal(int signal_number) noexcept {
+    if (g_registry.has_reported_live.exchange(1, std::memory_order_acq_rel) != 0) return;
+    const std::uint32_t live = count_live();
+    if (live == 0) return;
+    write_raw("\nfixy::session: LIVE PROTOCOL AT A FATAL SIGNAL\n  signal ");
+    write_number(static_cast<std::uint64_t>(signal_number));
+    write_raw(" ends the process, and ");
+    write_number(live);
+    write_raw(" session(s) still owe a message that no handle will send.\n");
+    const std::uint32_t claimed = g_registry.next_unused.load(std::memory_order_acquire);
+    const std::uint32_t bound = claimed < endpoint_capacity ? claimed : endpoint_capacity;
+    for (std::uint32_t index = 1; index <= bound; ++index) {
+        const endpoint_record& record = record_at_(index);
+        if (record.is_live.load(std::memory_order_acquire) == 0) continue;
+        const char* text = record.protocol_text.load(std::memory_order_acquire);
+        const std::uint32_t size = record.protocol_size.load(std::memory_order_acquire);
+        const std::source_location site = record.site.load(std::memory_order_acquire);
+        const char* file = site.file_name();
+        write_raw("  live endpoint ");
+        write_number(index);
+        write_raw(": ");
+        if (text != nullptr) write_raw(std::string_view{text, size});
+        write_raw("\n    minted at ");
+        if (file != nullptr && file[0] != '\0') {
+            write_raw(std::string_view{file});
+            write_raw(":");
+            write_number(site.line());
+        } else {
+            write_raw("<unknown site>");
+        }
+        write_raw("\n");
+    }
+}
+
+/// The handler of each fatal signal.  It reports the live records, puts
+/// back the action that was there before, and lets that action run: a
+/// signal that a process sent (si_code at or below zero) is raised again,
+/// and it arrives when the handler returns, because the handler blocks it
+/// while it runs.  A fault is not raised again: the faulting instruction
+/// runs again after the return and faults into the action put back.
+inline void on_fatal_signal(int signal_number, ::siginfo_t* info, void* /*context*/) noexcept {
+    report_live_on_signal(signal_number);
+    for (std::size_t index = 0; index < std::size(fatal_signals); ++index) {
+        if (fatal_signals[index] != signal_number) continue;
+        static_cast<void>(::sigaction(signal_number, &g_signal_chain.previous[index], nullptr));
+    }
+    if (info == nullptr || info->si_code <= 0) static_cast<void>(::raise(signal_number));
+}
+
+/// Installs the handler of each fatal signal, and keeps the action that it
+/// replaces.  A signal that the process ignores keeps its action.
+inline void install_signal_handlers() noexcept {
+    for (std::size_t index = 0; index < std::size(fatal_signals); ++index) {
+        struct sigaction action{};
+        action.sa_sigaction = &on_fatal_signal;
+        action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+        ::sigemptyset(&action.sa_mask);
+        struct sigaction& previous = g_signal_chain.previous[index];
+        if (::sigaction(fatal_signals[index], &action, &previous) != 0) continue;
+        if (!(previous.sa_flags & SA_SIGINFO) && previous.sa_handler == SIG_IGN) {
+            static_cast<void>(::sigaction(fatal_signals[index], &previous, nullptr));
+        }
+    }
 }
 
 /// Forgets every record in a child after fork.  The records belong to
@@ -319,6 +452,7 @@ inline void forget_records_in_child() noexcept {
     static_cast<void>(std::atexit(&report_live_at_exit));
     static_cast<void>(std::at_quick_exit(&report_live_at_exit));
     static_cast<void>(::pthread_atfork(nullptr, nullptr, &forget_records_in_child));
+    install_signal_handlers();
 }
 
 // One link of a wait-for chain: a thread waits on an endpoint, and the
@@ -511,15 +645,7 @@ struct session_ref {
 
 /// The number of records live now, for tests.  Complexity: linear in the
 /// records ever claimed.
-[[nodiscard]] inline std::uint32_t live_count() noexcept {
-    const std::uint32_t claimed = detail::g_registry.next_unused.load(std::memory_order_acquire);
-    const std::uint32_t bound = claimed < endpoint_capacity ? claimed : endpoint_capacity;
-    std::uint32_t live = 0;
-    for (std::uint32_t index = 1; index <= bound; ++index) {
-        if (detail::record_at_(index).is_live.load(std::memory_order_acquire) != 0) ++live;
-    }
-    return live;
-}
+[[nodiscard]] inline std::uint32_t live_count() noexcept { return detail::count_live(); }
 
 // The wait of one thread on one endpoint.  A handle opens it when its
 // polling transport first finds no message, and poll() runs between the
