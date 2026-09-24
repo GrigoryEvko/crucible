@@ -1,0 +1,30 @@
+# Gate mutants that no test kills, and why each one may stay.
+#
+# tools/mutation/run.py weakens one gate at a time.  A mutant that every
+# witness survives marks a gate with no witness.  Each such gate either gets
+# a witness (a negative fixture or a death test), or gets one line here.
+#
+# A line here is an EQUIVALENT mutant: the gate it weakens is implied by
+# another gate that still holds, so no program can tell the mutant from the
+# original.  The reason names the gate that still holds.
+#
+# Columns, separated by " | ":
+#   header | kind | entity | the gate text, whitespace squeezed | reason
+#
+# For a deleted declaration, the gate text is the declaration up to "= delete".
+# The key is the gate text, not a line number, so a line shift does not
+# make a row stale.
+
+include/foundation/permissions/ReadView.h | concept | ReadViewSource | !std::is_reference_v<Source> | detail::is_read_view_source refuses a reference type, because a reference type has no template arguments
+include/foundation/permissions/ReadView.h | delete | ReadView | ReadView(const ReadView&) | the declared move constructor makes the implicit copy constructor deleted
+include/foundation/permissions/ReadView.h | delete | ReadView | ReadView(ReadView&&) | without it an rvalue selects the deleted copy constructor
+include/foundation/permissions/ReadView.h | delete | operator= | ReadView& operator=(const ReadView&) | the declared move assignment makes the implicit copy assignment deleted
+include/foundation/permissions/ReadView.h | delete | operator= | ReadView& operator=(ReadView&&) | without it an rvalue selects the deleted copy assignment
+include/foundation/permissions/ReadView.h | delete | operator | static void* operator new(std::size_t) | the private default constructor and the deleted copy and move constructors refuse every new-expression of a ReadView
+include/foundation/permissions/ReadView.h | delete | operator | static void* operator new[](std::size_t) | the private default constructor refuses every array new-expression of a ReadView
+include/foundation/permissions/ReadView.h | delete | operator | static void* operator new(std::size_t, std::align_val_t) | the private default constructor and the deleted copy and move constructors refuse every new-expression of a ReadView
+include/foundation/permissions/ReadView.h | delete | operator | static void* operator new[](std::size_t, std::align_val_t) | the private default constructor refuses every array new-expression of a ReadView
+include/foundation/permissions/ReadView.h | delete | operator | static void operator delete(void*) | class lookup still finds the deleted aligned operator delete, which refuses delete of a view
+include/foundation/permissions/ReadView.h | delete | operator | static void operator delete[](void*) | class lookup still finds the deleted aligned operator delete[], which refuses delete[] of a view
+include/foundation/permissions/ReadView.h | delete | operator | static void operator delete(void*, std::align_val_t) | class lookup still finds the deleted operator delete(void*), which refuses delete of a view
+include/foundation/permissions/ReadView.h | delete | operator | static void operator delete[](void*, std::align_val_t) | class lookup still finds the deleted operator delete[](void*), which refuses delete[] of a view
