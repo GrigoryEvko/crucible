@@ -388,6 +388,22 @@ void test_serialization_round_trips() {
     // would rewrite the file and churn its mtime for nothing.
     assert(ledger::serialize_ledger(*parsed) == text);
 
+    // perf_event_paranoid is -1 on a host that allows every event.  The
+    // reader once parsed the field as unsigned and read -1 back as 0.
+    ledger::Ledger paranoid = sample_ledger();
+    paranoid.competence.perf_event_paranoid = -1;
+    const auto reread = ledger::deserialize_ledger(ledger::serialize_ledger(paranoid));
+    assert(reread.has_value());
+    assert(reread->competence.perf_event_paranoid == -1);
+
+    // A competence field that is not one number of its width is refused,
+    // not read as zero or as a truncated value.
+    const std::string head = "crucible-hwledger\t1\nfingerprint\t0\t0\n";
+    assert(!ledger::deserialize_ledger(head + "competence\t0\t0\t0\t0\t0\t1000000050000\t0\t0\t0\tnone\n"));
+    assert(!ledger::deserialize_ledger(head + "competence\tzz\t0\t0\t0\t0\t0\t0\t0\t0\tnone\n"));
+    assert(!ledger::deserialize_ledger(head + "competence\t0\t0\t0\t0\t0\t0\t0\t0\t2\tnone\n"));
+    assert(ledger::deserialize_ledger(head + "competence\t0\t0\t0\t0\t0\t-1\t0\t0\t1\tnone\n"));
+
     std::printf("  test_serialization_round_trips:            PASSED\n");
 }
 

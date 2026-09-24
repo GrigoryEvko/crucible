@@ -63,6 +63,7 @@
 #include <expected>
 #include <filesystem>
 #include <inplace_vector>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -433,10 +434,18 @@ namespace store_detail {
     return produced;
 }
 
-[[nodiscard]] inline std::uint64_t field_unsigned(std::string_view text, int base = 10) noexcept {
-    std::uint64_t parsed = 0;
-    const auto outcome = std::from_chars(text.data(), text.data() + text.size(), parsed, base);
-    return (outcome.ec == std::errc{}) ? parsed : 0u;
+// The number that a field holds, as a T, or no value.  The whole field must
+// be one number that fits T, so a field that holds text, a partial number or
+// a value past the range of T is refused, and never read as zero or as a
+// truncated value.  A negative number reads only into a signed T, which
+// perf_event_paranoid needs for its value -1.
+template <typename T>
+[[nodiscard]] inline std::optional<T> parse_field(std::string_view text, int base = 10) noexcept {
+    T parsed{};
+    const char* const end = text.data() + text.size();
+    const auto [stop, error] = std::from_chars(text.data(), end, parsed, base);
+    if (text.empty() || error != std::errc{} || stop != end) return std::nullopt;
+    return parsed;
 }
 
 [[nodiscard]] constexpr Confidence confidence_from_name(std::string_view name) noexcept {
@@ -475,7 +484,8 @@ namespace store_detail {
         }
 
         if (field[0] == kLedgerMagic) {
-            if (field_count < 2u || store_detail::field_unsigned(field[1]) != kLedgerFormatVersion) {
+            if (field_count < 2u
+                || store_detail::parse_field<std::uint64_t>(field[1]) != std::optional<std::uint64_t>{kLedgerFormatVersion}) {
                 // A version this build does not know is not partially
                 // readable. Refusing the whole file forces a remeasure,
                 // which is correct and cheap.
@@ -489,8 +499,13 @@ namespace store_detail {
             if (field_count < 3u) {
                 return std::unexpected(LedgerError::MalformedRecord);
             }
-            ledger.fingerprint.hardware = HardwareDigest{store_detail::field_unsigned(field[1], 16)};
-            ledger.fingerprint.policy = PolicyDigest{store_detail::field_unsigned(field[2], 16)};
+            const auto hardware = store_detail::parse_field<std::uint64_t>(field[1], 16);
+            const auto policy = store_detail::parse_field<std::uint64_t>(field[2], 16);
+            if (!hardware || !policy) {
+                return std::unexpected(LedgerError::MalformedRecord);
+            }
+            ledger.fingerprint.hardware = HardwareDigest{*hardware};
+            ledger.fingerprint.policy = PolicyDigest{*policy};
             saw_fingerprint = true;
             continue;
         }
@@ -509,16 +524,29 @@ namespace store_detail {
             if (field_count < 10u) {
                 return std::unexpected(LedgerError::MalformedRecord);
             }
-            ledger.competence.defects = safety::Bits<CompetenceDefect>::from_raw(
-                static_cast<std::uint16_t>(store_detail::field_unsigned(field[1], 16)));
-            ledger.competence.isolated_core_count = static_cast<std::uint32_t>(store_detail::field_unsigned(field[2]));
-            ledger.competence.online_sibling_count = static_cast<std::uint32_t>(store_detail::field_unsigned(field[3]));
-            ledger.competence.load_average_milli = static_cast<std::uint32_t>(store_detail::field_unsigned(field[4]));
-            ledger.competence.allowed_cpu_count = static_cast<std::uint32_t>(store_detail::field_unsigned(field[5]));
-            ledger.competence.perf_event_paranoid = static_cast<std::int32_t>(store_detail::field_unsigned(field[6]));
-            ledger.competence.scaling_min_freq_khz = store_detail::field_unsigned(field[7]);
-            ledger.competence.scaling_max_freq_khz = store_detail::field_unsigned(field[8]);
-            ledger.competence.governor_is_performance = store_detail::field_unsigned(field[9]) != 0u;
+            using store_detail::parse_field;
+            const auto defects = parse_field<std::uint16_t>(field[1], 16);
+            const auto isolated = parse_field<std::uint32_t>(field[2]);
+            const auto siblings = parse_field<std::uint32_t>(field[3]);
+            const auto load = parse_field<std::uint32_t>(field[4]);
+            const auto allowed = parse_field<std::uint32_t>(field[5]);
+            const auto paranoid = parse_field<std::int32_t>(field[6]);
+            const auto min_freq = parse_field<std::uint64_t>(field[7]);
+            const auto max_freq = parse_field<std::uint64_t>(field[8]);
+            const auto governor = parse_field<std::uint8_t>(field[9]);
+            if (!defects || !isolated || !siblings || !load || !allowed || !paranoid || !min_freq || !max_freq
+                || !governor || *governor > 1u) {
+                return std::unexpected(LedgerError::MalformedRecord);
+            }
+            ledger.competence.defects = safety::Bits<CompetenceDefect>::from_raw(*defects);
+            ledger.competence.isolated_core_count = *isolated;
+            ledger.competence.online_sibling_count = *siblings;
+            ledger.competence.load_average_milli = *load;
+            ledger.competence.allowed_cpu_count = *allowed;
+            ledger.competence.perf_event_paranoid = *paranoid;
+            ledger.competence.scaling_min_freq_khz = *min_freq;
+            ledger.competence.scaling_max_freq_khz = *max_freq;
+            ledger.competence.governor_is_performance = *governor != 0u;
             continue;
         }
 
@@ -541,21 +569,35 @@ namespace store_detail {
                 // exactly what an unknown verdict means.
                 continue;
             }
+            using store_detail::parse_field;
+            const auto value = parse_field<std::uint64_t>(field[2]);
+            const auto samples = parse_field<std::uint32_t>(field[5]);
+            const auto p50 = parse_field<std::uint32_t>(field[6]);
+            const auto p99 = parse_field<std::uint32_t>(field[7]);
+            const auto p999 = parse_field<std::uint32_t>(field[8]);
+            const auto cv = parse_field<std::uint32_t>(field[9]);
+            const auto spread = parse_field<std::uint32_t>(field[10]);
+            const auto defects = parse_field<std::uint16_t>(field[11], 16);
+            const auto measured_at = parse_field<std::uint64_t>(field[12]);
+            const auto ttl = parse_field<std::uint32_t>(field[13]);
+            if (!value || !samples || !p50 || !p99 || !p999 || !cv || !spread || !defects || !measured_at || !ttl) {
+                // A field that is not a number of its width is a corrupt
+                // line.  Dropping it is fail-closed, as above.
+                continue;
+            }
             LedgerEntry entry{};
             entry.id = *id;
-            entry.value = safety::Tagged<VerdictValue, safety::source::Calibrated>{
-                VerdictValue{store_detail::field_unsigned(field[2])}};
+            entry.value = safety::Tagged<VerdictValue, safety::source::Calibrated>{VerdictValue{*value}};
             entry.confidence = confidence;
-            entry.evidence.sample_count = static_cast<std::uint32_t>(store_detail::field_unsigned(field[5]));
-            entry.evidence.quantiles.p50_ns = static_cast<std::uint32_t>(store_detail::field_unsigned(field[6]));
-            entry.evidence.quantiles.p99_ns = static_cast<std::uint32_t>(store_detail::field_unsigned(field[7]));
-            entry.evidence.quantiles.p999_ns = static_cast<std::uint32_t>(store_detail::field_unsigned(field[8]));
-            entry.evidence.within_run_cv_ppm = static_cast<std::uint32_t>(store_detail::field_unsigned(field[9]));
-            entry.evidence.run_to_run_spread_ppm = static_cast<std::uint32_t>(store_detail::field_unsigned(field[10]));
-            entry.competence_defects_at_measurement =
-                static_cast<std::uint16_t>(store_detail::field_unsigned(field[11], 16));
-            entry.measured_at_unix_seconds = store_detail::field_unsigned(field[12]);
-            entry.ttl = VerdictTtl::of_seconds(static_cast<std::uint32_t>(store_detail::field_unsigned(field[13])));
+            entry.evidence.sample_count = *samples;
+            entry.evidence.quantiles.p50_ns = *p50;
+            entry.evidence.quantiles.p99_ns = *p99;
+            entry.evidence.quantiles.p999_ns = *p999;
+            entry.evidence.within_run_cv_ppm = *cv;
+            entry.evidence.run_to_run_spread_ppm = *spread;
+            entry.competence_defects_at_measurement = *defects;
+            entry.measured_at_unix_seconds = *measured_at;
+            entry.ttl = VerdictTtl::of_seconds(*ttl);
 
             // The evidence has to clear the same bar on the way in as it did
             // on the way out. Without this an edited file could promote a
