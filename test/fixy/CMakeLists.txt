@@ -2027,10 +2027,26 @@ fixy_neg_compile_test(neg_session_hold_lend_without_token
   "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<.anonymous.::Other> >::lend<.anonymous.::Region>"
   "required for the satisfaction of .SendablePayload<fixy::session::Borrowed<T, Tag>")
 
-# A read proof from a reader that dies at the end of the statement.
-fixy_neg_compile_test(neg_session_shared_reader_view_of_temporary
-  "use of deleted function .foundation::permissions::ReadView<Tag, Brand> fixy::session::SharedReader<Tag, Brand>::view\\(\\) const &&"
-  "a read proof taken from a temporary reader outlives the share")
+# A read through a reader or a hold that stays named.  read consumes the
+# object for the call and hands it back, so a body cannot end the share
+# or spend the hold through a capture while the view lives.
+fixy_neg_compile_test(neg_session_shared_reader_read_by_name
+  "passing .fixy::session::SharedReader<.anonymous.::Region"
+  "in call to .auto fixy::session::SharedReader<Tag, Brand>::read\\(Body&&\\) &&")
+fixy_neg_compile_test(neg_session_hold_read_by_name
+  "as .this. argument discards qualifiers"
+  "in call to .constexpr auto fixy::session::PermHold<foundation::permissions::PermSet<Tags \\.\\.\\.> >::read\\(Body&&\\) &&")
+
+# A read of a region the hold does not borrow.  read is gated by the set.
+fixy_neg_compile_test(neg_session_hold_read_without_borrow
+  "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<.anonymous.::Region> >::read<.anonymous.::Region>"
+  "perm_set_contains_v<foundation::permissions::PermSet<Tags \\.\\.\\.>, fixy::session::BorrowedIn<Tag> >")
+
+# A release with no loan.  The release carries the loan back, and the
+# lender gets its token only with that loan.
+fixy_neg_compile_test(neg_session_released_without_loan
+  "no matching function for call to .fixy::session::Released<int, .anonymous.::Region>::Released\\("
+  "candidate expects 2 arguments, 1 provided")
 
 # A classified value travels only in DeclassifyOnSend under an admitted
 # policy, and a constant-time value only in CTPayload, which has no ==.

@@ -25,22 +25,30 @@ struct Region {
 // Fact 1: a callee names the brand, and asks for two things about one
 // region with one parameter.
 template <class Brand>
-constexpr bool about_one_region(perm::Permission<Region, Brand> const&, perm::ReadView<Region, Brand>) noexcept {
+constexpr bool about_one_region(perm::Permission<Region, Brand> const&,
+                                perm::ReadView<Region, Brand> const&) noexcept {
     return true;
 }
 
 template <class A, class B>
-concept CanPair = requires(A const& a, B b) { about_one_region(a, b); };
+concept CanPair = requires(A const& a, B const& b) { about_one_region(a, b); };
 
 [[nodiscard]] int a_callee_names_the_brand() {
     auto owned = perm::mint_permission_root<Region>();
     auto other = perm::mint_permission_root<Region>();
-    auto proof = perm::mint_read_view(owned);
-    static_assert(CanPair<decltype(owned), decltype(proof)>, "a proof pairs with the permission it came from");
-    static_assert(!CanPair<decltype(other), decltype(proof)>, "and with no other permission of the tag");
-    static_assert(brand::SameBrand<decltype(owned), decltype(proof)>);
-    static_assert(!brand::SameBrand<decltype(other), decltype(proof)>);
-    return about_one_region(owned, proof) ? 0 : 1;
+    using Owned = decltype(owned);
+    using Other = decltype(other);
+    auto [paired, back] = perm::with_read_view(std::move(owned), [](auto const& proof) noexcept {
+        using Proof = std::remove_cvref_t<decltype(proof)>;
+        static_assert(CanPair<Owned, Proof>, "a proof pairs with the permission it came from");
+        static_assert(!CanPair<Other, Proof>, "and with no other permission of the tag");
+        static_assert(brand::SameBrand<Owned, Proof>);
+        static_assert(!brand::SameBrand<Other, Proof>);
+        return true;
+    });
+    perm::permission_drop(std::move(back));
+    perm::permission_drop(std::move(other));
+    return paired ? 0 : 1;
 }
 
 // Fact 2: one call site is one brand.  A loop body mints one brand for
@@ -81,21 +89,31 @@ template <class Tag, int Which>
     return minted == 3 ? 0 : 1;
 }
 
-// Fact 3: the twin and the brand refuse different things.  A temporary
-// is refused by the twin whatever its brand, and a wrong object is
-// refused by the brand whatever its value category.
+// Fact 3: the door and the brand refuse different things.  A named
+// source is refused by the door whatever its brand, because the body
+// could end it through a capture.  A wrong object is refused by the
+// brand whatever its value category.
 template <class P>
-concept ViewOfTemporary = requires { perm::mint_read_view(P{}); };
+concept LendsByName = requires(P& p) { perm::with_read_view(p, [](auto const&) noexcept {}); };
 
-[[nodiscard]] int twin_and_brand_refuse_differently() {
-    static_assert(!ViewOfTemporary<decltype(perm::mint_permission_root<Region>())>,
-                  "a view of a temporary permission is refused by the twin, brand or no brand");
+template <class P>
+concept LendsByMove = requires(P&& p) { perm::with_read_view(std::move(p), [](auto const&) noexcept {}); };
+
+[[nodiscard]] int door_and_brand_refuse_differently() {
+    using Owned = decltype(perm::mint_permission_root<Region>());
+    static_assert(!LendsByName<Owned>, "a named source is refused by the door, brand or no brand");
+    static_assert(LendsByName<Owned> == LendsByName<perm::Permission<Region>>);
+    static_assert(LendsByMove<Owned> && LendsByMove<perm::Permission<Region>>);
     auto owned = perm::mint_permission_root<Region>();
     auto other = perm::mint_permission_root<Region>();
-    auto proof = perm::mint_read_view(owned);
-    // Both are lvalues, so no twin fires; the brand is what refuses.
-    static_assert(!CanPair<decltype(other), decltype(proof)>);
-    (void)proof;
+    using Other = decltype(other);
+    // The source moved into the door, so no value category refuses; the
+    // brand is what refuses.
+    auto back = perm::with_read_view(std::move(owned), [](auto const& proof) noexcept {
+        static_assert(!CanPair<Other, std::remove_cvref_t<decltype(proof)>>);
+    });
+    perm::permission_drop(std::move(back));
+    perm::permission_drop(std::move(other));
     return 0;
 }
 
@@ -115,7 +133,7 @@ concept ViewOfTemporary = requires { perm::mint_read_view(P{}); };
 int main() {
     if (const int rc = a_callee_names_the_brand(); rc != 0) return rc;
     if (const int rc = one_site_is_one_brand(); rc != 0) return rc;
-    if (const int rc = twin_and_brand_refuse_differently(); rc != 0) return rc;
+    if (const int rc = door_and_brand_refuse_differently(); rc != 0) return rc;
     if (const int rc = erasure_one_way_and_free(); rc != 0) return rc;
     std::fprintf(stderr, "test_brand: ALL PASSED\n");
     return 0;

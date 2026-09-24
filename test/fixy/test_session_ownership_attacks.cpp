@@ -368,7 +368,9 @@ static_assert(!std::is_implicit_lifetime_v<BX>);
 // A marker cannot be built without its token or its proof.
 static_assert(!std::is_constructible_v<TX, int>);
 static_assert(!std::is_constructible_v<BX, int>);
-static_assert(!std::is_constructible_v<BX, int, fp::ReadView<Y>>, "a proof of one region does not lend another");
+static_assert(!std::is_constructible_v<BX, int, fp::ReadLoan<Y>&&>, "a loan of one region does not lend another");
+static_assert(!std::is_constructible_v<sess::Released<int, X>, int>, "a release carries the loan back");
+static_assert(!std::is_constructible_v<sess::Released<int, X>, int, fp::ReadLoan<Y>&&>);
 static_assert(!std::is_default_constructible_v<fp::ReadView<X>>);
 static_assert(!std::is_copy_constructible_v<TX> && !std::is_copy_constructible_v<BX>);
 
@@ -584,7 +586,7 @@ void write_region(fp::Permission<X>& token, int value) {
     (void)token;
     region_value = value;
 }
-int read_region(fp::ReadView<X> proof) {
+int read_region(fp::ReadView<X> const& proof) {
     (void)proof;
     return region_value;
 }
@@ -607,8 +609,9 @@ void borrowed_prefix_on_another_thread() {
     std::jthread borrower_thread{[&] {
         auto borrower = sess::mint_permission_hold();
         auto [ticket, borrowing] = std::move(borrower).accept_loan(to_borrower.take());
-        const int seen = read_region(borrowing.template view<X>());
-        auto [release, done] = std::move(borrowing).template release<X>(seen + ticket);
+        auto [seen, reading] = std::move(borrowing).template read<X>(
+            [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
+        auto [release, done] = std::move(reading).template release<X>(seen + ticket);
         to_lender.put(std::move(release));
         auto nothing = std::move(done).into_permissions();
         (void)nothing;
@@ -618,9 +621,98 @@ void borrowed_prefix_on_another_thread() {
     require(answer == 11, "the borrower read the value written before the loan");
     auto [token, empty] = std::move(closed).template take<X>();
     write_region(token, 20);
-    require(read_region(fp::mint_read_view(token)) == 20, "the lender writes after the loan closes");
+    auto [after, token_back] = fp::with_read_view(
+        std::move(token), [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
+    require(after == 20, "the lender writes after the loan closes");
+    fp::permission_drop(std::move(token_back));
     auto ended = std::move(empty).into_permissions();
     (void)ended;
+}
+
+}  // namespace
+
+// ── A read proof lives in the frame of its door ─────────────────────
+//
+// This attack was on the ledger: a ReadView copied during a loan
+// outlived the Released that ended the loan, and a copy taken under a
+// share guard outlived the upgrade that followed.  That broke the rule of
+// Saffrich, Spaderna, Thiemann and Vasconcelos, OOPSLA 2025, that a
+// borrow ends when it is returned, and the CLASS rule, ESOP 2023, that no
+// reader acts after the writer takes the region.
+//
+// A view now exists only inside the callback of with_read_view, which
+// keeps its source in its own frame, and the view neither copies nor
+// moves (Thiemann, ICFP 2023).  A loan travels as a ReadLoan, which the
+// borrower reads only through the door of its hold, and which the
+// release carries back to the lender.  The attack no longer compiles in
+// any of its forms.
+
+template <class Tag>
+concept ProofCopiesOrMoves =
+    std::is_copy_constructible_v<fp::ReadView<Tag>> || std::is_move_constructible_v<fp::ReadView<Tag>>;
+template <class Tag>
+concept ProofStoresPastItsFrame =
+    requires(std::optional<fp::ReadView<Tag>>& kept, fp::ReadView<Tag> const& view) { kept.emplace(view); };
+template <class Tag>
+concept LoanCopies = std::is_copy_constructible_v<fp::ReadLoan<Tag>>;
+template <class H, class Tag>
+concept CanReadThrough =
+    requires(H hold) { std::move(hold).template read<Tag>([](fp::ReadView<Tag> const&) noexcept {}); };
+template <class Tag>
+concept ProofLeavesAsResult = requires(fp::Permission<Tag>&& token) {
+    fp::with_read_view(std::move(token), [](fp::ReadView<Tag> const& view) noexcept { return &view; });
+};
+
+static_assert(!ProofCopiesOrMoves<X>, "a read proof does not leave the frame of its door by value");
+static_assert(!ProofStoresPastItsFrame<X>, "a read proof is not built in place in a longer-lived object");
+static_assert(!LoanCopies<X>, "one parked token has one loan");
+static_assert(CanReadThrough<Hold<BorrowedIn<X>>, X>, "a borrower reads through its hold");
+static_assert(!CanReadThrough<Hold<>, X>, "a borrower that released its loan reads nothing");
+static_assert(!CanReadThrough<Hold<X>, X>, "an owner reads through its token, not through a loan");
+static_assert(!CanReadThrough<Hold<LentOut<X>>, X>, "a lender reads nothing while its loan is out");
+
+namespace {
+
+// The loan ends when the release comes back.  The borrower reads through
+// its hold while the loan is open, and the hold after the release has no
+// read at all.
+void read_proof_ends_with_the_loan() {
+    auto lender = sess::mint_permission_hold(fp::mint_permission_root<X>());
+    auto [loan, lent] = std::move(lender).template lend<X>(0);
+    auto [value, borrowing] = sess::mint_permission_hold().accept_loan(std::move(loan));
+    auto [seen, reading] = std::move(borrowing).template read<X>(
+        [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
+    auto [release, done] = std::move(reading).template release<X>(value + seen);
+    static_assert(!CanReadThrough<decltype(done), X>, "the release ends every read of the borrower");
+    auto [back, closed] = std::move(lent).end_loan(std::move(release));
+    auto [token, empty] = std::move(closed).template take<X>();
+    require(back == region_value, "the lender gets the value the borrower read");
+    write_region(token, 0);
+    auto rest = std::move(empty).into_permissions();
+    auto nothing = std::move(done).into_permissions();
+    (void)rest;
+    (void)nothing;
+}
+
+// The share stays counted while the view lives, so an upgrade inside the
+// body fails.  After the guard ends, the upgrade succeeds.
+void read_proof_ends_with_the_share() {
+    fp::SharedPermissionPool pool{fp::mint_permission_root<X>()};
+    {
+        auto guard = pool.lend();
+        require(guard.has_value(), "a reader gets a share of a free pool");
+        auto [upgraded_inside, held] = fp::with_read_view(std::move(*guard), [&pool](auto const&) noexcept {
+            auto attempt = pool.try_upgrade();
+            const bool upgraded = attempt.has_value();
+            if (upgraded) pool.deposit_exclusive(std::move(*attempt));
+            return upgraded;
+        });
+        require(!upgraded_inside, "an upgrade succeeds while a read proof lives");
+        require(held.holds_share(), "the door hands the share back");
+    }
+    auto exclusive = pool.try_upgrade();
+    require(exclusive.has_value(), "the upgrade succeeds once the share ends");
+    pool.deposit_exclusive(std::move(*exclusive));
 }
 
 }  // namespace
@@ -630,27 +722,6 @@ void borrowed_prefix_on_another_thread() {
 // Each entry pins an attack that the discipline does not refuse.  The
 // pin asserts that the attack still compiles, so a repair turns the pin
 // red and the entry must go.
-
-// A read proof outlives its source.  A ReadView is an empty value with
-// no link to the Permission or the guard it came from, and it copies.  A
-// copy taken from a Borrowed outlives the Released that ends the loan,
-// and a copy taken under a share guard outlives the guard and the
-// upgrade that follows it.  This breaks the rule of Saffrich, Spaderna,
-// Thiemann and Vasconcelos, OOPSLA 2025, that a borrow ends when it is
-// returned, and the CLASS rule, ESOP 2023, that no reader acts after the
-// writer takes the region.  The set accounting of the session layer
-// records the loan, but a copy of the proof is outside the set.
-//
-// Why it stays open.  C++ cannot tie the life of a copyable value to the
-// life of another object: a lifetime annotation constrains a reference,
-// and a ReadView is a value.  The one shape that closes it is a scoped
-// view that is not copyable and exists only as the parameter of a
-// callback that the loan or the guard calls, so the frame of the proof
-// ends before its source can end.  CLAUDE.md states ReadView as copyable,
-// so that shape changes a stated contract and waits for approval.
-template <class Tag>
-concept ReadProofOutlivesItsSource =
-    requires(BX& loan) { fp::ReadView<Tag>{loan.view}; } && std::is_copy_constructible_v<fp::ReadView<Tag>>;
 
 // The same token moves twice.  A Permission is empty, so a moved-from
 // token is indistinguishable from a live one, and nothing diagnoses a
@@ -676,50 +747,12 @@ concept TokenMovesTwice = requires(fp::Permission<Tag>& token) {
 // repair: delete the entry.  The ledger only shrinks, and a new entry
 // needs a review of why the discipline cannot refuse it.
 inline constexpr bool pinned_attacks[] = {
-    ReadProofOutlivesItsSource<X>,
     TokenMovesTwice<X>,
 };
 static_assert(std::ranges::all_of(pinned_attacks, std::identity{}),
               "a pinned attack no longer compiles.  The discipline refuses it now, so delete its ledger entry.");
 inline constexpr std::size_t kLedgerSize = std::size(pinned_attacks);
-
-namespace {
-
-// The first entry, run through a hold: a borrower copies its proof, and
-// the copy survives the release and the end of the loan.
-void pinned_read_proof_outlives_loan() {
-    auto lender = sess::mint_permission_hold(fp::mint_permission_root<X>());
-    auto [loan, lent] = std::move(lender).template lend<X>(0);
-    auto [value, borrowing] = sess::mint_permission_hold().accept_loan(std::move(loan));
-    const fp::ReadView<X> kept = borrowing.template view<X>();
-    auto [release, done] = std::move(borrowing).template release<X>(value);
-    auto [back, closed] = std::move(lent).end_loan(std::move(release));
-    auto [token, empty] = std::move(closed).template take<X>();
-    (void)back;
-    require(read_region(kept) == region_value,
-            "pinned: a read proof copied during a loan still reads after the lender took its token back");
-    write_region(token, 0);
-    auto rest = std::move(empty).into_permissions();
-    auto nothing = std::move(done).into_permissions();
-    (void)rest;
-    (void)nothing;
-}
-
-// The first entry, run: a proof survives an upgrade.
-void pinned_read_proof_outlives_upgrade() {
-    fp::SharedPermissionPool pool{fp::mint_permission_root<X>()};
-    std::optional<fp::ReadView<X>> kept;
-    {
-        auto guard = pool.lend();
-        kept.emplace(fp::mint_read_view(*guard));
-    }
-    auto exclusive = pool.try_upgrade();
-    require(exclusive.has_value() && kept.has_value(),
-            "pinned: a read proof copied under a share outlives the upgrade that ends every share");
-    pool.deposit_exclusive(std::move(*exclusive));
-}
-
-}  // namespace
+static_assert(kLedgerSize <= 1, "the ledger only shrinks");
 
 }  // namespace ownership_attacks
 
@@ -728,8 +761,8 @@ int main() {
     readers_hold_past_an_upgrade_attempt();
     readers_and_writer_race();
     borrowed_prefix_on_another_thread();
-    pinned_read_proof_outlives_upgrade();
-    pinned_read_proof_outlives_loan();
+    read_proof_ends_with_the_share();
+    read_proof_ends_with_the_loan();
     if (failures != 0) {
         std::fprintf(stderr, "test_session_ownership_attacks: %d failures\n", failures);
         return EXIT_FAILURE;

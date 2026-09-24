@@ -12,11 +12,12 @@
 //   Transferable<T, Tag>     The sender gives the token to the recipient.
 //   Returned<T, Tag>         The same move.  The type records that it
 //                            closes an exclusive loan.
-//   Borrowed<T, Tag>         A read loan.  The sender keeps the token but
-//                            cannot use it until the loan ends.  The
-//                            recipient gets a read proof.
-//   Released<T, Tag>         The end of a read loan.  The lender gets the
-//                            use of its token back.
+//   Borrowed<T, Tag>         A read loan.  The sender keeps the token
+//                            parked and cannot use it until the loan
+//                            ends.  The recipient gets the ReadLoan.
+//   Released<T, Tag>         The end of a read loan.  It carries the
+//                            ReadLoan back, and the lender gets its token
+//                            back only with that loan.
 //   DelegatedSession<P, PS>  An endpoint of another protocol.  The tokens
 //                            in PS move with it.
 //   SharedReader<Tag>        A read share of a pool.  No set changes,
@@ -226,33 +227,40 @@ struct [[nodiscard]] Returned {
     ~Returned() = default;
 };
 
-// The read proof comes from mint_read_view, which takes a live
-// Permission or SharedPermission of the tag.  There is no constructor
-// that takes no proof, so a Borrowed cannot exist without its tag.
+// The loan comes from mint_read_loan, which parks the token of the tag.
+// There is no constructor that takes no loan, so a Borrowed cannot exist
+// without a parked token.  The loan is private: the recipient reaches it
+// only through accept_loan, and reads only through the door of its hold.
 template <class T, class Tag>
 struct [[nodiscard]] Borrowed {
     using payload_type = T;
     using borrowed_perm = Tag;
 
     T value;
-    [[no_unique_address]] ::foundation::permissions::ReadView<Tag> view;
 
     template <class Brand>
-    constexpr Borrowed(T v, ::foundation::permissions::ReadView<Tag, Brand> proof) noexcept(
+    constexpr Borrowed(T v, ::foundation::permissions::ReadLoan<Tag, Brand>&& loan) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value{std::move(v)}, view{proof} {}
+        : value{std::move(v)}, loan_{std::move(loan)} {}
 
     Borrowed(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
     Borrowed& operator=(const Borrowed&) =
         delete("Borrowed is one read loan. A copy is a second loan that no set records");
     constexpr Borrowed(Borrowed&&) noexcept = default;
-    Borrowed& operator=(Borrowed&&) = delete("Borrowed holds a single-binding read proof");
+    Borrowed& operator=(Borrowed&&) = delete("Borrowed holds one read loan for its whole life");
     ~Borrowed() = default;
+
+private:
+    template <class>
+    friend class PermHold;
+
+    [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
 };
 
-// The end of a read loan carries no token, because the borrower never
-// held one.  The type-level check is what makes a send of it sound: the
-// sender must hold BorrowedIn<Tag>.
+// The end of a read loan carries the loan back.  The lender gets its
+// token only from the parked token and this loan together, so a release
+// that no borrower sent cannot reopen the region.  The type-level check
+// makes the send sound too: the sender must hold BorrowedIn<Tag>.
 template <class T, class Tag>
 struct [[nodiscard]] Released {
     using payload_type = T;
@@ -260,13 +268,22 @@ struct [[nodiscard]] Released {
 
     T value;
 
-    constexpr explicit Released(T v) noexcept(std::is_nothrow_move_constructible_v<T>) : value{std::move(v)} {}
+    template <class Brand>
+    constexpr Released(T v, ::foundation::permissions::ReadLoan<Tag, Brand>&& loan) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        : value{std::move(v)}, loan_{std::move(loan)} {}
 
     Released(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
     Released& operator=(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
     constexpr Released(Released&&) noexcept = default;
     constexpr Released& operator=(Released&&) noexcept = default;
     ~Released() = default;
+
+private:
+    template <class>
+    friend class PermHold;
+
+    [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
 };
 
 // The endpoint itself moves through the transport that does the
@@ -280,8 +297,9 @@ struct [[nodiscard]] DelegatedSession {
 // A reader's share of a pool, which a message can carry to a reader on
 // another thread.  It owns the guard, so the share lives exactly as long
 // as the reader, and the pool cannot upgrade while one reader lives.  No
-// proof is dropped on the way: the read view comes from the guard that
-// this object holds.  The writer is the Permission that try_upgrade hands
+// proof is dropped on the way: a read view comes from the guard that
+// this object holds, and only inside read.  The writer is the
+// Permission that try_upgrade hands
 // back, which is linear, so there is one writer and any number of
 // readers, as in CLASS (Rocha and Caires, ESOP 2023).
 //
@@ -305,14 +323,24 @@ public:
     SharedReader& operator=(SharedReader&&) = delete("a SharedReader binds one share for its whole life");
     ~SharedReader() = default;
 
-    // A read proof of the region while this reader lives.  The deleted
-    // twin refuses a proof taken from a reader that dies at the end of
-    // the statement.
-    [[nodiscard]] ::foundation::permissions::ReadView<Tag, Brand> view() const& noexcept {
-        return ::foundation::permissions::mint_read_view(guard_);
+    // Runs the body with a read view of the region, and hands the reader
+    // back.  The reader is consumed for the call, so the body cannot end
+    // the share through a capture while the view lives.  A body that
+    // returns nothing gives the reader back, and a body that returns a
+    // value gives a pair of that value and the reader.
+    template <class Body>
+        requires ::foundation::permissions::ReadViewBody<Body, Tag, Brand>
+    [[nodiscard]] auto read(Body&& body) && noexcept(
+        ::foundation::permissions::detail::read_view_door_nothrow_v<
+            ::foundation::permissions::SharedPermissionGuard<Tag, Brand>, Body>) {
+        auto lent = ::foundation::permissions::with_read_view(std::move(guard_), std::forward<Body>(body));
+        if constexpr (std::is_same_v<decltype(lent),
+                                     ::foundation::permissions::SharedPermissionGuard<Tag, Brand>>) {
+            return SharedReader{std::move(lent)};
+        } else {
+            return std::pair{std::move(lent.first), SharedReader{std::move(lent.second)}};
+        }
     }
-    ::foundation::permissions::ReadView<Tag, Brand> view() const&& =
-        delete("a read proof taken from a temporary reader outlives the share. Bind the reader to a name");
 
     [[nodiscard]] bool holds_share() const noexcept { return guard_.holds_share(); }
 
@@ -361,9 +389,12 @@ enum class PayloadReach : std::uint8_t {
 // The families the walk classifies by name.  Each entry reflects a class
 // template, so one entry covers each specialization of it.
 
-// A read proof, a share or a pool.  Each travels only inside a marker.
+// A read proof, a read loan, a parked token, a share or a pool.  Each
+// travels only inside a marker.
 inline constexpr std::meta::info payload_proof_families[] = {
     ^^::foundation::permissions::ReadView,
+    ^^::foundation::permissions::ReadLoan,
+    ^^::foundation::permissions::LentPermission,
     ^^::foundation::permissions::SharedPermission,
     ^^::foundation::permissions::SharedPermissionGuard,
     ^^::foundation::permissions::SharedPermissionPool,
@@ -987,16 +1018,19 @@ inline constexpr bool perm_set_has_open_loan_v = [] consteval {
 // ── The tokens of a set, held ───────────────────────────────────────
 //
 // A PermHold keeps the token object for each element of its set: the
-// Permission of each plain tag, the parked Permission of each LentOut
-// tag, and the read proof of each BorrowedIn tag.  Every transition
-// consumes the hold and returns the next one, whose set is the set after
-// the step.  So the tokens and the set cannot disagree:
+// Permission of each plain tag, the LentPermission of each LentOut tag,
+// and the ReadLoan of each BorrowedIn tag.  Every transition consumes
+// the hold and returns the next one, whose set is the set after the
+// step.  So the tokens and the set cannot disagree:
 //
 //   take / put         a token leaves or enters the hold
 //   pack / unpack      the same, inside a Transferable
-//   lend / end_loan    the token parks in LentOut<Tag>, then returns
-//   accept_loan /      a read proof enters as BorrowedIn<Tag>, then goes
-//     release
+//   lend / end_loan    the token parks in LentOut<Tag>, then returns with
+//                      the loan that the release carries back
+//   accept_loan /      a read loan enters as BorrowedIn<Tag>, then goes
+//     release          back inside the release
+//   read               the body reads a BorrowedIn region through the
+//                      door of the loan, and the hold comes back
 //
 // A hold carries one flag of state, which the transitions clear.  A
 // transition on a hold that a move or an earlier transition consumed
@@ -1016,11 +1050,11 @@ namespace detail {
 [[nodiscard]] consteval std::meta::info hold_slot_of(std::meta::info element) {
     const std::meta::info bare = std::meta::dealias(element);
     if (payload_family_is(bare, ^^LentOut)) {
-        return std::meta::substitute(^^::foundation::permissions::Permission,
+        return std::meta::substitute(^^::foundation::permissions::LentPermission,
                                      {std::meta::template_arguments_of(bare)[0]});
     }
     if (payload_family_is(bare, ^^BorrowedIn)) {
-        return std::meta::substitute(^^::foundation::permissions::ReadView,
+        return std::meta::substitute(^^::foundation::permissions::ReadLoan,
                                      {std::meta::template_arguments_of(bare)[0]});
     }
     return std::meta::substitute(^^::foundation::permissions::Permission, {bare});
@@ -1144,19 +1178,20 @@ public:
 
     // ── A read loan, lender side ───────────────────────────────────
 
-    // The token parks in the LentOut slot, where take cannot reach it.
-    // Only a release of the same tag unparks it.
+    // The token parks in the LentOut slot, where take cannot reach it,
+    // and the loan leaves inside the Borrowed.  Only a release that
+    // carries the same loan back unparks the token.
     template <class Tag, class T>
         requires SendablePayload<Borrowed<T, Tag>, Set>
                  && ::foundation::permissions::ReadViewNeedsNoCtx<Tag>
     [[nodiscard]] constexpr auto lend(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<Borrowed<T, Tag>, PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag>>>> {
         require_live_();
-        ::foundation::permissions::Permission<Tag>& token = std::get<index_of_<Tag>>(slots_);
-        Borrowed<T, Tag> loan{std::move(value), ::foundation::permissions::mint_read_view(token)};
+        auto [loan, parked] = ::foundation::permissions::mint_read_loan(std::move(std::get<index_of_<Tag>>(slots_)));
+        Borrowed<T, Tag> message{std::move(value), std::move(loan)};
         auto next = std::move(*this).template transition_<perm_set_after_send_t<Set, Borrowed<T, Tag>>>(
-            std::move(token));
-        return {std::move(loan), std::move(next)};
+            std::move(parked));
+        return {std::move(message), std::move(next)};
     }
 
     template <class T, class Tag>
@@ -1166,9 +1201,9 @@ public:
         -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Released<T, Tag>>>> {
         require_live_();
         T value = std::move(message.value);
-        ::foundation::permissions::Permission<Tag>& parked = std::get<index_of_<LentOut<Tag>>>(slots_);
+        ::foundation::permissions::LentPermission<Tag>& parked = std::get<index_of_<LentOut<Tag>>>(slots_);
         auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Released<T, Tag>>>(
-            std::move(parked));
+            ::foundation::permissions::mint_permission_after_loan(std::move(parked), std::move(message.loan_)));
         return {std::move(value), std::move(next)};
     }
 
@@ -1182,29 +1217,43 @@ public:
         require_live_();
         T value = std::move(message.value);
         auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>(
-            ::foundation::permissions::ReadView<Tag>{message.view});
+            std::move(message.loan_));
         return {std::move(value), std::move(next)};
     }
 
-    // The read proof of a region this hold borrows.
-    template <class Tag>
+    // Runs the body with a read view of a region that this hold borrows,
+    // and hands the hold back.  The hold is consumed for the call, so a
+    // body that names the hold through a capture finds it spent, and a
+    // transition on it aborts.  A body that returns nothing gives the
+    // hold back, and a body that returns a value gives a pair of that
+    // value and the hold.
+    template <class Tag, class Body>
         requires(::foundation::permissions::perm_set_contains_v<Set, BorrowedIn<Tag>>)
-    [[nodiscard]] constexpr ::foundation::permissions::ReadView<Tag> view() const& noexcept {
+                && ::foundation::permissions::ReadViewBody<Body, Tag, ::foundation::brand::DefaultBrand>
+    [[nodiscard]] constexpr auto read(Body&& body) && noexcept(
+        ::foundation::permissions::detail::read_view_door_nothrow_v<::foundation::permissions::ReadLoan<Tag>, Body>) {
         require_live_();
-        return ::foundation::permissions::ReadView<Tag>{std::get<index_of_<BorrowedIn<Tag>>>(slots_)};
+        PermHold held{std::move(*this)};
+        ::foundation::permissions::ReadLoan<Tag>& slot = std::get<index_of_<BorrowedIn<Tag>>>(held.slots_);
+        auto lent = ::foundation::permissions::with_read_view(std::move(slot), std::forward<Body>(body));
+        if constexpr (std::is_same_v<decltype(lent), ::foundation::permissions::ReadLoan<Tag>>) {
+            slot = std::move(lent);
+            return held;
+        } else {
+            slot = std::move(lent.second);
+            return std::pair{std::move(lent.first), std::move(held)};
+        }
     }
-    template <class Tag>
-        requires(::foundation::permissions::perm_set_contains_v<Set, BorrowedIn<Tag>>)
-    ::foundation::permissions::ReadView<Tag> view() const&& =
-        delete("a read proof taken from a temporary hold outlives the loan. Bind the hold to a name");
 
     template <class Tag, class T>
         requires SendablePayload<Released<T, Tag>, Set>
     [[nodiscard]] constexpr auto release(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<Released<T, Tag>, PermHold<perm_set_after_send_t<Set, Released<T, Tag>>>> {
         require_live_();
+        ::foundation::permissions::ReadLoan<Tag>& loan = std::get<index_of_<BorrowedIn<Tag>>>(slots_);
+        Released<T, Tag> message{std::move(value), std::move(loan)};
         auto next = std::move(*this).template transition_<perm_set_after_send_t<Set, Released<T, Tag>>>();
-        return {Released<T, Tag>{std::move(value)}, std::move(next)};
+        return {std::move(message), std::move(next)};
     }
 
     // ── The end of the hold ────────────────────────────────────────

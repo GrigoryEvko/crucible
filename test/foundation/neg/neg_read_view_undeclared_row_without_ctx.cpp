@@ -1,24 +1,15 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture 2 of 2 for foundation::permissions::mint_read_view.
+// Fixture 2 of 2 for the row gate of foundation::permissions::with_read_view.
 //
-// The relation from tag to row is closed: a pure region says so with
-// Row<>, and a region that says nothing has not been decided.  The gate
-// therefore fails closed — permission_row_empty_v answers false for a tag
-// that declares no row, so an undeclared region is refused rather than
-// admitted by the omission.
+// A tag that declares no row says nothing about who may hold its region.
+// permission_row_empty_v answers false for it, so the gate refuses the
+// tag and does not admit it by omission.
 //
-// The call is written in an unevaluated operand on purpose.  Minting a
-// permission for this tag would fire mint_permission_root's own row
-// assertion, and the fixture would then prove that assertion rather than
-// this gate.  Overload resolution alone is enough to show the refusal.
+// A different class from neg_read_view_effectful_row_without_ctx.cpp:
+// there the row is declared and names an effect.
 //
-// Distinct mismatch class from
-// neg_read_view_effectful_row_without_ctx.cpp (fixture 1): there the row
-// is declared and names IO; here no row is declared at all, and the
-// question is which way the gate fails when it has nothing to read.
-//
-// Expected diagnostic: no matching function for mint_read_view, whose
+// Expected diagnostic: no matching function for with_read_view, whose
 // candidate was discarded because ReadViewNeedsNoCtx is not satisfied.
 
 #include <foundation/permissions/Permission.h>
@@ -27,16 +18,14 @@
 #include <utility>
 
 namespace {
-// Declares no permission_row, and no edge names it either.
+
 struct UndecidedRegion {};
 
 using UndecidedPermission = ::foundation::permissions::Permission<UndecidedRegion>;
+
 }  // namespace
 
-// The alias is never used.  Naming the result of the refused call is the
-// whole fixture, and reading it again would report a second error on a
-// second line, which the neg driver counts as a fixture rejecting for
-// more than one reason.
-using Borrowed = decltype(::foundation::permissions::mint_read_view(std::declval<UndecidedPermission const&>()));
+using Lent = decltype(::foundation::permissions::with_read_view(std::declval<UndecidedPermission&&>(),
+                                                                [](auto const&) noexcept {}));
 
 int main() { return 0; }

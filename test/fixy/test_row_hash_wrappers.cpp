@@ -778,6 +778,8 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^fp::SharedPermissionPool, ^^fp::SharedPermissionPool<PureRegionTag, ::foundation::brand::DefaultBrand>},
     {^^fp::PermSet, ^^fp::PermSet<PureRegionTag>},
     {^^fp::ReadView, ^^fp::ReadView<PureRegionTag>},
+    {^^fp::ReadLoan, ^^fp::ReadLoan<PureRegionTag>},
+    {^^fp::LentPermission, ^^fp::LentPermission<PureRegionTag>},
 
     {^^fe::Bg, ^^fe::Bg},
     {^^fe::Init, ^^fe::Init},

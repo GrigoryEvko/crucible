@@ -327,6 +327,7 @@ crucible/fixy/spawn/_SpawnGrant.h:fork_parent  — A grant whose comment said it
 crucible/fixy/spawn/_SpawnGrant.h:exec_ctx  — The same, for the execution context: a parameter no gate consumed (fixy/os/Spawn.h:20).
 crucible/safety/diag/_RowMismatch.h:runtime_smoke_test_row_mismatch  — A smoke function compiled into every including translation unit and called by nothing, which is a shape the port removed throughout; its body is the first case of test/foundation/test_row_mismatch.cpp, which ctest runs.
 crucible/permissions/_Permission.h:permission_row  — A primary template that answered Row<> for every tag nobody specialised, so an unregistered tag was a pure tag by omission and its region could be owned by the foreground, which foundation/permissions/Permission.h replaces with a closed relation read by has_permission_row_v and permission_row_t from the edge namespace permission_rows and from a permission_row member on the tag.
+crucible/permissions/_ReadView.h:mint_read_view  → include/foundation/permissions/ReadView.h  — The mint returned a view by value, which a caller could bind to a name that outlived its source, so foundation/permissions/ReadView.h lends a view only inside the body of with_read_view and carries a read right that travels as the ReadLoan of mint_read_loan.
 
 # The old row hash carried one partial specialisation per wrapper and
 # forward-declared each wrapper and each tier enum so it could name the

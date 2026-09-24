@@ -141,6 +141,8 @@ using BgBase = fe::detail::ContextBase<fe::Bg, fe::detail::ctx_mint::bg_key, fe:
 inline constexpr std::meta::info template_witnesses[] = {
     ^^fp::Permission<Region>,
     ^^fp::ReadView<Region>,
+    ^^fp::ReadLoan<Region>,
+    ^^fp::LentPermission<Region>,
     ^^fp::SharedPermissionGuard<Region, ::foundation::brand::DefaultBrand>,
     ^^fp::SharedPermissionPool<Region, ::foundation::brand::DefaultBrand>,
     ^^fe::Capability<fe::Effect::Alloc, fe::Bg>,

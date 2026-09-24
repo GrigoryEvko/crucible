@@ -430,27 +430,58 @@ foundation_neg_compile_test(neg_permission_root_ctx_refuses_row
 
 # ── The borrow's row gate ────────────────────────────────────────────
 #
-# A view is a proof about a region, so minting one is bounded by who may
-# hold that region.  A factory that reads no context can be sound only
-# for the empty row, which is the rule SharedPermissionPool::lend states
-# for the pooled share of the same region and this factory stated
-# nowhere.  The first fixture is a declared row that names IO; the
-# second is a region that declares no row, and asks which way the gate
-# fails when it has nothing to read.  The third is the scoped form,
-# which is the second door onto the same borrow.
+# A view is a proof about a region, so a borrow is bounded by who may
+# hold that region.  A door that reads no context is sound only for the
+# empty row, which is the rule SharedPermissionPool::lend states for the
+# pooled share of the same region.  The first fixture is a declared row
+# that names IO, and the second is a region that declares no row.  A read
+# loan opens views through the same door, so its mint carries the gate
+# too.
 #
-# Each second regex names the concept and the tag it was checked for,
-# which no fixture source spells.  Removing the clause compiles all
-# three.
+# Each second regex names the concept and the source or the tag it was
+# checked for, which no fixture source spells.
 foundation_neg_compile_test(neg_read_view_effectful_row_without_ctx
-  "no matching function for call to .mint_read_view\\("
-  "required for the satisfaction of .ReadViewNeedsNoCtx<Tag>. .with Tag = .*MappedRegion")
-foundation_neg_compile_test(neg_read_view_undeclared_row_without_ctx
-  "no matching function for call to .mint_read_view\\("
-  "required for the satisfaction of .ReadViewNeedsNoCtx<Tag>. .with Tag = .*UndecidedRegion")
-foundation_neg_compile_test(neg_read_view_scoped_form_keeps_the_row_gate
   "no matching function for call to .with_read_view\\("
-  "required for the satisfaction of .ReadViewNeedsNoCtx<Tag>. .with Tag = .*MappedRegion")
+  "required for the satisfaction of .ReadViewNeedsNoCtx<typename Source::tag_type>. .with Source = foundation::permissions::Permission<<unnamed>::MappedRegion")
+foundation_neg_compile_test(neg_read_view_undeclared_row_without_ctx
+  "no matching function for call to .with_read_view\\("
+  "required for the satisfaction of .ReadViewNeedsNoCtx<typename Source::tag_type>. .with Source = foundation::permissions::Permission<<unnamed>::UndecidedRegion")
+foundation_neg_compile_test(neg_read_loan_effectful_row_without_ctx
+  "no matching function for call to .mint_read_loan\\("
+  "required for the satisfaction of .ReadViewNeedsNoCtx<Tag>. .with Tag = <unnamed>::MappedRegion")
+foundation_neg_compile_test(neg_read_loan_from_named_token
+  "use of deleted function"
+  "mint_read_loan parks the token until the loan comes back")
+
+# ── The frame of a borrow ────────────────────────────────────────────
+#
+# A view lives only inside the body that with_read_view runs, so no view
+# leaves the frame of its door.  Each fixture below is one way out: a
+# named source that the body could end, a body that asks for a copy, a
+# result that carries the view, and a view built in place in a
+# longer-lived object.  A read loan is one read right, so it does not
+# copy, and a loan ends only the loan of its own region.
+foundation_neg_compile_test(neg_read_view_named_source_refused
+  "use of deleted function"
+  "with_read_view lends its source to the body and hands the source back")
+foundation_neg_compile_test(neg_read_view_body_by_value
+  "no matching function for call to .with_read_view\\("
+  "required for the satisfaction of .ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>.")
+foundation_neg_compile_test(neg_read_view_returned_from_the_body
+  "static assertion failed"
+  "the body returns a reference, a type that names a ReadView, or a lambda whose captures cannot be read")
+foundation_neg_compile_test(neg_read_view_stored_past_the_callback
+  "no matching function for call to .std::optional<foundation::permissions::ReadView<.anonymous.::Region> >::emplace\\("
+  "enable_if<false, foundation::permissions::ReadView<.anonymous.::Region>&>")
+foundation_neg_compile_test(neg_read_loan_copied
+  "use of deleted function"
+  "a ReadLoan is one read right. A copy is a second right")
+foundation_neg_compile_test(neg_loan_end_with_the_loan_of_another_region
+  "no matching function for call to .mint_permission_after_loan\\("
+  "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
+foundation_neg_compile_test(neg_loan_end_with_the_loan_of_another_tag
+  "no matching function for call to .mint_permission_after_loan\\("
+  "deduced conflicting types for parameter .Tag. \\(..anonymous.::Region. and ..anonymous.::Other.\\)")
 
 # ── Brands: identity per mint ────────────────────────────────────────
 #
@@ -479,25 +510,12 @@ foundation_neg_compile_test(neg_brand_read_view_proves_another_region
   "no matching function for call to .read_under\\("
   "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
 
-# A borrow proof of a temporary permission: the refusal by value
-# category, which is the deleted rvalue twin.
-foundation_neg_compile_test(neg_brand_read_view_from_temporary_permission
-  "use of deleted function"
-  "mint_read_view\\(const Permission<Tag, Brand>&&\\)"
-  "a borrow proof minted from a temporary permission outlives what it proves")
-
-# A read proof comes from a Permission or a live share, and from nothing
-# else.  A program that defines the old host type reaches a private
-# constructor, because no friend names that type.
+# A read proof comes from a door, and from nothing else.  A program that
+# defines the old host type reaches a private constructor, because no
+# friend names that type.
 foundation_neg_compile_test(neg_read_view_host_door_closed
   "is private within this context"
   "ReadView<Tag, Brand>::ReadView\\(\\) .with Tag = .*Region")
-
-# A read proof of a share guard that dies at the end of the statement.
-foundation_neg_compile_test(neg_read_view_from_temporary_share_guard
-  "use of deleted function"
-  "mint_read_view\\(const SharedPermissionGuard<Tag, Brand>&&\\)"
-  "a borrow proof minted from a temporary share guard outlives the share")
 
 # No route builds a token, the mint key or a read proof without a
 # constructor.  std::bit_cast needs a trivially copyable type, and
@@ -518,6 +536,12 @@ foundation_neg_compile_test(neg_read_view_forged_by_bit_cast
 foundation_neg_compile_test(neg_read_view_forged_by_start_lifetime_as
   "static assertion failed"
   "foundation::permissions::ReadView<.*Region.*. is not an implicit-lifetime type")
+foundation_neg_compile_test(neg_read_loan_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::permissions::ReadLoan<.*Region"
+  "is_trivially_copyable_v<_To>")
+foundation_neg_compile_test(neg_lent_permission_forged_by_bit_cast
+  "no matching function for call to .bit_cast<foundation::permissions::LentPermission<.*Region"
+  "is_trivially_copyable_v<_To>")
 
 # No route builds a context, a context key, the capability key, a
 # capability or an execution context over Bg without a constructor.

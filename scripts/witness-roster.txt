@@ -43,6 +43,10 @@ foundation::permissions::detail::ForkRebuildKey | foundation/permissions/Permiss
 foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>{} | private | closed
 foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>{forge::lvalue<foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>>()} | private | closed
 foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag> | foundation/permissions/ReadView.h | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>{} | private | closed
+# A read loan comes only from mint_read_loan, which parks the token, and
+# the parked token comes back only with its loan.
+foundation::permissions::ReadLoan<foundation::permissions::tag::HugePageTag> | foundation/permissions/ReadView.h | foundation::permissions::ReadLoan<foundation::permissions::tag::HugePageTag>{} | private | closed
+foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag> | foundation/permissions/ReadView.h | foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag>{forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>()} | private | closed
 # The pool's only constructor consumes the exclusive permission it
 # parks: there is no pool without the evidence.
 foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>{} | no-match | closed
