@@ -48,6 +48,15 @@ def line_of(joined: str, joins: list[int], offset: int) -> int:
     return joined.count("\n", 0, offset) + 1 + bisect_right(joins, offset)
 
 
+def comments(text: str) -> list[tuple[int, str]]:
+    """Return the offset and the text of each comment, in the order of the text.
+
+    A comment marker inside a string literal or a raw string is not a
+    comment.  Complexity: linear in the length of the text."""
+    return [(match.start(), match.group(0)) for match in LEXER.finditer(text)
+            if match.group("line_comment") is not None or match.group("block_comment") is not None]
+
+
 def blank(text: str, names: frozenset[str] = frozenset(), blank_literals: bool = False) -> tuple[str, list[int]]:
     """Blank each comment, and each literal when asked, and find the names.
 

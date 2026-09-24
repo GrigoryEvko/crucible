@@ -21,8 +21,9 @@ THE TWO BANS
 
 WHAT THE PARSER CANNOT READ
     A macro body is one `preproc_arg` node of raw text.  The guard scans that
-    text with a lexer that drops comments, string literals and raw strings, and
-    it reports each banned token that remains.  A file in tsast.UNPARSEABLE
+    text with the lexer of scripts/cxx_lex.py, which drops comments, string
+    literals, character literals and raw strings, and it reports each banned
+    token that remains.  A file in tsast.UNPARSEABLE
     gets the same lexical scan over its whole text.  A parse error in any
     other file is a guard failure.
 
@@ -53,6 +54,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import cxx_lex  # noqa: E402
 import tsast  # noqa: E402
 
 SUFFIXES = (".h", ".hpp", ".cpp", ".cc")
@@ -164,16 +166,12 @@ BANS = (
 
 
 def strip_literals(text: str) -> tuple[str, list[tuple[int, str]]]:
-    """Blank out the comments and literals of a C++ text, and keep the comments.
+    """Blank the comments and literals of a C++ text with the shared lexer, and keep the comments.
 
-    Each comment, string literal, character literal and raw string becomes
-    spaces, and each newline stays, so an offset in the result is an offset in
-    the input.  A quote after a letter, digit or underscore is a digit
-    separator, not the start of a character literal.  That reading can expose
-    the body of a prefixed character literal such as u8'x', which only adds a
-    report and never hides one.
-
-    Complexity: O(n) in the length of the text.
+    Each blanked character becomes a space and each newline stays, so an
+    offset in the result is an offset in the input.  A prefixed character
+    literal such as u8'"' is one token, so the quote inside it starts no
+    string.  Complexity: linear in the length of the text.
 
     Args:
         text: The C++ source text
@@ -181,55 +179,8 @@ def strip_literals(text: str) -> tuple[str, list[tuple[int, str]]]:
     Returns:
         The blanked text, and each comment as (start offset, comment text)
     """
-    out = list(text)
-    comments: list[tuple[int, str]] = []
-    length = len(text)
-    pos = 0
-
-    def blank(start: int, end: int) -> None:
-        """Replace text[start:end] with spaces, keeping newlines."""
-        for index in range(start, end):
-            if out[index] != "\n":
-                out[index] = " "
-
-    while pos < length:
-        char = text[pos]
-        if text.startswith("//", pos):
-            end = text.find("\n", pos)
-            end = length if end < 0 else end
-            comments.append((pos, text[pos:end]))
-            blank(pos, end)
-            pos = end
-        elif text.startswith("/*", pos):
-            end = text.find("*/", pos + 2)
-            end = length if end < 0 else end + 2
-            comments.append((pos, text[pos:end]))
-            blank(pos, end)
-            pos = end
-        elif char == '"':
-            raw = re.match(r'(?:u8|u|U|L)?R"([^()\\ \t\n]{0,16})\(', text[max(0, pos - 3):pos + 20])
-            prefix = text[max(0, pos - 3):pos]
-            if pos > 0 and text[pos - 1] == "R" and raw is not None and prefix.endswith("R"):
-                delimiter = ")" + raw.group(1) + '"'
-                end = text.find(delimiter, pos + 1)
-                end = length if end < 0 else end + len(delimiter)
-            else:
-                end = pos + 1
-                while end < length and text[end] not in '"\n':
-                    end += 2 if text[end] == "\\" else 1
-                end = min(end + 1, length)
-            blank(pos, end)
-            pos = end
-        elif char == "'" and not (pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_")):
-            end = pos + 1
-            while end < length and text[end] not in "'\n":
-                end += 2 if text[end] == "\\" else 1
-            end = min(end + 1, length)
-            blank(pos, end)
-            pos = end
-        else:
-            pos += 1
-    return "".join(out), comments
+    blanked, _ = cxx_lex.blank(text, blank_literals=True)
+    return blanked, cxx_lex.comments(text)
 
 
 def _row_of(text: str, offset: int) -> int:
@@ -423,6 +374,8 @@ def self_test() -> int:
     cast_fixture = (
         "#pragma once\n"
         "#define CAST_IN_MACRO(p) reinterpret_cast<long*>(p)\n"
+        "#define QUOTE_THEN_CAST(p) (u8'\"', reinterpret_cast<char*>(p))\n"
+        "#define SEPARATOR_THEN_CAST(p) (1'000, reinterpret_cast<short*>(p))\n"
         "inline int* plain(void* p) { return reinterpret_cast<int*>(p); }\n"
         "inline char* spanning(void* p) { return reinterpret_cast\n"
         "    <char*>(p); }\n"
@@ -478,6 +431,10 @@ def self_test() -> int:
         expect("a cast that spans two lines is caught", any("spanning" in key for key in casts))
         expect("a cast with a space before < is caught", any("spaced" in key for key in casts))
         expect("a cast in a macro body is caught", any("CAST_IN_MACRO" in key for key in casts))
+        expect("a cast after a prefixed character literal that holds a quote is caught",
+               any("QUOTE_THEN_CAST" in key for key in casts))
+        expect("a cast after a number with a digit separator is caught",
+               any("SEPARATOR_THEN_CAST" in key for key in casts))
         expect("a cast in vessel/ is caught", any("reinterpret_cast<int*>(p)" in key and "f(" in key
                                                      for key in casts))
         expect("a marker with a reason exempts its line", not any("double" in key for key in casts), True)
