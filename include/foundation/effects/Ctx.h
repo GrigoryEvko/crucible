@@ -311,6 +311,19 @@ public:
     return ExecCtx<ctx_cap::Fg, Row<>>{ctx_cap::Fg{key}};
 }
 
+namespace detail::producer_claim {
+
+// The fields of the record of one brand (host::ProducerClaim below).  The
+// type holds no key and builds no context.  Only a private function of the
+// claim holds an object of it.
+struct BrandRecord {
+    std::atomic_flag lock{};
+    std::atomic<const void*> holder{nullptr};
+    std::size_t claims = 0;
+};
+
+}  // namespace detail::producer_claim
+
 namespace host {
 
 // The one production builder of the foreground key.  Its member is
@@ -370,7 +383,7 @@ public:
     // holds the live claims.  A cold gate of the brand asks this through
     // require_brand_thread below.
     [[nodiscard]] static bool can_caller_use_brand() noexcept {
-        const void* const holder = brand_holder_.load(std::memory_order_acquire);
+        const void* const holder = brand_record_().holder.load(std::memory_order_acquire);
         return holder == nullptr || holder == calling_thread_identity_();
     }
 
@@ -408,52 +421,61 @@ private:
     // destructor write the record, so the flag that guards the count is
     // never on the path that runs for each op.
     [[gnu::cold, gnu::noinline]] static bool enter_brand_(const void* thread_identity) noexcept {
-        lock_brand_();
+        BrandRecord& record = brand_record_();
+        lock_brand_(record);
         const bool is_only_brand_thread =
-            brand_claims_ == 0 || brand_holder_.load(std::memory_order_relaxed) == thread_identity;
+            record.claims == 0 || record.holder.load(std::memory_order_relaxed) == thread_identity;
         if (is_only_brand_thread) {
-            brand_holder_.store(thread_identity, std::memory_order_release);
-            ++brand_claims_;
+            record.holder.store(thread_identity, std::memory_order_release);
+            ++record.claims;
         }
-        unlock_brand_();
+        unlock_brand_(record);
         return is_only_brand_thread;
     }
 
     [[gnu::cold, gnu::noinline]] static void leave_brand_() noexcept {
-        lock_brand_();
-        const bool has_entry = brand_claims_ != 0;
-        if (has_entry && --brand_claims_ == 0) brand_holder_.store(nullptr, std::memory_order_release);
-        unlock_brand_();
+        BrandRecord& record = brand_record_();
+        lock_brand_(record);
+        const bool has_entry = record.claims != 0;
+        if (has_entry && --record.claims == 0) record.holder.store(nullptr, std::memory_order_release);
+        unlock_brand_(record);
         CRUCIBLE_FATAL_INVARIANT(has_entry);
     }
 
     // The record names a thread by the address of a byte that each thread
     // owns, not by std::thread::id.  The default constructor of
     // std::thread::id is not constexpr, so an atomic of it cannot be
-    // constinit, and this templated static member needs constinit: its
-    // dynamic initialization is unordered.  A null address names no
-    // thread.  Like a std::thread::id, an address can name a new thread
-    // after the thread that owned it ends.
+    // constinit, and the record needs constinit: it belongs to a template,
+    // and the dynamic initialization of a templated static is unordered.  A
+    // null address names no thread.  Like a std::thread::id, an address can
+    // name a new thread after the thread that owned it ends.
     [[nodiscard]] static const void* calling_thread_identity_() noexcept {
         static thread_local const unsigned char identity_byte = 0;
         return &identity_byte;
     }
 
-    static void lock_brand_() noexcept {
-        while (brand_lock_.test_and_set(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
+    // The record is process-wide because the global schema and kernel
+    // tables have one writer.  It is a function-local static and not a
+    // static data member, because a splice of a static data member has no
+    // access check, and a splice cannot reach a local.
+    using BrandRecord = detail::producer_claim::BrandRecord;
+
+    [[nodiscard]] static BrandRecord& brand_record_() noexcept {
+        static constinit BrandRecord record{};
+        return record;
     }
 
-    static void unlock_brand_() noexcept { brand_lock_.clear(std::memory_order_release); }
+    static void lock_brand_(BrandRecord& record) noexcept {
+        while (record.lock.test_and_set(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
+    }
+
+    static void unlock_brand_(BrandRecord& record) noexcept { record.lock.clear(std::memory_order_release); }
 
     // A thread id is not a lock-free atomic on every target, and a hidden
     // mutex on this check would put a lock on the dispatch path.
     static_assert(std::atomic<std::thread::id>::is_always_lock_free,
                   "std::atomic<std::thread::id> must be lock-free on this target.");
     std::atomic<std::thread::id> holder_{};
-
-    static inline constinit std::atomic_flag brand_lock_{};
-    static inline constinit std::atomic<const void*> brand_holder_{nullptr};
-    static inline constinit std::size_t brand_claims_ = 0;
 };
 
 // The run-time half of a cold gate of a brand.  The context is evidence
