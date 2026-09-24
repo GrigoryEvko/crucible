@@ -3357,6 +3357,16 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
   "static assertion failed: a body that consumes its shard must be refused"
   "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0[^>]*>, Brand>&>")
 
+# The fan-out of mint_parallel_for is a private member of
+# ParallelForRunner, and the mint is its only friend: no other scope calls
+# it or derives from the runner to reach it.
+fixy_neg_compile_test(neg_spawn_parallel_for_runner_is_private
+  "is private within this context"
+  "ParallelForRunner::run_shards_")
+fixy_neg_compile_test(neg_spawn_parallel_for_runner_derived_look_alike
+  "cannot derive from .final. base"
+  "ParallelForRunner")
+
 # ── The two Qtt discipline recognisers, armed ─────────────────────────
 #
 # The port carried both gates of fixy/Qtt.h and neither table's arms, so

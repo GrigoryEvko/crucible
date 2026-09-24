@@ -44,6 +44,7 @@ foundation::permissions::perm_mint_key | foundation/permissions/Permission.h | f
 foundation::permissions::Permission<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>{} | no-match | closed
 foundation::permissions::detail::ForkRebuildKey | foundation/permissions/Permission.h | foundation::permissions::detail::ForkRebuildKey{} | private | closed
 foundation::permissions::PermissionForkRunner | foundation/permissions/PermissionFork.h | foundation::permissions::PermissionForkRunner{} | deleted | closed
+fixy::spawn::ParallelForRunner | fixy/os/Spawn.h | fixy::spawn::ParallelForRunner{} | deleted | closed
 foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>{} | private | closed
 foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>{forge::lvalue<foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>>()} | private | closed
 foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag> | foundation/permissions/ReadView.h | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>{} | private | closed

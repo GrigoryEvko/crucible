@@ -340,35 +340,58 @@ concept CtxFitsParallelFor =
     && std::is_nothrow_invocable_v<Body&, ::fixy::OwnedRegion<T, ::fixy::Slice<Whole, 0>, Brand>&>
     && (N == 1 || std::is_copy_constructible_v<Body>);
 
-namespace detail {
+// Declared before the runner so that its friend declaration names this
+// mint and nothing else.
+template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+    requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
+mint_parallel_for(Ctx const& ctx, ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body) noexcept;
 
-// One thread per shard, each mutating its own tuple element.  The array of
-// jthreads joins in its destructor, so every body has returned before this
-// function does and the tuple is whole again for recombine.
-template <typename Shards, typename Body, std::size_t... Is>
-void run_shards_(Shards& shards, Body body, std::index_sequence<Is...>) noexcept {
-    std::array<std::jthread, sizeof...(Is)> workers{
-        std::jthread{[&shards, body](std::stop_token) mutable noexcept { body(std::get<Is>(shards)); }}...};
-    (void)workers;
-}
+// The fan-out of mint_parallel_for: one thread per shard, each mutating its
+// own tuple element.  The array of jthreads joins in its destructor, so
+// every body has returned before the member does and the tuple is whole
+// again for recombine.
+//
+// Starting threads is the work of the mint, so only the mint may reach it.
+// The member is private and static, the mint is the only friend, and the
+// class is final and cannot be built.  The member also asks for the
+// background effect itself, so the check stands where the threads start.
+// A free function in a detail namespace once held this fan-out, and any
+// translation unit could call it with no context at all.
+class ParallelForRunner final {
+    ParallelForRunner() = delete("the parallel-for runner holds static members only; no object of it exists");
 
-}  // namespace detail
+    template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+        requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
+    friend ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx,
+                                                                  ::fixy::OwnedRegion<T, Whole, Brand>&& region,
+                                                                  Body body) noexcept;
+
+    template <typename Ctx, typename Shards, typename Body, std::size_t... Is>
+        requires eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
+    static void run_shards_(Ctx const&, Shards& shards, Body body, std::index_sequence<Is...>) noexcept {
+        std::array<std::jthread, sizeof...(Is)> workers{
+            std::jthread{[&shards, body](std::stop_token) mutable noexcept { body(std::get<Is>(shards)); }}...};
+        (void)workers;
+    }
+};
 
 // The call returns once every shard has run its body, and the region it
 // hands back is recombined from the shards.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
-[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& /*ctx*/,
-                                                                     ::fixy::OwnedRegion<T, Whole, Brand>&& region,
-                                                                     Body body) noexcept {
-    // The context is read by the constraint on the declaration and nowhere
-    // else.  The fan-out below is driven by N alone.
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
+mint_parallel_for(Ctx const& ctx, ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body) noexcept {
+    // The fan-out below is driven by N alone.  The context is read by the
+    // constraint on the declaration and by the runner, which asks for the
+    // background effect again before it starts a thread.
     auto parts = ::fixy::mint_split<N>(std::move(region));
 
     if constexpr (N == 1) {
+        (void)ctx;
         body(std::get<0>(parts.shards));
     } else {
-        detail::run_shards_(parts.shards, body, std::make_index_sequence<N>{});
+        ParallelForRunner::run_shards_(ctx, parts.shards, body, std::make_index_sequence<N>{});
     }
 
     // Deviation 4: every shard is surrendered here, and their Slice
