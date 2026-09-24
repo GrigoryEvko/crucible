@@ -16,19 +16,8 @@ import re
 import sys
 from pathlib import Path
 
-LEDGER = {
-    "evade_macro": "the guard removes preprocessor lines, so a move inside a macro is invisible",
-    "evade_using_declaration": "the guard recognises std::move, not move reached by a using-declaration",
-    "evade_namespace_alias": "the guard recognises std::move, not std::move spelled through a namespace alias",
-    "evade_move_if_noexcept": "the guard recognises std::move and std::forward only",
-    "evade_forward_like": "the guard recognises std::move and std::forward only",
-    "evade_parentheses": "a parenthesised name gives the guard no key",
-    "evade_this_arrow": "token_ and this->token_ are two keys",
-    "evade_this_dereference": "this->token_ and (*this).token_ are two keys",
-    "evade_backward_goto": "the guard walks a backward goto once, so the second pass is not seen",
-    "evade_array_element": "an array element has no key",
-}
-LEDGER_BOUND = 10
+LEDGER: dict[str, str] = {}
+LEDGER_BOUND = 0
 
 CORPUS = Path("test/guard_attacks/use_after_move_evasions.cpp")
 GUARD = Path("scripts/check-use-after-move.py")

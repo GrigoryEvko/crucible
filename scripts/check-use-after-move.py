@@ -3,8 +3,12 @@
 
 The rule
 --------
-After `std::move(x)`, `std::forward<T>(x)` or `static_cast<T&&>(x)`, the
-name `x` is spent.  A later read of `x`, a second move of `x`, or a member
+After `std::move(x)`, `std::forward<T>(x)`, `std::move_if_noexcept(x)`,
+`std::forward_like<T>(x)` or `static_cast<T&&>(x)`, the name `x` is spent.
+The qualifier of the callee does not matter, so `move(x)` after a
+using-declaration and `alias::move(x)` after a namespace alias are moves too.
+A macro may not move or forward at all: the walk reads the source with the
+preprocessor lines removed, so each use of such a macro would hide a move.  A later read of `x`, a second move of `x`, or a member
 of `x` is a use after move, unless an assignment to `x` comes first.  The
 guard checks each path through a function body: a move in one branch of
 an `if` does not spend the name in the other branch, a move that is
@@ -38,7 +42,12 @@ join by union, so a name that one path spends stays spent after the join.
 
 A key is a name or a member path (a.b, a->b).  A move of a spends a and
 each member path under it.  A use of a.c after a move of a.b is not a use
-after move.  An assignment to a key, or reset, clear, emplace or assign
+after move.  Parentheses around a name do not change its key, and this->m
+and (*this).m key as m.  A subscript by an integer literal is part of the
+key, so a[0] and a[1] are two keys.  A subscript by any other expression
+keys as a[*], which matches every element key of a.  A label that a later
+goto of its block targets is a loop head, so the walk passes the statements
+from it twice, as it does for a loop.  An assignment to a key, or reset, clear, emplace or assign
 on it, restores it.  A declaration restores its name in the scope that
 declares it.  Uses in unevaluated operands (sizeof, alignof, decltype,
 noexcept, typeid, requires, static_assert) are not uses.
@@ -151,6 +160,11 @@ UNEVALUATED = frozenset({"sizeof", "alignof", "decltype", "noexcept", "typeid", 
 NOT_A_TYPE = frozenset({"return", "delete", "throw", "co_return", "co_await", "co_yield", "new", "case",
                         "goto", "else", "do", "sizeof", "not", "and", "or"})
 REINIT_METHODS = frozenset({"reset", "clear", "emplace", "assign"})
+# The last component of a callee that gives an rvalue of its argument.  The
+# qualifier does not matter: std::move, ::std::move, a namespace alias and a
+# using-declaration all reach the same function.
+MOVE_CALLEES = frozenset({"move", "forward", "move_if_noexcept", "forward_like"})
+DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)")
 CLASS_KEYS = frozenset({"class", "struct", "union"})
 # The words of a scalar type.  static_cast<int&&>(x) leaves x whole,
 # because a scalar has no moved-from state.
@@ -227,6 +241,27 @@ def join(a: State, b: State) -> State:
     return out
 
 
+SEGMENT = re.compile(r"\*?[A-Za-z_]\w*|\.\w+|->\w+|\[[^\]]*\]")
+
+
+def reaches(spent: str, key: str) -> bool:
+    """Whether key names the spent key or a part of it.
+
+    A key is a list of segments: a name, then members (.m, ->m) and subscripts
+    ([0] for an integer literal, [*] for any other index).  Two subscripts match
+    when they are equal or when either one is [*], because an index that is not
+    a literal can name any element.
+    """
+    spent_parts, key_parts = SEGMENT.findall(spent), SEGMENT.findall(key)
+    if len(key_parts) < len(spent_parts):
+        return False
+    for mine, theirs in zip(spent_parts, key_parts):
+        subscripts = mine.startswith("[") and theirs.startswith("[")
+        if mine != theirs and not (subscripts and "[*]" in (mine, theirs)):
+            return False
+    return True
+
+
 def spent_prefix(state: dict[str, int], key: str) -> str | None:
     """The spent key that key names or reaches into, if any.
 
@@ -234,7 +269,7 @@ def spent_prefix(state: dict[str, int], key: str) -> str | None:
     a member of *p and p->m reach into it, and p itself does not.
     """
     for spent in state:
-        if key == spent or key.startswith(spent + ".") or key.startswith(spent + "->"):
+        if reaches(spent, key):
             return spent
         if spent.startswith("*") and key.startswith(spent[1:] + "->"):
             return spent
@@ -248,7 +283,7 @@ def restore(state: dict[str, int], key: str) -> None:
     """
     def refilled(spent: str) -> bool:
         base = spent[1:] if spent.startswith("*") and not key.startswith("*") else spent
-        return base == key or base.startswith(key + ".") or base.startswith(key + "->")
+        return base == key or base.startswith((key + ".", key + "->", key + "["))
 
     for spent in [s for s in state if refilled(s)]:
         del state[spent]
@@ -259,7 +294,7 @@ def exchange(state: dict[str, int], left: str, right: str) -> None:
     moved: dict[str, int] = {}
     for spent in list(state):
         for source, target in ((left, right), (right, left)):
-            if spent == source or spent.startswith(source + ".") or spent.startswith(source + "->"):
+            if spent == source or spent.startswith((source + ".", source + "->", source + "[")):
                 moved[target + spent[len(source):]] = state.pop(spent)
                 break
     state.update(moved)
@@ -282,6 +317,8 @@ class Body:
         # True while a condition is walked for the path where its try_ call
         # failed: a move in the call then leaves the name whole.
         self.hold_moves = False
+        # The join of the states at each goto of the current body, by label.
+        self.goto_states: dict[str, State] = {}
 
     # ── helpers ──────────────────────────────────────────────────────
 
@@ -439,10 +476,11 @@ class Body:
         """Whether the argument of the initializer from lo to hi is exactly a move of source."""
         close = hi - 2 if self.t(hi - 1) == "..." else hi - 1
         m = self.partner[close] + 1
-        if self.t(m) == "std" and self.t(m + 1) == "::" and self.t(m + 2) in ("move", "forward"):
-            m += 3
-            if self.t(m) == "<":
-                m = self.skip_angle(m, close)
+        callee = m
+        while self.t(callee + 1) == "::" or self.t(callee) == "::":
+            callee += 1
+        if self.move_callee(callee, close) >= 0:
+            m = self.move_callee(callee, close)
         elif self.t(m) == "static_cast" and self.t(m + 1) == "<":
             m = self.skip_angle(m + 1, close)
         else:
@@ -542,14 +580,43 @@ class Body:
     # ── statements ───────────────────────────────────────────────────
 
     def walk_body(self, open_brace: int, close_brace: int, state: State) -> State:
+        """Walk one function or lambda body.  Its labels and gotos are its own."""
         ctx: list[dict] = []
-        return self.block(open_brace, close_brace, state, ctx)
+        outer, self.goto_states = self.goto_states, {}
+        try:
+            return self.block(open_brace, close_brace, state, ctx)
+        finally:
+            self.goto_states = outer
+
+    def label_at(self, k: int) -> str | None:
+        """The name of the label that the statement at k declares, or None."""
+        if self.toks[k].kind == "id" and self.t(k) not in KEYWORDS and self.t(k + 1) == ":" and self.t(k + 2) != ":":
+            return self.t(k)
+        return None
+
+    def goto_after(self, label: str, lo: int, hi: int) -> bool:
+        """Whether a goto to label appears between lo and hi.  Complexity: O(hi - lo)."""
+        return any(self.t(i) == "goto" and self.t(i + 1) == label for i in range(lo, hi))
 
     def block(self, open_brace: int, close_brace: int, state: State, ctx: list[dict]) -> State:
+        """Walk a block.  A label that a later goto of the block targets is a loop head.
+
+        As for a loop, the statements from the first such label on are walked twice: the
+        second walk enters the label with the join of the fallthrough state and the state
+        at each goto to it.
+        """
         scope: dict[str, int | None] = {}
+        head: tuple[int, State, dict] | None = None
         k = open_brace + 1
         while k < close_brace:
+            label = self.label_at(k)
+            if head is None and label is not None and self.goto_after(label, k, close_brace):
+                head = (k, state, dict(scope))
             k, state = self.stmt(k, close_brace, state, ctx, scope)
+        if head is not None:
+            k, state, scope = head
+            while k < close_brace:
+                k, state = self.stmt(k, close_brace, state, ctx, scope)
         return self.close_scope(state, scope)
 
     def close_scope(self, state: State, scope: dict[str, int | None]) -> State:
@@ -619,6 +686,8 @@ class Body:
                 break
             return end + 1, None
         if text == "goto":
+            label = self.t(k + 1)
+            self.goto_states[label] = join(self.goto_states.get(label), state)
             return self.stmt_end(k, hi) + 1, None
         if text in ("case", "default") and ctx and any(f["kind"] == "switch" for f in ctx):
             m = k + 1
@@ -628,8 +697,12 @@ class Body:
             if text == "default":
                 frame["has_default"] = True
             return m + 1, join(state, frame["entry"])
-        if self.toks[k].kind == "id" and text not in KEYWORDS and self.t(k + 1) == ":" and self.t(k + 2) != ":":
-            return k + 2, state if state is not None else {}
+        if self.label_at(k) is not None:
+            # A label joins the state of each goto to it that the walk has passed.
+            # A label that no walked goto reaches keeps a live state, since a goto
+            # later in the body can still jump to it.
+            entered = join(state, self.goto_states.get(text))
+            return k + 2, entered if entered is not None else {}
         if text in ("using", "typedef", "static_assert", "namespace", "asm", "friend"):
             return self.stmt_end(k, hi) + 1, state
         if text in CLASS_KEYS or text == "enum":
@@ -868,33 +941,80 @@ class Body:
     # ── expressions ──────────────────────────────────────────────────
 
     def path_at(self, k: int, hi: int) -> tuple[str, int]:
-        """The member path that starts at k, and the index after it."""
+        """The member path that starts at k, and the index after it.
+
+        A subscript by an integer literal is part of the path, so a[0] and a[1] are two
+        keys.  A subscript by any other expression ends the path at the array, so a[i]
+        keys as the whole array a.
+        """
         parts = [self.t(k)]
         m = k + 1
-        while m + 1 < hi and self.t(m) in (".", "->") and self.toks[m + 1].kind == "id" and \
-                self.t(m + 2) != "(":
-            parts.append(self.t(m) + self.t(m + 1))
-            m += 2
+        while m + 1 < hi:
+            if self.t(m) in (".", "->") and self.toks[m + 1].kind == "id" and self.t(m + 2) != "(":
+                parts.append(self.t(m) + self.t(m + 1))
+                m += 2
+            elif self.t(m) == "[" and self.partner[m] == m + 2 and self.toks[m + 1].kind == "num":
+                parts.append(f"[{self.t(m + 1)}]")
+                m += 3
+            else:
+                break
         return "".join(parts), m
+
+    def member_of_this(self, k: int) -> int:
+        """The index of the member name after this-> or (*this). at k, or -1."""
+        if self.t(k) == "this" and self.t(k + 1) == "->" and self.toks[k + 2].kind == "id":
+            return k + 2
+        if (self.t(k) == "(" and self.t(k + 1) == "*" and self.t(k + 2) == "this" and self.t(k + 3) == ")"
+                and self.t(k + 4) == "." and self.toks[k + 5].kind == "id"):
+            return k + 5
+        return -1
 
     def move_argument(self, open_paren: int) -> str | None:
         """The path inside std::move( ... ) when the argument is a plain path or *path.
 
         The move std::move(*p) spends the object that p reaches, so its key is *p.
+        Parentheses around the argument do not change its key, and this->m and
+        (*this).m key as m.  A subscript by anything but an integer literal keys
+        the whole array.
         """
         close = self.partner[open_paren]
         k = open_paren + 1
+        while self.t(k) == "(" and self.partner[k] == close - 1:
+            k, close = k + 1, close - 1
         deref = self.t(k) == "*"
         if deref:
             k += 1
-        if self.t(k) == "this" and self.t(k + 1) == "->":
-            k += 2
+        if self.member_of_this(k) >= 0:
+            k = self.member_of_this(k)
         if self.toks[k].kind != "id" or self.t(k) in KEYWORDS:
             return None
         path, end = self.path_at(k, close)
+        if end < close and self.t(end) == "[" and self.partner[end] == close - 1:
+            path, end = path + "[*]", close
         if end != close:
             return None
         return "*" + path if deref else path
+
+    def move_callee(self, k: int, hi: int) -> int:
+        """The index of the ( of a move call whose callee name is at k, or -1.
+
+        The callee is a move when its last component is in MOVE_CALLEES, whatever
+        qualifies it.  A member call such as obj.move(x) is not a move of x.
+        """
+        if self.t(k) not in MOVE_CALLEES or self.t(k - 1) in (".", "->"):
+            return -1
+        m = k + 1
+        if self.t(m) == "<":
+            m = self.skip_angle(m, hi)
+        return m if self.t(m) == "(" else -1
+
+    def qualified_start(self, k: int) -> int:
+        """The index of the first token of the qualified name whose last component is at k."""
+        while self.t(k - 1) == "::":
+            if k < 2 or self.toks[k - 2].kind != "id" or self.t(k - 2) in KEYWORDS:
+                return k - 1
+            k -= 2
+        return k
 
     def swap_arguments(self, open_paren: int) -> tuple[str, str] | None:
         """The two paths of swap(a, b) when each argument is a plain path."""
@@ -1030,21 +1150,25 @@ class Body:
                     state = self.lambda_expr(k, body, state)
                     k = self.partner[body] + 1
                     continue
-            if text == "std" and self.t(k + 1) == "::" and self.t(k + 2) in ("move", "forward"):
-                m = k + 3
-                if self.t(m) == "<":
-                    m = self.skip_angle(m, hi)
-                if self.t(m) == "(":
-                    path = self.move_argument(m)
-                    element = self.element_of_get(k)
-                    if path is not None and element is not None:
-                        path = f"{path}[{element}]"
-                    if path is not None:
-                        self.spend(state, k, path)
-                        k = self.partner[m] + 1
-                        continue
-                    k = m + 1
+            if tok.kind == "id" and (m := self.move_callee(k, hi)) >= 0:
+                path = self.move_argument(m)
+                element = self.element_of_get(self.qualified_start(k))
+                if path is not None and element is not None:
+                    path = f"{path}[{element}]"
+                if path is not None:
+                    self.spend(state, k, path)
+                    k = self.partner[m] + 1
                     continue
+                k = m + 1
+                continue
+            if (member := self.member_of_this(k)) >= 0 and self.t(k - 1) not in (".", "->", "::"):
+                # this->m and (*this).m are the member m.  The walk resumes at m with no
+                # qualifier in front of it, so m is read as a plain name.
+                k = member
+                tok, text = self.toks[k], self.t(k)
+                anchored = True
+            else:
+                anchored = False
             if text == "static_cast" and self.t(k + 1) == "<":
                 m = self.skip_angle(k + 1, hi)
                 scalar = all(self.t(i) in SCALAR_TYPE_WORDS for i in range(k + 2, m - 2))
@@ -1063,7 +1187,7 @@ class Body:
                     k = self.partner[k + 1] + 1
                     continue
             if tok.kind == "id" and text not in KEYWORDS and k not in decl_at:
-                prev = self.t(k - 1)
+                prev = "" if anchored else self.t(k - 1)
                 if prev in (".", "->", "::") or self.t(k + 1) == "::":
                     k += 1
                     continue
@@ -1086,6 +1210,15 @@ class Body:
                     pending.append(path)
                     k = end + 1
                     continue
+                if nxt == "[" and self.t(end + 1) != "[":
+                    # A subscript that is not an integer literal can name any element,
+                    # so it reads the key path[*].  An assignment through it refills
+                    # every element key of the array.
+                    if self.t(self.partner[end] + 1) == "=":
+                        pending.append(path)
+                        k = end
+                        continue
+                    path += "[*]"
                 if nxt in (".", "->") and self.t(end + 1) in REINIT_METHODS and self.t(end + 2) == "(":
                     pending.append(path)
                     k = end + 2
@@ -1142,10 +1275,32 @@ class Body:
 
     # ── the file ────────────────────────────────────────────────────
 
+    def macro_moves(self) -> None:
+        """Report each #define whose replacement list moves or forwards.
+
+        The walk reads the source with the preprocessor lines removed, so a move
+        inside a macro is invisible at each use of the macro.  A macro therefore
+        may not move.  Complexity: O(length of the text).
+        """
+        offset = 0
+        for line in self.text.split("\n"):
+            define = DEFINE.match(line)
+            if define is not None:
+                tokens = [m.group(0) for m in TOKEN.finditer(line, define.end())]
+                for i, token in enumerate(tokens):
+                    after = tokens[i + 1] if i + 1 < len(tokens) else ""
+                    before = tokens[i - 1] if i > 0 else ""
+                    if token in MOVE_CALLEES and after in ("(", "<") and before not in (".", "->"):
+                        self.findings.append(Finding(self.path, line_of(self.text, self.joins, offset),
+                                                     define.group(1), token, "move inside a macro", 0))
+                        break
+            offset += len(line) + 1
+
     def run(self) -> list[Finding]:
         if not self.balanced:
             self.findings.append(Finding(self.path, 1, "<file>", "<unbalanced>", "unbalanced brackets", 0))
             return self.findings
+        self.macro_moves()
         self.scan_scope(0, len(self.toks))
         return self.findings
 
@@ -1282,6 +1437,29 @@ void must_catch_deref_arrow(Opt o) { take(std::move(*o)); auto n = o->size; }
 void must_catch_deref_value(Opt o) { take(std::move(*o)); read(o.value()); }
 void must_catch_deref_paren(Opt o) { take(std::move(*o)); auto n = (*o).size; }
 void must_catch_deref_second_move(Opt o) { take(std::move(*o)); take(std::move(*o)); }
+#define must_catch_macro_move(x) \
+    std::move(x)
+void must_catch_using_declaration(Token t) { using std::move; take(move(t)); read(t); }
+void must_catch_namespace_alias(Token t) { namespace standard = std; take(standard::move(t)); read(t); }
+void must_catch_global_qualified(Token t) { take(::std::move(t)); read(t); }
+void must_catch_move_if_noexcept(Token t) { take(std::move_if_noexcept(t)); read(t); }
+void must_catch_forward_like(Token t) { take(std::forward_like<Token&&>(t)); read(t); }
+void must_catch_parentheses(Token t) { take(std::move((t))); read(t); }
+struct This {
+    Token a; Token b;
+    void must_catch_this_arrow() { take(std::move(a)); read(this->a); }
+    void must_catch_this_dereference() { take(std::move(this->a)); read((*this).a); }
+    void must_accept_this_other_member() { take(std::move(this->a)); read(this->b); }
+    void must_accept_this_reassign() { take(std::move(a)); this->a = Token{}; read(a); }
+};
+void must_catch_backward_goto(Token t) {
+again:
+    take(std::move(t));
+    if (pick()) goto again;
+}
+void must_catch_array_element(Token (&ts)[2]) { take(std::move(ts[0])); read(ts[0]); }
+void must_catch_array_any_index(Token (&ts)[2], int i) { take(std::move(ts[i])); read(ts[1]); }
+void must_catch_array_literal_then_any(Token (&ts)[2], int i) { take(std::move(ts[0])); read(ts[i]); }
 
 // Each must_accept function is correct, and a finding in it is a false alarm.
 void must_accept_reassign(Token t) { take(std::move(t)); t = Token{}; read(t); }
@@ -1326,6 +1504,20 @@ struct must_accept_two_bases : Left, Right {
     must_accept_two_bases(must_accept_two_bases&& other) : Left{std::move(other)}, Right{std::move(other)} {}
 };
 template <class T> concept Moves = requires(T& t) { take(std::move(t)); take(std::move(t)); };
+#define must_accept_macro_plain(x) (x)
+#define must_accept_macro_member(x) (x).move(1)
+void must_accept_goto_reassign(Token t) {
+again:
+    take(std::move(t));
+    t = Token{};
+    if (pick()) goto again;
+}
+void must_accept_goto_skips_move(Token t) { if (pick()) goto skip; take(std::move(t)); return; skip: read(t); }
+void must_accept_array_other_element(Token (&ts)[2]) { take(std::move(ts[0])); read(ts[1]); }
+void must_accept_array_refill(Token (&ts)[2], int i) { take(std::move(ts[i])); ts[i] = Token{}; read(ts[i]); }
+void must_accept_container_after_element(Vec& v, int i) { auto x = std::move(v[i]); v.erase(v.begin() + i); v.push_back(std::move(x)); }
+void must_accept_member_move_call(Mover m, Token t) { m.move(t); read(t); }
+void must_accept_algorithm_move(Token* first, Token* last, Token* out) { std::move(first, last, out); read(*first); }
 '''
 
 
