@@ -518,6 +518,16 @@ foundation_neg_compile_test(neg_read_loan_from_named_token
 foundation_neg_compile_test(neg_read_view_named_source_refused
   "use of deleted function"
   "with_read_view lends its source to the body and hands the source back")
+# A class that copies a source's member types is not a source.  The door
+# refuses it by family, so the unsatisfied check names is_read_view_source.
+foundation_neg_compile_test(neg_read_view_look_alike_source_refused
+  "no matching function for call to .*with_read_view"
+  "is_read_view_source")
+# Only an empty class can brand a view, so ReadView<Region, int> fails the
+# IsBrand check inside ReadView.
+foundation_neg_compile_test(neg_read_view_brand_not_empty
+  "static assertion failed"
+  "Brand must be an empty class type")
 foundation_neg_compile_test(neg_read_view_body_by_value
   "no matching function for call to .with_read_view\\("
   "required for the satisfaction of .ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>.")
