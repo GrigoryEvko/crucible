@@ -125,7 +125,7 @@ static_assert(!is_forgeable_from_bytes_v<eff::Capability<eff::Effect::Block, eff
 // Two routes still compile, and a guard refuses each one where code ships.
 //
 // The testing door.  testing::bg(), init() and test() mint a context in
-// any translation unit.  scripts/check-ctx-testing-boundary.sh counts each
+// any translation unit.  scripts/check-ctx-testing-boundary.py counts each
 // use of the door in include/, src/, vessel/, tools/ and examples/, the old
 // tree included, and a use beyond the reviewed count of its file fails.
 //

@@ -1011,19 +1011,15 @@ set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
 # reads as a clean scan.  A guard that can silently pass is worse than no
 # guard, and style is not worth that.
 
-# foundation::effects::testing returns minted capabilities with no gate,
-# and a capability is what every ctx-bound mint checks for.  Effect.h says
-# naming it outside test and bench code is a review rejection, and that a
-# grep for it finds every translation unit taking the test path — but
-# nothing performed that grep, so the boundary was prose.  The self-test
-# plants a violating file, a prose-only file and a stale entry, so the
-# guard proves it can fail in each direction rather than merely reporting
-# clean.
+# The testing door of either tree mints a context with no key, and a context
+# is what every ctx-bound mint checks for.  scripts/check-ctx-testing-boundary.py
+# counts each use of the door in the code that ships, through the aliases of
+# every file of the scan, and each file with a use needs a counted entry in
+# scripts/ctx-testing-boundary-allowlist.txt.
 add_test(NAME ctx_testing_boundary_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.sh
-          --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.py --self-test)
 add_test(NAME ctx_testing_boundary
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.py)
 set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
     PROPERTIES LABELS "ci_guard")
 

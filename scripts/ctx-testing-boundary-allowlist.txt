@@ -1,6 +1,6 @@
 # ctx-testing-boundary allowlist — the files that ship and may use the
 # testing door of either tree: foundation::effects::testing or
-# crucible::effects::testing.  scripts/check-ctx-testing-boundary.sh reads
+# crucible::effects::testing.  scripts/check-ctx-testing-boundary.py reads
 # this file.
 #
 # The door mints a context with no key, and a context is what every
