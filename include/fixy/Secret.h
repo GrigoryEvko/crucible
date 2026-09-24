@@ -152,7 +152,16 @@ public:
     Secret(const Secret&) = delete("Secret<T> cannot be silently duplicated");
     Secret& operator=(const Secret&) = delete("Secret<T> cannot be silently duplicated");
     Secret(Secret&&) = default;
-    Secret& operator=(Secret&&) = default;
+    // User-provided, so the class is not trivially copyable.  A trivially
+    // copyable Secret<int> let std::bit_cast<int>(secret) read the value
+    // out with no declassify<Policy>() and no audit entry, and let memcpy
+    // do the same.  bit_cast refuses the class now, and -Wclass-memaccess
+    // refuses the memcpy.  The move constructor stays trivial, so a
+    // Secret still passes in a register.
+    constexpr Secret& operator=(Secret&& other) noexcept(std::is_nothrow_move_assignable_v<T>) {
+        impl_ = std::move(other.impl_);
+        return *this;
+    }
     ~Secret() = default;
 
     // This is not a way out of classification: it derives a different
@@ -241,6 +250,10 @@ template <typename T, typename... Args>
 
 static_assert(sizeof(Secret<int>) == sizeof(int));
 static_assert(sizeof(Secret<unsigned long long>) == sizeof(unsigned long long));
+static_assert(!std::is_trivially_copyable_v<Secret<int>> && !std::is_trivially_copyable_v<Secret<unsigned long long>>,
+              "std::bit_cast must not read a classified value out with no declassify<Policy>()");
+static_assert(std::is_trivially_move_constructible_v<Secret<int>> && std::is_trivially_destructible_v<Secret<int>>,
+              "the move constructor stays trivial, so a Secret still passes in a register");
 
 // The detection surface of the old IsSecret.h.  One reflection query
 // answers it, and the value type is read off the wrapper's own typedef,

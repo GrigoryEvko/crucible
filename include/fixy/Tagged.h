@@ -8,7 +8,12 @@
 // constructor evaluates Pred.  Compose the two when both are wanted:
 // Tagged<Refined<Pred, T>, Src>.
 //
-// The one door is mint_tagged<Tag>(value).  The old spelling kept the
+// The one door is mint_tagged<Tag>(value), and it opens only for a tag
+// that names where a value came from.  A tag that names a check that ran
+// (Sanitized, Verified, Validated and the others that a discharge edge of
+// the catalog below enters) is EARNED, and only retag along that edge
+// reaches it.  The catalog decides which tags are earned, by reflection,
+// so no second list states it.  The old spelling kept the
 // constructor public and let any caller write `Tagged<T, Src>{raw}`
 // around a hand-built aggregate and get a value indistinguishable from
 // one a validating factory produced.  That mattered most for the
@@ -51,6 +56,7 @@
 
 #include <fixy/GradedFacade.h>
 #include <fixy/Tags.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/TrustLattice.h>
@@ -192,12 +198,61 @@ struct retag_policy {
 template <typename Tag>
 concept ValidTaggedTag = std::is_class_v<Tag>;
 
+namespace detail::earned_tag {
+
+// True when an edge of the catalog enters Tag from a different tag, and
+// the edge is a discharge: the two ends are not two specializations of
+// one tag template.  Such a tag is EARNED.  It names a check that ran
+// (a sanitizer, an integrity check, a proof, the adapter checks), so the
+// only honest way to reach it is to cross the edge that records the
+// check, from a tag that names where the value came from.
+//
+// An edge between two specializations of one tag template changes a
+// parameter of the same claim and records no check.  The architecture
+// pins are the case: PortablePinned into X86Pinned narrows where the
+// value may run.  A value that is pinned to x86 from the start is minted
+// as X86Pinned, because claiming Portable first would be the stronger,
+// false claim.
+//
+// The answer is read off the catalog by reflection, so a new discharge
+// edge makes its target earned with no second list to keep in step.
+// Complexity: linear in the number of members of the catalog.
+template <typename Tag>
+[[nodiscard]] consteval bool is_earned() noexcept {
+    const std::meta::info tag = std::meta::dealias(^^Tag);
+    for (const std::meta::info member :
+         std::meta::members_of(^^tags::admitted_retags, std::meta::access_context::unchecked())) {
+        if (!::foundation::fail_closed::is_edge(member)) continue;
+        const ::foundation::fail_closed::edge_ends ends = ::foundation::fail_closed::ends_of(member);
+        if (ends.to != tag || ends.from == tag) continue;
+        const bool reparameterizes_one_template = std::meta::has_template_arguments(ends.from)
+                                                  && std::meta::has_template_arguments(ends.to)
+                                                  && std::meta::template_of(ends.from)
+                                                         == std::meta::template_of(ends.to);
+        if (!reparameterizes_one_template) return true;
+    }
+    return false;
+}
+
+}  // namespace detail::earned_tag
+
+// A tag that a value may carry from the moment it is built: it names
+// where the value came from, or it is reached from no other tag.  An
+// earned tag is not mintable.  It is reached only by retag along its
+// discharge edge, so every value under it passed through a retag call
+// that names the edge.
+template <typename Tag>
+concept MintableTag = ValidTaggedTag<Tag> && (!detail::earned_tag::is_earned<Tag>());
+
 template <typename T, typename Tag>
 class Tagged;
 
 // The constructor is private, so this factory and retag are the door.
+// The factory admits only a mintable tag.  An earned tag, such as
+// Sanitized, Verified or Validated, comes from retag and from nothing
+// else.
 template <typename Tag, typename T>
-    requires ValidTaggedTag<Tag>
+    requires MintableTag<Tag>
 [[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
 
 // Moves the value under a new tag along an admitted edge.  The member
@@ -206,9 +261,20 @@ template <typename To, typename T, typename From>
     requires RetagAllowed<From, To>
 [[nodiscard]] constexpr Tagged<T, To> retag(Tagged<T, From>&& tagged) noexcept(std::is_nothrow_move_constructible_v<T>);
 
+// A Tagged under an earned tag must not be built from bytes, or
+// std::bit_cast<Tagged<int, Sanitized>>(raw) forges the claim that the
+// factory refuses.  So under an earned tag the two assignments are
+// user-provided, and the class is not trivially copyable: bit_cast
+// refuses it, and so does -Wclass-memaccess for a memcpy into it.  The
+// copy and move constructors stay trivial, so the Itanium ABI still
+// passes the value in a register.  The annotation refuses the checked
+// lifetime start over bytes, for every tag.  A tag that names a source
+// keeps a trivially copyable wrapper: a byte image that crosses a trust
+// boundary arrives under such a tag and is checked again.
 template <typename T, typename Tag>
-class [[nodiscard]] Tagged : public graded_facade<::foundation::algebra::ModalityKind::RelativeMonad,
-                                                  ::foundation::algebra::lattices::TrustLattice<Tag>, T> {
+class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] Tagged
+    : public graded_facade<::foundation::algebra::ModalityKind::RelativeMonad,
+                           ::foundation::algebra::lattices::TrustLattice<Tag>, T> {
 public:
     using tag_type = Tag;
 
@@ -228,7 +294,7 @@ private:
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     template <typename S, typename U>
-        requires ValidTaggedTag<S>
+        requires MintableTag<S>
     friend constexpr Tagged<U, S> mint_tagged(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
 
     template <typename To, typename U, typename From>
@@ -239,10 +305,36 @@ public:
     // The second door: an empty slot before any of an array's slots is
     // filled.  The explicit constructor stays the only way to
     // materialise a non-default value, which keeps every
-    // provenance-bearing construction site a deliberate call.
+    // provenance-bearing construction site a deliberate call.  The door
+    // is shut for an earned tag: a default Tagged<T, Verified> would
+    // claim that a check passed on a T{} that no check ever saw.
     constexpr Tagged() noexcept(std::is_nothrow_default_constructible_v<T>)
-        requires std::default_initializable<T>
+        requires std::default_initializable<T> && MintableTag<Tag>
     = default;
+
+    constexpr Tagged(const Tagged&) = default;
+    constexpr Tagged(Tagged&&) = default;
+    ~Tagged() = default;
+
+    constexpr Tagged& operator=(const Tagged&)
+        requires MintableTag<Tag>
+    = default;
+    constexpr Tagged& operator=(Tagged&&)
+        requires MintableTag<Tag>
+    = default;
+
+    constexpr Tagged& operator=(const Tagged& other) noexcept(std::is_nothrow_copy_assignable_v<T>)
+        requires(!MintableTag<Tag>) && std::is_copy_assignable_v<T>
+    {
+        impl_ = other.impl_;
+        return *this;
+    }
+    constexpr Tagged& operator=(Tagged&& other) noexcept(std::is_nothrow_move_assignable_v<T>)
+        requires(!MintableTag<Tag>) && std::is_move_assignable_v<T>
+    {
+        impl_ = std::move(other.impl_);
+        return *this;
+    }
 
     [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
 
@@ -264,7 +356,7 @@ public:
 };
 
 template <typename Tag, typename T>
-    requires ValidTaggedTag<Tag>
+    requires MintableTag<Tag>
 [[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return Tagged<T, Tag>{std::move(value)};
 }
@@ -356,6 +448,38 @@ static_assert(retag_policy<tags::source::FromUser, tags::source::FromUser>::allo
               "retag_policy must agree with RetagAllowed on identity");
 static_assert(!retag_policy<detail::retag_policy_test::NeverFrom, detail::retag_policy_test::NeverTo>::allowed,
               "retag_policy must agree with RetagAllowed on the sentinel pair");
+
+// Which tags are earned, read off the catalog.  Each earned tag names a
+// check, and the factory refuses it; each mintable tag names a source, a
+// parameter of a pin family, or a tag that no edge enters.
+static_assert(!MintableTag<tags::source::Sanitized> && !MintableTag<tags::source::IntegrityVerified>
+                  && !MintableTag<tags::source::Loaded> && !MintableTag<tags::trust::Verified>
+                  && !MintableTag<tags::trust::Tested> && !MintableTag<tags::trust::Assumed>
+                  && !MintableTag<tags::vessel_trust::Validated>,
+              "a tag that names a check must come from retag along its discharge edge, never from mint_tagged");
+static_assert(MintableTag<tags::source::External> && MintableTag<tags::source::FromUser>
+                  && MintableTag<tags::trust::Unverified> && MintableTag<tags::vessel_trust::FromPytorch>
+                  && MintableTag<tags::source::CipherPath> && MintableTag<tags::access::RO>
+                  && MintableTag<tags::version::V<3>>,
+              "a tag that names where a value came from, or that no edge enters, is mintable");
+static_assert(MintableTag<tags::source::X86Pinned> && MintableTag<tags::source::ArmPinned>
+                  && MintableTag<tags::source::PortablePinned>,
+              "an edge inside one pin family changes a parameter and records no check, so every pin is mintable");
+static_assert(!std::is_default_constructible_v<Tagged<int, tags::trust::Verified>>
+                  && std::is_default_constructible_v<Tagged<int, tags::source::FromUser>>,
+              "an earned tag has no empty-slot door: a default value under it would claim a check that never ran");
+static_assert(!std::is_trivially_copyable_v<Tagged<int, tags::source::Sanitized>>
+                  && !std::is_trivially_copyable_v<Tagged<void*, tags::trust::Verified>>,
+              "std::bit_cast must not build a value under an earned tag from bytes");
+static_assert(std::is_trivially_copy_constructible_v<Tagged<int, tags::source::Sanitized>>
+                  && std::is_trivially_move_constructible_v<Tagged<int, tags::source::Sanitized>>
+                  && std::is_trivially_destructible_v<Tagged<int, tags::source::Sanitized>>,
+              "the constructors stay trivial, so an earned value still passes in a register");
+static_assert(std::is_trivially_copyable_v<Tagged<int, tags::source::External>>,
+              "a tag that names a source keeps a trivially copyable wrapper for byte transport");
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Tagged<int, tags::source::Sanitized>>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<Tagged<int, tags::source::External>>,
+              "the checked lifetime start refuses a Tagged over bytes");
 
 // The catalog's discipline, derived from the namespace.  The count is
 // the one place a new edge must be acknowledged by hand: an edge is

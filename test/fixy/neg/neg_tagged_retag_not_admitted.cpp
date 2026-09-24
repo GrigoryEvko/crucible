@@ -9,7 +9,8 @@
 namespace tags = ::fixy::tags;
 
 int main() {
-    fixy::Tagged<int, tags::trust::Verified> proved = fixy::mint_tagged<tags::trust::Verified>(42);
+    fixy::Tagged<int, tags::trust::Verified> proved =
+        fixy::mint_tagged<tags::trust::Unverified>(42).retag<tags::trust::Verified>();
     auto erased = std::move(proved).retag<tags::trust::Unverified>();
     return erased.value();
 }

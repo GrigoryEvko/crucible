@@ -814,6 +814,26 @@ fixy_neg_compile_test(neg_tagged_retag_not_admitted
   "satisfaction of .RetagAllowed<Tag, NewTag>."
   "Tag = fixy::tags::trust::Verified. NewTag = fixy::tags::trust::Unverified")
 
+# An earned tag (a target of a discharge edge) is reached only by retag.
+# The factory, the empty-slot door and std::bit_cast each refuse it.
+fixy_neg_compile_test(neg_tagged_mint_earned_tag
+  "no matching function for call to .mint_tagged<fixy::tags::source::Sanitized>"
+  "satisfaction of .MintableTag<Tag>.")
+
+fixy_neg_compile_test(neg_tagged_default_earned_tag
+  "no matching function for call to .fixy::Tagged<int, fixy::tags::trust::Verified>::Tagged\\(\\)."
+  "satisfaction of .MintableTag<Tag>.")
+
+fixy_neg_compile_test(neg_tagged_bit_cast_earned_tag
+  "no matching function for call to .bit_cast<fixy::Tagged<int, fixy::tags::source::Sanitized> >"
+  "is_trivially_copyable_v<_To>")
+
+# declassify<Policy>() is the one way out of a Secret: std::bit_cast
+# cannot read the value out, because a Secret is not trivially copyable.
+fixy_neg_compile_test(neg_secret_bit_cast_out
+  "no matching function for call to .bit_cast<int>.fixy::Secret<int>&."
+  "is_trivially_copyable_v<_From>")
+
 # The value constructor is private, so a Sanitized tag cannot be forged
 # around a raw value; the compiler names the constructor.
 fixy_neg_compile_test(neg_tagged_forge_by_constructor

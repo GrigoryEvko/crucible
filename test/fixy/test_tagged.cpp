@@ -200,9 +200,36 @@ static_assert(edges_in_family(^^::fixy::tags::trust) + edges_in_family(^^::fixy:
                   + edges_in_family(^^::fixy::tags::vessel_trust)
               == ::fixy::admitted_retag_count);
 
-// Every admitted edge retags a minted value, through the member door
-// and through the free door, and the inverse of every edge is refused
-// by the concept the doors consult.
+// The source of the first edge in the catalog that enters Tag from a
+// different tag.  Complexity: linear in the size of the catalog.
+[[nodiscard]] consteval std::meta::info entering_source(std::meta::info tag) {
+    for (const std::meta::info member :
+         std::meta::members_of(^^tags::admitted_retags, std::meta::access_context::unchecked())) {
+        if (!ffc::is_edge(member)) continue;
+        const auto ends = ffc::ends_of(member);
+        if (ends.to == tag && ends.from != tag) return ends.from;
+    }
+    return ^^void;
+}
+
+// A value under Tag, built the only honest way: minted when the tag is
+// mintable, and otherwise retagged along an edge that enters it, from a
+// value reached the same way.  The catalog is a one-way ratchet, so the
+// walk back ends at a mintable tag.
+template <typename Tag>
+[[nodiscard]] constexpr Tagged<int, Tag> reach(int value) {
+    if constexpr (::fixy::MintableTag<Tag>) {
+        return mint_tagged<Tag>(value);
+    } else {
+        using Source = typename[:entering_source(^^Tag):];
+        return reach<Source>(value).template retag<Tag>();
+    }
+}
+
+// Every admitted edge retags a value, through the member door and
+// through the free door, and the inverse of every edge is refused by the
+// concept the doors consult.  The value under the source of an edge is
+// reached through reach(), because an earned source is not mintable.
 [[nodiscard]] consteval bool every_edge_moves_a_value() noexcept {
     static constexpr auto members = std::define_static_array(
         std::meta::members_of(^^tags::admitted_retags, std::meta::access_context::unchecked()));
@@ -215,9 +242,9 @@ static_assert(edges_in_family(^^::fixy::tags::trust) + edges_in_family(^^::fixy:
             using To = typename[:ends.to:];
             static_assert(RetagAllowed<From, To>);
             static_assert(!RetagAllowed<To, From>);
-            Tagged<int, To> by_member = std::move(mint_tagged<From>(3)).template retag<To>();
+            Tagged<int, To> by_member = reach<From>(3).template retag<To>();
             if (by_member.value() != 3) return false;
-            Tagged<int, To> by_free = ::fixy::retag<To>(mint_tagged<From>(4));
+            Tagged<int, To> by_free = ::fixy::retag<To>(reach<From>(4));
             if (by_free.value() != 4) return false;
         }
     }
@@ -238,7 +265,9 @@ int check_retag_route() {
     auto sanitized = std::move(raw).retag<source::Sanitized>();
     apply_sanitized(std::move(sanitized));
 
-    Tagged<int, trust::Verified> v = mint_tagged<trust::Verified>(42);
+    // Verified is earned: the factory refuses it, and the discharge edge
+    // from Unverified is the one route in.
+    Tagged<int, trust::Verified> v = mint_tagged<trust::Unverified>(42).retag<trust::Verified>();
     Tagged<int, access::RO> ro = mint_tagged<access::RO>(99);
     Tagged<int, version::V<3>> vv = mint_tagged<version::V<3>>(7);
     if (v.value() != 42 || ro.value() != 99 || vv.value() != 7) return 10;
@@ -304,7 +333,8 @@ int check_remaining_doors() {
     if (std::move(sanitized).into() != 42) return 52;
 
     // The two trust poles carry the same value; only the tag differs.
-    Tagged<long, trust::Verified> verified = mint_tagged<trust::Verified>(static_cast<long>(seed * seed));
+    Tagged<long, trust::Verified> verified =
+        mint_tagged<trust::Unverified>(static_cast<long>(seed * seed)).retag<trust::Verified>();
     Tagged<long, trust::Unverified> unverified = mint_tagged<trust::Unverified>(static_cast<long>(seed * seed));
     if (verified.value() != unverified.value()) return 53;
 

@@ -111,10 +111,18 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, int*);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, TwoWords);
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Secret, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Secret, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Secret, int*);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Secret, TwoWords);
+// Secret keeps the size, the alignment and the trivial destructor of its
+// value, and it breaks the trivial-copy parity on purpose: a trivially
+// copyable Secret let std::bit_cast read the value out with no policy.
+// The shared invariant asserts that parity, so the three other
+// properties are stated here one by one, and the fourth inverted.
+template <typename T>
+inline constexpr bool secret_keeps_the_value_layout =
+    sizeof(Secret<T>) == sizeof(T) && alignof(Secret<T>) == alignof(T)
+    && std::is_trivially_destructible_v<Secret<T>> == std::is_trivially_destructible_v<T>
+    && !std::is_trivially_copyable_v<Secret<T>>;
+static_assert(secret_keeps_the_value_layout<int> && secret_keeps_the_value_layout<double>
+              && secret_keeps_the_value_layout<int*> && secret_keeps_the_value_layout<TwoWords>);
 
 // Monotonic's grade is its value, so the substrate holds one cell
 // instead of a value and a grade.
