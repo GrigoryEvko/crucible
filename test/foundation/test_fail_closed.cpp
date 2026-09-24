@@ -255,6 +255,22 @@ static_assert(ffc::admits<^^sealed_ingest, Raw, Checked>());
 static_assert(!ffc::admits<^^sealed_ingest, Checked, Raw>());
 static_assert(ffc::edge_count<^^sealed_ingest>() == 1);
 
+// A relation whose count differs from its seal holds a seal but is not
+// Sealed.  The concept reads the fault and answers false, where a query
+// would stop the build.
+namespace late_sealed {
+inline constexpr ffc::edge<Raw, Checked> raw_to_checked{};
+inline constexpr ffc::seal sealed{.members = 1};
+}  // namespace late_sealed
+
+namespace late_sealed {
+inline constexpr ffc::edge<Checked, Stored> checked_to_stored{};
+}  // namespace late_sealed
+
+static_assert(ffc::read_seal(^^late_sealed).is_sealed);
+static_assert(ffc::read_seal(^^late_sealed).fault == ffc::seal_fault::count_differs);
+static_assert(!ffc::Sealed<^^late_sealed>, "a seal whose count is wrong does not seal the relation");
+
 // Keeps a compile-time answer from folding into the caller.
 [[gnu::noipa]] bool as_runtime(bool value) noexcept { return value; }
 

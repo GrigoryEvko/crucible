@@ -439,6 +439,73 @@ foundation_neg_compile_test(neg_fail_closed_relation_sealed_twice
   "non-constant condition for static assertion"
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_relation_holds_two_seals\\(\\).")
 
+# Each query of a relation asks for the reflection of a namespace.  A
+# class that holds a static member of type edge is not one, and each
+# query refuses it on its own.
+foundation_neg_compile_test(neg_fail_closed_admits_of_a_class
+  "static assertion failed: fail_closed::admits<Ns, From, To>: Ns must be the reflection of a namespace"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+foundation_neg_compile_test(neg_fail_closed_edge_count_of_a_class
+  "static assertion failed: fail_closed::edge_count<Ns>: Ns must be the reflection of a namespace"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+foundation_neg_compile_test(neg_fail_closed_is_antisymmetric_of_a_class
+  "static assertion failed: fail_closed::is_antisymmetric<Ns>: Ns must be the reflection of a namespace"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+foundation_neg_compile_test(neg_fail_closed_is_intra_namespace_of_a_class
+  "static assertion failed: fail_closed::is_intra_namespace<Ns>: Ns must be the reflection of a namespace"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+foundation_neg_compile_test(neg_fail_closed_has_edge_from_of_a_class
+  "static assertion failed: fail_closed::has_edge_from<Ns, T>: Ns must be the reflection of a namespace"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+foundation_neg_compile_test(neg_fail_closed_has_edge_to_of_a_class
+  "static assertion failed: fail_closed::has_edge_to<Ns, T>: Ns must be the reflection of a namespace"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+foundation_neg_compile_test(neg_fail_closed_edge_count_from_of_a_class
+  "static assertion failed: fail_closed::edge_count_from<Ns, T>: Ns must be the reflection of a namespace"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+foundation_neg_compile_test(neg_fail_closed_every_class_in_has_edge_of_a_class
+  "static assertion failed: fail_closed::every_class_in_has_edge<Ns, TagNs, End, Excluded\\.\\.\\.>: Ns and TagNs must be reflections of namespaces"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\)")
+foundation_neg_compile_test(neg_fail_closed_every_edge_is_admitted_of_a_class
+  "static assertion failed: fail_closed::every_edge_is_admitted<Ns>: Ns must be the reflection of a namespace"
+  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+
+# Each query reads the seal before it answers, so a member added after
+# the header stops the build at every query, not only at admits.
+foundation_neg_compile_test(neg_fail_closed_edge_count_after_the_seal
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::edge_count<\\^\\^\\{anonymous\\}::ingest>\\(\\).")
+foundation_neg_compile_test(neg_fail_closed_is_antisymmetric_after_the_seal
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::is_antisymmetric<\\^\\^\\{anonymous\\}::ingest>\\(\\).")
+foundation_neg_compile_test(neg_fail_closed_is_intra_namespace_after_the_seal
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::is_intra_namespace<\\^\\^\\{anonymous\\}::ingest>\\(\\).")
+foundation_neg_compile_test(neg_fail_closed_has_edge_from_after_the_seal
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::has_edge_from<\\^\\^\\{anonymous\\}::ingest, \\{anonymous\\}::Raw>\\(\\).")
+foundation_neg_compile_test(neg_fail_closed_has_edge_to_after_the_seal
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::has_edge_to<\\^\\^\\{anonymous\\}::ingest, \\{anonymous\\}::Checked>\\(\\).")
+foundation_neg_compile_test(neg_fail_closed_edge_count_from_after_the_seal
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::edge_count_from<\\^\\^\\{anonymous\\}::ingest, \\{anonymous\\}::Raw>\\(\\).")
+foundation_neg_compile_test(neg_fail_closed_every_class_in_has_edge_after_the_seal
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::every_class_in_has_edge<\\^\\^\\{anonymous\\}::ingest, \\^\\^\\{anonymous\\}::vacant")
+foundation_neg_compile_test(neg_fail_closed_every_edge_is_admitted_after_the_seal
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::every_edge_is_admitted<\\^\\^\\{anonymous\\}::ingest>\\(\\).")
+
+# unique_target reads a relation as a function of its From, so it
+# refuses a From with no edge and a From with two.
+foundation_neg_compile_test(neg_fail_closed_unique_target_without_an_edge
+  "static assertion failed: fail_closed::unique_target<Ns, T>: the relation declares no edge from T"
+  "unique_target\\(\\) \\[with std::meta::info Ns = \\^\\^\\{anonymous\\}::ingest; T = \\{anonymous\\}::Stored")
+foundation_neg_compile_test(neg_fail_closed_unique_target_of_two_edges
+  "static assertion failed: fail_closed::unique_target<Ns, T>: the relation declares more than one edge from T"
+  "unique_target\\(\\) \\[with std::meta::info Ns = \\^\\^\\{anonymous\\}::ingest; T = \\{anonymous\\}::Raw")
+
 # The permission tests keep the file names of the tests they are ported
 # from and carry a suffix, because test/CMakeLists.txt still registers
 # the plain names and a CMake target name is global.
