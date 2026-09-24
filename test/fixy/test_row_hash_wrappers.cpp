@@ -60,6 +60,7 @@
 #include <fixy/Corpus.h>
 #include <fixy/Ctx.h>
 #include <fixy/Cyclic.h>
+#include <fixy/CyclicBuffer.h>
 #include <fixy/EpochVersioned.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Fn.h>
@@ -938,6 +939,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::retag_policy, kMetafunction},
     {^^::fixy::ThreadNameLiteral, "a string literal usable as a template argument; ThreadNamed folds it"},
     {^^::fixy::Cyclic, kPayload},
+    {^^::fixy::CyclicBuffer, kPayload},
     {^^::fixy::FixedArray, kPayload},
     {^^::fixy::duplicate_atom_on, kMetafunction},
     {^^::fixy::malformed_atom, kMetafunction},

@@ -8,7 +8,7 @@
 #include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/_Cyclic.h>
-#include <crucible/safety/CyclicBuffer.h>
+#include <crucible/safety/_CyclicBuffer.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_OwnedRegion.h>

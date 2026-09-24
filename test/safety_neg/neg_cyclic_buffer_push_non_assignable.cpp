@@ -21,7 +21,7 @@
 // "constraints not satisfied" / "associated constraints are not
 // satisfied" pointing at the push call.
 
-#include <crucible/safety/CyclicBuffer.h>
+#include <crucible/safety/_CyclicBuffer.h>
 
 namespace saf = crucible::safety;
 

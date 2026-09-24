@@ -18,7 +18,7 @@
 // constraints are not satisfied" / "no matching template" pointing at the
 // CyclicBuffer<int, 6> instantiation.
 
-#include <crucible/safety/CyclicBuffer.h>
+#include <crucible/safety/_CyclicBuffer.h>
 
 namespace saf = crucible::safety;
 

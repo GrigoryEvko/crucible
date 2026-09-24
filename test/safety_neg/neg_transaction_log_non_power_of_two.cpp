@@ -7,7 +7,7 @@
 // invariant breaks.
 //
 // Per WRAP-Transaction-4 (#1063), TransactionLog<N>'s ring storage is
-// now safety::CyclicBuffer<Transaction, N> (entries_ + head_ + count_
+// now fixy::CyclicBuffer<Transaction, N> (entries_ + head_ + count_
 // collapsed into one audited composition).  TWO independent gates
 // reject a non-power-of-2 N:
 //   (1) the class-body static_assert((N & (N - 1)) == 0, ...) — the

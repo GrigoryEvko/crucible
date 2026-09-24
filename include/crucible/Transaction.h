@@ -16,6 +16,7 @@
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Post.h>
+#include <fixy/CyclicBuffer.h>
 
 #include <cassert>
 #include <chrono>
@@ -98,7 +99,7 @@ public:
     // the wrap masking and the saturating fill live in the type rather than
     // being open-coded at each use. The fill saturates at the capacity instead
     // of failing, and never moves backwards.
-    using Ring = ::crucible::fixy::wrap::CyclicBuffer<Transaction, N>;
+    using Ring = ::fixy::CyclicBuffer<Transaction, N>;
 
     TransactionLog() = default;
     TransactionLog(const TransactionLog&) = delete("TransactionLog holds ring-internal pointers");
@@ -249,10 +250,9 @@ private:
 };
 
 // The ring composition adds nothing beyond its three members.
-static_assert(sizeof(::crucible::fixy::wrap::CyclicBuffer<Transaction, 16>)
-                  == sizeof(::crucible::safety::FixedArray<Transaction, 16>)
-                         + sizeof(::crucible::safety::Cyclic<std::size_t, 16>)
-                         + sizeof(::crucible::safety::BoundedMonotonic<std::size_t, 16>),
+static_assert(sizeof(::fixy::CyclicBuffer<Transaction, 16>)
+                  == sizeof(::fixy::FixedArray<Transaction, 16>) + sizeof(::fixy::Cyclic<std::size_t, 16>)
+                         + sizeof(::fixy::BoundedMonotonic<std::size_t, 16>),
               "CyclicBuffer<Transaction, N> must stay a zero-overhead composition");
 
 // The tag must not add storage, or the whole log grows.

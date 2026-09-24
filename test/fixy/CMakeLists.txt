@@ -1166,6 +1166,18 @@ fixy_test(test_owned_file)
 fixy_test(test_owned_mmap)
 fixy_test(test_constant_time)
 fixy_test(test_cyclic)
+fixy_test(test_cyclic_buffer)
+
+# The ring rejects a capacity that is not a power of two.  Its cursor
+# finds a slot with a mask, and a mask gives the remainder only for a
+# power of two.  The ring also rejects a push of a const element, because
+# a push writes into the slot that it gets.
+fixy_neg_compile_test(neg_cyclic_buffer_capacity_not_a_power_of_two
+  "template constraint failure for .template<class T, long unsigned int N> +requires +N > 0"
+  "== 0 class fixy::CyclicBuffer.")
+fixy_neg_compile_test(neg_cyclic_buffer_push_of_a_const_element
+  "no matching function for call to .fixy::CyclicBuffer<const "
+  "is_move_assignable_v<T> .with T = const ")
 fixy_test(test_saturated)
 fixy_test(test_saturate_fixy test_saturate.cpp)
 

@@ -5,7 +5,7 @@
 // begin_tx() would claim a slot that does not exist.
 //
 // Per WRAP-Transaction-4 (#1063), TransactionLog<N>'s ring storage is
-// safety::CyclicBuffer<Transaction, N>.  N = 0 is the mismatch class
+// fixy::CyclicBuffer<Transaction, N>.  N = 0 is the mismatch class
 // the migration STRENGTHENED the contract against, and it is precisely
 // why this fixture is the companion to the non-power-of-2 one:
 //   * The class-body static_assert((N & (N - 1)) == 0, ...) PASSES for

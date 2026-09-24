@@ -26,7 +26,6 @@
 #include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/_Cyclic.h>
-#include <crucible/safety/CyclicBuffer.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/_FixedArray.h>
@@ -342,8 +341,6 @@ using ::crucible::safety::OwnedRegion;
 using ::crucible::safety::FixedArray;
 
 using ::crucible::safety::Cyclic;
-
-using ::crucible::safety::CyclicBuffer;
 
 using ::crucible::safety::NotInherited;
 using ::crucible::safety::assert_not_inherited;
@@ -1035,9 +1032,6 @@ static_assert(std::is_same_v<::crucible::fixy::wrap::FixedArray<int, 8>, ::cruci
 static_assert(
     std::is_same_v<::crucible::fixy::wrap::Cyclic<std::uint32_t, 8>, ::crucible::safety::Cyclic<std::uint32_t, 8>>,
     "fixy::wrap::Cyclic must alias safety::Cyclic.");
-
-static_assert(std::is_same_v<::crucible::fixy::wrap::CyclicBuffer<int, 8>, ::crucible::safety::CyclicBuffer<int, 8>>,
-              "fixy::wrap::CyclicBuffer must alias safety::CyclicBuffer.");
 
 static_assert(std::is_same_v<::crucible::fixy::wrap::WeakRef<int>, ::crucible::safety::WeakRef<int>>,
               "fixy::wrap::WeakRef must alias safety::WeakRef.");

@@ -6862,7 +6862,7 @@ crucible_neg_compile_test(neg_symbol_table_add_cross_tag
   "no match for|cannot convert|no viable|could not convert|Tagged|External|FromInternal")
 
 # WRAP-Transaction-4 (#1063) — TransactionLog<N>'s ring-storage triple
-# (entries_ + head_ + count_) is now safety::CyclicBuffer<Transaction,
+# (entries_ + head_ + count_) is now fixy::CyclicBuffer<Transaction,
 # N>.  The migration's positive-power-of-2 capacity invariant is
 # enforced at the TransactionLog<N> instantiation by TWO gates; the
 # two fixtures (per HS14) exercise one distinct mismatch class each:
