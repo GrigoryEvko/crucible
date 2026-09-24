@@ -238,10 +238,10 @@ jobs:
           bash scripts/check-fixy-grant-namespace-purity.sh --self-test
           bash scripts/check-fixy-grant-namespace-purity.sh
 
-      - name: splits_into orphan-specialization purity (self-test + scan)
+      - name: split trait orphan specializations (self-test + scan)
         run: |
-          bash scripts/check-splits-into-orphan.sh --self-test
-          bash scripts/check-splits-into-orphan.sh
+          python3 scripts/check-splits-orphan.py --self-test
+          python3 scripts/check-splits-orphan.py
 
       - name: single combine_ids source of truth (self-test + scan)
         run: |

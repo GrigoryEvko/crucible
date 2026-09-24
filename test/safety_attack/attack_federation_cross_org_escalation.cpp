@@ -143,7 +143,7 @@ namespace {
 // gate now demands BOTH splits_into AND its authoring witness.  Eve
 // can specialize splits_into from a foreign TU but cannot specialize
 // splits_into_authoring_witness for her malicious triple — the CI
-// orphan-purity script (scripts/check-splits-into-orphan.sh) would
+// orphan-purity script (scripts/check-splits-orphan.py) would
 // reject the witness specialization at build time.  The
 // well_authored_split_v predicate below witnesses the closure.
 //

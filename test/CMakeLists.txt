@@ -1425,24 +1425,20 @@ set_tests_properties(fixy_grant_namespace_purity
                      fixy_grant_namespace_purity_self_test PROPERTIES
     LABELS "safety_attack;ci_guard")
 
-# fixy-A1-018 splits_into orphan-specialization guard — enforces that
-# `splits_into<Parent, L, R>` and `splits_into_pack<Parent, Children...>`
-# specializations live ONLY in the blessed authoring locations
-# (include/crucible/permissions/, include/crucible/concurrent/,
-# safety/Permission{Tree,Grid}Generator.h, and test/**).  C++ has no
-# native orphan-rule; this script fills the gap at build time so a
-# foreign TU cannot forge cross-region authority by declaring an
-# arbitrary split for a foreign tag (CLAUDE.md §IX, §XVI).
-add_test(NAME splits_into_orphan_purity_self_test
-         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-splits-into-orphan.sh
-                 --self-test
-         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-add_test(NAME splits_into_orphan_purity
-         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-splits-into-orphan.sh
-         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-set_tests_properties(splits_into_orphan_purity
-                     splits_into_orphan_purity_self_test PROPERTIES
-    LABELS "safety_attack;ci_guard;fixy-A1-018")
+# A specialization of a split trait, or of one of its variables, is legal
+# only beside the tags it names: in the permissions and concurrent
+# headers, the two permission generators, include/fixy/OwnedRegion.h and
+# test/.  C++ has no orphan rule, so a foreign TU could otherwise forge
+# cross-region authority (CLAUDE.md §IX).  scripts/check-splits-orphan.py
+# reads each specialization from the parse tree.  Exit 3 when the kit is
+# absent reports a skip.
+add_test(NAME splits_orphan_self_test
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-splits-orphan.py --self-test)
+add_test(NAME splits_orphan
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-splits-orphan.py)
+set_tests_properties(splits_orphan splits_orphan_self_test PROPERTIES
+    LABELS "safety_attack;ci_guard"
+    SKIP_RETURN_CODE 3)
 
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)

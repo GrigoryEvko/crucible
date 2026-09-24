@@ -54,7 +54,7 @@
 #
 # `splits_into` / `splits_into_pack` (in the new tree `can_split_into` /
 # `can_split_into_pack`) are the sixth relation of this shape.  They
-# have their own guard (check-splits-into-orphan.sh) plus a companion
+# have their own guard (check-splits-orphan.py) plus a companion
 # authoring-witness trait, and are not duplicated here.
 #
 # ── Family C: fail-closed namespaces ─────────────────────────────────
@@ -111,7 +111,7 @@
 # is a deliberate one-line edit that a reviewer sees.
 #
 # test/** is exempt for the Family B relations, matching the
-# check-splits-into-orphan.sh precedent: negative-compile fixtures and
+# check-splits-orphan.py precedent: negative-compile fixtures and
 # sentinel TUs legitimately declare local tag trees and their relations,
 # and are themselves the witnesses that the relation stays fail-closed.
 #

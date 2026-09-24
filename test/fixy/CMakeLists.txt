@@ -2363,7 +2363,7 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
 #
 # The split relation for each channel's tag triple is declared in the
 # channel's own header, which is why include/fixy/concurrent/ is an
-# authoring location in scripts/check-splits-into-orphan.sh.
+# authoring location in scripts/check-splits-orphan.py.
 fixy_test(test_concurrent_channels)
 fixy_test(test_channel_moved_from)
 
