@@ -1,6 +1,6 @@
 // A crashed role as the sender of a transmission.  A crashed role sends
 // nothing: role removal turns its transmission into the crash
-// pseudo-message, an EnRoute node.
+// pseudo-message, an en-route node.
 
 #include <fixy/session/Projection.h>
 

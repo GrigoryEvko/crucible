@@ -1909,6 +1909,14 @@ fixy_neg_compile_test(neg_sess_global_live_role_sends_crash_label
   "fixy::session::diagnostic \\[Global_Misplaced_Crash_Annotation\\]"
   "ensure_global_well_formed\\(\\) \\[with G")
 
+fixy_neg_compile_test(neg_sess_global_unknown_chosen_label
+  "fixy::session::diagnostic \\[Global_Unknown_Chosen_Label\\]"
+  "ensure_global_well_formed\\(\\) \\[with G")
+
+fixy_neg_compile_test(neg_sess_global_unknown_chosen_label_crashed_sender
+  "fixy::session::diagnostic \\[Global_Unknown_Chosen_Label\\]"
+  "ensure_global_well_formed\\(\\) \\[with G")
+
 fixy_neg_compile_test(neg_sess_projection_missing_crash_branch
   "fixy::session::diagnostic \\[Projection_Missing_Crash_Branch\\]"
   "expansion of .fixy::session::ensure_crash_projectable<")

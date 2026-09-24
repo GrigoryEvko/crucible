@@ -91,10 +91,19 @@ static_assert(!s::crash_live_by_construction_v<Logging0, LoggerAndInterface>);
 
 // ── Role removal, Example 4.11 ──────────────────────────────────────
 
+// The pseudo-message keeps each branch, because I still holds the whole
+// choice until it detects the crash.  The report to the crashed C goes
+// into a lost queue.
 using LoggingWithoutC = g::remove_role_t<Logging, C>;
-static_assert(std::is_same_v<LoggingWithoutC,
-                             g::Msg<L, I, Trigger, void,
-                                    g::EnRoute<g::Crashed<C>, I, g::CrashLabel, void, g::Msg<I, L, Fatal, void, g::End>>>>);
+static_assert(std::is_same_v<
+              LoggingWithoutC,
+              g::Msg<L, I, Trigger, void,
+                     g::EnRouteChoice<g::Crashed<C>, I, g::CrashLabel,
+                                      g::Branch<Read, void,
+                                                g::Msg<I, L, Read, void,
+                                                       g::Msg<L, I, Report, Log,
+                                                              g::Comm<I, g::Crashed<C>, g::Branch<Report, Log, g::End>>>>>,
+                                      g::Branch<g::CrashLabel, void, g::Msg<I, L, Fatal, void, g::End>>>>>);
 static_assert(g::is_global_well_formed_v<LoggingWithoutC>);
 static_assert(g::is_balanced_plus_v<LoggingWithoutC>);
 static_assert(g::is_well_annotated_v<LoggingWithoutC, g::Roles<L, I>>);
@@ -109,13 +118,14 @@ static_assert(g::en_route_count_v<C, I, LoggingWithoutC> == 0);
 static_assert(std::is_same_v<g::remove_role_t<Logging, L>, g::RemovalUndefined>);
 // A role that has crashed cannot crash again.
 static_assert(std::is_same_v<g::remove_role_t<LoggingWithoutC, C>, g::RemovalUndefined>);
-// The projections of the state after the crash.
+// The projections of the state after the crash.  I has not detected the
+// crash, so it projects as before: the whole choice with its crash
+// branch.  L takes no part in the choice and merges both branches, as
+// before.
 static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, C, LoggerAndInterface>,
                              s::NotProjectable<s::projection_failure::ProjectionOntoCrashedRole>>);
-static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, I, LoggerAndInterface>,
-                             s::NotProjectable<s::projection_failure::EnRouteFromUnreliableSender>>);
-static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, L, LoggerAndInterface>::local,
-                             s::Send<s::PeerMsg<I, Trigger, void>, s::Recv<s::PeerMsg<I, Fatal, void>, s::End>>>);
+static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, I, LoggerAndInterface>::local, ProjI::local>);
+static_assert(std::is_same_v<s::project_crash_t<LoggingWithoutC, L, LoggerAndInterface>::local, ProjL::local>);
 // The theorem covers a design-time type only.
 static_assert(!s::crash_live_by_construction_v<LoggingWithoutC, LoggerAndInterface>);
 
@@ -182,7 +192,8 @@ static_assert(s::crash_live_by_construction_v<MergedWithCrash, s::NoReliableRole
 using DetectEachTime = g::Rec<g::Comm<P, Q, g::Branch<M, int, g::Var>, g::Branch<g::CrashLabel, void, g::Var>>>;
 static_assert(s::crash_live_by_construction_v<DetectEachTime, s::NoReliableRoles>);
 static_assert(std::is_same_v<g::remove_role_t<DetectEachTime, P>,
-                             g::Rec<g::EnRoute<g::Crashed<P>, Q, g::CrashLabel, void, g::Var>>>);
+                             g::Rec<g::EnRouteChoice<g::Crashed<P>, Q, g::CrashLabel, g::Branch<M, int, g::Var>,
+                                                     g::Branch<g::CrashLabel, void, g::Var>>>>);
 static_assert(g::is_balanced_v<g::remove_role_t<DetectEachTime, P>>);
 
 // ── Example 3.2, from the global type to the runtime ────────────────

@@ -1,6 +1,6 @@
 // Bob is the receiver of an en-route message from Alice, who is not
 // reliable.  Bob's type is the whole choice with its crash branch, and
-// the EnRoute node keeps only the chosen branch.
+// this en-route node has one branch and no crash branch.
 
 #include <fixy/session/Projection.h>
 
