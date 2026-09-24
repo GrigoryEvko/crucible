@@ -303,10 +303,13 @@ static_assert(!s::DetachReason<int>);
 [[nodiscard]] int walk_once() {
     auto handle = s::mint_session_handle<Once, ValueWire>(ValueWire{});
 
-    auto after_send = std::move(handle).send(Ping{3}, [](ValueWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+    auto after_send = std::move(handle).send(Ping{3}, [](ValueWire& w, Ping& p) noexcept {
+        w.last_sent = p.value;
+        return true;
+    });
     static_assert(std::is_same_v<typename decltype(after_send)::protocol, s::Recv<Pong, s::End>>);
 
-    auto [pong, at_end] = std::move(after_send).recv([](ValueWire& w) noexcept { return Pong{w.last_sent}; });
+    auto [pong, at_end] = std::move(after_send).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
     if (pong.value != 3) {
         std::fprintf(stderr, "the value the transport wrote did not travel with the resource\n");
         return 1;
@@ -337,7 +340,10 @@ static_assert(!s::DetachReason<int>);
     const PinnedWire* const address_before = &wire;
 
     auto handle = s::mint_session_handle<s::Send<Ping, s::End>, PinnedWire&>(wire);
-    auto at_end = std::move(handle).send(Ping{11}, [](PinnedWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+    auto at_end = std::move(handle).send(Ping{11}, [](PinnedWire& w, Ping& p) noexcept {
+        w.last_sent = p.value;
+        return true;
+    });
     if (wire.last_sent != 11) {
         std::fprintf(stderr, "the transport did not reach the referenced resource\n");
         return 1;
@@ -363,14 +369,17 @@ static_assert(!s::DetachReason<int>);
     // difference visible at the call site.
     std::size_t signalled = 99;
     auto chosen =
-        std::move(handle).select<1>([&signalled](ValueWire&, std::size_t label) noexcept { signalled = label; });
+        std::move(handle).select<1>([&signalled](ValueWire&, std::size_t label) noexcept {
+            signalled = label;
+            return true;
+        });
     if (signalled != 1) {
         std::fprintf(stderr, "select did not signal the branch index\n");
         return 1;
     }
     static_assert(std::is_same_v<typename decltype(chosen)::protocol, s::Send<Stop, s::End>>);
 
-    auto at_end = std::move(chosen).send(Stop{}, [](ValueWire&, Stop&&) noexcept {});
+    auto at_end = std::move(chosen).send(Stop{}, [](ValueWire&, Stop&) noexcept { return true; });
     (void)std::move(at_end).close();
     return 0;
 }
@@ -380,13 +389,12 @@ static_assert(!s::DetachReason<int>);
     auto handle = s::mint_session_handle<Served, ValueWire>(ValueWire{});
 
     // The handler runs once, for the branch the peer's label names.
-    const int taken = std::move(handle).branch([](ValueWire&) noexcept -> std::size_t { return 0; },
+    const int taken = std::move(handle).branch([](ValueWire&) noexcept -> std::optional<std::size_t> { return 0; },
                                                [](auto branch_handle) {
                                                    using B = typename decltype(branch_handle)::protocol;
-                                                   auto [msg, at_end] =
-                                                       std::move(branch_handle).recv([](ValueWire&) noexcept {
-                                                           return typename decltype(branch_handle)::message_type{};
-                                                       });
+                                                   using Message = typename decltype(branch_handle)::message_type;
+                                                   auto [msg, at_end] = std::move(branch_handle).recv(
+                                                       [](ValueWire&) noexcept { return std::optional{Message{}}; });
                                                    (void)msg;
                                                    (void)std::move(at_end).close();
                                                    return std::is_same_v<B, s::Recv<Ping, s::End>> ? 0 : 1;
@@ -451,16 +459,20 @@ static_assert(s::branch_of_wire_word<PlainOffer>(s::branch_wire_word_v<KeyedSele
 
     // The word is the whole keyed message, so the sender stands at the
     // reply of Hello, past its label step.
-    auto awaiting = std::move(sender).select<0>([](std::uint64_t* box, std::size_t word) noexcept { *box = word; });
+    auto awaiting = std::move(sender).select<0>([](std::uint64_t* box, std::size_t word) noexcept {
+        *box = word;
+        return true;
+    });
     static_assert(std::is_same_v<typename decltype(awaiting)::protocol, s::Recv<int, s::End>>);
 
     const int taken = std::move(receiver).branch(
-        [](std::uint64_t* box) noexcept -> std::size_t { return *box; },
+        [](std::uint64_t* box) noexcept -> std::optional<std::size_t> { return *box; },
         [](auto branch_handle) {
             using B = typename decltype(branch_handle)::protocol;
             if constexpr (std::is_same_v<B, s::Send<int, s::End>>) {
-                auto at_end = std::move(branch_handle).send(7, [](std::uint64_t* box, int&& value) noexcept {
+                auto at_end = std::move(branch_handle).send(7, [](std::uint64_t* box, int& value) noexcept {
                     *box = static_cast<std::uint64_t>(value);
+                    return true;
                 });
                 (void)std::move(at_end).close();
                 return 0;
@@ -474,7 +486,7 @@ static_assert(s::branch_of_wire_word<PlainOffer>(s::branch_wire_word_v<KeyedSele
         return 1;
     }
     auto [reply, sender_end] =
-        std::move(awaiting).recv([](std::uint64_t* box) noexcept { return static_cast<int>(*box); });
+        std::move(awaiting).recv([](std::uint64_t* box) noexcept { return std::optional{static_cast<int>(*box)}; });
     (void)std::move(sender_end).close();
     return reply == 7 ? 0 : 1;
 }
@@ -501,7 +513,10 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
             return 1;
         }
     }
-    auto at_end = std::move(handle).send(Ping{9}, [](ValueWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+    auto at_end = std::move(handle).send(Ping{9}, [](ValueWire& w, Ping& p) noexcept {
+        w.last_sent = p.value;
+        return true;
+    });
     (void)std::move(at_end).close();
     return 0;
 }
@@ -515,8 +530,11 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     const ValueWire back = s::with_session<Once>(ValueWire{}, [](auto head) noexcept {
         using Brand = typename s::detail::session_brand_of<typename decltype(head)::loop_ctx>::type;
         static_assert(!std::is_void_v<Brand>, "a handle of an owned session carries the brand of its body");
-        auto after = std::move(head).send(Ping{5}, [](ValueWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
-        auto [pong, at_end] = std::move(after).recv([](ValueWire& w) noexcept { return Pong{w.last_sent}; });
+        auto after = std::move(head).send(Ping{5}, [](ValueWire& w, Ping& p) noexcept {
+        w.last_sent = p.value;
+        return true;
+    });
+        auto [pong, at_end] = std::move(after).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
         (void)pong;
         return std::move(at_end);
     });
@@ -540,7 +558,10 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     static_assert(std::is_same_v<typename decltype(head)::perm_set, HoldsRegion>);
     static_assert(std::is_same_v<typename decltype(head)::loop_ctx, s::detail::PermLoopFrame<Forever, HoldsRegion>>);
     for (int round = 0; round < 3; ++round) {
-        auto next = std::move(head).send(Ping{round}, [](ValueWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+        auto next = std::move(head).send(Ping{round}, [](ValueWire& w, Ping& p) noexcept {
+        w.last_sent = p.value;
+        return true;
+    });
         static_assert(std::is_same_v<decltype(next), decltype(head)>, "a Continue lands on the loop head again");
         head = std::move(next);
     }
@@ -556,7 +577,10 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 
 [[nodiscard]] int walk_vendor_pinned_session() {
     auto head = s::mint_session_handle<PinnedSend>(ValueWire{});
-    auto at_end = std::move(head).send(Ping{7}, [](ValueWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+    auto at_end = std::move(head).send(Ping{7}, [](ValueWire& w, Ping& p) noexcept {
+        w.last_sent = p.value;
+        return true;
+    });
     if (std::move(at_end).close().last_sent != 7) {
         std::fprintf(stderr, "the vendor-pinned session did not carry its message\n");
         return 1;
@@ -579,14 +603,18 @@ struct TokenWire {
     auto sender = s::detail::open_session_<s::Send<Token, s::End>, TokenWire, s::check::Enforced, HoldsRegion>(
         TokenWire{&slot}, std::source_location::current());
     auto sender_done = std::move(sender).send(::foundation::permissions::mint_permission_root<Region>(),
-                                              [](TokenWire& w, Token&& token) noexcept { w.slot->emplace(std::move(token)); });
+                                              [](TokenWire& w, Token& token) noexcept {
+                                                  w.slot->emplace(std::move(token));
+                                                  return true;
+                                              });
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, NoPerms>);
     (void)std::move(sender_done).close();
 
     auto receiver = s::mint_session_handle<s::Recv<Token, s::End>>(TokenWire{&slot});
-    auto [token, receiver_done] = std::move(receiver).recv([](TokenWire& w) noexcept {
+    auto [token, receiver_done] = std::move(receiver).recv([](TokenWire& w) noexcept -> std::optional<Token> {
         std::optional<Token>& wire_slot = *w.slot;
-        Token taken = std::move(*wire_slot);
+        if (!wire_slot) return std::nullopt;
+        std::optional<Token> taken{std::move(*wire_slot)};
         wire_slot.reset();
         return taken;
     });
@@ -604,8 +632,8 @@ struct TokenWire {
 //
 // A one-slot mailbox in each direction.  The two endpoints hold a pointer
 // to the same pipe, so each side of the protocol reads what the other
-// side wrote.  Every wait has a deadline, so a bug here aborts with a
-// diagnostic and does not hang the test run.
+// side wrote.  A read polls, so each wait goes through the watch of
+// fixy/session/Watch.h.
 
 struct Mailbox {
     std::atomic<int> value{0};
@@ -624,25 +652,28 @@ struct PeerEnd {
     Pipe* pipe = nullptr;
 };
 
-constexpr auto kWaitDeadline = std::chrono::seconds{10};
-
-void put(Mailbox& box, int value) noexcept {
+// A trying write: the one slot takes a value only while it is empty.
+[[nodiscard]] bool put(Mailbox& box, int value) noexcept {
+    if (box.full.load(std::memory_order_acquire)) return false;
     box.value.store(value, std::memory_order_relaxed);
     box.full.store(true, std::memory_order_release);
+    return true;
 }
 
-[[nodiscard]] int take(Mailbox& box) noexcept {
-    const auto deadline = std::chrono::steady_clock::now() + kWaitDeadline;
-    while (!box.full.load(std::memory_order_acquire)) {
-        if (std::chrono::steady_clock::now() > deadline) {
-            std::fprintf(stderr, "watchdog: a mailbox wait passed its deadline; the two sides are out of step\n");
-            std::abort();
-        }
-        std::this_thread::yield();
-    }
+// A polling read: no value while the slot is empty.
+[[nodiscard]] std::optional<int> try_take(Mailbox& box) noexcept {
+    if (!box.full.load(std::memory_order_acquire)) return std::nullopt;
     const int value = box.value.load(std::memory_order_relaxed);
     box.full.store(false, std::memory_order_release);
     return value;
+}
+
+// A polling read of a message that carries one int.
+template <typename Message>
+[[nodiscard]] std::optional<Message> try_take_as(Mailbox& box) noexcept {
+    const std::optional<int> value = try_take(box);
+    if (!value) return std::nullopt;
+    return Message{*value};
 }
 
 // The two endpoints on one thread, through the test hatch.  The order is
@@ -652,11 +683,14 @@ void put(Mailbox& box, int value) noexcept {
     const ::foundation::effects::detail::ctx_witnesses::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto [self_head, peer_head] = s::mint_test_channel<Once>(ctx, SelfEnd{&pipe}, PeerEnd{&pipe});
 
-    auto self_waits = std::move(self_head).send(Ping{7}, [](SelfEnd& e, Ping&& p) noexcept { put(e.pipe->to_peer, p.value); });
-    auto [ping, peer_sends] = std::move(peer_head).recv([](PeerEnd& e) noexcept { return Ping{take(e.pipe->to_peer)}; });
-    auto peer_done = std::move(peer_sends).send(Pong{ping.value + 1},
-                                                [](PeerEnd& e, Pong&& p) noexcept { put(e.pipe->to_self, p.value); });
-    auto [pong, self_done] = std::move(self_waits).recv([](SelfEnd& e) noexcept { return Pong{take(e.pipe->to_self)}; });
+    auto self_waits =
+        std::move(self_head).send(Ping{7}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
+    auto [ping, peer_sends] =
+        std::move(peer_head).recv([](PeerEnd& e) noexcept { return try_take_as<Ping>(e.pipe->to_peer); });
+    auto peer_done = std::move(peer_sends).send(
+        Pong{ping.value + 1}, [](PeerEnd& e, Pong& p) noexcept { return put(e.pipe->to_self, p.value); });
+    auto [pong, self_done] =
+        std::move(self_waits).recv([](SelfEnd& e) noexcept { return try_take_as<Pong>(e.pipe->to_self); });
     (void)std::move(peer_done).close();
     (void)std::move(self_done).close();
     if (pong.value != 8) {
@@ -678,15 +712,18 @@ void put(Mailbox& box, int value) noexcept {
     auto back = s::mint_forked_channel<Once, channel_tags::Self, channel_tags::Peer>(
         ctx, std::move(whole), SelfEnd{&pipe}, PeerEnd{&pipe},
         [&seen_pong](auto head, ::foundation::permissions::Permission<channel_tags::Self>, BgCtx const&) noexcept {
-            auto waits = std::move(head).send(Ping{20}, [](SelfEnd& e, Ping&& p) noexcept { put(e.pipe->to_peer, p.value); });
-            auto [pong, done] = std::move(waits).recv([](SelfEnd& e) noexcept { return Pong{take(e.pipe->to_self)}; });
+            auto waits =
+                std::move(head).send(Ping{20}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
+            auto [pong, done] =
+                std::move(waits).recv([](SelfEnd& e) noexcept { return try_take_as<Pong>(e.pipe->to_self); });
             seen_pong.store(pong.value, std::memory_order_release);
             return std::move(done);
         },
         [](auto head, ::foundation::permissions::Permission<channel_tags::Peer>, BgCtx const&) noexcept {
-            auto [ping, sends] = std::move(head).recv([](PeerEnd& e) noexcept { return Ping{take(e.pipe->to_peer)}; });
+            auto [ping, sends] =
+                std::move(head).recv([](PeerEnd& e) noexcept { return try_take_as<Ping>(e.pipe->to_peer); });
             return std::move(sends).send(Pong{ping.value + 1},
-                                         [](PeerEnd& e, Pong&& p) noexcept { put(e.pipe->to_self, p.value); });
+                                         [](PeerEnd& e, Pong& p) noexcept { return put(e.pipe->to_self, p.value); });
         });
     ::foundation::permissions::permission_drop(std::move(back));
 
@@ -832,7 +869,7 @@ template <typename Body>
         auto handle = s::mint_session_handle<Once, ValueWire>(ValueWire{});
         auto moved = std::move(handle);
         std::move(moved).detach(s::detach_reason::TestInstrumentation{});
-        auto stepped = std::move(handle).send(Ping{1}, [](ValueWire&, Ping&&) noexcept {});
+        auto stepped = std::move(handle).send(Ping{1}, [](ValueWire&, Ping&) noexcept { return true; });
         std::move(stepped).detach(s::detach_reason::TestInstrumentation{});
     });
     if (!use_after_move_aborted) {
@@ -884,8 +921,11 @@ template <typename Body>
     // A handle that finishes its protocol sends no cancellation.
     const int finished = child_exit_code([] {
         auto handle = s::mint_session_handle<Once, CancelWire, s::check::Cancel>(CancelWire{});
-        auto after = std::move(handle).send(Ping{2}, [](CancelWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
-        auto [pong, at_end] = std::move(after).recv([](CancelWire& w) noexcept { return Pong{w.last_sent}; });
+        auto after = std::move(handle).send(Ping{2}, [](CancelWire& w, Ping& p) noexcept {
+            w.last_sent = p.value;
+            return true;
+        });
+        auto [pong, at_end] = std::move(after).recv([](CancelWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
         (void)pong;
         (void)std::move(at_end).close();
         std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 0 ? 0 : 3);
@@ -916,9 +956,12 @@ template <typename Body>
 
     auto handle = s::mint_session_handle<Once, ValueWire>(ValueWire{});
     if (!live_count_is(baseline + 1, "a mint")) return 1;
-    auto waits = std::move(handle).send(Ping{1}, [](ValueWire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+    auto waits = std::move(handle).send(Ping{1}, [](ValueWire& w, Ping& p) noexcept {
+        w.last_sent = p.value;
+        return true;
+    });
     if (!live_count_is(baseline + 1, "a step that does not end")) return 1;
-    auto [pong, at_end] = std::move(waits).recv([](ValueWire& w) noexcept { return Pong{w.last_sent}; });
+    auto [pong, at_end] = std::move(waits).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
     (void)pong;
     if (!live_count_is(baseline, "the step to End")) return 1;
     (void)std::move(at_end).close();
@@ -976,8 +1019,8 @@ struct PollBox {
     const BgCtx ctx{::foundation::effects::testing::bg()};
     const PollBox to_self{[](Pipe& p) noexcept { return &p.to_self; }};
     const PollBox to_peer{[](Pipe& p) noexcept { return &p.to_peer; }};
-    const auto send_to_peer = [](SelfEnd& e, int&& v) noexcept { put(e.pipe->to_peer, v); };
-    const auto send_to_self = [](PeerEnd& e, int&& v) noexcept { put(e.pipe->to_self, v); };
+    const auto send_to_peer = [](SelfEnd& e, int& v) noexcept { return put(e.pipe->to_peer, v); };
+    const auto send_to_self = [](PeerEnd& e, int& v) noexcept { return put(e.pipe->to_self, v); };
 
     auto back = s::mint_forked_channel<Twice, channel_tags::Self, channel_tags::Peer>(
         ctx, ::foundation::permissions::mint_permission_root<channel_tags::Whole>(), SelfEnd{&pipe}, PeerEnd{&pipe},
@@ -1000,6 +1043,48 @@ struct PollBox {
     ::foundation::permissions::permission_drop(std::move(back));
     if (total.load(std::memory_order_acquire) != 4) {
         std::fprintf(stderr, "the polling channel carried %d, not 4\n", total.load(std::memory_order_acquire));
+        return 1;
+    }
+    return 0;
+}
+
+// ── Runtime: the four transport shapes ───────────────────────────────
+//
+// A trying write that finds no room returns false, and the handle waits
+// through the watch and tries again.  A declared read takes the scope
+// that the handle opened, and polls it while it waits.  The session is
+// the only one the thread holds, so the watch admits each wait.
+
+struct SlowWire {
+    int value = 0;
+    int refusals = 2;
+};
+
+[[nodiscard]] int each_transport_shape_waits_through_the_watch() {
+    using Twice = s::Send<int, s::Recv<int, s::Send<int, s::Recv<int, s::End>>>>;
+    auto head = s::mint_session_handle<Twice, SlowWire>(SlowWire{});
+    int tries = 0;
+    auto first_read = std::move(head).send(5, [&tries](SlowWire& w, int& v) noexcept {
+        ++tries;
+        if (w.refusals > 0) {
+            --w.refusals;
+            return false;
+        }
+        w.value = v;
+        return true;
+    });
+    auto [first, second_write] = std::move(first_read).recv([](SlowWire& w, s::watch::wait_scope& wait) noexcept {
+        wait.poll();
+        return w.value;
+    });
+    auto second_read = std::move(second_write).send(first + 1, [](SlowWire& w, int&& v, s::watch::wait_scope&) noexcept {
+        w.value = v;
+    });
+    auto [second, done] = std::move(second_read).recv([](SlowWire& w) noexcept { return std::optional{w.value}; });
+    (void)std::move(done).close();
+    if (tries != 3 || first != 5 || second != 6) {
+        std::fprintf(stderr, "the transport shapes gave tries=%d first=%d second=%d, not 3, 5 and 6\n", tries, first,
+                     second);
         return 1;
     }
     return 0;
@@ -1089,5 +1174,6 @@ int main() {
     if (const int rc = watch_counts_sessions(); rc != 0) return rc;
     if (const int rc = polling_channel_waits_without_a_false_deadlock(); rc != 0) return rc;
     if (const int rc = channel_claim_names_no_holder(); rc != 0) return rc;
+    if (const int rc = each_transport_shape_waits_through_the_watch(); rc != 0) return rc;
     return 0;
 }

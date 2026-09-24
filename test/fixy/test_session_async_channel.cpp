@@ -22,7 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <thread>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -79,21 +79,34 @@ struct Pipe : ::foundation::Pinned<Pipe> {
     std::abort();
 }
 
-void put(Mailbox& box, int value, const char* where) noexcept {
-    const auto deadline = std::chrono::steady_clock::now() + kDeadline;
-    while (box.full.load(std::memory_order_acquire)) {
-        if (std::chrono::steady_clock::now() > deadline) deadline_passed(where);
-        std::this_thread::yield();
+// The deadline of one transport.  The handle waits through the watch and
+// tries the transport again, and each try that finds nothing reads the
+// deadline.
+struct Deadline {
+    const char* where = "";
+    std::chrono::steady_clock::time_point at = std::chrono::steady_clock::now() + kDeadline;
+
+    void check() const noexcept {
+        if (std::chrono::steady_clock::now() > at) deadline_passed(where);
+    }
+};
+
+// Puts `value` into `box` if the box is empty.
+[[nodiscard]] bool try_put(Mailbox& box, int value, const Deadline& deadline) noexcept {
+    if (box.full.load(std::memory_order_acquire)) {
+        deadline.check();
+        return false;
     }
     box.value.store(value, std::memory_order_relaxed);
     box.full.store(true, std::memory_order_release);
+    return true;
 }
 
-[[nodiscard]] int take(Mailbox& box, const char* where) noexcept {
-    const auto deadline = std::chrono::steady_clock::now() + kDeadline;
-    while (!box.full.load(std::memory_order_acquire)) {
-        if (std::chrono::steady_clock::now() > deadline) deadline_passed(where);
-        std::this_thread::yield();
+// Takes the value in `box` if the box is full.
+[[nodiscard]] std::optional<int> try_take(Mailbox& box, const Deadline& deadline) noexcept {
+    if (!box.full.load(std::memory_order_acquire)) {
+        deadline.check();
+        return std::nullopt;
     }
     const int value = box.value.load(std::memory_order_relaxed);
     box.full.store(false, std::memory_order_release);
@@ -181,11 +194,12 @@ struct LeftBody {
     template <typename Head>
     auto operator()(Head head, perm::Permission<async_tags::Left>, BgCtx const&) noexcept {
         g_live_in_left_body.store(s::watch::live_count(), std::memory_order_relaxed);
-        auto waiting = std::move(head).send(Ping{11}, [](LeftEnd& e, Ping&& p) noexcept {
-            put(e.pipe->to_right, p.value, "the left send");
-        });
-        auto [pong, done] = std::move(waiting).recv([](LeftEnd& e) noexcept {
-            return Pong{take(e.pipe->to_left, "the left receive")};
+        const auto send_ping = [deadline = Deadline{"the left send"}](LeftEnd& e, Ping& p) noexcept {
+            return try_put(e.pipe->to_right, p.value, deadline);
+        };
+        auto waiting = std::move(head).send(Ping{11}, send_ping);
+        auto [pong, done] = std::move(waiting).recv([deadline = Deadline{"the left receive"}](LeftEnd& e) noexcept {
+            return try_take(e.pipe->to_left, deadline).transform([](int value) noexcept { return Pong{value}; });
         });
         g_left_received.store(pong.value, std::memory_order_relaxed);
         return std::move(done);
@@ -195,11 +209,12 @@ struct LeftBody {
 struct RightBody {
     template <typename Head>
     auto operator()(Head head, perm::Permission<async_tags::Right>, BgCtx const&) noexcept {
-        auto waiting = std::move(head).send(Pong{22}, [](RightEnd& e, Pong&& p) noexcept {
-            put(e.pipe->to_left, p.value, "the right send");
-        });
-        auto [ping, done] = std::move(waiting).recv([](RightEnd& e) noexcept {
-            return Ping{take(e.pipe->to_right, "the right receive")};
+        const auto send_pong = [deadline = Deadline{"the right send"}](RightEnd& e, Pong& p) noexcept {
+            return try_put(e.pipe->to_left, p.value, deadline);
+        };
+        auto waiting = std::move(head).send(Pong{22}, send_pong);
+        auto [ping, done] = std::move(waiting).recv([deadline = Deadline{"the right receive"}](RightEnd& e) noexcept {
+            return try_take(e.pipe->to_right, deadline).transform([](int value) noexcept { return Ping{value}; });
         });
         g_right_received.store(ping.value, std::memory_order_relaxed);
         return std::move(done);

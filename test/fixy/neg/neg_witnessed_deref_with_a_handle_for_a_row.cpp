@@ -40,6 +40,12 @@ int main() {
     auto witnessed = ::fixy::mint_witnessed_under(borrow);
     auto at_send = s::mint_session_handle<Sending, Wire>(Wire{});
     [[maybe_unused]] auto read = deref(witnessed, at_send);
-    (void)std::move(at_send).send(Ping{1}, [](Wire& w, Ping&& p) noexcept { w.last_sent = p.value; }).close();
+    (void)std::move(at_send)
+        .send(Ping{1},
+              [](Wire& w, Ping& p) noexcept {
+                  w.last_sent = p.value;
+                  return true;
+              })
+        .close();
     return 0;
 }

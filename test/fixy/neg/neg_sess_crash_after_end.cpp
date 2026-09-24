@@ -17,8 +17,8 @@ int main() {
     s::PeerCrashCell watched;
     s::PeerCrashCell announce;
     auto handle = s::mint_crash_session<Proto, Alice, Bob>(Wire{}, watched);
-    auto next = std::move(handle).select<0>([](Wire&, std::size_t) noexcept {});
-    auto [at_end, undelivered] = std::move(next).send(1, [](Wire&, int&&) noexcept {});
+    auto next = std::move(handle).select<0>([](Wire&, std::size_t) noexcept { return true; });
+    auto [at_end, undelivered] = std::move(next).send(1, [](Wire&, int&) noexcept { return true; });
     (void)undelivered;
     auto resource = std::move(at_end).crash(s::CrashCause::Abort, s::mint_crash_reporter(announce));
     (void)resource;

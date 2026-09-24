@@ -226,7 +226,10 @@ struct Port {
 };
 
 // Every message of these binary views is keyed, so each is its label word.
-constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
+constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
+    port.out->slots.push_back(label);
+    return true;
+};
 // A crash-watched reception reads with no wait: the word when one is
 // queued, and no value otherwise.
 constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t> {

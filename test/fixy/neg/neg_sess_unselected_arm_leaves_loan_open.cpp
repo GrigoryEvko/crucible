@@ -25,7 +25,7 @@ using Proto = s::Select<s::End, s::Send<s::Borrowed<int, Region>, s::End>>;
 int main() {
     auto head = s::detail::open_session_<Proto, Wire, s::check::Enforced, perm::PermSet<Region>>(
         Wire{}, std::source_location::current());
-    auto at_end = std::move(head).select<0>([](Wire&, std::size_t) noexcept {});
+    auto at_end = std::move(head).select<0>([](Wire&, std::size_t) noexcept { return true; });
     (void)std::move(at_end).close();
     return 0;
 }

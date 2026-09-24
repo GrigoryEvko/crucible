@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -143,27 +144,39 @@ struct Port {
     Mailbox* out = nullptr;
 };
 
-constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
+// The two ends run on one thread, and each send comes before its receive.
+// A write tries, and the queue has no bound, so each try takes the value.
+// A read polls, so the handle never waits while the queue holds a slot.
+constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
+    port.out->slots.push_back(label);
+    return true;
+};
 // A Text travels as its first character, which is enough to tell the
 // three texts of the example apart.
-constexpr auto push_text = [](Port& port, Text&& text) noexcept {
+constexpr auto push_text = [](Port& port, Text& text) noexcept {
     port.out->slots.push_back(static_cast<std::uint64_t>(static_cast<unsigned char>(text.value.front())));
+    return true;
 };
-constexpr auto push_int = [](Port& port, int&& value) noexcept {
+constexpr auto push_int = [](Port& port, int& value) noexcept {
     port.out->slots.push_back(static_cast<std::uint64_t>(value));
+    return true;
 };
-constexpr auto pop_slot = [](Port& port) noexcept {
+constexpr auto pop_slot = [](Port& port) noexcept -> std::optional<std::uint64_t> {
+    if (port.in->slots.empty()) return std::nullopt;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
     return slot;
 };
-constexpr auto pop_label = [](Port& port) noexcept -> std::size_t { return pop_slot(port); };
-constexpr auto pop_int = [](Port& port) noexcept { return static_cast<int>(pop_slot(port)); };
+constexpr auto pop_label = [](Port& port) noexcept -> std::optional<std::size_t> { return pop_slot(port); };
+constexpr auto pop_int = [](Port& port) noexcept {
+    return pop_slot(port).transform([](std::uint64_t slot) noexcept { return static_cast<int>(slot); });
+};
 constexpr auto pop_text = [](Port& port) noexcept {
-    const std::uint64_t first = pop_slot(port);
-    if (first == 'm') return Text{"meta"};
-    if (first == 'c') return Text{"clip"};
-    return Text{"film"};
+    return pop_slot(port).transform([](std::uint64_t first) noexcept {
+        if (first == 'm') return Text{"meta"};
+        if (first == 'c') return Text{"clip"};
+        return Text{"film"};
+    });
 };
 
 // A trace of what happened, in order.

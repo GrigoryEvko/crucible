@@ -40,7 +40,10 @@ int main() {
     auto at_send = s::mint_session_handle<Sending, Wire>(Wire{});
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
     auto witnessed = ::fixy::mint_witnessed_at(at_send, borrow);
-    auto at_end = std::move(at_send).send(Ping{1}, [](Wire& w, Ping&& p) noexcept { w.last_sent = p.value; });
+    auto at_end = std::move(at_send).send(Ping{1}, [](Wire& w, Ping& p) noexcept {
+        w.last_sent = p.value;
+        return true;
+    });
     [[maybe_unused]] auto read = deref(witnessed, at_end);
     (void)std::move(at_end).close();
     return 0;

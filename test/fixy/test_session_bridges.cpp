@@ -188,8 +188,8 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
     // The transport is the cell's own publish step.  Each Send branch
     // exists for exactly one of its overloads, so the branch index and
     // the transition type cannot drift apart without a compile error.
-    auto apply = []<typename Transition>(vm::ModeCell*& target, Transition&& transition) noexcept {
-        s::publish_atomic_machine_transition(target, std::forward<Transition>(transition));
+    auto apply = []<typename Transition>(vm::ModeCell*& target, Transition& transition) noexcept {
+        return s::publish_atomic_machine_transition(target, transition);
     };
 
     auto session = vm::mint_vigil_mode_bridge(cell);

@@ -46,7 +46,9 @@
 // decide WHETHER the operation is legal at this protocol position and
 // WHAT position follows it.  A session over a socket, over an in-memory
 // ring and over a mock all use the same handle and differ only in the
-// callable they pass.
+// callable they pass.  A callable has one of the shapes that "The shapes
+// of a transport" names below, and no shape waits where the watch of
+// fixy/session/Watch.h cannot see the wait.
 //
 // ── The word of a choice ────────────────────────────────────────────
 //
@@ -472,6 +474,11 @@ public:
         }
     }
 
+    // The record of the session in fixy/session/Watch.h, or none.  A
+    // decorator that waits on its own, as the crash transport does, opens
+    // its watch::wait_scope on this endpoint, so the watch sees the wait.
+    [[nodiscard]] constexpr watch::endpoint_id watch_endpoint() const noexcept { return tracker_.session().endpoint; }
+
     // Marks the handle consumed without advancing the protocol.  The
     // destructor check still fires for every handle that does not
     // detach, so accidental abandonment stays caught.
@@ -710,10 +717,74 @@ constexpr void cancel_resource(std::remove_reference_t<Resource>& resource) noex
     cancel_session(resource);
 }
 
-// Retries a polling transport until it gives a result.  It runs only
-// after the first attempt found nothing, so it is outlined and cold.  It
-// waits through a watch::wait_scope, which publishes the wait for the
-// deadlock detector and aborts on a cycle of waits across sessions.
+}  // namespace detail
+
+// ── The shapes of a transport ────────────────────────────────────────
+//
+// A transport never waits where the watch of fixy/session/Watch.h cannot
+// see the wait.  Each shape either returns at once, or takes the
+// wait_scope that the handle opened before the call:
+//
+//   a trying write     bool(Resource&, T&)     false while it has no room,
+//                                              and the value stays as it was
+//   a declared write   void(Resource&, T&&, watch::wait_scope&)
+//   a polling read     std::optional<T>(Resource&)   no value while nothing
+//                                                    is there
+//   a declared read    T(Resource&, watch::wait_scope&)
+//
+// The word of a choice or of a keyed message is std::size_t, with the same
+// shapes.  When a trying write finds no room, or a polling read finds
+// nothing, the handle waits through the watch and tries again.  A declared
+// call waits inside the transport, and it calls poll() on the scope while
+// it waits.  A transport of any other shape could wait where the watch does
+// not see it, so each operation refuses it with [Transport_Shape].
+
+template <typename F, typename Resource, typename T>
+concept TryWrite =
+    std::is_invocable_v<F&, Resource&, T&> && std::same_as<std::invoke_result_t<F&, Resource&, T&>, bool>;
+
+template <typename F, typename Resource, typename T>
+concept DeclaredWrite = !TryWrite<F, Resource, T> && std::is_invocable_v<F&, Resource&, T&&, watch::wait_scope&>
+                     && std::is_void_v<std::invoke_result_t<F&, Resource&, T&&, watch::wait_scope&>>;
+
+template <typename F, typename Resource, typename T>
+concept WriteTransport = TryWrite<F, Resource, T> || DeclaredWrite<F, Resource, T>;
+
+template <typename F, typename Resource, typename T>
+concept PollRead = std::is_invocable_v<F&, Resource&>
+                && std::same_as<std::invoke_result_t<F&, Resource&>, std::optional<T>>;
+
+template <typename F, typename Resource, typename T>
+concept DeclaredRead = !PollRead<F, Resource, T> && std::is_invocable_v<F&, Resource&, watch::wait_scope&>
+                    && std::same_as<std::invoke_result_t<F&, Resource&, watch::wait_scope&>, T>;
+
+template <typename F, typename Resource, typename T>
+concept ReadTransport = PollRead<F, Resource, T> || DeclaredRead<F, Resource, T>;
+
+namespace detail {
+
+template <typename F, typename Resource, typename T>
+consteval bool write_is_nothrow() noexcept {
+    if constexpr (TryWrite<F, Resource, T>) {
+        return std::is_nothrow_invocable_v<F&, Resource&, T&>;
+    } else {
+        return std::is_nothrow_invocable_v<F&, Resource&, T&&, watch::wait_scope&>;
+    }
+}
+
+template <typename F, typename Resource, typename T>
+consteval bool read_is_nothrow() noexcept {
+    if constexpr (PollRead<F, Resource, T>) {
+        return std::is_nothrow_invocable_v<F&, Resource&> && std::is_nothrow_move_constructible_v<T>;
+    } else {
+        return std::is_nothrow_invocable_v<F&, Resource&, watch::wait_scope&>;
+    }
+}
+
+// Retries a polling read until it gives a value.  It runs only after the
+// first read found nothing, so it is outlined and cold.  It waits through
+// a watch::wait_scope, which refuses a wait that breaks the priority
+// order and aborts on a cycle of waits across sessions.
 template <typename Transport, typename Resource>
 [[gnu::cold, gnu::noinline]] auto wait_for_arrival(Transport& transport, Resource& resource,
                                                    watch::endpoint_id endpoint) noexcept(
@@ -723,6 +794,86 @@ template <typename Transport, typename Resource>
         auto arrived = std::invoke(transport, resource);
         if (arrived) return arrived;
         wait.poll();
+    }
+}
+
+// Retries a trying write until it takes the value, as wait_for_arrival
+// retries a read.
+template <typename Transport, typename Resource, typename T>
+[[gnu::cold, gnu::noinline]] void wait_for_room(Transport& transport, Resource& resource, T& value,
+                                                watch::endpoint_id endpoint) noexcept(
+    std::is_nothrow_invocable_v<Transport&, Resource&, T&>) {
+    watch::wait_scope wait{endpoint};
+    while (!std::invoke(transport, resource, value)) wait.poll();
+}
+
+// Writes `value` through either write shape.  A trying write that finds
+// room costs one call.  A declared write gets the scope opened for it.
+template <typename T, typename Transport, typename Resource>
+constexpr void write_through(Transport& transport, Resource& resource, T& value,
+                             watch::endpoint_id endpoint) noexcept(write_is_nothrow<Transport, Resource, T>()) {
+    if constexpr (TryWrite<Transport, Resource, T>) {
+        if (!std::invoke(transport, resource, value)) [[unlikely]]
+            wait_for_room(transport, resource, value, endpoint);
+    } else {
+        watch::wait_scope wait{endpoint};
+        std::invoke(transport, resource, std::move(value), wait);
+    }
+}
+
+// Reads a value through either read shape.
+template <typename T, typename Transport, typename Resource>
+[[nodiscard]] constexpr T read_through(Transport& transport, Resource& resource, watch::endpoint_id endpoint) noexcept(
+    read_is_nothrow<Transport, Resource, T>()) {
+    if constexpr (PollRead<Transport, Resource, T>) {
+        std::optional<T> arrived = std::invoke(transport, resource);
+        if (!arrived) [[unlikely]]
+            arrived = wait_for_arrival(transport, resource, endpoint);
+        return std::move(*arrived);
+    } else {
+        watch::wait_scope wait{endpoint};
+        return std::invoke(transport, resource, wait);
+    }
+}
+
+// A read of the same shape as `read` that gives each value it reads to
+// `seen` first.  A decorator uses it to learn what its inner handle read.
+template <typename T, typename Resource, typename Read, typename Seen>
+[[nodiscard]] constexpr auto observed_read(Read& read, Seen seen) noexcept {
+    if constexpr (PollRead<Read, Resource, T>) {
+        return [&read, seen](Resource& resource) mutable noexcept(read_is_nothrow<Read, Resource, T>())
+                   -> std::optional<T> {
+            std::optional<T> got = std::invoke(read, resource);
+            if (got) seen(*got);
+            return got;
+        };
+    } else {
+        return [&read, seen](Resource& resource, watch::wait_scope& wait) mutable noexcept(
+                   read_is_nothrow<Read, Resource, T>()) -> T {
+            T got = std::invoke(read, resource, wait);
+            seen(got);
+            return got;
+        };
+    }
+}
+
+// A write of the same shape as `write` that calls `taken` once the
+// transport took the value.
+template <typename T, typename Resource, typename Write, typename Taken>
+[[nodiscard]] constexpr auto observed_write(Write& write, Taken taken) noexcept {
+    if constexpr (TryWrite<Write, Resource, T>) {
+        return [&write, taken](Resource& resource, T& value) mutable noexcept(write_is_nothrow<Write, Resource, T>())
+                   -> bool {
+            const bool is_taken = std::invoke(write, resource, value);
+            if (is_taken) taken();
+            return is_taken;
+        };
+    } else {
+        return [&write, taken](Resource& resource, T&& value, watch::wait_scope& wait) mutable noexcept(
+                   write_is_nothrow<Write, Resource, T>()) {
+            std::invoke(write, resource, std::move(value), wait);
+            taken();
+        };
     }
 }
 
@@ -934,47 +1085,63 @@ public:
     // it sends that word as the Select does (fixy/session/Protocol.h).
     static constexpr bool is_keyed = is_keyed_step_v<Send<T, R>>;
 
-    // The Transport is what physically moves the value to the peer.
-    // Its signature is void(Resource&, T&&).  The returned handle sits
-    // at the continuation, with Continue and Loop already resolved.
+    // The Transport is what physically moves the value to the peer.  It
+    // has one of the two write shapes above the handle family.  The
+    // returned handle sits at the continuation, with Continue and Loop
+    // already resolved.
     template <typename Transport>
-        requires(!is_keyed) && std::is_invocable_v<Transport, Resource&, T&&>
+        requires(!is_keyed) && WriteTransport<Transport, Resource, T>
     [[nodiscard]] constexpr auto
-    send(T value, Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, T&&>
+    send(T value, Transport transport) && noexcept(detail::write_is_nothrow<Transport, Resource, T>()
                                                    && std::is_nothrow_move_constructible_v<Resource>
                                                    && std::is_nothrow_move_constructible_v<T>) {
         static_assert(detail::handle_admits_send_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message takes, or the payload walk of fixy/session/Payload.h refuses the message.  Hold each "
                       "permission that the payload moves or lends before the send.");
-        std::invoke(transport, this->live_resource_(), std::move(value));
+        detail::write_through<T>(transport, this->live_resource_(), value, this->session_().endpoint);
         const watch::session_ref session = this->session_();
         return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
             this->take_resource_(), session);
     }
 
-    // Sends the label word of the message through Transport, whose
-    // signature is void(Resource&, std::size_t).  The peer can hold an
-    // Offer with more labels, and it enters the branch of this word.
     template <typename Transport>
-        requires is_keyed && std::is_invocable_v<Transport, Resource&, std::size_t>
+        requires(!is_keyed) && (!WriteTransport<Transport, Resource, T>)
+    void send(T, Transport) && = delete("[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns "
+                                        "false with the value unchanged while it has no room, or declares its wait, "
+                                        "as void(Resource&, T&&, fixy::session::watch::wait_scope&).  A write of "
+                                        "another shape can wait where the watch of fixy/session/Watch.h does not see "
+                                        "it.");
+
+    // Sends the label word of the message through Transport, a write of a
+    // std::size_t word.  The peer can hold an Offer with more labels, and
+    // it enters the branch of this word.
+    template <typename Transport>
+        requires is_keyed && WriteTransport<Transport, Resource, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && noexcept(
-        std::is_nothrow_invocable_v<Transport, Resource&, std::size_t> && std::is_nothrow_move_constructible_v<Resource>) {
+        detail::write_is_nothrow<Transport, Resource, std::size_t>() && std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(detail::handle_admits_send_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message takes, or the payload walk of fixy/session/Payload.h refuses the message.");
-        std::invoke(transport, this->live_resource_(), static_cast<std::size_t>(step_wire_word_v<Send<T, R>>));
+        std::size_t word = static_cast<std::size_t>(step_wire_word_v<Send<T, R>>);
+        detail::write_through<std::size_t>(transport, this->live_resource_(), word, this->session_().endpoint);
         const watch::session_ref session = this->session_();
         return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
             this->take_resource_(), session);
     }
+
+    template <typename Transport>
+        requires is_keyed && (!WriteTransport<Transport, Resource, std::size_t>)
+    void send(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
+                                     "bool(Resource&, std::size_t), or declares its wait, as "
+                                     "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
+                                     "another shape can wait where the watch of fixy/session/Watch.h does not see it.");
 
     template <typename U, typename Transport>
         requires is_keyed
     void send(U&&, Transport) && = delete("[Keyed_Message_Has_No_Value] a Send of a PeerMsg or a Labelled is keyed: its "
                                           "label word is the whole message, so the step sends no value.  Call "
-                                          "send(transport) with a transport of the signature "
-                                          "void(Resource&, std::size_t).");
+                                          "send(transport) with a write of a std::size_t word.");
 };
 
 template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
@@ -999,74 +1166,52 @@ public:
     // and it reads the label word as the Offer does.
     static constexpr bool is_keyed = is_keyed_step_v<Recv<T, R>>;
 
-    // The Transport signature is T(Resource&).  The pair is the
-    // received value and the handle at the continuation.  A transport of
-    // this kind waits inside its own call, so the deadlock detector of
-    // fixy/session/Watch.h does not see the wait.
+    // The Transport has one of the two read shapes above the handle
+    // family.  The pair is the received value and the handle at the
+    // continuation.  A polling read that finds the message costs one call.
     template <typename Transport>
-        requires(!is_keyed) && std::is_invocable_r_v<T, Transport, Resource&>
-              && (!std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<T>>)
+        requires(!is_keyed) && ReadTransport<Transport, Resource, T>
     [[nodiscard]] constexpr auto
-    recv(Transport transport) && noexcept(std::is_nothrow_invocable_r_v<T, Transport, Resource&>
+    recv(Transport transport) && noexcept(detail::read_is_nothrow<Transport, Resource, T>()
                                           && std::is_nothrow_move_constructible_v<Resource>
                                           && std::is_nothrow_move_constructible_v<T>) {
         static_assert(detail::handle_admits_recv_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message closes, the message gives a region that the set already holds, or the payload walk "
                       "of fixy/session/Payload.h refuses the message.");
-        T value = std::invoke(transport, this->live_resource_());
+        T value = detail::read_through<T>(transport, this->live_resource_(), this->session_().endpoint);
         const watch::session_ref session = this->session_();
         auto next = detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
             this->take_resource_(), session);
         return std::pair{std::move(value), std::move(next)};
     }
 
-    // A polling Transport has the signature std::optional<T>(Resource&),
-    // and returns an empty optional while no message is there.  The handle
-    // then waits through fixy/session/Watch.h, which aborts on a cycle of
-    // waits across sessions.  A message that is there costs nothing more.
     template <typename Transport>
-        requires(!is_keyed) && std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<T>>
-    [[nodiscard]] constexpr auto
-    recv(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport&, Resource&>
-                                          && std::is_nothrow_move_constructible_v<Resource>
-                                          && std::is_nothrow_move_constructible_v<T>) {
-        static_assert(detail::handle_admits_recv_v<PS, T>,
-                      "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
-                      "message closes, the message gives a region that the set already holds, or the payload walk "
-                      "of fixy/session/Payload.h refuses the message.");
-        std::optional<T> arrived = std::invoke(transport, this->live_resource_());
-        if (!arrived) [[unlikely]]
-            arrived = detail::wait_for_arrival(transport, this->live_resource_(), this->session_().endpoint);
-        const watch::session_ref session = this->session_();
-        auto next = detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
-            this->take_resource_(), session);
-        return std::pair{std::move(*arrived), std::move(next)};
-    }
+        requires(!is_keyed) && (!ReadTransport<Transport, Resource, T>)
+    void recv(Transport) && = delete("[Transport_Shape] a read either polls, as std::optional<T>(Resource&), and "
+                                     "returns no value while nothing is there, or declares its wait, as "
+                                     "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
+                                     "wait where the watch of fixy/session/Watch.h does not see it.");
 
-    // Reads the label word of the message through Transport, whose
-    // signature is std::size_t(Resource&), and returns the handle at the
-    // continuation.  A word other than the label word of this message
-    // aborts: the peer sent a label that this position does not accept,
-    // as a word that names no branch of an Offer aborts.
+    // Reads the label word of the message through Transport, a read of a
+    // std::size_t word, and returns the handle at the continuation.  A
+    // word other than the label word of this message aborts: the peer sent
+    // a label that this position does not accept, as a word that names no
+    // branch of an Offer aborts.
     template <typename Transport>
-        requires is_keyed && std::is_invocable_r_v<std::size_t, Transport, Resource&>
-              && (!std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<std::size_t>>)
+        requires is_keyed && ReadTransport<Transport, Resource, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
-        const std::size_t word = std::invoke(transport, this->live_resource_());
+        const std::size_t word =
+            detail::read_through<std::size_t>(transport, this->live_resource_(), this->session_().endpoint);
         return std::move(*this).take_word_(word);
     }
 
-    // The polling form: std::optional<std::size_t>(Resource&), with the
-    // wait of the polling recv above.
     template <typename Transport>
-        requires is_keyed && std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<std::size_t>>
-    [[nodiscard]] constexpr auto recv(Transport transport) && {
-        std::optional<std::size_t> word = std::invoke(transport, this->live_resource_());
-        if (!word) [[unlikely]]
-            word = detail::wait_for_arrival(transport, this->live_resource_(), this->session_().endpoint);
-        return std::move(*this).take_word_(*word);
-    }
+        requires is_keyed && (!ReadTransport<Transport, Resource, std::size_t>)
+    void recv(Transport) && = delete("[Transport_Shape] a read of a word either polls, as "
+                                     "std::optional<std::size_t>(Resource&), or declares its wait, as "
+                                     "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of another "
+                                     "shape can wait where the watch of fixy/session/Watch.h does not see it.");
 
 private:
     [[nodiscard]] constexpr auto take_word_(std::size_t word) &&
@@ -1246,9 +1391,9 @@ public:
                                     "diagnostic and remediation.");
 
     // Picks branch I and signals the choice to the peer through
-    // Transport, whose signature is void(Resource&, std::size_t).  The
-    // Transport receives the wire word of branch I: its label word in a
-    // keyed choice, and I in a positional one.  In a keyed choice the
+    // Transport, a write of a std::size_t word.  The Transport receives the
+    // wire word of branch I: its label word in a keyed choice, and I in a
+    // positional one.  In a keyed choice the
     // word is the whole message of the branch, so the returned handle
     // stands past the label step of branch I.  In a positional choice it
     // stands at the branch, and the branch sends its payload next.
@@ -1258,9 +1403,9 @@ public:
     // diagnostic instead of a bare unsatisfied-constraint message.
     // Transport still gates overload resolution.
     template <std::size_t I, typename Transport>
-        requires std::is_invocable_v<Transport, Resource&, std::size_t>
+        requires WriteTransport<Transport, Resource, std::size_t>
     [[nodiscard]] constexpr auto
-    select(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, std::size_t>
+    select(Transport transport) && noexcept(detail::write_is_nothrow<Transport, Resource, std::size_t>()
                                             && std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(I < branch_count, "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
                                         "SessionHandle<Select<...>>::select<I>(transport): branch "
@@ -1268,10 +1413,19 @@ public:
                                         "protocol has fewer branches than the index requested; "
                                         "verify I < branch_count at the call site (decltype("
                                         "handle)::branch_count is exposed for compile-time queries).");
-        std::invoke(transport, this->live_resource_(), static_cast<std::size_t>(branch_wire_word_v<protocol, I>));
+        std::size_t word = static_cast<std::size_t>(branch_wire_word_v<protocol, I>);
+        detail::write_through<std::size_t>(transport, this->live_resource_(), word, this->session_().endpoint);
         const watch::session_ref session = this->session_();
         return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
+
+    template <std::size_t I, typename Transport>
+        requires(!WriteTransport<Transport, Resource, std::size_t>)
+    void select(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
+                                       "bool(Resource&, std::size_t), or declares its wait, as "
+                                       "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
+                                       "another shape can wait where the watch of fixy/session/Watch.h does not see "
+                                       "it.");
 
     // Advances the local handle WITHOUT telling the peer which branch
     // was picked.  The name carries the omission so it is visible at
@@ -1350,9 +1504,9 @@ public:
                                     "is not a branch.  See mint_session_handle for the full "
                                     "diagnostic and remediation.");
 
-    // Receives the peer's wire word through Transport, whose signature
-    // is std::size_t(Resource&), then calls the handler with the handle
-    // for the branch that the word names (branch_of_wire_word).  The
+    // Receives the peer's wire word through Transport, a read of a
+    // std::size_t word, then calls the handler with the handle for the
+    // branch that the word names (branch_of_wire_word).  The
     // handler is invoked once per branch type and every branch must give
     // the handler the same return type, or all of them void.  In a keyed
     // choice the word is the whole message of a label branch, so that
@@ -1362,28 +1516,22 @@ public:
     // protocol does not define, so the two endpoints no longer agree
     // and no branch can be entered safely.
     template <typename Transport, typename Handler>
-        requires std::is_invocable_r_v<std::size_t, Transport, Resource&>
+        requires ReadTransport<Transport, Resource, std::size_t>
     constexpr auto branch(Transport transport, Handler handler) && {
-        const std::size_t word = std::invoke(transport, this->live_resource_());
+        const std::size_t word =
+            detail::read_through<std::size_t>(transport, this->live_resource_(), this->session_().endpoint);
         const watch::session_ref session = this->session_();
         return dispatch_branch_(branch_of_wire_word<protocol>(word), this->take_resource_(), session,
                                 std::move(handler), std::make_index_sequence<branch_count>{});
     }
 
-    // A polling Transport has the signature
-    // std::optional<std::size_t>(Resource&), and returns an empty optional
-    // while no word is there.  The handle then waits through
-    // fixy/session/Watch.h, as the polling recv does.
     template <typename Transport, typename Handler>
-        requires std::same_as<std::invoke_result_t<Transport&, Resource&>, std::optional<std::size_t>>
-    constexpr auto branch(Transport transport, Handler handler) && {
-        std::optional<std::size_t> word = std::invoke(transport, this->live_resource_());
-        if (!word) [[unlikely]]
-            word = detail::wait_for_arrival(transport, this->live_resource_(), this->session_().endpoint);
-        const watch::session_ref session = this->session_();
-        return dispatch_branch_(branch_of_wire_word<protocol>(*word), this->take_resource_(), session,
-                                std::move(handler), std::make_index_sequence<branch_count>{});
-    }
+        requires(!ReadTransport<Transport, Resource, std::size_t>)
+    void branch(Transport, Handler) && = delete("[Transport_Shape] a read of a word either polls, as "
+                                                "std::optional<std::size_t>(Resource&), or declares its wait, as "
+                                                "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read "
+                                                "of another shape can wait where the watch of fixy/session/Watch.h "
+                                                "does not see it.");
 
     // Assumes branch I WITHOUT receiving the peer's label.  The name
     // carries the omission so it is visible at every call site.  If the

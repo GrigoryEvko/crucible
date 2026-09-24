@@ -35,6 +35,7 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <thread>
@@ -131,7 +132,10 @@ void walk(H handle, Endpoint& self);
 
 template <std::size_t... I, typename H>
 void select_branch(H handle, Endpoint& self, std::size_t pick, std::index_sequence<I...>) {
-    const auto write = [&](Wire&, std::size_t word) noexcept { self.out->push(word); };
+    const auto write = [&](Wire&, std::size_t word) noexcept {
+        self.out->push(word);
+        return true;
+    };
     (void)((pick == I ? (walk(std::move(handle).template select<I>(write), self), true) : false) || ...);
 }
 
@@ -152,9 +156,17 @@ void walk(H handle, Endpoint& self) {
         if constexpr (kind == 1) {
             using T = typename head<P>::message;
             if constexpr (H::is_keyed) {
-                walk(std::move(handle).send([&](Wire&, std::size_t word) noexcept { self.out->push(word); }), self);
+                walk(std::move(handle).send([&](Wire&, std::size_t word) noexcept {
+                    self.out->push(word);
+                    return true;
+                }),
+                     self);
             } else {
-                walk(std::move(handle).send(T{}, [&](Wire&, T&&) noexcept { self.out->push(value_word); }), self);
+                walk(std::move(handle).send(T{}, [&](Wire&, T&) noexcept {
+                    self.out->push(value_word);
+                    return true;
+                }),
+                     self);
             }
         } else if constexpr (kind == 2) {
             using T = typename head<P>::message;
@@ -164,12 +176,13 @@ void walk(H handle, Endpoint& self) {
                 return;
             }
             if constexpr (H::is_keyed) {
-                walk(std::move(handle).recv(
-                         [&](Wire&) noexcept -> std::size_t { return static_cast<std::size_t>(word); }),
+                walk(std::move(handle).recv([&](Wire&) noexcept -> std::optional<std::size_t> {
+                    return static_cast<std::size_t>(word);
+                }),
                      self);
             } else {
                 if (word != value_word) std::_Exit(static_cast<int>(exit_code::desync));
-                auto [value, next] = std::move(handle).recv([](Wire&) noexcept -> T { return T{}; });
+                auto [value, next] = std::move(handle).recv([](Wire&) noexcept -> std::optional<T> { return T{}; });
                 (void)value;
                 walk(std::move(next), self);
             }
@@ -183,8 +196,9 @@ void walk(H handle, Endpoint& self) {
                 self.out->close();
                 return;
             }
-            std::move(handle).branch([&](Wire&) noexcept -> std::size_t { return static_cast<std::size_t>(word); },
-                                     [&](auto next) { walk(std::move(next), self); });
+            std::move(handle).branch(
+                [&](Wire&) noexcept -> std::optional<std::size_t> { return static_cast<std::size_t>(word); },
+                [&](auto next) { walk(std::move(next), self); });
         }
     }
 }

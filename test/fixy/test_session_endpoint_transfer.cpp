@@ -57,7 +57,10 @@ int transfer_keeps_the_record_live() {
     const s::watch::endpoint_id record = moved.session.endpoint;
     auto received = sd::make_session_handle<Proto, Wire, void, s::DefaultAbandonmentPolicy>(std::move(moved.resource),
                                                                                            moved.session);
-    auto at_end = std::move(received).send(Ping{1}, [](Wire& wire, Ping&& ping) noexcept { wire.sent = ping.value; });
+    auto at_end = std::move(received).send(Ping{1}, [](Wire& wire, Ping& ping) noexcept {
+        wire.sent = ping.value;
+        return true;
+    });
     if (s::watch::is_live(record)) return fail("End did not release the record of the transferred endpoint");
     if (s::watch::live_count() != live_before) return fail("a record stayed live after End");
     const Wire back = std::move(at_end).close();

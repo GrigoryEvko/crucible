@@ -7,6 +7,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -43,10 +44,10 @@ int main() {
     auto back = s::mint_forked_channel<Proto, Left, Right>(
         FgCtx{}, std::move(whole), Wire{}, Wire{},
         [](auto head, perm::Permission<Left>, FgCtx const&) noexcept {
-            return std::move(head).send(Msg{}, [](Wire&, Msg&&) noexcept {});
+            return std::move(head).send(Msg{}, [](Wire&, Msg&) noexcept { return true; });
         },
         [](auto head, perm::Permission<Right>, FgCtx const&) noexcept {
-            auto [msg, at_end] = std::move(head).recv([](Wire&) noexcept { return Msg{}; });
+            auto [msg, at_end] = std::move(head).recv([](Wire&) noexcept -> std::optional<Msg> { return Msg{}; });
             (void)msg;
             return std::move(at_end);
         });

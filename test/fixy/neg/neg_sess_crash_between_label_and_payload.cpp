@@ -21,7 +21,7 @@ int main() {
     s::PeerCrashCell peer_cell;
     s::PeerCrashCell own_cell;
     auto handle = s::mint_crash_session<Proto, Alice, Bob>(Wire{}, peer_cell);
-    auto half_sent = std::move(handle).template select<0>([](Wire&, std::size_t) noexcept {});
+    auto half_sent = std::move(handle).template select<0>([](Wire&, std::size_t) noexcept { return true; });
     (void)std::move(half_sent).crash(s::CrashCause::Abort, s::mint_crash_reporter(own_cell));
     return 0;
 }

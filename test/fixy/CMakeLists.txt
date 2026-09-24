@@ -1791,17 +1791,17 @@ fixy_neg_compile_test(neg_sess_crash_branch_blocking_poll
   "fixy::session::diagnostic \\[Crash_Read_Must_Poll\\]: branch\\(\\)"
   "CrashWatched<Handle, Self, Peer, Reliable, Position>::branch\\(Poll, Handler\\)")
 fixy_neg_compile_test(neg_sess_crash_token_send_without_refusal
-  "fixy::session::diagnostic \\[Crash_Send_Must_Refuse\\]"
-  "is_plain_payload_v<fixy::session::Transferable<int, .anonymous.::Region> >")
+  ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
+  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Position>::send\\(typename P::message_type, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_recorded_token_send_without_refusal
-  "fixy::session::diagnostic \\[Crash_Send_Must_Refuse\\]"
-  "required from .constexpr auto fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
+  ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
+  "In instantiation of .constexpr auto fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_send_transport_result
-  "fixy::session::diagnostic \\[Crash_Transport_Result\\]"
-  "std::is_void_v<bool>")
+  ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
+  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Position>::send\\(typename P::message_type, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_recorded_send_transport_result
-  "fixy::session::diagnostic \\[Crash_Transport_Result\\]"
-  "required from .constexpr auto fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
+  ": \\[Transport_Shape\\] a write either tries, as bool\\(Resource&, T&\\)"
+  "use of deleted function .void fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_delegation_undefined_template
   "fixy::session::diagnostic \\[Payload_Delegation_Unreadable\\]: the payload reaches .anonymous.::OpaqueChannel<int>,"
   "required from .struct fixy::session::detail::crash::is_delegation_free<")
@@ -1914,6 +1914,18 @@ fixy_neg_compile_test(neg_sess_channel_ends_disagree_on_priority
 fixy_neg_compile_test(neg_sess_session_priority_untyped
   "fixy::session::diagnostic \\[Session_Priority_Type\\]"
   "declares session_priority with a type other than fixy::session::watch::priority")
+fixy_neg_compile_test(neg_sess_send_write_waits_in_secret
+  ": \\[Transport_Shape\\] a write either tries, as bool\\(Resource&, T&\\)"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(T, Transport\\)")
+fixy_neg_compile_test(neg_sess_recv_read_waits_in_secret
+  ": \\[Transport_Shape\\] a read either polls, as std::optional<T>\\(Resource&\\)"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>::recv\\(Transport\\)")
+fixy_neg_compile_test(neg_sess_select_write_waits_in_secret
+  ": \\[Transport_Shape\\] a write of a word either tries, as bool\\(Resource&, std::size_t\\)"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Select<Branches ...>, Resource, LoopCtx, Policy, PS>::select\\(Transport\\)")
+fixy_neg_compile_test(neg_sess_branch_read_waits_in_secret
+  ": \\[Transport_Shape\\] a read of a word either polls, as std::optional<std::size_t>\\(Resource&\\)"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Offer<Branches ...>, Resource, LoopCtx, Policy, PS>::branch\\(Transport, Handler\\)")
 #
 # Legal code that tries to defeat the crash transport, the checkpoint
 # session and the event log.  Each runtime attack runs in a child under

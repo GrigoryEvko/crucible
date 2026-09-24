@@ -19,7 +19,7 @@ int main() {
     auto back = s::with_session<Proto>(Wire{}, [](auto head) noexcept {
         std::move(head).detach(s::detach_reason::TestInstrumentation{});
         auto other = s::mint_session_handle<Proto>(Wire{});
-        return std::move(other).send(Ping{}, [](Wire&, Ping&&) noexcept {});
+        return std::move(other).send(Ping{}, [](Wire&, Ping&) noexcept { return true; });
     });
     (void)back;
     return 0;

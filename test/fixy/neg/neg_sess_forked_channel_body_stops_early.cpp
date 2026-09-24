@@ -45,7 +45,7 @@ int main() {
     auto back = s::mint_forked_channel<Proto, Left, Right>(
         ctx, std::move(whole), Wire{}, Wire{},
         [](auto head, perm::Permission<Left>, DrainCtx const&) noexcept {
-            return std::move(head).send(Msg{}, [](Wire&, Msg&&) noexcept {});
+            return std::move(head).send(Msg{}, [](Wire&, Msg&) noexcept { return true; });
         },
         [](auto head, perm::Permission<Right>, DrainCtx const&) noexcept { return head; });
     perm::permission_drop(std::move(back));

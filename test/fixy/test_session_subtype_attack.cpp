@@ -708,19 +708,26 @@ namespace {
 [[nodiscard]] std::pair<int, int> labels_on_a_word_wire() {
     WordWire wire{};
     auto picker = s::mint_session_handle<Permuted>(PickerEnd{&wire});
-    auto chosen =
-        std::move(picker).template select<0>([](PickerEnd& end, std::size_t word) noexcept { end.wire->word = word; });
+    auto chosen = std::move(picker).template select<0>([](PickerEnd& end, std::size_t word) noexcept {
+        end.wire->word = word;
+        return true;
+    });
     static_assert(std::is_same_v<typename decltype(chosen)::protocol, Send<int, End>>, "branch 0 of Permuted is L1");
-    auto picker_done = std::move(chosen).send(5, [](PickerEnd& end, int&& value) noexcept { end.wire->value = value; });
+    auto picker_done = std::move(chosen).send(5, [](PickerEnd& end, int& value) noexcept {
+        end.wire->value = value;
+        return true;
+    });
     (void)std::move(picker_done).close();
 
+    // The picker wrote the two slots before the offerer reads them, so
+    // each poll finds its value.
     int received = -1;
     auto offerer = s::mint_session_handle<s::dual_of_t<Projected>>(OffererEnd{&wire});
-    std::move(offerer).branch([](OffererEnd& end) noexcept { return end.wire->word; },
+    std::move(offerer).branch([](OffererEnd& end) noexcept -> std::optional<std::size_t> { return end.wire->word; },
                               [&received](auto handle) noexcept {
                                   if constexpr (std::is_same_v<typename decltype(handle)::protocol, Recv<int, End>>) {
                                       auto [value, done] = std::move(handle).recv(
-                                          [](OffererEnd& end) noexcept { return end.wire->value; });
+                                          [](OffererEnd& end) noexcept -> std::optional<int> { return end.wire->value; });
                                       received = value == 5 ? 1 : -1;
                                       (void)std::move(done).close();
                                   } else {
@@ -787,10 +794,12 @@ struct WideEnd {
             auto sent = std::move(stepper).send([](StepEnd& end, std::size_t word) noexcept {
                 end.wire->word.store(word, std::memory_order_relaxed);
                 end.wire->has_word.store(true, std::memory_order_release);
+                return true;
             });
-            auto done = std::move(sent).send(9, [](StepEnd& end, int&& value) noexcept {
+            auto done = std::move(sent).send(9, [](StepEnd& end, int& value) noexcept {
                 end.wire->value.store(value, std::memory_order_relaxed);
                 end.wire->has_value.store(true, std::memory_order_release);
+                return true;
             });
             (void)std::move(done).close();
         }};

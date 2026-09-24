@@ -26,8 +26,9 @@ using Forever = s::Loop<s::Send<Token, s::Continue>>;
 int main() {
     auto head = s::detail::open_session_<Forever, Wire, s::check::Enforced, perm::PermSet<Region>>(
         Wire{}, std::source_location::current());
-    auto next = std::move(head).send(perm::mint_permission_root<Region>(), [](Wire&, Token&& token) noexcept {
+    auto next = std::move(head).send(perm::mint_permission_root<Region>(), [](Wire&, Token& token) noexcept {
         perm::permission_drop(std::move(token));
+        return true;
     });
     std::move(next).detach(s::detach_reason::InfiniteLoopProtocol{});
     return 0;

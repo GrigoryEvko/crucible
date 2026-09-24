@@ -154,7 +154,10 @@ void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there() {
     // Advancing the session consumes the handle and hands back one at
     // the next position.  The borrow's witness names the old position,
     // so the new handle does not discharge it.
-    auto at_end = std::move(handle).send(Ping{11}, [](Wire& wire, Ping&& ping) noexcept { wire.last_sent = ping.value; });
+    auto at_end = std::move(handle).send(Ping{11}, [](Wire& wire, Ping& ping) noexcept {
+        wire.last_sent = ping.value;
+        return true;
+    });
     static_assert(!CanDeref<decltype(witnessed), decltype(at_end)>,
                   "a handle one step on is not a handle at the position the borrow was minted at");
 

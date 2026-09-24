@@ -724,14 +724,14 @@ public:
 
     template <typename Transport, typename P = Head>
         requires is_send_v<P> && (!is_keyed_step_v<P>)
-              && std::is_invocable_v<Transport, resource_t&, typename P::message_type&&>
+              && WriteTransport<Transport, resource_t, typename P::message_type>
     [[nodiscard]] constexpr auto send(typename P::message_type value, Transport transport) && {
         return wrap_<typename P::next, HeadLoop, Frame>(std::move(inner_).send(std::move(value), std::move(transport)));
     }
 
     template <typename Transport, typename P = Head>
         requires is_recv_v<P> && (!is_keyed_step_v<P>)
-              && std::is_invocable_r_v<typename P::message_type, Transport, resource_t&>
+              && ReadTransport<Transport, resource_t, typename P::message_type>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         auto [value, next] = std::move(inner_).recv(std::move(transport));
         return std::pair{std::move(value), wrap_<typename P::next, HeadLoop, Frame>(std::move(next))};
@@ -739,13 +739,13 @@ public:
 
     // A keyed message is its label word (fixy/session/Handle.h).
     template <typename Transport, typename P = Head>
-        requires is_send_v<P> && is_keyed_step_v<P> && std::is_invocable_v<Transport, resource_t&, std::size_t>
+        requires is_send_v<P> && is_keyed_step_v<P> && WriteTransport<Transport, resource_t, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && {
         return wrap_<typename P::next, HeadLoop, Frame>(std::move(inner_).send(std::move(transport)));
     }
 
     template <typename Transport, typename P = Head>
-        requires is_recv_v<P> && is_keyed_step_v<P> && std::is_invocable_r_v<std::size_t, Transport, resource_t&>
+        requires is_recv_v<P> && is_keyed_step_v<P> && ReadTransport<Transport, resource_t, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         return wrap_<typename P::next, HeadLoop, Frame>(std::move(inner_).recv(std::move(transport)));
     }
@@ -757,7 +757,7 @@ public:
     // branch that take_branch_ reads (branch_landing_t in
     // fixy/session/Handle.h).
     template <std::size_t I, typename Transport, typename P = Head>
-        requires is_select_v<P> && std::is_invocable_v<Transport, resource_t&, std::size_t>
+        requires is_select_v<P> && WriteTransport<Transport, resource_t, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
         return take_branch_<branch_landing_t<P, I>>(std::move(inner_).template select<I>(std::move(transport)));
     }
@@ -770,18 +770,16 @@ public:
     // (branch_of_wire_word in fixy/session/Handle.h).  The erasure keeps
     // the count and the order of the branches.
     template <typename Transport, typename Handler, typename P = Head>
-        requires is_offer_v<P> && std::is_invocable_r_v<std::size_t, Transport, resource_t&>
+        requires is_offer_v<P> && ReadTransport<Transport, resource_t, std::size_t>
     constexpr auto branch(Transport transport, Handler handler) && {
         constexpr std::size_t count = std::tuple_size_v<typename P::branches_tuple>;
         using Branches = typename decltype([]<std::size_t... Is>(std::index_sequence<Is...>) {
             return std::type_identity<std::tuple<branch_landing_t<P, Is>...>>{};
         }(std::make_index_sequence<count>{}))::type;
         std::size_t label = count;
-        auto read_label = [&transport, &label](resource_t& resource) -> std::size_t {
-            const std::size_t word = std::invoke(transport, resource);
-            label = branch_of_wire_word<typename Inner::protocol>(word);
-            return word;
-        };
+        auto read_label = ::fixy::session::detail::observed_read<std::size_t, resource_t>(
+            transport,
+            [&label](std::size_t word) noexcept { label = branch_of_wire_word<typename Inner::protocol>(word); });
         return std::move(inner_).branch(read_label, [&handler, &label](auto next) {
             return dispatch_<Branches>(label, std::move(next), handler, std::make_index_sequence<count>{});
         });

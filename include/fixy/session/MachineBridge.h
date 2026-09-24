@@ -185,15 +185,19 @@ atomic_machine_state(const Cell& cell, std::memory_order order = std::memory_ord
 }
 
 // The transport for a Send step over an atomic cell.  The signature is
-// the one a handle's send() expects — void(Resource&, Event&&), where
-// Resource is the cell pointer the mint stored — so a call site passes
-// this directly rather than writing the same lambda at each step.
+// the try-write that a handle's send() accepts, bool(Resource&, Event&),
+// where Resource is the cell pointer that the mint stored.  The result
+// is the answer of the cell: true when the cell took the event.  A cell
+// that answers false makes the handle wait through the watch and try
+// again, so a cell must answer false only when a later try can succeed.
 template <typename Event, AtomicMachineCell Cell>
-constexpr void publish_atomic_machine_transition(Cell*& cell, Event&& event) noexcept(
-    noexcept(cell->publish_from_session(std::forward<Event>(event), std::memory_order_release)))
-    requires requires { cell->publish_from_session(std::forward<Event>(event), std::memory_order_release); }
+[[nodiscard]] constexpr bool publish_atomic_machine_transition(Cell*& cell, Event& event) noexcept(
+    noexcept(cell->publish_from_session(std::move(event), std::memory_order_release)))
+    requires requires {
+        { cell->publish_from_session(std::move(event), std::memory_order_release) } -> std::same_as<bool>;
+    }
 {
-    cell->publish_from_session(std::forward<Event>(event), std::memory_order_release);
+    return cell->publish_from_session(std::move(event), std::memory_order_release);
 }
 
 }  // namespace fixy::session

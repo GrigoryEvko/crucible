@@ -350,14 +350,23 @@ void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause,
 
 using Token = s::Transferable<int, X>;
 
-constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
-constexpr auto push_int = [](Port& port, int&& value) noexcept { port.out->slots.push_back(static_cast<std::uint64_t>(value)); };
-// A write that refuses at the write: it gives the token back when the
-// queue of the peer is closed.
-constexpr auto push_token = [](Port& port, Token&& token) noexcept -> std::optional<Token> {
-    if (port.out->is_closed) return std::optional<Token>{std::move(token)};
+// A crash-watched send tries its write.  The queue has no bound, so a try
+// fails only when the queue of the peer is closed, and then the value
+// stays with the caller.
+constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
+    if (port.out->is_closed) return false;
+    port.out->slots.push_back(label);
+    return true;
+};
+constexpr auto push_int = [](Port& port, int& value) noexcept {
+    if (port.out->is_closed) return false;
+    port.out->slots.push_back(static_cast<std::uint64_t>(value));
+    return true;
+};
+constexpr auto push_token = [](Port& port, Token& token) noexcept {
+    if (port.out->is_closed) return false;
     port.out->slots.push_back(static_cast<std::uint64_t>(token.value));
-    return std::nullopt;
+    return true;
 };
 // A crash-watched reception reads with no wait: the payload when one is
 // queued, and no value otherwise.
@@ -737,11 +746,12 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
 
 // The check of the crash cell and the write of the transport are two
 // steps.  The peer crashes between them: the check sees it alive, and the
-// peer's queue closes before the write.  A token-carrying payload needs a
-// transport that refuses at the write, so the closed queue refuses the
-// token and it comes back as the undelivered payload.  A transport that
-// returns void for a token does not compile: neg_sess_crash_token_send_
-// without_refusal and neg_sess_crash_recorded_token_send_without_refusal.
+// peer's queue closes before the write.  A crash-watched send accepts only
+// a trying write, so the closed queue refuses the token and keeps it with
+// the caller.  The decorator reads the crash cell before the next try, and
+// the token comes back as the undelivered payload.  A write that cannot
+// refuse does not compile: neg_sess_crash_token_send_without_refusal and
+// neg_sess_crash_recorded_token_send_without_refusal.
 [[noreturn]] void crash_between_check_and_write_loses_token() {
     using Relay = s::Offer<s::Recv<Token, s::Select<s::Send<Token, s::End>>>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
@@ -759,9 +769,9 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
             auto [token, reply] = std::move(branch).recv(read_token);
             auto chosen = std::move(reply).template select<0>(push_label);
             auto [end, undelivered] =
-                std::move(chosen).send(std::move(token), [&cell_p, &to_p](Port& port, Token&& moved) noexcept {
+                std::move(chosen).send(std::move(token), [&cell_p, &to_p](Port& port, Token& held) noexcept {
                     crash_endpoint(cell_p, to_p, s::CrashCause::Abort, 1);
-                    return push_token(port, std::move(moved));
+                    return push_token(port, held);
                 });
             // The label went before the crash, so the queue of p holds it
             // and must hold nothing more.

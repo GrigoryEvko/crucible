@@ -166,9 +166,20 @@ struct Port {
     Mailbox* out = nullptr;
 };
 
-constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
-constexpr auto push_text = [](Port& port, Text&& text) noexcept { port.out->slots.push_back(text.value.size()); };
-constexpr auto push_int = [](Port& port, int&& value) noexcept { port.out->slots.push_back(static_cast<std::uint64_t>(value)); };
+// A crash-watched send tries its write: the queue has no bound, so each
+// try takes the value.
+constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
+    port.out->slots.push_back(label);
+    return true;
+};
+constexpr auto push_text = [](Port& port, Text& text) noexcept {
+    port.out->slots.push_back(text.value.size());
+    return true;
+};
+constexpr auto push_int = [](Port& port, int& value) noexcept {
+    port.out->slots.push_back(static_cast<std::uint64_t>(value));
+    return true;
+};
 // A crash-watched reception reads with no wait: the payload when one is
 // queued, and no value otherwise.
 constexpr auto read_int = [](Port& port) noexcept -> std::optional<int> {
@@ -403,9 +414,13 @@ int run_stream_across_threads() {
         bool was_payload_returned = false;
         auto p = s::mint_crash_session<StreamP, P, Q>(WirePort{&to_p, &to_q}, cell_q);
         for (int message = 0; message < kStreamMessages; ++message) {
-            auto chosen = std::move(p).select<0>([](WirePort& port, std::size_t label) noexcept { port.out->push(label); });
-            auto [next, undelivered] = std::move(chosen).send(message, [](WirePort& port, int&& value) noexcept {
+            auto chosen = std::move(p).select<0>([](WirePort& port, std::size_t label) noexcept {
+                port.out->push(label);
+                return true;
+            });
+            auto [next, undelivered] = std::move(chosen).send(message, [](WirePort& port, int& value) noexcept {
                 port.out->push(static_cast<std::uint64_t>(value));
+                return true;
             });
             was_payload_returned = was_payload_returned || undelivered.has_value();
             p = std::move(next);

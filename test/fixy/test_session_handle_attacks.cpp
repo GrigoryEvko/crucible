@@ -55,10 +55,11 @@
 // The watch also orders the sessions by priority.  A wait on an endpoint
 // whose peer the thread holds, or while the thread holds another endpoint
 // of a priority that is not lower, is refused before the thread waits.
-// The two forest attacks use polling transports and are refused so, and
-// the captured diagnostics show which check refused each.  A transport
-// that waits inside its own call publishes no wait, which is the row
-// blocking_transport_hides_the_cycle.
+// A transport cannot wait in secret: the handle accepts only a transport
+// that tries, polls, or takes the wait scope that the handle opened.  So
+// the forest attacks are refused through a polling transport and through
+// a declared wait, and the captured diagnostics show which check refused
+// each.
 
 #include <fixy/Fn.h>
 #include <fixy/ScopedView.h>
@@ -165,13 +166,10 @@ constexpr limitation_row known_limitations[] = {
     {"off_policy_use_after_move",
      "linearity: a liveness flag needs a byte, and with alignment it grows an 8-byte handle to 16.  check::Off "
      "gives that byte up by contract, so a moved-from handle steps the protocol again"},
-    {"blocking_transport_hides_the_cycle",
-     "forest: a transport that waits inside its own call publishes no wait, so the deadlock detector of "
-     "fixy/session/Watch.h cannot see the cycle.  A polling transport lets the handle wait, and the detector sees it"},
 };
 
 // The ledger can only shrink.  Lower this number when a row leaves.
-constexpr std::size_t kLedgerCeiling = 5;
+constexpr std::size_t kLedgerCeiling = 4;
 static_assert(sizeof(known_limitations) / sizeof(known_limitations[0]) <= kLedgerCeiling,
               "the ledger of known limitations grew.  A new successful attack is a finding: fix it, or report it "
               "and raise nothing here without a decision.");
@@ -368,13 +366,14 @@ struct Holder {
     auto handle = fresh();
     auto taken = std::move(handle);
     std::move(taken).detach(s::detach_reason::TestInstrumentation{});
-    auto stepped = std::move(handle).send(Ping{1}, [](Wire&, Ping&&) noexcept {});
+    auto stepped = std::move(handle).send(Ping{1}, [](Wire&, Ping&) noexcept { return true; });
     std::move(stepped).detach(s::detach_reason::TestInstrumentation{});
     std::_Exit(kSilentExit);
 }
 
 [[noreturn]] void close_twice() {
-    auto at_end = s::mint_session_handle<s::Send<Ping, s::End>, Wire>(Wire{}).send(Ping{}, [](Wire&, Ping&&) noexcept {});
+    auto at_end =
+        s::mint_session_handle<s::Send<Ping, s::End>, Wire>(Wire{}).send(Ping{}, [](Wire&, Ping&) noexcept { return true; });
     auto& alias = at_end;
     (void)std::move(at_end).close();
     (void)std::move(alias).close();
@@ -416,7 +415,7 @@ struct Holder {
     auto handle = fresh();
     auto& same = handle;
     handle = std::move(same);
-    auto after = std::move(handle).send(Ping{3}, [](Wire&, Ping&&) noexcept {});
+    auto after = std::move(handle).send(Ping{3}, [](Wire&, Ping&) noexcept { return true; });
     std::move(after).detach(s::detach_reason::TestInstrumentation{});
     std::_Exit(kCorrectExit);
 }
@@ -449,7 +448,7 @@ struct Task {
 
 Task hold_across_suspension(FreshHandle handle) {
     co_await std::suspend_always{};
-    auto after = std::move(handle).send(Ping{4}, [](Wire&, Ping&&) noexcept {});
+    auto after = std::move(handle).send(Ping{4}, [](Wire&, Ping&) noexcept { return true; });
     std::move(after).detach(s::detach_reason::TestInstrumentation{});
 }
 
@@ -517,8 +516,8 @@ Task hold_across_suspension(FreshHandle handle) {
 [[noreturn]] void off_policy_use_after_move() {
     auto handle = s::mint_session_handle<Once, Wire, s::check::Off>(Wire{});
     auto taken = std::move(handle);
-    auto first = std::move(taken).send(Ping{5}, [](Wire&, Ping&&) noexcept {});
-    auto second = std::move(handle).send(Ping{6}, [](Wire&, Ping&&) noexcept {});
+    auto first = std::move(taken).send(Ping{5}, [](Wire&, Ping&) noexcept { return true; });
+    auto second = std::move(handle).send(Ping{6}, [](Wire&, Ping&) noexcept { return true; });
     (void)first;
     (void)second;
     std::_Exit(kSilentExit);
@@ -536,7 +535,7 @@ using LeftProto = s::Recv<Ping, s::End>;
 // handle has its type.
 struct GiveAwayBody;
 using RightHead = s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, GiveAwayBody>;
-using RightDone = decltype(std::declval<RightHead>().send(Ping{}, [](RightEnd&, Ping&&) noexcept {}));
+using RightDone = decltype(std::declval<RightHead>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 
 Slot<RightHead> g_right_endpoint;
 Slot<RightDone> g_right_done;
@@ -549,9 +548,9 @@ struct GiveAwayBody {
 };
 
 // How a left body receives: through a polling transport, which lets the
-// handle wait through the watch, or through a transport that waits
-// inside its own call.
-enum class Receive : std::uint8_t { Polling, Blocking };
+// handle wait through the watch, or through a declared read, which waits
+// in the scope that the handle opened.
+enum class Receive : std::uint8_t { Polling, Declared };
 
 // Receives one Ping on the left end of `head`, in the given way.
 template <Receive How, typename Head>
@@ -559,7 +558,9 @@ template <Receive How, typename Head>
     if constexpr (How == Receive::Polling) {
         return std::move(head).recv(PollLeftBox{where});
     } else {
-        return std::move(head).recv([where](LeftEnd& e) noexcept { return Ping{take(e.pipe->to_left, where)}; });
+        return std::move(head).recv([where](LeftEnd& e, s::watch::wait_scope&) noexcept {
+            return Ping{take(e.pipe->to_left, where)};
+        });
     }
 }
 
@@ -572,8 +573,9 @@ struct TakesBothBody {
     auto operator()(Head head, perm::Permission<attack_tags::Left>, BgCtx const&) noexcept {
         RightHead other = g_right_endpoint.take("the left body, for the right endpoint");
         auto [ping, done] = receive_ping<How>(std::move(head), "left recv");
-        g_right_done.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping&& p) noexcept {
+        g_right_done.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
             put(e.pipe->to_left, p.value);
+            return true;
         }));
         return std::move(done);
     }
@@ -594,8 +596,10 @@ template <Receive How>
 // of that endpoint is held by the waiting thread itself, and aborts.
 [[noreturn]] void one_thread_holds_both_ends_after_fork() { run_one_thread_holds_both_ends<Receive::Polling>(); }
 
-// The same cycle through a transport that waits in its own call.
-[[noreturn]] void blocking_transport_hides_the_cycle() { run_one_thread_holds_both_ends<Receive::Blocking>(); }
+// The same cycle through a declared read.  The handle opens the wait
+// scope before it calls the transport, so the watch refuses the wait
+// before the transport runs.
+[[noreturn]] void one_thread_holds_both_ends_declared_wait() { run_one_thread_holds_both_ends<Receive::Declared>(); }
 
 // Two forked sessions, each run from its own thread.  Each right body
 // gives its endpoint to the left body of the OTHER session.  Each left
@@ -605,8 +609,8 @@ struct CycleRightA;
 struct CycleRightB;
 using CycleHeadA = s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, CycleRightA>;
 using CycleHeadB = s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, CycleRightB>;
-using CycleDoneA = decltype(std::declval<CycleHeadA>().send(Ping{}, [](RightEnd&, Ping&&) noexcept {}));
-using CycleDoneB = decltype(std::declval<CycleHeadB>().send(Ping{}, [](RightEnd&, Ping&&) noexcept {}));
+using CycleDoneA = decltype(std::declval<CycleHeadA>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
+using CycleDoneB = decltype(std::declval<CycleHeadB>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 
 Slot<CycleHeadA> g_cycle_endpoint_a;
 Slot<CycleHeadB> g_cycle_endpoint_b;
@@ -633,8 +637,9 @@ struct CycleLeftA {
     auto operator()(Head head, perm::Permission<attack_tags::Left>, BgCtx const&) noexcept {
         CycleHeadB other = g_cycle_endpoint_b.take("session A's left body, for session B's endpoint");
         auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "A recv");
-        g_cycle_done_b.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping&& p) noexcept {
+        g_cycle_done_b.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
             put(e.pipe->to_left, p.value);
+            return true;
         }));
         return std::move(done);
     }
@@ -644,8 +649,9 @@ struct CycleLeftB {
     auto operator()(Head head, perm::Permission<attack_tags::Left2>, BgCtx const&) noexcept {
         CycleHeadA other = g_cycle_endpoint_a.take("session B's left body, for session A's endpoint");
         auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "B recv");
-        g_cycle_done_a.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping&& p) noexcept {
+        g_cycle_done_a.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
             put(e.pipe->to_left, p.value);
+            return true;
         }));
         return std::move(done);
     }
@@ -740,7 +746,10 @@ using OneRead = s::Recv<int, s::End>;
             (void)handle;
         }};
         auto right = s::mint_session_handle<s::dual_of_t<LeftSide>, RightEnd>(RightEnd{&pipe});
-        auto waits = std::move(right).send(Ping{round}, [](RightEnd& e, Ping&& p) noexcept { put(e.pipe->to_left, p.value); });
+        auto waits = std::move(right).send(Ping{round}, [](RightEnd& e, Ping& p) noexcept {
+            put(e.pipe->to_left, p.value);
+            return true;
+        });
         const auto deadline = std::chrono::steady_clock::now() + kAttackDeadline;
         for (;;) {
             if (waits.resource().pipe->to_right.full.load(std::memory_order_acquire)) {
@@ -807,6 +816,7 @@ constexpr attack_case kAttacks[] = {
     {"leak_coroutine_frame_then_exit", Outcome::Caught, leak_coroutine_frame_then_exit},
     {"quick_exit_with_static_handle", Outcome::Caught, quick_exit_with_static_handle},
     {"one_thread_holds_both_ends_after_fork", Outcome::Caught, one_thread_holds_both_ends_after_fork},
+    {"one_thread_holds_both_ends_declared_wait", Outcome::Caught, one_thread_holds_both_ends_declared_wait},
     {"two_forked_sessions_in_a_cycle", Outcome::Caught, two_forked_sessions_in_a_cycle},
     {"wait_low_while_holding_high", Outcome::Caught, wait_low_while_holding_high},
     {"wait_high_while_holding_low", Outcome::Correct, wait_high_while_holding_low},
@@ -817,7 +827,6 @@ constexpr attack_case kAttacks[] = {
     {"detach_with_a_false_reason", Outcome::Silent, detach_with_a_false_reason},
     {"off_policy_drop", Outcome::Silent, off_policy_drop},
     {"off_policy_use_after_move", Outcome::Silent, off_policy_use_after_move},
-    {"blocking_transport_hides_the_cycle", Outcome::Deadlock, blocking_transport_hides_the_cycle},
 };
 
 // Every attack that succeeds has a ledger row, and every ledger row
@@ -999,6 +1008,7 @@ struct wait_refusal_case {
 
 constexpr wait_refusal_case kWaitRefusals[] = {
     {"one_thread_holds_both_ends_after_fork", "[Wait_On_Held_Peer]", one_thread_holds_both_ends_after_fork},
+    {"one_thread_holds_both_ends_declared_wait", "[Wait_On_Held_Peer]", one_thread_holds_both_ends_declared_wait},
     {"two_forked_sessions_in_a_cycle", "[Wait_Breaks_Priority_Order]", two_forked_sessions_in_a_cycle},
     {"wait_low_while_holding_high", "[Wait_Breaks_Priority_Order]", wait_low_while_holding_high},
 };

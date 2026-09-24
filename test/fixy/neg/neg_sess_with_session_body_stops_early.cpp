@@ -16,7 +16,7 @@ using Proto = s::Send<Ping, s::Recv<Pong, s::End>>;
 
 int main() {
     auto back = s::with_session<Proto>(Wire{}, [](auto head) noexcept {
-        return std::move(head).send(Ping{}, [](Wire&, Ping&&) noexcept {});
+        return std::move(head).send(Ping{}, [](Wire&, Ping&) noexcept { return true; });
     });
     (void)back;
     return 0;

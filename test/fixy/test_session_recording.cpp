@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -164,23 +165,24 @@ struct Port {
     Mailbox* out = nullptr;
 };
 
-constexpr auto push_label = [](Port& port, std::size_t label) noexcept { port.out->slots.push_back(label); };
-constexpr auto push_int = [](Port& port, int&& value) noexcept {
+// A write tries, and the queue has no bound, so each try takes the value.
+// A read polls: the slot when one is queued, and no value otherwise.
+constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
+    port.out->slots.push_back(label);
+    return true;
+};
+constexpr auto push_int = [](Port& port, int& value) noexcept {
     port.out->slots.push_back(static_cast<std::uint64_t>(value));
+    return true;
 };
-constexpr auto pop_int = [](Port& port) noexcept {
-    const std::uint64_t slot = port.in->slots.front();
-    port.in->slots.pop_front();
-    return static_cast<int>(slot);
-};
-constexpr auto pop_label = [](Port& port) noexcept -> std::size_t {
+constexpr auto pop_label = [](Port& port) noexcept -> std::optional<std::size_t> {
+    if (port.in->slots.empty()) return std::nullopt;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
     return slot;
 };
-constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t> {
-    if (port.in->slots.empty()) return std::nullopt;
-    return pop_label(port);
+constexpr auto pop_int = [](Port& port) noexcept {
+    return pop_label(port).transform([](std::size_t slot) noexcept { return static_cast<int>(slot); });
 };
 
 // ── A plain session ─────────────────────────────────────────────────
@@ -249,7 +251,7 @@ int check_crash_recording() {
     auto [p_wait, lost] = std::move(p_sent).send(3, push_int);
     if (!lost || *lost != 3) return fail("the lost payload did not come back through the recorder");
     bool took_crash = false;
-    std::move(p_wait).branch(poll_label, [&](auto branch) {
+    std::move(p_wait).branch(pop_label, [&](auto branch) {
         if constexpr (std::is_same_v<typename decltype(branch)::protocol, s::Recv<s::Crash<Q>, s::End>>) {
             auto [record, at_end] = std::move(branch).recv();
             took_crash = record.cause == s::CrashCause::Throw;

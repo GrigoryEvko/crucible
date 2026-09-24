@@ -186,16 +186,11 @@ template <typename Inner>
 [[nodiscard]] constexpr auto make_recorded(Inner inner, SessionEventLog& log, RoleTagId self, RoleTagId peer) noexcept
     -> Recorded<Inner>;
 
-// The operations of the inner handle that the recorder forwards.  Each
-// member of Recorded exists only when the inner handle has it.
-template <typename Inner, typename T, typename Transport>
-concept inner_can_send = requires(Inner&& inner, T value, Transport transport) {
-    std::move(inner).send(std::move(value), std::move(transport));
-};
-
-template <typename Inner, typename Transport>
-concept inner_can_recv = requires(Inner&& inner, Transport transport) { std::move(inner).recv(std::move(transport)); };
-
+// The operations of the inner handle that the recorder forwards with no
+// transport.  Each such member of Recorded exists only when the inner
+// handle has it.  A member that takes a transport exists when the
+// transport has a shape of fixy/session/Handle.h, and a shape that the
+// inner handle refuses reaches the refusal of the inner handle.
 template <typename Inner>
 concept inner_can_detect_crash = requires(Inner&& inner) { std::move(inner).recv(); };
 
@@ -252,28 +247,19 @@ public:
     Recorded& operator=(const Recorded&) = delete("a recorded handle is linear, like the handle it wraps");
     ~Recorded() = default;
 
-    // A transport that refuses at the write returns the payload it could
-    // not deliver.  The recorder passes that result through, and records
-    // a refused payload as lost to the crashed peer.
+    // The recorder hands the inner handle a write of the same shape as the
+    // transport, which notes when the transport took the payload.  A payload
+    // that no transport took, because the peer had crashed, is recorded as
+    // lost to the crashed peer.  A write of a shape that the inner handle
+    // refuses reaches the refusal of the inner handle.
     template <typename T, typename Transport>
-        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>) && detail::recording::inner_can_send<Inner, T, Transport>
+        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>)
+                 && WriteTransport<Transport, resource_type, typename protocol::message_type>
     [[nodiscard]] constexpr auto send(T value, Transport transport) && {
         using Message = typename protocol::message_type;
-        using Result = std::invoke_result_t<Transport, resource_type&, Message&&>;
-        constexpr bool is_refusing = std::is_same_v<Result, std::optional<Message>>;
-        constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, Message&&>;
         bool is_delivered = false;
-        auto marked = [&transport, &is_delivered](resource_type& resource, Message&& payload) noexcept(is_nothrow)
-            -> Result {
-            if constexpr (is_refusing) {
-                Result refused = std::invoke(transport, resource, std::move(payload));
-                is_delivered = !refused.has_value();
-                return refused;
-            } else {
-                is_delivered = true;
-                return std::invoke(transport, resource, std::move(payload));
-            }
-        };
+        auto marked =
+            detail::observed_write<Message, resource_type>(transport, [&is_delivered]() noexcept { is_delivered = true; });
         auto result = std::move(inner_).send(std::move(value), marked);
         record_(detail::recording::event_for_send<Message>(
             self_, peer_, is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
@@ -285,28 +271,43 @@ public:
         }
     }
 
+    template <typename T, typename Transport>
+        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>)
+                 && (!WriteTransport<Transport, resource_type, typename protocol::message_type>)
+    void send(T, Transport) && = delete("[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns "
+                                        "false with the value unchanged while it has no room, or declares its wait, "
+                                        "as void(Resource&, T&&, fixy::session::watch::wait_scope&).  A write of "
+                                        "another shape can wait where the watch of fixy/session/Watch.h does not see "
+                                        "it.");
+
     template <typename Transport>
-        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>) && detail::recording::inner_can_recv<Inner, Transport>
+        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
+                 && ReadTransport<Transport, resource_type, typename protocol::message_type>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         auto [value, next] = std::move(inner_).recv(std::move(transport));
         record_(detail::recording::event_for_recv<typename protocol::message_type>(self_, peer_));
         return std::pair{std::move(value), wrap_(std::move(next))};
     }
 
-    // A keyed message is its label word.  The transport of the send has the
-    // signature void(Resource&, std::size_t), and the event records the
-    // message as a send, delivered unless the peer had crashed.
+    template <typename Transport>
+        requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
+                 && (!ReadTransport<Transport, resource_type, typename protocol::message_type>)
+    void recv(Transport) && = delete("[Transport_Shape] a read either polls, as std::optional<T>(Resource&), and "
+                                     "returns no value while nothing is there, or declares its wait, as "
+                                     "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
+                                     "wait where the watch of fixy/session/Watch.h does not see it.");
+
+    // A keyed message is its label word.  The transport of the send is a
+    // write of the word, and the event records the message as a send,
+    // delivered unless the peer had crashed.
     template <typename Transport>
         requires is_send_v<protocol> && is_keyed_step_v<protocol>
-              && std::is_invocable_v<Transport, resource_type&, std::size_t>
+                 && WriteTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && {
         using Message = typename protocol::message_type;
-        constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, std::size_t>;
         bool is_delivered = false;
-        auto marked = [&transport, &is_delivered](resource_type& resource, std::size_t word) noexcept(is_nothrow) {
-            is_delivered = true;
-            std::invoke(transport, resource, word);
-        };
+        auto marked = detail::observed_write<std::size_t, resource_type>(
+            transport, [&is_delivered]() noexcept { is_delivered = true; });
         auto result = std::move(inner_).send(marked);
         record_(detail::recording::event_for_send<Message>(
             self_, peer_, is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
@@ -318,14 +319,31 @@ public:
         }
     }
 
+    template <typename Transport>
+        requires is_send_v<protocol> && is_keyed_step_v<protocol>
+                 && (!WriteTransport<Transport, resource_type, std::size_t>)
+    void send(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
+                                     "bool(Resource&, std::size_t), or declares its wait, as "
+                                     "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
+                                     "another shape can wait where the watch of fixy/session/Watch.h does not see it.");
+
     // The keyed receive gives the handle at the continuation and no value.
     template <typename Transport>
-        requires is_recv_v<protocol> && is_keyed_step_v<protocol> && detail::recording::inner_can_recv<Inner, Transport>
+        requires is_recv_v<protocol> && is_keyed_step_v<protocol>
+                 && ReadTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         auto next = std::move(inner_).recv(std::move(transport));
         record_(detail::recording::event_for_recv<typename protocol::message_type>(self_, peer_));
         return wrap_(std::move(next));
     }
+
+    template <typename Transport>
+        requires is_recv_v<protocol> && is_keyed_step_v<protocol>
+                 && (!ReadTransport<Transport, resource_type, std::size_t>)
+    void recv(Transport) && = delete("[Transport_Shape] a read of a word either polls, as "
+                                     "std::optional<std::size_t>(Resource&), or declares its wait, as "
+                                     "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of another "
+                                     "shape can wait where the watch of fixy/session/Watch.h does not see it.");
 
     // The crash record of a crash branch.
     template <typename P = protocol>
@@ -337,18 +355,15 @@ public:
     }
 
     template <std::size_t I, typename Transport>
-        requires is_select_v<protocol> && std::is_invocable_v<Transport, resource_type&, std::size_t>
+        requires is_select_v<protocol> && WriteTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
         using Wire = detail::recording::wire_protocol_t<Inner>;
         static_assert(Wire::branch_count <= detail::recording::recordable_branch_limit,
                       "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
                       "index in one byte, and this Select has more than 256 branches.");
-        constexpr bool is_nothrow = std::is_nothrow_invocable_v<Transport, resource_type&, std::size_t>;
         bool is_delivered = false;
-        auto marked = [&transport, &is_delivered](resource_type& resource, std::size_t label) noexcept(is_nothrow) {
-            is_delivered = true;
-            std::invoke(transport, resource, label);
-        };
+        auto marked = detail::observed_write<std::size_t, resource_type>(
+            transport, [&is_delivered]() noexcept { is_delivered = true; });
         auto next = std::move(inner_).template select<I>(marked);
         record_(SessionEvent::select(self_, peer_, static_cast<std::uint8_t>(I),
                                      is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer,
@@ -359,12 +374,21 @@ public:
         return wrap_(std::move(next));
     }
 
-    // The label reader is whatever the inner handle takes: a transport
-    // for a plain or checkpoint handle, a poll for a crash-watched one.
-    // The recorder keeps the word it read, and names the branch that
-    // the word names in the protocol of the wire.
+    template <std::size_t I, typename Transport>
+        requires is_select_v<protocol> && (!WriteTransport<Transport, resource_type, std::size_t>)
+    void select(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
+                                       "bool(Resource&, std::size_t), or declares its wait, as "
+                                       "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
+                                       "another shape can wait where the watch of fixy/session/Watch.h does not see "
+                                       "it.");
+
+    // The label reader is whatever the inner handle takes: a polling read
+    // or a declared read of a word for a plain or checkpoint handle, and a
+    // polling read for a crash-watched one.  The recorder hands the inner
+    // handle a read of the same shape, keeps the word it read, and names
+    // the branch that the word names in the protocol of the wire.
     template <typename Reader, typename Handler>
-        requires is_offer_v<protocol>
+        requires is_offer_v<protocol> && ReadTransport<Reader, resource_type, std::size_t>
     constexpr auto branch(Reader reader, Handler handler) && {
         using Wire = detail::recording::wire_protocol_t<Inner>;
         using Branches = typename protocol::branches_tuple;
@@ -372,17 +396,9 @@ public:
         static_assert(count <= detail::recording::recordable_branch_limit,
                       "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
                       "index in one byte, and this Offer has more than 256 branches.");
-        constexpr bool is_nothrow = std::is_nothrow_invocable_v<Reader, resource_type&>;
         std::optional<std::uint64_t> word;
-        auto marked = [&reader, &word](resource_type& resource) noexcept(is_nothrow) {
-            auto read = std::invoke(reader, resource);
-            if constexpr (std::is_same_v<decltype(read), std::size_t>) {
-                word = read;
-            } else if (read) {
-                word = *read;
-            }
-            return read;
-        };
+        auto marked = detail::observed_read<std::size_t, resource_type>(
+            reader, [&word](std::size_t read) noexcept { word = read; });
         return std::move(inner_).branch(marked, [this, &handler, &word](auto next) {
             // No word was read only when a crash-watched handle took the
             // crash branch.
@@ -401,6 +417,14 @@ public:
             return std::invoke(handler, wrap_(std::move(next)));
         });
     }
+
+    template <typename Reader, typename Handler>
+        requires is_offer_v<protocol> && (!ReadTransport<Reader, resource_type, std::size_t>)
+    void branch(Reader, Handler) && = delete("[Transport_Shape] a read of a word either polls, as "
+                                             "std::optional<std::size_t>(Resource&), or declares its wait, as "
+                                             "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of "
+                                             "another shape can wait where the watch of fixy/session/Watch.h does not "
+                                             "see it.");
 
     template <typename P = protocol>
         requires is_terminal_state_v<P> && detail::recording::inner_can_close<Inner>

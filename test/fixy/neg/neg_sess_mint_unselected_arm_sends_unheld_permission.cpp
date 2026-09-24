@@ -23,7 +23,7 @@ using Proto = s::Select<s::End, s::Send<perm::Permission<Region>, s::End>>;
 
 int main() {
     auto head = s::mint_session_handle<Proto>(Wire{});
-    auto at_end = std::move(head).select<0>([](Wire&, std::size_t) noexcept {});
+    auto at_end = std::move(head).select<0>([](Wire&, std::size_t) noexcept { return true; });
     (void)std::move(at_end).close();
     return 0;
 }
