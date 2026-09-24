@@ -48,6 +48,8 @@
 
 namespace fixy::atom::hw {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 // Old spelling: crucible::algebra::lattices::HwInstruction.
 enum class HwInstruction : std::uint8_t {
     NoneAllowed = 0,  // no hardware-specific instruction at all

@@ -180,6 +180,8 @@ using leak_atom_of = lifting_atom_of<Axis::SyscallSurface, leak_row>;
 
 namespace io {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 template <typename E>
 struct engine final : detail::io_atom_of {};
 
@@ -203,6 +205,8 @@ struct cq_entries final : detail::io_atom_of {
 
 namespace fs {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 template <typename Mode>
 struct mode final : detail::fs_atom_of {};
 
@@ -218,6 +222,8 @@ struct atomic_write final : detail::fs_atom_of {};
 }  // namespace fs
 
 namespace mmap {
+
+inline constexpr atom_seal atom_namespace_seal{};
 
 template <typename Prot>
 struct with_prot final : detail::mmap_atom_of {};
@@ -241,6 +247,8 @@ struct trusted_jit final : detail::mmap_atom_of {};
 // The axis tracks which syscall surface a site engages, so the absence
 // of the unmap call belongs on the same axis.
 namespace leak {
+
+inline constexpr atom_seal atom_namespace_seal{};
 
 template <typename RationaleTag>
 struct resource final : detail::leak_atom_of {};

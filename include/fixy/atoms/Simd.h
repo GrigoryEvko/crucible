@@ -48,6 +48,8 @@
 
 namespace fixy::atom::simd {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 // Old spelling: crucible::algebra::lattices::SimdIsa.  The high nibble
 // names the trunk: 0x0 the shared bottom, 0x1 x86, 0x2 ARM, 0xF the
 // shared top.

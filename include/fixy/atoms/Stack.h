@@ -17,6 +17,8 @@
 
 namespace fixy::atom::stack {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 template <std::size_t MaxBytes>
 struct alloc final : atom_of<Axis::StackUse> {};
 

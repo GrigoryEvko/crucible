@@ -397,7 +397,8 @@ using atoms_row_t = typename atoms_row<Atoms...>::type;
 }  // namespace detail
 
 template <typename Ctx, typename... Atoms>
-concept CtxAdmitsAtomRow = eff::IsExecCtx<Ctx> && (eff::LiftsToRow<std::remove_cvref_t<Atoms>> && ...)
+concept CtxAdmitsAtomRow = eff::IsExecCtx<Ctx> && (::fixy::atom::IsAtom<std::remove_cvref_t<Atoms>> && ...)
+                        && (eff::LiftsToRow<std::remove_cvref_t<Atoms>> && ...)
                         && eff::CtxAdmits<Ctx, detail::atoms_row_t<Atoms...>>;
 
 template <typename Ctx, typename... Atoms>

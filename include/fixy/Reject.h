@@ -102,8 +102,10 @@ template <Axis A, class... Atoms>
     static constexpr auto entries = pack_entries_<Atoms...>();
     template for (constexpr auto entry : entries) {
         using Candidate = [:entry:];
-        if constexpr (Candidate::axis == A) {
-            ++count;
+        // A type that is not an atom states no axis the walk may read.
+        // Tier 2 refuses it, and this walk must not add a second error.
+        if constexpr (::fixy::atom::IsAtom<Candidate>) {
+            if constexpr (Candidate::axis == A) ++count;
         }
     }
     return count;
@@ -209,7 +211,12 @@ template <class G>
     std::string text{"The type "};
     text += std::meta::display_string_of(^^G);
     text += " appears in a fixy::fn pack but is not an atom.  An atom is "
-            "final, derives fixy::atom::atom_base, and names an axis.";
+            "final, derives fixy::atom::atom_base, names an axis, and is declared in the closed catalog.";
+    if constexpr (::fixy::atom::detail::HasAtomShape<G>) {
+        text += "  It has the shape, and it is refused because ";
+        text += ::fixy::atom::detail::atom_refusal_text_(::fixy::atom::detail::atom_refusal_v<G>);
+        text += '.';
+    }
     return std::define_static_string(text);
 }
 
@@ -238,8 +245,9 @@ template <class G>
 struct malformed_atom final : ::foundation::diag::tag_base {
     static constexpr std::string_view name = detail::reject::malformed_name_<G>();
     static constexpr std::string_view description = detail::reject::malformed_description_<G>();
-    static constexpr std::string_view remediation = "Pass an atom from fixy::atom, or declare one: a final class "
-                                                    "deriving fixy::atom::atom_of<Axis>.  A cv-qualified or "
+    static constexpr std::string_view remediation = "Pass an atom from fixy::atom.  A new atom is declared in the "
+                                                    "header of its family, beside that family's atom_seal, and a "
+                                                    "new family is a line in fixy/Atom.h.  A cv-qualified or "
                                                     "reference-qualified atom is refused rather than stripped, "
                                                     "because such a type comes from a decltype on a variable.";
 };

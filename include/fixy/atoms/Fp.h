@@ -64,6 +64,8 @@
 
 namespace fixy::atom::fp {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 // Old spellings: crucible::algebra::lattices::{FpReassociate, FpContract,
 // FpFtz, FpDenormalInput}.  The first enumerator of each is the strict
 // value a mode takes when it does not name the setting.

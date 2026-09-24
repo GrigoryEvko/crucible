@@ -147,7 +147,12 @@ template <Axis A, class... Atoms>
 // The same answer fn::grade_on gives, computed from the pack alone.
 // Axis::Type is absent on purpose: it resolves to the payload, which is
 // fn's business, and no collision rule reads it.
+//
+// Every entry must be an atom of the closed catalog.  A rule reads a
+// grade by its axis alone, so a type that states an axis without being
+// an atom would be read as a shipped grade.
 template <class... Atoms>
+    requires(::fixy::atom::IsAtom<Atoms> && ...)
 struct grades {
     template <Axis A>
     using on = [:detail::grade_<A, Atoms...>():];
@@ -1176,9 +1181,10 @@ template <class G>
     requires requires { G::strategy; }
 struct is_busy_wait_<G> : std::bool_constant<::fixy::atom::sync::burns_the_core(G::strategy)> {};
 
-// Whether a grade names a wait strategy.  The atom set is open, so a type
-// can engage Synchronization and name no strategy.  Such a type states no
-// wait, and W003 does not read it as one.
+// Whether a grade names a wait strategy.  The strict pole of
+// Synchronization names none, and a binding that states no atom on the
+// axis takes that pole.  Such a grade states no wait, and W003 does not
+// read it as one.
 template <class G>
 struct has_wait_strategy_ : std::false_type {};
 template <class G>
@@ -2381,8 +2387,14 @@ static_assert(hot_rules<Live, at::sync::park>::W003_ok && !hot_rules<Live, at::s
               "a stated kernel wait is W001's refusal, not W003's");
 static_assert(live_rules<Live>::W003_ok, "not hot, so the wait is the regime's business");
 static_assert(hot_rules<>::W003_ok, "no handle, so no transport wait");
+// A type on the axis that names no strategy is not an atom of the
+// catalog, so no rule reads it and the grade lookup refuses it.
 struct names_no_strategy final : at::atom_of<Axis::Synchronization> {};
-static_assert(!hot_rules<Live, names_no_strategy>::W003_ok, "a type on the axis that names no strategy states no wait");
+static_assert(!::fixy::atom::IsAtom<names_no_strategy>);
+template <class G>
+concept grade_lookup_forms = requires { typename grades<G>; };
+static_assert(grade_lookup_forms<at::sync::park>);
+static_assert(!grade_lookup_forms<names_no_strategy>, "a grade lookup over a type that is not an atom must not form");
 static_assert(!rules_of<owes_a_step, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
                         at::as_public>::W003_ok,
               "a payload that is a live handle waits as the atom does");

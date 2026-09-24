@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -63,29 +64,162 @@ struct lifting_atom_of : atom_of<A> {
     static constexpr LiftRow lifts_to{};
 };
 
-// The `final` clause is what stops a user from extending an already-shipped
-// atom and injecting behavior into the acceptance check through the
-// subclass.
+// ── The catalog is closed ───────────────────────────────────────────
 //
-// The cv-ref clause rejects rather than strips.  An atom is a zero-state
-// phantom marker, so no legitimate path produces a cv-qualified or
-// reference-qualified one; such a type comes from a `decltype` taken on a
-// runtime variable (`const auto g = affine{};`) or on a reference return.
-// Stripping with `std::remove_cvref_t` would coerce that mistake into the
-// bare atom and accept it silently.
+// The shape of an atom is a recipe: final, derives atom_base, names an
+// axis.  Any namespace can repeat it, so a check on the shape alone
+// admits a type that a user declares in a namespace of their own, and
+// every rule then reads that type as a shipped grade.  IsAtom therefore
+// reads three facts that the type cannot state about itself.
 //
-// What this gate cannot do is bound the set of atoms.  The recipe —
-// `final`, derives `atom_base`, names an axis — is reproducible by anyone
-// in any namespace, because the axis is a member and not a registration.
-// The concept has no type-system handle on namespace identity, so a
-// foreign type built that way is indistinguishable from a shipped atom.
-// Closing that gap is a review and CI matter, not a type-system one.
+//   1. The namespace.  An atom is declared directly in fixy::atom or
+//      directly in one of the family namespaces below.  parent_of reads
+//      the namespace from the declaration, so a namespace that a user
+//      names fixy::atom inside a namespace of their own is a different
+//      namespace, and a family that a user opens beside these is not in
+//      the list.  The list is the closed set of families: a new family
+//      is a line here and a header under fixy/atoms/.
+//   2. The seal.  Each admitted namespace holds exactly one variable of
+//      type atom_seal.  A namespace with no seal, or with two, admits no
+//      atom.  Each query reads the seal again.
+//   3. The file.  An atom is declared in the file that declares the seal
+//      of its namespace.  source_location_of gives the file of a class
+//      definition, and the file of an explicit or partial
+//      specialization, so an atom planted in a family from another file,
+//      or a specialization of a shipped atom template written anywhere
+//      else, is refused.  The rule reads the declaration and not the
+//      point of the query, so the order of the includes cannot change
+//      the answer.
+//
+// A `#line` directive that names a family header defeats the third read.
+// That forges the position of the source, and no property of a type can
+// refuse it.
 
+// The families.  Each is opened here, empty, so that the list below can
+// name it before its header is included.
+namespace barrier {}
+namespace ctrl {}
+namespace dispatch {}
+namespace fp {}
+namespace global {}
+namespace hw {}
+namespace io {}
+namespace fs {}
+namespace mmap {}
+namespace leak {}
+namespace observe {}
+namespace regime {}
+namespace scope {}
+namespace session {}
+namespace simd {}
+namespace spawn {}
+namespace stack {}
+namespace stdio {}
+namespace sync {}
+
+// The seal of one admitted namespace.  It carries no data: its position
+// is the whole claim, the namespace and the file that declare it.
+struct atom_seal {};
+
+inline constexpr atom_seal atom_namespace_seal{};
+
+namespace detail {
+
+inline constexpr std::meta::info atom_families[] = {
+    ^^barrier, ^^ctrl,    ^^dispatch, ^^fp,    ^^global, ^^hw,    ^^io,    ^^fs,    ^^mmap, ^^leak,
+    ^^observe, ^^regime,  ^^scope,    ^^session, ^^simd, ^^spawn, ^^stack, ^^stdio, ^^sync,
+};
+
+// Why a type with the shape of an atom is refused, or none.
+enum class atom_refusal : std::uint8_t {
+    none,
+    outside_the_catalog,       // not declared directly in fixy::atom or in a family
+    namespace_unsealed,        // the namespace holds no atom_seal
+    namespace_sealed_twice,    // the namespace holds two atom_seal variables
+    declared_outside_its_seal  // declared in a file other than the one that seals its namespace
+};
+
+// The namespace that declares a type.  A specialization is placed where
+// its template is declared.
+[[nodiscard]] consteval std::meta::info atom_owner_(std::meta::info type) {
+    const std::meta::info declared = std::meta::dealias(type);
+    if (std::meta::has_template_arguments(declared)) return std::meta::parent_of(std::meta::template_of(declared));
+    return std::meta::parent_of(declared);
+}
+
+[[nodiscard]] consteval bool is_admitted_atom_namespace_(std::meta::info ns) {
+    if (ns == ^^::fixy::atom) return true;
+    for (const std::meta::info family : atom_families) {
+        if (ns == family) return true;
+    }
+    return false;
+}
+
+[[nodiscard]] consteval bool same_file_(std::meta::info lhs, std::meta::info rhs) {
+    const std::string_view lhs_file = std::meta::source_location_of(lhs).file_name();
+    const std::string_view rhs_file = std::meta::source_location_of(rhs).file_name();
+    return lhs_file == rhs_file;
+}
+
+// The refusal for a type that already has the shape.  Complexity: linear
+// in the members of the owning namespace.
+[[nodiscard]] consteval atom_refusal atom_refusal_of_(std::meta::info type) {
+    const std::meta::info owner = atom_owner_(type);
+    if (!is_admitted_atom_namespace_(owner)) return atom_refusal::outside_the_catalog;
+    std::meta::info seal{};
+    std::size_t seals = 0;
+    for (const std::meta::info member : std::meta::members_of(owner, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_variable(member)) continue;
+        if (std::meta::remove_cvref(std::meta::type_of(member)) != ^^atom_seal) continue;
+        seal = member;
+        ++seals;
+    }
+    if (seals == 0) return atom_refusal::namespace_unsealed;
+    if (seals > 1) return atom_refusal::namespace_sealed_twice;
+    if (!same_file_(std::meta::dealias(type), seal)) return atom_refusal::declared_outside_its_seal;
+    return atom_refusal::none;
+}
+
+[[nodiscard]] consteval std::string_view atom_refusal_text_(atom_refusal refusal) {
+    switch (refusal) {
+        case atom_refusal::none:
+            return "none";
+        case atom_refusal::outside_the_catalog:
+            return "it is not declared directly in fixy::atom or in a family namespace of fixy/Atom.h";
+        case atom_refusal::namespace_unsealed:
+            return "its namespace holds no fixy::atom::atom_seal";
+        case atom_refusal::namespace_sealed_twice:
+            return "its namespace holds two fixy::atom::atom_seal variables";
+        case atom_refusal::declared_outside_its_seal:
+            return "it is declared in a file other than the one that seals its namespace";
+        default:
+            break;
+    }
+    return "an unknown refusal";
+}
+
+// The shape, which a user can repeat.  The cv-ref clause refuses rather
+// than strips: an atom is a zero-state marker, so a qualified one comes
+// from a decltype on a variable, and stripping would coerce that mistake
+// into the bare atom.  The final clause stops a subclass from injecting
+// behavior into the acceptance check.
 template <class G>
-concept IsAtom =
+concept HasAtomShape =
     std::same_as<G, std::remove_cvref_t<G>> && std::is_final_v<G> && std::derived_from<G, atom_base> && requires {
         { G::axis } -> std::convertible_to<Axis>;
     };
+
+// The answer for one type, computed once at the first query.  The
+// namespace and the file are facts of the declaration.  A second seal
+// that a translation unit adds later refuses each atom first asked
+// about after it.
+template <class G>
+inline constexpr atom_refusal atom_refusal_v = atom_refusal_of_(^^G);
+
+}  // namespace detail
+
+template <class G>
+concept IsAtom = detail::HasAtomShape<G> && detail::atom_refusal_v<G> == detail::atom_refusal::none;
 
 // Each concept below is the minimum structural bar a parametric atom's
 // parameter must clear.  A parameter that fails one makes the atom
@@ -128,10 +262,25 @@ concept IsProvenanceSource =
 // must name a tag from the closed set in fixy/Tags.h.  The tags there
 // are final, and the clause here repeats that, so a subclass of a
 // shipped policy cannot launder the trail through subtype coercion.
+//
+// The base and final alone are a recipe that any namespace can repeat,
+// so the set is closed the way the atom catalog is: a policy is declared
+// directly in fixy::tags::secret_policy, in the file that declares the
+// base.
+namespace detail {
+
+[[nodiscard]] consteval bool is_catalog_policy_(std::meta::info policy) {
+    constexpr std::meta::info base = ^^::fixy::tags::secret_policy::secret_policy_base;
+    return std::meta::parent_of(std::meta::dealias(policy)) == std::meta::parent_of(base)
+        && same_file_(std::meta::dealias(policy), base);
+}
+
+}  // namespace detail
+
 template <typename Policy>
 concept IsDeclassificationPolicy =
     std::is_class_v<Policy> && std::derived_from<Policy, ::fixy::tags::secret_policy::secret_policy_base>
-    && std::is_final_v<Policy>;
+    && std::is_final_v<Policy> && detail::is_catalog_policy_(^^Policy);
 
 // A relaxation atom carries no meaning of its own beyond the axis it engages.
 // The resolver that reads an atom pack decides what each atom resolves to;
@@ -563,7 +712,10 @@ template <std::meta::info Ns, class Roster>
         if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
                       && std::meta::is_class_type(member)) {
             using A = [:member:];
-            if constexpr (IsAtom<A>) {
+            // The shape, not IsAtom: a class with the shape of an atom
+            // that the catalog refuses, because another file planted it
+            // here, is still a class the family did not list.
+            if constexpr (HasAtomShape<A>) {
                 bool is_rostered = false;
                 template for (constexpr auto listed : roster_members_v<Roster>) {
                     // The splice is named before the comparison: one in
@@ -726,6 +878,9 @@ static_assert(IsDeclassificationPolicy<::fixy::tags::secret_policy::AuditedLoggi
 static_assert(IsDeclassificationPolicy<::fixy::tags::secret_policy::AuthorizedReplay>);
 static_assert(!IsDeclassificationPolicy<ad_hoc_policy>, "A policy outside the closed set must be rejected.");
 static_assert(!IsDeclassificationPolicy<open_policy>, "A policy that is not final must be rejected.");
+struct forged_policy final : ::fixy::tags::secret_policy::secret_policy_base {};
+static_assert(!IsDeclassificationPolicy<forged_policy>,
+              "A final policy with the base, declared outside fixy::tags::secret_policy, must be rejected.");
 
 // The gate rejects a cv-qualified or reference-qualified atom rather than
 // stripping it, and rejects the two halves of the recipe on their own.
@@ -742,6 +897,33 @@ static_assert(!IsAtom<not_final>);
 static_assert(!IsAtom<no_axis>);
 static_assert(!IsAtom<atom_base>);
 static_assert(!IsAtom<int>);
+
+// The shape alone is not an atom.  A type with every part of the recipe,
+// declared here in detail, is refused because detail is not a family.
+struct shaped_outside_the_catalog final : atom_of<Axis::Usage> {};
+static_assert(detail::HasAtomShape<shaped_outside_the_catalog>);
+static_assert(!IsAtom<shaped_outside_the_catalog>);
+static_assert(atom_refusal_v<shaped_outside_the_catalog> == atom_refusal::outside_the_catalog);
+
+// The core namespace and each family carry one seal, in this file for
+// the core.  A shipped atom passes each of the three reads.
+static_assert(atom_refusal_v<affine> == atom_refusal::none);
+static_assert(atom_refusal_v<with_io> == atom_refusal::none, "an alias is read through to the atom it names");
+static_assert(atom_refusal_v<declassify<::fixy::tags::secret_policy::AuditedLogging>> == atom_refusal::none);
+static_assert(same_file_(^^affine, ^^::fixy::atom::atom_namespace_seal));
+static_assert(is_admitted_atom_namespace_(^^::fixy::atom) && is_admitted_atom_namespace_(^^::fixy::atom::sync));
+static_assert(!is_admitted_atom_namespace_(^^::fixy::atom::detail), "detail holds rosters and probes, not atoms");
+static_assert(!is_admitted_atom_namespace_(^^::fixy), "the parent of the catalog is not the catalog");
+
+// Each family in the list is a namespace directly in fixy::atom.  A
+// family that moved would leave a list entry that names nothing.
+[[nodiscard]] consteval bool every_family_is_a_child_of_the_catalog() {
+    for (const std::meta::info family : atom_families) {
+        if (!std::meta::is_namespace(family) || std::meta::parent_of(family) != ^^::fixy::atom) return false;
+    }
+    return true;
+}
+static_assert(every_family_is_a_child_of_the_catalog());
 
 // ── The Effect grade reads the same both ways ────────────────────────
 //

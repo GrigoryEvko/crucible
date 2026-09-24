@@ -144,8 +144,8 @@ template <Axis A, class T, class... Atoms>
     static constexpr auto entries = ::fixy::detail::reject::pack_entries_<Atoms...>();
     template for (constexpr auto entry : entries) {
         using Candidate = [:entry:];
-        if constexpr (Candidate::axis == A) {
-            found = entry;
+        if constexpr (::fixy::atom::IsAtom<Candidate>) {
+            if constexpr (Candidate::axis == A) found = entry;
         }
     }
     return found;
@@ -183,7 +183,8 @@ class fn {
 
     static constexpr bool tier2_atoms_ok_ = refused_at_ != detail::reject::Tier::Malformed;
     static_assert(tier2_atoms_ok_, "fixy::fn<Type, Atoms...> [tier 2]: every entry in the pack must be an "
-                                   "atom — a final class deriving fixy::atom::atom_of<Axis>.  "
+                                   "atom of the closed catalog — a final class deriving fixy::atom::atom_of<Axis>, "
+                                   "declared in fixy::atom or a family namespace, in the file that seals it.  "
                                    "fixy::malformed_atom<Offender> names the offending entry.");
 
     // There is no tier 3.  An unmentioned axis is not an error.

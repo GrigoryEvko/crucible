@@ -13,6 +13,8 @@
 
 namespace fixy::atom::stdio {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 // <cstdio> defines lowercase stderr and stdout as object-like macros. The
 // capitalized spellings are immune to that expansion.
 namespace streams {

@@ -157,6 +157,8 @@ using Default = AutoJoin;
 // instantiation, before any consumer of the atom sees it.
 namespace fixy::atom::spawn {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 // The same parameter type the atoms take, re-exported so a caller writes
 // one here without reaching for the header that declares it.
 template <std::size_t N>

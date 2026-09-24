@@ -14,6 +14,8 @@
 
 namespace fixy::atom::ctrl {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 // A string literal cannot be a template argument through a pointer,
 // because its address is not a constant. Copying the characters into a
 // structural class type makes the literal itself part of the type, so

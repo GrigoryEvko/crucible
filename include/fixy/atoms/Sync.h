@@ -59,6 +59,8 @@
 
 namespace fixy::atom::sync {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 namespace fal = ::foundation::algebra::lattices;
 namespace fe = ::foundation::effects;
 

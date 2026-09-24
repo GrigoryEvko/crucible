@@ -25,6 +25,8 @@
 
 namespace fixy::atom::session {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 template <typename Proto>
     requires IsSessionProtocol<Proto>
 struct live_handle final : atom_of<Axis::Protocol> {};

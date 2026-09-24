@@ -47,6 +47,8 @@
 
 namespace fixy::atom::barrier {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 namespace fal = ::foundation::algebra::lattices;
 
 struct none final : atom_of<Axis::BarrierStrength> {

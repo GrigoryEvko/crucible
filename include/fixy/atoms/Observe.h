@@ -75,6 +75,8 @@
 
 namespace fixy::atom::observe {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 namespace fe = ::foundation::effects;
 
 // The effects of this binding that exist to let something outside see a

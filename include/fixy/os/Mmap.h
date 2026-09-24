@@ -371,6 +371,7 @@ using atoms_row_t = typename atoms_row<Atoms...>::type;
 // lift to IO and Block, and this is what makes the context carry them.
 template <typename Ctx, typename... Atoms>
 concept CtxAdmitsAtomRow = ::foundation::effects::IsExecCtx<Ctx>
+                        && (::fixy::atom::IsAtom<std::remove_cvref_t<Atoms>> && ...)
                         && (::foundation::effects::LiftsToRow<std::remove_cvref_t<Atoms>> && ...)
                         && ::foundation::effects::CtxAdmits<Ctx, detail::atoms_row_t<Atoms...>>;
 

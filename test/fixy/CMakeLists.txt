@@ -672,6 +672,32 @@ fixy_neg_compile_test(neg_atom_without_axis_rejected
   "required for the satisfaction of .IsAtom<G>."
   "the required expression .G::axis. is invalid")
 
+# The catalog of atoms is closed.  A type with the whole shape of an atom
+# is refused when it is declared outside fixy::atom and its families,
+# and when it is declared in a file other than the one that seals its
+# namespace.  Two fixtures refuse the namespace and two refuse the file.
+fixy_neg_compile_test(neg_atom_forged_in_user_namespace
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
+  "fixy::fn<int, user_code::forged_usage>::tier2_atoms_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_atom_forged_in_spoof_namespace
+  "static assertion failed"
+  ".atom_refusal_v<G>. == fixy::atom::detail::atom_refusal::none \\[with G = user_code::fixy::atom::forged_effect\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_atom_planted_in_family
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
+  "fixy::fn<int, fixy::atom::sync::planted_wait>::tier2_atoms_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_atom_specialized_outside_its_header
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
+  "fixy::fn<int, fixy::atom::stdio::write<user_code::private_stream> >::tier2_atoms_ok_.+ evaluates to false")
+
+# The declassification policies are closed the same way: the namespace
+# and the file of the declaration, read by IsDeclassificationPolicy.
+fixy_neg_compile_test(neg_declassify_forged_policy
+  "template constraint failure for .template<class Policy>  requires  IsDeclassificationPolicy<Policy> struct fixy::atom::declassify."
+  "is_catalog_policy_.+\\[with Policy = user_code::forged_release\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_declassify_policy_planted_in_catalog
+  "template constraint failure for .template<class Policy>  requires  IsDeclassificationPolicy<Policy> struct fixy::atom::declassify."
+  "is_catalog_policy_.+\\[with Policy = fixy::tags::secret_policy::PlantedRelease\\]. evaluated to .false.")
+
 # ── Fixy/Refined.h ────────────────────────────────────────────────────
 
 fixy_test(test_refined)

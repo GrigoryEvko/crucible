@@ -53,6 +53,8 @@
 
 namespace fixy::atom::regime {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 namespace fal = ::foundation::algebra::lattices;
 
 // Each atom names its tier as a member rather than encoding it in the

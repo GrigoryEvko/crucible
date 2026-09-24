@@ -160,10 +160,56 @@ static_assert(!std::is_same_v<fa::ctrl::abort<"a">, fa::ctrl::abort<"b">>);
     return all_named;
 }
 
+// ── The catalog is closed ────────────────────────────────────────────
+//
+// Three types with the whole shape of an atom, each refused by one read
+// of IsAtom: a user namespace, a plant in a shipped family from this
+// file, and a specialization of a shipped template written in this file.
+namespace user_code {
+struct forged_usage final : fa::atom_of<Axis::Usage> {};
+struct private_stream final {};
+}  // namespace user_code
+
+}  // namespace
+
+namespace fixy::atom::ctrl {
+struct planted_flow final : atom_of<Axis::ControlFlow> {};
+}  // namespace fixy::atom::ctrl
+
+template <>
+struct fixy::atom::stdio::write<user_code::private_stream> final : fixy::atom::atom_of<Axis::Usage> {};
+
+namespace {
+
+using forged_usage = user_code::forged_usage;
+using planted_flow = fa::ctrl::planted_flow;
+using respecialized = fa::stdio::write<user_code::private_stream>;
+
+static_assert(fad::HasAtomShape<forged_usage> && !fa::IsAtom<forged_usage>);
+static_assert(fad::HasAtomShape<planted_flow> && !fa::IsAtom<planted_flow>);
+static_assert(fad::HasAtomShape<respecialized> && !fa::IsAtom<respecialized>);
+static_assert(fad::atom_refusal_v<forged_usage> == fad::atom_refusal::outside_the_catalog);
+static_assert(fad::atom_refusal_v<planted_flow> == fad::atom_refusal::declared_outside_its_seal);
+static_assert(fad::atom_refusal_v<respecialized> == fad::atom_refusal::declared_outside_its_seal);
+
+// The same template, specialized nowhere, is still an atom: the refusal
+// is of the specialization, not of the family.
+static_assert(fa::IsAtom<fa::stdio::write<fa::stdio::streams::Stderr>>);
+
+// The refusal of each type, read at runtime through the text the
+// diagnostic prints.
+[[nodiscard]] bool every_forgery_is_refused_at_runtime() noexcept {
+    constexpr std::string_view outside = fad::atom_refusal_text_(fad::atom_refusal_v<forged_usage>);
+    constexpr std::string_view planted = fad::atom_refusal_text_(fad::atom_refusal_v<planted_flow>);
+    volatile bool shipped_is_atom = fa::IsAtom<fa::affine>;
+    return outside.contains("fixy::atom") && planted.contains("file") && shipped_is_atom;
+}
+
 }  // namespace
 
 int main() {
     if (!every_atom_constructs_at_runtime()) return 1;
+    if (!every_forgery_is_refused_at_runtime()) return 3;
     volatile Axis axis = fa::ctrl::unreachable_ok::axis;
     if (::fixy::axis_name(axis) != "ControlFlow") return 2;
     return 0;

@@ -46,6 +46,8 @@
 
 namespace fixy::atom::scope {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 namespace fal = ::foundation::algebra::lattices;
 
 // The shared bottom.

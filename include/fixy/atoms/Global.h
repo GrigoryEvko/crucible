@@ -17,6 +17,8 @@
 
 namespace fixy::atom::global {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 template <class GlobalTag>
 struct singleton final : atom_of<Axis::GlobalState> {};
 

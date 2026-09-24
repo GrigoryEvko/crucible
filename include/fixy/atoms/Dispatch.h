@@ -14,6 +14,8 @@
 
 namespace fixy::atom::dispatch {
 
+inline constexpr atom_seal atom_namespace_seal{};
+
 template <class FnPtrFamily>
 struct indirect_call final : atom_of<Axis::CallShape> {};
 
