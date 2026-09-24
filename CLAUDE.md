@@ -1660,7 +1660,7 @@ Need a sharded dispatch grid (M producers × N consumers)?
 
 - **Storing `Permission<Tag>` in a long-lived struct field** that is shared between threads. Defeats linearity — the struct may be aliased and the type system can't see it. Permissions belong in handles (Pinned), thread-local stacks, or function parameters.
 - **Passing `SharedPermission` by value across functions** without lifetime context. Lifetime gets confusing fast. Prefer `ReadView<Tag>` for scoped borrows; use `SharedPermissionGuard` (RAII) when crossing thread boundaries.
-- **Manually spawning `std::jthread` with a Permission inside** instead of using `permission_fork`. Bypasses the CSL parallel-rule encoding and skips static verification of `splits_into_pack`. Use `permission_fork` and let the type system check.
+- **Manually spawning `std::jthread` with a Permission inside** instead of using `permission_fork`. Bypasses the CSL parallel-rule encoding and skips static verification of `can_split_into_pack`. Use `permission_fork` and let the type system check.
 - **Parallelizing a workload smaller than L2** without explicit override. `CostModel` will refuse; bypassing it almost always regresses (icache cold, MESI ping-pong, TLB shootdowns).
 - **`new`-allocating a Permission or ReadView**. Both have deleted `operator new` precisely because heap-allocating them defeats the lifetime contract. Stack only.
 
@@ -2313,7 +2313,7 @@ Library types in `include/crucible/safety/` that mechanize the axioms from §II 
 | `Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
 | `ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
 | `Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` for lifetime-bound borrows. Factories: `permission_root_mint` / `permission_split` / `permission_combine` / `permission_split_n`. |
-| `PermissionFork.h` | ThreadSafe, BorrowSafe | `permission_fork<Children...>(parent, callables...)` — encodes CSL parallel composition rule as RAII fork-join over `std::jthread`. Constraint: `splits_into_pack_v<Parent, Children...>`. Returns parent permission after all children join. |
+| `PermissionFork.h` | ThreadSafe, BorrowSafe | `permission_fork<Children...>(parent, callables...)` — encodes CSL parallel composition rule as RAII fork-join over `std::jthread`. Constraint: `can_split_into_pack_v<Parent, Children...>`. Returns parent permission after all children join. |
 
 Every header is header-only and self-contained. The dependency rule is the layer
 rule, and `scripts/check-layer-boundary.sh` enforces it: `foundation` names only
@@ -2358,7 +2358,7 @@ is owed.
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
 - Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (debug, CI, boundary TUs) and under `semantic=ignore` on hot-path TUs they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
 - Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `Session<>` / `Permission<Tag>` means the compiler rejects accidental duplication.
-- `permission_split`, `permission_combine`, `permission_split_n`, `permission_fork` all `static_assert` on `splits_into_v` / `splits_into_pack_v` — splitting into undeclared subregions is a compile error, naming the missing trait specialization in the diagnostic.
+- `permission_split`, `permission_combine`, `permission_split_n`, `permission_fork` all `static_assert` on `can_split_into_v` / `can_split_into_pack_v` — splitting into undeclared subregions is a compile error, naming the missing trait specialization in the diagnostic.
 - Contract violations abort via `std::terminate` (P1494R5), never invoke undefined behavior.
 
 ### Review enforcement
@@ -2374,7 +2374,7 @@ Rules for code review and grep-guards:
 - Any `[[unlikely]]` body of more than 8 non-trivial lines without being outlined into a `CRUCIBLE_COLD` helper → reject.
 - A new concurrent producer/consumer pair without a `Permission<Tag>` discipline → questioned; bare `std::thread` + raw atomic SPSC is an old-style pattern; new code uses `Permission<Tag>` for the static safety + `permission_fork` for handoff.
 - A `permission_root_mint<X>()` call site outside `main()` / a Vessel/Keeper init function → reject; root-mint is once-per-program-per-tag and review-discoverable via `grep permission_root_mint<` exactly because of this rule.
-- A new `splits_into<...>` or `splits_into_pack<...>` specialization in a header far from its tag tree's declaration → questioned; the manifest belongs in the same TU as the tags so reviewers see the whole region tree at one glance.
+- A new `can_split_into<...>` or `can_split_into_pack<...>` specialization in a header far from its tag tree's declaration → questioned; the manifest belongs in the same TU as the tags so reviewers see the whole region tree at one glance.
 - A `Permission<Tag>` stored in a struct field of a type that is itself shared between threads (i.e., not Pinned + not handle-pattern) → reject; defeats linearity.
 - Bypassing `AdaptiveScheduler` to spawn N raw threads when working set is L2-resident → questioned; cache-tier rule (§IX) says sequential wins. Override requires bench evidence and a justification comment.
 
@@ -2640,7 +2640,7 @@ Update rules here when:
 2. A new GCC/libstdc++ feature lands that measurably helps an axiom → add to opt-in.
 3. A measurement invalidates a "perf wisdom" here → replace with the measured version.
 4. A rule is consistently violated without consequence → investigate whether the rule is still necessary.
-5. A new Permission tag tree, splits_into specialization, or PermissionedFoo primitive lands → add a row to §IX or §XVI cataloging it.
+5. A new Permission tag tree, can_split_into specialization, or PermissionedFoo primitive lands → add a row to §IX or §XVI cataloging it.
 6. The cache-tier rule (§IX) is invalidated by a new microarchitecture → re-measure with SEPLOG-E1 bench harness, update the table.
 
 Every change to this guide is a semi-major commit with rationale. This guide is the contract between engineer and codebase.
@@ -2696,12 +2696,12 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 | Status | Layer | Mint | Concept gate | Returns |
 |---|---|---|---|---|
 | ✅ | Permission token | `mint_permission_root<Tag>()` | (none — root authority) | `Permission<Tag>` |
-| ✅ | Permission token | `mint_permission_split<L, R>(parent)` | `splits_into<P, L, R>` | `pair<Permission<L>, Permission<R>>` |
-| ✅ | Permission token | `mint_permission_combine<P>(l, r)` | `splits_into<P, L, R>` | `Permission<P>` |
-| ✅ | Permission token | `mint_permission_split_n<...>(parent)` | `splits_into_pack<...>` | `tuple<Permission<...>...>` |
-| ✅ | Permission token | `mint_permission_combine_n<P>(...)` | `splits_into_pack<...>` | `Permission<P>` |
+| ✅ | Permission token | `mint_permission_split<L, R>(parent)` | `can_split_into<P, L, R>` | `pair<Permission<L>, Permission<R>>` |
+| ✅ | Permission token | `mint_permission_combine<P>(l, r)` | `can_split_into<P, L, R>` | `Permission<P>` |
+| ✅ | Permission token | `mint_permission_split_n<...>(parent)` | `can_split_into_pack<...>` | `tuple<Permission<...>...>` |
+| ✅ | Permission token | `mint_permission_combine_n<P>(...)` | `can_split_into_pack<...>` | `Permission<P>` |
 | ✅ | Permission token | `mint_permission_share<Tag>(p, pool)` | (none — fractional from pool) | `SharedPermission<Tag>` |
-| ✅ | Ctx-bound permission token | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `CtxFitsPermissionFork<Ctx, P, Children...>` (`IsExecCtx` + `row_contains<Bg>` + `splits_into_pack`) | `Permission<parent>` (after inline run or join) |
+| ✅ | Ctx-bound permission token | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `CtxFitsPermissionFork<Ctx, P, Children...>` (`IsExecCtx` + `row_contains<Bg>` + `can_split_into_pack`) | `Permission<parent>` (after inline run or join) |
 | ✅ | Capability token | `mint_cap<E>(source)` | `CanMintCap<E, S>` | `Capability<E, S>` |
 | ✅ | Ctx-bound | `mint_from_ctx<E>(ctx)` | `CtxCanMint<Ctx, E>` | `Capability<E, ctx_cap_t<Ctx>>` |
 | ✅ | Session token | `mint_session_handle<Proto>(res)` | `is_well_formed_v<Proto> ∧ SessionResource<Res>` | `SessionHandle<Proto, Res>` |
