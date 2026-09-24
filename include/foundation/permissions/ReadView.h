@@ -93,8 +93,10 @@ constexpr void mint_read_loan(Permission<Tag, Brand> const&) =
 
 // Ends a loan: consumes the loan and gives back the parked token.  The
 // brands of the two must agree, so a loan of one region cannot end the
-// loan of another region.
+// loan of another region.  It carries the row gate of mint_read_loan,
+// because no loan of another tag exists to end.
 template <typename Tag, typename Brand>
+    requires ReadViewNeedsNoCtx<Tag>
 [[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
                                                                           ReadLoan<Tag, Brand>&& loan) noexcept;
 
@@ -370,6 +372,7 @@ private:
     mint_read_loan(Permission<Tag_, Brand_>&& token) noexcept;
 
     template <typename Tag_, typename Brand_>
+        requires ReadViewNeedsNoCtx<Tag_>
     friend constexpr Permission<Tag_, Brand_> mint_permission_after_loan(LentPermission<Tag_, Brand_>&& lent,
                                                                          ReadLoan<Tag_, Brand_>&& loan) noexcept;
 };
@@ -382,6 +385,7 @@ mint_read_loan(Permission<Tag, Brand>&& token) noexcept {
 }
 
 template <typename Tag, typename Brand>
+    requires ReadViewNeedsNoCtx<Tag>
 [[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
                                                                           ReadLoan<Tag, Brand>&& loan) noexcept {
     ReadLoan<Tag, Brand> ended{std::move(loan)};
