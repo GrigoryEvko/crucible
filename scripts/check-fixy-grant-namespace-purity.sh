@@ -156,6 +156,16 @@ Documentation prose for --self-test.
 namespace crucible::fixy::grant {
 DOC
 
+        # EXEMPT (rg glob exclusion) — a reopen under misc/.  The glob holds
+        # only when rg sees a root-relative path, so this file shows whether
+        # the scan depends on the working directory.
+        mkdir -p "$tmp_root/misc"
+        cat >"$tmp_root/misc/planted_misc.h" <<'MISC'
+namespace crucible::fixy::grant {
+struct planted_misc final {};
+}  // namespace crucible::fixy::grant
+MISC
+
         result_file="$(mktemp)"
         if CRUCIBLE_FIXY_GRANT_PURITY_TEST_ROOT="$tmp_root" \
            bash "${BASH_SOURCE[0]}" 2>"$result_file"; then
@@ -165,6 +175,19 @@ DOC
             rm -f "$result_file"
             exit 2
         fi
+
+        # The same scan from another working directory must give the same
+        # report, byte for byte.
+        script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+        other_file="$(mktemp)"
+        (cd / && CRUCIBLE_FIXY_GRANT_PURITY_TEST_ROOT="$tmp_root" bash "$script_path") 2>"$other_file" || true
+        if ! cmp -s "$result_file" "$other_file"; then
+            printf 'fixy_grant_purity: SELF-TEST FAILED — the report from / differs from the report from the scan root.\n' >&2
+            diff "$result_file" "$other_file" >&2 || true
+            rm -f "$result_file" "$other_file"
+            exit 2
+        fi
+        rm -f "$other_file"
 
         self_test_fail() {
             printf 'fixy_grant_purity: SELF-TEST FAILED — %s\n' "$1" >&2
@@ -203,6 +226,11 @@ DOC
             self_test_fail 'rg glob exclusion leaked — Markdown file was flagged.'
         fi
 
+        # The misc/ file must NOT be flagged.
+        if grep -qF 'planted_misc.h' "$result_file"; then
+            self_test_fail 'rg glob exclusion leaked — misc/ file was flagged.'
+        fi
+
         rm -f "$result_file"
         printf 'fixy_grant_purity: self-test passed — forbidden reopen caught, missing-ack arm fires, path allowlist + ack comment + Markdown glob all honoured.\n' >&2
         exit 0
@@ -218,7 +246,8 @@ pattern='namespace\s+crucible\s*::\s*fixy\s*::\s*grant\s*\{'
 status=0
 
 while IFS=: read -r file line text; do
-    rel="${file#"$scan_root"/}"
+    rel="${file#./}"
+    file="$scan_root/$rel"
 
     case "$rel" in
         include/crucible/fixy/_Grant.h)
@@ -417,8 +446,11 @@ while IFS=: read -r file line text; do
     printf 'fixy_grant_purity: forbidden namespace reopen at %s:%s\n' "$rel" "$line" >&2
     printf 'fixy_grant_purity: %s\n' "$text" >&2
     status=1
+# rg matches an exclude glob against the path it prints, which is relative
+# to the search argument.  Search `.` from inside the scan root, so each
+# glob sees a root-relative path from any working directory.
 done < <(
-    rg -n --no-heading --pcre2 \
+    cd "$scan_root" && rg -n --no-heading --pcre2 \
         --glob '!build*/**' \
         --glob '!cmake-build-*/**' \
         --glob '!third_party/**' \
@@ -427,7 +459,7 @@ done < <(
         --glob '!misc/**' \
         --glob '!**/*.md' \
         --glob '!scripts/check-fixy-grant-namespace-purity.sh' \
-        "$pattern" "$scan_root" || true
+        "$pattern" . || true
 )
 
 if [[ "$status" -ne 0 ]]; then
