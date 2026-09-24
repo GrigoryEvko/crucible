@@ -286,7 +286,6 @@ private:
     constexpr init_key() noexcept {}
 
     friend struct ::foundation::effects::host::InitOwner;
-    friend struct ::foundation::effects::host::BackgroundOwner;
     friend struct ::foundation::effects::testing::TestWitness;
 
 public:
@@ -307,13 +306,14 @@ public:
 
 namespace host {
 
-// No production entry point of this tree starts a background thread or
-// an initialization phase yet.  So neither owner has a member, and only
-// the test witness builds a background or an init key.  The entry point
-// that starts the thread or the phase adds its claim function here, as
-// the one friend of a private key member.
+// No production entry point of this tree starts a background thread yet.
+// So this owner has no member, and only the test witness builds a
+// background key.  The entry point that starts the thread adds its claim
+// function here, as the one friend of a private key member.
+//
+// The init owner is defined below, after the init context, because its
+// door returns that context by value.
 struct BackgroundOwner final {};
-struct InitOwner final {};
 
 }  // namespace host
 
@@ -434,11 +434,11 @@ private:
 //
 // Each context has a private default constructor and befriends the one
 // factory, whose constraint admits the context's own passkey and no
-// other.  The passkey's own default constructor is private too,
-// friended only to the entry points allowed to start a context and to
-// the test scaffolding.  A translation unit that holds neither cannot
-// forge a context.  Adding a privileged entry point is one friend
-// declaration on the relevant passkey.
+// other.  The passkey's own default constructor is private too.  Its
+// friends are the owner of the context and the test scaffolding.  A
+// translation unit that holds neither cannot forge a context.  The init
+// owner has a door, and a new entry point that calls the door needs a
+// row in scripts/ctx-init-door-allowlist.txt.
 //
 // The factory is constexpr so a friended caller can build a context
 // during constant evaluation.
@@ -479,6 +479,24 @@ template <class Ctx, class Key>
                                    "default member initializer must never throw.");
     return Ctx{};
 }
+
+namespace host {
+
+// The one production door of the init context.  The init key has a
+// private constructor, and its friends are this owner and the test
+// witness.  So production code can get an init context only from this
+// door.
+//
+// The door is a static member, so the name of the owner is in each call.
+// scripts/check-ctx-init-door.py rejects a call of the door outside the
+// process entry points in scripts/ctx-init-door-allowlist.txt.
+struct InitOwner final {
+    [[nodiscard]] static constexpr Init mint_init_context() noexcept {
+        return mint_context<Init>(detail::ctx_mint::init_key{});
+    }
+};
+
+}  // namespace host
 
 // Naming this namespace outside test and bench code is a review
 // rejection.  Its whole purpose is that a grep for it finds every

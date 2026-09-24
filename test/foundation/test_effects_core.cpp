@@ -29,10 +29,11 @@ static_assert(!std::is_default_constructible_v<fe::Init>);
 static_assert(!std::is_default_constructible_v<fe::Test>);
 static_assert(noexcept(fe::testing::bg()) && noexcept(fe::testing::init()) && noexcept(fe::testing::test()));
 
-// The owners are defined beside their keys, so they are complete in
-// every TU that can name a key, and no TU can define one again.  The
-// background and init owners have no member yet, so nothing but the
-// test witness builds their keys.
+// The owners are defined in the header of their keys, so they are
+// complete in every TU that can name a key, and no TU can define one
+// again.  The background owner has no member, so only the test witness
+// builds its key.  The init owner has one member, the door to the init
+// context, and scripts/check-ctx-init-door.py limits the calls of it.
 template <class T>
 concept Complete = requires { sizeof(T); };
 static_assert(Complete<fe::host::BackgroundOwner> && Complete<fe::host::InitOwner>);

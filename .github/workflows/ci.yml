@@ -266,6 +266,11 @@ jobs:
           python3 scripts/check-host-owners.py --self-test
           python3 scripts/check-host-owners.py
 
+      - name: init door opened only from reviewed entry points (self-test + scan)
+        run: |
+          python3 scripts/check-ctx-init-door.py --self-test
+          python3 scripts/check-ctx-init-door.py
+
       - name: single combine_ids source of truth (self-test + scan)
         run: |
           bash scripts/check-no-combine-ids-duplicate.sh --self-test

@@ -42,14 +42,19 @@ struct Intruder {};
 static_assert(Complete<fe::host::InitOwner> && Complete<fe::host::BackgroundOwner>
               && Complete<fe::host::ForegroundOwner> && Complete<fe::host::ProducerClaim<Producer>>);
 
-// The background and init owners have no member, so no route outside the
-// test witness builds their keys.
+// The background owner has no member, so no route outside the test
+// witness builds its key.  The init owner has one member, the door to the
+// init context, and no member that gives out the init key.
 static_assert(std::is_empty_v<fe::host::InitOwner> && std::is_empty_v<fe::host::BackgroundOwner>);
+static_assert(std::is_same_v<decltype(fe::host::InitOwner::mint_init_context()), fe::Init>);
+static_assert(noexcept(fe::host::InitOwner::mint_init_context()));
 
-// The foreground owner builds its key only for a producer claim.
+// No owner gives out its key.  The foreground owner builds its key only
+// for a producer claim.
 template <class Owner>
 concept KeyReachable = requires { Owner::key(); };
-static_assert(!KeyReachable<fe::host::ForegroundOwner>);
+static_assert(!KeyReachable<fe::host::ForegroundOwner> && !KeyReachable<fe::host::InitOwner>
+              && !KeyReachable<fe::host::BackgroundOwner>);
 
 // No owner is a base, so no derived class borrows its position.
 static_assert(std::is_final_v<fe::host::InitOwner> && std::is_final_v<fe::host::BackgroundOwner>

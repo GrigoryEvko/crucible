@@ -872,6 +872,17 @@ add_test(NAME host_owners
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-host-owners.py)
 set_tests_properties(host_owners host_owners_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
+# host::InitOwner::mint_init_context() is the one production door of the
+# init context, and an init context permits the effects of process
+# startup.  scripts/check-ctx-init-door.py rejects a use of the owner in
+# production code outside the scopes in scripts/ctx-init-door-allowlist.txt,
+# and a stale row.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
+add_test(NAME ctx_init_door_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-init-door.py --self-test)
+add_test(NAME ctx_init_door
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-init-door.py)
+set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
+    LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # A write past the end of a C array member lands in the next member of the
 # same object, where the address sanitizer sees valid memory, and no build
 # checks the subscript.  scripts/check-no-raw-array-member.py refuses a C

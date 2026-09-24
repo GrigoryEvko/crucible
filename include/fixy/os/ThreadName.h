@@ -112,8 +112,8 @@ concept IsThreadNamed = detail::thread_name_extract::is_thread_named_v<std::remo
 // The context is read for its type alone and is not consumed, which is the
 // shape §XXI fixes for every ctx-bound mint.  The authority is real without
 // being one-shot: an Init context is reachable only through
-// mint_context, whose passkey only the initialization owner, the
-// background owner and the test witness can build.  A phase token that the
+// mint_context, whose passkey only the initialization owner and the test
+// witness can build.  A phase token that the
 // first naming call consumed would end the phase it exists to describe.
 //
 // Not constexpr: the body performs a kernel side effect.

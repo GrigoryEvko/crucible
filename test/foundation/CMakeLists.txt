@@ -1139,6 +1139,18 @@ foundation_neg_compile_test(neg_host_background_owner_defined_again
 foundation_neg_compile_test(neg_host_owner_key_private
   "is private within this context"
   "foundation::effects::host::ForegroundOwner::key\\(\\)")
+# The init owner is the one production door of the init context.  No
+# second definition of it compiles, no translation unit builds the init
+# key for a door of its own, and no free function opens the door.
+foundation_neg_compile_test(neg_host_init_owner_defined_again
+  "redefinition of .struct foundation::effects::host::InitOwner."
+  "neg_host_init_owner_defined_again.cpp:9")
+foundation_neg_compile_test(neg_init_door_forged_outside_owner
+  "is private within this context"
+  "foundation::effects::detail::ctx_mint::init_key::init_key\\(\\)")
+foundation_neg_compile_test(neg_init_door_without_owner
+  "is not a member of .foundation::effects."
+  ".mint_init_context.")
 foundation_neg_compile_test(neg_producer_claim_default_built
   "is private within this context"
   "ProducerClaim<Brand>::ProducerClaim\\(\\) .with Brand = .anonymous.::Brand")
