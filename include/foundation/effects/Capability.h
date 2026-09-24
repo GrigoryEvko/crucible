@@ -248,19 +248,19 @@ static_assert(std::is_nothrow_move_constructible_v<Capability<Effect::Alloc, Bg>
 // requires-expression body as a hard error instead of a substitution
 // failure, so the requires form would not compile at all here.
 template <class, class = void>
-struct cap_consume_callable_lvalue : std::false_type {};
+struct can_consume_from_lvalue : std::false_type {};
 template <class C>
-struct cap_consume_callable_lvalue<C, std::void_t<decltype(std::declval<C&>().consume())>> : std::true_type {};
+struct can_consume_from_lvalue<C, std::void_t<decltype(std::declval<C&>().consume())>> : std::true_type {};
 
 template <class, class = void>
-struct cap_consume_callable_rvalue : std::false_type {};
+struct can_consume_from_rvalue : std::false_type {};
 template <class C>
-struct cap_consume_callable_rvalue<C, std::void_t<decltype(std::declval<C>().consume())>> : std::true_type {};
+struct can_consume_from_rvalue<C, std::void_t<decltype(std::declval<C>().consume())>> : std::true_type {};
 
-static_assert(!cap_consume_callable_lvalue<Capability<Effect::Alloc, Bg>>::value,
+static_assert(!can_consume_from_lvalue<Capability<Effect::Alloc, Bg>>::value,
               "Capability::consume must not be callable on an lvalue.  The call site has to spell the "
               "move, which is what makes the consumption point visible.");
-static_assert(cap_consume_callable_rvalue<Capability<Effect::Alloc, Bg>>::value,
+static_assert(can_consume_from_rvalue<Capability<Effect::Alloc, Bg>>::value,
               "Capability::consume must be callable on a non-const rvalue, which is the consumption path.");
 
 static_assert(!std::is_default_constructible_v<Capability<Effect::Alloc, Bg>>);
