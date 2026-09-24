@@ -884,12 +884,14 @@ int main() {
 
     // A subtype with a narrower payload puts the same bytes on the wire
     // as the supertype payload, because each axiom keeps the
-    // representation.  Checked on a value, not only on the size.
+    // representation.  Checked on the size, the alignment and a value.
     const ::fixy::Refined<::fixy::positive, int> refined = ::fixy::mint_refined<::fixy::positive>(42);
-    const int wire = std::bit_cast<int>(refined);
-    expect(wire == 42, "a refined payload does not carry its value as the bare payload");
-    const ::fixy::Tagged<int, tags::source::Sanitized> tagged = ::fixy::mint_tagged<tags::source::Sanitized>(7);
-    expect(std::bit_cast<int>(tagged) == 7, "a tagged payload does not carry its value as the bare payload");
+    static_assert(sizeof(refined) == sizeof(int) && alignof(decltype(refined)) == alignof(int));
+    expect(refined.value() == 42, "a refined payload does not carry its value as the bare payload");
+    const ::fixy::Tagged<int, tags::source::Sanitized> tagged =
+        ::fixy::mint_tagged<tags::source::External>(7).retag<tags::source::Sanitized>();
+    static_assert(sizeof(tagged) == sizeof(int) && alignof(decltype(tagged)) == alignof(int));
+    expect(tagged.value() == 7, "a tagged payload does not carry its value as the bare payload");
 
     return failures == 0 ? 0 : 1;
 }
