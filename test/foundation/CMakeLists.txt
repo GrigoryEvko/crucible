@@ -863,3 +863,17 @@ foundation_neg_compile_test(neg_aligned_buffer_alignment_below_the_element
 foundation_neg_compile_test(neg_aligned_buffer_copied
   "use of deleted function .foundation::AlignedBuffer<T, Alignment>::AlignedBuffer\\(const foundation::AlignedBuffer<T, Alignment>&\\) \\[with T = int; long unsigned int Alignment = 4\\]."
   "AlignedBuffer owns its storage alone and is move-only")
+
+# ── The thread-local cell ─────────────────────────────────────────────
+#
+# The cell is built on the first access of each thread, with no argument,
+# so its value type is default-constructible, and a store takes only a
+# value the cell type is assignable from.
+foundation_test(test_thread_local_ref)
+
+foundation_neg_compile_test(neg_thread_local_ref_mint_needs_a_default
+  "no matching function for call to .mint_thread_local_ref<\\{anonymous\\}::CounterTag, \\{anonymous\\}::NeedsSeed>\\(\\)."
+  "the expression .is_default_constructible_v<T> \\[with T = <unnamed>::NeedsSeed\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
+  "no matching function for call to .foundation::ThreadLocalRef<\\{anonymous\\}::CounterTag, \\{anonymous\\}::Counter>::store\\(\\{anonymous\\}::Label\\) const."
+  "the expression .is_assignable_v<T&, U&&> \\[with T = <unnamed>::Counter; U = <unnamed>::Label\\]. evaluated to .false.")

@@ -177,6 +177,7 @@
 #include <foundation/Saturate.h>
 #include <foundation/Simd.h>
 #include <foundation/SwissTableBuffer.h>
+#include <foundation/ThreadLocalRef.h>
 
 #include <array>
 #include <cstddef>
@@ -889,6 +890,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::simd::mask, kPayload},
     {^^::foundation::AlignedBuffer, "an owned allocation of elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::SwissTableBuffer, "the one allocation of an open-addressing table: it holds storage and makes no claim about the slots"},
+    {^^::foundation::ThreadLocalRef, "a stateless handle onto a cell of the thread: it holds nothing, and the cell it names is process state, not a claim"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},

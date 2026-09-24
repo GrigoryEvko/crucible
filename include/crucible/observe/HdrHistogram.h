@@ -3,7 +3,7 @@
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/safety/_Refined.h>
-#include <crucible/safety/ThreadLocalRef.h>
+#include <foundation/ThreadLocalRef.h>
 
 #include <array>
 #include <atomic>
@@ -371,7 +371,7 @@ private:
     // then reads as "this thread has picked no shard yet", because a real
     // index plus one is never zero.
     [[nodiscard]] CRUCIBLE_HOT std::size_t thread_shard_() noexcept {
-        const ::crucible::safety::ThreadLocalRef<UniqueTag, std::size_t> cell{};
+        const ::foundation::ThreadLocalRef<UniqueTag, std::size_t> cell{};
         std::size_t& cached_plus_one = cell.peek_mut();
         if (cached_plus_one == 0) [[unlikely]] {
             cached_plus_one = (next_thread_shard_.fetch_add(1, std::memory_order_relaxed) % ShardCount) + 1;

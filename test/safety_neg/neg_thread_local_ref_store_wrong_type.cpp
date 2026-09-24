@@ -24,7 +24,7 @@
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on
 // ThreadLocalRef::store.
 
-#include <crucible/safety/ThreadLocalRef.h>
+#include <crucible/safety/_ThreadLocalRef.h>
 
 #include <string>
 

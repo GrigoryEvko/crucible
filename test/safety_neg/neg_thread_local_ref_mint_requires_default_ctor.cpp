@@ -25,7 +25,7 @@
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on
 // mint_thread_local_ref / ThreadLocalRef class template.
 
-#include <crucible/safety/ThreadLocalRef.h>
+#include <crucible/safety/_ThreadLocalRef.h>
 
 using namespace crucible::safety;
 

@@ -63,7 +63,7 @@
 #include <crucible/safety/GlobalState.h>
 #include <crucible/safety/StackUse.h>
 #include <crucible/safety/Stdio.h>
-#include <crucible/safety/ThreadLocalRef.h>
+#include <crucible/safety/_ThreadLocalRef.h>
 #include <crucible/safety/SuspendBehavior.h>
 #include <crucible/safety/SimdWidthPinned.h>
 #include <crucible/safety/_Tagged.h>
