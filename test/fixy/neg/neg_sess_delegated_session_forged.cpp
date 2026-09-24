@@ -4,6 +4,8 @@
 
 #include <fixy/session/Delegate.h>
 
+#include <utility>
+
 namespace neg_sess_delegated_session_forged_types {
 
 namespace s = ::fixy::session;
@@ -15,12 +17,14 @@ struct Wire {
 using Proto = s::Send<int, s::End>;
 using Carried = s::DelegatedSession<Proto, Wire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
 
+Carried forge(s::detail::transferred_endpoint<Wire>&& endpoint);
+
+Carried forge(s::detail::transferred_endpoint<Wire>&& endpoint) {
+    return Carried{std::move(endpoint)};
+}
+
 }  // namespace neg_sess_delegated_session_forged_types
 
 int main() {
-    namespace t = neg_sess_delegated_session_forged_types;
-    auto handle = t::s::mint_session_handle<t::Proto, t::Wire>(t::Wire{});
-    auto endpoint = t::s::detail::endpoint_transfer::take(std::move(handle));
-    t::Carried forged{std::move(endpoint)};
-    return forged.holds_endpoint() ? 0 : 1;
+    return 0;
 }

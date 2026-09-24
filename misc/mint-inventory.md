@@ -428,7 +428,7 @@ apply to the row.
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 40 |
+| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 41 |
 | `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 

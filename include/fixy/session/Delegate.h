@@ -58,8 +58,6 @@ namespace fixy::session {
 
 namespace detail {
 
-struct delegation_door;
-
 // A DelegatedSession that already gave its endpoint away holds none.  An
 // accept() on it would build a second handle over a Resource that moved.
 [[noreturn, gnu::cold, gnu::noinline]] inline void report_delegation_taken() noexcept {
@@ -74,7 +72,7 @@ struct delegation_door;
 
 template <typename InnerProto, typename Resource, typename Policy, typename InnerPS>
 class [[nodiscard]] DelegatedSession {
-    friend struct detail::delegation_door;
+    friend class DelegationDoor;
 
     using endpoint_type = detail::transferred_endpoint<Resource>;
     static constexpr bool is_nothrow_move = std::is_nothrow_move_constructible_v<endpoint_type>;
@@ -91,8 +89,8 @@ class [[nodiscard]] DelegatedSession {
     [[nodiscard]] constexpr auto rebuild_() && noexcept(is_nothrow_move) {
         endpoint_type taken{std::move(*endpoint_)};
         endpoint_.reset();
-        return detail::make_session_handle<InnerProto, Resource, void, Policy, InnerPS>(
-            std::forward<Resource>(taken.resource), taken.session);
+        return HandleFactory::make_<InnerProto, Resource, void, Policy, InnerPS>(std::forward<Resource>(taken.resource),
+                                                                                taken.session);
     }
 
     // Drops the endpoint that this object holds through its handle, so the
@@ -155,23 +153,38 @@ struct is_delegatable_handle : std::false_type {};
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS>
 struct is_delegatable_handle<SessionHandle<Proto, Resource, void, Policy, PS>> : std::true_type {};
 
-// The one door that builds a DelegatedSession.  It takes the endpoint out
-// of the handle through endpoint_transfer, which keeps the session record
-// live.
-struct delegation_door {
-    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS>
-    [[nodiscard]] static constexpr DelegatedSession<Proto, Resource, Policy, PS>
-    give(SessionHandle<Proto, Resource, void, Policy, PS>&& handle) noexcept(
-        std::is_nothrow_move_constructible_v<Resource>) {
-        return DelegatedSession<Proto, Resource, Policy, PS>{endpoint_transfer::take(std::move(handle))};
-    }
-};
-
 }  // namespace detail
 
 // True when H is a session handle that can travel as a DelegatedSession.
 template <typename H>
 concept DelegatableHandle = detail::is_delegatable_handle<H>::value;
+
+// The one door that builds a DelegatedSession.  It takes the endpoint out
+// of the handle through endpoint_transfer, which keeps the session record
+// live.  Its member is private and static, its only friend is
+// mint_delegated_session, and the member states the constraint of the
+// mint again.  The class is final, and no object of it exists.
+class DelegationDoor final {
+    DelegationDoor() = delete("the delegation door holds static members only; no object of it exists");
+    DelegationDoor(const DelegationDoor&) = delete("the delegation door holds static members only");
+    DelegationDoor& operator=(const DelegationDoor&) = delete("the delegation door holds static members only");
+    DelegationDoor(DelegationDoor&&) = delete("the delegation door holds static members only");
+    DelegationDoor& operator=(DelegationDoor&&) = delete("the delegation door holds static members only");
+    constexpr ~DelegationDoor() noexcept {}
+
+    template <typename H>
+        requires DelegatableHandle<H>
+    friend constexpr auto mint_delegated_session(H handle) noexcept(
+        std::is_nothrow_move_constructible_v<typename H::resource_type>);
+
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS>
+        requires DelegatableHandle<SessionHandle<Proto, Resource, void, Policy, PS>>
+    [[nodiscard]] static constexpr DelegatedSession<Proto, Resource, Policy, PS>
+    give_(SessionHandle<Proto, Resource, void, Policy, PS>&& handle) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>) {
+        return DelegatedSession<Proto, Resource, Policy, PS>{detail::endpoint_transfer::take(std::move(handle))};
+    }
+};
 
 // Takes the endpoint out of the handle, which is consumed, and gives the
 // payload that carries it.  The payload travels as the value of a Send.
@@ -179,7 +192,7 @@ template <typename H>
     requires DelegatableHandle<H>
 [[nodiscard]] constexpr auto mint_delegated_session(H handle) noexcept(
     std::is_nothrow_move_constructible_v<typename H::resource_type>) {
-    return detail::delegation_door::give(std::move(handle));
+    return DelegationDoor::give_(std::move(handle));
 }
 
 }  // namespace fixy::session

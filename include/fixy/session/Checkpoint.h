@@ -624,22 +624,33 @@ struct CheckpointFrame {
 template <typename Inner, typename Head, typename HeadLoop, typename Frame>
 class CheckpointHandle;
 
-namespace detail::checkpoint {
+// The door of a checkpoint handle to the handle factory of
+// fixy/session/Handle.h.  Its member is private and static, and its only
+// friend is CheckpointHandle, which rebuilds a plain handle only at a
+// position that the compliance check of its session proved.  The class is
+// final, and no object of it exists.
+class CheckpointDoor final {
+    CheckpointDoor() = delete("the checkpoint door holds static members only; no object of it exists");
+    CheckpointDoor(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
+    CheckpointDoor& operator=(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
+    CheckpointDoor(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
+    CheckpointDoor& operator=(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
+    constexpr ~CheckpointDoor() noexcept {}
 
-// Builds the plain handle at protocol R, with the loop context of the
-// position.  The handle's builder takes the permission set as a fifth
-// argument where the handle carries one, and a checkpoint session moves
-// no permission, so the set is empty.
-template <typename R, typename Resource, typename LoopCtx, typename Policy>
-[[nodiscard]] constexpr auto step_plain(Resource resource) noexcept {
-    using ::foundation::permissions::EmptyPermSet;
-    if constexpr (requires { ::fixy::session::detail::step_to_next<R, Resource, LoopCtx, Policy, EmptyPermSet>; }) {
-        return ::fixy::session::detail::step_to_next<R, Resource, LoopCtx, Policy, EmptyPermSet>(
+    template <typename, typename, typename, typename>
+    friend class CheckpointHandle;
+
+    // The plain handle at protocol R, with the loop context of the
+    // position.  A checkpoint session moves no permission, so the set is
+    // empty.
+    template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy>
+    [[nodiscard]] static constexpr auto step_(Resource resource) noexcept {
+        return HandleFactory::step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
             std::forward<Resource>(resource));
-    } else {
-        return ::fixy::session::detail::step_to_next<R, Resource, LoopCtx, Policy>(std::forward<Resource>(resource));
     }
-}
+};
+
+namespace detail::checkpoint {
 
 template <typename Head, typename HeadLoop, typename Frame, typename Inner>
 [[nodiscard]] constexpr auto make_checkpoint_handle(Inner inner) noexcept
@@ -673,19 +684,24 @@ class [[nodiscard]] CheckpointHandle {
         return CheckpointHandle<Next, typename Resolved::head, typename Resolved::loop, NewFrame>{std::move(next)};
     }
 
+    // The plain handle at the erased protocol of R, with the erased loop
+    // context of the position.  The compliance check proved each position
+    // that this class reaches, so the checkpoint door builds it.
+    template <typename R, typename Loop>
+    [[nodiscard]] static constexpr auto step_plain_(resource_t resource) noexcept {
+        return CheckpointDoor::step_<checkpoint_erase_t<R>, resource_t, detail::checkpoint::erase_loop_t<Loop>,
+                                     policy_t>(std::forward<resource_t>(resource));
+    }
+
     // The plain handle that a branch reaches: Commit<K> reaches K, and
     // Roll and Abort reach End.
     template <typename Branch>
-    using inner_branch_t = decltype(detail::checkpoint::step_plain<checkpoint_erase_t<Branch>, resource_t,
-                                                                   detail::checkpoint::erase_loop_t<HeadLoop>, policy_t>(
-        std::declval<resource_t>()));
+    using inner_branch_t = decltype(step_plain_<Branch, HeadLoop>(std::declval<resource_t>()));
 
     // Rebuilds the plain handle at the checkpoint, or at the start.
     template <typename Saved, typename SavedLoop>
     [[nodiscard]] static constexpr auto rebuild_(resource_t resource) noexcept {
-        return detail::checkpoint::step_plain<checkpoint_erase_t<Saved>, resource_t,
-                                              detail::checkpoint::erase_loop_t<SavedLoop>, policy_t>(
-            std::forward<resource_t>(resource));
+        return step_plain_<Saved, SavedLoop>(std::forward<resource_t>(resource));
     }
 
     // The effect of branch B, given the plain handle it reached.

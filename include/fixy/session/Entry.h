@@ -67,8 +67,7 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
     requires CtxFitsSession<Ctx, Proto, Resource>
 [[nodiscard]] constexpr auto mint_session(Ctx const&, Resource resource,
                                           std::source_location loc = std::source_location::current()) noexcept {
-    return detail::open_session_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet>(
-        std::forward<Resource>(resource), loc);
+    return mint_session_handle<Proto, Resource, Policy>(std::forward<Resource>(resource), loc);
 }
 
 // The gate of the context-bound callback: the gate of mint_session, and a
@@ -87,10 +86,7 @@ with_session(Ctx const&, Resource resource, Body body, std::source_location loc 
     std::is_nothrow_invocable_v<Body, detail::first_handle_t<Proto, Resource, Policy,
                                                              ::foundation::permissions::EmptyPermSet,
                                                              detail::brand_ctx_t<Body>>>) {
-    auto at_end = std::invoke(std::move(body),
-                              detail::open_session_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                                                    detail::brand_ctx_t<Body>>(std::forward<Resource>(resource), loc));
-    return std::move(at_end).close();
+    return with_session<Proto, Resource, Policy>(std::forward<Resource>(resource), std::move(body), loc);
 }
 
 }  // namespace fixy::session

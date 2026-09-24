@@ -177,3 +177,11 @@ fixy::session::detail::handle_core<fixy::session::End, int, void, fixy::session:
 fixy::session::detail::transferred_endpoint<int> | fixy/session/Handle.h | fixy::session::detail::transferred_endpoint<int>{forge::rvalue<int>(), forge::lvalue<fixy::session::watch::session_ref>()} | private | closed
 fixy::session::DelegatedSession<fixy::session::End, int, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet> | fixy/session/Delegate.h | fixy::session::DelegatedSession<fixy::session::End, int, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>{forge::rvalue<fixy::session::detail::transferred_endpoint<int>>()} | private | closed
 fixy::session::CrashReporter | fixy/session/CrashTransport.h | fixy::session::CrashReporter{forge::lvalue<fixy::session::PeerCrashCell>()} | private | closed
+# The handle factory and the doors to it hold static members only.  No
+# object of them exists, so a forger has no value to call a member on.
+fixy::session::HandleFactory | fixy/session/Handle.h | fixy::session::HandleFactory{} | deleted | closed
+fixy::session::SessionMintDoor | fixy/session/Handle.h | fixy::session::SessionMintDoor{} | deleted | closed
+fixy::session::detail::endpoint_transfer | fixy/session/Handle.h | fixy::session::detail::endpoint_transfer{} | deleted | closed
+fixy::session::DelegationDoor | fixy/session/Delegate.h | fixy::session::DelegationDoor{} | deleted | closed
+fixy::session::AsyncChannelDoor | fixy/session/AsyncChannel.h | fixy::session::AsyncChannelDoor{} | deleted | closed
+fixy::session::CheckpointDoor | fixy/session/Checkpoint.h | fixy::session::CheckpointDoor{} | deleted | closed

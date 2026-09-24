@@ -1323,6 +1323,26 @@ fixy_neg_compile_test(neg_sess_endpoint_transfer_redefined
 fixy_neg_compile_test(neg_sess_transferred_endpoint_forged
   "is private within this context"
   "detail::transferred_endpoint<Resource>::transferred_endpoint.Resource, fixy::session::watch::session_ref.")
+fixy_neg_compile_test(neg_sess_endpoint_transfer_take_outside
+  "is private within this context"
+  "fixy::session::detail::endpoint_transfer::take")
+
+# The handle factory builds a handle at a position that its caller names,
+# and the door of the mints opens a session on it.  Their members are
+# private, and each class is final: no scope but a friend calls a member,
+# and no class derives from one to reach a member.
+fixy_neg_compile_test(neg_sess_handle_factory_called_outside
+  "is private within this context"
+  "fixy::session::HandleFactory::make_")
+fixy_neg_compile_test(neg_sess_handle_factory_derived_look_alike
+  "cannot derive from .final. base"
+  "HandleFactory")
+fixy_neg_compile_test(neg_sess_mint_door_called_outside
+  "is private within this context"
+  "fixy::session::SessionMintDoor::open_")
+fixy_neg_compile_test(neg_sess_mint_door_derived_look_alike
+  "cannot derive from .final. base"
+  "SessionMintDoor")
 
 # Delegate.h: a message that carries a live endpoint.  The test hands an
 # endpoint over a channel and checks the contravariant payload order and
@@ -1331,6 +1351,9 @@ fixy_neg_compile_test(neg_sess_transferred_endpoint_forged
 # protocol hands an endpoint to a peer of its session, and no handle
 # inside a Loop or under a brand delegates.
 fixy_test(test_session_delegation)
+fixy_neg_compile_test(neg_sess_delegation_door_called_outside
+  "is private within this context"
+  "fixy::session::DelegationDoor::give_")
 fixy_neg_compile_test(neg_sess_delegated_session_forged
   "is private within this context"
   "DelegatedSession<InnerProto, Resource, Policy, InnerPS>::DelegatedSession.endpoint_type&&. .with InnerProto = fixy::session::Send<int, fixy::session::End>. Resource = neg_sess_delegated_session_forged_types::Wire")

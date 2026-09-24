@@ -643,24 +643,85 @@ struct session_loop_ctx_rebind_inner<detail::session_brand<Brand, InnerLoopCtx>,
     using type = detail::session_brand<Brand, session_loop_ctx_rebind_inner_t<InnerLoopCtx, NewInnerLoopCtx>>;
 };
 
-namespace detail {
+class SessionMintDoor;
+class DelegationDoor;
+class CheckpointDoor;
 
-// The sole authorized constructor of a bare handle.  Every handle
-// specialization's value constructor is private and befriends only this
-// factory, so a direct `SessionHandle<Proto, Res, Ctx, Pol, PS>{res}` at
-// a call site is rejected as private and cannot bypass the
-// well-formedness gate or the Continue-and-Loop resolution.
+// ── The handle factory ───────────────────────────────────────────────
 //
-// It is deliberately unconstrained.  Every caller runs its own
-// admission first.
-template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
-          typename PS = ::foundation::permissions::EmptyPermSet>
-[[nodiscard]] constexpr auto make_session_handle(
-    Resource r, watch::session_ref session = {},
-    std::source_location loc = std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS> {
-    return SessionHandle<Proto, Resource, LoopCtx, Policy, PS>{std::forward<Resource>(r), session, loc};
-}
+// Every handle value constructor is private and befriends only this
+// class.  Its members build a handle at a protocol position, with a loop
+// context, a permission set and a session record that the caller names.
+// Only the first handle of a session states the admission of the mints.
+// The members are private.  The class admits the handle classes, which
+// step the handle they hold, and the doors that run their own admission
+// first:
+//
+//   - SessionMintDoor, the door of the mints at the end of this header,
+//   - a DelegatedSession, which rebuilds the endpoint it carries at its
+//     own protocol position (fixy/session/Delegate.h),
+//   - CheckpointDoor, through which a checkpoint handle rolls back to a
+//     checkpoint that its compliance check proved
+//     (fixy/session/Checkpoint.h).
+//
+// No other code names these members.  A caller that needs a handle uses
+// a mint.  No object of the class exists.  Every constructor is deleted
+// and the destructor is user-provided.  The class is neither trivially
+// copyable nor an implicit-lifetime type, and no byte route makes one.
+class HandleFactory final {
+    HandleFactory() = delete("the handle factory holds static members only; no object of it exists");
+    HandleFactory(const HandleFactory&) = delete("the handle factory holds static members only");
+    HandleFactory& operator=(const HandleFactory&) = delete("the handle factory holds static members only");
+    HandleFactory(HandleFactory&&) = delete("the handle factory holds static members only");
+    HandleFactory& operator=(HandleFactory&&) = delete("the handle factory holds static members only");
+    constexpr ~HandleFactory() noexcept {}
+
+    template <typename, typename, typename, AbandonmentPolicy, typename>
+    friend class SessionHandle;
+    template <typename, typename, typename, typename>
+    friend class DelegatedSession;
+    friend class CheckpointDoor;
+    friend class SessionMintDoor;
+
+    // Builds the handle at Proto as it stands.
+    template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
+              typename PS = ::foundation::permissions::EmptyPermSet>
+    [[nodiscard]] static constexpr auto make_(Resource r, watch::session_ref session = {},
+                                              std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>) -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS>;
+
+    // Builds the handle at the head that R reaches after Continue, Loop
+    // and a vendor pin resolve.
+    template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
+    [[nodiscard]] static constexpr auto step_(Resource r, watch::session_ref session = {},
+                                              std::source_location loc = std::source_location::current()) noexcept;
+
+    // Builds the handle that a choice enters for branch I.
+    template <typename Choice, std::size_t I, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
+              typename PS>
+    [[nodiscard]] static constexpr auto branch_(Resource r, watch::session_ref session) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>);
+
+    // Builds the first handle of a protocol on a session record.
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
+    [[nodiscard]] static constexpr auto start_(Resource r, std::source_location loc,
+                                               watch::session_ref session) noexcept;
+
+    // Opens a session with a new record, or on a record that a channel
+    // mint claimed.
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
+    [[nodiscard]] static constexpr auto open_(Resource r, std::source_location loc) noexcept;
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
+    [[nodiscard]] static constexpr auto open_(Resource r, std::source_location loc,
+                                              watch::endpoint_id endpoint) noexcept;
+
+public:
+    // The type of the first handle of a session, for the gates that read
+    // it.  It builds nothing.
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
+    using first_handle =
+        decltype(open_<Proto, Resource, Policy, PS, LoopCtx>(std::declval<Resource>(), std::source_location{}));
+};
 
 // Builds the handle at R, and carries the session's reference in the
 // watch to it.  A step that reaches a terminal state owes no message, so
@@ -668,14 +729,13 @@ template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy
 // record.  A caller that builds a handle without a record passes none,
 // and that session is not tracked.
 template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
-[[nodiscard]] constexpr auto step_to_next(Resource r, watch::session_ref session = {},
-                                          std::source_location loc = std::source_location::current()) noexcept {
+constexpr auto HandleFactory::step_(Resource r, watch::session_ref session, std::source_location loc) noexcept {
     if constexpr (std::is_same_v<R, Continue>) {
         using ActiveLoopCtx = session_loop_ctx_inner_t<LoopCtx>;
         static_assert(!std::is_void_v<ActiveLoopCtx>, "fixy::session::diagnostic [Continue_Without_Loop]: "
                                                       "Continue appears outside a Loop context.  "
                                                       "Every Continue must have an enclosing Loop<Body>.");
-        static_assert(::foundation::permissions::perm_set_equal_v<PS, loop_entry_perm_set_t<ActiveLoopCtx>>,
+        static_assert(::foundation::permissions::perm_set_equal_v<PS, detail::loop_entry_perm_set_t<ActiveLoopCtx>>,
                       "fixy::session::diagnostic [PermissionImbalance]: one iteration of the loop changes the "
                       "permission set, so a Continue would start the next iteration with a different set.  Each "
                       "permission that the body receives, it must send back before the Continue, and each "
@@ -684,18 +744,17 @@ template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Pol
         // The body may itself begin with a Loop or a Continue, so this
         // recurses.  Forwarding `loc` keeps the outermost caller's site
         // rather than replacing it with this frame's.
-        return step_to_next<NextBody, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
+        return step_<NextBody, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
-        using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, loop_frame_t<R, PS>>;
+        using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, detail::loop_frame_t<R, PS>>;
         // Entering an inner Loop shadows the enclosing loop context.
         // That shadowing is what binds Continue to the nearest Loop.
-        return step_to_next<InnerBody, Resource, InnerCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
+        return step_<InnerBody, Resource, InnerCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else if constexpr (is_vendor_pinned_v<R>) {
         // The vendor is a declaration for the layer above.  The handle
         // steps the protocol that it pins.
-        return step_to_next<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session,
-                                                                                loc);
+        return step_<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else {
         static_assert(is_head_v<R>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                     "unexpected protocol shape after resolution.  "
@@ -704,13 +763,14 @@ template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Pol
             if !consteval {
                 watch::release(session.endpoint);
             }
-            return make_session_handle<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r),
-                                                                         watch::session_ref{}, loc);
+            return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), watch::session_ref{}, loc);
         } else {
-            return make_session_handle<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
+            return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
         }
     }
 }
+
+namespace detail {
 
 // Sends the cancellation through the Resource.  The call is unqualified,
 // so argument-dependent lookup finds the Resource's own function.
@@ -986,7 +1046,11 @@ public:
 // translation unit that sees a handle also sees this definition.  A
 // second definition is then a redefinition error, and no other code can
 // take the friendship.  The struct has one operation, and that operation
-// is its only way to change a handle.
+// is its only way to change a handle.  The operation is private, and its
+// one caller is the door of mint_delegated_session
+// (fixy/session/Delegate.h).  A call from any other scope would take the
+// endpoint out of its handle and drop it with its record still live, and
+// the abandonment policy would not act.
 
 // A live endpoint that left its handle.  It holds the Resource and the
 // record of the session, which stays live: the session still owes its
@@ -1016,7 +1080,17 @@ public:
     ~transferred_endpoint() = default;
 };
 
-struct endpoint_transfer {
+struct endpoint_transfer final {
+    endpoint_transfer() = delete("endpoint_transfer holds a static member only; no object of it exists");
+    endpoint_transfer(const endpoint_transfer&) = delete("endpoint_transfer holds a static member only");
+    endpoint_transfer& operator=(const endpoint_transfer&) = delete("endpoint_transfer holds a static member only");
+    endpoint_transfer(endpoint_transfer&&) = delete("endpoint_transfer holds a static member only");
+    endpoint_transfer& operator=(endpoint_transfer&&) = delete("endpoint_transfer holds a static member only");
+    constexpr ~endpoint_transfer() noexcept {}
+
+    friend class ::fixy::session::DelegationDoor;
+
+private:
     // Moves the Resource and the record out of a live handle, and marks
     // the handle consumed without ending its session.  The handle's
     // destructor then reports nothing, and the record stays live until a
@@ -1045,9 +1119,7 @@ class [[nodiscard]] SessionHandle<End, Resource, LoopCtx, Policy, PS>
                   "permission set holds an open loan, a LentOut or a BorrowedIn.  close() would lose it.  Return "
                   "each loan before End.");
 
-    template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
-        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend class HandleFactory;
 
     constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
                                      std::source_location loc = std::source_location::current()) noexcept(
@@ -1069,9 +1141,7 @@ class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>
     : public detail::handle_core<Send<T, R>, Resource, LoopCtx, Policy, PS> {
     using core_type = detail::handle_core<Send<T, R>, Resource, LoopCtx, Policy, PS>;
 
-    template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
-        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend class HandleFactory;
 
     constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
                                      std::source_location loc = std::source_location::current()) noexcept(
@@ -1103,7 +1173,7 @@ public:
                       "permission that the payload moves or lends before the send.");
         detail::write_through<T>(transport, this->live_resource_(), value, this->session_().endpoint);
         const watch::session_ref session = this->session_();
-        return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
+        return HandleFactory::step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
             this->take_resource_(), session);
     }
 
@@ -1128,7 +1198,7 @@ public:
         std::size_t word = static_cast<std::size_t>(step_wire_word_v<Send<T, R>>);
         detail::write_through<std::size_t>(transport, this->live_resource_(), word, this->session_().endpoint);
         const watch::session_ref session = this->session_();
-        return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
+        return HandleFactory::step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(
             this->take_resource_(), session);
     }
 
@@ -1151,9 +1221,7 @@ class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx, Policy, PS>
     : public detail::handle_core<Recv<T, R>, Resource, LoopCtx, Policy, PS> {
     using core_type = detail::handle_core<Recv<T, R>, Resource, LoopCtx, Policy, PS>;
 
-    template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
-        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend class HandleFactory;
 
     constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
                                      std::source_location loc = std::source_location::current()) noexcept(
@@ -1183,7 +1251,7 @@ public:
                       "of fixy/session/Payload.h refuses the message.");
         T value = detail::read_through<T>(transport, this->live_resource_(), this->session_().endpoint);
         const watch::session_ref session = this->session_();
-        auto next = detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
+        auto next = HandleFactory::step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
             this->take_resource_(), session);
         return std::pair{std::move(value), std::move(next)};
     }
@@ -1226,7 +1294,7 @@ private:
             std::abort();
         }
         const watch::session_ref session = this->session_();
-        return detail::step_to_next<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
+        return HandleFactory::step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_recv_t<PS, T>>(
             this->take_resource_(), session);
     }
 };
@@ -1324,8 +1392,6 @@ consteval auto branch_landing_of() {
 template <typename Choice, std::size_t I>
 using branch_landing_t = typename decltype(detail::branch_landing_of<Choice, I>())::type;
 
-namespace detail {
-
 // The handle that a choice enters for branch I.  A label branch of a
 // keyed choice is its label step (rule 6 of the section on branches and
 // labels of foundation/algebra/Transition.h), and the word of the branch
@@ -1333,41 +1399,37 @@ namespace detail {
 // Every other branch, a positional one or one that is no label, enters at
 // its head.
 template <typename Choice, std::size_t I, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
-[[nodiscard]] constexpr auto enter_branch(Resource r, watch::session_ref session) noexcept(
+constexpr auto HandleFactory::branch_(Resource r, watch::session_ref session) noexcept(
     std::is_nothrow_move_constructible_v<Resource>) {
     using Branch = std::tuple_element_t<I, typename Choice::branches_tuple>;
-    if constexpr (is_keyed_choice_v<Choice> && wire_words_v<Choice>[I].is_wired) {
+    if constexpr (is_keyed_choice_v<Choice> && detail::wire_words_v<Choice>[I].is_wired) {
         using Message = typename Branch::message_type;
         if constexpr (is_select_v<Choice>) {
-            static_assert(handle_admits_send_v<PS, Message>,
+            static_assert(detail::handle_admits_send_v<PS, Message>,
                           "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what "
                           "the message of the branch takes, or the payload walk of fixy/session/Payload.h refuses "
                           "the message.");
-            return step_to_next<typename Branch::next, Resource, LoopCtx, Policy, perm_set_after_send_t<PS, Message>>(
+            return step_<typename Branch::next, Resource, LoopCtx, Policy, perm_set_after_send_t<PS, Message>>(
                 std::forward<Resource>(r), session);
         } else {
-            static_assert(handle_admits_recv_v<PS, Message>,
+            static_assert(detail::handle_admits_recv_v<PS, Message>,
                           "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what "
                           "the message of the branch closes, or the payload walk of fixy/session/Payload.h refuses "
                           "the message.");
-            return step_to_next<typename Branch::next, Resource, LoopCtx, Policy, perm_set_after_recv_t<PS, Message>>(
+            return step_<typename Branch::next, Resource, LoopCtx, Policy, perm_set_after_recv_t<PS, Message>>(
                 std::forward<Resource>(r), session);
         }
     } else {
-        return step_to_next<Branch, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
+        return step_<Branch, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
     }
 }
-
-}  // namespace detail
 
 template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy, PS>
     : public detail::handle_core<Select<Branches...>, Resource, LoopCtx, Policy, PS> {
     using core_type = detail::handle_core<Select<Branches...>, Resource, LoopCtx, Policy, PS>;
 
-    template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
-        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend class HandleFactory;
 
     constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
                                      std::source_location loc = std::source_location::current()) noexcept(
@@ -1418,7 +1480,7 @@ public:
         std::size_t word = static_cast<std::size_t>(branch_wire_word_v<protocol, I>);
         detail::write_through<std::size_t>(transport, this->live_resource_(), word, this->session_().endpoint);
         const watch::session_ref session = this->session_();
-        return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
+        return HandleFactory::branch_<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     template <std::size_t I, typename Transport>
@@ -1444,7 +1506,7 @@ public:
                                         "branch_count at the call site.");
         this->require_live_();
         const watch::session_ref session = this->session_();
-        return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
+        return HandleFactory::branch_<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1467,9 +1529,7 @@ class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy,
     : public detail::handle_core<Offer<Branches...>, Resource, LoopCtx, Policy, PS> {
     using core_type = detail::handle_core<Offer<Branches...>, Resource, LoopCtx, Policy, PS>;
 
-    template <typename FProto, typename FRes, typename FLoop, AbandonmentPolicy FPol, typename FPS>
-    friend constexpr auto detail::make_session_handle(FRes, watch::session_ref, std::source_location) noexcept(
-        std::is_nothrow_move_constructible_v<FRes>) -> SessionHandle<FProto, FRes, FLoop, FPol, FPS>;
+    friend class HandleFactory;
 
     constexpr explicit SessionHandle(Resource r, watch::session_ref session = {},
                                      std::source_location loc = std::source_location::current()) noexcept(
@@ -1551,7 +1611,7 @@ public:
                                         "branch, so B0 is index 0.");
         this->require_live_();
         const watch::session_ref session = this->session_();
-        return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
+        return HandleFactory::branch_<protocol, I, Resource, LoopCtx, Policy, PS>(this->take_resource_(), session);
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1569,7 +1629,7 @@ public:
 private:
     template <std::size_t I>
     static constexpr auto make_branch_handle_(Resource r, watch::session_ref session) {
-        return detail::enter_branch<protocol, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
+        return HandleFactory::branch_<protocol, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session);
     }
 
     template <std::size_t... Is, typename Handler>
@@ -1886,41 +1946,59 @@ struct permission_flow_<VendorPinned<V, P>, PS, LoopPS> {
 template <typename Proto, typename PS>
 concept PermissionFlowCloses = detail::permission_flow_<Proto, PS, void>::closes();
 
-namespace detail {
+// The member definitions of the factory that read the admission concepts
+// stand here, after those concepts.
 
-// Builds the first handle of an admitted protocol with a given
-// permission set.  A Proto that starts with a Loop is unrolled one
-// iteration, so the returned handle sits at the loop body with the Loop
-// (or its permission frame) as its LoopCtx.  Any other head passes
-// through unchanged.
+template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
+constexpr auto HandleFactory::make_(Resource r, watch::session_ref session, std::source_location loc) noexcept(
+    std::is_nothrow_move_constructible_v<Resource>) -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS> {
+    static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_Refused]: the handle "
+                                             "factory builds a handle only over a Resource that a mint admits.");
+    return SessionHandle<Proto, Resource, LoopCtx, Policy, PS>{std::forward<Resource>(r), session, loc};
+}
+
+// HandleFactory::start_ builds the first handle of an admitted protocol
+// with a given permission set.  A Proto that starts with a Loop is
+// unrolled one iteration.  The returned handle then sits at the loop body
+// with the Loop (or its permission frame) as its LoopCtx.  Any other head
+// passes through unchanged.
 //
-// It checks only the permission flow of the whole protocol.  Each public
-// mint runs its own admission first, and states the flow in its
-// constraint.  A mint that consumes Permission tokens calls this with the
-// set of the tokens it consumed.  No mint may call it with a set whose
-// tokens it did not consume.
-//
-// LoopCtx is void, or a session brand that an owning entry point sets.
+// Each public mint runs its own admission first.  This member states the
+// part of the admission that every mint shares again: a runnable
+// protocol, a Resource that a mint admits, a permission flow that closes
+// from PS, and a loop context that is void or a session brand.  A mint
+// that consumes Permission tokens calls it with the set of the tokens it
+// consumed.  No mint may call it with a set whose tokens it did not
+// consume.
 //
 // Under a checking policy the session has a record in
 // fixy/session/Watch.h, and the first handle names the calling thread as
-// its holder.  The two open_session_ overloads below differ only in how
-// they get the record.
+// its holder.  The two open_ overloads below differ only in how they get
+// the record.
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
-[[nodiscard]] constexpr auto start_session_(Resource r, std::source_location loc,
-                                            watch::session_ref session) noexcept {
+constexpr auto HandleFactory::start_(Resource r, std::source_location loc, watch::session_ref session) noexcept {
+    static_assert(WellFormedRunnableProtocol<Proto>,
+                  "fixy::session::diagnostic [Protocol_Ill_Formed]: the handle factory opens a session only on a "
+                  "protocol that a mint admits.");
+    static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_Refused]: the handle "
+                                             "factory opens a session only over a Resource that a mint admits.");
+    static_assert(std::is_void_v<LoopCtx>
+                      || std::is_same_v<LoopCtx, detail::session_brand<typename detail::session_brand_of<LoopCtx>::type,
+                                                                       void>>,
+                  "fixy::session::diagnostic [Protocol_Ill_Formed]: the first handle of a session has no loop "
+                  "context, or the brand of the body that owns the session.");
     static_assert(PermissionFlowCloses<Proto, PS>,
                   "fixy::session::diagnostic [PermissionImbalance]: a path of the protocol sends a region that the "
                   "permission set does not hold, receives a second owner of a region, changes the set in one loop "
                   "iteration, or reaches End with an open loan.  The walk visits every branch, so an arm that no "
                   "run selects counts too.");
-    return step_to_next<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
+    return step_<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
 }
 
 // Opens a session that has no record yet, and claims one for it with the
 // priority of its Resource.  The calling thread holds the first handle.
-template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
-[[nodiscard]] constexpr auto open_session_(Resource r, std::source_location loc) noexcept {
+template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
+constexpr auto HandleFactory::open_(Resource r, std::source_location loc) noexcept {
     watch::session_ref session{};
     if constexpr (Policy::checks_abandonment) {
         if !consteval {
@@ -1930,22 +2008,24 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename 
             session = {endpoint, watch::current_thread_slot()};
         }
     }
-    return start_session_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, session);
+    return start_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, session);
 }
 
 // Opens a session on a record that a channel mint claimed and linked to
 // its peer.  The mint claimed it with no holder, and can run on a
-// different thread, so the calling thread records itself as the holder.
-template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
-[[nodiscard]] constexpr auto open_session_(Resource r, std::source_location loc, watch::endpoint_id endpoint) noexcept {
+// different thread, and the calling thread records itself as the holder.
+template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
+constexpr auto HandleFactory::open_(Resource r, std::source_location loc, watch::endpoint_id endpoint) noexcept {
     watch::session_ref session{};
     if constexpr (Policy::checks_abandonment) {
         if !consteval {
             session = {endpoint, watch::note_holder(endpoint)};
         }
     }
-    return start_session_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, session);
+    return start_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, session);
 }
+
+namespace detail {
 
 // Claims the two linked records of a channel, one for each end, with the
 // one priority of the channel.  The thread that claims them does not hold
@@ -1967,11 +2047,21 @@ template <typename SelfProto, typename PeerProto, AbandonmentPolicy Policy, watc
 
 template <typename Proto, typename Resource, AbandonmentPolicy Policy,
           typename PS = ::foundation::permissions::EmptyPermSet, typename LoopCtx = void>
-using first_handle_t = decltype(open_session_<Proto, Resource, Policy, PS, LoopCtx>(std::declval<Resource>(),
-                                                                                    std::source_location{}));
+using first_handle_t = HandleFactory::first_handle<Proto, Resource, Policy, PS, LoopCtx>;
 
 template <typename Brand>
 using brand_ctx_t = session_brand<Brand, void>;
+
+// Names the class Door through a type that depends on Dep.  A mint body
+// that names a door defined after the mint uses this alias.  The lookup
+// into the door then waits for the instantiation, where the door is
+// complete, and the access check runs there in the scope of the mint.
+template <typename Door, typename Dep>
+struct late_door_ {
+    using type = Door;
+};
+template <typename Door, typename Dep>
+using late_door_t = typename late_door_<Door, Dep>::type;
 
 }  // namespace detail
 
@@ -2025,7 +2115,8 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
     // Forwarding `loc` keeps the caller's site in the abandonment
     // diagnostic even though the unroll inserts an intermediate handle
     // whose own default location would otherwise win.
-    return detail::open_session_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet>(
+    return detail::late_door_t<SessionMintDoor, Proto>::template open_<Proto, Resource, Policy,
+                                                                       ::foundation::permissions::EmptyPermSet>(
         std::forward<Resource>(r), loc);
 }
 
@@ -2070,8 +2161,8 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
                                                        ::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
     using Set = ::foundation::permissions::PermSet<Tags...>;
     auto hold = mint_permission_hold(std::move(tokens)...);
-    auto head = detail::open_session_<Proto, Resource, Policy, Set>(std::forward<Resource>(resource),
-                                                                   std::source_location::current());
+    auto head = detail::late_door_t<SessionMintDoor, Proto>::template open_<Proto, Resource, Policy, Set>(
+        std::forward<Resource>(resource), std::source_location::current());
     return std::pair{std::move(head), std::move(hold)};
 }
 
@@ -2115,9 +2206,11 @@ with_session(Resource r, Body body, std::source_location loc = std::source_locat
     std::is_nothrow_invocable_v<Body, detail::first_handle_t<Proto, Resource, Policy,
                                                              ::foundation::permissions::EmptyPermSet,
                                                              detail::brand_ctx_t<Body>>>) {
-    auto at_end = std::invoke(std::move(body),
-                              detail::open_session_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                                                    detail::brand_ctx_t<Body>>(std::forward<Resource>(r), loc));
+    auto at_end =
+        std::invoke(std::move(body),
+                    detail::late_door_t<SessionMintDoor, Proto>::template open_<
+                        Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet, detail::brand_ctx_t<Body>>(
+                        std::forward<Resource>(r), loc));
     return std::move(at_end).close();
 }
 
@@ -2147,28 +2240,6 @@ template <typename Proto, typename Resource, typename Policy, typename Body>
 using forked_head_t =
     first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet, brand_ctx_t<Body>>;
 
-// One side of a forked channel.  It builds the endpoint in the thread
-// that runs it, gives the endpoint to the body, and closes the handle
-// that the body returns.  A struct and not a lambda, because a lambda
-// capture cannot hold a reference Resource by its declared type.
-template <typename Proto, AbandonmentPolicy Policy, typename Resource, typename Body>
-struct forked_endpoint_ {
-    Resource resource;
-    Body body;
-    std::source_location loc;
-    // The record the channel mint claimed for this end, linked to the
-    // record of the other end.
-    watch::endpoint_id endpoint = watch::endpoint_id::none;
-
-    template <typename Perm, typename Ctx>
-    void operator()(Perm permission, Ctx const& ctx) noexcept {
-        auto head = open_session_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet, brand_ctx_t<Body>>(
-            std::forward<Resource>(resource), loc, endpoint);
-        auto at_end = std::invoke(std::move(body), std::move(head), std::move(permission), ctx);
-        static_cast<void>(std::move(at_end).close());
-    }
-};
-
 template <typename Body, typename Proto, typename Resource, typename Policy, typename Tag, typename Ctx>
 concept ForkedEndpointBody =
     std::is_nothrow_invocable_v<Body, forked_head_t<Proto, Resource, Policy, Body>,
@@ -2177,30 +2248,11 @@ concept ForkedEndpointBody =
                                               ::foundation::permissions::Permission<Tag>, Ctx const&>,
                          Resource, Body>;
 
-// Claims the two linked records of a channel and starts its two sides on
-// two threads.  Each fork-shaped channel mint states its gate and then
-// calls this, so no mint can start a side without its record.
-template <typename SelfProto, typename PeerProto, typename SelfTag, typename PeerTag, AbandonmentPolicy Policy,
-          typename Ctx, typename Parent, typename Brand, typename ResourceSelf, typename ResourcePeer,
-          typename SelfBody, typename PeerBody>
-[[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
-fork_channel_(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
-              ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
-              std::source_location loc) noexcept {
-    static_assert(ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>,
-                  "fixy::session::diagnostic [Channel_Priority_Mismatch]: the two Resources of one channel state "
-                  "different session priorities.  The two ends are one session, so they have one priority.");
-    using SelfSide = forked_endpoint_<SelfProto, Policy, ResourceSelf, SelfBody>;
-    using PeerSide = forked_endpoint_<PeerProto, Policy, ResourcePeer, PeerBody>;
-    const auto [self_endpoint, peer_endpoint] =
-        claim_channel_<SelfProto, PeerProto, Policy, session_priority_v<ResourceSelf>>(loc);
-    return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
-        ctx, std::move(parent),
-        SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
-        PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc, peer_endpoint});
-}
-
 }  // namespace detail
+
+// The door of a fork-shaped channel mint that another header defines
+// (fixy/session/AsyncChannel.h).
+class AsyncChannelDoor;
 
 // The context gate of the fork-shaped mint: two runnable local
 // protocols, one the dual of the other, and a fork that the context may
@@ -2238,7 +2290,8 @@ template <typename Proto, typename SelfTag, typename PeerTag, AbandonmentPolicy 
 mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                     ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
                     std::source_location loc = std::source_location::current()) noexcept {
-    return detail::fork_channel_<Proto, dual_of_t<Proto>, SelfTag, PeerTag, Policy>(
+    return detail::late_door_t<SessionMintDoor, Proto>::template fork_channel_<Proto, dual_of_t<Proto>, SelfTag,
+                                                                               PeerTag, Policy>(
         ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
         std::move(self_body), std::move(peer_body), loc);
 }
@@ -2264,11 +2317,140 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
     if !consteval {
         endpoints = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy, session_priority_v<ResourceA>>(loc);
     }
-    return std::pair{
-        detail::open_session_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(
-            std::forward<ResourceA>(resource_a), loc, endpoints.first),
-        detail::open_session_<dual_of_t<Proto>, ResourceB, Policy, ::foundation::permissions::EmptyPermSet>(
-            std::forward<ResourceB>(resource_b), loc, endpoints.second)};
+    using Door = detail::late_door_t<SessionMintDoor, Proto>;
+    return std::pair{Door::template open_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(
+                         std::forward<ResourceA>(resource_a), loc, endpoints.first),
+                     Door::template open_<dual_of_t<Proto>, ResourceB, Policy, ::foundation::permissions::EmptyPermSet>(
+                         std::forward<ResourceB>(resource_b), loc, endpoints.second)};
 }
+
+// ── The door of the mints ────────────────────────────────────────────
+//
+// The mints above reach the handle factory through this class.  Its
+// members are private and static.  Its friends are the mints of this
+// header and the door of fixy/session/AsyncChannel.h, and each of them
+// states its gate before it calls a member.  The class is final, and no
+// object of it exists, so no other scope names a member.
+//
+// A friend declaration of a constrained function template repeats the
+// constraint exactly, and it cannot carry a default argument.  The class
+// therefore stands after the mints, and each mint names it through
+// detail::late_door_t.
+class SessionMintDoor final {
+    SessionMintDoor() = delete("the mint door holds static members only; no object of it exists");
+    SessionMintDoor(const SessionMintDoor&) = delete("the mint door holds static members only");
+    SessionMintDoor& operator=(const SessionMintDoor&) = delete("the mint door holds static members only");
+    SessionMintDoor(SessionMintDoor&&) = delete("the mint door holds static members only");
+    SessionMintDoor& operator=(SessionMintDoor&&) = delete("the mint door holds static members only");
+    constexpr ~SessionMintDoor() noexcept {}
+
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy>
+        requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
+              && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
+    friend constexpr auto mint_session_handle(Resource r, std::source_location loc) noexcept;
+
+    template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource, typename... Tags,
+              typename... Brands>
+        requires CtxFitsPermissionedSession<Ctx, Proto, Resource, Tags...>
+    friend constexpr auto mint_permissioned_session(Ctx const&, Resource resource,
+                                                    ::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept;
+
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename Body>
+        requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
+              && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
+              && SessionBody<Body, Proto, Resource, Policy>
+    friend constexpr Resource with_session(Resource r, Body body, std::source_location loc) noexcept(
+        std::is_nothrow_invocable_v<Body, detail::first_handle_t<Proto, Resource, Policy,
+                                                                 ::foundation::permissions::EmptyPermSet,
+                                                                 detail::brand_ctx_t<Body>>>);
+
+    template <typename Proto, typename SelfTag, typename PeerTag, AbandonmentPolicy Policy, typename Ctx,
+              typename Parent, typename Brand, typename ResourceSelf, typename ResourcePeer, typename SelfBody,
+              typename PeerBody>
+        requires CtxFitsForkedChannel<Ctx, Proto, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
+              && SessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
+              && detail::ForkedEndpointBody<SelfBody, Proto, ResourceSelf, Policy, SelfTag, Ctx>
+              && detail::ForkedEndpointBody<PeerBody, dual_of_t<Proto>, ResourcePeer, Policy, PeerTag, Ctx>
+    friend ::foundation::permissions::Permission<Parent, Brand>
+    mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
+                        ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,
+                        PeerBody peer_body, std::source_location loc) noexcept;
+
+    template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename ResourceA, typename ResourceB>
+        requires CtxFitsTestChannel<Ctx, Proto> && SessionResource<ResourceA> && SessionResource<ResourceB>
+              && ChannelEndsShareAPriority<ResourceA, ResourceB>
+    friend constexpr auto mint_test_channel(Ctx const&, ResourceA resource_a, ResourceB resource_b,
+                                            std::source_location loc) noexcept;
+
+    friend class AsyncChannelDoor;
+
+    // Opens a session with a new record.
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
+    [[nodiscard]] static constexpr auto open_(Resource r, std::source_location loc) noexcept {
+        return HandleFactory::open_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc);
+    }
+
+    // Opens a session on a record that a channel mint claimed.
+    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
+    [[nodiscard]] static constexpr auto open_(Resource r, std::source_location loc,
+                                              watch::endpoint_id endpoint) noexcept {
+        return HandleFactory::open_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, endpoint);
+    }
+
+    // One side of a forked channel.  It builds the endpoint in the thread
+    // that runs it, gives the endpoint to the body, and closes the handle
+    // that the body returns.  A struct and not a lambda, because a lambda
+    // capture cannot hold a reference Resource by its declared type.  It
+    // is a private member, and only fork_channel_ builds one.
+    template <typename Proto, AbandonmentPolicy Policy, typename Resource, typename Body>
+    struct forked_endpoint_ {
+        Resource resource;
+        Body body;
+        std::source_location loc;
+        // The record the channel mint claimed for this end, linked to the
+        // record of the other end.
+        watch::endpoint_id endpoint = watch::endpoint_id::none;
+
+        template <typename Perm, typename Ctx>
+        void operator()(Perm permission, Ctx const& ctx) noexcept {
+            auto head = HandleFactory::open_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
+                                             detail::brand_ctx_t<Body>>(std::forward<Resource>(resource), loc,
+                                                                        endpoint);
+            auto at_end = std::invoke(std::move(body), std::move(head), std::move(permission), ctx);
+            static_cast<void>(std::move(at_end).close());
+        }
+    };
+
+    // Claims the two linked records of a channel and starts its two sides
+    // on two threads.  Each fork-shaped channel mint states its gate and
+    // then calls this.  No mint can start a side without its record.  The
+    // relation between the two protocols is the gate of each mint: the
+    // dual, or an asynchronous refinement of it.  This member states the
+    // rest of the gate again.
+    template <typename SelfProto, typename PeerProto, typename SelfTag, typename PeerTag, AbandonmentPolicy Policy,
+              typename Ctx, typename Parent, typename Brand, typename ResourceSelf, typename ResourcePeer,
+              typename SelfBody, typename PeerBody>
+        requires WellFormedRunnableProtocol<SelfProto> && WellFormedRunnableProtocol<PeerProto>
+              && PermissionFlowCloses<SelfProto, ::foundation::permissions::EmptyPermSet>
+              && PermissionFlowCloses<PeerProto, ::foundation::permissions::EmptyPermSet>
+              && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>
+              && SessionResource<ResourceSelf> && SessionResource<ResourcePeer>
+              && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
+              && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Ctx>
+              && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Ctx>
+    [[nodiscard]] static ::foundation::permissions::Permission<Parent, Brand>
+    fork_channel_(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
+                  ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
+                  std::source_location loc) noexcept {
+        using SelfSide = forked_endpoint_<SelfProto, Policy, ResourceSelf, SelfBody>;
+        using PeerSide = forked_endpoint_<PeerProto, Policy, ResourcePeer, PeerBody>;
+        const auto [self_endpoint, peer_endpoint] =
+            detail::claim_channel_<SelfProto, PeerProto, Policy, session_priority_v<ResourceSelf>>(loc);
+        return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
+            ctx, std::move(parent),
+            SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
+            PeerSide{std::forward<ResourcePeer>(peer_resource), std::move(peer_body), loc, peer_endpoint});
+    }
+};
 
 }  // namespace fixy::session

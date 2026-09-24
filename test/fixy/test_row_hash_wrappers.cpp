@@ -1017,6 +1017,20 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::Borrowed, kMessageMarker},
     {^^::fixy::session::Released, kMessageMarker},
     {^^::fixy::session::DelegatedSession, kMessageMarker},
+    {^^::fixy::session::HandleFactory,
+     "the builder of every session handle: it has static members only, no object of it exists, and it is never a "
+     "value"},
+    {^^::fixy::session::SessionMintDoor,
+     "the door of the session mints to the handle factory: it has static members only, no object of it exists, "
+     "and it is never a value"},
+    {^^::fixy::session::DelegationDoor,
+     "the door of the delegation mint: it has static members only, no object of it exists, and it is never a value"},
+    {^^::fixy::session::AsyncChannelDoor,
+     "the door of the asynchronous channel mint: it has static members only, no object of it exists, and it is "
+     "never a value"},
+    {^^::fixy::session::CheckpointDoor,
+     "the door of a checkpoint handle to the handle factory: it has static members only, no object of it exists, "
+     "and it is never a value"},
     {^^::fixy::session::SharedReader,
      "a reader's share of a pool that a message carries: it is the payload of a Send or a Recv, and the handle "
      "that steps through the protocol folds it"},
