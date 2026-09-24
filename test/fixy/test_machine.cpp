@@ -29,12 +29,12 @@ struct Disconnected {};
 
 struct Connecting {
     int attempt = 0;
-    explicit Connecting(int a) noexcept : attempt{a} {}
+    constexpr explicit Connecting(int a) noexcept : attempt{a} {}
 };
 
 struct Connected {
     int fd = -1;
-    explicit Connected(int f) noexcept : fd{f} {}
+    constexpr explicit Connected(int f) noexcept : fd{f} {}
 };
 
 // The per-machine relation, preferred: the edges sit beside the states

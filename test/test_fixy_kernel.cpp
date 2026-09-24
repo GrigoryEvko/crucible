@@ -330,12 +330,12 @@ static_assert(!fk::BinaryTransform<&kernel_tu_binary_shapes::f_binary_arity_thre
 
 namespace kernel_tu_fusion_shapes {
 
-inline int p_double(int x) noexcept { return x * 2; }
-inline int p_inc(int x) noexcept { return x + 1; }
+constexpr int p_double(int x) noexcept { return x * 2; }
+constexpr int p_inc(int x) noexcept { return x + 1; }
 
 // The second pair changes the element type along the way.
-inline double p_to_double(int x) noexcept { return static_cast<double>(x); }
-inline double p_half(double x) noexcept { return x * 0.5; }
+constexpr double p_to_double(int x) noexcept { return static_cast<double>(x); }
+constexpr double p_half(double x) noexcept { return x * 0.5; }
 
 }  // namespace kernel_tu_fusion_shapes
 

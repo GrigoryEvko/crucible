@@ -48,12 +48,12 @@ namespace effects = ::crucible::effects;
 
 namespace fusion_test {
 
-inline int p_int_to_int(int x) noexcept { return x * 2; }
+constexpr int p_int_to_int(int x) noexcept { return x * 2; }
 inline double p_int_to_double(int x) noexcept { return static_cast<double>(x) * 1.5; }
 inline int p_double_to_int(double x) noexcept { return static_cast<int>(x); }
 inline char p_int_to_char(int x) noexcept { return static_cast<char>(x % 128); }
 
-inline int c_int_to_int(int x) noexcept { return x + 1; }
+constexpr int c_int_to_int(int x) noexcept { return x + 1; }
 inline int c_double_to_int(double x) noexcept { return static_cast<int>(x + 0.5); }
 inline double c_int_to_double(int x) noexcept { return static_cast<double>(x) / 3.0; }
 inline char c_char_to_char(char x) noexcept { return static_cast<char>(x ^ 0x20); }
