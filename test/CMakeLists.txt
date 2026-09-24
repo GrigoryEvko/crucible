@@ -16147,3 +16147,4 @@ set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RE
 add_subdirectory(foundation)
 add_subdirectory(fixy)
 add_subdirectory(session_oracle)
+add_subdirectory(ct)

@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 namespace fixy::ct {
 
@@ -58,6 +59,20 @@ template <std::unsigned_integral T>
     for (std::size_t i = 0; i < a.size(); ++i) {
         acc |= a[i] ^ b[i];
     }
+    return acc == std::byte{0};
+}
+
+// Equality of two byte arrays whose length is part of the type.  A
+// length mismatch does not compile, and the fold below has no loop, so the
+// body carries no branch at all.  The disassembly guard checks that claim
+// on the compiled code.
+template <std::size_t N>
+    requires(N != std::dynamic_extent)
+[[nodiscard]] constexpr bool eq(std::span<const std::byte, N> a, std::span<const std::byte, N> b) noexcept {
+    std::byte acc{0};
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+        ((acc |= a[I] ^ b[I]), ...);
+    }(std::make_index_sequence<N>{});
     return acc == std::byte{0};
 }
 
