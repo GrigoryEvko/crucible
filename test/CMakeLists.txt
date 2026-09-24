@@ -489,6 +489,7 @@ set_tests_properties(test_serialize test_serialize_release_gate PROPERTIES
   LABELS "determinism;axiom-detsafe")
 crucible_test(test_cipher)
 crucible_test(test_transaction)
+crucible_test(test_permissioned_moved_from_handles)
 crucible_test(test_vigil)
 crucible_test(test_ckernel)
 crucible_test(test_graph)

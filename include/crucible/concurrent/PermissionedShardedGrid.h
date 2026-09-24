@@ -25,6 +25,7 @@
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/safety/PermissionTreeGenerator.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/ChannelBinding.h>
 
 #include <cstddef>
 #include <optional>
@@ -68,12 +69,11 @@ public:
     class ProducerHandle {
         static_assert(I < M, "Producer slot index out of range");
 
-        // A reference rather than a pointer, because a handle binds to
-        // one grid for life.  The reference also deletes move
-        // assignment, which matters: a defaulted move of an empty
-        // Permission is a no-op, so the source and the target would
-        // both go on claiming the linear token.
-        PermissionedShardedGrid& grid_;
+        // The move clears the binding, so a moved-from handle cannot
+        // push: a defaulted move of an empty Permission is a no-op, and
+        // a reference would let the source and the target both go on
+        // using the one linear token.
+        ::foundation::ChannelBinding<PermissionedShardedGrid> grid_;
         [[no_unique_address]] safety::Permission<grid_tag::Producer<UserTag, I>> perm_;
 
         constexpr ProducerHandle(PermissionedShardedGrid& g,
@@ -93,7 +93,7 @@ public:
         static constexpr std::size_t shard_index = I;
 
         // The routing policy picks the consumer column.
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return grid_.grid_.try_push(I, item); }
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return grid_->grid_.try_push(I, item); }
 
         // Snapshots over this slot's row.  Sound for telemetry and for
         // deciding whether to keep retrying, never for a correctness
@@ -101,13 +101,13 @@ public:
         [[nodiscard]] std::size_t size_approx() const noexcept {
             std::size_t total = 0;
             for (std::size_t j = 0; j < N; ++j) {
-                total += grid_.grid_.size_approx(I, j);
+                total += grid_->grid_.size_approx(I, j);
             }
             return total;
         }
         [[nodiscard]] bool empty_approx() const noexcept {
             for (std::size_t j = 0; j < N; ++j) {
-                if (grid_.grid_.size_approx(I, j) != 0) return false;
+                if (grid_->grid_.size_approx(I, j) != 0) return false;
             }
             return true;
         }
@@ -118,7 +118,7 @@ public:
     class ConsumerHandle {
         static_assert(J < N, "Consumer slot index out of range");
 
-        PermissionedShardedGrid& grid_;
+        ::foundation::ChannelBinding<PermissionedShardedGrid> grid_;
         [[no_unique_address]] safety::Permission<grid_tag::Consumer<UserTag, J>> perm_;
 
         constexpr ConsumerHandle(PermissionedShardedGrid& g,
@@ -137,7 +137,7 @@ public:
 
         static constexpr std::size_t shard_index = J;
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return grid_.grid_.try_pop(J); }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return grid_->grid_.try_pop(J); }
 
         // Snapshots over this slot's column.  Sound for telemetry and
         // for deciding whether to keep retrying, never for a
@@ -145,13 +145,13 @@ public:
         [[nodiscard]] std::size_t size_approx() const noexcept {
             std::size_t total = 0;
             for (std::size_t i = 0; i < M; ++i) {
-                total += grid_.grid_.size_approx(i, J);
+                total += grid_->grid_.size_approx(i, J);
             }
             return total;
         }
         [[nodiscard]] bool empty_approx() const noexcept {
             for (std::size_t i = 0; i < M; ++i) {
-                if (grid_.grid_.size_approx(i, J) != 0) return false;
+                if (grid_->grid_.size_approx(i, J) != 0) return false;
             }
             return true;
         }

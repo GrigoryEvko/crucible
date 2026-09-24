@@ -27,6 +27,7 @@
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/WorkingSet.h>
 
+#include <foundation/ChannelBinding.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/permissions/Permission.h>
@@ -97,12 +98,15 @@ public:
     // destruction.
 
     class ProducerHandle {
-        PermissionedMpscChannel* ch_ = nullptr;
+        // The move clears the binding.  A moved-from producer that kept
+        // its channel would push with no pool share, and so would push
+        // during the drained window that assumes every producer out.
+        ::foundation::ChannelBinding<PermissionedMpscChannel> ch_;
         ::foundation::permissions::SharedPermissionGuard<producer_tag> guard_;
 
         constexpr ProducerHandle(PermissionedMpscChannel& channel,
                                  ::foundation::permissions::SharedPermissionGuard<producer_tag>&& guard) noexcept
-            : ch_{&channel}, guard_{std::move(guard)} {}
+            : ch_{channel}, guard_{std::move(guard)} {}
         friend class PermissionedMpscChannel;
 
     public:
@@ -128,12 +132,11 @@ public:
     };
 
     class ConsumerHandle {
-        // A reference rather than a pointer, because a handle binds to
-        // one channel for life.  The reference also deletes move
-        // assignment, which matters: a defaulted move of an empty
-        // Permission is a no-op, so the source and the target would
-        // both go on claiming the linear token.
-        PermissionedMpscChannel& ch_;
+        // The move clears the binding, so a moved-from handle cannot
+        // pop: a defaulted move of an empty Permission is a no-op, and
+        // a reference or a plain pointer would let the source and the
+        // target both go on using the one linear token.
+        ::foundation::ChannelBinding<PermissionedMpscChannel> ch_;
         [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag> perm_;
 
         constexpr ConsumerHandle(PermissionedMpscChannel& channel,
@@ -155,10 +158,10 @@ public:
             "ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission "
             "and silently allow a second consumer to coexist (MpscRing's try_pop is single-consumer-only)");
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_.ring_.try_pop(); }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
 
-        [[nodiscard]] bool empty_approx() const noexcept { return ch_.ring_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_.ring_.size_approx(); }
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 

@@ -3,6 +3,7 @@
 #include <crucible/concurrent/ChainEdge.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/ChannelBinding.h>
 
 #include <type_traits>
 #include <utility>
@@ -36,7 +37,9 @@ public:
         : edge_{upstream, downstream, edge, signal_value} {}
 
     class SignalerHandle {
-        PermissionedChainEdge& owner_;
+        // The move clears the binding, so a moved-from handle cannot
+        // signal through the Permission it no longer holds.
+        ::foundation::ChannelBinding<PermissionedChainEdge> owner_;
         [[no_unique_address]] safety::Permission<signaler_tag> perm_;
 
         constexpr SignalerHandle(PermissionedChainEdge& owner, safety::Permission<signaler_tag>&& perm) noexcept
@@ -55,21 +58,21 @@ public:
         SignalerHandle& operator=(SignalerHandle&&) = delete(
             "ChainEdge SignalerHandle binds to one ChainEdge for life — rebinding would orphan the original Permission");
 
-        [[nodiscard]] value_type expected_signal() const noexcept { return owner_.edge_.expected_signal(); }
+        [[nodiscard]] value_type expected_signal() const noexcept { return owner_->edge_.expected_signal(); }
 
-        void signal(const value_type& signal) noexcept { owner_.signal_substrate_(signal); }
+        void signal(const value_type& signal) noexcept { owner_->signal_substrate_(signal); }
 
         [[nodiscard]] value_type signal() noexcept {
             value_type signal = expected_signal();
-            owner_.signal_substrate_(signal);
+            owner_->signal_substrate_(signal);
             return signal;
         }
 
-        [[nodiscard]] std::uint64_t current_value() const noexcept { return owner_.edge_.current_value(); }
+        [[nodiscard]] std::uint64_t current_value() const noexcept { return owner_->edge_.current_value(); }
     };
 
     class WaiterHandle {
-        PermissionedChainEdge& owner_;
+        ::foundation::ChannelBinding<PermissionedChainEdge> owner_;
         [[no_unique_address]] safety::Permission<waiter_tag> perm_;
 
         constexpr WaiterHandle(PermissionedChainEdge& owner, safety::Permission<waiter_tag>&& perm) noexcept
@@ -88,7 +91,7 @@ public:
         WaiterHandle& operator=(WaiterHandle&&) = delete(
             "ChainEdge WaiterHandle binds to one ChainEdge for life — rebinding would orphan the original Permission");
 
-        [[nodiscard]] value_type expected_signal() const noexcept { return owner_.edge_.expected_signal(); }
+        [[nodiscard]] value_type expected_signal() const noexcept { return owner_->edge_.expected_signal(); }
 
         // This reads the semaphore once. It never spins, yields or blocks, so
         // the caller owns the retry policy. No single backoff suits every
@@ -97,9 +100,9 @@ public:
         // give up at a fixed time. What every caller must avoid is spinning
         // out a whole scheduler quantum against a signaler that has itself
         // been descheduled.
-        [[nodiscard]] bool try_wait(const value_type& signal) const noexcept { return owner_.wait_substrate_(signal); }
+        [[nodiscard]] bool try_wait(const value_type& signal) const noexcept { return owner_->wait_substrate_(signal); }
 
-        [[nodiscard]] std::uint64_t current_value() const noexcept { return owner_.edge_.current_value(); }
+        [[nodiscard]] std::uint64_t current_value() const noexcept { return owner_->edge_.current_value(); }
     };
 
     [[nodiscard]] constexpr SignalerHandle signaler(safety::Permission<signaler_tag>&& perm) noexcept {

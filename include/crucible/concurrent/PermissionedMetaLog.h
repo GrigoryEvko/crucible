@@ -2,6 +2,7 @@
 
 #include <crucible/MetaLog.h>
 #include <crucible/permissions/_Permission.h>
+#include <foundation/ChannelBinding.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -40,7 +41,9 @@ public:
     PermissionedMetaLog& operator=(PermissionedMetaLog&&) = delete;
 
     class ProducerHandle {
-        ::crucible::MetaLog& log_;
+        // The move clears the binding, so a moved-from handle cannot
+        // append or drain through the Permission it no longer holds.
+        ::foundation::ChannelBinding<::crucible::MetaLog> log_;
         [[no_unique_address]] safety::Permission<producer_tag> perm_;
 
         constexpr ProducerHandle(::crucible::MetaLog& log, safety::Permission<producer_tag>&& perm) noexcept
@@ -60,20 +63,20 @@ public:
             "MetaLog ProducerHandle binds to one MetaLog for life — rebinding would orphan the original Permission");
 
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append(const value_type* metas, std::uint32_t count) {
-            return log_.try_append(metas, count);
+            return log_->try_append(metas, count);
         }
 
         [[nodiscard, gnu::hot]] bool try_append_one(const value_type& meta) {
-            return log_.try_append(&meta, 1).is_valid();
+            return log_->try_append(&meta, 1).is_valid();
         }
 
         template <typename CallerRow = ::crucible::effects::Row<>>
             requires ::crucible::effects::IsPure<CallerRow>
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append_pure(const value_type* metas, std::uint32_t count) {
-            return log_.template try_append_pure<CallerRow>(metas, count);
+            return log_->template try_append_pure<CallerRow>(metas, count);
         }
 
-        [[nodiscard]] std::uint32_t size_approx() const { return log_.size().peek(); }
+        [[nodiscard]] std::uint32_t size_approx() const { return log_->size().peek(); }
     };
 
     // The tail index is read relaxed. The consumer permission is linear, so
@@ -82,7 +85,7 @@ public:
     // which acquires against the producer's release and is what makes the
     // appended records visible.
     class ConsumerHandle {
-        ::crucible::MetaLog& log_;
+        ::foundation::ChannelBinding<::crucible::MetaLog> log_;
         [[no_unique_address]] safety::Permission<consumer_tag> perm_;
 
         constexpr ConsumerHandle(::crucible::MetaLog& log, safety::Permission<consumer_tag>&& perm) noexcept
@@ -102,48 +105,48 @@ public:
             "MetaLog ConsumerHandle binds to one MetaLog for life — rebinding would orphan the original Permission");
 
         [[nodiscard, gnu::hot]] std::optional<value_type> try_drain_one() {
-            const std::uint32_t t = log_.tail.peek_relaxed();
-            if (t == log_.head.get()) [[unlikely]] {
+            const std::uint32_t t = log_->tail.peek_relaxed();
+            if (t == log_->head.get()) [[unlikely]] {
                 return std::nullopt;
             }
 
-            value_type meta = log_.at(t);
-            log_.advance_tail(t + 1);
+            value_type meta = log_->at(t);
+            log_->advance_tail(t + 1);
             return meta;
         }
 
         template <typename Body>
             requires std::is_invocable_v<Body&, const value_type&>
         [[nodiscard]] std::uint32_t drain(Body&& body, std::uint32_t max_items = ::crucible::MetaLog::CAPACITY) {
-            const std::uint32_t t = log_.tail.peek_relaxed();
-            const std::uint32_t available = log_.head.get() - t;
+            const std::uint32_t t = log_->tail.peek_relaxed();
+            const std::uint32_t available = log_->head.get() - t;
             const std::uint32_t count = std::min(available, max_items);
 
             for (std::uint32_t i = 0; i < count; ++i) {
-                std::invoke(body, log_.at(t + i));
+                std::invoke(body, log_->at(t + i));
             }
             if (count != 0) {
-                log_.advance_tail(t + count);
+                log_->advance_tail(t + count);
             }
             return count;
         }
 
         [[nodiscard]] const value_type& at(::crucible::MetaIndex index) const CRUCIBLE_LIFETIMEBOUND {
-            return log_.at(index);
+            return log_->at(index);
         }
 
         [[nodiscard]] value_type* try_contiguous(std::uint32_t start, std::uint32_t count) const
             CRUCIBLE_LIFETIMEBOUND {
-            return log_.try_contiguous(start, count);
+            return log_->try_contiguous(start, count);
         }
 
-        void advance_tail(std::uint32_t new_tail) { log_.advance_tail(new_tail); }
+        void advance_tail(std::uint32_t new_tail) { log_->advance_tail(new_tail); }
 
-        [[nodiscard]] std::uint32_t head_index() const { return log_.head.get(); }
+        [[nodiscard]] std::uint32_t head_index() const { return log_->head.get(); }
 
-        [[nodiscard]] std::uint32_t tail_index() const { return log_.tail.get(); }
+        [[nodiscard]] std::uint32_t tail_index() const { return log_->tail.get(); }
 
-        [[nodiscard]] std::uint32_t size_approx() const { return log_.size().peek(); }
+        [[nodiscard]] std::uint32_t size_approx() const { return log_->size().peek(); }
     };
 
     [[nodiscard]] constexpr ProducerHandle producer(safety::Permission<producer_tag>&& perm) noexcept {

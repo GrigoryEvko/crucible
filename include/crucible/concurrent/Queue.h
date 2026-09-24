@@ -21,6 +21,7 @@
 #include <crucible/concurrent/_SpscRing.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/ChannelBinding.h>
 
 #include <concepts>
 #include <cstddef>
@@ -162,11 +163,13 @@ public:
     // therefore recombine the halves once the handle goes out of scope.
     template <typename UserTag>
     class PermissionedProducerHandle {
-        Queue* q_ = nullptr;
+        // The move clears the binding, so a moved-from handle cannot
+        // push through the Permission it no longer holds.
+        ::foundation::ChannelBinding<Queue> q_;
         [[no_unique_address]] safety::Permission<queue_tag::Producer<UserTag>> perm_;
 
         constexpr PermissionedProducerHandle(Queue& q, safety::Permission<queue_tag::Producer<UserTag>>&& p) noexcept
-            : q_{&q}, perm_{std::move(p)} {}
+            : q_{q}, perm_{std::move(p)} {}
         friend class Queue;
 
     public:
@@ -185,11 +188,11 @@ public:
 
     template <typename UserTag>
     class PermissionedConsumerHandle {
-        Queue* q_ = nullptr;
+        ::foundation::ChannelBinding<Queue> q_;
         [[no_unique_address]] safety::Permission<queue_tag::Consumer<UserTag>> perm_;
 
         constexpr PermissionedConsumerHandle(Queue& q, safety::Permission<queue_tag::Consumer<UserTag>>&& c) noexcept
-            : q_{&q}, perm_{std::move(c)} {}
+            : q_{q}, perm_{std::move(c)} {}
         friend class Queue;
 
     public:
@@ -269,11 +272,13 @@ public:
     // must stay distinct in the type system needs a user tag per producer.
     template <typename UserTag>
     class PermissionedProducerHandle {
-        Queue* q_ = nullptr;
+        // The move clears the binding, so a moved-from handle cannot
+        // push through the Permission it no longer holds.
+        ::foundation::ChannelBinding<Queue> q_;
         [[no_unique_address]] safety::Permission<queue_tag::Producer<UserTag>> perm_;
 
         constexpr PermissionedProducerHandle(Queue& q, safety::Permission<queue_tag::Producer<UserTag>>&& p) noexcept
-            : q_{&q}, perm_{std::move(p)} {}
+            : q_{q}, perm_{std::move(p)} {}
         friend class Queue;
 
     public:
@@ -292,11 +297,11 @@ public:
 
     template <typename UserTag>
     class PermissionedConsumerHandle {
-        Queue* q_ = nullptr;
+        ::foundation::ChannelBinding<Queue> q_;
         [[no_unique_address]] safety::Permission<queue_tag::Consumer<UserTag>> perm_;
 
         constexpr PermissionedConsumerHandle(Queue& q, safety::Permission<queue_tag::Consumer<UserTag>>&& c) noexcept
-            : q_{&q}, perm_{std::move(c)} {}
+            : q_{q}, perm_{std::move(c)} {}
         friend class Queue;
 
     public:

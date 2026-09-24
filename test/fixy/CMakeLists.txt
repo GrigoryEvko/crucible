@@ -2027,6 +2027,7 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
 # channel's own header, which is why include/fixy/concurrent/ is an
 # authoring location in scripts/check-splits-into-orphan.sh.
 fixy_test(test_concurrent_channels)
+fixy_test(test_channel_moved_from)
 
 # A handle owns a linear token or a pool share; copying it would
 # duplicate the one and double-count the other.

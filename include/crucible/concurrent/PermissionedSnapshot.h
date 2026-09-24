@@ -16,6 +16,7 @@
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Stale.h>
+#include <foundation/ChannelBinding.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -58,11 +59,14 @@ public:
         : snap_{initial}, reader_pool_{safety::mint_permission_root<reader_tag>()} {}
 
     class WriterHandle {
-        PermissionedSnapshot* snap_ = nullptr;
+        // The move clears the binding, and so does handing the
+        // Permission back, so neither a moved-from writer nor a
+        // released one can publish again.
+        ::foundation::ChannelBinding<PermissionedSnapshot> snap_;
         [[no_unique_address]] safety::Permission<writer_tag> perm_;
 
         constexpr WriterHandle(PermissionedSnapshot& s, safety::Permission<writer_tag>&& p) noexcept
-            : snap_{&s}, perm_{std::move(p)} {}
+            : snap_{s}, perm_{std::move(p)} {}
         friend class PermissionedSnapshot;
 
     public:
@@ -81,19 +85,25 @@ public:
 
         // Hands the writer permission back, so the caller can spend it
         // on a full-exclusion transition.  The rvalue qualification
-        // consumes the handle at the call site, and the handle is
-        // moved-from afterwards: it must not publish again.
-        [[nodiscard]] safety::Permission<writer_tag> release_permission() && noexcept { return std::move(perm_); }
+        // consumes the handle at the call site, and the binding is
+        // cleared here, so a publish after the release fails closed.
+        [[nodiscard]] safety::Permission<writer_tag> release_permission() && noexcept {
+            snap_.unbind();
+            return std::move(perm_);
+        }
     };
 
     // Holds a pool share for its whole lifetime and gives it back on
     // destruction.
     class ReaderHandle {
-        PermissionedSnapshot* snap_ = nullptr;
+        // The move clears the binding.  A moved-from reader that kept
+        // its snapshot would read with no pool share, during the
+        // drained window that assumes every reader out.
+        ::foundation::ChannelBinding<PermissionedSnapshot> snap_;
         safety::SharedPermissionGuard<reader_tag> guard_;
 
         constexpr ReaderHandle(PermissionedSnapshot& s, safety::SharedPermissionGuard<reader_tag>&& g) noexcept
-            : snap_{&s}, guard_{std::move(g)} {}
+            : snap_{s}, guard_{std::move(g)} {}
         friend class PermissionedSnapshot;
 
     public:

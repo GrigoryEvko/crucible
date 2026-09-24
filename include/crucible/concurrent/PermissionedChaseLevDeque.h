@@ -24,6 +24,7 @@
 #include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/ChannelBinding.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -68,14 +69,13 @@ public:
 
     PermissionedChaseLevDeque() noexcept : thief_pool_{safety::mint_permission_root<thief_tag>()} {}
 
-    // A reference rather than a pointer, because a handle binds to one
-    // deque for life.  The reference also deletes move assignment,
-    // which matters: a defaulted move of an empty Permission is a
-    // no-op, so the source and the target would both go on claiming the
-    // linear token.
+    // Each handle holds a binding that its move clears, so a moved-from
+    // handle cannot push, pop or steal.  A defaulted move of an empty
+    // Permission is a no-op, and a reference or a plain pointer would
+    // let the source and the target both go on using the one token.
 
     class OwnerHandle {
-        PermissionedChaseLevDeque& deque_;
+        ::foundation::ChannelBinding<PermissionedChaseLevDeque> deque_;
         [[no_unique_address]] safety::Permission<owner_tag> perm_;
 
         constexpr OwnerHandle(PermissionedChaseLevDeque& d, safety::Permission<owner_tag>&& p) noexcept
@@ -95,14 +95,14 @@ public:
         OwnerHandle& operator=(OwnerHandle&&) = delete(
             "OwnerHandle binds to ONE deque for life — rebinding would orphan the original Permission and silently allow a second owner to coexist (CL's push_bottom/pop_bottom is single-owner-only)");
 
-        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept { return deque_.deque_.push_bottom(item); }
+        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept { return deque_->deque_.push_bottom(item); }
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return deque_.deque_.pop_bottom(); }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return deque_->deque_.pop_bottom(); }
 
         // Snapshots.  Sound for telemetry and for deciding whether to
         // keep retrying, never for a correctness invariant.
-        [[nodiscard]] std::size_t size_approx() const noexcept { return deque_.deque_.size_approx(); }
-        [[nodiscard]] bool empty_approx() const noexcept { return deque_.deque_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return deque_->deque_.size_approx(); }
+        [[nodiscard]] bool empty_approx() const noexcept { return deque_->deque_.empty_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
@@ -110,11 +110,11 @@ public:
     // destruction.
 
     class ThiefHandle {
-        PermissionedChaseLevDeque* deque_ = nullptr;
+        ::foundation::ChannelBinding<PermissionedChaseLevDeque> deque_;
         safety::SharedPermissionGuard<thief_tag> guard_;
 
         constexpr ThiefHandle(PermissionedChaseLevDeque& d, safety::SharedPermissionGuard<thief_tag>&& g) noexcept
-            : deque_{&d}, guard_{std::move(g)} {}
+            : deque_{d}, guard_{std::move(g)} {}
         friend class PermissionedChaseLevDeque;
 
     public:

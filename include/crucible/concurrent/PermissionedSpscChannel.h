@@ -15,6 +15,7 @@
 #include <crucible/concurrent/_SpscRing.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/ChannelBinding.h>
 
 #include <cstddef>
 #include <optional>
@@ -54,12 +55,11 @@ public:
     PermissionedSpscChannel() noexcept = default;
 
     class ProducerHandle {
-        // A reference rather than a pointer, because a handle binds to
-        // one channel for life.  The reference also deletes move
-        // assignment, which matters: a defaulted move of an empty
-        // Permission is a no-op, so the source and the target would
-        // both go on claiming the linear token.
-        PermissionedSpscChannel& ch_;
+        // The move clears the binding, so a moved-from handle cannot
+        // push: a defaulted move of an empty Permission is a no-op, and
+        // a reference would let the source and the target both go on
+        // using the one linear token.
+        ::foundation::ChannelBinding<PermissionedSpscChannel> ch_;
         [[no_unique_address]] safety::Permission<producer_tag> perm_;
 
         constexpr ProducerHandle(PermissionedSpscChannel& c, safety::Permission<producer_tag>&& p) noexcept
@@ -74,24 +74,22 @@ public:
         ProducerHandle& operator=(const ProducerHandle&) =
             delete("ProducerHandle owns the Producer Permission — assignment would overwrite the linear token");
         constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
-        // The reference member already deletes this implicitly.  Saying
-        // so explicitly puts the reason in the diagnostic instead of
-        // pointing at an implicitly-deleted special member.
         ProducerHandle& operator=(ProducerHandle&&) = delete(
             "ProducerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second producer to coexist");
 
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return ch_.ring_.try_push(item); }
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return ch_->ring_.try_push(item); }
 
         // Snapshots.  Sound for telemetry and for deciding whether to
         // keep retrying, never for a correctness invariant.
-        [[nodiscard]] bool empty_approx() const noexcept { return ch_.ring_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_.ring_.size_approx(); }
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
     class ConsumerHandle {
-        // A reference for the same reason as in ProducerHandle.
-        PermissionedSpscChannel& ch_;
+        // A binding that the move clears, for the same reason as in
+        // ProducerHandle.
+        ::foundation::ChannelBinding<PermissionedSpscChannel> ch_;
         [[no_unique_address]] safety::Permission<consumer_tag> perm_;
 
         constexpr ConsumerHandle(PermissionedSpscChannel& c, safety::Permission<consumer_tag>&& p) noexcept
@@ -109,10 +107,10 @@ public:
         ConsumerHandle& operator=(ConsumerHandle&&) = delete(
             "ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second consumer to coexist");
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_.ring_.try_pop(); }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
 
-        [[nodiscard]] bool empty_approx() const noexcept { return ch_.ring_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_.ring_.size_approx(); }
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 

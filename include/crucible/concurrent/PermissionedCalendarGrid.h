@@ -24,6 +24,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/ChannelBinding.h>
 
 #include <array>
 #include <cstddef>
@@ -89,7 +90,9 @@ public:
     class ProducerHandle {
         static_assert(P < NumProducers, "ProducerHandle<P>: P must be < NumProducers");
 
-        PermissionedCalendarGrid& grid_;
+        // The move clears the binding, so a moved-from handle cannot
+        // push through the Permission it no longer holds.
+        ::foundation::ChannelBinding<PermissionedCalendarGrid> grid_;
         [[no_unique_address]] safety::Permission<producer_tag<P>> perm_;
 
         constexpr ProducerHandle(PermissionedCalendarGrid& g, safety::Permission<producer_tag<P>>&& p) noexcept
@@ -108,8 +111,8 @@ public:
         static constexpr std::size_t row_index = P;
 
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            const std::size_t b = grid_.bucket_for_(item);
-            return grid_.rings_[P][b].try_push(item);
+            const std::size_t b = grid_->bucket_for_(item);
+            return grid_->rings_[P][b].try_push(item);
         }
 
         // Only a run of items sharing a bucket becomes one batched
@@ -119,13 +122,13 @@ public:
             std::size_t total = 0;
             std::size_t i = 0;
             while (i < items.size()) {
-                const std::size_t bucket = grid_.bucket_for_(items[i]);
+                const std::size_t bucket = grid_->bucket_for_(items[i]);
                 std::size_t run_end = i + 1;
-                while (run_end < items.size() && grid_.bucket_for_(items[run_end]) == bucket) {
+                while (run_end < items.size() && grid_->bucket_for_(items[run_end]) == bucket) {
                     ++run_end;
                 }
                 const std::size_t want = run_end - i;
-                const std::size_t pushed = grid_.rings_[P][bucket].try_push_batch(items.subspan(i, want));
+                const std::size_t pushed = grid_->rings_[P][bucket].try_push_batch(items.subspan(i, want));
                 total += pushed;
                 if (pushed < want) break;
                 i = run_end;
@@ -139,13 +142,13 @@ public:
         [[nodiscard]] std::size_t size_approx() const noexcept {
             std::size_t total = 0;
             for (std::size_t b = 0; b < NumBuckets; ++b) {
-                total += grid_.rings_[P][b].size_approx();
+                total += grid_->rings_[P][b].size_approx();
             }
             return total;
         }
         [[nodiscard]] bool empty_approx() const noexcept {
             for (std::size_t b = 0; b < NumBuckets; ++b) {
-                if (!grid_.rings_[P][b].empty_approx()) return false;
+                if (!grid_->rings_[P][b].empty_approx()) return false;
             }
             return true;
         }
@@ -153,7 +156,7 @@ public:
     };
 
     class ConsumerHandle {
-        PermissionedCalendarGrid& grid_;
+        ::foundation::ChannelBinding<PermissionedCalendarGrid> grid_;
         [[no_unique_address]] safety::Permission<consumer_tag> perm_;
 
         constexpr ConsumerHandle(PermissionedCalendarGrid& g, safety::Permission<consumer_tag>&& p) noexcept
@@ -177,16 +180,16 @@ public:
             // over a fixed set of buckets.  The running sum is an
             // absolute bucket counter, and the modulo maps it onto a
             // physical column.
-            const std::uint64_t cur_origin = grid_.current_bucket_.peek_relaxed();
+            const std::uint64_t cur_origin = grid_->current_bucket_.peek_relaxed();
             for (std::size_t scan = 0; scan < NumBuckets; ++scan) {
                 const std::uint64_t this_b = cur_origin + scan;
                 const std::size_t bucket = this_b % NumBuckets;
                 for (std::size_t p = 0; p < NumProducers; ++p) {
-                    if (auto v = grid_.rings_[p][bucket].try_pop()) {
+                    if (auto v = grid_->rings_[p][bucket].try_pop()) {
                         return v;
                     }
                 }
-                grid_.advance_past_(this_b);
+                grid_->advance_past_(this_b);
             }
             return std::nullopt;
         }
@@ -195,18 +198,18 @@ public:
             if (out.empty()) return 0;
             std::size_t total = 0;
             // Sampled once, for the reason given in try_pop.
-            const std::uint64_t cur_origin = grid_.current_bucket_.peek_relaxed();
+            const std::uint64_t cur_origin = grid_->current_bucket_.peek_relaxed();
             for (std::size_t scan = 0; scan < NumBuckets && total < out.size(); ++scan) {
                 const std::uint64_t this_b = cur_origin + scan;
                 const std::size_t bucket = this_b % NumBuckets;
                 std::size_t bucket_got = 0;
                 for (std::size_t p = 0; p < NumProducers && total < out.size(); ++p) {
-                    const std::size_t got = grid_.rings_[p][bucket].try_pop_batch(out.subspan(total));
+                    const std::size_t got = grid_->rings_[p][bucket].try_pop_batch(out.subspan(total));
                     total += got;
                     bucket_got += got;
                 }
                 if (bucket_got == 0) {
-                    grid_.advance_past_(this_b);
+                    grid_->advance_past_(this_b);
                     continue;
                 }
                 // A bucket that yielded anything is left as the current
@@ -218,9 +221,9 @@ public:
         }
 
         // The consumer sees every cell, since it drains all of them.
-        [[nodiscard]] bool empty_approx() const noexcept { return grid_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(); }
-        [[nodiscard]] std::uint64_t current_bucket() const noexcept { return grid_.current_bucket_.peek_relaxed(); }
+        [[nodiscard]] bool empty_approx() const noexcept { return grid_->empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_->size_approx(); }
+        [[nodiscard]] std::uint64_t current_bucket() const noexcept { return grid_->current_bucket_.peek_relaxed(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumProducers * NumBuckets * BucketCap; }
     };
 

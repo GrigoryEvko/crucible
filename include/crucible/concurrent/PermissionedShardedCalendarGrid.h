@@ -28,6 +28,7 @@
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/ChannelBinding.h>
 
 #include <array>
 #include <cstddef>
@@ -125,7 +126,9 @@ public:
     class ProducerHandle {
         static_assert(S < NumShards, "ProducerHandle<S>: S must be < NumShards");
 
-        PermissionedShardedCalendarGrid& grid_;
+        // The move clears the binding, so a moved-from handle cannot
+        // push through the Permission it no longer holds.
+        ::foundation::ChannelBinding<PermissionedShardedCalendarGrid> grid_;
         [[no_unique_address]] safety::Permission<shard_producer_tag<S>> perm_;
 
         constexpr ProducerHandle(PermissionedShardedCalendarGrid& g,
@@ -146,15 +149,15 @@ public:
         static constexpr std::size_t shard_index = S;
 
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            const std::size_t b = grid_.bucket_for_(S, item);
-            return grid_.shards_[S]->buckets[b].try_push(item);
+            const std::size_t b = grid_->bucket_for_(S, item);
+            return grid_->shards_[S]->buckets[b].try_push(item);
         }
 
         // Snapshots over this handle's shard.  Sound for telemetry and
         // for deciding whether to keep retrying, never for a
         // correctness invariant.
-        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(S); }
-        [[nodiscard]] bool empty_approx() const noexcept { return grid_.size_approx(S) == 0; }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_->size_approx(S); }
+        [[nodiscard]] bool empty_approx() const noexcept { return grid_->size_approx(S) == 0; }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumBuckets * BucketCap; }
     };
 
@@ -162,7 +165,7 @@ public:
     class ConsumerHandle {
         static_assert(S < NumShards, "ConsumerHandle<S>: S must be < NumShards");
 
-        PermissionedShardedCalendarGrid& grid_;
+        ::foundation::ChannelBinding<PermissionedShardedCalendarGrid> grid_;
         [[no_unique_address]] safety::Permission<shard_consumer_tag<S>> perm_;
 
         constexpr ConsumerHandle(PermissionedShardedCalendarGrid& g,
@@ -183,7 +186,7 @@ public:
         // shard.  The origin is sampled once, so the advance below
         // cannot slide the scan window forward under the loop.
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            auto& shard = *grid_.shards_[S];
+            auto& shard = *grid_->shards_[S];
             const std::uint64_t cur_origin = shard.current_bucket.peek_relaxed();
             for (std::size_t scan = 0; scan < NumBuckets; ++scan) {
                 const std::uint64_t this_b = cur_origin + scan;
@@ -206,8 +209,8 @@ public:
         // Snapshots over this handle's shard.  Sound for telemetry and
         // for deciding whether to keep retrying, never for a
         // correctness invariant.
-        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(S); }
-        [[nodiscard]] bool empty_approx() const noexcept { return grid_.size_approx(S) == 0; }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_->size_approx(S); }
+        [[nodiscard]] bool empty_approx() const noexcept { return grid_->size_approx(S) == 0; }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumBuckets * BucketCap; }
     };
 

@@ -18,6 +18,7 @@
 #include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
+#include <foundation/ChannelBinding.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -77,11 +78,17 @@ public:
 
     template <typename State = mpmc_session::Active>
     class ProducerHandleT {
-        PermissionedMpmcChannel* ch_ = nullptr;
+        // The move clears the binding, and close() moves it into the
+        // Closed handle.  A moved-from or closed producer that kept its
+        // channel would push with no pool share.
+        ::foundation::ChannelBinding<PermissionedMpmcChannel> ch_;
         safety::SharedPermissionGuard<producer_tag> guard_;
 
         constexpr ProducerHandleT(PermissionedMpmcChannel& c, safety::SharedPermissionGuard<producer_tag>&& g) noexcept
-            : ch_{&c}, guard_{std::move(g)} {}
+            : ch_{c}, guard_{std::move(g)} {}
+        constexpr ProducerHandleT(::foundation::ChannelBinding<PermissionedMpmcChannel>&& binding,
+                                  safety::SharedPermissionGuard<producer_tag>&& g) noexcept
+            : ch_{std::move(binding)}, guard_{std::move(g)} {}
         friend class PermissionedMpmcChannel;
         // Cross-state friendship is what lets close construct the
         // Closed handle out of this one's moved-out members.
@@ -119,7 +126,7 @@ public:
         [[nodiscard]] ProducerHandleT<mpmc_session::Closed> close() && noexcept
             requires std::is_same_v<State, mpmc_session::Active>
         {
-            return ProducerHandleT<mpmc_session::Closed>{*ch_, std::move(guard_)};
+            return ProducerHandleT<mpmc_session::Closed>{std::move(ch_), std::move(guard_)};
         }
 
         // Snapshots.  Sound for telemetry and for deciding whether to
@@ -131,11 +138,16 @@ public:
 
     template <typename State = mpmc_session::Active>
     class ConsumerHandleT {
-        PermissionedMpmcChannel* ch_ = nullptr;
+        // The move clears the binding, and close() moves it into the
+        // Closed handle, as in ProducerHandleT.
+        ::foundation::ChannelBinding<PermissionedMpmcChannel> ch_;
         safety::SharedPermissionGuard<consumer_tag> guard_;
 
         constexpr ConsumerHandleT(PermissionedMpmcChannel& c, safety::SharedPermissionGuard<consumer_tag>&& g) noexcept
-            : ch_{&c}, guard_{std::move(g)} {}
+            : ch_{c}, guard_{std::move(g)} {}
+        constexpr ConsumerHandleT(::foundation::ChannelBinding<PermissionedMpmcChannel>&& binding,
+                                  safety::SharedPermissionGuard<consumer_tag>&& g) noexcept
+            : ch_{std::move(binding)}, guard_{std::move(g)} {}
         friend class PermissionedMpmcChannel;
         template <typename Other>
         friend class ConsumerHandleT;
@@ -168,7 +180,7 @@ public:
         [[nodiscard]] ConsumerHandleT<mpmc_session::Closed> close() && noexcept
             requires std::is_same_v<State, mpmc_session::Active>
         {
-            return ConsumerHandleT<mpmc_session::Closed>{*ch_, std::move(guard_)};
+            return ConsumerHandleT<mpmc_session::Closed>{std::move(ch_), std::move(guard_)};
         }
 
         [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
