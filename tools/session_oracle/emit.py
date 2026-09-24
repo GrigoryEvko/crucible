@@ -38,8 +38,10 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Union
 
 import labelled
 from model import (Local, cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local, cpp_old_global,
@@ -686,9 +688,145 @@ def _split_closers(text: str) -> str:
     return text
 
 
+# The deepest template nest that one emitted line may hold.  The pinned
+# tree-sitter grammar of the AST gates cannot tell a template from a
+# less-than inside a nest of about twenty levels, and a file with one such
+# line fails parse_clean as a whole.
+NEST_LIMIT = 6
+_QUALIFIED = re.compile(r"\s*(::)?[A-Za-z_][A-Za-z_0-9]*(::[A-Za-z_][A-Za-z_0-9]*)*\s*")
+
+
+class _Nest:
+    """The template argument list of one template-id: each argument is a list of pieces."""
+
+    __slots__ = ("args",)
+
+    def __init__(self, args: list[list["_Piece"]]) -> None:
+        self.args = args
+
+
+_Piece = Union[str, _Nest]
+
+
+def _tokens(line: str) -> list[str]:
+    """Split one line into string literals, the three bracket tokens and runs of other text."""
+    out: list[str] = []
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if ch == '"':
+            j = i + 1
+            while j < len(line) and line[j] != '"':
+                j += 2 if line[j] == "\\" else 1
+            out.append(line[i:j + 1])
+            i = j + 1
+        elif ch in "<>,":
+            out.append(ch)
+            i += 1
+        else:
+            j = i
+            while j < len(line) and line[j] not in '"<>,':
+                j += 1
+            out.append(line[i:j])
+            i = j
+    return out
+
+
+def _parse_nest(tokens: list[str], pos: int, inside: bool) -> tuple[list[_Piece], int]:
+    """Read pieces up to the end of one template argument.  Returns the pieces and the next position."""
+    pieces: list[_Piece] = []
+    while pos < len(tokens):
+        tok = tokens[pos]
+        if tok == "<":
+            args: list[list[_Piece]] = []
+            pos += 1
+            while True:
+                arg, pos = _parse_nest(tokens, pos, True)
+                args.append(arg)
+                if pos >= len(tokens):
+                    raise GoldenError("an emitted line opens a template argument list that it never closes")
+                closer = tokens[pos]
+                pos += 1
+                if closer == ">":
+                    break
+            pieces.append(_Nest(args))
+        elif inside and tok in ",>":
+            return pieces, pos
+        else:
+            pieces.append(tok)
+            pos += 1
+    return pieces, pos
+
+
+def _depth(pieces: list[_Piece]) -> int:
+    return max((1 + max((_depth(a) for a in p.args), default=0) for p in pieces if isinstance(p, _Nest)),
+               default=0)
+
+
+def _render(pieces: list[_Piece]) -> str:
+    return "".join(p if isinstance(p, str) else "<" + ",".join(_render(a) for a in p.args) + ">"
+                   for p in pieces)
+
+
+def _hoist(pieces: list[_Piece], aliases: list[str], counter: list[int]) -> None:
+    """Replace each deep template argument that is one template-id by an alias, bottom up."""
+    for piece in pieces:
+        if not isinstance(piece, _Nest):
+            continue
+        for k, arg in enumerate(piece.args):
+            _hoist(arg, aliases, counter)
+            core = list(arg)
+            trail = ""
+            while core and isinstance(core[-1], str) and not core[-1].strip():
+                trail = core.pop() + trail
+            is_template_id = (len(core) == 2 and isinstance(core[0], str) and isinstance(core[1], _Nest)
+                              and _QUALIFIED.fullmatch(core[0]) is not None)
+            if is_template_id and _depth(core) > NEST_LIMIT - 1:
+                name = f"session_oracle_nest{counter[0]}"
+                counter[0] += 1
+                lead = core[0][:len(core[0]) - len(core[0].lstrip())]
+                aliases.append(f"using {name} = {_render(core).strip()};\n")
+                piece.args[k] = [lead + name + trail]
+
+
+def _hoist_nests(text: str) -> str:
+    """Give each template nest deeper than NEST_LIMIT an alias on the lines before its statement.
+
+    Every emitted statement that nests deeper gets one using-declaration for
+    each deep template argument, built bottom up, so no line nests deeper
+    than NEST_LIMIT.  The aliases are named session_oracle_nest<k>, unique in
+    the file, and each one is in scope where its statement is, because it
+    sits in the same scope just before it.  O(length of the text).
+    """
+    out: list[str] = []
+    counter = [0]
+    for line in text.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith(("#", "//")):
+            out.append(line)
+            continue
+        tokens = _tokens(line)
+        pieces, _ = _parse_nest(tokens, 0, False)
+        if _depth(pieces) <= NEST_LIMIT:
+            out.append(line)
+            continue
+        if not stripped.rstrip().endswith(";"):
+            raise GoldenError(f"an emitted line nests deeper than {NEST_LIMIT} and is not one statement: "
+                              f"{stripped[:120]}")
+        aliases: list[str] = []
+        _hoist(pieces, aliases, counter)
+        indent = line[:len(line) - len(stripped)]
+        out.extend(indent + a for a in aliases)
+        rendered = _render(pieces)
+        if _depth(_parse_nest(_tokens(rendered), 0, False)[0]) > NEST_LIMIT:
+            raise GoldenError(f"an emitted line still nests deeper than {NEST_LIMIT}: {stripped[:120]}")
+        out.append(rendered)
+    return "".join(out)
+
+
 def emit_all(rows: list[Row]) -> dict[str, str]:
     """Return the file name and text of every emitted test."""
-    return {name: _split_closers(text) for name, text in (
+    return {name: _hoist_nests(_split_closers(text)) for name, text in (
         ("generated_fixy_duality.cpp", emit_fixy(rows)),
         ("generated_fixy_projection.cpp", emit_multi(rows)),
         ("generated_fixy_subtype.cpp", emit_subtype(rows)),
