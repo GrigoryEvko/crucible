@@ -53,7 +53,7 @@ apply to the row.
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
 | `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | Y | Y | · | member | · | · | HS14: 6 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 3 |
-| `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | Y | Y | · | member | · | · | HS14: 1 ⚠ |
+| `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | Y | Y | · | member | · | · | HS14: 2 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 8 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
@@ -483,5 +483,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 214 | 107 | 98 | 9 | 0 | 74 | 42 |
+| old (`include/crucible/`) | 214 | 107 | 98 | 9 | 0 | 74 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 94 | 38 | 55 | 1 | 0 | · | 30 |
