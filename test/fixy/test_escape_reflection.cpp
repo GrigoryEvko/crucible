@@ -3,9 +3,9 @@
 // not sanction, and the compiler reads the return type, so no spelling
 // evades it.
 //
-// scripts/check-escape-doors.sh scans source text and is the tree-wide
-// net; a text scan is coarse and a member written in a shape its regex
-// does not match slips through, which is the dangerous direction.  This
+// scripts/check-escape-doors.py reads the parse tree and is the tree-wide
+// net.  It is coarse: a return type that a macro hides slips through,
+// which is the dangerous direction.  This
 // TU closes that gap for the wrappers where a raw escape is dangerous:
 // it walks each one's public members through std::meta and asserts every
 // reference- or pointer-returning member is a sanctioned accessor, a

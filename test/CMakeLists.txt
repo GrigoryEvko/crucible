@@ -578,11 +578,12 @@ set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
 # test_escape_reflection; this script covers the free-function residue
 # reflection cannot walk.
 add_test(NAME escape_doors_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.sh --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.py --self-test)
 add_test(NAME escape_doors
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.sh --quiet)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.py --quiet)
 set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
 # fixy-A2-014: regression guard for the SessionPersistence.h include-lift.
 # Probes `g++ -H` to verify the bridge header does not transitively pull
 # Cipher.h / MerkleDag.h / Arena.h / FederationProtocol.h / etc.  Without

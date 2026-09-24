@@ -4,12 +4,10 @@
 // reference or pointer through a member the guard did not sanction, and
 // the compiler is what reads the return type, so no spelling evades it.
 //
-// scripts/check-escape-doors.sh scans source text.  A text scan is a
-// coarse net: a member written in a shape its regex does not match — a
-// trailing return, a macro-hidden type, a declaration split across
-// lines — is a raw escape the scan never sees, and a missed escape is
-// the dangerous direction.  This header closes that gap for member
-// functions.  It walks a type's public members through std::meta and
+// scripts/check-escape-doors.py reads the parse tree of the source.  It
+// is a coarse net: a return type that a macro hides is a raw escape it
+// never sees, and a missed escape is the dangerous direction.  This
+// header closes that gap for member functions.  It walks a type's public members through std::meta and
 // reads each function's return type as the compiler resolved it, so a
 // later member added to a checked wrapper, however it is spelled, is
 // seen exactly as the first was.
