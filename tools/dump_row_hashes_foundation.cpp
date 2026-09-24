@@ -244,11 +244,11 @@ using B07_FnDoublePayload = ::fixy::fn<double>;
 // A role is a named stack of atoms over the same binding, so these
 // entries witness the walk over several axes at once.
 //
-// Two of these repeat a value above, and both repeats are the point
-// rather than a collision. S01 is the binding with no atom at all, so it
-// prints B01. S05 spells an empty effect set and the Security top, and an
-// empty effect set is that axis's own pole, so it prints B03. The asserts
-// below hold both, and a reader who diffs the golden by hand needs them.
+// One of these repeats a value above, and the repeat is the point rather
+// than a collision. S01 is the binding with no atom at all, so it prints
+// B01. S05 spells an empty effect set and constant_time, so it differs
+// from B03 on the Security axis and takes its own slot. The asserts below
+// hold both facts, and a reader who diffs the golden by hand needs them.
 using S01_PureLinear = ::fixy::role::PureLinear<int>;
 using S02_PureCopy = ::fixy::role::PureCopy<int>;
 using S03_IoFunction = ::fixy::role::IoFunction<int>;
@@ -345,7 +345,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x4d260c6590cf7839ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0x0856e32833e00ef7ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -413,9 +413,9 @@ static_assert(row_hash_contribution_v<B07_FnDoublePayload> == row_hash_contribut
               "half of the cache key");
 static_assert(row_hash_contribution_v<S01_PureLinear> == row_hash_contribution_v<B01_FnStrictPole>,
               "PureLinear names no atom, so it is the strict pole on every axis");
-static_assert(row_hash_contribution_v<S05_CtCrypto> == row_hash_contribution_v<B03_FnSecret>,
-              "an empty effect set is the Effect pole, so CtCrypto resolves to the "
-              "Security top alone");
+static_assert(row_hash_contribution_v<S05_CtCrypto> != row_hash_contribution_v<B03_FnSecret>,
+              "CtCrypto states constant_time and B03 states as_secret, so a kernel compiled "
+              "under the timing discipline must not share a slot with a plain secret binding");
 
 // Two values are reserved, and no entry of this matrix may take either.
 //
@@ -479,11 +479,11 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
     return distinct;
 }
 
-// Fifty-one entries carry forty-six distinct values. Five entries repeat
-// one that stands above them: R05 repeats R04, B02 and B07 and S01 each
-// repeat B01, and S05 repeats B03. Every one of those five has its own
-// assert above, with the property that makes the repeat correct.
-static_assert(distinct_value_count() == 46,
+// Fifty-one entries carry forty-seven distinct values. Four entries repeat
+// one that stands above them: R05 repeats R04, and B02, B07 and S01 each
+// repeat B01. Every one of those four has its own assert above, with the
+// property that makes the repeat correct.
+static_assert(distinct_value_count() == 47,
               "the number of distinct values moved. Every repeat in this matrix is "
               "named by an assert above, so a new one is a collision between two "
               "claims that must not share a cache slot.");

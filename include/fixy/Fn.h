@@ -407,9 +407,13 @@ concept CtxAdmitsBinding =
 // identity one.  Folding it would split one discipline across two slots.
 //
 // The combiner is order-sensitive, so the walk is in enumerator order and
-// nothing sorts it.  That order is the enum's, which is append-only for
-// the same reason: a new axis at the end leaves every existing key where
-// it was, and a renumbering moves all of them.
+// nothing sorts it.  That order is the enum's, which is append-only.  A new
+// axis still moves every key: the walk folds one more step for it into
+// every binding, the strict pole included, so each B and S entry of the
+// foundation golden changes.  Appending keeps the old axes at their fold
+// positions, so a renumbering is worse, but neither leaves a key in place.
+// A new point on an existing axis moves only the keys of bindings that
+// spell it.
 //
 // Portability is the bound foundation/diag/RowHash.h sets out. A grade's
 // identity comes from a reflected name, so these keys agree only among

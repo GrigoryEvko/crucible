@@ -80,12 +80,14 @@ using SecretConsumer = ::fixy::fn<Type, ::fixy::atom::declassify<Policy>>;
 // timing-observable and reopens the side channel the discipline
 // closes.  The strict Effect pole is already the empty row, but the
 // empty row is spelled out here so that a later widening of that pole
-// cannot relax this role.  The strict poles carry the rest: linear
-// usage, since duplicating a secret defeats the discipline, and
-// non-reentrant, since a constant-time path must not interleave with
-// itself.
+// cannot relax this role.  The Security grade is constant_time, the one
+// point of that axis that states the timing claim, so every
+// constant-time rule of fixy/Collision.h reads this role.  The strict
+// poles carry the rest: linear usage, since duplicating a secret defeats
+// the discipline, and non-reentrant, since a constant-time path must not
+// interleave with itself.
 template <class Type>
-using CtCrypto = ::fixy::fn<Type, ::fixy::atom::with<>, ::fixy::atom::as_secret>;
+using CtCrypto = ::fixy::fn<Type, ::fixy::atom::with<>, ::fixy::atom::constant_time>;
 
 // The Security axis takes a declassification rather than a plain public
 // pin.  Both land the binding below the classified carrier, but only
@@ -147,7 +149,9 @@ static_assert(std::is_same_v<::fixy::role::IoFunction<int>::grade_on<Axis::Secur
 static_assert(std::is_same_v<::fixy::role::BgWorker<int>::grade_on<Axis::Effect>,
                              ::fixy::atom::with<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>);
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Effect>, ::fixy::atom::with<>>);
-static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>, ::fixy::atom::as_secret>);
+static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>, ::fixy::atom::constant_time>);
+static_assert(::fixy::atom::is_constant_time_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>>,
+              "CtCrypto must state the timing claim, or no constant-time rule reads the role");
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Usage>,
                              typename ::fixy::axis_traits<Axis::Usage>::strict>);
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Reentrancy>,
@@ -205,9 +209,9 @@ static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::BgWorker
 
 static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::CtCrypto<int>>
                   != ::foundation::diag::row_hash_contribution_v<::fixy::role::PureLinear<int>>,
-              "CtCrypto<int> and PureLinear<int> differ on the Security axis alone: one names the "
-              "secret level through an atom, the other takes the same level as its strict pole.  "
-              "The fold reads the grade as spelled, so the two take separate slots.");
+              "CtCrypto<int> and PureLinear<int> differ on the Security axis alone: one states "
+              "constant_time, the other takes the classified strict pole.  A kernel compiled for "
+              "one discipline must not serve the other, so the two take separate slots.");
 
 static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::PureLinear<int>>
                   != ::foundation::diag::row_hash_contribution_v<int>,

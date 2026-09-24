@@ -69,7 +69,7 @@ static_assert(std::is_same_v<role::IoFunction<int>::grade_on<Axis::Security>, at
 static_assert(std::is_same_v<role::BgWorker<int>::grade_on<Axis::Effect>, at::with<Eff::Bg, Eff::Alloc>>);
 static_assert(std::is_same_v<role::BgWorker<int>::grade_on<Axis::Security>, at::as_public>);
 static_assert(std::is_same_v<role::CtCrypto<int>::grade_on<Axis::Effect>, at::with<>>);
-static_assert(std::is_same_v<role::CtCrypto<int>::grade_on<Axis::Security>, at::as_secret>);
+static_assert(std::is_same_v<role::CtCrypto<int>::grade_on<Axis::Security>, at::constant_time>);
 static_assert(std::is_same_v<role::PublicEmit<int, policy::WireSerialize>::grade_on<Axis::Effect>, at::with<Eff::IO>>);
 static_assert(std::is_same_v<role::PublicEmit<int, policy::WireSerialize>::grade_on<Axis::Security>,
                              at::declassify<policy::WireSerialize>>);
