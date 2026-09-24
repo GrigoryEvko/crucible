@@ -239,7 +239,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
     [[nodiscard, gnu::pure]] uint64_t pool_bytes() const noexcept { return pool_bytes_; }
     [[nodiscard, gnu::pure]] uint32_t num_slots() const noexcept { return num_slots_; }
     [[nodiscard, gnu::pure]] uint32_t num_external() const noexcept { return num_external_; }
-    [[nodiscard, gnu::pure]] bool is_initialized() const noexcept { return ptr_table_ != nullptr; }
+    [[nodiscard, gnu::pure]] constexpr bool is_initialized() const noexcept { return ptr_table_ != nullptr; }
 
     // The same values, with their allocation tier carried in the return type.
     // A slot pointer comes out of a preallocated table, which is the pool
@@ -310,7 +310,7 @@ private:
     friend struct ReplayEngine;
     friend struct CrucibleContext;
 
-    [[nodiscard]] CRUCIBLE_INLINE InitializedView initialized_view_() const noexcept pre(is_initialized()) {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView initialized_view_() const noexcept pre(is_initialized()) {
         return crucible::fixy::wrap::mint_view<pool_state::Initialized>(*this);
     }
 

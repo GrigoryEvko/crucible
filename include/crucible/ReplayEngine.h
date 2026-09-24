@@ -214,7 +214,7 @@ struct ReplayEngine {
     [[nodiscard]] uint32_t num_ops() const { return static_cast<uint32_t>(end_ - ops_); }
 
     [[nodiscard]] bool is_complete() const { return cursor_ == end_; }
-    [[nodiscard]] bool is_initialized() const { return ops_ != nullptr; }
+    [[nodiscard]] constexpr bool is_initialized() const { return ops_ != nullptr; }
 
     using ActiveView = crucible::fixy::wrap::ScopedView<ReplayEngine, engine_state::Active>;
 
@@ -264,7 +264,7 @@ private:
     // already passed, so it reaches the view without a context.
     friend struct CrucibleContext;
 
-    [[nodiscard]] CRUCIBLE_INLINE ActiveView active_view_() const noexcept pre(is_initialized()) {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr ActiveView active_view_() const noexcept pre(is_initialized()) {
         return crucible::fixy::wrap::mint_view<engine_state::Active>(*this);
     }
 
