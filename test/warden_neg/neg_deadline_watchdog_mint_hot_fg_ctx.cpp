@@ -1,19 +1,18 @@
-// FIXY-U-084 HS14 neg-compile fixture (6 of 6).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_deadline_watchdog rejects HotFgCtx.  HotFgCtx's row is empty —
-// the hot foreground cannot stand up a watchdog (the steady_clock
-// baseline read and Senses pointer chase are both cold-path
-// operations).  This fixture closes the §XXI bug class where a
-// future caller might pass `effects::Init{}` as the cap-tag arg to
-// the bare ctor from a hot context, sidestepping row admission.
+// mint_deadline_watchdog rejects the hot foreground context.  Its row is
+// empty, so it does not own the Init atom that the gate asks for.  The
+// hot path observes no watchdog and builds none.
 
 #include <crucible/warden/DeadlineWatchdog.h>
+#include <fixy/Ctx.h>
 
 int main() {
     crucible::warden::Policy p{};
     p.deadline_miss_budget = 100;
     p.watchdog_window_sec = 1;
-    auto watchdog = crucible::warden::mint_deadline_watchdog(crucible::effects::HotFgCtx{}, /*senses=*/nullptr, p);
+    const ::fixy::HotFgCtx foreground = ::foundation::effects::testing::foreground();
+    auto watchdog = crucible::warden::mint_deadline_watchdog(foreground, /*senses=*/nullptr, p);
     (void)watchdog;
     return 0;
 }

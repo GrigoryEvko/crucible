@@ -193,8 +193,7 @@ public:
             const ::fixy::InitLoadCtx startup{::foundation::effects::host::InitOwner::mint_init_context()};
             senses_.emplace(
                 ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true}));
-            wd_.emplace(&*senses_, cfg_.watchdog_policy,
-                        ::crucible::effects::mint_init_context(::crucible::effects::detail::ctx_mint::init_key{}));
+            wd_.emplace(::crucible::warden::mint_deadline_watchdog(startup, &*senses_, cfg_.watchdog_policy));
         }
 
         bg_.start(ring_.get(), meta_log_.get(), cfg_.rank, cfg_.world_size, cfg_.device_capability);

@@ -33,17 +33,19 @@
 // replay bit-exactly is a structural error.
 
 #include <crucible/Platform.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/safety/_Checked.h>
 #include <crucible/safety/_ClockSource.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <chrono>
 #include <cstdint>
 #include <ctime>
+#include <type_traits>
 
 namespace crucible::warden {
 
@@ -81,10 +83,27 @@ concept CtxFitsDeadlineWatchdog =
     ::crucible::effects::CtxOwnsAnyOf<Ctx, ::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Init,
                                       ::crucible::effects::Effect::Test>;
 
+// Building a watchdog belongs to process startup, because the watchdog
+// takes the baseline that the first window is measured against.  The
+// build asks for a context that owns the Init atom.  A hot foreground
+// context or a background context observes a watchdog that already
+// exists.
+template <class Ctx>
+concept CtxFitsDeadlineWatchdogMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+
+class DeadlineWatchdog;
+
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsDeadlineWatchdogMint<Ctx>
+[[nodiscard]] constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, const ::crucible::perf::Senses* senses,
+                                                                const Policy& policy) noexcept;
+
 class DeadlineWatchdog {
-public:
-    [[nodiscard]] explicit DeadlineWatchdog(const ::crucible::perf::Senses* senses, const Policy& policy,
-                                            ::crucible::effects::Init) noexcept
+    // The constructor is private, and the mint is its one friend.  So a
+    // watchdog comes only from a context that owns the Init atom.
+    constexpr explicit DeadlineWatchdog(const ::crucible::perf::Senses* senses, const Policy& policy) noexcept
         : senses_{senses},
           miss_budget_{policy.deadline_miss_budget},
           window_ns_{static_cast<uint64_t>(policy.watchdog_window_sec) * 1000000000ull} {
@@ -93,6 +112,13 @@ public:
         // captures the baseline. All-zero state is that pending
         // sentinel.
     }
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsDeadlineWatchdogMint<Ctx>
+    friend constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, const ::crucible::perf::Senses* senses,
+                                                             const Policy& policy) noexcept;
+
+public:
 
     // The clock read is CLOCK_BOOTTIME rather than CLOCK_MONOTONIC
     // because a host suspend freezes the monotonic clock. The window
@@ -212,22 +238,27 @@ private:
 
 static_assert(sizeof(DeadlineWatchdog) <= 64, "DeadlineWatchdog must fit in one cache line");
 
-// Building a watchdog belongs to start-up, because it takes the
-// baseline the first window is measured against. A hot foreground or
-// background context observes one that already exists.
-template <class Ctx>
-concept CtxFitsDeadlineWatchdogMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
-
-template <effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsDeadlineWatchdogMint<Ctx>
 [[nodiscard]] constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, const ::crucible::perf::Senses* senses,
                                                                 const Policy& policy) noexcept {
-    return DeadlineWatchdog{senses, policy, ::crucible::effects::Init{}};
+    return DeadlineWatchdog{senses, policy};
 }
 
-static_assert(CtxFitsDeadlineWatchdogMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsDeadlineWatchdogMint<effects::BgDrainCtx>);
-static_assert(!CtxFitsDeadlineWatchdogMint<effects::HotFgCtx>);
+namespace detail::deadline_watchdog_mint_check {
+namespace fe = ::foundation::effects;
+using ColdInit = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO>>;
+using InitLoad = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>;
+using BgLoad = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>;
+using TestRunner = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>;
+static_assert(CtxFitsDeadlineWatchdogMint<ColdInit> && CtxFitsDeadlineWatchdogMint<InitLoad>);
+static_assert(!CtxFitsDeadlineWatchdogMint<BgLoad> && !CtxFitsDeadlineWatchdogMint<TestRunner>);
+static_assert(!CtxFitsDeadlineWatchdogMint<fe::ExecCtx<>>);
+static_assert(!CtxFitsDeadlineWatchdogMint<::crucible::effects::ColdInitCtx>,
+              "An old-tree context is not a context of the new tree.");
+static_assert(!std::is_constructible_v<DeadlineWatchdog, const ::crucible::perf::Senses*, const Policy&>,
+              "The constructor is private.  A watchdog comes only from mint_deadline_watchdog.");
+}  // namespace detail::deadline_watchdog_mint_check
 
 // The order a caller steps through after a Downgrade verdict. The
 // time-shared class is the floor: below it there is nothing weaker.

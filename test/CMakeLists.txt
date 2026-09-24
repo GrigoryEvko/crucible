@@ -2495,11 +2495,11 @@ crucible_neg_compile_fixy_test(neg_monotonic_clock_non_exec_ctx
 #   doesn't freeze the window.  Two distinct-mismatch-class fixtures:
 #   HotFgCtx (row-content) and a bare `int` (ctx-type).
 crucible_neg_compile_fixy_test(neg_deadline_watchdog_hot_ctx
-  "constraints.*not satisfied|no matching function"
-    "CtxFitsDeadlineWatchdog|observe")
+  "no matching function for call to .crucible::warden::DeadlineWatchdog::observe\\(crucible::effects::HotFgCtx&\\)."
+    "required for the satisfaction of .CtxFitsDeadlineWatchdog<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
 crucible_neg_compile_fixy_test(neg_deadline_watchdog_non_exec_ctx
-  "constraints.*not satisfied|no matching function"
-    "IsExecCtx|observe")
+  "no matching function for call to .crucible::warden::DeadlineWatchdog::observe\\(int\\)."
+    "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = int.")
 
 # ─── FIXY-V-196 RdtscPinned witness neg-compiles (mint discipline) ─────
 #   RdtscPinned is the bench-local move-only proof that the
@@ -5203,11 +5203,11 @@ crucible_neg_compile_warden_test(neg_hot_region_registry_mint_hot_fg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsDeadlineWatchdogMint")
+    "no matching function for call to .mint_deadline_watchdog\\(fixy::BgLoadCtx, std::nullptr_t, crucible::warden::Policy&\\)."
+    "required for the satisfaction of .CtxFitsDeadlineWatchdogMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsDeadlineWatchdogMint")
+    "no matching function for call to .mint_deadline_watchdog\\(const fixy::HotFgCtx&, std::nullptr_t, crucible::warden::Policy&\\)."
+    "required for the satisfaction of .CtxFitsDeadlineWatchdogMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 
 # ─── §XXI Universal Mint Pattern for perf/ hubs ───────────────────
 # Per-perf-hub mint_<hub> ships an HS14 floor: ≥2 neg-compile fixtures
@@ -5359,8 +5359,8 @@ crucible_neg_compile_warden_test(neg_hot_region_registry_mint_not_exec_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_not_exec_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsDeadlineWatchdogMint")
+    "no matching function for call to .mint_deadline_watchdog\\(NotAnExecCtx, std::nullptr_t, crucible::warden::Policy&\\)."
+    "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = NotAnExecCtx.")
 
 # ─── GAPS-130 cntp/dataplane/Xdp.h soundness gates ────────────────
 #
@@ -5916,16 +5916,15 @@ crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_no_cap
     "no matching function for call to .crucible::perf::SyscallTpBtf::load\\(\\)."
     "candidate expects 1 argument, 0 provided")
 
-# GAPS-004g (#1283): warden::DeadlineWatchdog cap-tag gate.  Construction
-# takes effects::Init by value as the third parameter — wrong-cap and
-# no-cap fixtures pin the gate against silent default-arg regressions.
-# Init-by-value discipline matches the Senses-touching facades upstream.
-crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "DeadlineWatchdog")
-crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_no_cap
-    "too few arguments|no matching function"
-    "candidate expects 3 arguments")
+# The constructor of warden::DeadlineWatchdog is private, and
+# mint_deadline_watchdog is its one route.  One fixture builds a
+# watchdog with the constructor, and one calls the mint with no context.
+crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_constructor_private
+    "is private within this context"
+    ".constexpr crucible::warden::DeadlineWatchdog::DeadlineWatchdog\\(const crucible::perf::Senses\\*, const crucible::warden::Policy&\\). is private")
+crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_mint_no_ctx
+    "no matching function for call to .mint_deadline_watchdog\\(std::nullptr_t, crucible::warden::Policy&\\)."
+    "candidate expects 3 arguments, 2 provided")
 
 # GAPS-004h (#1284): perf::WorkloadProfiler cap-tag gate.  Construction
 # takes effects::Init by value as the second parameter (third is the

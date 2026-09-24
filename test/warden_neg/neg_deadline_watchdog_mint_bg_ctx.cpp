@@ -1,18 +1,20 @@
-// FIXY-U-084 HS14 neg-compile fixture (5 of 6).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_deadline_watchdog rejects BgDrainCtx.  Standing up a fresh
-// watchdog requires reading Senses + Policy + steady_clock to
-// baseline the rolling window — an Init-row act.  The Bg drain
-// thread that polls observe() each tick reads from an EXISTING
-// watchdog minted at Init time; it does not mint its own.
+// mint_deadline_watchdog rejects a background context.  Building a
+// watchdog takes the baseline of the first window, which belongs to
+// process startup, so the gate asks for the Init atom.  The background
+// load context claims Bg, Alloc, IO and Block, and not Init.  A
+// background thread observes a watchdog that startup built.
 
 #include <crucible/warden/DeadlineWatchdog.h>
+#include <fixy/Ctx.h>
 
 int main() {
     crucible::warden::Policy p{};
     p.deadline_miss_budget = 100;
     p.watchdog_window_sec = 1;
-    auto watchdog = crucible::warden::mint_deadline_watchdog(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, /*senses=*/nullptr, p);
+    auto watchdog = crucible::warden::mint_deadline_watchdog(::fixy::BgLoadCtx{::foundation::effects::testing::bg()},
+                                                             /*senses=*/nullptr, p);
     (void)watchdog;
     return 0;
 }

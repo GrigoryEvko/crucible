@@ -6,6 +6,7 @@
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Policy.h>
+#include <fixy/Ctx.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -28,7 +29,12 @@ using crucible::warden::Policy;
 using crucible::warden::SchedClass;
 using crucible::warden::WatchdogVerdict;
 using crucible::warden::demote_one_step;
+using crucible::warden::mint_deadline_watchdog;
 using crucible::warden::watchdog_verdict_name;
+
+// Each watchdog below comes from the mint, with a startup context from
+// the test door.  So each block also instantiates the mint at run time.
+const ::fixy::ColdInitCtx startup{::foundation::effects::testing::init()};
 
 static_assert(static_cast<int>(WatchdogVerdict::InsufficientData) == 0,
               "InsufficientData must be the zero sentinel — default-construction "
@@ -73,7 +79,7 @@ int main() {
     // many times it is asked for.
     {
         Policy policy = Policy::production();  // a nonzero budget
-        DeadlineWatchdog watchdog{/*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         for (int i = 0; i < 5; ++i) {
             const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
             if (v != WatchdogVerdict::InsufficientData) {
@@ -102,7 +108,7 @@ int main() {
     {
         Policy policy = Policy::none();
         policy.deadline_miss_budget = 0;
-        DeadlineWatchdog watchdog{/*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
         if (v != WatchdogVerdict::InsufficientData) {
             std::fprintf(stderr, "budget=0 should disable watchdog; got %s\n", watchdog_verdict_name(v));
@@ -121,7 +127,7 @@ int main() {
     {
         Policy policy = Policy::production();
         policy.watchdog_window_sec = 0;
-        DeadlineWatchdog watchdog{/*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         for (int i = 0; i < 5; ++i) {
             const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
             if (v != WatchdogVerdict::InsufficientData) {
@@ -169,7 +175,7 @@ int main() {
 
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog watchdog{/*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         if (watchdog.miss_budget() != policy.deadline_miss_budget) {
             std::fprintf(stderr, "miss_budget() = %u; expected %u\n", watchdog.miss_budget(),
                          policy.deadline_miss_budget);
@@ -193,7 +199,7 @@ int main() {
     // observation.
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog watchdog{/*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         (void)watchdog.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});  // no source, so no state changes
         watchdog.reset();
         if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u || watchdog.window_started_ns() != 0u) {
@@ -205,7 +211,7 @@ int main() {
     // A watchdog moved into a new home keeps working.
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog watchdog_src{/*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
+        DeadlineWatchdog watchdog_src = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         DeadlineWatchdog watchdog_sink = std::move(watchdog_src);
         const auto v = watchdog_sink.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
         if (v != WatchdogVerdict::InsufficientData) {
