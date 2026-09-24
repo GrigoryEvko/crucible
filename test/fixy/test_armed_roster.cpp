@@ -843,6 +843,35 @@ struct foundation::contracts::armed_instances<^^::fixy::session::detail::crash_t
         w::UnwatchedRelay, w::RoleQ, w::sn::ReliableSet<>>>;
 };
 
+// ── fixy: the shapes the recorder reads ─────────────────────────────
+
+namespace rec = ::fixy::session::detail::recording;
+
+template <>
+struct foundation::contracts::armed_cell<rec::is_crash_watched_shape> {
+    using accepts = witnesses<w::sn::CrashWatched<int, w::RoleP, w::RoleQ, w::sn::ReliableSet<>>>;
+    using refuses = witnesses<int, w::sn::CrashSend<int, int>>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<rec::is_checkpoint_shape> {
+    using accepts = witnesses<w::sn::CheckpointHandle<int, int, int, int>>;
+    using refuses = witnesses<int, w::sn::CrashWatched<int, w::RoleP, w::RoleQ, w::sn::ReliableSet<>>>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<rec::is_crash_send_shape> {
+    using accepts = witnesses<w::sn::CrashSend<int, int>>;
+    using refuses = witnesses<int, w::sn::CheckpointHandle<int, int, int, int>>;
+};
+
+// A delegated session is a hand-off, and every other payload is a message.
+template <>
+struct foundation::contracts::armed_cell<rec::is_delegation_shape> {
+    using accepts = witnesses<w::sn::DelegatedSession<w::BareRecv, fp::EmptyPermSet>>;
+    using refuses = witnesses<int, w::BareRecv>;
+};
+
 // A stage runs inline only when its author claims it.
 template <>
 struct foundation::contracts::armed_cell<::fixy::concurrent::is_stage_inline_safe> {

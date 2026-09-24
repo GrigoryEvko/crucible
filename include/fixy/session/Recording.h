@@ -75,14 +75,14 @@ class Recorded;
 namespace detail::recording {
 
 template <typename H>
-struct crash_watched_shape : std::false_type {};
+struct is_crash_watched_shape : std::false_type {};
 template <typename H, typename Self, typename Peer, typename Reliable, typename Position>
-struct crash_watched_shape<CrashWatched<H, Self, Peer, Reliable, Position>> : std::true_type {};
+struct is_crash_watched_shape<CrashWatched<H, Self, Peer, Reliable, Position>> : std::true_type {};
 
 template <typename H>
-struct checkpoint_shape : std::false_type {};
+struct is_checkpoint_shape : std::false_type {};
 template <typename Inner, typename Head, typename Loop, typename Frame>
-struct checkpoint_shape<CheckpointHandle<Inner, Head, Loop, Frame>> : std::true_type {};
+struct is_checkpoint_shape<CheckpointHandle<Inner, Head, Loop, Frame>> : std::true_type {};
 
 // The protocol of the plain handle under the decorators, whose wire words
 // the transport carries.  A handle of an unknown shape has no entry, so
@@ -116,26 +116,26 @@ template <typename Choice, std::size_t I>
 }
 
 template <typename R>
-struct crash_send_shape : std::false_type {};
+struct is_crash_send_shape : std::false_type {};
 template <typename Next, typename T>
-struct crash_send_shape<CrashSend<Next, T>> : std::true_type {};
+struct is_crash_send_shape<CrashSend<Next, T>> : std::true_type {};
 
 // The payload families a recorder knows.  A delegated session is a
 // hand-off.  Every other payload that Payload.h accepts is a message.
 template <typename T>
-struct delegation_shape : std::false_type {};
+struct is_delegation_shape : std::false_type {};
 template <typename InnerProto, typename InnerPS>
-struct delegation_shape<DelegatedSession<InnerProto, InnerPS>> : std::true_type {
+struct is_delegation_shape<DelegatedSession<InnerProto, InnerPS>> : std::true_type {
     using protocol = InnerProto;
     using perm_set = InnerPS;
 };
 
 template <typename T>
 [[nodiscard]] constexpr SessionEvent event_for_send(RoleTagId self, RoleTagId peer, DeliveryFate fate) noexcept {
-    if constexpr (delegation_shape<T>::value) {
+    if constexpr (is_delegation_shape<T>::value) {
         return SessionEvent::delegate_handoff(
-            self, peer, default_proto_hash<typename delegation_shape<T>::protocol>,
-            InnerPermSetHash{::foundation::reflect::stable_type_id<typename delegation_shape<T>::perm_set>});
+            self, peer, default_proto_hash<typename is_delegation_shape<T>::protocol>,
+            InnerPermSetHash{::foundation::reflect::stable_type_id<typename is_delegation_shape<T>::perm_set>});
     } else {
         return SessionEvent::send(self, peer, default_schema_hash<T>, PayloadHash{}, fate);
     }
@@ -143,10 +143,10 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] constexpr SessionEvent event_for_recv(RoleTagId self, RoleTagId peer) noexcept {
-    if constexpr (delegation_shape<T>::value) {
+    if constexpr (is_delegation_shape<T>::value) {
         return SessionEvent::accept_handoff(
-            self, peer, default_proto_hash<typename delegation_shape<T>::protocol>,
-            InnerPermSetHash{::foundation::reflect::stable_type_id<typename delegation_shape<T>::perm_set>});
+            self, peer, default_proto_hash<typename is_delegation_shape<T>::protocol>,
+            InnerPermSetHash{::foundation::reflect::stable_type_id<typename is_delegation_shape<T>::perm_set>});
     } else {
         return SessionEvent::recv(self, peer, default_schema_hash<T>);
     }
@@ -277,7 +277,7 @@ public:
         auto result = std::move(inner_).send(std::move(value), marked);
         record_(detail::recording::event_for_send<Message>(
             self_, peer_, is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
-        if constexpr (detail::recording::crash_send_shape<decltype(result)>::value) {
+        if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
             using Wrapped = decltype(wrap_(std::move(result.next)));
             return CrashSend<Wrapped, Message>{wrap_(std::move(result.next)), std::move(result.undelivered)};
         } else {
@@ -310,7 +310,7 @@ public:
         auto result = std::move(inner_).send(marked);
         record_(detail::recording::event_for_send<Message>(
             self_, peer_, is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
-        if constexpr (detail::recording::crash_send_shape<decltype(result)>::value) {
+        if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
             using Wrapped = decltype(wrap_(std::move(result.next)));
             return CrashSend<Wrapped, Message>{wrap_(std::move(result.next)), std::move(result.undelivered)};
         } else {
@@ -389,7 +389,7 @@ public:
             std::size_t taken = word ? branch_of_wire_word<Wire>(*word) : no_branch;
             LabelWord label{};
             if (word && is_keyed_choice_v<Wire>) label = LabelWord{*word};
-            if constexpr (detail::recording::crash_watched_shape<Inner>::value) {
+            if constexpr (detail::recording::is_crash_watched_shape<Inner>::value) {
                 using Head = typename decltype(next)::protocol;
                 if constexpr (is_crash_branch_v<Head>) {
                     taken = crash_branch_index_v<protocol, typename Inner::peer_role>;
