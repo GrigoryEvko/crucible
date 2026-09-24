@@ -22,9 +22,10 @@
 // template a foreign translation unit can specialize, so a class that
 // pointed graded_type at a fake substrate and specialized the first two
 // for it was admitted, and one that specialized the third escaped the
-// value_type check.  The three names stay for the readers that print
+// value_type check.  The first two names stay for the readers that print
 // them, derived from the concept and the members, and no gate reads
-// them.
+// them.  The third is gone: DeclaresValueTypeDecoupled reads the member,
+// and no reader needs a trait beside it.
 
 #include <foundation/algebra/Graded.h>
 
@@ -65,12 +66,6 @@ concept DeclaresValueTypeDecoupled = requires {
     { std::remove_cvref_t<W>::value_type_decoupled } -> std::convertible_to<bool>;
     requires std::remove_cvref_t<W>::value_type_decoupled;
 };
-
-template <typename W>
-struct value_type_decoupled : std::bool_constant<DeclaresValueTypeDecoupled<W>> {};
-
-template <typename W>
-inline constexpr bool value_type_decoupled_v = DeclaresValueTypeDecoupled<W>;
 
 template <typename W>
 inline constexpr bool is_graded_wrapper_v = false;
@@ -142,10 +137,10 @@ struct DeclaredTrue {
 struct DeclaredFalse {
     static constexpr bool value_type_decoupled = false;
 };
-static_assert(!value_type_decoupled_v<Undeclared>);
-static_assert(value_type_decoupled_v<DeclaredTrue>);
-static_assert(!value_type_decoupled_v<DeclaredFalse>);
-static_assert(value_type_decoupled<DeclaredTrue const&>::value);
+static_assert(!DeclaresValueTypeDecoupled<Undeclared>);
+static_assert(DeclaresValueTypeDecoupled<DeclaredTrue>);
+static_assert(!DeclaresValueTypeDecoupled<DeclaredFalse>);
+static_assert(DeclaresValueTypeDecoupled<DeclaredTrue const&>);
 
 }  // namespace detail::is_graded_specialization_self_test
 

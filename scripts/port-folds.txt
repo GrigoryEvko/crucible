@@ -46,7 +46,6 @@
 
 include/foundation/algebra/GradedTrait.h:graded_modality  — the one specialisation read a member, and the primary now reads T::modality directly, so every wrapper that declares the member answers for itself.
 include/foundation/algebra/GradedTrait.h:is_graded_specialization  — the primary delegates to the IsGraded concept, which recognises a Graded specialisation structurally rather than by a listed instantiation.
-include/foundation/algebra/GradedTrait.h:value_type_decoupled  — the primary delegates to the DeclaresValueTypeDecoupled concept, so a wrapper opts in by declaring the member rather than by being named here.
 include/foundation/contracts/DecideOracle.h:widen  — the eight per-type specialisations became one conditional_t over width and signedness, pinned by six static_asserts, and it answers for long and long long as well, which the listed form did not.
 include/foundation/effects/Computation.h:extract_admits_payload  — the one specialisation covered a nested Computation hiding an engaged row, and the relation is now stated positively as detail::conveys_authority, which carries five specialisations plus an opt-in member.
 include/foundation/effects/Ctx.h:cap_permitted_row  — the four specialisations became four context declarations, because the primary reads Cap::permitted_as<Row> off the capability source's own class.

@@ -226,8 +226,11 @@ static_assert(!fa::IsGraded<::Cheat11_FakeSubstrate>);
 static_assert(!fa::GradedWrapper<Cheat11_TraitInjection>,
               "[CHEAT 11 ADMITTED] trait-spec injection on is_graded_specialization reached GradedWrapper");
 
-// Cheat 12: trait-spec injection on value_type_decoupled, to escape the
-// value_type check of Cheat 1.  The opt-in is a member now.
+// Cheat 12: trait-spec injection on a value_type_decoupled trait, to
+// escape the value_type check of Cheat 1.  The opt-in is a member, and
+// foundation::algebra declares no class template and no variable
+// template for it, so no translation unit has a specialization to
+// write.  The walk below keeps it that way.
 struct Cheat12_DecoupledOptOut {
     using value_type = double;  // mismatches the substrate's int
     using lattice_type = One;
@@ -236,14 +239,23 @@ struct Cheat12_DecoupledOptOut {
     static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
     static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
-namespace foundation::algebra {
-template <>
-struct value_type_decoupled<::Cheat12_DecoupledOptOut> : std::true_type {};
-}  // namespace foundation::algebra
-static_assert(fa::value_type_decoupled<::Cheat12_DecoupledOptOut>::value, "the injection did not take");
+[[nodiscard]] consteval bool algebra_declares_a_decoupling_template() {
+    for (const std::meta::info member :
+         std::meta::members_of(^^::foundation::algebra, std::meta::access_context::unchecked())) {
+        const bool is_template = std::meta::is_class_template(member) || std::meta::is_variable_template(member);
+        if (is_template && std::meta::has_identifier(member)
+            && std::meta::identifier_of(member).find("decoupled") != std::string_view::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+static_assert(!algebra_declares_a_decoupling_template(),
+              "[CHEAT 12 ADMITTED] foundation::algebra declares a decoupling template that a foreign translation "
+              "unit can specialize");
 static_assert(!fa::DeclaresValueTypeDecoupled<::Cheat12_DecoupledOptOut>);
 static_assert(!fa::GradedWrapper<::Cheat12_DecoupledOptOut>,
-              "[CHEAT 12 ADMITTED] trait-spec injection on value_type_decoupled reached GradedWrapper");
+              "[CHEAT 12 ADMITTED] a wrapper with no decoupling member reached GradedWrapper");
 
 // Cheat 13: the same escape through the member, declared false.  A
 // declaration that says no is no opt-in.

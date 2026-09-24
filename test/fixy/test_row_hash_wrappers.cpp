@@ -876,7 +876,6 @@ inline constexpr StatedZero kZeros[] = {
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},
-    {^^fa::value_type_decoupled, kMetafunction},
 
     {^^fp::splits_into, kMetafunction},
     {^^fp::splits_into_pack, kMetafunction},
