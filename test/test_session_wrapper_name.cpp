@@ -4,7 +4,7 @@
 // template name, and this file pins what each one renders.
 
 #include <crucible/bridges/_CrashTransport.h>
-#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/bridges/_RecordingSessionHandle.h>
 #include <crucible/sessions/Session.h>
 
 #include <cstdio>

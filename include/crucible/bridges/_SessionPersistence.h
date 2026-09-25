@@ -11,8 +11,8 @@
 // its names are needed to parse this header.  The template bodies below still
 // need the complete type, so a translation unit that instantiates any of them
 // has to include the store's own header itself.
-#include <crucible/bridges/RecordingPermissionedSessionHandle.h>
-#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/bridges/_RecordingPermissionedSessionHandle.h>
+#include <crucible/bridges/_RecordingSessionHandle.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/_Time.h>

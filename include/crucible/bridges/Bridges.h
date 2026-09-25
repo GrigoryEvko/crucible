@@ -6,5 +6,5 @@
 #include <crucible/Cipher.h>
 #include <crucible/bridges/_CrashTransport.h>
 #include <crucible/bridges/_MachineSessionBridge.h>
-#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/bridges/_RecordingSessionHandle.h>
 #include <crucible/bridges/_SessionPersistence.h>

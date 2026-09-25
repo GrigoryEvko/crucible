@@ -46,7 +46,7 @@
 // event_for_send and event_for_recv below, so a delegation cannot be
 // recorded as a plain send.  The ported permissioned recorder recorded
 // its epoched hand-off as a plain Delegate and lost both thresholds
-// (crucible/bridges/RecordingPermissionedSessionHandle.h).  The new tree
+// (crucible/bridges/_RecordingPermissionedSessionHandle.h).  The new tree
 // has no epoched delegation payload yet.  When one lands, it must join
 // those two functions, or the recorder writes it as a plain Send.
 

@@ -29,7 +29,7 @@
 //   "no matching function for call to ... accept" /
 //   "constraints not satisfied" / "is_invocable_v" / "Transport"
 
-#include <crucible/bridges/RecordingPermissionedSessionHandle.h>
+#include <crucible/bridges/_RecordingPermissionedSessionHandle.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/SessionMint.h>

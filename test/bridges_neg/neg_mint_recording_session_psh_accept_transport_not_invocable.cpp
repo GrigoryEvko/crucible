@@ -24,7 +24,7 @@
 //   "constraints not satisfied" / "is_invocable" /
 //   "no matching function for call to ... accept" / "int"
 
-#include <crucible/bridges/RecordingPermissionedSessionHandle.h>
+#include <crucible/bridges/_RecordingPermissionedSessionHandle.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/SessionMint.h>

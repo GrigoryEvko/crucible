@@ -5,7 +5,7 @@
 #include <crucible/bridges/_CrashTransport.h>
 #include <crucible/bridges/_EndpointMint.h>
 #include <crucible/bridges/_MachineSessionBridge.h>
-#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/bridges/_RecordingSessionHandle.h>
 
 #include <cstdio>
 #include <cstdlib>

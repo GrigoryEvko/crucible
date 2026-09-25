@@ -1973,6 +1973,13 @@ crucible/sessions/_SessionCrash.h:is_subtype_sync_structural  — Dropped. The o
 crucible/sessions/_SessionCrash.h:Stop_g  → include/fixy/session/Crash.h  — Replaced by Stop, which carries no crash class. The calculus has no crash classes, and the crash cause travels on the crash record.
 crucible/sessions/_SessionCrash.h:UnreliableAll  → include/fixy/session/Crash.h  — Renamed NoReliableRoles, the empty ReliableSet.
 
+# ── bridges: the session recorders ──────────────────────────────────────
+crucible/bridges/_RecordingPermissionedSessionHandle.h:mint_recording_session  → include/fixy/session/Recording.h  — Replaced by mint_recorded_session, which wraps any handle that RecordableHandle admits and opens through RecordingDoor.
+crucible/bridges/_RecordingPermissionedSessionHandle.h:RecordingPermissionedSessionHandle  → include/fixy/session/Recording.h  — Folded into Recorded. The new SessionHandle carries its permission set as a parameter, so one decorator records a permissioned handle and a plain handle.
+crucible/bridges/_RecordingSessionHandle.h:mint_recording_session  → include/fixy/session/Recording.h  — Replaced by mint_recorded_session, the one mint for every recorded handle.
+crucible/bridges/_RecordingSessionHandle.h:RecordingCrashWatchedHandle  → include/fixy/session/Recording.h  — Folded into Recorded, which wraps a CrashWatched handle and records a send to a crashed peer as LostToCrashedPeer and a crash branch as Stop.
+crucible/bridges/_RecordingSessionHandle.h:RecordingSessionHandle  → include/fixy/session/Recording.h  — Replaced by Recorded, one decorator over a plain handle, a crash-watched handle or a checkpoint handle.
+
 # ── safety: the stage-shape recognizers and the signature inference ─────
 # No production file and no header of the new tree classifies a function
 # by its parameter shape, infers a row or a tag set from a signature, or

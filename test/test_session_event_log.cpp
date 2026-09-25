@@ -5,8 +5,8 @@
 // of them drives the same protocol twice and demands that the two logs
 // agree on everything except the per-log step ids.
 
-#include <crucible/bridges/RecordingPermissionedSessionHandle.h>
-#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/bridges/_RecordingPermissionedSessionHandle.h>
+#include <crucible/bridges/_RecordingSessionHandle.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/SessionMint.h>

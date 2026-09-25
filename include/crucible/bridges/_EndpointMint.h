@@ -7,7 +7,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/bridges/_CrashTransport.h>
-#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/bridges/_RecordingSessionHandle.h>
 #include <crucible/concurrent/_Endpoint.h>
 #include <crucible/handles/_OneShotFlag.h>
 #include <crucible/sessions/_SessionEventLog.h>

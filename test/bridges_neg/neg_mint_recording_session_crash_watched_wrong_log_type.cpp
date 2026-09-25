@@ -11,7 +11,7 @@
 // Expected diagnostic:
 //   "no matching function for call to 'mint_recording_session'"
 
-#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/bridges/_RecordingSessionHandle.h>
 
 namespace proto = ::crucible::safety::proto;
 

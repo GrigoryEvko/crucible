@@ -28,7 +28,7 @@
 //   "cannot declare variable" / "incomplete type 'void'" /
 //   "void delegated_res" / "no matching function" / "accept"
 
-#include <crucible/bridges/RecordingPermissionedSessionHandle.h>
+#include <crucible/bridges/_RecordingPermissionedSessionHandle.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/SessionMint.h>
