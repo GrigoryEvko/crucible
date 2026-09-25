@@ -6,7 +6,7 @@
 #include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/_IsScopedFence.h>
 #include <crucible/safety/_SimdWidthPinned.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdint>

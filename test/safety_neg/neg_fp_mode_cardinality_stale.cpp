@@ -22,7 +22,7 @@
 // Expected diagnostic: "static assertion failed|DIMENSION_AXIS_COUNT|
 // FIXY-V-088|22".
 
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 namespace neg_fp_mode_cardinality_stale {
 

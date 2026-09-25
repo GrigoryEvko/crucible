@@ -12,7 +12,7 @@
 // per bound would add no ordering.
 
 #include <crucible/algebra/lattices/_CallShapeLattice.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 #include <string_view>
 #include <type_traits>

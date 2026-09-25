@@ -1,4 +1,4 @@
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 #include <crucible/safety/_MemOrder.h>
 #include <crucible/safety/_Wait.h>
 

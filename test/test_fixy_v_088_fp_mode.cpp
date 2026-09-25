@@ -6,7 +6,7 @@
 // floating point for a content hash.
 
 #include <crucible/algebra/lattices/_FpModeLattice.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 #include <string_view>
 #include <type_traits>

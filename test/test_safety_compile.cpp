@@ -27,7 +27,7 @@
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 #include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_Fn.h>
 #include <crucible/safety/_FixedArray.h>

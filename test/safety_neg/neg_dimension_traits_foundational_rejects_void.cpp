@@ -25,7 +25,7 @@
 // Expected diagnostic: "constraints not satisfied" pointing at
 // the FoundationalGrade<void> evaluation.
 
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 namespace neg = crucible::safety;
 

@@ -1,4 +1,4 @@
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_Progress.h>
 

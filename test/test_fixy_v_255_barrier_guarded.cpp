@@ -10,7 +10,7 @@
 #include <crucible/safety/_IsBarrierGuarded.h>
 #include <crucible/safety/_Hw.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 
 #include <cstdint>

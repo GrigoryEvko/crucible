@@ -8,7 +8,7 @@
 // be asked of one bit.
 
 #include <crucible/algebra/lattices/_ControlFlowLattice.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 #include <string_view>
 #include <type_traits>

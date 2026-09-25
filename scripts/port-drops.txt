@@ -1001,6 +1001,43 @@ crucible/safety/_Fn.h:Fn  — Renamed fixy::fn<Type, Atoms...> in fixy/Fn.h. The
 crucible/safety/_Fn.h:SecLevel  — The five-level enum is not carried. The atoms as_unclassified, as_public, as_internal, as_classified, as_secret, constant_time and declassify<Policy> in fixy/Atom.h grade the Security axis.
 crucible/safety/_Fn.h:UsageMode  — The enum is not carried. The atoms affine, copy, ghost, borrow and capability_usage in fixy/Atom.h grade the Usage axis, and its strict pole is the linear QttGrade::One.
 
+# ── safety: the dimension table ─────────────────────────────────────────
+crucible/safety/_DimensionTraits.h:count_wrappers_on_axis  — No successor. One axis has at most one wrapper in fixy::axis_traits<A>::wrapper, so there is nothing to count.
+crucible/safety/_DimensionTraits.h:DIMENSION_AXIS_COUNT  — Renamed fixy::axis_count in fixy/Axis.h.
+crucible/safety/_DimensionTraits.h:dimension_axis_name  — Renamed fixy::axis_name in fixy/Axis.h, which reads the enumerator identifier by reflection. The hand-kept switch has no successor.
+crucible/safety/_DimensionTraits.h:dimension_tier_v  — No successor. It guessed the tier of a wrapper from its lattice, and fixy reads the shape from axis_traits by axis and never from a wrapper.
+crucible/safety/_DimensionTraits.h:DimensionAxis  — Renamed fixy::Axis in fixy/Axis.h, with the same 33 enumerators at the same values.
+crucible/safety/_DimensionTraits.h:DimensionedGradedWrapper  — No successor. It admitted a graded wrapper that declared its axis in wrapper_dimension, and the new tree keeps no such table.
+crucible/safety/_DimensionTraits.h:every_wrapper_kind_has_axis  — A self-check of wrapper_kind_to_axis. every_axis_has_traits in fixy/Axis.h checks that each axis names a fixy::Wrapper value in range.
+crucible/safety/_DimensionTraits.h:every_wrapper_kind_has_name  — A self-check of the hand-kept name switch. The new tree reads the name by reflection, so no switch can miss an arm.
+crucible/safety/_DimensionTraits.h:FoundationalGrade  — No successor. The test was std::is_object_v, and fixy/Axis.h discharges the Type and Refinement axes by reflection and by contract, not by a grade shape.
+crucible/safety/_DimensionTraits.h:LatticeGrade  — An alias of the old algebra::Lattice concept. foundation::algebra::Lattice in foundation/algebra/Lattice.h is the port of that concept.
+crucible/safety/_DimensionTraits.h:SemiringGrade  — No successor. foundation/algebra/Lattice.h carries the Lattice and Semiring concepts, and fixy reads the shape of an axis from axis_traits, never from its grade.
+crucible/safety/_DimensionTraits.h:tier_admits_lattice  — No successor. It checked the lattice of a wrapper against the tier of its declared axis, and the new tree declares no axis for a wrapper.
+crucible/safety/_DimensionTraits.h:tier_admits_modality  — No successor. It admitted every modality that foundation::algebra::IsModality admits, so it checked nothing beyond that concept.
+crucible/safety/_DimensionTraits.h:tier_admits_semiring  — No successor. It was the strict form of tier_admits_lattice, and it read the same wrapper table that the new tree does not keep.
+crucible/safety/_DimensionTraits.h:tier_for_grade  — No successor. fixy reads the shape of an axis from axis_traits and never infers it from the shape of a grade.
+crucible/safety/_DimensionTraits.h:tier_for_grade_v  — The value of tier_for_grade. fixy reads the shape of an axis from axis_traits and never infers it from the shape of a grade.
+crucible/safety/_DimensionTraits.h:tier_kind_name  — No successor. foundation::reflect::enum_name in foundation/reflect/EnumName.h reads the name of a fixy::Shape enumerator by reflection.
+crucible/safety/_DimensionTraits.h:tier_of_axis  — fixy::axis_traits<A>::shape in fixy/Axis.h gives the shape of each axis. The map is not the old one, because most old Tier S axes are lattices there.
+crucible/safety/_DimensionTraits.h:tier_of_axis_v  — The value of tier_of_axis. fixy::axis_traits<A>::shape in fixy/Axis.h gives the shape of each axis.
+crucible/safety/_DimensionTraits.h:TIER_KIND_COUNT  — No successor. fixy/Axis.h counts fixy::Shape through std::meta::enumerators_of where it needs the count.
+crucible/safety/_DimensionTraits.h:TierKind  — The five tier kinds became fixy::Shape in fixy/Axis.h. The old Tier S chains are lattices there, and only Usage and Staleness keep the semiring shape.
+crucible/safety/_DimensionTraits.h:TypestateGrade  — No successor. Session types are not graded, so the Protocol axis of fixy/Axis.h takes the Transition shape and needs no grade concept.
+crucible/safety/_DimensionTraits.h:verify_quadruple  — foundation::algebra::GradedWrapper in foundation/algebra/GradedTrait.h checks the lattice and the modality against the Graded substrate. The tier half read wrapper_dimension and has no successor.
+crucible/safety/_DimensionTraits.h:VersionedGrade  — No successor. The Version axis of fixy/Axis.h has the Structural shape, a strict pole of version 1 and a contract discharge.
+crucible/safety/_DimensionTraits.h:wrapper_dimension  — The table ran from wrapper to axis. fixy::axis_traits<A>::wrapper in fixy/Axis.h runs from axis to wrapper, for the eight wrappers that carry an axis discipline.
+crucible/safety/_DimensionTraits.h:wrapper_dimension_v  — The value of wrapper_dimension. fixy::axis_traits<A>::wrapper in fixy/Axis.h keeps the map from axis to wrapper.
+crucible/safety/_DimensionTraits.h:wrapper_for  — No successor. fixy::axis_traits<A>::wrapper gives the one wrapper of an axis directly.
+crucible/safety/_DimensionTraits.h:wrapper_for_v  — The value of wrapper_for. fixy::axis_traits<A>::wrapper gives the one wrapper of an axis directly.
+crucible/safety/_DimensionTraits.h:wrapper_kind_name  — No successor. foundation::reflect::enum_name reads the name of a fixy::Wrapper enumerator by reflection.
+crucible/safety/_DimensionTraits.h:wrapper_kind_to_axis  — No successor. fixy::axis_traits<A>::wrapper maps each axis to its wrapper, which is the other direction.
+crucible/safety/_DimensionTraits.h:wrapper_lattice_t  — No successor. A graded wrapper exposes lattice_type itself, and foundation::algebra::GradedWrapper in foundation/algebra/GradedTrait.h requires it.
+crucible/safety/_DimensionTraits.h:wrapper_modality_v  — No successor. A graded wrapper exposes modality itself, and foundation::algebra::GradedWrapper requires that it agree with its Graded substrate.
+crucible/safety/_DimensionTraits.h:wrapper_tier_v  — No successor. It read the tier of a wrapper through wrapper_dimension, and fixy::axis_traits<A>::shape gives the shape by axis.
+crucible/safety/_DimensionTraits.h:WRAPPER_KIND_COUNT  — No successor. fixy/Axis.h counts fixy::Wrapper through std::meta::enumerators_of.
+crucible/safety/_DimensionTraits.h:WrapperKind  — fixy::Wrapper in fixy/Axis.h names the eight wrappers that carry an axis discipline. The other kinds became atoms or bands, or have their own drop rows.
+
 # ── sessions: the classified payloads ───────────────────────────────────
 crucible/sessions/_SessionCT.h:requires_ct  — Replaced by the constant_time_value annotation in fixy/session/Classified.h, which sits on the declaration, so a late specialisation cannot change an answer already given.
 crucible/sessions/_SessionCT.h:requires_ct_v  — Replaced by the ConstantTimeValue concept in fixy/session/Classified.h, which reads the annotation on the declaration.

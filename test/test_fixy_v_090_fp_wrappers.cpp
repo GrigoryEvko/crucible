@@ -1,5 +1,5 @@
 #include <crucible/safety/_FpMode.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/lattices/_FpModeLattice.h>

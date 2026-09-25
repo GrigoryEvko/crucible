@@ -1,6 +1,6 @@
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/_QttSemiring.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 #include <string_view>
 #include <type_traits>

@@ -26,7 +26,7 @@
 // Expected diagnostic: "static assertion failed|FpMode|TierKind|
 // Foundational|Semiring|FIXY-V-088".
 
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 namespace neg_fp_mode_tier_misclassify {
 

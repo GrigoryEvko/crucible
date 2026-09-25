@@ -4,7 +4,7 @@
 // trait, or projection belongs in the substrate that owns the taxonomy
 // and is aliased here afterwards, so the catalog stays in one place.
 
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 #include <meta>
 #include <string_view>

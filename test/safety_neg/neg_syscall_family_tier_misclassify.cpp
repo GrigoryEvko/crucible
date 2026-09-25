@@ -30,7 +30,7 @@
 // Expected diagnostic: "static assertion failed|SyscallSurface|
 // TierKind|Foundational|Semiring|FIXY-V-097".
 
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 namespace neg_syscall_family_tier_misclassify {
 

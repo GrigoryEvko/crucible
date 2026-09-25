@@ -6,7 +6,7 @@
 // the project warning flags until some translation unit includes it.
 
 #include <crucible/fixy/Dim.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 #include <array>
 #include <cstdint>

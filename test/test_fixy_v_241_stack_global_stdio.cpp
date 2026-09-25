@@ -1,7 +1,7 @@
 #include <crucible/algebra/lattices/_GlobalStateLattice.h>
 #include <crucible/algebra/lattices/_StackUseLattice.h>
 #include <crucible/algebra/lattices/_StdioLattice.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 #include <string_view>
 #include <type_traits>

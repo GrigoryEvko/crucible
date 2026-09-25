@@ -24,7 +24,7 @@
 // LatticeGrade<int> evaluation, naming the algebra::Lattice<int>
 // requirement that fails.
 
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 namespace neg = crucible::safety;
 

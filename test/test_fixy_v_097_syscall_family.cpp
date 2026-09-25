@@ -8,7 +8,7 @@
 // binding's call-site specification.
 
 #include <crucible/algebra/lattices/_SyscallFamilyLattice.h>
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 
 #include <string_view>
 #include <type_traits>

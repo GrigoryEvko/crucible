@@ -11,7 +11,7 @@
 // the same whether it is materialised as an Fn or as the equivalent
 // wrapper stack.
 
-#include <crucible/safety/DimensionTraits.h>
+#include <crucible/safety/_DimensionTraits.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>

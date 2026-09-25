@@ -22,7 +22,7 @@
 // FX catalog this vocabulary is derived from.  Two of those dimensions
 // are deliberately absent, marked where they would have fallen.
 //
-// Old spellings: include/crucible/safety/DimensionTraits.h
+// Old spellings: include/crucible/safety/_DimensionTraits.h
 // (DimensionAxis, tier_of_axis), include/crucible/fixy/Default.h
 // (strict_default_for) and include/crucible/safety/_Fn.h (the pole
 // sentinel types, here under fixy::pole).  The old tier kinds S, L,

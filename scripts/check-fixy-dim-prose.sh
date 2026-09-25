@@ -44,7 +44,7 @@ Scan scope:
   include/crucible/fixy/**/*.h
 
 Re-spell any FX ordinal as 'DimensionAxis::<Name> = <substrate-ordinal>'.
-See include/crucible/safety/DimensionTraits.h for the canonical enum.
+See include/crucible/safety/_DimensionTraits.h for the canonical enum.
 USAGE
 }
 
@@ -139,7 +139,7 @@ if matches=$(grep -r -n -E -H --include='*.h' "${pattern}" "${fixy_dir}" 2>/dev/
     echo "${matches}" >&2
     echo "" >&2
     echo "Re-spell as 'DimensionAxis::<Name> = <substrate-ordinal>'." >&2
-    echo "See include/crucible/safety/DimensionTraits.h for the canonical" >&2
+    echo "See include/crucible/safety/_DimensionTraits.h for the canonical" >&2
     echo "DimensionAxis enum + per-enumerator substrate ordinals." >&2
     exit 1
 fi
