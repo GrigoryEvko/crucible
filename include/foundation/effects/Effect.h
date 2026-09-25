@@ -303,18 +303,8 @@ public:
 
 }  // namespace detail::ctx_mint
 
-namespace host {
-
-// No production entry point of this tree starts a background thread yet.
-// So this owner has no member, and only the test witness builds a
-// background key.  The entry point that starts the thread adds its claim
-// function here, as the one friend of a private key member.
-//
-// The init owner is defined below, after the init context, because its
-// door returns that context by value.
-struct BackgroundOwner final {};
-
-}  // namespace host
+// The background owner and the init owner are defined below, after the
+// contexts, because each door returns its context by value.
 
 class Bg;
 class Init;
@@ -438,8 +428,10 @@ private:
 // other.  The passkey's own default constructor is private too.  Its
 // friends are the owner of the context and the test scaffolding.  A
 // translation unit that holds neither cannot forge a context.  The init
-// owner has a door, and a new entry point that calls the door needs a
-// row in scripts/ctx-init-door-allowlist.txt.
+// owner and the background owner each have a door.  A new entry point
+// that calls the init door needs a row in scripts/ctx-init-door-allowlist.txt,
+// and one that calls the background door needs a row in
+// scripts/ctx-bg-door-allowlist.txt.
 //
 // The factory is constexpr so a friended caller can build a context
 // during constant evaluation.
@@ -495,6 +487,24 @@ namespace host {
 struct InitOwner final {
     [[nodiscard]] static constexpr Init mint_init_context() noexcept {
         return mint_context<Init>(detail::ctx_mint::init_key{});
+    }
+};
+
+// The one production door of the background context.  The background key
+// has a private constructor, and its friends are this owner and the test
+// witness.  So production code can get a background context only from
+// this door.
+//
+// Only the entry function of a background thread calls the door, on that
+// thread, before the thread enters its loop.  A background context permits
+// Bg, Alloc, IO and Block, so the foreground thread must never hold one: its
+// hot path would then claim the right to block.  The door is a static
+// member, so the name of the owner is in each call, and
+// scripts/check-ctx-init-door.py rejects a call outside the thread entry
+// points in scripts/ctx-bg-door-allowlist.txt.
+struct BackgroundOwner final {
+    [[nodiscard]] static constexpr Bg mint_background_context() noexcept {
+        return mint_context<Bg>(detail::ctx_mint::bg_key{});
     }
 };
 

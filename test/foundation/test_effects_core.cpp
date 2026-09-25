@@ -31,9 +31,8 @@ static_assert(noexcept(fe::testing::bg()) && noexcept(fe::testing::init()) && no
 
 // The owners are defined in the header of their keys, so they are
 // complete in every TU that can name a key, and no TU can define one
-// again.  The background owner has no member, so only the test witness
-// builds its key.  The init owner has one member, the door to the init
-// context, and scripts/check-ctx-init-door.py limits the calls of it.
+// again.  Each owner has one member, the door to its context, and
+// scripts/check-ctx-init-door.py limits the calls of each door.
 template <class T>
 concept Complete = requires { sizeof(T); };
 static_assert(Complete<fe::host::BackgroundOwner> && Complete<fe::host::InitOwner>);

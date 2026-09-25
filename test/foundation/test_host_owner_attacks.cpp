@@ -42,12 +42,19 @@ struct Intruder {};
 static_assert(Complete<fe::host::InitOwner> && Complete<fe::host::BackgroundOwner>
               && Complete<fe::host::ForegroundOwner> && Complete<fe::host::ProducerClaim<Producer>>);
 
-// The background owner has no member, so no route outside the test
-// witness builds its key.  The init owner has one member, the door to the
-// init context, and no member that gives out the init key.
+// Each owner has one member, the door to its context, and no member that
+// gives out its key.
 static_assert(std::is_empty_v<fe::host::InitOwner> && std::is_empty_v<fe::host::BackgroundOwner>);
 static_assert(std::is_same_v<decltype(fe::host::InitOwner::mint_init_context()), fe::Init>);
 static_assert(noexcept(fe::host::InitOwner::mint_init_context()));
+static_assert(std::is_same_v<decltype(fe::host::BackgroundOwner::mint_background_context()), fe::Bg>);
+static_assert(noexcept(fe::host::BackgroundOwner::mint_background_context()));
+
+// The background door gives the widest background context, and the
+// context it gives claims no more than the background source permits.
+using BgFromDoor = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>;
+static_assert(std::is_same_v<decltype(BgFromDoor{fe::host::BackgroundOwner::mint_background_context()}), BgFromDoor>);
+static_assert(fe::CtxOwnsCapability<BgFromDoor, fe::Effect::Block>);
 
 // No owner gives out its key.  The foreground owner builds its key only
 // for a producer claim.

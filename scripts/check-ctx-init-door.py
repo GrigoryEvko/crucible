@@ -1,30 +1,36 @@
 #!/usr/bin/env python3
-"""check-ctx-init-door — only a reviewed process entry point opens the init door.
+"""check-ctx-init-door — only a reviewed entry point opens the init or the background door.
 
 include/foundation/effects/Effect.h gives the init context one production door,
-host::InitOwner::mint_init_context().  The init key has a private constructor,
-and its friends are the init owner and the test witness.  So production code
-gets an init context only through this door.  An init context permits the
-effects of process startup, so a call of the door gives those effects to the
-scope that makes the call.  Each call must be in a process entry point that a
-reviewer admitted.
+host::InitOwner::mint_init_context(), and the background context one production
+door, host::BackgroundOwner::mint_background_context().  Each key has a private
+constructor, and its friends are its owner and the test witness.  So production
+code gets an init or a background context only through its door.  An init
+context permits the effects of process startup, and a background context
+permits the effects of a background thread, so a call of a door gives those
+effects to the scope that makes the call.  Each call of the init door must be in
+a process entry point, and each call of the background door must be in the
+entry function of a background thread, that a reviewer admitted.
 
-THE RULE
-    - A use is the identifier InitOwner in the code of a file under the trees
-      of production code: include/foundation, include/fixy, include/crucible,
-      src, vessel, tools and examples.  A comment or a literal is not a use.
-      The door is a static member, so a call always contains the name of the
-      owner.  A type alias, a using-declaration and a friend declaration also
-      contain it, so each of them is a use too.
+THE RULE (each owner is checked alone, against its own allowlist)
+    - A use is the identifier of the owner (InitOwner or BackgroundOwner) in
+      the code of a file under the trees of production code:
+      include/foundation, include/fixy, include/crucible, src, vessel, tools
+      and examples.  A comment or a literal is not a use.  Each door is a
+      static member, so a call always contains the name of the owner.  A type
+      alias, a using-declaration and a friend declaration also contain it,
+      so each of them is a use too.
     - The scope of a use is the function whose definition encloses it, as the
       parse gives it: the names of the enclosing classes, then the name of the
       declarator.  A use in no function has the scope namespace-scope.  A use
       in a macro body has the scope macro, because the parse cannot tell where
       the macro expands.
-    - Each scope with a use needs a row `PATH SCOPE [xN] — REASON` in
-      scripts/ctx-init-door-allowlist.txt.  N is the number of uses that the
-      row admits, and it is 1 when the row gives no count.  A new use in a
-      listed scope is more than the count, and it fails.
+    - Each scope with a use needs a row `PATH SCOPE [xN] — REASON` in the
+      allowlist of the owner: scripts/ctx-init-door-allowlist.txt for the init
+      owner, scripts/ctx-bg-door-allowlist.txt for the background owner.  N is
+      the number of uses that the row admits, and it is 1 when the row gives
+      no count.  A new use in a listed scope is more than the count, and it
+      fails.  A row in the allowlist of one owner admits no use of the other.
     - A row that admits more uses than its scope has is stale, and it fails.
       So the list becomes shorter when the code does.
     - For each file, the count from the parse must equal the count from the
@@ -54,37 +60,54 @@ import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cxx_lex  # noqa: E402
 import tsast  # noqa: E402
 
-OWNER = "InitOwner"
-ALLOWLIST = "scripts/ctx-init-door-allowlist.txt"
 SCAN_DIRS = ("include/foundation", "include/fixy", "include/crucible", "src", "vessel", "tools", "examples")
 SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".tpp", ".c", ".cc", ".cpp", ".cxx", ".cppm"})
 NAMESPACE_SCOPE = "namespace-scope"
 MACRO_SCOPE = "macro"
 CLASSES = ("class_specifier", "struct_specifier", "union_specifier")
 MACROS = ("preproc_def", "preproc_function_def")
-OWNER_TEXT = re.compile(rf"\b{OWNER}\b")
 ENTRY = re.compile(r"^(?P<path>\S+)\s+(?P<scope>\S+?)(?:\s+x(?P<count>[1-9][0-9]*))?\s+—\s+\S")
 
 Key = tuple[str, str]
+
+
+class Door(NamedTuple):
+    """One door: the owner whose name marks a use, the allowlist of its scopes, and what it gives."""
+
+    owner: str
+    allowlist: str
+    context: str
+    effects: str
+    callers: str
+
+
+DOORS = (
+    Door("InitOwner", "scripts/ctx-init-door-allowlist.txt", "init", "the effects of process startup",
+         "Call it only from a process entry point"),
+    Door("BackgroundOwner", "scripts/ctx-bg-door-allowlist.txt", "background", "the effects of a background thread",
+         "Call it only from the entry function of a background thread"),
+)
+INIT_DOOR, BG_DOOR = DOORS
 
 
 class Refused(Exception):
     """The allowlist has a malformed or a repeated row (exit 2)."""
 
 
-def read_allowlist(root: Path) -> dict[Key, tuple[int, int]]:
-    """Return the count and the line of each row, by (path, scope).
+def read_allowlist(root: Path, door: Door) -> dict[Key, tuple[int, int]]:
+    """Return the count and the line of each row of the allowlist of one door, by (path, scope).
 
     Raises:
         Refused: If a row does not parse, or two rows have one path and one scope
     """
-    allowlist = root / ALLOWLIST
+    allowlist = root / door.allowlist
     entries: dict[Key, tuple[int, int]] = {}
     for number, raw in enumerate(allowlist.read_text().splitlines() if allowlist.is_file() else [], 1):
         line = raw.strip()
@@ -92,15 +115,16 @@ def read_allowlist(root: Path) -> dict[Key, tuple[int, int]]:
             continue
         match = ENTRY.match(line)
         if match is None:
-            raise Refused(f"{ALLOWLIST}:{number} is not a row.  A row is PATH SCOPE [xN] — REASON.")
+            raise Refused(f"{door.allowlist}:{number} is not a row.  A row is PATH SCOPE [xN] — REASON.")
         key = (match.group("path"), match.group("scope"))
         if key in entries:
-            raise Refused(f"{ALLOWLIST}:{number} repeats the row at line {entries[key][1]}.  Give one row a count.")
+            raise Refused(f"{door.allowlist}:{number} repeats the row at line {entries[key][1]}.  "
+                          f"Give one row a count.")
         entries[key] = (int(match.group("count") or 1), number)
     return entries
 
 
-def candidate_files(root: Path) -> list[Path]:
+def candidate_files(root: Path, owner: str) -> list[Path]:
     """Return each file under the scan roots whose text contains the name of the owner, in sorted order.
 
     Complexity: one read of each file under the scan roots.
@@ -111,18 +135,18 @@ def candidate_files(root: Path) -> list[Path]:
         if not base.is_dir():
             continue
         for path in sorted(base.rglob("*")):
-            if path.suffix in SUFFIXES and path.is_file() and OWNER in path.read_text(errors="replace"):
+            if path.suffix in SUFFIXES and path.is_file() and owner in path.read_text(errors="replace"):
                 found.append(path)
     return found
 
 
-def lexed_lines(path: Path) -> list[int]:
-    """Return the line of each use in the code of the file, from the lexer.
+def lexed_lines(path: Path, owner: str) -> list[int]:
+    """Return the line of each use of the owner in the code of the file, from the lexer.
 
     Complexity: linear in the length of the file.
     """
     joined, joins = cxx_lex.splice(path.read_text(errors="replace"))
-    _, hits = cxx_lex.blank(joined, frozenset({OWNER}), blank_literals=True)
+    _, hits = cxx_lex.blank(joined, frozenset({owner}), blank_literals=True)
     return [cxx_lex.line_of(joined, joins, offset) for offset in hits]
 
 
@@ -153,8 +177,8 @@ def scope_of(node: tsast.Node) -> str:
     return "::".join(parts)
 
 
-def parsed_uses(tree: tsast.Tree) -> list[tuple[str, int]]:
-    """Return (scope, line) for each use that the parse holds, in the order of the file.
+def parsed_uses(tree: tsast.Tree, owner: str) -> list[tuple[str, int]]:
+    """Return (scope, line) for each use of the owner that the parse holds, in the order of the file.
 
     An identifier of each kind counts: a type, a namespace qualifier, a field
     and a plain identifier.  A macro body is raw text in the parse, so the
@@ -163,20 +187,22 @@ def parsed_uses(tree: tsast.Tree) -> list[tuple[str, int]]:
     Complexity: linear in the number of nodes of the tree.
     """
     identifier_types = {kind for kind in set(tree.types) if kind.endswith("identifier")}
-    found = [(scope_of(node), node.line) for node in tree.find(*identifier_types) if node.text == OWNER]
+    owner_text = re.compile(rf"\b{owner}\b")
+    found = [(scope_of(node), node.line) for node in tree.find(*identifier_types) if node.text == owner]
     for node in tree.find(*MACROS):
         body, _ = cxx_lex.blank(node.text, blank_literals=True)
         found += [(MACRO_SCOPE, node.line + body.count("\n", 0, match.start()))
-                  for match in OWNER_TEXT.finditer(body)]
+                  for match in owner_text.finditer(body)]
     return sorted(found, key=lambda use: use[1])
 
 
-def scan(root: Path) -> tuple[dict[Key, list[int]], list[str]]:
-    """Return the lines of the uses by (path, scope), and a line for each file the guard cannot read.
+def scan(root: Path, door: Door) -> tuple[dict[Key, list[int]], list[str]]:
+    """Return the lines of the uses of one owner by (path, scope), and a line for each file the guard cannot read.
 
     Complexity: one lexical pass over each candidate file, and one parse of it.
     """
-    lexed_by_path = {path: lines for path in candidate_files(root) if (lines := lexed_lines(path))}
+    lexed_by_path = {path: lines for path in candidate_files(root, door.owner)
+                     if (lines := lexed_lines(path, door.owner))}
     uses: dict[Key, list[int]] = defaultdict(list)
     problems: list[str] = []
     for tree in tsast.parse(list(lexed_by_path), strict=False):
@@ -185,48 +211,58 @@ def scan(root: Path) -> tuple[dict[Key, list[int]], list[str]]:
         lexed = lexed_by_path[path]
         if tree.diagnostic is not None:
             problems.append(f"PARSE     {rel}:{lexed[0]} — the parser cannot read the file, so the guard cannot "
-                            f"find the scope of its use of the init owner: {tree.diagnostic}")
+                            f"find the scope of its use of the {door.context} owner: {tree.diagnostic}")
             continue
-        parsed = parsed_uses(tree)
+        parsed = parsed_uses(tree, door.owner)
         if len(parsed) != len(lexed):
-            problems.append(f"PARSE     {rel} — the lexer finds {len(lexed)} use(s) of the init owner and the "
-                            f"parse finds {len(parsed)}, so the parse lost a use and the guard cannot find its scope.")
+            problems.append(f"PARSE     {rel} — the lexer finds {len(lexed)} use(s) of the {door.context} owner and "
+                            f"the parse finds {len(parsed)}, so the parse lost a use and the guard cannot find its "
+                            f"scope.")
             continue
         for scope, line in parsed:
             uses[(rel, scope)].append(line)
     return uses, problems
 
 
-def check(root: Path) -> int:
-    """Compare the uses of the init owner with the allowlist, and report to stderr.
+def check_door(root: Path, door: Door) -> int:
+    """Compare the uses of one owner with its allowlist, and report to stderr.
 
     Returns:
         0 clean, 1 on a finding, 2 on a bad allowlist
     """
     try:
-        entries = read_allowlist(root)
+        entries = read_allowlist(root, door)
     except Refused as exc:
         print(f"check-ctx-init-door: {exc}", file=sys.stderr)
         return 2
-    uses, problems = scan(root)
+    uses, problems = scan(root, door)
     for (rel, scope), lines in sorted(uses.items()):
         admitted = entries.get((rel, scope), (0, 0))[0]
         if len(lines) > admitted:
-            problems.append(f"UNLISTED  {rel}:{', '.join(map(str, lines))} — the scope {scope} names the init owner "
-                            f"{len(lines)} time(s), and its row in {ALLOWLIST} admits {admitted}.  The init door "
-                            f"gives the effects of process startup to its caller.  Call it only from a process "
-                            f"entry point, and give that entry point a row with a sentence that says why.")
+            problems.append(f"UNLISTED  {rel}:{', '.join(map(str, lines))} — the scope {scope} names the "
+                            f"{door.context} owner {len(lines)} time(s), and its row in {door.allowlist} admits "
+                            f"{admitted}.  The {door.context} door gives {door.effects} to its caller.  "
+                            f"{door.callers}, and give that entry point a row with a sentence that says why.")
     for (rel, scope), (admitted, number) in sorted(entries.items(), key=lambda item: item[1][1]):
         held = len(uses.get((rel, scope), []))
         if held < admitted:
-            problems.append(f"STALE     {ALLOWLIST}:{number} admits {admitted} use(s) in the scope {scope} of {rel}, "
-                            f"and the scope has {held}.  Lower or remove the row.")
+            problems.append(f"STALE     {door.allowlist}:{number} admits {admitted} use(s) in the scope {scope} of "
+                            f"{rel}, and the scope has {held}.  Lower or remove the row.")
     for line in problems:
         print(f"check-ctx-init-door: {line}", file=sys.stderr)
     total = sum(len(lines) for lines in uses.values())
-    print(f"check-ctx-init-door: {total} use(s) of the init owner in {len(uses)} scope(s), "
+    print(f"check-ctx-init-door: {total} use(s) of the {door.context} owner in {len(uses)} scope(s), "
           f"{'refused' if problems else 'each one admitted'}.", file=sys.stderr)
     return 1 if problems else 0
+
+
+def check(root: Path) -> int:
+    """Check each door against its own allowlist, and return the worst verdict.
+
+    Returns:
+        0 clean, 1 on a finding, 2 on a bad allowlist
+    """
+    return max(check_door(root, door) for door in DOORS)
 
 
 def self_test() -> int:
@@ -238,6 +274,9 @@ def self_test() -> int:
     failures: list[str] = []
     negatives = 0
     door = "foundation::effects::host::InitOwner::mint_init_context()"
+    bg_door = "foundation::effects::host::BackgroundOwner::mint_background_context()"
+    ALLOWLIST = INIT_DOOR.allowlist  # noqa: N806
+    BG_ALLOWLIST = BG_DOOR.allowlist  # noqa: N806
 
     def write(root: Path, rel: str, text: str) -> None:
         """Write one planted file."""
@@ -336,6 +375,29 @@ def self_test() -> int:
         write(root, "src/broken.cpp", f"int broken( {{ return {door}; }}}}\n")
         expect(root, 1, ["PARSE     src/broken.cpp:1"], "a file that the parser cannot read fails", True)
         (root / "src/broken.cpp").unlink()
+
+        # The background door is checked against its own allowlist, so a
+        # row for the init door admits no call of the background door.
+        write(root, "src/thread.cpp", f"struct Worker {{ int run() {{ return {bg_door}; }} }};\n")
+        expect(root, 1, ["UNLISTED  src/thread.cpp:1 — the scope Worker::run names the background owner 1 time(s)",
+                         "4 use(s) of the init owner in 2 scope(s), each one admitted"],
+               "the background door called from an unlisted thread entry", True)
+        write(root, BG_ALLOWLIST, "# planted\nsrc/thread.cpp Worker::run — the entry function of the worker thread\n")
+        expect(root, 0, ["1 use(s) of the background owner in 1 scope(s), each one admitted"],
+               "a listed thread entry opens the background door")
+        write(root, "vessel/torch/api.cpp",
+              f'extern "C" {{\nint crucible_create(void) noexcept {{\n    return {bg_door};\n}}\n}}\n')
+        expect(root, 1, ["UNLISTED  vessel/torch/api.cpp:3 — the scope crucible_create names the background owner",
+                         f"STALE     {ALLOWLIST}:3 admits 1 use(s) in the scope crucible_create"],
+               "a row of the init allowlist admits no call of the background door", True)
+        write(root, "vessel/torch/api.cpp",
+              f'extern "C" {{\nint crucible_create(void) noexcept {{\n    return {door};\n}}\n}}\n')
+        write(root, BG_ALLOWLIST, "# planted\nsrc/thread.cpp Worker::run — the entry function of the worker thread\n"
+              "src/thread.cpp Worker::stop — never called\n")
+        expect(root, 1, [f"STALE     {BG_ALLOWLIST}:3 admits 1 use(s) in the scope Worker::stop"],
+               "a background row with no use is stale", True)
+        (root / "src/thread.cpp").unlink()
+        (root / BG_ALLOWLIST).unlink()
 
         same = captured(root, root) == captured(root, Path("/"))
         print(f"  {'ok  ' if same else 'FAIL'} the report from / equals the report from the tree")

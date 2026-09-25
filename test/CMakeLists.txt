@@ -876,9 +876,11 @@ add_test(NAME host_owners
 set_tests_properties(host_owners host_owners_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # host::InitOwner::mint_init_context() is the one production door of the
-# init context, and an init context permits the effects of process
-# startup.  scripts/check-ctx-init-door.py rejects a use of the owner in
-# production code outside the scopes in scripts/ctx-init-door-allowlist.txt,
+# init context, and host::BackgroundOwner::mint_background_context() is the
+# one production door of the background context.  Each context permits
+# effects that the hot path must not have.  scripts/check-ctx-init-door.py
+# rejects a use of either owner in production code outside the scopes of its
+# allowlist (scripts/ctx-init-door-allowlist.txt, scripts/ctx-bg-door-allowlist.txt),
 # and a stale row.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
 add_test(NAME ctx_init_door_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-init-door.py --self-test)

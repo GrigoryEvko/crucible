@@ -445,12 +445,13 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
+| `BackgroundOwner::mint_background_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | · | HS14: 2 |
 | `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
 | `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
 | `InitOwner::mint_init_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | · | HS14: 3 |
 | `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | member | · | · | HS14: 2 |
 | `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
-| `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
+| `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
 | `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
 
@@ -474,4 +475,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 204 | 101 | 94 | 9 | 0 | 83 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 94 | 37 | 56 | 1 | 0 | · | 22 |
+| new (`include/foundation/`, `include/fixy/`) | 95 | 37 | 57 | 1 | 0 | · | 22 |

@@ -1156,6 +1156,15 @@ foundation_neg_compile_test(neg_init_door_forged_outside_owner
 foundation_neg_compile_test(neg_init_door_without_owner
   "is not a member of .foundation::effects."
   ".mint_init_context.")
+# The background owner is the one production door of the background
+# context, on the same terms: no translation unit builds the background
+# key for a door of its own, and no free function opens the door.
+foundation_neg_compile_test(neg_bg_door_forged_outside_owner
+  "is private within this context"
+  "foundation::effects::detail::ctx_mint::bg_key::bg_key\\(\\)")
+foundation_neg_compile_test(neg_bg_door_without_owner
+  "is not a member of .foundation::effects."
+  ".mint_background_context.")
 foundation_neg_compile_test(neg_producer_claim_default_built
   "is private within this context"
   "ProducerClaim<Brand>::ProducerClaim\\(\\) .with Brand = .anonymous.::Brand")
