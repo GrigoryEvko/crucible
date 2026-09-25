@@ -1,7 +1,7 @@
 #include <crucible/topology/Ptp.h>
 
 #include <crucible/Platform.h>
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 #include <crucible/safety/_ClockSource.h>
 #include <foundation/Lifetime.h>
 

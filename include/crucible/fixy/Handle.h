@@ -4,7 +4,7 @@
 // caller that pulls in only the fixy surface an entry point that does not
 // name that namespace.
 
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 #include <crucible/handles/LazyEstablishedChannel.h>
 #include <crucible/handles/_Once.h>
 #include <crucible/handles/_OneShotFlag.h>

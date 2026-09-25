@@ -1,4 +1,4 @@
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 #include <crucible/handles/_PublishOnce.h>
 #include <crucible/safety/_Checked.h>
 #include <crucible/safety/_ConstantTime.h>

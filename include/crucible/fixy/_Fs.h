@@ -5,7 +5,7 @@
 #include <crucible/safety/_Path.h>
 #include <crucible/safety/source/_Path.h>
 
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 #include <crucible/safety/_Linear.h>
 
 #include <crucible/effects/_ExecCtx.h>

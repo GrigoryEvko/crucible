@@ -457,6 +457,13 @@ crucible/safety/_IsCrash.h:IsCrash  — The concept form of the detector. The ne
 crucible/safety/_IsCrash.h:is_crash_smoke_test  — This runtime smoke test used the detector. It goes with the detector.
 crucible/safety/_IsCrash.h:is_crash_v  — This variable detected a Crash wrapper. The new tree has no Crash wrapper, so the detector has no type to detect.
 
+# ── handles: the file handle ────────────────────────────────────────────
+crucible/handles/_FileHandle.h:Fd  → include/fixy/os/Fs.h  — The descriptor value has no twin, because fixy::fs::OwnedFd keeps the number private and only its factories build one.
+crucible/handles/_FileHandle.h:FileHandle  → include/fixy/os/Fs.h  — fixy::fs::OwnedFd replaces the owning handle, and its constructor from an int is private, so no caller adopts a descriptor that no factory opened.
+crucible/handles/_FileHandle.h:open_read  → include/fixy/os/Fs.h  — mint_file with the ReadOnly mode atom replaces this call, and it demands a context and a sanitized path.
+crucible/handles/_FileHandle.h:open_write_append  → include/fixy/os/Fs.h  — mint_file with the WriteAppend mode atom replaces this call, and it demands a context and a sanitized path.
+crucible/handles/_FileHandle.h:open_write_truncate  → include/fixy/os/Fs.h  — mint_file with the WriteTruncate mode atom replaces this call, and it demands a context and a sanitized path.
+
 # ── algebra: the lattices that became atoms ─────────────────────────────
 #
 # Each of these lattices graded one axis of a binding.  The binding now

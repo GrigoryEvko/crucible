@@ -24,7 +24,7 @@
 // "__builtin_trap", "contract violation", or equivalent — anything
 // proving the consteval invocation was refused.
 
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 
 int main() {
     namespace safe = ::crucible::safety;

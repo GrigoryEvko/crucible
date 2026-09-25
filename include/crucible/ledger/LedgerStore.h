@@ -10,7 +10,7 @@
 // Writes are tmp-then-fsync-then-rename. A reader therefore sees either the
 // whole previous ledger or the whole new one, never a half-written line.
 //
-// The descriptor work goes through crucible::safety (handles/FileHandle.h),
+// The descriptor work goes through crucible::safety (handles/_FileHandle.h),
 // whose syscall sites are already covered by the capability allowlist.
 // fixy::fs offers a higher-level version of the same dance and would have
 // been the tidier dependency, but it is under active rewrite and currently
@@ -42,7 +42,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 #include <crucible/ledger/Competence.h>
 #include <crucible/ledger/HostFingerprint.h>
 #include <crucible/ledger/Verdict.h>

@@ -36,7 +36,7 @@
 
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/concurrent/_Topology.h>
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 #include <crucible/mimic/CogMimic.h>
 #include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Tagged.h>

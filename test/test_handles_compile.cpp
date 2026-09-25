@@ -1,7 +1,7 @@
 // Sentinel TU: compiles every handles header under the test target warning
 // matrix so their static_asserts run.
 
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 #include <crucible/handles/LazyEstablishedChannel.h>
 #include <crucible/handles/_Once.h>
 #include <crucible/handles/_OneShotFlag.h>

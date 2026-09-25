@@ -21,7 +21,7 @@
 // "__builtin_trap", "contract violation", or equivalent — anything
 // proving the ctor refused the consteval call.
 
-#include <crucible/handles/FileHandle.h>
+#include <crucible/handles/_FileHandle.h>
 
 int main() {
     namespace safe = ::crucible::safety;
