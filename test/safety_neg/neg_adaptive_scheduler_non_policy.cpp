@@ -4,7 +4,7 @@
 // SchedulerPolicy concept must reject a type with no queue_template,
 // policy_tag, priority_kind, needs_topology, or name() surface.
 
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 
 struct NotSchedulerPolicy {};
 

@@ -1,6 +1,6 @@
 // AutoSplit bench — range-planning and scheduler-dispatch overhead.
 
-#include <crucible/concurrent/AutoSplit.h>
+#include <crucible/concurrent/_AutoSplit.h>
 
 #include "bench_harness.h"
 

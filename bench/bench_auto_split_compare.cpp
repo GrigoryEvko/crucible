@@ -37,7 +37,7 @@
 // Queue cost is orthogonal to AutoSplit's parallelism choice — see
 // bench_concurrent_queues.cpp for those numbers.
 
-#include <crucible/concurrent/AutoSplit.h>
+#include <crucible/concurrent/_AutoSplit.h>
 #include "bench_harness.h"
 
 #include <algorithm>

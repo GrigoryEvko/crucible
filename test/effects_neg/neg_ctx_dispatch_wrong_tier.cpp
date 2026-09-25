@@ -10,7 +10,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at IsL1ResidentCtx.
 
-#include <crucible/concurrent/ExecCtxBridge.h>
+#include <crucible/concurrent/_ExecCtxBridge.h>
 
 namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;

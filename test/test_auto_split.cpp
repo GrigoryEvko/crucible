@@ -1,4 +1,4 @@
-#include <crucible/concurrent/AutoSplit.h>
+#include <crucible/concurrent/_AutoSplit.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/_HotPath.h>

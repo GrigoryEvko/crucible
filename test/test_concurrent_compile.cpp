@@ -6,7 +6,7 @@
 // include and a probe here.
 
 #include <crucible/concurrent/Endpoint.h>
-#include <crucible/concurrent/ExecCtxBridge.h>
+#include <crucible/concurrent/_ExecCtxBridge.h>
 #include <crucible/concurrent/_Pipeline.h>
 #include <crucible/concurrent/_Stage.h>
 #include <crucible/concurrent/StageEndpointBridge.h>

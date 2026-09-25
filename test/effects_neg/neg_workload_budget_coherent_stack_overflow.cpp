@@ -24,7 +24,7 @@
 // "WorkloadBudgetCoherent" / "coherence" / "constraints not satisfied".
 
 #include <crucible/concurrent/_Pipeline.h>
-#include <crucible/concurrent/WorkloadBudgetCoherent.h>
+#include <crucible/concurrent/_WorkloadBudgetCoherent.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <cstddef>

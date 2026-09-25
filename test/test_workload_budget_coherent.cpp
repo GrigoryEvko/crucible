@@ -5,7 +5,7 @@
 // that must fail to compile lives in a negative-compile fixture instead.
 
 #include <crucible/concurrent/_Pipeline.h>
-#include <crucible/concurrent/WorkloadBudgetCoherent.h>
+#include <crucible/concurrent/_WorkloadBudgetCoherent.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <cstddef>

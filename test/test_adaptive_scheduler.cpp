@@ -1,4 +1,4 @@
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 
 #include <algorithm>
 #include <atomic>

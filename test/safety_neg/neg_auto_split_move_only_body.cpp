@@ -4,7 +4,7 @@
 // Move-only bodies must therefore fail at the AutoSplitShardBody
 // boundary instead of entering the queue machinery.
 
-#include <crucible/concurrent/AutoSplit.h>
+#include <crucible/concurrent/_AutoSplit.h>
 
 namespace cc = crucible::concurrent;
 

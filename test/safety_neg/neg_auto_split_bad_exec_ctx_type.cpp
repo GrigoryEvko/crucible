@@ -4,7 +4,7 @@
 // axis.  Malformed context metadata must be rejected, not silently
 // ignored by the typed autosplit planner.
 
-#include <crucible/concurrent/AutoSplit.h>
+#include <crucible/concurrent/_AutoSplit.h>
 
 namespace {
 

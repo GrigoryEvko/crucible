@@ -26,7 +26,7 @@
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/concurrent/_SpscRing.h>
-#include <crucible/concurrent/scheduler/Policies.h>
+#include <crucible/concurrent/scheduler/_Policies.h>
 #include <crucible/Arena.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/_OwnedRegion.h>

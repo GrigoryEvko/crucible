@@ -33,7 +33,7 @@
 // the rationale for the figures.  A future target below those floors
 // means lowering them there and re-auditing the callers.
 
-#include <crucible/concurrent/ExecCtxBridge.h>
+#include <crucible/concurrent/_ExecCtxBridge.h>
 #include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/_WorkingSet.h>

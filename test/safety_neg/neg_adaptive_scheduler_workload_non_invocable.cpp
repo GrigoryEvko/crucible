@@ -4,7 +4,7 @@
 // void(WorkShard) sharded job.  Arbitrary payload objects must be
 // rejected at the scheduler boundary before they reach queue storage.
 
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 
 struct NotAJob {
     int payload = 0;

@@ -1709,15 +1709,6 @@ crucible_test(test_session_checkpoint)
 # classified build-log diagnostics.
 crucible_test(test_session_diagnostic)
 
-# Scheduler policy tags (SEPLOG-H3, task #329) — 7 compile-time
-# policy tags (Fifo, Lifo, RoundRobin, LocalityAware★, Deadline,
-# Cfs, Eevdf) parameterising the future NumaMpmcThreadPool.  Each
-# tag carries constexpr metadata (name, description, use_case,
-# typical_submit_ns, algorithmic properties).  LocalityAware is the
-# default per THREADING.md §5.5.2.  Inheritance-based detection; user
-# extensions plug in with zero boilerplate.
-crucible_test(test_scheduler_policy)
-
 # AdaptiveScheduler Pool<Policy> (GAPS-032) — runnable policy-parametric
 # worker pool over scheduler/Policies.h, with dispatch(), topology
 # consultation for locality-aware policies, completion smoke coverage
@@ -11379,14 +11370,6 @@ crucible_neg_compile_test(neg_session_checkpoint_wrong_base
 # "[DiagnosticAccessor_NonTag]" prefix.  Stable across GCC versions.
 crucible_neg_compile_test(neg_session_diagnostic_non_tag
     "DiagnosticAccessor_NonTag")
-
-# Concurrent — SchedulerPolicy accessor on non-policy type.
-#
-# [FRAMEWORK-CONTROLLED] Same #371 pattern: the scheduler accessor
-# variable templates route through `detail::sched::accessor_check`
-# and emit "[SchedulerAccessor_NonPolicy]" on rejection.
-crucible_neg_compile_test(neg_scheduler_policy_non_inheritance
-    "SchedulerAccessor_NonPolicy")
 
 # SessionHandle::detach() called without a typed reason tag (#376).
 #

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 #include <crucible/concurrent/AutoRouter.h>
-#include <crucible/concurrent/AutoSplit.h>
+#include <crucible/concurrent/_AutoSplit.h>
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/concurrent/_Pipeline.h>

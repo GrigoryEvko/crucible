@@ -8,7 +8,7 @@
 // regardless of the working set, which is the overhead the scheduler
 // is meant to avoid.
 
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 
 #include "bench_harness.h"
 

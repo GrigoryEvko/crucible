@@ -5,7 +5,7 @@
 #include <crucible/concurrent/_SpinLock.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/_Topology.h>
-#include <crucible/concurrent/scheduler/Policies.h>
+#include <crucible/concurrent/scheduler/_Policies.h>
 #include <crucible/safety/_Pinned.h>
 
 #include <algorithm>

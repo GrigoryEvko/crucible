@@ -559,6 +559,123 @@ crucible/safety/_Workload.h:parallel_for_views_adaptive  — Not carried, becaus
 crucible/safety/_Workload.h:parallel_for_smart  — Not carried, because no production file called it, and a caller asks ParallelismRule::recommend for the factor before it calls mint_parallel_for.
 crucible/safety/_Workload.h:log_topology_at_startup  — Not carried, because nothing called it, and fixy::concurrent::Topology::instance().log_summary() prints the same summary.
 
+# ── concurrent: the scheduler pool, its queue policies, the auto split and the context bridges ──
+crucible/concurrent/_AdaptiveScheduler.h:Pool  — Not carried, because no production file ran a job on it, and its idle workers spin with a pause and never park.
+crucible/concurrent/_AdaptiveScheduler.h:dispatch  — A member and free entry of the dropped pool, which no production file called.
+crucible/concurrent/_AdaptiveScheduler.h:dispatch_with_workload  — A member and free entry of the dropped pool. A caller asks ParallelismRule::recommend and then calls mint_parallel_for or mint_spawn.
+crucible/concurrent/_AdaptiveScheduler.h:DispatchWithWorkloadResult  — The result record of dispatch_with_workload on the dropped pool.
+crucible/concurrent/_AdaptiveScheduler.h:WorkloadProfile  — The job description of the dropped pool. Its byte counts are the WorkBudget of fixy/concurrent/ParallelismRule.h, and its other fields are caller hints the rule refuses.
+crucible/concurrent/_AdaptiveScheduler.h:WorkShard  — The shard record of the dropped pool. mint_parallel_for in fixy/os/Spawn.h gives each body its own shard of the region.
+crucible/concurrent/_AdaptiveScheduler.h:CoreCount  — A core count for the dropped pool. fixy::concurrent::Topology::instance().process_cpu_count() gives the same number.
+crucible/concurrent/_AdaptiveScheduler.h:NumaNodeMask  — The node mask that chose the workers of the dropped pool, which pinned each worker with a raw sched_setaffinity call.
+crucible/concurrent/_AdaptiveScheduler.h:InlineTask  — The fixed-size job cell of the dropped pool.
+crucible/concurrent/_AdaptiveScheduler.h:QueuePortal  — Not carried, because each constructor minted a root permission for its queue, and each shared a linear handle between workers behind a spin lock.
+crucible/concurrent/_AdaptiveScheduler.h:policy_queue_t  — The queue type that a policy of scheduler/_Policies.h chose for the dropped pool.
+crucible/concurrent/_AdaptiveScheduler.h:ticket_metadata  — The ticket body that the dropped pool kept in its task table.
+crucible/concurrent/_AdaptiveScheduler.h:ticket_type  — The pointer-sized ticket that the dropped pool put in its queue.
+crucible/concurrent/_AdaptiveScheduler.h:ticket_key  — The key extractor that the priority queues of the dropped pool read from a ticket.
+crucible/concurrent/_AdaptiveScheduler.h:HasSchedulerKey  — The concept that found a priority key on a job of the dropped pool.
+crucible/concurrent/_AdaptiveScheduler.h:priority_key  — The priority key of a job on the dropped pool.
+crucible/concurrent/_AdaptiveScheduler.h:queue_key  — The queue key of a job on the dropped pool, which chose between the priority key and the submit sequence.
+crucible/concurrent/scheduler/_Policies.h:Lifo  — A queue policy of the dropped pool of _AdaptiveScheduler.h, which no production file named.
+crucible/concurrent/scheduler/_Policies.h:LocalityAware  — A queue policy of the dropped pool of _AdaptiveScheduler.h, which no production file named.
+crucible/concurrent/scheduler/_Policies.h:Cfs  — A priority policy of the dropped pool, keyed by virtual runtime, which no production file named.
+crucible/concurrent/scheduler/_Policies.h:Eevdf  — A priority policy of the dropped pool, keyed by virtual deadline, which no production file named.
+crucible/concurrent/scheduler/_Policies.h:CfsPerShard  — The per-shard form of the dropped Cfs policy.
+crucible/concurrent/scheduler/_Policies.h:DeadlinePerShard  — The per-shard form of the dropped Deadline policy.
+crucible/concurrent/scheduler/_Policies.h:EevdfPerShard  — The per-shard form of the dropped Eevdf policy.
+crucible/concurrent/scheduler/_Policies.h:DefaultPolicy  — The default queue policy of the dropped pool.
+crucible/concurrent/scheduler/_Policies.h:PriorityKind  — The key kind that routed a policy of the dropped pool to its priority arithmetic.
+crucible/concurrent/scheduler/_Policies.h:needs_priority_key_v  — The question whether a policy of the dropped pool reads a priority key.
+crucible/concurrent/scheduler/_Policies.h:policy_defaults  — The shard and capacity defaults of the dropped queue policies.
+crucible/concurrent/scheduler/_Policies.h:per_shard_defaults  — The shard and capacity defaults of the dropped per-shard policies.
+crucible/concurrent/scheduler/_Policies.h:SchedulerPolicy  — The concept that admitted a queue policy to the dropped pool.
+crucible/safety/diag/_RowHashFold.h:SchedulerPolicy  → include/foundation/algebra/lattices/SchedulerPolicyLattice.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier declares the enum.
+crucible/concurrent/_AutoSplit.h:auto_split_plan  — Not carried, because no production file split work with it. ParallelismRule::recommend gives the factor, and mint_parallel_for splits the region.
+crucible/concurrent/_AutoSplit.h:auto_split_plan_at_factor  — A plan builder of the dropped auto split, which no production file called.
+crucible/concurrent/_AutoSplit.h:auto_split_plan_cached  — A plan builder of the dropped auto split. It read a per-shape hit cache, so two runs could split the same work differently.
+crucible/concurrent/_AutoSplit.h:auto_split_plan_runtime  — A plan builder of the dropped auto split, which no production file called.
+crucible/concurrent/_AutoSplit.h:auto_split_plan_typed  — A plan builder of the dropped auto split, which read a split hint from the type of the body.
+crucible/concurrent/_AutoSplit.h:AutoSplitPlan  — The plan record of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:AutoSplitRequest  — The request record of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:AutoSplitShard  — The shard record of the dropped auto split. mint_parallel_for in fixy/os/Spawn.h gives each body its own shard of the region.
+crucible/concurrent/_AutoSplit.h:dispatch_auto_split  — It ran an auto split plan on the dropped pool of _AdaptiveScheduler.h.
+crucible/concurrent/_AutoSplit.h:dispatch_auto_split_typed  — It ran an auto split plan on the dropped pool of _AdaptiveScheduler.h.
+crucible/concurrent/_AutoSplit.h:dispatch_auto_split_plan_  — It ran an auto split plan on the dropped pool of _AdaptiveScheduler.h.
+crucible/concurrent/_AutoSplit.h:dispatch_at_factor  — It ran an auto split plan on the dropped pool of _AdaptiveScheduler.h.
+crucible/concurrent/_AutoSplit.h:AutoSplitDispatchResult  — The result record of a dispatch on the dropped pool.
+crucible/concurrent/_AutoSplit.h:AutoSplitShardBody  — The concept that admitted a shard body to the dropped auto split.
+crucible/concurrent/_AutoSplit.h:AutoSplitOnlineCalibrator  — Not carried, because it fed measured times back into the split factor, so two runs could split the same work differently.
+crucible/concurrent/_AutoSplit.h:AutoSplitShapeCache  — Not carried, because it fed per-shape hit counts back into the split factor, so two runs could split the same work differently.
+crucible/concurrent/_AutoSplit.h:AutoSplitRouterState  — The state that held the dropped calibrator and shape cache.
+crucible/concurrent/_AutoSplit.h:auto_split_shape_key  — The key of the dropped shape cache.
+crucible/concurrent/_AutoSplit.h:AutoSplitRuntimeProfile  — The runtime profile of the dropped auto split. fixy::concurrent::Topology probes the cache sizes that ParallelismRule reads.
+crucible/concurrent/_AutoSplit.h:auto_split_runtime_profile_from_topology  — A builder of the dropped runtime profile.
+crucible/concurrent/_AutoSplit.h:auto_split_runtime_profile_from_topology_snapshot  — A builder of the dropped runtime profile.
+crucible/concurrent/_AutoSplit.h:auto_split_runtime_profile_once  — A builder of the dropped runtime profile.
+crucible/concurrent/_AutoSplit.h:auto_split_runtime_profile_refresh  — A builder of the dropped runtime profile.
+crucible/concurrent/_AutoSplit.h:auto_split_runtime_profile_reprobe  — A builder of the dropped runtime profile.
+crucible/concurrent/_AutoSplit.h:classify_from_profile  — Not carried, because it classified the tier with its own thresholds, a third set beside ParallelismRule and the old AutoRouter.
+crucible/concurrent/_AutoSplit.h:numa_from_tier  — The NUMA choice of the dropped auto split. ParallelismRule::recommend chooses the NUMA policy from the tier.
+crucible/concurrent/_AutoSplit.h:apply_pool_pressure  — It narrowed a split to the idle workers of the dropped pool.
+crucible/concurrent/_AutoSplit.h:break_even_prefers_sequential  — Not carried, because it weighed measured costs, and the rule decides from the working set alone, so the answer does not change between runs.
+crucible/concurrent/_AutoSplit.h:efficiency_pct  — It weighed measured costs for the dropped auto split. The rule decides from the working set alone.
+crucible/concurrent/_AutoSplit.h:SchedulingIntent  — The caller intent that the dropped auto split read. The rule takes no caller hint.
+crucible/concurrent/_AutoSplit.h:HintDirective  — A caller hint that the dropped auto split read. The rule takes no caller hint.
+crucible/concurrent/_AutoSplit.h:AutoSplitWorkloadHint  — A caller hint that the dropped auto split read. The rule takes no caller hint.
+crucible/concurrent/_AutoSplit.h:AutoSplitWorkloadTagged  — The tag that put a hint on the body type for the dropped auto split.
+crucible/concurrent/_AutoSplit.h:workload_traits  — The trait that read a split hint from wrapper grades and old context axes. The rule takes no caller hint.
+crucible/concurrent/_AutoSplit.h:infer_workload_hint  — It read a split hint from the type of the body. The rule takes no caller hint.
+crucible/concurrent/_AutoSplit.h:merge_hints  — It merged the split hints of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:normalize_hint  — It normalized a split hint of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:merge_request_with_hint  — It merged a split hint into a request of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:hint_from_effect_row  — It read a split hint from an effect row. The rule takes no caller hint.
+crucible/concurrent/_AutoSplit.h:hint_from_ctx_workload_bytes  — It read the workload axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_AutoSplit.h:hint_from_ctx_workload_axis  — It read the workload axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_AutoSplit.h:hint_from_exec_ctx_axes  — It read the axes of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_AutoSplit.h:ctx_workload_hint_impl  — It read the workload axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_AutoSplit.h:HasInlineWorkloadHint  — The concept that found a split hint on the body type.
+crucible/concurrent/_AutoSplit.h:DeclaresExecCtxType  — The concept that found an old context type on the body type.
+crucible/concurrent/_AutoSplit.h:HasExecCtxType  — The concept that found an old context type on the body type.
+crucible/concurrent/_AutoSplit.h:HasAutoSplitValueType  — The concept that found a payload type on the body type.
+crucible/concurrent/_AutoSplit.h:AutoSplitPartitionStrategy  — A field of the routing record of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:AutoSplitScheduleMode  — A field of the routing record of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:AutoSplitPlacementPolicy  — A field of the routing record of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:AutoSplitCompletionMode  — A field of the routing record of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:AutoSplitRoutingDecision  — The routing record of the dropped auto split.
+crucible/concurrent/_AutoSplit.h:normalize_auto_split_route  — It normalized a route of the old AutoRouter for the dropped auto split.
+crucible/concurrent/_AutoSplit.h:saturating_add_u64  → include/foundation/Saturate.h  — A private helper of the dropped auto split, and the carrier holds the saturating forms.
+crucible/concurrent/_AutoSplit.h:saturating_mul_u64  → include/foundation/Saturate.h  — A private helper of the dropped auto split, and the carrier holds the saturating forms.
+crucible/concurrent/_AutoSplit.h:ceil_div  — A private arithmetic helper of the dropped auto split.
+crucible/concurrent/_ExecCtxBridge.h:numa_to_policy  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:numa_to_policy_v  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:numa_to_node  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:numa_node_of_v  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:ctx_numa_policy  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:ctx_numa_node  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:IsNumaIgnoreCtx  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:IsNumaLocalCtx  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:IsNumaSpreadCtx  — It read the NUMA axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:resid_to_tier  — It read the residency axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:resid_to_tier_v  — It read the residency axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:ctx_residency_tier  — It read the residency axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:IsL1ResidentCtx  — It read the residency axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:IsL2ResidentCtx  — It read the residency axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:IsL3ResidentCtx  — It read the residency axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:IsDRAMBoundCtx  — It read the residency axis of the old context, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_ExecCtxBridge.h:workload_to_budget  — It read the workload axis of the old context, which foundation/effects/Ctx.h does not carry. A caller builds the WorkBudget directly.
+crucible/concurrent/_ExecCtxBridge.h:workload_to_budget_v  — It read the workload axis of the old context, which foundation/effects/Ctx.h does not carry. A caller builds the WorkBudget directly.
+crucible/concurrent/_ExecCtxBridge.h:ctx_workbudget  — It read the workload axis of the old context, which foundation/effects/Ctx.h does not carry. A caller builds the WorkBudget directly.
+crucible/concurrent/_ExecCtxBridge.h:parallelism_decision_for  → include/fixy/concurrent/ParallelismRule.h  — It fed the workload axis of the old context to the rule. A caller passes its WorkBudget to ParallelismRule::recommend directly.
+crucible/concurrent/_WorkloadBudgetCoherent.h:WorkloadBudgetCoherent  — Not carried, because it checked the workload, allocator and NUMA claims of the old context, and foundation/effects/Ctx.h carries none of them.
+crucible/concurrent/_WorkloadBudgetCoherent.h:workload_hint_byte_budget  — It read the byte budget of the old context's workload axis, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_WorkloadBudgetCoherent.h:workload_hint_byte_budget_v  — It read the byte budget of the old context's workload axis, which foundation/effects/Ctx.h does not carry.
+crucible/concurrent/_WorkloadBudgetCoherent.h:alloc_class_max_working_set  — It bounded the working set of a stack-allocated context, and foundation/effects/Ctx.h carries no allocator class.
+crucible/concurrent/_WorkloadBudgetCoherent.h:alloc_class_max_working_set_v  — It bounded the working set of a stack-allocated context, and foundation/effects/Ctx.h carries no allocator class.
+crucible/concurrent/_WorkloadBudgetCoherent.h:stack_alloc_max_working_set_bytes  — The stack bound of the dropped allocator-class check.
+crucible/concurrent/_WorkloadBudgetCoherent.h:numa_policy_min_working_set  — It refused a NUMA spread claim below the DRAM tier. ParallelismRule::recommend chooses NumaSpread only for a DRAM-bound set on a machine with more than one node.
+crucible/concurrent/_WorkloadBudgetCoherent.h:numa_policy_min_working_set_v  — It refused a NUMA spread claim below the DRAM tier. ParallelismRule::recommend chooses NumaSpread only for a DRAM-bound set on a machine with more than one node.
+
 # ── safety: the detectors of ported bands, ported wrappers and wrappers re-modelled as atoms ──
 crucible/safety/_IsBarrierGuarded.h:barrier_guarded_tier_v  — A tier accessor for the BarrierGuarded wrapper, which the port did not carry. V301 in fixy/Collision.h reads the barrier strength from the grade of a binding.
 crucible/safety/_IsBarrierGuarded.h:barrier_guarded_value_t  — A payload accessor for the BarrierGuarded wrapper, which the port did not carry. The strength is an atom of a binding, and an atom has no payload.

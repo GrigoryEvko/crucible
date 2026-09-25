@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 #include <crucible/concurrent/AutoRouter.h>
 #include <crucible/concurrent/_Topology.h>
 #include <crucible/effects/_Computation.h>

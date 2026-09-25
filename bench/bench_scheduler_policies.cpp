@@ -40,7 +40,7 @@
 //     intended use shape (recursive fork-join with cache-hot owner).
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/concurrent/scheduler/Policies.h>
+#include <crucible/concurrent/scheduler/_Policies.h>
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>

@@ -4,7 +4,7 @@
 // larger than that budget must be rejected at compile time instead of
 // silently falling back to heap allocation through type erasure.
 
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 
 #include <array>
 #include <cstdint>

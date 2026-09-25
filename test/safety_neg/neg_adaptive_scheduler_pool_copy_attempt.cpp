@@ -4,7 +4,7 @@
 // counters.  Copying it would duplicate the control surface without
 // duplicating the running workers' identity.
 
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 
 int main() {
     namespace cc = crucible::concurrent;

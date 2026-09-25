@@ -1,6 +1,6 @@
 // AdaptiveScheduler Pool<Policy> bench — per-policy dispatch tail and throughput.
 
-#include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/concurrent/_AdaptiveScheduler.h>
 #include <crucible/fixy/_Time.h>  // FIXY-V-202
 
 #include "bench_harness.h"
