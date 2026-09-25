@@ -200,7 +200,41 @@ void effect_row_lattice_runs_at_run_time() noexcept {
 
 }  // namespace
 
+namespace {
+
+// The mask operations called with values the optimizer cannot fold.
+// The wire value comes back through a volatile load, as a received byte
+// string would.
+[[nodiscard]] bool effect_mask_runs_at_run_time() noexcept {
+    using namespace ::foundation::effects;
+    auto const bg = bits_for<Effect::Bg>();
+    if (bg != bits_from_row<Row<Effect::Bg>>()) return false;
+
+    auto const multi = bits_from_row<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
+    if (multi.popcount() != 3 || !multi.test(Effect::Bg) || !multi.test(Effect::Alloc) || !multi.test(Effect::IO)) {
+        return false;
+    }
+
+    using R_bg = Row<Effect::Bg>;
+    if (row_subsumes_bits<R_bg>(bits_for<Effect::Bg, Effect::IO>())) return false;
+    if (!row_subsumes_bits<R_bg>(bg)) return false;
+
+    using R_bg_alloc = Row<Effect::Bg, Effect::Alloc>;
+    if (bits_subsumes_row<R_bg_alloc>(bg)) return false;
+    auto const full = bits_for<Effect::Bg, Effect::Alloc>();
+    if (!bits_subsumes_row<R_bg_alloc>(full)) return false;
+
+    volatile EffectMask::underlying_type wire = full.raw();
+    if (EffectMask::from_raw(wire) != full) return false;
+
+    // The complement of a received mask stays inside the valid bits.
+    return ((~EffectMask::from_raw(wire)).raw() & ~EffectRowLattice::top()) == 0;
+}
+
+}  // namespace
+
 int main() {
+    if (!effect_mask_runs_at_run_time()) return 5;
     every_accessor_runs_at_run_time();
     row_types_run_at_run_time();
     effect_row_lattice_runs_at_run_time();

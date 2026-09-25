@@ -167,6 +167,13 @@ foundation_neg_compile_test(neg_concurrent_rows_that_wrap_are_not_schedulable
 foundation_neg_compile_test(neg_resource_tag_refuses_a_forged_kind
   "constraints not satisfied"
   "nested requirement .IsResourceKind<.*>. is not satisfied")
+
+# A mask built during constant evaluation from a bit that names no
+# effect atom reaches the trap in from_raw.  The location regex proves
+# the trap came from Row.h rather than from the fixture.
+foundation_neg_compile_test(neg_effect_mask_from_raw_refuses_a_high_bit
+  "is not a constant expression"
+  "foundation/effects/Row\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\).")
 foundation_neg_compile_test(neg_strong_counter_bit_cast_retag
   "no matching function for call to .bit_cast<foundation::algebra::lattices::Generation>"
   "the expression .is_trivially_copyable_v<_To> .with _To = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation>::element_type.. evaluated to .false.")

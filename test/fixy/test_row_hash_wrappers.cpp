@@ -1007,6 +1007,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^fe::ResourceTagDescriptor, kPayload},
     {^^fe::concurrent_row_value, kMetafunction},
     {^^fe::concurrent_row_descriptors, kMetafunction},
+    {^^fe::EffectMask, "a set of effect atoms read at run time, from a sample or from bytes on the wire: its type names no row, and bits_from_row projects a row into it"},
 
     {^^::fixy::axis_traits, kMetafunction},
     {^^::fixy::Bits, kPayload},
