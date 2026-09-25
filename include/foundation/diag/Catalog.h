@@ -699,117 +699,93 @@ struct CipherTierViolation : tag_base {
 
 struct ResidencyHeatViolation : tag_base {
     static constexpr std::string_view name = "ResidencyHeatViolation";
-    static constexpr std::string_view description = "A storage-tier operation (KernelCache L1/L2/L3, runtime metrics "
-                                                    "ring, etc.) was invoked at the wrong heat class.  L1 is "
-                                                    "vendor-portable IR002 (federation-shareable across "
-                                                    "organizations); L2 is per-vendor-family IR003* (intra-vendor "
-                                                    "shareable); L3 is per-chip compiled bytes (machine-local).  "
-                                                    "Mixing heat classes either loses portability (writing per-chip "
-                                                    "bytes to L1) or wastes capacity (writing portable IR to L3).";
-    static constexpr std::string_view remediation = "Verify the storage tier matches the artifact's portability "
-                                                    "level: portable bytecode → L1; vendor-family IR → L2; "
-                                                    "compiled native bytes → L3.  See FORGE.md §23 for the "
-                                                    "three-level cache architecture and the federation discipline.";
+    static constexpr std::string_view description =
+        "Reserved for a value that gets to a consumer that accepts only a hotter residency.  fixy::ResidencyHeat in "
+        "fixy/Bands.h pins the cache level that holds the working set of a value.  Hot is L1, Warm is L2, and Cold is "
+        "L3 or DRAM.  These are the levels of the CPU cache hierarchy.  The L1, L2 and L3 tiers of the KernelCache "
+        "grade portability, which is a different axis.  Nothing in this tree emits this category.";
+    static constexpr std::string_view remediation =
+        "No action is necessary for the category, because nothing emits it.  When the compiler rejects a residency, "
+        "lower the residency that the consumer accepts, or make the value where its working set stays at that "
+        "level.  relax moves only toward Cold, because a move up would claim a residency that nothing measured.";
 
     static constexpr Severity severity = Severity::Warning;
-    static constexpr std::string_view why_this_matters = "ResidencyHeat<Tier, T> (28_04 §4.3.8) is the storage-heat "
-                                                         "lattice for any subsystem with hot/warm/cold residency: "
-                                                         "KernelCache L1/L2/L3, runtime metrics, MAP-Elites archives.  "
-                                                         "Distinct from CipherTier (which is Cipher-specific); "
-                                                         "ResidencyHeat is the generic heat axis.  A Hot value "
-                                                         "demoted to Cold loses LRU residency guarantees and slows "
-                                                         "by orders of magnitude; a Cold value promoted to Hot "
-                                                         "evicts other Hot entries.  Severity::Warning rather than "
-                                                         "Error because mis-tiering degrades performance but doesn't "
-                                                         "corrupt state — the framework can still serve correctly, "
-                                                         "just slower.";
+    static constexpr std::string_view why_this_matters =
+        "The residency tells a consumer what one access costs.  An L1 hit costs a few cycles, and an L3 or DRAM "
+        "access costs tens to hundreds of cycles.  A consumer that accepts Warm also accepts a Hot value, and a "
+        "consumer that accepts only Hot rejects a Cold value.  A mismatch is a compile error: satisfies_v is false, "
+        "relax rejects a move up, and a Hot parameter does not take a Cold value.  Severity::Warning rather than "
+        "Error, because a residency error decreases performance but does not corrupt state.  The category keeps its "
+        "index, because each index is an ordinal pin of the federation cache keys.";
     static constexpr std::string_view symptom_pattern =
-        "Surfaces when a KernelCache::lookup at L1 is fed a "
-        "ResidencyHeat<Cold>-tagged key (the cache will never find "
-        "it because L1 only holds Hot entries).  Or when runtime observer's "
-        "drift attribution misclassifies a Cold-tier metric drift "
-        "as a Hot-path regression.  Diagnostic names the value's "
-        "current residency and the operation's required residency.";
-    static constexpr std::string_view correct_example = "KernelCache::lookup_l1(ResidencyHeat<Hot, KeyId>{kid});";
+        "Does not surface.  Nothing in this tree emits the category.  A residency mismatch shows as a compile error "
+        "at the call that gives a Warm or Cold value to a consumer that accepts only residency_heat::Hot.";
+    static constexpr std::string_view correct_example =
+        "static_assert(fixy::satisfies_v<fixy::residency_heat::Hot<Key>, fixy::ResidencyHeatTag_v::Warm>);";
     static constexpr std::string_view violating_example =
-        "KernelCache::lookup_l1(ResidencyHeat<Cold, KeyId>{kid});  // miss";
+        "static_assert(fixy::satisfies_v<fixy::residency_heat::Cold<Key>, fixy::ResidencyHeatTag_v::Hot>);  // false";
 };
 
 struct EpochMismatch : tag_base {
     static constexpr std::string_view name = "EpochMismatch";
-    static constexpr std::string_view description = "An EpochVersioned<Epoch, Generation, T> value carried an "
-                                                    "epoch tag that does not match the consuming Canopy collective's "
-                                                    "current epoch.  Canopy fleet membership changes (Raft-"
-                                                    "committed epoch bumps); a value carrying the prior epoch is "
-                                                    "stale and must be rebuilt.  Pattern from CRUCIBLE.md §L13 "
-                                                    "Canopy distribution layer.";
-    static constexpr std::string_view remediation = "Rebuild the value at the new epoch via Canopy::reshard, or "
-                                                    "if the value is epoch-independent, declare its construction "
-                                                    "without the EpochVersioned wrapper.  Reshard checks include "
-                                                    "row intersection across the new fleet — a "
-                                                    "stale-epoch value triggers the diagnostic at the first "
-                                                    "operation that consumes it.";
+    static constexpr std::string_view description =
+        "Reserved for a fixy::EpochVersioned value whose version is too old for its gate.  fixy/EpochVersioned.h "
+        "spells EpochVersioned<T>: a payload with the fleet epoch and the per-node generation.  Only a VersionSource, "
+        "minted with an Init context, gives the VersionStamp that sets a version.  is_at_least returns false when one "
+        "counter is below the requirement.  select_fresher returns VersionConflict::Incomparable or "
+        "VersionConflict::Divergent.  Nothing in this tree emits this category.";
+    static constexpr std::string_view remediation =
+        "No action is necessary for the category, because nothing emits it.  When is_at_least returns false, make "
+        "the value again with a stamp from VersionSource::stamp().  For a value from a peer, adopt the newer version "
+        "at the source, and then stamp the value with stamp_received().  An Incomparable or Divergent pair has no "
+        "fresher operand, and the caller decides which value holds.";
 
     static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = "EpochVersioned<Epoch, Generation, T> (28_04 §4.4.2) carries "
-                                                         "Canopy's Raft-committed fleet epoch alongside a per-Relay "
-                                                         "generation counter.  After a membership change (peer join "
-                                                         "OR peer death), the fleet advances epoch; values constructed "
-                                                         "in the OLD epoch are stale relative to the NEW epoch's "
-                                                         "topology.  Operating on a stale-epoch value during a "
-                                                         "collective produces wrong gradients (the partition layout "
-                                                         "the value was computed against no longer matches the live "
-                                                         "fleet).  The fence prevents the silent staleness — caller "
-                                                         "must rebuild the value at the new epoch via Canopy::reshard.";
-    static constexpr std::string_view symptom_pattern = "Surfaces immediately after Canopy::reshard fires (peer "
-                                                        "join or peer-down detected) — any pending operation whose "
-                                                        "operand was minted in the previous epoch fails the epoch "
-                                                        "check.  Less commonly: a long-running Raft log replay "
-                                                        "interleaves an old-epoch value with new-epoch metadata.  "
-                                                        "Diagnostic names BOTH epochs and points at "
-                                                        "Canopy::reshard for the rebuild path.";
-    static constexpr std::string_view correct_example = "auto fresh = Canopy::reshard(stale_value).at_current_epoch();";
+    static constexpr std::string_view why_this_matters =
+        "The version tells a reader which cluster state made the payload.  A gate accepts a value at or above a "
+        "version, and a false high version makes a stale payload read as fresh.  A producer cannot state a version, "
+        "and each stamp names a version that its source reached.  A value from an older epoch was calculated against "
+        "a membership that no longer holds.  A collective that uses it calculates against the wrong partition.  The "
+        "category keeps its index, because each index is an ordinal pin of the federation cache keys.";
+    static constexpr std::string_view symptom_pattern =
+        "Does not surface.  Nothing in this tree emits the category.  A caller sees the version check as the false "
+        "return of is_at_least, or as the error of select_fresher.";
+    static constexpr std::string_view correct_example =
+        "fixy::EpochVersioned<Shard> const fresh{rebuild(shard), source.stamp()};";
     static constexpr std::string_view violating_example =
-        "do_collective(stale_value);  // epoch=N-1 but fleet at epoch=N";
+        "do_collective(stale);  // stamped at epoch N-1: is_at_least(EpochBound{N}, GenerationBound{0}) is false";
 };
 
 struct BudgetExceeded : tag_base {
     static constexpr std::string_view name = "BudgetExceeded";
-    static constexpr std::string_view description = "A Budgeted<{BitsBudget, PeakBytes}, T> operation exceeded its "
-                                                    "declared resource bound.  Bits-budget is the cumulative bits-"
-                                                    "transferred allowance for a precision-budget calibrator step; "
-                                                    "peak-bytes is the high-water memory residency allowance.  "
-                                                    "Budget overshoot indicates the operation needs either a "
-                                                    "tighter algorithm or a relaxed budget.  Pattern per "
-                                                    "arXiv:2512.06952 resource-bounded type theory.";
-    static constexpr std::string_view remediation = "Two routes.  (a) Tighten the algorithm: lower-precision "
-                                                    "intermediate types, smaller working sets, reuse buffers via "
-                                                    "arena allocation.  (b) Relax the budget at the declaration "
-                                                    "site if the larger resource use is justified by application "
-                                                    "requirements.  Budget exceedance silently is NOT acceptable "
-                                                    "— the diagnostic must fire so the choice is explicit.";
+    static constexpr std::string_view description =
+        "Reserved for a fixy::Budgeted value with a grade above the bound of its gate.  fixy/Budgeted.h spells "
+        "Budgeted<T> over BudgetLattice: a payload with the bits it transferred and the peak bytes it held.  Only a "
+        "BudgetStamp from a BudgetAuthority, minted with an Init context, sets a finite grade.  satisfies returns "
+        "false when one grade is above its bound, and a value that nothing measured is unbounded.  Nothing in this "
+        "tree emits this category.";
+    static constexpr std::string_view remediation =
+        "No action is necessary for the category, because nothing emits it.  When satisfies returns false, decrease "
+        "the use: smaller intermediate types, a smaller working set, or buffers that an arena uses again.  If the "
+        "larger use is correct, get a larger grant from the BudgetAuthority.  A producer cannot state its own grade, "
+        "and one stamp grades one value.";
 
     static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = "Budgeted<{BitsBudget, PeakBytes}, T> (28_04 §4.4.1, "
-                                                         "Resource-bounded type theory arXiv:2512.06952) carries a "
-                                                         "compile-time bound on the value's resource footprint: "
-                                                         "either bits transferred (network) or peak bytes resident "
-                                                         "(memory).  A composition that sums two Budgeted values into "
-                                                         "a budget that exceeds the wrapper's declared cap fails the "
-                                                         "ProductLattice's join check.  The fence prevents accidental "
-                                                         "OOM (memory budget) or bandwidth saturation (bits budget) "
-                                                         "in production deployments where the budget is the contract.";
-    static constexpr std::string_view symptom_pattern = "Surfaces when a precision-budget calibrator (28_04 §4.4.1) "
-                                                        "composes two BitsBudget<N>-tagged candidates whose sum "
-                                                        "exceeds the declared per-step cap.  Less commonly: a "
-                                                        "Canopy collective whose per-peer PeakBytes sum exceeds the "
-                                                        "configured fleet memory ceiling.  The diagnostic names "
-                                                        "BOTH operands' budgets and the cap that was violated.";
+    static constexpr std::string_view why_this_matters =
+        "A grade is a claim about what the payload used, and a smaller grade is a stronger claim.  A producer that "
+        "states its own grade can claim zero and pass every gate.  Only a BudgetAuthority grants an allowance, and "
+        "one stamp grades one value, because a stamp does not copy.  accumulate adds the grades of a chain of stages "
+        "with a saturating sum, and combine_max takes the larger grades of two parallel paths.  A grant bounds work "
+        "only when the work spends through resources that draw on the grant.  The category keeps its index, because "
+        "each index is an ordinal pin of the federation cache keys.";
+    static constexpr std::string_view symptom_pattern =
+        "Does not surface.  Nothing in this tree emits the category.  A caller sees the budget check as the false "
+        "return of satisfies, for example after accumulate sums a chain of stages above the bound, or for an "
+        "unbounded value.";
     static constexpr std::string_view correct_example =
-        "compose(Budgeted<{B<512>, P<1MB>}, T>, Budgeted<{B<256>, P<512KB>}, U>);";
+        "fixy::Budgeted<Shard> const v{shard, authority.grant(BitsBudgetBound{1024}, PeakBytesBound{1 << 20})};";
     static constexpr std::string_view violating_example =
-        "compose(Budgeted<{B<800>, P<2MB>}, T>, Budgeted<{B<500>, P<1MB>}, U>);"
-        "  // sum=1300 > cap=1024 OR sum=3MB > cap=2MB";
+        "a.accumulate(b).satisfies(BitsBudgetBound{1024}, PeakBytesBound{1 << 20});  // false: 800 + 500 bits";
 };
 
 struct NumaPlacementMismatch : tag_base {

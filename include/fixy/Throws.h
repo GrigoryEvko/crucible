@@ -1,12 +1,13 @@
 #pragma once
 
-// A noexcept declaration is a promise the callable can still break.  The
-// throw is rewritten to an abort under -fno-exceptions and terminates at
-// the noexcept boundary under -fexceptions, and either outcome tears
-// through a structured join instead of unwinding it.  The control-flow
-// atom fixy::atom::ctrl::throws is the type-level record that a callable
-// transits a throw, so a consumer can reject it by searching the type
-// tree rather than trusting the declaration.
+// A noexcept declaration is a promise that the callable can still break.
+// A throw that gets to a noexcept boundary calls std::terminate.  The
+// process stops there, and a structured join does not unwind.  Nothing in
+// this tree throws, and scripts/check-no-throw-no-rtti.sh holds that on
+// the built artifact.  The control-flow atom fixy::atom::ctrl::throws is
+// the type-level record that a callable transits a throw, so a consumer
+// can reject it by searching the type tree rather than trusting the
+// declaration.
 //
 // Old spelling: include/crucible/fixy/ctrl/Throws.h.
 //

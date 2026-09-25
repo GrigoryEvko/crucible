@@ -19,9 +19,9 @@
 // fence-then-relaxed pattern that depends on one architecture.  That is
 // claimed separately.
 //
-// This axis is not the memory-order tag on the Synchronization axis, and
-// fixy/Axis.h says so at the enumerator: this is the standalone
-// hardware-fence ladder.
+// The standard memory orders are grades of this axis.  The Synchronization
+// axis holds only the wait strategies, and fixy/Axis.h says so at the
+// enumerator.
 //
 // ---------------------------------------------------------------------
 // No lift

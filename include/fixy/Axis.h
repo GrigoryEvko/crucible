@@ -100,8 +100,7 @@ enum class Axis : std::uint8_t {
     Version = 18,  // V  (FX dim 21)
     Staleness = 19,  // S  (FX dim 22)
     // Synchronization is not Reentrancy. Reentrancy tracks call-graph
-    // self-call. A waiting strategy and a memory order say nothing about
-    // self-call.
+    // self-call. A waiting strategy says nothing about self-call.
     Synchronization = 20,  // S  (Crucible extension)
     // Regime is not Complexity. Complexity tracks asymptotic and
     // termination-class bounds. Regime tracks where in the latency budget a
@@ -124,8 +123,10 @@ enum class Axis : std::uint8_t {
     GlobalState = 27,  // S  (Crucible extension)
     Stdio = 28,  // S  (Crucible extension)
     HwInstruction = 29,  // S  (Crucible extension)
-    // BarrierStrength is the standalone hardware-fence ladder, distinct from
-    // the memory-order tag that lives on the Synchronization axis.
+    // BarrierStrength grades the memory ordering that a region provides. The
+    // standard memory orders are its middle grades, with a compiler barrier
+    // below them and a standalone fence above them. The Synchronization axis
+    // holds only the six wait strategies.
     BarrierStrength = 30,  // S  (Crucible extension)
     // SimdIsa and MemoryScope are Tier L rather than Tier S because each is a
     // non-distributive partial order: two vendor trunks that meet only at the
