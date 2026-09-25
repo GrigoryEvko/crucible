@@ -17,7 +17,6 @@
 
 #include <crucible/fixy/_Fn.h>
 
-#include <crucible/fixy/Decide.h>
 #include <crucible/fixy/Is.h>
 #include <crucible/fixy/_Mach.h>
 #include <crucible/fixy/Perm.h>

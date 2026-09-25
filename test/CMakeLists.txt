@@ -344,7 +344,6 @@ crucible_test(test_row_hash_translation_units_safety
 # old-collision triple pair now produces distinct row_hash.
 crucible_test(test_row_hash_sched_class_collision)
 crucible_test(test_canonical_order)              # FIXY-FOUND-048
-crucible_test(test_fixy_decide)
 crucible_test(test_fixy_sess_mint_handle_reach)  # FIXY-U-022
 crucible_test(test_cost_model)
 crucible_test(test_saturate)
@@ -2571,24 +2570,18 @@ crucible_neg_compile_fixy_test(neg_fixy_v_273_unclosed_slot
     "constraints.*not satisfied|static assertion failed"
     "permission_flow_closes")
 
-# FIXY-V-178 — HS14 floor for the signature_traits / GradedExtract /
-# DecideOracle surfaces.  Three fixtures cover orthogonal rejection
-# classes, one per re-exported family:
+# HS14 floor for the signature_traits and GradedExtract surfaces.  Two
+# fixtures cover orthogonal rejection classes, one per re-exported family:
 #   1. signature_traits over a non-function NTTP — reflection of ^^int
 #      has no parameters_of (the SignatureTraits surface).
 #   2. GradedExtract metafunction over a non-GradedWrapper — the
 #      IsGradedWrapper-constrained alias has no definition.
-#   3. DecideOracle invoked with a non-integral argument — the
-#      std::integral constraint rejects the double candidate.
 crucible_neg_compile_fixy_test(neg_fixy_v_178_signature_traits_nonfn
     "uncaught exception of type|std::meta::exception"
     "does not represent a function")
 crucible_neg_compile_fixy_test(neg_fixy_v_178_graded_extract_nongraded
     "constraints.*not satisfied"
     "IsGradedWrapper|no type|template constraint")
-crucible_neg_compile_fixy_test(neg_fixy_v_178_decide_oracle_nonintegral
-    "no matching function|constraints.*not satisfied"
-    "integral")
 
 # FIXY-V-244 — HS14 floor for the fixy/grant/Ctrl.h control-flow grants.
 # Three fixtures cover orthogonal rejection classes around the
