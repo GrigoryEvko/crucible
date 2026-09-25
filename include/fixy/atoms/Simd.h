@@ -19,8 +19,9 @@
 // The enum lives here, and why
 //
 // foundation ports no SimdIsa lattice, and the old one at
-// include/crucible/algebra/lattices/SimdIsaLattice.h was neither carried
-// across nor recorded in port-drops.txt.  The fifteen enumerators and
+// include/crucible/algebra/lattices/SimdIsaLattice.h is not carried
+// across, and port-drops.txt records each of its symbols against this
+// header.  The fifteen enumerators and
 // their values are restated here verbatim, with the trunk nibble they
 // encode, and nothing else of the lattice comes with them.  A later
 // foundation port can alias either way; the values are the contract.

@@ -5,7 +5,7 @@
 // policies, so folding the two axes together would leave no way to canonicalize
 // floating point for a content hash.
 
-#include <crucible/algebra/lattices/FpModeLattice.h>
+#include <crucible/algebra/lattices/_FpModeLattice.h>
 #include <crucible/safety/DimensionTraits.h>
 
 #include <string_view>

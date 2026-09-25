@@ -21,7 +21,7 @@
 // rejection between two unrelated empty class types.
 
 #include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
-#include <crucible/algebra/lattices/HwInstructionLattice.h>
+#include <crucible/algebra/lattices/_HwInstructionLattice.h>
 
 using namespace crucible::algebra::lattices;
 

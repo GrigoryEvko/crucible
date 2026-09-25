@@ -10,11 +10,11 @@
 // traits from analyzed bodies without changing any signature here.
 
 #include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
-#include <crucible/algebra/lattices/ControlFlowLattice.h>
-#include <crucible/algebra/lattices/HwInstructionLattice.h>
-#include <crucible/algebra/lattices/SimdIsaLattice.h>
+#include <crucible/algebra/lattices/_ControlFlowLattice.h>
+#include <crucible/algebra/lattices/_HwInstructionLattice.h>
+#include <crucible/algebra/lattices/_SimdIsaLattice.h>
 #include <crucible/algebra/lattices/_MemoryScopeLattice.h>
-#include <crucible/algebra/lattices/StdioLattice.h>
+#include <crucible/algebra/lattices/_StdioLattice.h>
 #include <crucible/algebra/lattices/_WaitLattice.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/_Borrowed.h>

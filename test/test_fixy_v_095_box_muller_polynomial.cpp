@@ -5,7 +5,7 @@
 // repeats exactly, stays finite, and still produces a normal distribution.
 
 #include <crucible/Philox.h>
-#include <crucible/algebra/lattices/FpModeLattice.h>
+#include <crucible/algebra/lattices/_FpModeLattice.h>
 #include <crucible/fixy/fp/_Polynomial.h>
 
 #include <bit>

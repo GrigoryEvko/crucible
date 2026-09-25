@@ -428,6 +428,88 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
 
+# ── algebra: the lattices that became atoms ─────────────────────────────
+#
+# Each of these lattices graded one axis of a binding.  The binding now
+# carries that axis as an atom of fixy/atoms/, so the lattice type, its
+# At<T> singletons and its name function have no successor.  Where an
+# atom family needs the enumerators, it restates them verbatim.
+crucible/algebra/lattices/_CallShapeLattice.h:CallShape  → include/fixy/atoms/Dispatch.h  — The five call shapes became atoms: Direct is the strict default, and indirect_call, virtual_call and recurses name the shapes above it.
+crucible/algebra/lattices/_CallShapeLattice.h:CallShapeLattice  → include/fixy/atoms/Dispatch.h  — The chain over call shapes has no successor, because a binding names its call shape with a dispatch atom and a collision rule reads the atom.
+crucible/algebra/lattices/_CallShapeLattice.h:call_shape_name  — A name function for the old enum, and the enum has no successor.
+crucible/algebra/lattices/_ControlFlowLattice.h:ControlFlow  → include/fixy/atoms/Ctrl.h  — The five escape tiers became atoms: Pure is the strict default, and abort, throws, longjmp_unsafe and raises_signal name the tiers above it.
+crucible/algebra/lattices/_ControlFlowLattice.h:ControlFlowLattice  → include/fixy/atoms/Ctrl.h  — The chain over escapes has no successor, because a binding names each escape with a ctrl atom and a collision rule reads the atom.
+crucible/algebra/lattices/_ControlFlowLattice.h:control_flow_name  — A name function for the old enum, and the enum has no successor.
+crucible/algebra/lattices/_FpModeLattice.h:CRUCIBLE_FP_LATTICE_VERIFY  — A macro that ran the axiom checks of the eleven sub-lattices, and those lattices have no successor.
+crucible/algebra/lattices/_FpModeLattice.h:CRUCIBLE_FP_NAME_COVERAGE  — A macro that checked the name functions of the eleven sub-lattices, and those functions have no successor.
+crucible/algebra/lattices/_FpModeLattice.h:FpComplexLayout  → include/fixy/atoms/Fp.h  — One of the seven settings no collision rule reads; the head comment of fixy/atoms/Fp.h names it and records why it is not restated.
+crucible/algebra/lattices/_FpModeLattice.h:FpComplexLayoutLattice  → include/fixy/atoms/Fp.h  — The sub-lattice of a setting that fixy/atoms/Fp.h does not restate.
+crucible/algebra/lattices/_FpModeLattice.h:fp_complex_layout_name  — A name function for an enum that has no successor.
+crucible/algebra/lattices/_FpModeLattice.h:FpConstantRounding  → include/fixy/atoms/Fp.h  — One of the seven settings no collision rule reads; the head comment of fixy/atoms/Fp.h names it and records why it is not restated.
+crucible/algebra/lattices/_FpModeLattice.h:FpConstantRoundingLattice  → include/fixy/atoms/Fp.h  — The sub-lattice of a setting that fixy/atoms/Fp.h does not restate.
+crucible/algebra/lattices/_FpModeLattice.h:fp_constant_rounding_name  — A name function for an enum that has no successor.
+crucible/algebra/lattices/_FpModeLattice.h:FpContractLattice  → include/fixy/atoms/Fp.h  — The FpContract enum is restated verbatim in fixy/atoms/Fp.h, and the product atom fp::mode takes the place of its sub-lattice.
+crucible/algebra/lattices/_FpModeLattice.h:fp_contract_name  — A name function for the old sub-lattice; the restated enum in fixy/atoms/Fp.h carries no name function.
+crucible/algebra/lattices/_FpModeLattice.h:FpDenormalInputLattice  → include/fixy/atoms/Fp.h  — The FpDenormalInput enum is restated verbatim in fixy/atoms/Fp.h, and the product atom fp::mode takes the place of its sub-lattice.
+crucible/algebra/lattices/_FpModeLattice.h:fp_denormal_input_name  — A name function for the old sub-lattice; the restated enum in fixy/atoms/Fp.h carries no name function.
+crucible/algebra/lattices/_FpModeLattice.h:FpFtzLattice  → include/fixy/atoms/Fp.h  — The FpFtz enum is restated verbatim in fixy/atoms/Fp.h, and the product atom fp::mode takes the place of its sub-lattice.
+crucible/algebra/lattices/_FpModeLattice.h:fp_ftz_name  — A name function for the old sub-lattice; the restated enum in fixy/atoms/Fp.h carries no name function.
+crucible/algebra/lattices/_FpModeLattice.h:FpInfPolicy  → include/fixy/atoms/Fp.h  — One of the seven settings no collision rule reads; the head comment of fixy/atoms/Fp.h names it and records why it is not restated.
+crucible/algebra/lattices/_FpModeLattice.h:FpInfPolicyLattice  → include/fixy/atoms/Fp.h  — The sub-lattice of a setting that fixy/atoms/Fp.h does not restate.
+crucible/algebra/lattices/_FpModeLattice.h:fp_inf_policy_name  — A name function for an enum that has no successor.
+crucible/algebra/lattices/_FpModeLattice.h:FpLibmPolicy  → include/fixy/atoms/Fp.h  — One of the seven settings no collision rule reads; the head comment of fixy/atoms/Fp.h names it and records why it is not restated.
+crucible/algebra/lattices/_FpModeLattice.h:FpLibmPolicyLattice  → include/fixy/atoms/Fp.h  — The sub-lattice of a setting that fixy/atoms/Fp.h does not restate.
+crucible/algebra/lattices/_FpModeLattice.h:fp_libm_policy_name  — A name function for an enum that has no successor.
+crucible/algebra/lattices/_FpModeLattice.h:FpModeProductLattice  → include/fixy/atoms/Fp.h  — The eleven-way product became the atom fp::mode, a product over the four settings that a collision rule reads.
+crucible/algebra/lattices/_FpModeLattice.h:FpNanPolicy  → include/fixy/atoms/Fp.h  — One of the seven settings no collision rule reads; the head comment of fixy/atoms/Fp.h names it and records why it is not restated.
+crucible/algebra/lattices/_FpModeLattice.h:FpNanPolicyLattice  → include/fixy/atoms/Fp.h  — The sub-lattice of a setting that fixy/atoms/Fp.h does not restate.
+crucible/algebra/lattices/_FpModeLattice.h:fp_nan_policy_name  — A name function for an enum that has no successor.
+crucible/algebra/lattices/_FpModeLattice.h:FpReassociateLattice  → include/fixy/atoms/Fp.h  — The FpReassociate enum is restated verbatim in fixy/atoms/Fp.h, and the product atom fp::mode takes the place of its sub-lattice.
+crucible/algebra/lattices/_FpModeLattice.h:fp_reassociate_name  — A name function for the old sub-lattice; the restated enum in fixy/atoms/Fp.h carries no name function.
+crucible/algebra/lattices/_FpModeLattice.h:FpRounding  → include/fixy/atoms/Fp.h  — One of the seven settings no collision rule reads; the head comment of fixy/atoms/Fp.h names it and records why it is not restated.
+crucible/algebra/lattices/_FpModeLattice.h:FpRoundingLattice  → include/fixy/atoms/Fp.h  — The sub-lattice of a setting that fixy/atoms/Fp.h does not restate.
+crucible/algebra/lattices/_FpModeLattice.h:fp_rounding_name  — A name function for an enum that has no successor.
+crucible/algebra/lattices/_FpModeLattice.h:FpTrapMask  → include/fixy/atoms/Fp.h  — One of the seven settings no collision rule reads; the head comment of fixy/atoms/Fp.h names it and records why it is not restated.
+crucible/algebra/lattices/_FpModeLattice.h:FpTrapMaskLattice  → include/fixy/atoms/Fp.h  — The sub-lattice of a setting that fixy/atoms/Fp.h does not restate.
+crucible/algebra/lattices/_FpModeLattice.h:fp_trap_mask_name  — A name function for an enum that has no successor.
+crucible/algebra/lattices/_GlobalStateLattice.h:GlobalState  → include/fixy/atoms/Global.h  — The four tiers became atoms: Stateless is the strict default, and singleton, thread_local_, namespace_static and atexit_handler name each global a binding touches.
+crucible/algebra/lattices/_GlobalStateLattice.h:GlobalStateLattice  → include/fixy/atoms/Global.h  — The chain over global state has no successor, because a binding names each global with its own global atom.
+crucible/algebra/lattices/_GlobalStateLattice.h:global_state_name  — A name function for the old enum, and the enum has no successor.
+crucible/algebra/lattices/_HwInstructionLattice.h:HwInstruction  → include/fixy/atoms/Hw.h  — fixy/atoms/Hw.h restates the five enumerators verbatim, same names and same values, in namespace fixy::atom::hw for its atom family.
+crucible/algebra/lattices/_HwInstructionLattice.h:HwInstructionLattice  → include/fixy/atoms/Hw.h  — The chain has no successor, because a binding names its instruction tier with one hw atom per tier.
+crucible/algebra/lattices/_HwInstructionLattice.h:hw_instruction_name  — A name function for the old enum; the restated enum in fixy/atoms/Hw.h carries no name function.
+crucible/algebra/lattices/_SimdIsaLattice.h:Avx2Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::avx2.
+crucible/algebra/lattices/_SimdIsaLattice.h:Avx512bwIsa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::avx512bw.
+crucible/algebra/lattices/_SimdIsaLattice.h:Avx512fIsa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::avx512f.
+crucible/algebra/lattices/_SimdIsaLattice.h:NeonDotIsa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::neon_dot_product.
+crucible/algebra/lattices/_SimdIsaLattice.h:NeonFp16Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::neon_fp16.
+crucible/algebra/lattices/_SimdIsaLattice.h:NeonIsa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::neon.
+crucible/algebra/lattices/_SimdIsaLattice.h:PortableIsa  → include/fixy/atoms/Simd.h  — The At<T> alias of the shared top became the atom simd::portable.
+crucible/algebra/lattices/_SimdIsaLattice.h:ScalarIsa  → include/fixy/atoms/Simd.h  — The At<T> alias of the shared bottom became the atom simd::scalar.
+crucible/algebra/lattices/_SimdIsaLattice.h:SimdIsa  → include/fixy/atoms/Simd.h  — fixy/atoms/Simd.h restates the fifteen enumerators and their trunk nibble verbatim in namespace fixy::atom::simd for its atom family.
+crucible/algebra/lattices/_SimdIsaLattice.h:simd_isa_count  — A count of the old enumerators; the self-test of fixy/atoms/Simd.h walks the restated enum by reflection instead.
+crucible/algebra/lattices/_SimdIsaLattice.h:simd_isa_is_arm  → include/fixy/atoms/Simd.h  — Renamed on_arm_trunk in namespace fixy::atom::simd, a consteval test over the restated enum that V101 and V402 in fixy/Collision.h read.
+crucible/algebra/lattices/_SimdIsaLattice.h:simd_isa_is_x86  → include/fixy/atoms/Simd.h  — Renamed on_x86_trunk in namespace fixy::atom::simd, a consteval test over the restated enum.
+crucible/algebra/lattices/_SimdIsaLattice.h:SimdIsaLattice  → include/fixy/atoms/Simd.h  — The two-trunk partial order has no successor, because a binding pins its ISA with one simd atom and a collision rule reads the pin.
+crucible/algebra/lattices/_SimdIsaLattice.h:simd_isa_name  — A name function for the old enum; the restated enum in fixy/atoms/Simd.h carries no name function.
+crucible/algebra/lattices/_SimdIsaLattice.h:simd_isa_same_trunk  → include/fixy/atoms/Simd.h  — A trunk comparison over the old enum; fixy::atom::simd::trunk_of gives the trunk of a restated value, and two values share a trunk when it is equal.
+crucible/algebra/lattices/_SimdIsaLattice.h:Sse2Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::sse2.
+crucible/algebra/lattices/_SimdIsaLattice.h:Sse3Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::sse3.
+crucible/algebra/lattices/_SimdIsaLattice.h:Sse41Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::sse41.
+crucible/algebra/lattices/_SimdIsaLattice.h:Sse42Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::sse42.
+crucible/algebra/lattices/_SimdIsaLattice.h:Ssse3Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::ssse3.
+crucible/algebra/lattices/_SimdIsaLattice.h:Sve2Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::sve2.
+crucible/algebra/lattices/_SimdIsaLattice.h:SveIsa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::sve.
+crucible/algebra/lattices/_StackUseLattice.h:StackUse  → include/fixy/atoms/Stack.h  — The four tiers became atoms: ConstantFrame is the strict default, and alloc, vla_ok and alloca_ok name the stack use above the frame budget.
+crucible/algebra/lattices/_StackUseLattice.h:StackUseLattice  → include/fixy/atoms/Stack.h  — The chain has no successor, because a binding names its stack use with a stack atom.
+crucible/algebra/lattices/_StackUseLattice.h:stack_use_name  — A name function for the old enum, and the enum has no successor.
+crucible/algebra/lattices/_StdioLattice.h:Stdio  → include/fixy/atoms/Stdio.h  — The four tiers became atoms: NoStdio is the strict default, write names a stream write, and read_stdin names the interactive read.
+crucible/algebra/lattices/_StdioLattice.h:StdioLattice  → include/fixy/atoms/Stdio.h  — The chain has no successor, because a binding names each stream it touches with a stdio atom, and each atom lifts IO and Block.
+crucible/algebra/lattices/_StdioLattice.h:stdio_name  — A name function for the old enum, and the enum has no successor.
+crucible/algebra/lattices/_SyscallFamilyLattice.h:SyscallFamily  → include/fixy/atoms/Syscall.h  — fixy/atoms/Syscall.h restates all nine families verbatim, same names and same values, and maps each family to its effect row.
+crucible/algebra/lattices/_SyscallFamilyLattice.h:SyscallFamilyLattice  → include/fixy/atoms/Syscall.h  — The chain has no successor, because a binding names its system calls with the per and family atoms.
+crucible/algebra/lattices/_SyscallFamilyLattice.h:syscall_family_name  — A name function for the old enum; the restated enum in fixy/atoms/Syscall.h carries no name function.
+
 # ── concurrent: the parallelism rule, its tier math and the workload helpers ──
 crucible/concurrent/_SubstrateCtxFit.h:SubstrateFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this gate to read, so only its tier math came, as fits_in_tier_v.
 crucible/concurrent/_SubstrateCtxFit.h:StorageFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this construction gate to read, so only its tier math came, as fits_in_tier_v.

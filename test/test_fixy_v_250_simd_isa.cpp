@@ -20,7 +20,7 @@
 
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/_Lattice.h>
-#include <crucible/algebra/lattices/SimdIsaLattice.h>
+#include <crucible/algebra/lattices/_SimdIsaLattice.h>
 
 #include <string_view>
 #include <type_traits>

@@ -22,7 +22,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/SimdIsaLattice.h>
+#include <crucible/algebra/lattices/_SimdIsaLattice.h>
 
 #include <concepts>
 #include <cstdlib>

@@ -15,8 +15,9 @@
 // The enum lives here, and why
 //
 // foundation ports no HwInstruction lattice: the old one at
-// include/crucible/algebra/lattices/HwInstructionLattice.h was neither
-// carried across nor recorded as dropped.  The atoms need the five
+// include/crucible/algebra/lattices/HwInstructionLattice.h is not
+// carried across, and port-drops.txt records each of its symbols against
+// this header.  The atoms need the five
 // enumerators and their order, so they are declared here verbatim — same
 // names, same values — and nothing else of the lattice comes with them.
 // A later foundation port can alias to these or these to it; the values

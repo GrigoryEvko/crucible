@@ -32,8 +32,9 @@
 //
 // The enums are declared here verbatim because foundation ports no
 // FpMode lattice and the old one at
-// include/crucible/algebra/lattices/FpModeLattice.h was neither carried
-// across nor recorded in port-drops.txt.  Same names, same values.
+// include/crucible/algebra/lattices/FpModeLattice.h is not carried
+// across, and port-drops.txt records each of its symbols against this
+// header.  Same names, same values.
 //
 // ---------------------------------------------------------------------
 // No lift

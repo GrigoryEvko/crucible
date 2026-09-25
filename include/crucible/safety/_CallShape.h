@@ -15,7 +15,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/CallShapeLattice.h>
+#include <crucible/algebra/lattices/_CallShapeLattice.h>
 
 #include <concepts>
 #include <string_view>

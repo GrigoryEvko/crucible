@@ -21,8 +21,8 @@
 // [GCC-WRAPPER-TEXT] — diagnostic comes from GCC's no-viable-conversion
 // rejection between two unrelated empty class types.
 
-#include <crucible/algebra/lattices/ControlFlowLattice.h>
-#include <crucible/algebra/lattices/HwInstructionLattice.h>
+#include <crucible/algebra/lattices/_ControlFlowLattice.h>
+#include <crucible/algebra/lattices/_HwInstructionLattice.h>
 
 using namespace crucible::algebra::lattices;
 

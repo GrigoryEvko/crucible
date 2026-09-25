@@ -7,7 +7,7 @@
 // granularity and forces every consumer to re-derive it from the
 // binding's call-site specification.
 
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h>
+#include <crucible/algebra/lattices/_SyscallFamilyLattice.h>
 #include <crucible/safety/DimensionTraits.h>
 
 #include <string_view>

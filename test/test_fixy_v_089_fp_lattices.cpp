@@ -1,5 +1,5 @@
 #include <crucible/algebra/lattices/AllLattices.h>
-#include <crucible/algebra/lattices/FpModeLattice.h>
+#include <crucible/algebra/lattices/_FpModeLattice.h>
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/_Modality.h>
 

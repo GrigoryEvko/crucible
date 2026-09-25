@@ -7,7 +7,7 @@
 // each need to distinguish among them, and none of those questions can
 // be asked of one bit.
 
-#include <crucible/algebra/lattices/ControlFlowLattice.h>
+#include <crucible/algebra/lattices/_ControlFlowLattice.h>
 #include <crucible/safety/DimensionTraits.h>
 
 #include <string_view>

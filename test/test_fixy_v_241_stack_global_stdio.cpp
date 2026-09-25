@@ -1,6 +1,6 @@
-#include <crucible/algebra/lattices/GlobalStateLattice.h>
-#include <crucible/algebra/lattices/StackUseLattice.h>
-#include <crucible/algebra/lattices/StdioLattice.h>
+#include <crucible/algebra/lattices/_GlobalStateLattice.h>
+#include <crucible/algebra/lattices/_StackUseLattice.h>
+#include <crucible/algebra/lattices/_StdioLattice.h>
 #include <crucible/safety/DimensionTraits.h>
 
 #include <string_view>

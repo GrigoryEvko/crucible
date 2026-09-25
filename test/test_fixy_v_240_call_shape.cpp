@@ -11,7 +11,7 @@
 // more analyzable than any indirect call whatever its bound, so tiers
 // per bound would add no ordering.
 
-#include <crucible/algebra/lattices/CallShapeLattice.h>
+#include <crucible/algebra/lattices/_CallShapeLattice.h>
 #include <crucible/safety/DimensionTraits.h>
 
 #include <string_view>

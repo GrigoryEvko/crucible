@@ -22,13 +22,13 @@
 #include <crucible/algebra/lattices/CrashLattice.h>
 #include <crucible/algebra/lattices/_DetSafeLattice.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
-#include <crucible/algebra/lattices/HwInstructionLattice.h>
+#include <crucible/algebra/lattices/_HwInstructionLattice.h>
 #include <crucible/algebra/lattices/JoinPolicyLattice.h>
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h>
-#include <crucible/algebra/lattices/SimdIsaLattice.h>
+#include <crucible/algebra/lattices/_SimdIsaLattice.h>
 #include <crucible/algebra/lattices/_SuspendBehaviorLattice.h>
 #include <crucible/algebra/lattices/_ToleranceLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
