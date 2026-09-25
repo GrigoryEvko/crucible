@@ -10,7 +10,7 @@
 // [GCC-WRAPPER-TEXT] — leq parameter-type mismatch.
 
 #include <crucible/algebra/lattices/_AffinityLattice.h>
-#include <crucible/algebra/lattices/NumaNodeLattice.h>
+#include <crucible/algebra/lattices/_NumaNodeLattice.h>
 
 using namespace crucible::algebra::lattices;
 

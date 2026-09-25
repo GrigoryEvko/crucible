@@ -365,7 +365,7 @@ crucible/permissions/_ReadView.h:mint_read_view  → include/foundation/permissi
 # nobody has marked, and the guard pins every such row by name.
 crucible/safety/diag/_RowHashFold.h:BarrierGuarded  → include/fixy/atoms/Barrier.h  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: Axis::BarrierStrength moved to the binding as the atom family of fixy/atoms/Barrier.h over foundation's BarrierStrengthLattice, V301 in fixy/Collision.h reads the strength there, and the value form's only consumer was a using-declaration in the old crucible/fixy/Wrap.h.
 crucible/safety/diag/_RowHashFold.h:Consistency  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/Consistency.h, which no port has marked superseded.
-crucible/safety/diag/_RowHashFold.h:CrashClass  → none  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and no header in the new tree carries the enum: it is defined in crucible/algebra/lattices/CrashLattice.h, which no port has marked superseded.
+crucible/safety/diag/_RowHashFold.h:CrashClass  → include/fixy/atoms/Ctrl.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the crash classes fold into the ctrl atoms of the carrier, where NoThrow is the strict default.
 crucible/safety/diag/_RowHashFold.h:FpComplexLayout  → include/fixy/atoms/Fp.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier's head comment names complex layout among the seven FpModeLattice settings no collision rule reads, which it does not restate.
 crucible/safety/diag/_RowHashFold.h:FpConstantRounding  → include/fixy/atoms/Fp.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier's head comment names constant rounding among the seven FpModeLattice settings no collision rule reads, which it does not restate.
 crucible/safety/diag/_RowHashFold.h:FpInfPolicy  → include/fixy/atoms/Fp.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier's head comment names Inf policy among the seven FpModeLattice settings no collision rule reads, which it does not restate.
@@ -386,7 +386,7 @@ crucible/safety/diag/_RowHashFold.h:ProgressClass  → include/fixy/Aliases.h  �
 crucible/safety/diag/_RowHashFold.h:SimdIsa  → include/fixy/atoms/Simd.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier restates the fifteen enumerators and their trunk nibble verbatim for its atom family.
 crucible/safety/diag/_RowHashFold.h:SimdWidthPinned  → include/fixy/atoms/Simd.h  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: Axis::SimdIsa moved to the binding as the atom family of fixy/atoms/Simd.h, which restates the fifteen enumerators and their trunk nibble verbatim because foundation ports no SimdIsa lattice, V101 and V402 in fixy/Collision.h read the pin there, and the value form's only consumer was a using-declaration in the old crucible/fixy/Wrap.h.
 crucible/safety/diag/_RowHashFold.h:TimeOrdered  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/TimeOrdered.h, which no port has marked superseded.
-crucible/safety/diag/_RowHashFold.h:Witness  → none  — Two forward declarations, the wrapper and its tier enum, and no header in the new tree carries either: they are defined in crucible/safety/Witness.h and crucible/algebra/lattices/WitnessLattice.h, which no port has marked superseded, and the Witness of fixy/OwnedRegion.h is brand machinery, a different thing.
+crucible/safety/diag/_RowHashFold.h:Witness  → include/fixy/Tags.h  — Two forward declarations, the wrapper and its tier enum. The witness ladder folds into the trust tags of the carrier, and the Witness of fixy/OwnedRegion.h is brand machinery, a different thing.
 
 # ── concurrent: the ring predicates and the working-set trait ───────────
 #
@@ -545,6 +545,67 @@ crucible/algebra/lattices/_StdioLattice.h:stdio_name  — A name function for th
 crucible/algebra/lattices/_SyscallFamilyLattice.h:SyscallFamily  → include/fixy/atoms/Syscall.h  — fixy/atoms/Syscall.h restates all nine families verbatim, same names and same values, and maps each family to its effect row.
 crucible/algebra/lattices/_SyscallFamilyLattice.h:SyscallFamilyLattice  → include/fixy/atoms/Syscall.h  — The chain has no successor, because a binding names its system calls with the per and family atoms.
 crucible/algebra/lattices/_SyscallFamilyLattice.h:syscall_family_name  — A name function for the old enum; the restated enum in fixy/atoms/Syscall.h carries no name function.
+crucible/algebra/lattices/_CrashLattice.h:AbortClass  → include/fixy/atoms/Ctrl.h  — The At<T> alias of the Abort tier; a binding that can abort names the atom ctrl::abort.
+crucible/algebra/lattices/_CrashLattice.h:CrashClass  → include/fixy/atoms/Ctrl.h  — The four crash classes fold into ctrl atoms: NoThrow is the strict default, Abort is ctrl::abort, ErrorReturn shows in a std::expected return type, and Throw has no carrier.
+crucible/algebra/lattices/_CrashLattice.h:crash_class_count  — A count of the old enumerators, gone with the enum.
+crucible/algebra/lattices/_CrashLattice.h:crash_class_name  — A name function for the old enum, gone with the enum.
+crucible/algebra/lattices/_CrashLattice.h:CrashLattice  → include/fixy/atoms/Ctrl.h  — The chain has no successor, because a binding names how it can leave its frame with a ctrl atom and no crash-class lattice exists.
+crucible/algebra/lattices/_CrashLattice.h:ErrorReturnClass  — The At<T> alias of the ErrorReturn tier; an error return shows in the std::expected return type of the function, not in a grade.
+crucible/algebra/lattices/_CrashLattice.h:NoThrowClass  → include/fixy/atoms/Ctrl.h  — The At<T> alias of the strict default, which a binding holds when it names no ctrl atom.
+crucible/algebra/lattices/_CrashLattice.h:ThrowClass  — The At<T> alias of the Throw tier; nothing in this tree throws, and scripts/check-no-throw-no-rtti.sh fails the build on a throw, so the tier has no carrier.
+crucible/algebra/lattices/_WitnessLattice.h:FormallyVerifiedTier  — The At<T> alias of the formal tier, dropped because the project has no verifier that could earn it.
+crucible/algebra/lattices/_WitnessLattice.h:TestPassedTier  → include/fixy/Tags.h  — The At<T> alias of the test tier; the trust tag Tested names a value that tests cover.
+crucible/algebra/lattices/_WitnessLattice.h:TypeCheckedTier  → include/fixy/Tags.h  — The At<T> alias of the type-check tier, which has no trust tag of its own; a value that the types prove carries Verified.
+crucible/algebra/lattices/_WitnessLattice.h:UnwitnessedTier  → include/fixy/Tags.h  — The At<T> alias of the bottom tier; the trust tag Unverified names it.
+crucible/algebra/lattices/_WitnessLattice.h:Witness  → include/fixy/Tags.h  — The four witness tiers fold into the trust tags, and the fail-closed retags of fixy/Tagged.h are the only route up the ladder.
+crucible/algebra/lattices/_WitnessLattice.h:witness_count  — A count of the old enumerators, gone with the enum.
+crucible/algebra/lattices/_WitnessLattice.h:WitnessLattice  → include/fixy/Tags.h  — The chain has no successor, because trust is a tag on fixy::Tagged and a raise happens only through a declared retag.
+crucible/algebra/lattices/_WitnessLattice.h:witness_name  — A name function for the old enum, gone with the enum.
+crucible/safety/diag/_CiRunRegistry.h:CiRunEntry  — The entry type of a registry that any translation unit could extend, dropped with the witness ladder it served.
+crucible/safety/diag/_CiRunRegistry.h:fixy_aarch64_x86_pairwise  — A registry entry with a placeholder URL, dropped with the registry.
+crucible/safety/diag/_CiRunRegistry.h:fixy_cross_vendor_smoke  — A registry entry with a placeholder URL, dropped with the registry.
+crucible/safety/diag/_CiRunRegistry.h:fixy_revoked_ci_demo  — A demonstration entry of the revoked status, dropped with the registry.
+crucible/safety/diag/_CiRunRegistry.h:is_valid_ci_run_v  — The registry query, which accepted an unregistered id because such an id defaulted to Active; dropped with the registry.
+crucible/safety/diag/_CiRunRegistry.h:UnnamedCiRunId  — The default id of the dropped registry.
+crucible/safety/diag/_TestRegistry.h:fixy_cipher_writer  — A registry entry that cites a file under examples/fixy, which does not exist; dropped with the registry.
+crucible/safety/diag/_TestRegistry.h:fixy_custom_optimizer  — A registry entry that cites a file under examples/fixy, which does not exist; dropped with the registry.
+crucible/safety/diag/_TestRegistry.h:fixy_forge_phase  — A registry entry that cites a file under examples/fixy, which does not exist; dropped with the registry.
+crucible/safety/diag/_TestRegistry.h:fixy_mimic_backend_hook  — A registry entry that cites a file under examples/fixy, which does not exist; dropped with the registry.
+crucible/safety/diag/_TestRegistry.h:fixy_revoked_demo  — A demonstration entry of the revoked status, dropped with the registry.
+crucible/safety/diag/_TestRegistry.h:is_active_test_v  — The registry query, which accepted an unregistered id because such an id defaulted to Active; dropped with the registry.
+crucible/safety/diag/_TestRegistry.h:TestEntry  — The entry type of a registry that any translation unit could extend, dropped with the witness ladder it served.
+crucible/safety/diag/_TestRegistry.h:UnnamedTestId  — The default id of the dropped registry.
+crucible/safety/diag/_TestRegistry.h:WitnessStatus  — The Active or Revoked status of a registry entry, dropped with the registry.
+crucible/safety/diag/_TestRegistry.h:witness_status_name  — A name function for the dropped status enum.
+crucible/safety/witness/_Aggregation.h:claims_on_platform_v  — A platform query whose primary answered true for any witness, dropped with the witness ladder.
+crucible/safety/witness/_Aggregation.h:intersect_witnesses_t  — A meet over witness tiers alone, which lost the test and run identity; dropped with the witness ladder.
+crucible/safety/witness/_Aggregation.h:MultiplatformWitness  — The multi-platform witness, dropped with the witness ladder.
+crucible/safety/witness/_Aggregation.h:PlatformPack  — The platform list of the multi-platform witness, dropped with it.
+crucible/safety/witness/_Aggregation.h:platform_set_of  — A query on the multi-platform witness, dropped with it.
+crucible/safety/witness/_Aggregation.h:union_witnesses_t  — A join over witness tiers alone, which lost the test and run identity; dropped with the witness ladder.
+crucible/safety/witness/_IsWitness.h:is_valid_witness_v  — Its primary answered true, so any type counted as valid unless the caller also asked IsWitness; dropped with the witness ladder.
+crucible/safety/witness/_IsWitness.h:IsWitness  — A recogniser for the type-level evidence tags, dropped with them.
+crucible/safety/witness/_IsWitness.h:WitnessAtLeast  — A tier comparison over the dropped evidence tags.
+crucible/safety/witness/_Platform.h:AArch64  — A platform tag of the dropped multi-platform witness.
+crucible/safety/witness/_Platform.h:current_arch_tag  — The platform tag of the build target, dropped with the multi-platform witness.
+crucible/safety/witness/_Platform.h:RISCV  — A platform tag of the dropped multi-platform witness.
+crucible/safety/witness/_Platform.h:X86_64  — A platform tag of the dropped multi-platform witness.
+crucible/safety/witness/_Witness.h:Asserted  — A tag of the type-level evidence ladder, dropped with it; the trust tags of fixy/Tags.h are the one ladder.
+crucible/safety/witness/_Witness.h:CrossValidated  — A tag of the type-level evidence ladder, dropped with it; the trust tags of fixy/Tags.h are the one ladder.
+crucible/safety/witness/_Witness.h:DefaultWitness  — The default tag of the type-level evidence ladder, dropped with it.
+crucible/safety/witness/_Witness.h:FormallyVerified  — The top tag of the type-level evidence ladder, which any type P reached, and the project has no proof system.
+crucible/safety/witness/_Witness.h:PlatformBounded  — A tag of the type-level evidence ladder, dropped with it; the trust tags of fixy/Tags.h are the one ladder.
+crucible/safety/witness/_Witness.h:UnnamedRationale  — The default rationale of the dropped evidence tags.
+crucible/safety/witness/_Witness.h:witness_leq_v  — A tier comparison over the dropped evidence tags.
+crucible/safety/witness/_Witness.h:witness_tier_v  — A tier accessor over the dropped evidence tags.
+crucible/safety/_Witness.h:FormallyVerified  — The formal tier of the value-level ladder; the project has no verifier, and mint_witness gave this tier on request.
+crucible/safety/_Witness.h:mint_witness  → include/fixy/Tagged.h  — The mint gave any tier on request, so a tier proved nothing; trust rises only through a declared retag of fixy/Tagged.h.
+crucible/safety/_Witness.h:TestPassed  → include/fixy/Tags.h  — The test tier of the value-level ladder; the trust tag Tested names it.
+crucible/safety/_Witness.h:TypeChecked  → include/fixy/Tags.h  — The type-check tier, which has no trust tag of its own; a value that the types prove carries Verified.
+crucible/safety/_Witness.h:Unwitnessed  → include/fixy/Tags.h  — The bottom tier of the value-level ladder; the trust tag Unverified names it.
+crucible/safety/_Witness.h:Witness  → include/fixy/Tags.h  — The value-level wrapper over the witness chain folds into fixy::Tagged over the trust tags.
+crucible/safety/_Witness.h:WitnessLattice  — A local alias of the witness lattice, dropped with it.
+crucible/safety/_Witness.h:Witness_v  — The value spelling of the old tier accessor, gone with the wrapper.
 
 # ── concurrent: the parallelism rule, its tier math and the workload helpers ──
 crucible/concurrent/_SubstrateCtxFit.h:SubstrateFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this gate to read, so only its tier math came, as fits_in_tier_v.

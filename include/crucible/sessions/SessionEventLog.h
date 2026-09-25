@@ -15,7 +15,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Pinned.h>
 

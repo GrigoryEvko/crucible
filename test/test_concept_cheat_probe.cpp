@@ -833,7 +833,7 @@ static_assert(cheat67_admits, "[CHEAT 67 STATUS CHANGED] trait-spec injection on
 #include <crucible/safety/_IsScopedFence.h>
 #include <crucible/safety/IsJoinPolicy.h>
 #include <crucible/safety/_IsClockSource.h>
-#include <crucible/safety/witness/IsWitness.h>
+#include <crucible/safety/witness/_IsWitness.h>
 
 struct Cheat68_DerivedFromHw : crucible::safety::Hw<crucible::safety::HwInstruction_v::Scalar, int> {};
 static constexpr bool cheat68_admits = crucible::safety::extract::IsHw<Cheat68_DerivedFromHw>;

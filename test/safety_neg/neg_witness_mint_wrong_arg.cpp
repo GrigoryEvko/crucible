@@ -26,7 +26,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on mint_witness.
 
-#include <crucible/safety/Witness.h>
+#include <crucible/safety/_Witness.h>
 
 using namespace crucible::safety;
 

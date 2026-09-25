@@ -53,7 +53,7 @@
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/_Wait.h>
-#include <crucible/safety/Witness.h>
+#include <crucible/safety/_Witness.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/safety/diag/_StableName.h>
 

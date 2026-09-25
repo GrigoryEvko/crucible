@@ -21,7 +21,7 @@
 #include <crucible/algebra/lattices/_CipherTierLattice.h>
 #include <crucible/algebra/lattices/_ConfLattice.h>
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
-#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/algebra/lattices/_EpochLattice.h>
 #include <crucible/algebra/lattices/_FractionalLattice.h>
 #include <crucible/algebra/lattices/_GenerationLattice.h>
@@ -31,20 +31,20 @@
 #include <crucible/algebra/lattices/_LifetimeLattice.h>
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/_MonotoneLattice.h>
-#include <crucible/algebra/lattices/NumaNodeLattice.h>
+#include <crucible/algebra/lattices/_NumaNodeLattice.h>
 #include <crucible/algebra/lattices/_PeakBytesLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
 #include <crucible/algebra/lattices/_QttSemiring.h>
 #include <crucible/algebra/lattices/_RecipeFamilyLattice.h>
-#include <crucible/algebra/lattices/ResidencyHeatLattice.h>
+#include <crucible/algebra/lattices/_ResidencyHeatLattice.h>
 #include <crucible/algebra/lattices/_SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/_StalenessSemiring.h>
 #include <crucible/algebra/lattices/_ToleranceLattice.h>
 #include <crucible/algebra/lattices/_TrustLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/algebra/lattices/_WaitLattice.h>
-#include <crucible/algebra/lattices/WitnessLattice.h>
+#include <crucible/algebra/lattices/_WitnessLattice.h>
 
 #include <cstdio>
 #include <cstdlib>

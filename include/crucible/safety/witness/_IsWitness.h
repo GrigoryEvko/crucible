@@ -1,8 +1,8 @@
 #pragma once
 
-#include <crucible/safety/diag/CiRunRegistry.h>
-#include <crucible/safety/diag/TestRegistry.h>
-#include <crucible/safety/witness/Witness.h>
+#include <crucible/safety/diag/_CiRunRegistry.h>
+#include <crucible/safety/diag/_TestRegistry.h>
+#include <crucible/safety/witness/_Witness.h>
 
 #include <type_traits>
 

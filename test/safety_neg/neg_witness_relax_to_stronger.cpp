@@ -23,7 +23,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on Witness::relax<>().
 
-#include <crucible/safety/Witness.h>
+#include <crucible/safety/_Witness.h>
 
 using namespace crucible::safety;
 

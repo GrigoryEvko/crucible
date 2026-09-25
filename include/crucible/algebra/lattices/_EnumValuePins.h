@@ -19,7 +19,7 @@
 #include <crucible/algebra/lattices/_CipherTierLattice.h>
 #include <crucible/algebra/lattices/_ClockSourceLattice.h>
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
-#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/algebra/lattices/_DetSafeLattice.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
 #include <crucible/algebra/lattices/_HwInstructionLattice.h>
@@ -27,13 +27,13 @@
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/_MemoryScopeLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
-#include <crucible/algebra/lattices/ResidencyHeatLattice.h>
+#include <crucible/algebra/lattices/_ResidencyHeatLattice.h>
 #include <crucible/algebra/lattices/_SimdIsaLattice.h>
 #include <crucible/algebra/lattices/_SuspendBehaviorLattice.h>
 #include <crucible/algebra/lattices/_ToleranceLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/algebra/lattices/_WaitLattice.h>
-#include <crucible/algebra/lattices/WitnessLattice.h>
+#include <crucible/algebra/lattices/_WitnessLattice.h>
 
 #include <cstdint>
 #include <type_traits>

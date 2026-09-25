@@ -18,7 +18,7 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/_AllocClassLattice.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
-#include <crucible/algebra/lattices/ResidencyHeatLattice.h>
+#include <crucible/algebra/lattices/_ResidencyHeatLattice.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 

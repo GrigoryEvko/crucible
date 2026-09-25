@@ -33,7 +33,7 @@
 #include <crucible/safety/_FpMode.h>
 #include <crucible/safety/JoinPolicy.h>
 #include <crucible/safety/_Wait.h>
-#include <crucible/safety/Witness.h>
+#include <crucible/safety/_Witness.h>
 
 #include <concepts>
 #include <cstdint>

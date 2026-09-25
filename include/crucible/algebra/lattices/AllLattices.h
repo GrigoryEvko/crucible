@@ -31,7 +31,7 @@
 #include <crucible/algebra/lattices/_ConfLattice.h>
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
 #include <crucible/algebra/lattices/_ControlFlowLattice.h>
-#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/algebra/lattices/_DetSafeLattice.h>
 #include <crucible/algebra/lattices/_EpochLattice.h>
 #include <crucible/algebra/lattices/_FpModeLattice.h>
@@ -46,13 +46,13 @@
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
 #include <crucible/algebra/lattices/_MonotoneLattice.h>
-#include <crucible/algebra/lattices/NumaNodeLattice.h>
+#include <crucible/algebra/lattices/_NumaNodeLattice.h>
 #include <crucible/algebra/lattices/_PeakBytesLattice.h>
 #include <crucible/algebra/lattices/_PinningRequirementLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
 #include <crucible/algebra/lattices/_QttSemiring.h>
 #include <crucible/algebra/lattices/_RecipeFamilyLattice.h>
-#include <crucible/algebra/lattices/ResidencyHeatLattice.h>
+#include <crucible/algebra/lattices/_ResidencyHeatLattice.h>
 #include <crucible/algebra/lattices/_SchedulerPolicyLattice.h>
 #include <crucible/algebra/lattices/_SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/_SimdIsaLattice.h>
@@ -65,7 +65,7 @@
 #include <crucible/algebra/lattices/_TrustLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/algebra/lattices/_WaitLattice.h>
-#include <crucible/algebra/lattices/WitnessLattice.h>
+#include <crucible/algebra/lattices/_WitnessLattice.h>
 
 // The underlying-value pins ride the umbrella so that their assertions
 // fire in every translation unit that pulls any lattice at all.

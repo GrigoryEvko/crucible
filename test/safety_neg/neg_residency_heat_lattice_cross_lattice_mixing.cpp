@@ -29,7 +29,7 @@
 // type-mismatch rejection.
 
 #include <crucible/algebra/lattices/_CipherTierLattice.h>
-#include <crucible/algebra/lattices/ResidencyHeatLattice.h>
+#include <crucible/algebra/lattices/_ResidencyHeatLattice.h>
 
 using namespace crucible::algebra::lattices;
 

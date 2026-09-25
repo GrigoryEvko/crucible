@@ -10,7 +10,7 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/lattices/_AffinityLattice.h>
-#include <crucible/algebra/lattices/NumaNodeLattice.h>
+#include <crucible/algebra/lattices/_NumaNodeLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
 
 #include <cstdint>

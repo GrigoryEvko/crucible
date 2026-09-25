@@ -20,7 +20,7 @@
 //   takes that Offer's Crash branch and runs the recovery continuation.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionEventLog.h>
 #include <crucible/sessions/SessionSubtype.h>

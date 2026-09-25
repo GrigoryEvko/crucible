@@ -1,8 +1,8 @@
 #pragma once
 
-#include <crucible/safety/witness/IsWitness.h>
-#include <crucible/safety/witness/Platform.h>
-#include <crucible/safety/witness/Witness.h>
+#include <crucible/safety/witness/_IsWitness.h>
+#include <crucible/safety/witness/_Platform.h>
+#include <crucible/safety/witness/_Witness.h>
 
 #include <type_traits>
 

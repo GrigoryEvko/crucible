@@ -20,7 +20,7 @@
 // [GCC-WRAPPER-TEXT] — diagnostic comes from GCC's strong-enum
 // type-mismatch rejection.
 
-#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
 
 using namespace crucible::algebra::lattices;

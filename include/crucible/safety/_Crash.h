@@ -20,7 +20,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/_CrashLattice.h>
 
 #include <cstdlib>
 #include <string_view>

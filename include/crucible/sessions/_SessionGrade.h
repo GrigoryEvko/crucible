@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/algebra/lattices/_CipherTierLattice.h>
-#include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
 #include <crucible/algebra/lattices/_ToleranceLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>

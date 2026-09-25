@@ -8,7 +8,7 @@
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/safety/witness/Witness.h>
+#include <crucible/safety/witness/_Witness.h>
 
 #include <cstdint>
 #include <type_traits>

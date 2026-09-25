@@ -4,7 +4,7 @@
 // the header does not already pin.
 
 #include <crucible/safety/diag/_CanonicalOrder.h>
-#include <crucible/safety/Witness.h>  // off-tree neutrality probe
+#include <crucible/safety/_Witness.h>  // off-tree neutrality probe
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 
 #include "test_assert.h"

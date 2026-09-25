@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/diag/TestRegistry.h>
+#include <crucible/safety/diag/_TestRegistry.h>
 
 #include <cstdint>
 #include <string_view>

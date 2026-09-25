@@ -22,7 +22,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/WitnessLattice.h>
+#include <crucible/algebra/lattices/_WitnessLattice.h>
 
 #include <cstdlib>
 #include <string_view>

@@ -72,7 +72,7 @@
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/_Wait.h>
 #include <crucible/safety/_WeakRef.h>
-#include <crucible/safety/Witness.h>
+#include <crucible/safety/_Witness.h>
 
 #include <cstdint>
 #include <type_traits>

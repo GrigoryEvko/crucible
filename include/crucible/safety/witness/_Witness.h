@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/safety/witness/Platform.h>
+#include <crucible/safety/witness/_Platform.h>
 
 #include <cstdint>
 #include <type_traits>

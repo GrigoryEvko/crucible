@@ -52,7 +52,7 @@
 #include <crucible/safety/_IsTagged.h>
 #include <crucible/safety/_IsVendor.h>
 #include <crucible/safety/_IsWait.h>
-#include <crucible/safety/witness/IsWitness.h>
+#include <crucible/safety/witness/_IsWitness.h>
 
 namespace crucible::fixy::is {
 
