@@ -47,7 +47,7 @@
 // layout itself does not change.
 
 #include <crucible/Types.h>
-#include <crucible/effects/OsUniverse.h>
+#include <crucible/effects/_OsUniverse.h>
 #include <crucible/permissions/FederationPermission.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Pre.h>

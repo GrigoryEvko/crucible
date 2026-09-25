@@ -1,4 +1,4 @@
-#include <crucible/effects/OsUniverse.h>
+#include <crucible/effects/_OsUniverse.h>
 
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>

@@ -428,6 +428,16 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
 
+# ── effects: the universe descriptor and the context-to-wrapper lifts ───
+
+crucible/effects/_OsUniverse.h:OsUniverse  → include/foundation/effects/Effect.h  — Dropped, because its consumers read only the cardinality, which is effect_count. effect_name replaces atom_name, the Effect value replaces bit_position, and EffectRowLattice replaces the lattice alias.
+crucible/effects/_OsUniverse.h:Universe  — The concept over catalog descriptors had one model, OsUniverse, and no second catalog exists, so nothing in the new tree needs it.
+crucible/effects/_OsUniverse.h:runtime_smoke_test_os_universe  — An inline smoke test of the dropped descriptor. test/foundation/test_effects_core.cpp drives effect_name and EffectRowLattice with values known only at run time.
+crucible/effects/_CtxWrapperLift.h:HotPathFromCtx  → include/fixy/Bands.h  — Dropped with the heat axis of the old context. foundation/effects/Ctx.h has no such axis, so a caller grades the value with the HotPath band.
+crucible/effects/_CtxWrapperLift.h:AllocClassFromCtx  → include/fixy/Bands.h  — Dropped with the allocator axis of the old context. foundation/effects/Ctx.h has no such axis, so a caller grades the value with the AllocClass band.
+crucible/effects/_CtxWrapperLift.h:ResidencyHeatFromCtx  → include/fixy/Bands.h  — Dropped with the residency axis of the old context. foundation/effects/Ctx.h has no such axis, so a caller grades the value with the ResidencyHeat band.
+crucible/effects/_CtxWrapperLift.h:runtime_smoke_test_ctx_wrapper_lift  — An inline smoke test of the three dropped lifts, so nothing in the new tree calls it.
+
 # ── safety: the crash-class wrapper and its detector ────────────────────
 crucible/safety/_Crash.h:CrashClass_v  — An alias of the crash-class enum. The classes fold into the fixy ctrl atoms, and the new tree has no crash-class enum, because nothing in it throws.
 crucible/safety/_Crash.h:CrashLattice  — The chain order of the four crash classes. The new tree has no crash-class lattice: a binding that can leave its frame names a ctrl atom.

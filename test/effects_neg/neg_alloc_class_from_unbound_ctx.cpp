@@ -11,7 +11,7 @@
 // Expected diagnostic: "static assertion failed" with the message
 // `AllocClassFromCtx requires Ctx::alloc_class to be bound`.
 
-#include <crucible/effects/CtxWrapperLift.h>
+#include <crucible/effects/_CtxWrapperLift.h>
 
 namespace eff = crucible::effects;
 

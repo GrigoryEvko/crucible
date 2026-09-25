@@ -12,7 +12,7 @@
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/Serialize.h>  // CDAG_MAGIC
 #include <crucible/Types.h>
-#include <crucible/effects/OsUniverse.h>
+#include <crucible/effects/_OsUniverse.h>
 
 #include "test_assert.h"
 

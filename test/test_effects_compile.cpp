@@ -8,14 +8,13 @@
 #include <crucible/effects/_ComputationGraded.h>
 #include <crucible/effects/_Capability.h>
 #include <crucible/effects/Concurrent.h>
-#include <crucible/effects/CtxWrapperLift.h>
+#include <crucible/effects/_CtxWrapperLift.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_EffectRowLattice.h>
 #include <crucible/effects/EffectRowProjection.h>
-#include <crucible/effects/Effects.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/_FxAliases.h>
-#include <crucible/effects/OsUniverse.h>
+#include <crucible/effects/_OsUniverse.h>
 #include <crucible/effects/Resources.h>
 
 #include <cstdio>
@@ -44,16 +43,6 @@ void run_test(const char* name, F&& body) {
 void test_capabilities_compile() {}
 void test_computation_compile() {}
 void test_effect_row_compile() {}
-void test_effects_umbrella() {
-    // Neither of these two surfaces is reached by a direct include anywhere
-    // in this file. Both arrive through the umbrella alone, so dropping one
-    // of its includes fires these assertions rather than going unnoticed.
-    namespace ce = ::crucible::effects;
-    static_assert(ce::resource_kind_count == 23, "the effects umbrella must reach the resource-kind catalog, which "
-                                                 "carries 23 axes.");
-    static_assert(std::is_same_v<ce::EmptyConcurrentRow, ce::ConcurrentRow<>>,
-                  "the effects umbrella must reach the concurrent-row surface.");
-}
 void test_fx_aliases_compile() {
     // The header's smoke body is what instantiates its constant-evaluated
     // accessors outside constant evaluation.
@@ -157,7 +146,6 @@ int main() {
     run_test("test_capabilities_compile", test_capabilities_compile);
     run_test("test_computation_compile", test_computation_compile);
     run_test("test_effect_row_compile", test_effect_row_compile);
-    run_test("test_effects_umbrella", test_effects_umbrella);
     run_test("test_fx_aliases_compile", test_fx_aliases_compile);
     run_test("test_effect_row_lattice_compile", test_effect_row_lattice_compile);
     run_test("test_os_universe_compile", test_os_universe_compile);
