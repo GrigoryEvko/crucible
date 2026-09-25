@@ -271,7 +271,7 @@ using PortablePinned = ArchPinned<ArchTag::Portable>;
 }  // namespace source
 
 namespace trust {
-struct Verified {};  // proved by SMT / type system / test
+struct Verified {};  // proved by the type system or a cryptographic check
 struct Tested {};  // covered by tests but not formally verified
 struct Unverified {};  // no formal coverage
 struct Assumed {};  // axiom / mathematical assumption

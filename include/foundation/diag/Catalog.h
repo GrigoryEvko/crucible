@@ -93,38 +93,35 @@ struct EffectRowMismatch : tag_base {
 
 struct UnknownParameterShape : tag_base {
     static constexpr std::string_view name = "UnknownParameterShape";
-    static constexpr std::string_view description = "The dispatcher could not classify the function's "
-                                                    "parameter list against any of the seven canonical shapes "
-                                                    "(UnaryTransform, BinaryTransform, Reduction, ProducerEndpoint, "
-                                                    "ConsumerEndpoint, SwmrWriter, SwmrReader, PipelineStage).  No "
-                                                    "automatic lowering is selected; manual orchestration via "
-                                                    "parallel_for_views / mint_permission_fork / Queue::* is required.";
+    static constexpr std::string_view description = "A function was offered as a pipeline stage, and its signature "
+                                                    "is not one.  fixy/concurrent/StageShape.h recognizes one "
+                                                    "shape: a void function that takes one or more consumer "
+                                                    "handles, then one or more producer handles, each by non-const "
+                                                    "rvalue reference.";
     static constexpr std::string_view remediation =
-        "Either reshape the function signature to match a canonical "
-        "shape (most commonly: change a raw `T*` to `OwnedRegion<T, Tag>&&` "
-        "for the unary/binary transform path), or call the underlying "
-        "primitives directly via the manual orchestration surface.  See "
-        "27_04_2026.md §3 for the full shape catalog.";
+        "Either reshape the signature to the stage shape: return void, "
+        "and take each consumer handle and then each producer handle by "
+        "non-const rvalue reference.  Or drive the channel handles "
+        "directly, without mint_stage.";
 
     static constexpr Severity severity = Severity::Warning;
-    static constexpr std::string_view why_this_matters = "The dispatcher (28_04 §6) reads function signatures "
-                                                         "and routes them to one of the seven canonical lowerings "
-                                                         "(UnaryTransform, BinaryTransform, Reduction, Producer/"
-                                                         "Consumer endpoint, SwmrWriter/Reader, PipelineStage).  "
-                                                         "Functions whose parameter types don't match any canonical "
-                                                         "shape can't be auto-dispatched — the user must either "
-                                                         "reshape the signature or manually call the underlying "
-                                                         "primitives.  Severity::Warning rather than Error because "
-                                                         "the manual orchestration path is documented and supported; "
-                                                         "auto-dispatch is the default but not the only option.";
-    static constexpr std::string_view symptom_pattern = "Surfaces when a user writes a free function the natural way "
-                                                        "(e.g., taking raw pointers + sizes) and tries to dispatch it "
-                                                        "via dispatch().  The dispatcher rejects because "
-                                                        "raw pointers aren't OwnedRegion<T, Tag>; user reshapes to "
-                                                        "use the wrapper or calls parallel_for_views directly.";
+    static constexpr std::string_view why_this_matters = "mint_stage builds a stage only from a function whose "
+                                                         "signature is the stage shape.  The shape tells which "
+                                                         "handles the body consumes and in which order the data "
+                                                         "flows.  A handle taken by lvalue reference or by value "
+                                                         "leaves a moved-from endpoint with the caller, and a "
+                                                         "non-void return is a second output that nothing drains.  "
+                                                         "Severity::Warning rather than Error, because the caller "
+                                                         "can still drive the handles without a stage.";
+    static constexpr std::string_view symptom_pattern = "Surfaces when a function written the natural way, for "
+                                                        "example with raw pointers and sizes or with a returned "
+                                                        "value, is given to mint_stage.  The fix is to take the "
+                                                        "handles by rvalue reference and return void, or to drive "
+                                                        "the handles without a stage.";
     static constexpr std::string_view correct_example =
-        "void f(OwnedRegion<float, Tag>&&); // canonical UnaryTransform";
-    static constexpr std::string_view violating_example = "void f(float*, size_t); // raw ptr; not a canonical shape";
+        "void stage(ConsumerHandle&& in, ProducerHandle&& out);  // a pipeline stage";
+    static constexpr std::string_view violating_example =
+        "Result stage(ConsumerHandle& in);  // lvalue handle and a return value";
 };
 
 struct GradedWrapperViolation : tag_base {
@@ -483,41 +480,39 @@ struct VendorBackendMismatch : tag_base {
 
 struct CrashClassMismatch : tag_base {
     static constexpr std::string_view name = "CrashClassMismatch";
-    static constexpr std::string_view description = "A function pinned at Crash<NoThrow> invoked a callee declared "
-                                                    "as Crash<Throw>, Crash<Abort>, or Crash<ErrorReturn>.  "
-                                                    "Crucible compiles with -fno-exceptions (CLAUDE.md §III); "
-                                                    "throwing across a NoThrow boundary terminates the program.  "
-                                                    "BSYZ22 crash-stop session types relate this discipline to "
-                                                    "the OneShotFlag-guarded boundaries.";
-    static constexpr std::string_view remediation = "Two routes.  (a) If the callee is genuinely fallible, "
-                                                    "convert its return type to std::expected<T, E> — the caller "
-                                                    "then handles the failure explicitly without exception "
-                                                    "machinery.  (b) If the callee's failure mode is "
-                                                    "structurally impossible at this call site, wrap it in a "
-                                                    "noexcept adapter that crucible_abort's on the impossible "
-                                                    "case (documents the assumption).";
+    static constexpr std::string_view description = "A binding that must leave its frame only by a return called "
+                                                    "a callee that can leave it another way.  The ctrl atoms of "
+                                                    "fixy/atoms/Ctrl.h record each other exit: throws, abort, "
+                                                    "longjmp_unsafe and exit.  A binding with no ctrl atom leaves "
+                                                    "only by a return, and that is the strict default.  Nothing in "
+                                                    "this tree throws, and scripts/check-no-throw-no-rtti.sh fails "
+                                                    "the build when __cxa_throw reaches an artifact.";
+    static constexpr std::string_view remediation = "Two routes.  (a) If the callee can fail, return "
+                                                    "std::expected<T, E> from it.  The caller then handles the "
+                                                    "failure explicitly.  (b) If the failure cannot occur at this "
+                                                    "call site, call the callee through an adapter that calls "
+                                                    "crucible_abort on the impossible case.  The adapter carries a "
+                                                    "ctrl::abort atom that states the reason, and the caller admits "
+                                                    "that exit by name.";
 
     static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = "BSYZ22 crash-stop session typing (sessions/SessionCrash.h) "
-                                                         "classifies callees by failure mode: NoThrow (cannot fail), "
-                                                         "ErrorReturn (returns std::expected), Throw (exceptions — "
-                                                         "BANNED in Crucible), Abort (calls std::abort).  A NoThrow-"
-                                                         "constrained context that invokes a Throw or Abort callee "
-                                                         "loses its noexcept guarantee mid-protocol; the type system's "
-                                                         "crash-aware composition rules silently break.  The fence "
-                                                         "preserves the protocol-level reasoning for rollback / "
-                                                         "recovery / replay.";
-    static constexpr std::string_view symptom_pattern = "Surfaces after a refactor that replaces an Error-returning "
-                                                        "helper with one that aborts on failure (e.g., switching from "
-                                                        "std::expected to a contract_assert).  The new helper's "
-                                                        "Crash<Abort> grade no longer satisfies the caller's "
-                                                        "Crash<NoThrow> requirement; the protocol step that was a "
-                                                        "cleanly-recoverable boundary is now a process kill.  Caller "
-                                                        "must either re-introduce error-returning, or relax the "
-                                                        "Crash<...> bound (and update downstream rollback logic).";
-    static constexpr std::string_view correct_example = "Crash<Crash::ErrorReturn, T> safe_op();  // recoverable";
+    static constexpr std::string_view why_this_matters = "The ctrl atoms classify the ways a binding leaves its frame "
+                                                         "other than by a return.  A binding with no ctrl atom leaves "
+                                                         "only by a return, and an error comes back as a "
+                                                         "std::expected value.  When such a binding calls a callee "
+                                                         "that can abort, it loses that guarantee in the middle of a "
+                                                         "protocol.  The rollback, recovery and replay reasoning that "
+                                                         "depends on the guarantee then fails without a diagnostic.";
+    static constexpr std::string_view symptom_pattern = "Surfaces after a refactor that replaces a helper that returns "
+                                                        "std::expected with one that aborts on failure, for example a "
+                                                        "change to contract_assert.  The new helper carries a "
+                                                        "ctrl::abort atom, and its caller admits no ctrl atom.  The "
+                                                        "protocol step that a caller could recover from is now a "
+                                                        "process kill.  The caller must go back to an error return, or "
+                                                        "admit the abort by name and update the rollback logic.";
+    static constexpr std::string_view correct_example = "std::expected<T, E> safe_op() noexcept;  // recoverable";
     static constexpr std::string_view violating_example =
-        "Crash<Crash::Abort, T> dangerous_op();  // kills NoThrow caller";
+        "T dangerous_op() noexcept;  // calls crucible_abort, so it carries ctrl::abort";
 };
 
 struct ConsistencyMismatch : tag_base {
@@ -1058,48 +1053,42 @@ struct StateBudgetViolation : tag_base {
 
 struct InsufficientWitness : tag_base {
     static constexpr std::string_view name = "InsufficientWitness";
-    static constexpr std::string_view description = "A binding's proof-relevance witness is below the floor demanded "
-                                                    "by a downstream consumer.  Witness lattice: Asserted ⊑ Tested "
-                                                    "⊑ CrossValidated ⊑ FormallyVerified.  Downstream consumers "
-                                                    "(Cipher hot-tier promotion, Federation peering, AdaptiveScheduler "
-                                                    "hot-path admission) require a minimum witness tier per axis; "
-                                                    "bindings with weaker witness are refused.  See "
-                                                    "safety/witness/Witness.h for the four-tier hierarchy.";
-    static constexpr std::string_view remediation = "Either upgrade the binding's witness tier on the offending "
-                                                    "axis by switching to a `cg::*_e<W>` evidenced grant variant "
-                                                    "with a stronger W (e.g., grant::reentrant → grant::reentrant_e"
-                                                    "<Tested<test_id>>), OR loosen the consumer's witness-floor "
-                                                    "demand if the weaker tier is acceptable for this consumer.  "
-                                                    "Tested<id> references safety/diag/TestRegistry.h entries; "
-                                                    "CrossValidated<id> references safety/diag/CiRunRegistry.h.";
+    static constexpr std::string_view description = "A consumer demands a trust tag that the value does not carry.  "
+                                                    "The trust tags of fixy/Tags.h form a one-way ratchet: "
+                                                    "Unverified to Tested to Verified, and Assumed to Verified.  A "
+                                                    "consumer that takes Tagged<T, trust::Tested> refuses a value "
+                                                    "at a lower tag.  The only route up is a retag along an edge "
+                                                    "of fixy::tags::admitted_retags.";
+    static constexpr std::string_view remediation = "Either run the validator that discharges the edge and retag "
+                                                    "the value along it, for example unverified_to_tested after "
+                                                    "the test suite passes against the value, OR change the "
+                                                    "consumer to take the lower tag if that tag is sufficient.  "
+                                                    "Each edge of fixy::tags::admitted_retags names the validator "
+                                                    "that discharges it.";
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "The witness lattice (safety/witness/Witness.h) encodes "
-        "proof-relevance per axis: Asserted (developer claim) ⊑ Tested "
-        "(unit-test-witnessed) ⊑ CrossValidated (CI-witnessed across "
-        "vendors / configurations) ⊑ FormallyVerified (machine-checked "
-        "by the verify preset's small SMT solver).  Production consumers "
-        "encode their evidence floor: Cipher's hot-tier promotion will "
-        "not admit a binding whose KernelCache content-hash equivalence "
-        "claim is merely Asserted — replay determinism demands at least "
-        "CrossValidated, witnessed by the cross-vendor numerics CI "
-        "(MIMIC.md §41).  Without the fence, untested kernels would "
-        "graduate to hot-tier and silently corrupt replay logs.";
+        "The trust tag records the evidence behind a value.  Unverified "
+        "is a claim with no evidence, Tested is a value that a test "
+        "suite ran against, and Verified is a value that a proof or a "
+        "cryptographic check discharged.  A consumer states its floor "
+        "in its parameter type.  A Cipher hot-tier promotion must not "
+        "admit a kernel whose content-hash equivalence is only a claim, "
+        "because replay determinism depends on it.  The cross-vendor "
+        "numerics CI (MIMIC.md §41) is the evidence for that claim.  "
+        "Without the floor, a kernel that no test covers can reach the "
+        "hot tier and corrupt the replay logs.";
     static constexpr std::string_view symptom_pattern =
-        "Surfaces during production refactors that try to promote a "
-        "developer-only sketch into a Cipher-cached / federation-shared "
-        "binding without first adding a test that registers the proof.  "
-        "The diagnostic names the consumer's floor (e.g., 'requires "
-        "Tested<test_id>') and the binding's actual witness (Asserted "
-        "by default).  Remediation: either upgrade the grant to a "
-        "*_e<W> evidenced variant pointing at a real test_id, or "
-        "lower the consumer's witness-floor demand if Asserted is "
-        "actually acceptable for this consumption.";
+        "Surfaces when a refactor moves a value that only a developer "
+        "vouched for into a consumer that takes a higher trust tag, "
+        "with no validator run and no retag.  The compiler names the "
+        "parameter type that holds the floor and the tag that the "
+        "value carries.  Remediation: retag along the edge whose "
+        "validator ran, or lower the tag that the consumer takes.";
     static constexpr std::string_view correct_example =
-        "auto g = grant::reentrant_e<Tested<test_kernel_xxx>>();  // tier ≥ Tested";
+        "auto tested = ::fixy::retag<trust::Tested>(std::move(claim));  // after the suite passes";
     static constexpr std::string_view violating_example =
-        "auto g = grant::reentrant();  // Asserted only — rejected by Tested floor";
+        "admit_hot(::fixy::mint_tagged<trust::Unverified>(kernel));  // admit_hot takes trust::Tested";
 };
 
 struct ModalityMismatch : tag_base {

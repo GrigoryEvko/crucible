@@ -8,10 +8,12 @@
 // leaves the elements uninitialized in that form, which is the same
 // trap a raw C array sets.
 //
-// There is no throwing accessor, because exceptions are off. Bounds
-// come instead from three tiers: a subscript the caller vouches for, a
-// proof-token index that was checked once when it was built, and an
-// index fixed at compile time that cannot be out of range at all.
+// There is no throwing accessor, because nothing in this tree throws.
+// scripts/check-no-throw-no-rtti.sh holds that property on each
+// artifact. Bounds come instead from three tiers: a subscript the
+// caller vouches for, a proof-token index that was checked once when it
+// was built, and an index fixed at compile time that cannot be out of
+// range at all.
 //
 // It is a distinct type, so it cannot be swapped for the standard one
 // by accident.
