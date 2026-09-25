@@ -4,16 +4,5 @@
 # a line shift and goes stale only when the pin is gone.  The list can only
 # shrink.
 
-# Tests of the old fixy session re-exports.  They go with the old tree.
-test/test_fixy_sess_mint_handle_reach.cpp:kFixyFriendMintHandleCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_patterns.cpp:kFixyPatternProtocolAliasCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_patterns.cpp:kFixyPatternContractMarkerCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_patterns.cpp:kFixyPatternPredicateCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_federation.cpp:kFederationPerRoleProtoCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_federation.cpp:kFederationExpectedProtoCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_federation.cpp:kFederationGlobalProtoCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_federation.cpp:kFederationRoleTagCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_federation.cpp:kFederationPayloadCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_federation.cpp:kFederationVerifierCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_federation.cpp:kFederationRowGateCount — a test of the old fixy session re-exports, which goes with the old tree
-test/test_fixy_sess_federation.cpp:kFederationBoundaryCount — a test of the old fixy session re-exports, which goes with the old tree
+# A test of the old session handle factory.  It goes with the old tree.
+test/test_fixy_sess_mint_handle_reach.cpp:kFixyFriendMintHandleCount — a test of the old session handle factory, which goes with the old tree

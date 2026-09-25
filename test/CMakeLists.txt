@@ -183,7 +183,6 @@ crucible_test(test_fixy_fn)
 crucible_test(test_fixy_profile)
 crucible_test(test_fixy_rule_helpers)
 crucible_test(test_fixy_rules_compose)  # FIXY-U-062 — §6.8 aggregator surface
-crucible_test(test_fixy_sess_federation) # FIXY-U-072 — federation per-role reach
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
 crucible_test(test_fixy_substr_spsc_permissioned_spsc_channel) # FIXY-V-045 — fixy::substr::spsc:: PermissionedSpscChannel surface
@@ -193,10 +192,6 @@ crucible_test(test_fixy_substr_sharded_grid_permissioned_sharded_grid) # FIXY-V-
 crucible_test(test_fixy_substr_shardcal_permissioned_sharded_calendar_grid) # FIXY-V-049 — fixy::substr::sharded_calendar_grid:: PermissionedShardedCalendarGrid surface
 crucible_test(test_fixy_substr_calendar_permissioned_calendar_grid) # FIXY-V-050 — fixy::substr::calendar_grid:: PermissionedCalendarGrid surface
 crucible_test(test_fixy_substr_chainedge_permissioned_chain_edge) # FIXY-V-052 — fixy::substr::chainedge:: PermissionedChainEdge surface
-crucible_test(test_fixy_sess)
-crucible_test(test_fixy_sess_phi)
-crucible_test(test_fixy_sess_patterns)  # FIXY-AUDIT-C6
-crucible_test(test_fixy_sess_mint_removed_diag)  # FIXY-AUDIT-B6
 crucible_test(test_fixy_substr_completeness)  # FIXY-AUDIT-C10
 crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_pipe_chain)  # FIXY-AUDIT-C2
@@ -1828,8 +1823,7 @@ crucible_test(test_session_subtype_reason)
 # protocols may be rejected).  Lattice ordering verified via
 # implication chain phi_live_pp ⇒ phi_live_plus ⇒ phi_live ⇒
 # phi_df ⇒ phi_safe; phi_term ∧ phi_nterm proven mutually
-# exclusive.  Backs fixy/Sess.h::phi_*_v re-exports (restoring
-# the 4 dropped by CR-12 + refining phi_term/phi_nterm).
+# exclusive.
 crucible_test(test_session_phi)
 
 # Lazy-established session channels (#403, SAFEINT-B14).
@@ -2750,26 +2744,6 @@ crucible_neg_compile_fixy_test(neg_fixy_fn_direct_sentinel_use
     "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
     "fn_ctad_blocked_use_mint_fn|tier 0")
 
-# FIXY-AUDIT-E10 — HS14 floor for fixy::sess::mint_federation_channel.
-# Surface-level IsExecCtx<Ctx> gate + downstream protocol-shape gate.
-crucible_neg_compile_fixy_test(neg_fixy_federation_channel_non_ctx
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "IsExecCtx")
-crucible_neg_compile_fixy_test(neg_fixy_federation_channel_wrong_endpoint
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "SessionResource_NotPinned|SessionResource<")
-
-# fixy-CR-13 — HS14 floor for the CtxFitsFederation row gate at the
-# fixy wrapper boundary.  Two rejection classes: (a) Fg cap empty row
-# (HotFgCtx can't widen — Fg::permitted_row is Row<>), (b) strict
-# subset (BgCompileCtx carries Row<Bg, Alloc, IO> — missing Block).
-crucible_neg_compile_fixy_test(neg_fixy_federation_channel_no_row_fg
-    "constraints.*not satisfied|no matching function"
-    "CtxFitsFederation|EffectRowMismatch")
-crucible_neg_compile_fixy_test(neg_fixy_federation_channel_no_row_bg_compile
-    "constraints.*not satisfied|no matching function"
-    "CtxFitsFederation|EffectRowMismatch")
-
 # FIXY-AUDIT-D3 — HS14 floor for fixy::fn class-body static_assert.
 # Distinct from D2 (mint_fn requires-clause): the class-body assert
 # fires inside class-template instantiation, not overload resolution.
@@ -3197,21 +3171,14 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_combine_n_witness_missing
     "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
     "splits_into_pack_authoring_witness")
 
-# ── FIXY-MINT-Sess — fixy/Sess.h re-export of session minters
-# (mint_session=deleted, mint_permissioned_session, mint_channel,
-# mint_session_handle, mint_recording_session, mint_crash_watched_session)
-# plus federation::mint_sender/receiver/coord.  Two HS14 fixtures
-# pin the deleted-overload diagnostic and the channel ctx-fit gate:
+# The two overloads of the old proto::mint_session are deleted.  Each
+# fixture calls one of them and reads the deletion message.
 crucible_neg_compile_fixy_test(neg_fixy_sess_mint_session_deleted
     "use of deleted function"
     "is removed|mint_permissioned_session")
-# fixy-A4-014: bare mint_session<Proto>(resource) — second deleted overload.
 crucible_neg_compile_fixy_test(neg_fixy_sess_mint_session_bare_deleted
     "use of deleted function"
     "is removed|mint_permissioned_session")
-crucible_neg_compile_fixy_test(neg_fixy_sess_channel_recv_row_drift
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsChannel|CtxFitsPermissionedProtocol")
 
 # ── FIXY-MINT-Pipe — fixy/Pipe.h re-export of Tier-3 composition
 # (mint_endpoint, mint_stage, mint_pipeline, mint_pipeline_dag,
@@ -3378,23 +3345,12 @@ crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision
     "no matching function|cannot convert"
     "dispatch_workload_decision|TaggedParallelismDecision|Tagged|ParallelismDecision")
 
-# fixy-HS14-06 — per-role federation mints HS14 floor (≥2 fixtures
-# each across mint_sender / mint_receiver / mint_coord, all via the
-# `fixy::sess::` re-export — `using federation::mint_{sender,
-# receiver,coord};` at Sess.h:285-287).
-#
-# Each mint has the same 3-arg shape (ctx, endpoint, admittance) and
-# the same requires-clause `CtxFitsFederation<Ctx>`.  The HS14 floor
-# requires per-mint coverage of TWO distinct mismatch classes:
-# (#1) non_ctx     — `int` fails the IsExecCtx prerequisite that
-#                    CtxFitsFederation transitively requires;
-# (#2) no_row_fg   — `HotFgCtx` IS IsExecCtx but its `Row<>` lacks
-#                    the IO+Block atoms federation demands, so the
-#                    row-subset check fires.
-#
-# 6 fixtures total — distinct from the 4-arg mint_federation_channel
-# fixtures (HS14-05) which exercise the combined sender+receiver
-# forwarder.
+# The per-role federation mints mint_sender, mint_receiver and
+# mint_coord take (ctx, endpoint, admittance) and require
+# CtxFitsFederation<Ctx>.  Each mint has one fixture per mismatch class:
+#   non_ctx    an int is not an IsExecCtx;
+#   no_row_fg  HotFgCtx is an IsExecCtx, but its Row<> has no IO and no
+#              Block, so the row-subset check is false.
 crucible_neg_compile_fixy_test(neg_fixy_sess_mint_sender_non_ctx
     "constraints.*not satisfied"
     "CtxFitsFederation|IsExecCtx|mint_sender")
@@ -3414,14 +3370,9 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_no_row_fg
     "constraints.*not satisfied"
     "CtxFitsFederation|EffectRowMismatch|row_subset|federation_required_row|mint_coord")
 
-# fixy-HS14-06 super-set — third mismatch class per mint (wrong
-# admittance template-class binding).  IsExecCtx + row-subset both
-# satisfied via TestRunnerCtx (Row<Test, Alloc, IO, Block> ⊃
-# federation_required_row).  Failure is the third parameter:
-# `SharedPermission<FederatedPeer<Org>>` cannot bind to `int`.
-# Pushes HS14-06 from "floor" (2 per mint) to "100%+" (3 per
-# mint), witnessing per-role mint signature preservation through
-# the using-decl across ALL THREE parameter slots independently.
+# The third mismatch class per mint: TestRunnerCtx satisfies IsExecCtx
+# and the row check, so only the admittance slot stops the call.  An int
+# does not bind to SharedPermission<FederatedPeer<Org>>.
 crucible_neg_compile_fixy_test(neg_fixy_sess_mint_sender_wrong_admittance
     "no matching function|cannot convert"
     "SharedPermission|FederatedPeer|mint_sender")
@@ -3547,15 +3498,10 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_consumer_endpoint_near_miss
     "constraints.*not satisfied|no matching function"
     "SpscChannelSessionSurface|same_as")
 
-# FIXY-U-074m HS14 floor: fixy::sess::mint_session_view gates via
-# `requires HandleIsAt<Handle, Tag>`.  Probed with static_assert(requires{...})
-# — the header's own can_mint_session_view discipline, which avoids
-# namespace-scope Send-state handle instances (abandonment-destructor).
-# Two distinct classes: SessionHandle at the WRONG position (Send@AtRecv)
-# vs a non-SessionHandle type (int).
-crucible_neg_compile_fixy_test(neg_fixy_sess_session_view_wrong_position
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "HandleIsAt|mint_session_view")
+# proto::mint_session_view carries `requires HandleIsAt<Handle, Tag>`.
+# The fixture calls it with an int, which is not a SessionHandle.  The
+# probe is a static_assert over a requires-expression, so no handle in a
+# Send state is built at namespace scope.
 crucible_neg_compile_fixy_test(neg_fixy_sess_session_view_non_handle
     "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
     "HandleIsAt|mint_session_view")

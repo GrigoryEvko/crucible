@@ -1,34 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-06 negative fixture #6/6:
-// `fixy::sess::mint_coord<Org, KeyTag>(ctx, endpoint, admittance)`
-// rejects when ctx is IsExecCtx but its row is INSUFFICIENT.
+// federation::mint_coord<Org, KeyTag>(ctx, endpoint, admittance) rejects
+// an execution context whose row does not contain IO and Block.  HotFgCtx
+// has the empty row, so IsExecCtx holds and the row-subset check inside
+// CtxFitsFederation is false.
 //
-// HotFgCtx ships `row_type = Row<>`; federation requires
-// Row<IO, Block>.  CtxFitsFederation's row-subset check fails.
-//
-// Distinct from fixture #5 (non_ctx): #5 passes `int` (fails
-// IsExecCtx prerequisite); #6 passes real IsExecCtx with wrong row
-// (fails row-subset).
-//
-// Distinct from mint_sender/mint_receiver no_row_fg fixtures: same
-// gate mechanism but different §XXI mint factory.  HS14 floor
-// requires each mint to independently witness its requires-clause
-// discipline.
-//
-// Expected diagnostic: "CtxFitsFederation" /
-// "EffectRowMismatch" / "constraints not satisfied" /
-// "row_subset" / "federation_required_row" / "mint_coord".
+// Expected diagnostic: "CtxFitsFederation" / "EffectRowMismatch" /
+// "constraints not satisfied" / "row_subset" / "federation_required_row" /
+// "mint_coord".
 
-#include <crucible/fixy/Sess.h>
 #include <crucible/permissions/FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>
 
 namespace fp = ::crucible::safety::proto::federation;
-
-namespace fsess = ::crucible::fixy::sess;
 namespace perm = ::crucible::permissions;
 namespace saf = ::crucible::safety;
 namespace eff = ::crucible::effects;
@@ -56,7 +42,7 @@ int main() {
     auto guard = pool.lend();
 
     eff::HotFgCtx fg{};
-    auto coord = fsess::mint_coord<neg_fixy_coord_no_row::PeerOrg, neg_fixy_coord_no_row::TraceKey>(
+    auto coord = fp::mint_coord<neg_fixy_coord_no_row::PeerOrg, neg_fixy_coord_no_row::TraceKey>(
         fg, neg_fixy_coord_no_row::Endpoint{}, guard->token());
     (void)coord;
     return 0;

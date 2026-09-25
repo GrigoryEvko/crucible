@@ -12,12 +12,12 @@
 // Expected diagnostic: GCC finds no conversion for argument 3 from the token
 // for OrgA to the token for OrgB.
 
-#include <crucible/fixy/Sess.h>
 #include <crucible/fixy/Source.h>
+#include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>
 
-namespace fsess = crucible::fixy::sess;
+namespace fp = crucible::safety::proto::federation;
 namespace cs = crucible::safety;
 namespace eff = crucible::effects;
 namespace ff = crucible::fixy::source::federation;
@@ -42,11 +42,11 @@ int main() {
     auto local = cs::mint_permission_root<ff::LocalCipherTag>();
     auto handshake_a = ff::make_self_signed_handshake<NegFedWrongOrg_OrgA>();
     auto admitted_a = ff::mint_federation_admittance<NegFedWrongOrg_OrgA>(local, handshake_a);
-    auto pool_a = fsess::federation::mint_federation_pool<NegFedWrongOrg_OrgA>(std::move(*admitted_a));
+    auto pool_a = fp::mint_federation_pool<NegFedWrongOrg_OrgA>(std::move(*admitted_a));
     auto guard_a = pool_a.lend();
 
     FederationFitCtx ctx{::crucible::effects::testing::bg()};
-    auto bad = fsess::mint_sender<NegFedWrongOrg_OrgB>(ctx, NegFedWrongOrg_Endpoint{}, guard_a->token());
+    auto bad = fp::mint_sender<NegFedWrongOrg_OrgB>(ctx, NegFedWrongOrg_Endpoint{}, guard_a->token());
     (void)bad;
     return 0;
 }

@@ -64,15 +64,15 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_crash_watched_session(PermissionedSessionHandle<Proto,PS,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Sess.h:231` | HS14: 2 |
-| `mint_crash_watched_session(SessionHandle<Proto,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Sess.h:231` | HS14: 2 |
+| `mint_crash_watched_session(PermissionedSessionHandle<Proto,PS,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 2 |
+| `mint_crash_watched_session(SessionHandle<Proto,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_persisted_session(Ctx const&,Cipher&,CipherOpenView const&,Resource&&,SessionTagId,RoleTagId,RoleTagId,SessionPersistencePolicy)` | `include/crucible/bridges/SessionPersistence.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
 | `mint_persisted_session(Ctx const&,PermissionedSessionHandle<Proto,PS,Resource,LoopCtx>,Cipher&,CipherOpenView const&,SessionTagId,RoleTagId,RoleTagId,SessionPersistencePolicy)` | `include/crucible/bridges/SessionPersistence.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
 | `mint_persisted_session(Ctx const&,SessionHandle<Proto,Resource,LoopCtx>,Cipher&,CipherOpenView const&,SessionTagId,RoleTagId,RoleTagId,SessionPersistencePolicy)` | `include/crucible/bridges/SessionPersistence.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
 | `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Sess.h:230` | HS14: 12 |
-| `mint_recording_session(CrashWatchedHandle<Proto,Resource,PeerTag,C,LoopCtx,PS>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Sess.h:230` | HS14: 12 |
-| `mint_recording_session(SessionHandle<Proto,Resource,LoopCtx>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | `include/crucible/fixy/Sess.h:230` | HS14: 12 |
+| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 12 |
+| `mint_recording_session(CrashWatchedHandle<Proto,Resource,PeerTag,C,LoopCtx,PS>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 12 |
+| `mint_recording_session(SessionHandle<Proto,Resource,LoopCtx>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 12 |
 
 ## include/crucible/canopy/
 
@@ -158,8 +158,8 @@ apply to the row.
 | `mint_endpoint` | `include/crucible/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Pipe.h:27` | HS14: 13 |
 | `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Pipe.h:35` | HS14: 3 |
 | `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Pipe.h:34` | HS14: 7 |
-| `mint_substrate_session(Ctx const&,handle_for_t<Substr,Dir,Shard>&)` | `include/crucible/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Sess.h:240` | HS14: 12 |
-| `mint_substrate_session(Ctx const&,handle_for_t<Substr,Dir>&)` | `include/crucible/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Sess.h:240` | HS14: 12 |
+| `mint_substrate_session(Ctx const&,handle_for_t<Substr,Dir,Shard>&)` | `include/crucible/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:438` | HS14: 12 |
+| `mint_substrate_session(Ctx const&,handle_for_t<Substr,Dir>&)` | `include/crucible/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:438` | HS14: 12 |
 | `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Pipe.h:36` | HS14: 2 |
 
 ## include/crucible/fixy/
@@ -168,7 +168,6 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_affinity` | `include/crucible/fixy/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_asm_grant` | `include/crucible/fixy/Hw.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_federation_channel` | `include/crucible/fixy/SessFederation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_fn` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 32 |
 | `mint_fn_for(Type)` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
 | `mint_fn_for(Type)` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
@@ -229,7 +228,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/Source.h:68` | HS14: 30 |
+| `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/Source.h:68` | HS14: 26 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/Perm.h:34` | HS14: 2 |
 | `mint_self_signed_handshake` | `include/crucible/permissions/FederationPermission.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Source.h:67` | HS14: 4 |
 
@@ -261,8 +260,8 @@ apply to the row.
 | `mint_chainedge_signaler_session` | `include/crucible/sessions/ChainEdgeSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:204` | HS14: 3 |
 | `mint_chainedge_waiter` | `include/crucible/sessions/ChainEdgeSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:203` | HS14: 2 |
 | `mint_chainedge_waiter_session` | `include/crucible/sessions/ChainEdgeSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:205` | HS14: 3 |
-| `mint_channel` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 12 |
-| `mint_channel` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Sess.h:228` | HS14: 12 |
+| `mint_channel` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
+| `mint_channel` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
 | `mint_chaselev_owner` | `include/crucible/sessions/ChaseLevDequeSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:173` | HS14: 3 |
 | `mint_chaselev_thief(Deque&)` | `include/crucible/sessions/ChaseLevDequeSession.h` | Y | - (alloc) | Y | Y | token | · | `include/crucible/fixy/Substr.h:174` | HS14: 3 |
 | `mint_chaselev_thief(Deque&,::crucible::safety::SharedPermission<typename Deque::thief_tag>)` | `include/crucible/sessions/ChaseLevDequeSession.h` | Y | - | Y | Y | token | · | `include/crucible/fixy/Substr.h:174` | HS14: 3 |
@@ -270,24 +269,24 @@ apply to the row.
 | `mint_consumer_session` | `include/crucible/sessions/ShardedCalendarGridSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:302` | HS14: 10 |
 | `mint_consumer_session` | `include/crucible/sessions/ShardedGridSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:335` | HS14: 10 |
 | `mint_consumer_session` | `include/crucible/sessions/SpscSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:112` | HS14: 10 |
-| `mint_coord` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:17` | HS14: 5 |
-| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/SessFederation.h:20` | HS14: 22 |
+| `mint_coord` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
+| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | [✗ NO-FIXY] | HS14: 18 |
 | `mint_mpmc_consumer_endpoint` | `include/crucible/sessions/MpmcChannelSession.h` | Y | - | Y | Y | token | · | `include/crucible/fixy/Substr.h:233` | HS14: 2 |
 | `mint_mpmc_consumer_session` | `include/crucible/sessions/MpmcChannelSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:235` | HS14: 4 |
 | `mint_mpmc_producer_endpoint` | `include/crucible/sessions/MpmcChannelSession.h` | Y | - | Y | Y | token | · | `include/crucible/fixy/Substr.h:232` | HS14: 2 |
 | `mint_mpmc_producer_session` | `include/crucible/sessions/MpmcChannelSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:234` | HS14: 5 |
 | `mint_owner_session` | `include/crucible/sessions/ChaseLevDequeSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:175` | HS14: 4 |
-| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Sess.h:227` | HS14: 43 |
+| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 43 |
 | `mint_producer_session` | `include/crucible/sessions/CalendarGridSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:267` | HS14: 11 |
 | `mint_producer_session` | `include/crucible/sessions/ShardedCalendarGridSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:301` | HS14: 11 |
 | `mint_producer_session` | `include/crucible/sessions/ShardedGridSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:334` | HS14: 11 |
 | `mint_producer_session` | `include/crucible/sessions/SpscSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:111` | HS14: 11 |
 | `mint_reader_runtime_session` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:139` | HS14: 3 |
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:137` | HS14: 2 |
-| `mint_receiver` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:16` | HS14: 6 |
-| `mint_sender` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/SessFederation.h:15` | HS14: 12 |
-| `mint_session_handle` | `include/crucible/sessions/Session.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Sess.h:229` | HS14: 25 |
-| `mint_session_view` | `include/crucible/sessions/SessionView.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Sess.h:235` | HS14: 4 |
+| `mint_receiver` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
+| `mint_sender` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 12 |
+| `mint_session_handle` | `include/crucible/sessions/Session.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 25 |
+| `mint_session_view` | `include/crucible/sessions/SessionView.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
 | `mint_sharded_calendar_grid_consumer` | `include/crucible/sessions/ShardedCalendarGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:300` | HS14: 2 |
 | `mint_sharded_calendar_grid_producer` | `include/crucible/sessions/ShardedCalendarGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:299` | HS14: 2 |
 | `mint_sharded_grid_consumer` | `include/crucible/sessions/ShardedGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:333` | HS14: 2 |
@@ -476,5 +475,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 200 | 100 | 91 | 9 | 0 | 103 | 41 |
+| old (`include/crucible/`) | 199 | 99 | 91 | 9 | 0 | 116 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 101 | 42 | 58 | 1 | 0 | · | 22 |

@@ -1,38 +1,19 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-06 negative fixture #1/6:
-// `fixy::sess::mint_sender<Org, KeyTag>(ctx, endpoint, admittance)`
-// rejects a non-IsExecCtx first argument.
-//
-// mint_sender is re-exported in fixy::sess via `using
-// federation::mint_sender;` (Sess.h:285).  The substrate signature
-// constrains `Ctx` via the requires-clause
-// `CtxFitsFederation<Ctx>`, which itself transitively requires
-// `IsExecCtx<Ctx>`.  Passing a plain `int` as the ctx slot fires
-// the constraint-satisfaction failure.
-//
-// Distinct from fixture #2 (no_row_fg, the sibling): #1 exercises
-// the IsExecCtx / arity-shape gate by passing a non-class type as
-// ctx — substitution fails outright.  #2 exercises the row-subset
-// gate by passing a real IsExecCtx (HotFgCtx) with an INSUFFICIENT
-// row.  Different failure mechanisms, different diagnostic shapes.
-//
-// Distinct from the federation_channel fixtures (HS14-05): those
-// exercise the 4-arg mint_federation_channel forwarder (combined
-// sender+receiver) at the fixy::sess outer boundary.  HS14-06
-// exercises the per-role 3-arg mints individually.
+// federation::mint_sender<Org, KeyTag>(ctx, endpoint, admittance) rejects
+// a first argument that is not an execution context.  Its requires-clause
+// CtxFitsFederation<Ctx> contains IsExecCtx<Ctx>, which is false for a
+// plain int.
 //
 // Expected diagnostic: "CtxFitsFederation" / "IsExecCtx" /
 // "constraints not satisfied".
 
-#include <crucible/fixy/Sess.h>
 #include <crucible/permissions/FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>
 
 namespace fp = ::crucible::safety::proto::federation;
-namespace fsess = ::crucible::fixy::sess;
 namespace perm = ::crucible::permissions;
 namespace saf = ::crucible::safety;
 
@@ -59,9 +40,7 @@ int main() {
     auto guard = pool.lend();
 
     int not_a_ctx = 0;
-    // Plain int as ctx — fails CtxFitsFederation / IsExecCtx
-    // constraint at template parameter substitution time.
-    auto bad = fsess::mint_sender<neg_fixy_sender_non_ctx::PeerOrg, neg_fixy_sender_non_ctx::TraceKey>(
+    auto bad = fp::mint_sender<neg_fixy_sender_non_ctx::PeerOrg, neg_fixy_sender_non_ctx::TraceKey>(
         not_a_ctx, neg_fixy_sender_non_ctx::Endpoint{}, guard->token());
     (void)bad;
     return 0;

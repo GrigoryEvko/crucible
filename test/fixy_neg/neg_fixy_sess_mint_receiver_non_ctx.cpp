@@ -1,33 +1,19 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-06 negative fixture #3/6:
-// `fixy::sess::mint_receiver<Org, KeyTag>(ctx, endpoint, admittance)`
-// rejects a non-IsExecCtx first argument.
-//
-// Same gate structure as mint_sender (HS14-06 #1): CtxFitsFederation
-// requires IsExecCtx<Ctx>; passing `int` fails substitution.
-//
-// Distinct from mint_receiver no_row_fg (#4): #3 hits the
-// IsExecCtx prerequisite by passing a non-class type; #4 hits the
-// row-subset check after IsExecCtx is satisfied.
-//
-// Distinct from mint_sender fixtures (#1/#2): different §XXI
-// mint factory, different protocol type (ReceiverProto vs
-// SenderProto).  HS14 floor requires per-mint coverage; using-decl
-// from `federation::mint_receiver` (Sess.h:286) must independently
-// preserve the requires-clause.
+// federation::mint_receiver<Org, KeyTag>(ctx, endpoint, admittance) rejects
+// a first argument that is not an execution context.  Its requires-clause
+// CtxFitsFederation<Ctx> contains IsExecCtx<Ctx>, which is false for a
+// plain int.
 //
 // Expected diagnostic: "CtxFitsFederation" / "IsExecCtx" /
 // "constraints not satisfied" / "mint_receiver".
 
-#include <crucible/fixy/Sess.h>
 #include <crucible/permissions/FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>
 
 namespace fp = ::crucible::safety::proto::federation;
-namespace fsess = ::crucible::fixy::sess;
 namespace perm = ::crucible::permissions;
 namespace saf = ::crucible::safety;
 
@@ -54,7 +40,7 @@ int main() {
     auto guard = pool.lend();
 
     int not_a_ctx = 0;
-    auto bad = fsess::mint_receiver<neg_fixy_receiver_non_ctx::PeerOrg, neg_fixy_receiver_non_ctx::TraceKey>(
+    auto bad = fp::mint_receiver<neg_fixy_receiver_non_ctx::PeerOrg, neg_fixy_receiver_non_ctx::TraceKey>(
         not_a_ctx, neg_fixy_receiver_non_ctx::Endpoint{}, guard->token());
     (void)bad;
     return 0;

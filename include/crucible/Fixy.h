@@ -24,11 +24,8 @@
 #include <crucible/fixy/Perm.h>
 #include <crucible/fixy/Handle.h>
 #include <crucible/fixy/Pipe.h>
-#include <crucible/fixy/Sess.h>
 #include <crucible/fixy/SessContentAddr.h>
 #include <crucible/fixy/SessEventLog.h>
-#include <crucible/fixy/SessFederation.h>
-#include <crucible/fixy/SessShape.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>

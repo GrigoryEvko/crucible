@@ -8,10 +8,8 @@
 // implications as well as the individual answers.
 
 #include <crucible/sessions/SessionPhi.h>
-#include <crucible/Fixy.h>
 
 namespace proto = ::crucible::safety::proto;
-namespace fsess = ::crucible::fixy::sess;
 
 namespace cell_1_helpers {
 
@@ -185,38 +183,27 @@ static_assert(nterm_excludes_term<cell_2_phi::LoopUnbounded>);
 
 }  // namespace cell_3_lattice
 
-// The predicates are also re-exported under a second namespace, and
-// each re-exported name must answer exactly as the original does.
+// A protocol that satisfies every predicate cannot tell the rungs
+// apart.  These protocols separate each rung from its neighbour.
 
-namespace cell_4_fixy_reach {
+namespace cell_4_rung_separation {
 
 struct Q {};
-using P = proto::Send<Q, proto::End>;
 using P_loop_inf = proto::Loop<proto::Send<Q, proto::Continue>>;
 using P_loop_fin = proto::Loop<proto::Select<proto::Send<Q, proto::Continue>, proto::Stop>>;
 using P_distinct = proto::Select<proto::Send<int, proto::End>, proto::Send<float, proto::End>>;
 using P_dup = proto::Select<proto::Send<int, proto::End>, proto::Send<int, proto::End>>;
 
-static_assert(fsess::phi_safe_v<P> == proto::phi_safe_v<P>);
-static_assert(fsess::phi_df_v<P> == proto::phi_df_v<P>);
-static_assert(fsess::phi_term_v<P> == proto::phi_term_v<P>);
-static_assert(fsess::phi_nterm_v<P> == proto::phi_nterm_v<P>);
-static_assert(fsess::phi_live_v<P> == proto::phi_live_v<P>);
-static_assert(fsess::phi_live_plus_v<P> == proto::phi_live_plus_v<P>);
-static_assert(fsess::phi_live_pp_v<P> == proto::phi_live_pp_v<P>);
+static_assert(!proto::phi_term_v<P_loop_inf>);
+static_assert(proto::phi_nterm_v<P_loop_inf>);
+static_assert(proto::phi_term_v<P_loop_fin>);
+static_assert(!proto::phi_nterm_v<P_loop_fin>);
+static_assert(proto::phi_live_plus_v<P_distinct>);
+static_assert(!proto::phi_live_plus_v<P_dup>);
+static_assert(!proto::phi_live_pp_v<P_loop_inf>);
+static_assert(proto::phi_live_pp_v<P_loop_fin>);
 
-// Agreement on one protocol proves little if that protocol satisfies
-// every predicate.  These separate the rungs from each other.
-static_assert(!fsess::phi_term_v<P_loop_inf>);
-static_assert(fsess::phi_nterm_v<P_loop_inf>);
-static_assert(fsess::phi_term_v<P_loop_fin>);
-static_assert(!fsess::phi_nterm_v<P_loop_fin>);
-static_assert(fsess::phi_live_plus_v<P_distinct>);
-static_assert(!fsess::phi_live_plus_v<P_dup>);
-static_assert(!fsess::phi_live_pp_v<P_loop_inf>);
-static_assert(fsess::phi_live_pp_v<P_loop_fin>);
-
-}  // namespace cell_4_fixy_reach
+}  // namespace cell_4_rung_separation
 
 int main() {
     // The assertions above run in the constant evaluator.  This call
