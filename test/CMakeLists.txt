@@ -184,14 +184,6 @@ crucible_test(test_fixy_profile)
 crucible_test(test_fixy_rule_helpers)
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
-crucible_test(test_fixy_substr_spsc_permissioned_spsc_channel) # FIXY-V-045 — fixy::substr::spsc:: PermissionedSpscChannel surface
-crucible_test(test_fixy_substr_mpmc_permissioned_mpmc_channel) # FIXY-V-046 — fixy::substr::mpmc:: PermissionedMpmcChannel surface
-crucible_test(test_fixy_substr_chaselev_permissioned_chase_lev_deque) # FIXY-V-047 — fixy::substr::chaselev:: PermissionedChaseLevDeque surface
-crucible_test(test_fixy_substr_sharded_grid_permissioned_sharded_grid) # FIXY-V-048 — fixy::substr::sharded_grid:: PermissionedShardedGrid surface
-crucible_test(test_fixy_substr_shardcal_permissioned_sharded_calendar_grid) # FIXY-V-049 — fixy::substr::sharded_calendar_grid:: PermissionedShardedCalendarGrid surface
-crucible_test(test_fixy_substr_calendar_permissioned_calendar_grid) # FIXY-V-050 — fixy::substr::calendar_grid:: PermissionedCalendarGrid surface
-crucible_test(test_fixy_substr_chainedge_permissioned_chain_edge) # FIXY-V-052 — fixy::substr::chainedge:: PermissionedChainEdge surface
-crucible_test(test_fixy_substr_completeness)  # FIXY-AUDIT-C10
 # The chain concepts and the two mints of the old pipeline headers.
 crucible_test(test_fixy_pipe_chain)
 
@@ -208,7 +200,6 @@ target_compile_definitions(test_fixy_pipe_topology_override PRIVATE
     CRUCIBLE_L2_PER_CORE_BYTES=1048576     #  1 MiB
     CRUCIBLE_L3_TOTAL_BYTES=33554432       # 32 MiB
 )
-crucible_test(test_fixy_substr)
 crucible_test(test_fixy_mach_transitions)  # FIXY-AUDIT-C1
 crucible_test(test_fixy_wrap)
 crucible_test(test_fixy_struct)
@@ -3369,27 +3360,6 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_endpoint_near_miss
     "constraints.*not satisfied|no matching function"
     "MpmcChannelSessionSurface")
 
-# FIXY-V-045-audit HS14 floor: the SPSC ENDPOINT token mints (two-arg,
-# surface-gated on SpscChannelSessionSurface, plus a Linear Permission<*_tag>
-# proof).  Inline-defined in fixy/Substr.h v045:: (not in inventory scan
-# tree, but HS14 still applies per CLAUDE.md HS14 rule).  Four fixtures →
-# two per mint × two mints: bare non-surface (fails first nested-type
-# requirement + substitution-fails on Permission<typename Channel::*_tag>)
-# vs near-miss (producer/consumer returns optional<handle> instead of bare
-# handle — the SPSC linearity contract opposite of MPMC).
-crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_producer_endpoint_non_surface
-    "constraints.*not satisfied|no matching function"
-    "SpscChannelSessionSurface|producer_tag")
-crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_producer_endpoint_near_miss
-    "constraints.*not satisfied|no matching function"
-    "SpscChannelSessionSurface|same_as")
-crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_consumer_endpoint_non_surface
-    "constraints.*not satisfied|no matching function"
-    "SpscChannelSessionSurface|consumer_tag")
-crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_consumer_endpoint_near_miss
-    "constraints.*not satisfied|no matching function"
-    "SpscChannelSessionSurface|same_as")
-
 # proto::mint_session_view carries `requires HandleIsAt<Handle, Tag>`.
 # The fixture calls it with an int, which is not a SessionHandle.  The
 # probe is a static_assert over a requires-expression, so no handle in a
@@ -3667,21 +3637,6 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_grid_consumer_session_non
 crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_grid_consumer_session_wrong_handle
     "no matching function|cannot convert"
     "ConsumerHandle|mint_consumer_session")
-
-# fixy-M-20 — fixy::substr::mpsc:: namespace shipped (closes the
-# discipline-inconsistent gap where PermissionedMpscChannel had a
-# working SubstrateSessionBridge default_proto_for<> specialization
-# but no per-substrate sub-namespace mirroring spsc / swmr / mpmc).
-# HS14 floor: ≥2 distinct-mismatch fixtures.  Fixture #1 trips the
-# IsExecCtx prerequisite on `mint_mpsc_producer_session`'s ctx slot;
-# fixture #2 trips the ConsumerHandle reference binding on
-# `mint_mpsc_consumer_session`'s second slot AFTER IsExecCtx passes.
-crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_producer_session_non_ctx
-    "constraints.*not satisfied|no matching function"
-    "IsExecCtx|mint_mpsc_producer_session")
-crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_session_wrong_handle
-    "no matching function|cannot convert|cannot bind"
-    "ConsumerHandle|mint_mpsc_consumer_session")
 
 # fixy-A4-030 — substrate-vs-fixy disjointness discriminator witness.
 # Reject.h's main guard is the std::index_sequence fold that walks every
@@ -12739,12 +12694,6 @@ crucible_neg_compile_session_test(neg_endpoint_gate_spsc_producer_bg_row
 crucible_neg_compile_session_test(neg_endpoint_gate_spsc_consumer_bg_row
     "no matching function for call to .mint_consumer_session<"
     "proto_row_admitted_by")
-crucible_neg_compile_session_test(neg_endpoint_gate_mpsc_producer_bg_row
-    "no matching function for call to .mint_mpsc_producer_session<"
-    "proto_row_admitted_by")
-crucible_neg_compile_session_test(neg_endpoint_gate_mpsc_consumer_bg_row
-    "no matching function for call to .mint_mpsc_consumer_session<"
-    "proto_row_admitted_by")
 crucible_neg_compile_session_test(neg_endpoint_gate_mpmc_producer_bg_row
     "no matching function for call to .mint_mpmc_producer_session<"
     "proto_row_admitted_by")
@@ -14269,46 +14218,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_durable_append_file_external_
 crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_durable_append_file_ctx_lacks_block
     "no matching function|constraints.*not satisfied"
     "CtxAdmitsIoBlock|CtxFitsFileMint|row_contains")
-
-# ─── FIXY-FOUND-089 — mpsc endpoint mint HS14 floors (#2244) ────────
-#
-# Four neg-compile fixtures (2 per mint × 2 mints) — clears HS14:0
-# from misc/mint-inventory.md for fixy/Substr.h's MPSC endpoint
-# helpers.  Two distinct mismatch classes per mint:
-#   producer_endpoint:
-#     #1 non_channel    — concept fails on missing nested typedefs
-#     #2 almost_channel — concept passes typedefs, fails on ch.producer()
-#   consumer_endpoint:
-#     #1 non_channel    — concept fails on missing nested typedefs
-#     #2 wrong_perm_tag — concept passes; Permission<wrong> binding fails
-crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_producer_endpoint_non_channel
-    "constraints.*not satisfied|no matching function|no type named"
-    "MpscChannelSessionSurface|value_type|mint_mpsc_producer_endpoint")
-crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_producer_endpoint_almost_channel
-    "constraints.*not satisfied|no matching function"
-    "MpscChannelSessionSurface|producer|no member named|mint_mpsc_producer_endpoint")
-crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_endpoint_non_channel
-    "constraints.*not satisfied|no matching function|no type named"
-    "MpscChannelSessionSurface|consumer_tag|mint_mpsc_consumer_endpoint")
-crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_endpoint_wrong_perm_tag
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "Permission|consumer_tag|mint_mpsc_consumer_endpoint")
-
-# ─── FIXY-FOUND-090 — mpsc session mint HS14 floors (#2245) ─────────
-#
-# Two cross-symmetric neg fixtures bump mint_mpsc_consumer_session +
-# mint_mpsc_producer_session from HS14:1 → HS14:2:
-#   consumer_session_non_ctx   — slot 1 IsExecCtx concept gate
-#                                (peer fixture covers slot 2 handle-binding)
-#   producer_session_wrong_handle — slot 2 ConsumerHandle binding to
-#                                ProducerHandle& fails (peer covers slot 1)
-crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_session_non_ctx
-    "constraints.*not satisfied|no matching function"
-    "IsExecCtx|mint_mpsc_consumer_session")
-crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_producer_session_wrong_handle
-    "could not convert|cannot bind|no matching function"
-    "ProducerHandle|mint_mpsc_producer_session")
-
 
 # ── FIXY-V-225 — fixy/Mmap.h HS14 neg-compile fixtures (#2103) ──────
 #

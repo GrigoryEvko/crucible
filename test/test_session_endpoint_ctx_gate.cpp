@@ -21,7 +21,6 @@
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/_AsyncPipelineSession.h>
 #include <crucible/sessions/CalendarGridSession.h>
@@ -49,7 +48,6 @@ using Bg = eff::BgDrainCtx;
 using BgInt = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
 
 struct SpscTag {};
-struct MpscTag {};
 struct MpmcTag {};
 struct SnapTag {};
 struct SwmrWriterTag {};
@@ -64,7 +62,6 @@ struct BgIntKey {
 };
 
 using Spsc = conc::PermissionedSpscChannel<BgInt, 64, SpscTag>;
-using Mpsc = conc::PermissionedMpscChannel<BgInt, 64, MpscTag>;
 using Mpmc = conc::PermissionedMpmcChannel<BgInt, 64, MpmcTag>;
 using Snap = conc::PermissionedSnapshot<BgInt, SnapTag>;
 using Swmr = proto::swmr_session::SwmrSession<BgInt, SwmrWriterTag, SwmrReaderTag>;
@@ -76,7 +73,6 @@ using ShardedCalendar = conc::PermissionedShardedCalendarGrid<BgInt, 2, 8, 16, B
 using PlainSpsc = conc::PermissionedSpscChannel<int, 64, SpscTag>;
 
 namespace spsc = proto::spsc_session;
-namespace mpsc = ::crucible::fixy::substr::mpsc;
 namespace mpmc = proto::mpmc_channel_session;
 namespace snapshot = proto::snapshot_session;
 namespace swmr = proto::swmr_session;
@@ -97,14 +93,6 @@ concept fits_spsc_producer = requires(Ctx const& ctx, typename C::ProducerHandle
 template <class Ctx, class C>
 concept fits_spsc_consumer = requires(Ctx const& ctx, typename C::ConsumerHandle& h) {
     spsc::mint_consumer_session<C>(ctx, h);
-};
-template <class Ctx, class C>
-concept fits_mpsc_producer = requires(Ctx const& ctx, typename C::ProducerHandle& h) {
-    mpsc::mint_mpsc_producer_session<C>(ctx, h);
-};
-template <class Ctx, class C>
-concept fits_mpsc_consumer = requires(Ctx const& ctx, typename C::ConsumerHandle& h) {
-    mpsc::mint_mpsc_consumer_session<C>(ctx, h);
 };
 template <class Ctx, class C>
 concept fits_mpmc_producer = requires(Ctx const& ctx, typename C::ProducerHandle& h) {
@@ -174,7 +162,6 @@ concept fits_sharded_calendar_consumer = requires(Ctx const& ctx, typename C::te
 // ── The background context fits every endpoint of a background-row channel ──
 
 static_assert(fits_spsc_producer<Bg, Spsc> && fits_spsc_consumer<Bg, Spsc>);
-static_assert(fits_mpsc_producer<Bg, Mpsc> && fits_mpsc_consumer<Bg, Mpsc>);
 static_assert(fits_mpmc_producer<Bg, Mpmc> && fits_mpmc_consumer<Bg, Mpmc>);
 static_assert(fits_snapshot_writer<Bg, Snap> && fits_snapshot_reader<Bg, Snap>);
 static_assert(fits_swmr_writer<Bg, Swmr> && fits_swmr_reader<Bg, Swmr>);
@@ -188,7 +175,6 @@ static_assert(fits_sharded_calendar_producer<Bg, ShardedCalendar>
 // ── The foreground context fits none of them ──
 
 static_assert(!fits_spsc_producer<Fg, Spsc> && !fits_spsc_consumer<Fg, Spsc>);
-static_assert(!fits_mpsc_producer<Fg, Mpsc> && !fits_mpsc_consumer<Fg, Mpsc>);
 static_assert(!fits_mpmc_producer<Fg, Mpmc> && !fits_mpmc_consumer<Fg, Mpmc>);
 static_assert(!fits_snapshot_writer<Fg, Snap> && !fits_snapshot_reader<Fg, Snap>);
 static_assert(!fits_swmr_writer<Fg, Swmr> && !fits_swmr_reader<Fg, Swmr>);
