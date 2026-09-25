@@ -359,6 +359,17 @@ concept IsSharedPermissionFor =
     IsSharedPermission<T>
     && std::is_same_v<typename detail::is_shared_permission_impl<std::remove_cvref_t<T>>::tag_type, Tag>;
 
+// The region tag of a token.  Each extractor is constrained on its own
+// predicate, so a type of the other kind, or of no kind, is refused at
+// the alias and does not become void.
+template <typename T>
+    requires IsPermission<T>
+using permission_tag_t = typename detail::is_permission_impl<std::remove_cvref_t<T>>::tag_type;
+
+template <typename T>
+    requires IsSharedPermission<T>
+using shared_permission_tag_t = typename detail::is_shared_permission_impl<std::remove_cvref_t<T>>::tag_type;
+
 // The shape of a mint's argument list: zero, one or two execution
 // contexts, then the permissions.  A context argument is anything the
 // context trait recognizes after the reference is stripped; a

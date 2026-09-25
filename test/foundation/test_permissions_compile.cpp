@@ -134,6 +134,48 @@ static_assert(std::is_move_constructible_v<::foundation::permissions::Permission
               "ownership of a token transfers.");
 }  // namespace fixy_found_008_pin
 
+// The tag extractors give the region tag of a token through every
+// reference and cv qualifier.  Each one refuses a type of the other
+// kind, and a type that is no token, at the alias.
+namespace tag_extractor_pin {
+namespace fp = ::foundation::permissions;
+
+struct RegionA {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct RegionB {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct PinBrand {};
+
+using ExclusiveA = fp::Permission<RegionA, PinBrand>;
+using ExclusiveB = fp::Permission<RegionB, PinBrand>;
+using SharedA = fp::SharedPermission<RegionA, PinBrand>;
+
+template <typename T>
+concept has_permission_tag = requires { typename fp::permission_tag_t<T>; };
+template <typename T>
+concept has_shared_permission_tag = requires { typename fp::shared_permission_tag_t<T>; };
+
+static_assert(std::is_same_v<fp::permission_tag_t<ExclusiveA>, RegionA>);
+static_assert(std::is_same_v<fp::permission_tag_t<ExclusiveB>, RegionB>);
+static_assert(std::is_same_v<fp::permission_tag_t<ExclusiveA&>, RegionA>);
+static_assert(std::is_same_v<fp::permission_tag_t<ExclusiveA const&>, RegionA>);
+static_assert(std::is_same_v<fp::permission_tag_t<ExclusiveA&&>, RegionA>);
+static_assert(std::is_same_v<fp::permission_tag_t<ExclusiveA const volatile>, RegionA>);
+static_assert(std::is_same_v<fp::shared_permission_tag_t<SharedA>, RegionA>);
+static_assert(std::is_same_v<fp::shared_permission_tag_t<SharedA const&>, RegionA>);
+static_assert(std::is_same_v<fp::shared_permission_tag_t<SharedA&&>, RegionA>);
+
+static_assert(!has_permission_tag<SharedA>,
+              "A shared permission is not an exclusive token, so it has no exclusive tag.");
+static_assert(!has_permission_tag<RegionA>, "A region tag is not a token.");
+static_assert(!has_permission_tag<int>, "A plain value is not a token.");
+static_assert(!has_permission_tag<ExclusiveA*>, "A pointer to a token is not a token.");
+static_assert(!has_shared_permission_tag<ExclusiveA>, "An exclusive token is not a shared permission.");
+static_assert(!has_shared_permission_tag<int>, "A plain value is not a shared permission.");
+}  // namespace tag_extractor_pin
+
 void test_permission_compile() {}
 void test_permission_fork_compile() {}
 void test_permission_row_compile() {
