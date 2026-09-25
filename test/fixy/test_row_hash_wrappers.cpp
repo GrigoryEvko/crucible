@@ -103,6 +103,7 @@
 #include <fixy/Saturated.h>
 #include <fixy/ScopedView.h>
 #include <fixy/Secret.h>
+#include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/MachineBridge.h>
 #include <fixy/session/Protocol.h>
@@ -1128,6 +1129,12 @@ inline constexpr StatedZero kZeros[] = {
      "through the protocol folds it"},
     {^^::fixy::session::constant_time_value,
      "an annotation that marks a class as a constant-time value; it is never a value in a signature"},
+    {^^::fixy::session::ContentAddressed,
+     "a message carrier of a value that the recipient can already hold by its content: it is the payload of a Send "
+     "or a Recv, and the handle that steps through the protocol folds it"},
+    {^^::fixy::session::is_content_addressed, kMetafunction},
+    {^^::fixy::session::content_addressed_underlying, kMetafunction},
+    {^^::fixy::session::unwrap_content_addressed, kMetafunction},
     {^^::fixy::session::PermHold,
      "the hold of the tokens that one session endpoint owns: it stays on the thread of that endpoint beside the "
      "handle, and it is never a template argument of a kernel signature"},

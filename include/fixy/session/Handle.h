@@ -103,6 +103,7 @@
 
 #include <fixy/SelfContained.h>
 #include <fixy/concurrent/PayloadRow.h>
+#include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Payload.h>
 #include <fixy/session/Stepping.h>
 
@@ -2269,6 +2270,7 @@ namespace detail {
         Rule{^^CTPayload, carries_first},
         Rule{^^PeerMsg, std::uint64_t{1} << 2},
         Rule{^^Labelled, std::uint64_t{1} << 1},
+        Rule{^^ContentAddressed, carries_first},
         Rule{^^DelegatedSession, carries_first},
         Rule{^^SharedReader, carries_nothing},
         Rule{^^Crash, carries_nothing},

@@ -1630,6 +1630,10 @@ fixy_neg_compile_test(neg_sess_mint_vendor_none
 # suffix because test/CMakeLists.txt still registers test_session_subtype
 # for the old tree, and a CMake target name is global.
 fixy_test(test_session_subtype_fixy test_session_subtype.cpp)
+
+# The content-addressed marker and its payload are subsorts of each
+# other, at any depth.  The suffix avoids the old tree's target name.
+fixy_test(test_session_content_addressed_fixy test_session_content_addressed.cpp)
 fixy_neg_compile_test(neg_sess_subtype_branch_count
   "\\[Subtype_BranchCount\\]: assert_subtype_sync"
   "because the branch counts are in the wrong direction")

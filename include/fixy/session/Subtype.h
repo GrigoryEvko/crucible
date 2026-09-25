@@ -146,6 +146,14 @@
 //   DelegatedSession<P, Res, Pol, PS>
 //                              ⩽  DelegatedSession<Q, Res, Pol, PS>
 //                                                       when Q refines P
+//   ContentAddressed<T>        ⩽  T  and  T  ⩽  ContentAddressed<T>,
+//                                 at any depth of the marker
+//
+// The content-addressed marker changes no content, so the two sides are
+// subsorts of each other.  The axiom strips every layer of the marker
+// from both sides and compares what is left.  It relates a payload to
+// its own marked form only: it does not reach across the marker to
+// another axiom, because nothing claims that the two compose.
 //
 // A delegated endpoint is contravariant in its protocol (Gay and Hole,
 // 2005, for channel types).  The recipient runs code of the protocol
@@ -185,6 +193,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Protocol.h>
 #include <foundation/algebra/Transition.h>
 #include <foundation/algebra/lattices/ToleranceLattice.h>
@@ -325,8 +334,13 @@ inline constexpr ::foundation::algebra::transition::subsort_axiom peer_message{.
 inline constexpr ::foundation::algebra::transition::subsort_axiom delegation_contravariant{
     .weakens = ^^detail::payload_order::delegation_weakens_v};
 
+// A payload and its content-addressed form are below each other, at any
+// depth of the marker.
+inline constexpr ::foundation::algebra::transition::subsort_axiom content_addressed{
+    .weakens = ^^::fixy::session::content_addressed_equivalent_v};
+
 inline constexpr ::foundation::algebra::transition::seal axiom_seal{
-    .kind = ^^::foundation::algebra::transition::subsort_axiom, .count = 6};
+    .kind = ^^::foundation::algebra::transition::subsort_axiom, .count = 7};
 
 }  // namespace payload_axioms
 
