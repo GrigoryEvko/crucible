@@ -2,7 +2,7 @@
 //
 // MPMC endpoint fixture 2 for
 // safety::proto::mpmc_channel_session::mint_mpmc_producer_endpoint
-// (token mint, single-argument, sessions/MpmcChannelSession.h).  The
+// (token mint, single-argument, sessions/_MpmcChannelSession.h).  The
 // template-parameter constraint `MpmcChannelSessionSurface Channel` requires
 // `{ ch.producer() } -> std::same_as<std::optional<ProducerHandle>>`
 // (a clause of that concept).  NearMissChannel satisfies EVERY other

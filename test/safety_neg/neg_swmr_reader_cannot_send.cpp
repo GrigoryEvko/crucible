@@ -2,7 +2,7 @@
 //
 // GAPS-021: a SWMR reader role cannot publish writer-side values.
 
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace ses = crucible::safety::proto::swmr_session;
 

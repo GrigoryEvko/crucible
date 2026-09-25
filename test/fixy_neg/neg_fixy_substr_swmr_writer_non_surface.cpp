@@ -2,7 +2,7 @@
 //
 // SWMR token mint fixture 2 for
 // safety::proto::swmr_session::mint_swmr_writer
-// (token mint, sessions/SwmrSession.h).  The template-parameter constraint
+// (token mint, sessions/_SwmrSession.h).  The template-parameter constraint
 // `SwmrSessionSurface Swmr` rejects a type that exposes a `writer_tag`
 // (so the second parameter `Permission<typename Swmr::writer_tag>&&`
 // substitutes cleanly) but is MISSING the rest of the surface
@@ -18,7 +18,7 @@
 // no matching function.
 
 #include <crucible/concurrent/_PermissionedSnapshot.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace fsafe = crucible::safety;

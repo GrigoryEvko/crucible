@@ -20,7 +20,7 @@
 
 #include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;

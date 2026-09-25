@@ -1633,7 +1633,7 @@ crucible_test(test_session_substrate_mint_constexpr)
 # family — last of the four cells to receive a session-typed facade.
 crucible_test(test_mpmc_channel_session)
 
-# SwmrSession.h (GAPS-019 / GAPS-020) — typed-session facade for
+# sessions/_SwmrSession.h — typed-session facade for
 # AtomicSnapshot + SharedPermissionPool.  Covers writer publication,
 # multi-reader lifetime accounting, late-reader visibility, matching
 # SharedPermission proof minting, and PSH send/recv wrapper execution.
@@ -3271,7 +3271,7 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_wrong_admittance
     "SharedPermission|FederatedPeer|mint_coord")
 
 # ── The per-substrate session mints in sessions/_SpscSession.h and
-# sessions/SwmrSession.h.  Two HS14 fixtures pin the
+# sessions/_SwmrSession.h.  Two HS14 fixtures pin the
 # producer/consumer + writer/reader role gates:
 crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_wrong_handle
     "cannot convert|no matching function"
@@ -3415,7 +3415,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_session_non_ctx
 
 # HS14 floor of the SWMR runtime-session mints (writer/reader).  Same
 # handle types + IsExecCtx constraint as the typed session variants in
-# sessions/SwmrSession.h, so the same two distinct classes apply
+# sessions/_SwmrSession.h, so the same two distinct classes apply
 # (role-swap wrong-handle + non-ExecCtx).
 crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_writer_runtime_session_wrong_handle
     "cannot convert|no matching function"

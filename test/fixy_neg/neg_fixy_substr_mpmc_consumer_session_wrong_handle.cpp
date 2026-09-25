@@ -3,7 +3,7 @@
 // MPMC session mint fixture for
 // safety::proto::mpmc_channel_session::mint_mpmc_consumer_session:
 // rejects a ProducerHandle (wrong role).  mint_mpmc_consumer_session
-// takes `typename Channel::ConsumerHandle&` (sessions/MpmcChannelSession.h);
+// takes `typename Channel::ConsumerHandle&` (sessions/_MpmcChannelSession.h);
 // passing a ProducerHandle fails type match — the role-inverse of the
 // producer-session fixture.
 //

@@ -1,6 +1,6 @@
 #include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 #include "bench_harness.h"
 

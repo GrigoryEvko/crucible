@@ -5,7 +5,7 @@
 // reader receives the value and its row, which the context does not admit.
 
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace eff = ::crucible::effects;
 namespace ses = ::crucible::safety::proto::swmr_session;

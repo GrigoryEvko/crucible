@@ -2,7 +2,7 @@
 //
 // Snapshot token mint fixture 1 for
 // safety::proto::snapshot_session::mint_snapshot_writer
-// (token mint, sessions/SnapshotSession.h).  The mint's second parameter is the
+// (token mint, sessions/_SnapshotSession.h).  The mint's second parameter is the
 // EXACT type `Permission<typename Snap::writer_tag>&&`; supplying a
 // Permission carrying an UNRELATED tag fails the parameter match.
 //

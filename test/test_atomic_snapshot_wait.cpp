@@ -3,7 +3,7 @@
 // return type so a consumer can constrain on it and admit only wait
 // strategies its own call site can afford.
 
-#include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/_AtomicSnapshot.h>
 #include <crucible/safety/_Wait.h>
 #include "test_assert.h"
 

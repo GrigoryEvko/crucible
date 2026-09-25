@@ -2,7 +2,7 @@
 //
 // Snapshot token mint fixture 4 for
 // safety::proto::snapshot_session::mint_snapshot_reader
-// (token mint, single-argument overload, sessions/SnapshotSession.h).  The
+// (token mint, single-argument overload, sessions/_SnapshotSession.h).  The
 // template-parameter constraint `SnapshotSessionSurface Snap` requires
 // `{ snap.reader() } -> std::same_as<std::optional<ReaderHandle>>`
 // (a clause of that concept).  NearMissSnap satisfies EVERY other clause —

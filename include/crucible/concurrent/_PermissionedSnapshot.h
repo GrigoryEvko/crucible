@@ -11,7 +11,7 @@
 // interchangeable.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/_AtomicSnapshot.h>
 #include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>

@@ -2,7 +2,7 @@
 //
 // MPMC endpoint fixture 4 for
 // safety::proto::mpmc_channel_session::mint_mpmc_consumer_endpoint
-// (token mint, single-argument, sessions/MpmcChannelSession.h).  The
+// (token mint, single-argument, sessions/_MpmcChannelSession.h).  The
 // template-parameter constraint `MpmcChannelSessionSurface Channel` requires
 // `{ ch.consumer() } -> std::same_as<std::optional<ConsumerHandle>>`
 // (a clause of that concept).  NearMissChannel satisfies EVERY other

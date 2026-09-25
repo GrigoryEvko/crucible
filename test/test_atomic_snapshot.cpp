@@ -1,4 +1,4 @@
-#include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/_AtomicSnapshot.h>
 
 #include <atomic>
 #include "test_assert.h"

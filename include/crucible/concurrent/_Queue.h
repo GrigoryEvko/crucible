@@ -14,7 +14,7 @@
 // primitive returns.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/_AtomicSnapshot.h>
 #include <crucible/concurrent/_ChaseLevDeque.h>
 #include <crucible/concurrent/_MpscRing.h>
 #include <crucible/concurrent/_ShardedGrid.h>

@@ -25,7 +25,7 @@
 #include <crucible/sessions/_ChaseLevDequeSession.h>
 #include <crucible/sessions/_ShardedCalendarGridSession.h>
 #include <crucible/sessions/_ShardedGridSession.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 #include <fixy/Ctx.h>
 

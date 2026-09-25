@@ -31,7 +31,7 @@
 #include <cstdint>
 
 #include <crucible/TraceRing.h>
-#include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/_AtomicSnapshot.h>
 #include <crucible/concurrent/_MpmcRing.h>
 #include <crucible/concurrent/_SpscRing.h>
 

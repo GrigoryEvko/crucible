@@ -5,7 +5,7 @@
 // publishes the value, so its protocol does not fit the context.
 
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace eff = ::crucible::effects;
 namespace ses = ::crucible::safety::proto::swmr_session;

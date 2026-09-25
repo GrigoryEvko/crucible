@@ -4,7 +4,7 @@
 // them. Deterministic replay and safety contracts must not consume them as
 // evidence.
 
-#include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/_AtomicSnapshot.h>
 
 #include <cstdint>
 #include <type_traits>

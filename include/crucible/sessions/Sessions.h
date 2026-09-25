@@ -28,7 +28,7 @@
 #include <crucible/sessions/_MpmcChannelSession.h>
 #include <crucible/sessions/_ChainEdgeSession.h>
 #include <crucible/sessions/_AsyncPipelineSession.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 #include <crucible/sessions/_SnapshotSession.h>
 #include <crucible/sessions/_ChaseLevDequeSession.h>
 #include <crucible/sessions/_ShardedGridSession.h>

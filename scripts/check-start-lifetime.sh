@@ -50,7 +50,7 @@
 # is the name and its template argument list, with the white space
 # reduced, for example
 #
-#   include/crucible/concurrent/AtomicSnapshot.h:start_lifetime_as<T> x2
+#   include/crucible/concurrent/_AtomicSnapshot.h:start_lifetime_as<T> x2
 #
 # The key survives a line shift, a rename of the variable that holds the
 # result, and a change of the qualification.  A use with no template

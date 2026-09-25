@@ -2,7 +2,7 @@
 //
 // Snapshot token mint fixture 2 for
 // safety::proto::snapshot_session::mint_snapshot_writer
-// (token mint, sessions/SnapshotSession.h).  The template-parameter constraint
+// (token mint, sessions/_SnapshotSession.h).  The template-parameter constraint
 // `SnapshotSessionSurface Snap` rejects a type that exposes a `writer_tag`
 // (so the second parameter `Permission<typename Snap::writer_tag>&&`
 // substitutes cleanly) but is MISSING the rest of the surface (value_type,

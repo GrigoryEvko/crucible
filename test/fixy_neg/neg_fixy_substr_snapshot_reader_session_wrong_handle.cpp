@@ -3,7 +3,7 @@
 // Snapshot session mint fixture for
 // safety::proto::snapshot_session::mint_snapshot_reader_session:
 // rejects a WriterHandle (wrong role).  mint_snapshot_reader_session
-// takes `typename Snap::ReaderHandle&` (sessions/SnapshotSession.h);
+// takes `typename Snap::ReaderHandle&` (sessions/_SnapshotSession.h);
 // passing a WriterHandle fails type match — the role-inverse of
 // neg_fixy_substr_snapshot_wrong_handle.cpp (which passes a
 // ReaderHandle to mint_snapshot_writer_session).

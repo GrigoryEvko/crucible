@@ -6,7 +6,7 @@
 // is not a SwmrSessionSurface.
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 #include <utility>
 

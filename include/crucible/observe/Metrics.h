@@ -4,11 +4,11 @@
 // published by value. A growable or span-backed payload would need heap
 // ownership or leave the reader holding a borrow.
 
-#include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/_AtomicSnapshot.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Stale.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 #include <array>
 #include <cstddef>

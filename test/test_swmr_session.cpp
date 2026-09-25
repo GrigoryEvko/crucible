@@ -1,6 +1,6 @@
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_IsSwmrHandle.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 #include <array>
 #include <atomic>

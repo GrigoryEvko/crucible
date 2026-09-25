@@ -2,7 +2,7 @@
 //
 // MPMC endpoint fixture 3 for
 // safety::proto::mpmc_channel_session::mint_mpmc_consumer_endpoint
-// (token mint, single-argument, sessions/MpmcChannelSession.h).  The
+// (token mint, single-argument, sessions/_MpmcChannelSession.h).  The
 // template-parameter constraint `MpmcChannelSessionSurface Channel` rejects
 // a plain type that exposes NONE of the required surface — it fails at the
 // very first requirement (`typename Channel::value_type`).

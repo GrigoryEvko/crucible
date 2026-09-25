@@ -201,16 +201,9 @@ apply to the row.
 | `mint_coord` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | [✗ NO-FIXY] | HS14: 18 |
 | `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 43 |
-| `mint_reader_runtime_session` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_reader_session` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_receiver` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
 | `mint_sender` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 12 |
 | `mint_session_handle` | `include/crucible/sessions/Session.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 25 |
-| `mint_swmr_reader(Swmr&)` | `include/crucible/sessions/SwmrSession.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 4 |
-| `mint_swmr_reader(Swmr&,::crucible::safety::SharedPermission<typename Swmr::reader_tag>)` | `include/crucible/sessions/SwmrSession.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 4 |
-| `mint_swmr_writer` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 5 |
-| `mint_writer_runtime_session` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_writer_session` | `include/crucible/sessions/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 
 ## include/crucible/topology/
 
@@ -397,5 +390,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 124 | 61 | 54 | 9 | 0 | 113 | 41 |
+| old (`include/crucible/`) | 117 | 57 | 51 | 9 | 0 | 106 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 108 | 46 | 60 | 2 | 0 | · | 22 |

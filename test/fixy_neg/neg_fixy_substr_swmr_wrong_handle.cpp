@@ -13,7 +13,7 @@
 
 #include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 #include <utility>
 

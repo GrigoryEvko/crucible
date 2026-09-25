@@ -3,7 +3,7 @@
 // SWMR runtime session mint fixture for
 // safety::proto::swmr_session::mint_reader_runtime_session:
 // rejects a WriterHandle (wrong role).  mint_reader_runtime_session
-// takes `typename Swmr::ReaderHandle&` (sessions/SwmrSession.h); passing a
+// takes `typename Swmr::ReaderHandle&` (sessions/_SwmrSession.h); passing a
 // WriterHandle fails type match — the role-inverse of the writer
 // runtime fixture.
 //
@@ -16,7 +16,7 @@
 
 #include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;

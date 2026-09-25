@@ -2,7 +2,7 @@
 //
 // SWMR token mint fixture 4 for
 // safety::proto::swmr_session::mint_swmr_reader
-// (token mint, two-argument overload, sessions/SwmrSession.h).  That overload
+// (token mint, two-argument overload, sessions/_SwmrSession.h).  That overload
 // takes a fractional `SharedPermission<typename Swmr::reader_tag>` proof
 // by value.  Passing an EXCLUSIVE `Permission<reader_tag>` (minted via
 // mint_permission_root) is a distinct, non-convertible type — the
@@ -20,7 +20,7 @@
 // pointing at SharedPermission<reader_tag> vs Permission<reader_tag>.
 
 #include <crucible/concurrent/_PermissionedSnapshot.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;

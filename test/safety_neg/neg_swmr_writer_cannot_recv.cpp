@@ -3,7 +3,7 @@
 // GAPS-021: a SWMR writer role cannot perform reader recv/load work.
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace ses = crucible::safety::proto::swmr_session;
 namespace safety = crucible::safety;

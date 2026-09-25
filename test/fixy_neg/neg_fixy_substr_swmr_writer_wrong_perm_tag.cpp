@@ -2,7 +2,7 @@
 //
 // SWMR token mint fixture 1 for
 // safety::proto::swmr_session::mint_swmr_writer
-// (token mint, sessions/SwmrSession.h).  The mint's second parameter is the
+// (token mint, sessions/_SwmrSession.h).  The mint's second parameter is the
 // EXACT type `Permission<typename Swmr::writer_tag>&&`; supplying a
 // Permission carrying an UNRELATED tag fails the parameter match.
 //
@@ -16,7 +16,7 @@
 // pointing at Permission<writer_tag> vs Permission<WrongTag>.
 
 #include <crucible/concurrent/_PermissionedSnapshot.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;

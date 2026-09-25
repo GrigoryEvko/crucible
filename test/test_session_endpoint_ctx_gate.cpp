@@ -30,7 +30,7 @@
 #include <crucible/sessions/_ShardedGridSession.h>
 #include <crucible/sessions/_SnapshotSession.h>
 #include <crucible/sessions/_SpscSession.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 #include <cstdint>
 #include <cstdio>

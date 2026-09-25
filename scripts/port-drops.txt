@@ -867,6 +867,11 @@ crucible/sessions/_SpscSession.h:ConsumerProto  → include/fixy/concurrent/Subs
 crucible/sessions/_SpscSession.h:mint_consumer_session  → include/fixy/concurrent/SubstrateSessionBridge.h  — mint_substrate_session starts the same consumer session, and it takes the handle by move where the old mint stored its address.
 crucible/sessions/_SpscSession.h:mint_producer_session  → include/fixy/concurrent/SubstrateSessionBridge.h  — mint_substrate_session starts the same producer session, and it takes the handle by move where the old mint stored its address.
 crucible/sessions/_SpscSession.h:ProducerProto  → include/fixy/concurrent/SubstrateSessionBridge.h  — default_proto_for of the producer role of PermissionedSpscChannel names the same loop.
+crucible/sessions/_SwmrSession.h:load_borrowed_value  → include/fixy/concurrent/SwmrSession.h  — The load of a Borrowed value for the ContentAddressed and Borrowed protocol pair had no production consumer, so the port dropped it with that pair.
+crucible/sessions/_SwmrSession.h:mint_reader_session  → include/fixy/concurrent/SwmrSession.h  — The ctx-bound mint of ReaderProto had no production consumer, and mint_reader_runtime_session starts the reader session over the plain loop that the port keeps.
+crucible/sessions/_SwmrSession.h:mint_writer_session  → include/fixy/concurrent/SwmrSession.h  — The ctx-bound mint of WriterProto had no production consumer, and mint_writer_runtime_session starts the writer session over the plain loop that the port keeps.
+crucible/sessions/_SwmrSession.h:ReaderProto  → include/fixy/concurrent/SwmrSession.h  — The reader loop over Borrowed<T, Tag> had no production consumer, and ReaderRuntimeProto is the plain reader loop that the port keeps.
+crucible/sessions/_SwmrSession.h:WriterProto  → include/fixy/concurrent/SwmrSession.h  — The writer loop over ContentAddressed<T> had no production consumer, and WriterRuntimeProto is the plain writer loop that the port keeps.
 
 # ── bridges: the persisted-session bridge ───────────────────────────────
 crucible/bridges/_SessionPersistence.h:detach_reason_kind_v  → include/fixy/session/Recording.h  — Folded into detail::recording::detach_kind in fixy/session/Recording.h, which maps the same five detach reasons to the log's reason kind and every other type to Unknown.

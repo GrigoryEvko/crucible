@@ -13,7 +13,7 @@
 // policy alias survives the direct-instantiation tests.  The policy
 // tests re-run the same workload through the alias to catch that.
 
-#include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/_AtomicSnapshot.h>
 #include <fixy/concurrent/ChaseLevDeque.h>
 #include <crucible/concurrent/_MpmcRing.h>
 #include <crucible/concurrent/_MpscRing.h>

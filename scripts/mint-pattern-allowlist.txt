@@ -193,7 +193,6 @@ include/foundation/permissions/PermissionFork.h:mint_permission_fork:constexpr-o
 # The forty-two `requires-ok` entries that stood here are gone.  Each one
 # named a mint whose gate is `template <SomeSessionSurface S, ...>`, and
 # the scanner now reads a constrained parameter as the constraint it is.
-include/crucible/sessions/SwmrSession.h:mint_swmr_reader:constexpr-ok
 include/crucible/sessions/FederationProtocol.h:mint_federation_pool:requires-ok
 
 # ── topology/ + warden/ allocating mints ─────────────────────────────

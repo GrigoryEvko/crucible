@@ -2,7 +2,7 @@
 //
 // SWMR token mint fixture 3 for
 // safety::proto::swmr_session::mint_swmr_reader
-// (token mint, single-argument overload, sessions/SwmrSession.h).  The
+// (token mint, single-argument overload, sessions/_SwmrSession.h).  The
 // template-parameter constraint `SwmrSessionSurface Swmr` rejects a
 // plain type that exposes none of the required surface (value_type,
 // writer_tag, reader_tag, WriterHandle/ReaderHandle, writer()/reader()).
@@ -18,7 +18,7 @@
 // no matching function.
 
 #include <crucible/concurrent/_PermissionedSnapshot.h>
-#include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/_SwmrSession.h>
 
 namespace fswmr = ::crucible::safety::proto::swmr_session;
 

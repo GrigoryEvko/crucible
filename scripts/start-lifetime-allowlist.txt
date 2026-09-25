@@ -23,7 +23,7 @@ include/foundation/Lifetime.h:start_lifetime_as_array<std::remove_cv_t<T>>
 # parameter, and the class constraint holds it to a trivially copyable
 # type.  A proof type is not trivially copyable, and neither is a class
 # that holds one, so no proof reaches the site.
-include/crucible/concurrent/AtomicSnapshot.h:start_lifetime_as<T> x2
+include/crucible/concurrent/_AtomicSnapshot.h:start_lifetime_as<T> x2
 
 # A KNOWN OPEN SITE in the superseded copy of the frozen tree.
 # slot_type is the template parameter SlotPtr, and nothing constrains
