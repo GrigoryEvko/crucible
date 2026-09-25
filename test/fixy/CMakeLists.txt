@@ -1235,6 +1235,19 @@ fixy_neg_compile_test(neg_budget_authority_start_as_array
 fixy_test(test_bands)
 fixy_test(test_aliases)
 
+# ── The canonical nesting order ───────────────────────────────────────
+fixy_test(test_canonical_order_fixy test_canonical_order.cpp)
+
+# A stack must nest its canonical wrappers at strictly increasing
+# positions.  Linear outside HotPath runs the positions downward, and a
+# HotPath inside a HotPath repeats one position.
+fixy_neg_compile_test(neg_fixy_canonical_order_inverted_two_layer
+  "no matching function for call to .accept_canonical_stack<"
+  "satisfaction of .CanonicallyOrdered<Stack>. .with Stack = fixy::Qtt<foundation::algebra::lattices::QttGrade::One, foundation::algebra::Graded<")
+fixy_neg_compile_test(neg_fixy_canonical_order_duplicate_layer
+  "no matching function for call to .accept_canonical_stack<"
+  "satisfaction of .CanonicallyOrdered<Stack>. .with Stack = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::HotPathLattice::At<foundation::algebra::lattices::HotPathTier::Hot>, foundation::algebra::Graded<")
+
 # relax moves down the chain only.  Both relax overloads are rejected
 # because the leq gate in their requires clause evaluates to false for
 # the pair (PhiloxRng, Pure).
