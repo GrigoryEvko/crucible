@@ -67,6 +67,7 @@
 #include <foundation/effects/Row.h>
 
 #include <fcntl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -154,9 +155,10 @@ inline constexpr bool is_known_atomicity_v = std::is_same_v<Atomicity, atomicity
 // The constructor that claims a descriptor is private.  A public one
 // took an int and the destructor closed it, so a caller could hand it
 // any small integer — stdin, a descriptor another object still owns —
-// and have it closed on scope exit.  The two factories perform the
-// ::open themselves and build a handle only from what the kernel
-// returned.  Same shape as OwnedMmap::map_region, for the same reason.
+// and have it closed on scope exit.  The three factories make the
+// ::open or ::socket call themselves and build a handle only from what
+// the kernel returned.  Same shape as OwnedMmap::map_region, for the
+// same reason.
 class [[nodiscard]] OwnedFd {
     int fd_ = -1;
 
@@ -183,6 +185,17 @@ public:
     // descriptor is what a later fsync flushes the entry through.
     [[nodiscard]] static std::expected<OwnedFd, int> open_directory(const char* dir_path) noexcept {
         const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  // SYSCALL-CAP-OK: OwnedFd::open_directory, sole caller open_dirfd ctx-gate (CtxAdmitsFs)
+        if (fd < 0) {
+            return std::unexpected{errno};
+        }
+        return OwnedFd{fd};
+    }
+
+    // The one door for a socket.  SOCK_CLOEXEC is folded in, because a
+    // descriptor that survives execve leaks into every child process.
+    // Returns the errno on failure and no handle.
+    [[nodiscard]] static std::expected<OwnedFd, int> open_socket(int domain, int type, int protocol) noexcept {
+        const int fd = ::socket(domain, type | SOCK_CLOEXEC, protocol);  // SYSCALL-CAP-OK: OwnedFd::open_socket, sole caller fixy::net::mint_socket ctx-gate (CtxFitsSocketMint)
         if (fd < 0) {
             return std::unexpected{errno};
         }

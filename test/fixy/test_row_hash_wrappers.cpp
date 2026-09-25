@@ -90,6 +90,7 @@
 #include <fixy/os/Sched.h>
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/Spawn.h>
+#include <fixy/os/Socket.h>
 #include <fixy/os/SpinLock.h>
 #include <fixy/os/ThreadName.h>
 #include <fixy/os/Time.h>
@@ -612,6 +613,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::handle,
     ^^::fixy::io,
     ^^::fixy::fs,
+    ^^::fixy::net,
     ^^::fixy::mmap,
     ^^::fixy::fp,
     ^^::fixy::sched,
@@ -680,6 +682,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::fs::flag, kGradeVocabulary},
     {^^::fixy::fs::sync_op, kGradeVocabulary},
     {^^::fixy::fs::atomicity, kGradeVocabulary},
+    {^^::fixy::net::socket_kind, kGradeVocabulary},
     {^^::fixy::mmap::prot, kGradeVocabulary},
     {^^::fixy::mmap::share, kGradeVocabulary},
     {^^::fixy::mmap::advice, kGradeVocabulary},
@@ -1284,6 +1287,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::fs::flag_bits, kMetafunction},
     {^^::fixy::fs::OwnedFd, kDescriptor},
     {^^::fixy::fs::Dirfd, kDescriptor},
+    {^^::fixy::net::socket_triple, kMetafunction},
     {^^::fixy::mmap::prot_bits, kMetafunction},
     {^^::fixy::mmap::share_flags, kMetafunction},
     {^^::fixy::mmap::advice_value, kMetafunction},

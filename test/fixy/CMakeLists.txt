@@ -3637,6 +3637,18 @@ fixy_neg_compile_test(neg_os_fs_mint_file_ctx_lacks_block
   "no matching function for call"
   "mint_file<.*>\\(\\{anonymous\\}::IoOnlyCtx&")
 
+# The socket mint.  The first fixture is a context without Block, which
+# the row of the socket syscall atom demands.  The second is a kind tag
+# with no triple.  Each second regex holds the anonymous-namespace prefix
+# that the compiler emits and the source does not.
+fixy_test(test_os_socket)
+fixy_neg_compile_test(neg_os_socket_ctx_lacks_block
+  "no matching function for call"
+  "mint_socket<fixy::net::socket_kind::NetlinkRoute>\\(\\{anonymous\\}::IoOnlyCtx&\\)")
+fixy_neg_compile_test(neg_os_socket_unmapped_kind
+  "no matching function for call"
+  "mint_socket<\\{anonymous\\}::NotASocketKind>\\(\\{anonymous\\}::IoBlockCtx&\\)")
+
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"
   "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")
