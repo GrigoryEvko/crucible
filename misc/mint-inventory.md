@@ -357,11 +357,15 @@ apply to the row.
 | `mint_mpmc_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 7 |
 | `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| `mint_reader_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_recording_endpoint` | `include/fixy/concurrent/EndpointMint.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 18 |
 | `mint_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_substrate_session` | `include/fixy/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
+| `mint_swmr_reader` | `include/fixy/concurrent/SwmrSession.h` | Y | - | Y | Y | token | · | · | HS14: 4 |
 | `mint_swmr_stage` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| `mint_swmr_writer` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
+| `mint_writer_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 
 ## include/fixy/os/
 
@@ -451,7 +455,7 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 140 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 147 |
 | `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 27 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |
@@ -462,4 +466,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 185 | 94 | 82 | 9 | 0 | 113 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 101 | 42 | 58 | 1 | 0 | · | 22 |
+| new (`include/foundation/`, `include/fixy/`) | 105 | 44 | 60 | 1 | 0 | · | 22 |

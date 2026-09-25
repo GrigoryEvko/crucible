@@ -169,6 +169,9 @@ include/fixy/os/Spawn.h:mint_spawn:constexpr-ok
 # names the mint as the friend of its only constructor, so the guard sees
 # the signature two times, and one entry covers the two sites.
 include/fixy/session/CrashTransport.h:mint_crash_reporter:constexpr-ok
+# fixy/concurrent/SwmrSession.h: the reader mint takes a share from an
+# atomic reference count, so it reads runtime state and cannot be constexpr.
+include/fixy/concurrent/SwmrSession.h:mint_swmr_reader:constexpr-ok
 
 # ── observe/ + perf/ eBPF / perf-event allocating mints ──────────────
 include/crucible/observe/Metrics.h:mint_canopy_metrics_reader:constexpr-ok

@@ -2945,6 +2945,42 @@ fixy_neg_compile_test(neg_recording_endpoint_wrong_log_type
   "no matching function for call to .mint_recording_endpoint"
   "cannot convert .not_a_log. .type .int.. to type .fixy::session::SessionEventLog&.")
 
+# ── The snapshot and the single-writer many-reader channel ────────────
+#
+# A seqlock snapshot publishes one value to many readers, and the channel
+# over it gives one linear writer and a pool of reader shares.
+fixy_test(test_concurrent_snapshot)
+fixy_test(test_concurrent_swmr_session)
+
+# The writer mint takes the writer permission of a channel of the SWMR
+# shape, and the reader mint lends from a channel that can change.
+fixy_neg_compile_test(neg_swmr_session_writer_wrong_permission_tag
+  "no matching function for call to .mint_swmr_writer<swmr_writer_tag_fixture::Swmr>"
+  "mismatched types .swmr_writer_tag_fixture::WriterTag. and .swmr_writer_tag_fixture::ReaderTag.")
+fixy_neg_compile_test(neg_swmr_session_writer_non_surface
+  "no matching function for call to .mint_swmr_writer<swmr_writer_surface_fixture::NotAChannel>"
+  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = swmr_writer_surface_fixture::NotAChannel.")
+fixy_neg_compile_test(neg_swmr_session_reader_non_surface
+  "no matching function for call to .mint_swmr_reader<int>"
+  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = int.")
+fixy_neg_compile_test(neg_swmr_session_reader_const_channel
+  "no matching function for call to .mint_swmr_reader"
+  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = const fixy::concurrent::swmr_session::SwmrSession<int, swmr_reader_const_fixture::WriterTag")
+
+# Each session mint takes the handle of its own role, by move.
+fixy_neg_compile_test(neg_swmr_session_writer_session_reader_handle
+  "no matching function for call to .mint_writer_runtime_session<swmr_writer_session_role_fixture::Swmr>"
+  "satisfaction of .CtxFitsSwmrWriterSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+fixy_neg_compile_test(neg_swmr_session_writer_session_lvalue_handle
+  "no matching function for call to .mint_writer_runtime_session<swmr_writer_session_lvalue_fixture::Swmr>"
+  "satisfaction of .CtxFitsSwmrWriterSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+fixy_neg_compile_test(neg_swmr_session_reader_session_writer_handle
+  "no matching function for call to .mint_reader_runtime_session<swmr_reader_session_role_fixture::Swmr>"
+  "satisfaction of .CtxFitsSwmrReaderSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+fixy_neg_compile_test(neg_swmr_session_reader_session_lvalue_handle
+  "no matching function for call to .mint_reader_runtime_session<swmr_reader_session_lvalue_fixture::Swmr>"
+  "satisfaction of .CtxFitsSwmrReaderSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+
 # ── The handle poles and the stage shape ──────────────────────────────
 #
 # Which pole of a channel a handle is, and what shape a pipeline-stage

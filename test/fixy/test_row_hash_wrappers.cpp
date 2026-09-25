@@ -46,6 +46,7 @@
 #include <fixy/CanonicalOrder.h>
 #include <fixy/Checked.h>
 #include <fixy/Collision.h>
+#include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/ChaseLevDeque.h>
 #include <fixy/concurrent/Endpoint.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -60,6 +61,7 @@
 #include <fixy/concurrent/StageEndpointBridge.h>
 #include <fixy/concurrent/StageShape.h>
 #include <fixy/concurrent/SubstrateSessionBridge.h>
+#include <fixy/concurrent/SwmrSession.h>
 #include <fixy/concurrent/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <fixy/ConstantTime.h>
@@ -606,6 +608,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::session,
     ^^::fixy::session::vigil_mode,
     ^^::fixy::concurrent,
+    ^^::fixy::concurrent::swmr_session,
     ^^::fixy::handle,
     ^^::fixy::io,
     ^^::fixy::fs,
@@ -813,6 +816,16 @@ struct SelfRole {};
 
 struct PeerRole {};
 
+// The tags and the reader brand of the single-writer many-reader witness.
+struct SwmrWriterTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct SwmrReaderTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct SwmrReaderBrand {};
+using SwmrWitness = ::fixy::concurrent::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand>;
+
 using PureDet = fa::lattices::DetSafeLattice::At<fa::lattices::DetSafeTier::Pure>;
 using BorrowedInt = ::fixy::Borrowed<int, PureRegionTag>;
 
@@ -922,6 +935,8 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::SpscRing, ^^::fixy::concurrent::SpscRing<int, 8>},
     {^^::fixy::concurrent::PermissionedMpscChannel, ^^::fixy::concurrent::PermissionedMpscChannel<int, 8>},
     {^^::fixy::concurrent::PermissionedSpscChannel, ^^::fixy::concurrent::PermissionedSpscChannel<int, 8>},
+    {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
+    {^^::fixy::concurrent::swmr_session::SwmrSession, ^^SwmrWitness},
     {^^::fixy::concurrent::Stage, ^^stage_probe::S1},
     {^^::fixy::concurrent::MpmcStage, ^^stage_probe::M1},
     {^^::fixy::concurrent::SwmrStage, ^^stage_probe::W1},
