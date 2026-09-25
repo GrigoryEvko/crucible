@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: "FixyNotEngaged_Security".
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

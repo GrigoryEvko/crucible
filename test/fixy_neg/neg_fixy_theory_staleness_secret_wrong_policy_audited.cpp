@@ -33,7 +33,7 @@
 // fixy-H-16 corpus_full_diagnostic_v surface names BOTH the gate
 // concept and the matched entry.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

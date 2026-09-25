@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: "FixyNotEngaged_Effect".
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 #include <crucible/safety/_Secret.h>
 
 namespace crucible_fixy = crucible::fixy;

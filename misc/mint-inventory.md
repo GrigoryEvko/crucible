@@ -146,14 +146,6 @@ apply to the row.
 | `mint_nic_config` | `include/crucible/cog/NicConfig.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_sriov_plan` | `include/crucible/cog/SrIov.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
 
-## include/crucible/fixy/
-
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_fn` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 32 |
-| `mint_fn_for(Type)` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
-| `mint_fn_for(Type)` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
-
 ## include/crucible/ledger/
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
@@ -405,5 +397,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 127 | 61 | 57 | 9 | 0 | 113 | 41 |
+| old (`include/crucible/`) | 124 | 61 | 54 | 9 | 0 | 113 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 108 | 46 | 60 | 2 | 0 | · | 22 |

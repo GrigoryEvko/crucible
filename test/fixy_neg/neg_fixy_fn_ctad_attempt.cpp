@@ -28,7 +28,7 @@
 // Expected diagnostic: `fn_ctad_blocked_use_mint_fn` (sentinel CLASS
 // name in error chain) OR `tier 0` (static_assert message tier prefix).
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 

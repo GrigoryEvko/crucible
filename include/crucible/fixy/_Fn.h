@@ -8,7 +8,7 @@
 #include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/_Hw.h>
 #include <crucible/fixy/_Profile.h>
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 #include <crucible/safety/_Fn.h>
 #include <crucible/safety/_Tagged.h>
 

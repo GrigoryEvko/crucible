@@ -17,7 +17,7 @@
 // collision that the runtime fold would produce.
 
 #include <crucible/Expr.h>
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 #include <crucible/safety/_AllocClass.h>
 #include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/_Budgeted.h>

@@ -4,7 +4,7 @@
 // the outside: weakened prose reddens here as well as at the definition.
 
 #include <crucible/fixy/_Insights.h>
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 #include <crucible/fixy/_Theory.h>
 #include <crucible/safety/_DimensionTraits.h>
 #include <crucible/safety/diag/_Insights.h>

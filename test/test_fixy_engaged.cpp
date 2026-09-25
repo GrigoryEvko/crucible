@@ -1,6 +1,6 @@
 // Every claim here is a static_assert, so compiling the file is the test.
 
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 #include <crucible/fixy/_Grant.h>
 #include <crucible/fixy/_Dim.h>
 #include <crucible/fixy/_Default.h>

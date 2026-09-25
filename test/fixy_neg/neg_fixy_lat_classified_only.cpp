@@ -6,8 +6,8 @@
 //
 // Expected diagnostic: "FixyNotEngaged_Type".
 
-#include <crucible/fixy/Fn.h>
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Fn.h>
+#include <crucible/fixy/_Reject.h>
 
 namespace gr = crucible::fixy::grant;
 using D = crucible::fixy::dim::DimensionAxis;

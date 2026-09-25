@@ -30,7 +30,7 @@
 // existed only so that every security level was reachable through
 // some stance, and as_internal and as_unclassified are atoms.
 //
-// Old spelling: include/crucible/fixy/Fn.h, namespace stance.
+// Old spelling: include/crucible/fixy/_Fn.h, namespace stance.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>

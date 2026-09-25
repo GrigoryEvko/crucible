@@ -25,7 +25,7 @@
 // Expected diagnostic: "StanceForBinary" — requires-clause failure at
 // the function signature.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 

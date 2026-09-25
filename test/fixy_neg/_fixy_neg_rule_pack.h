@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace fixy_neg_rule_detail {
 

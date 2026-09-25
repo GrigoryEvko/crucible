@@ -74,7 +74,7 @@ CTCRYPTO_DEFINITION_FILES = {
     "include/fixy/Atom.h",
     "include/fixy/Collision.h",
     "include/fixy/Role.h",
-    "include/crucible/fixy/Fn.h",
+    "include/crucible/fixy/_Fn.h",
 }
 
 # A binding states the grade through the role or through the atom.

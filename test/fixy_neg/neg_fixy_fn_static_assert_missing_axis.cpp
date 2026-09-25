@@ -14,7 +14,7 @@
 // axis failure mode (distinct from tier 4's first_duplicate_axis_v
 // and tier 2's FixyMalformedGrant).
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

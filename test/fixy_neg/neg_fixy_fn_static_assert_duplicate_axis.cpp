@@ -21,7 +21,7 @@
 // fired (not tier 3) and that the duplicate-axis inspection helper
 // is correctly cited.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

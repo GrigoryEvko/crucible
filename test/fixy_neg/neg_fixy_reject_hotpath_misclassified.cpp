@@ -36,7 +36,7 @@
 // `is_fixy_diag_v<HotPathViolation>` predicate, OR `static_assert`
 // pointing at `HotPathViolation`.
 
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 #include <crucible/safety/_Diagnostic.h>
 
 int main() {

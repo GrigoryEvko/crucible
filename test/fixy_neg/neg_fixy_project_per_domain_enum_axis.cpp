@@ -21,7 +21,7 @@
 // specialization` OR `FIXY-FOUND-026` OR `per-domain tag` (the
 // message body language).
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 // Per-domain grant tag.  Final, derives grant_base — passes the
 // structural IsGrantTag_v gate.

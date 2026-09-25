@@ -6,7 +6,7 @@
 // the array-Type fixture: array decay vs the void-is-not-object
 // rejection class.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace stance = crucible::fixy::stance;
 

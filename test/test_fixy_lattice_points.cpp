@@ -4,7 +4,7 @@
 // coverage exhaustive: a point with no tag of its own can only be
 // reached by relaxing some other axis, which a caller cannot do.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 #include <type_traits>
 

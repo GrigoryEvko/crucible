@@ -15,7 +15,7 @@
 // AND triggers the per-axis FIXY_NEG_FIXTURE machinery indirectly via
 // the IsAccepted → AllDimsEngaged → first_missing_axis chain.  // fixy-A4-023: post-H-05 rename.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

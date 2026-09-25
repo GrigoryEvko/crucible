@@ -11,7 +11,7 @@
 // names the top-level concept (Type-axis rejection happens inside
 // IsAccepted's body, not via a named per-axis diagnostic tag).
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace stance = crucible::fixy::stance;
 

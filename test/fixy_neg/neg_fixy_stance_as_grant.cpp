@@ -16,7 +16,7 @@
 // Expected diagnostic: "AllGrantsWellFormed" or "IsGrantTag" — the
 // well-formedness gate fires before engagement/uniqueness checks.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 

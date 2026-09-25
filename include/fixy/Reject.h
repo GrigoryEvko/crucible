@@ -28,7 +28,7 @@
 // ordinals are pinned into federation cache keys, so a per-axis family
 // has no business there.
 //
-// Old spelling: include/crucible/fixy/Reject.h.
+// Old spelling: include/crucible/fixy/_Reject.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>

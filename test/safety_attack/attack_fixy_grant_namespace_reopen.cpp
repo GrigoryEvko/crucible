@@ -74,7 +74,7 @@
 //      `scripts/check-fixy-grant-namespace-purity.sh` — the
 //      attack-fixture exception is no longer required.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 #include <type_traits>
 

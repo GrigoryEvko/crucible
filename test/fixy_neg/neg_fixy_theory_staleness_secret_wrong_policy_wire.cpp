@@ -31,7 +31,7 @@
 // Expected diagnostic: "NotInTheoryCorpus" OR the matched corpus
 // entry's struct name "staleness_secret_without_declassify".
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

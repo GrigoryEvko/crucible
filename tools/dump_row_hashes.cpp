@@ -46,7 +46,7 @@
 //     fires (textual diff fails).
 
 #include <crucible/Expr.h>  // detail::fmix64
-#include <crucible/fixy/Fn.h>  // fixy::fn + stance::*
+#include <crucible/fixy/_Fn.h>  // fixy::fn + stance::*
 #include <crucible/safety/_AllocClass.h>
 #include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/_Budgeted.h>

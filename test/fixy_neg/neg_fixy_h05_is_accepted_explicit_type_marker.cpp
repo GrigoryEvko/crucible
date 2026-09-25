@@ -29,7 +29,7 @@
 // line below.  The full diagnostic chain cites
 // `UniqueEngagementPerAxis` and the duplicate Type axis.
 
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

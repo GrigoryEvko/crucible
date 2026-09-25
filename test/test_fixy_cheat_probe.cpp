@@ -3,7 +3,7 @@
 // statement that all five attempts failed.  The final witness is positive
 // and exists to show the gate is not simply refusing everything.
 
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

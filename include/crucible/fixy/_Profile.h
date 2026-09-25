@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 
 namespace crucible::fixy {
 

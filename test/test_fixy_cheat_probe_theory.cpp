@@ -7,8 +7,8 @@
 // therefore has two shapes: suppress one of the two positive
 // detections, or fabricate a declassification nobody granted.
 
-#include <crucible/fixy/Fn.h>
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Fn.h>
+#include <crucible/fixy/_Reject.h>
 #include <crucible/fixy/_Theory.h>
 
 namespace crucible_fixy = crucible::fixy;

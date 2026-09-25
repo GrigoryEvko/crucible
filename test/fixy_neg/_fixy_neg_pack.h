@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 #include <tuple>
 
 namespace fixy_neg_detail {

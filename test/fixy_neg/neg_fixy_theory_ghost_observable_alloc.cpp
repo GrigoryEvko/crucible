@@ -21,7 +21,7 @@
 // because `with_alloc` carries `Effect::Alloc` which is in the
 // runtime-observable set.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 namespace crucible_fixy = crucible::fixy;
 namespace gr = crucible::fixy::grant;

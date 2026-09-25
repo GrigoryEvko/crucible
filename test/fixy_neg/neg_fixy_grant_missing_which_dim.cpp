@@ -17,7 +17,7 @@
 // Expected diagnostic: incomplete type / no member named 'value' /
 // no matching specialization for which_dim<G>.
 
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 
 namespace crucible_fixy = crucible::fixy;
 

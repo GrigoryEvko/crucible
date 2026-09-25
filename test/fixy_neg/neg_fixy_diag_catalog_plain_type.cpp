@@ -16,7 +16,7 @@
 // Expected diagnostic: GCC's static_assert pointing at the
 // "is_fixy_diag_v<int>" claim.
 
-#include <crucible/fixy/Reject.h>
+#include <crucible/fixy/_Reject.h>
 
 namespace fd = crucible::fixy::diag;
 

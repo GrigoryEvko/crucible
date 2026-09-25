@@ -1,7 +1,7 @@
 // Including the header here puts its static_asserts and smoke-test
 // assertions into the build graph.
 
-#include <crucible/fixy/Fn.h>
+#include <crucible/fixy/_Fn.h>
 
 #include <type_traits>
 #include <utility>
