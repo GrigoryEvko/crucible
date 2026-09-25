@@ -2,8 +2,8 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/effects/Concurrent.h>
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Concurrent.h>
+#include <crucible/effects/_Resources.h>
 
 #include <concepts>
 #include <cstdint>

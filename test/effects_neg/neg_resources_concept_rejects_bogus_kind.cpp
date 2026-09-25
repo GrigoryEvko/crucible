@@ -39,7 +39,7 @@
 // "constraints not satisfied" / "IsResourceKind" /
 // "ResourceTag" pointing at the static_assert call site.
 
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Resources.h>
 
 #include <cstdint>
 #include <string_view>

@@ -41,7 +41,7 @@
 // "constraints not satisfied" / "no member named 'kind'" /
 // "ResourceTag" pointing at the static_assert call site.
 
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Resources.h>
 
 namespace eff = crucible::effects;
 

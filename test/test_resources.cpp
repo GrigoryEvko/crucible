@@ -4,7 +4,7 @@
 // with non-constant inputs, which is what separates a real runtime call
 // from a constant fold of the compile-time checks.
 
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Resources.h>
 
 #include "test_assert.h"
 

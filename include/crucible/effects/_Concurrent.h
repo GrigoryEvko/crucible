@@ -16,7 +16,7 @@
 // oversubscribed schedule pass a fitting check.  Every path that adds
 // budgets therefore proves first that the addition does not wrap.
 
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Resources.h>
 
 #include <array>
 #include <concepts>

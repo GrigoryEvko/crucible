@@ -43,8 +43,8 @@
 // / "GAPS-191" pointing at the call site below.
 
 #include <crucible/cog/FitsCog.h>
-#include <crucible/effects/Resources.h>
-#include <crucible/effects/Concurrent.h>
+#include <crucible/effects/_Resources.h>
+#include <crucible/effects/_Concurrent.h>
 
 namespace cog = crucible::cog;
 namespace effects = crucible::effects;

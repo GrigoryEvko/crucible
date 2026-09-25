@@ -4,8 +4,8 @@
 // with no per-instance state, so the runtime body constructs them to
 // confirm the empty-base claim and to reach the concept gate.
 
-#include <crucible/effects/Concurrent.h>
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Concurrent.h>
+#include <crucible/effects/_Resources.h>
 
 #include "test_assert.h"
 

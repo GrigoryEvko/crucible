@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/cog/FitsCog.h>
-#include <crucible/effects/Concurrent.h>
+#include <crucible/effects/_Concurrent.h>
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/safety/_Tagged.h>

@@ -7,7 +7,7 @@
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_ComputationGraded.h>
 #include <crucible/effects/_Capability.h>
-#include <crucible/effects/Concurrent.h>
+#include <crucible/effects/_Concurrent.h>
 #include <crucible/effects/_CtxWrapperLift.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_EffectRowLattice.h>
@@ -15,7 +15,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/_FxAliases.h>
 #include <crucible/effects/_OsUniverse.h>
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Resources.h>
 
 #include <cstdio>
 #include <cstdlib>

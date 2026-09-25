@@ -444,6 +444,7 @@ crucible/effects/_CtxWrapperLift.h:HotPathFromCtx  → include/fixy/Bands.h  —
 crucible/effects/_CtxWrapperLift.h:AllocClassFromCtx  → include/fixy/Bands.h  — Dropped with the allocator axis of the old context. foundation/effects/Ctx.h has no such axis, so a caller grades the value with the AllocClass band.
 crucible/effects/_CtxWrapperLift.h:ResidencyHeatFromCtx  → include/fixy/Bands.h  — Dropped with the residency axis of the old context. foundation/effects/Ctx.h has no such axis, so a caller grades the value with the ResidencyHeat band.
 crucible/effects/_CtxWrapperLift.h:runtime_smoke_test_ctx_wrapper_lift  — An inline smoke test of the three dropped lifts, so nothing in the new tree calls it.
+crucible/effects/_Resources.h:CRUCIBLE_RESOURCE_TAG_ROW_HASH  → include/foundation/effects/Resources.h  — The per-tag row-hash specialisations are gone. Each tag that CRUCIBLE_DEFINE_RESOURCE_TAG declares names itself as its row discipline, and the one fold in foundation/diag/RowHash.h reads it.
 
 # ── safety: the crash-class wrapper and its detector ────────────────────
 crucible/safety/_Crash.h:CrashClass_v  — An alias of the crash-class enum. The classes fold into the fixy ctrl atoms, and the new tree has no crash-class enum, because nothing in it throws.

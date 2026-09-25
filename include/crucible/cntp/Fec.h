@@ -6,7 +6,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/Concurrent.h>
+#include <crucible/effects/_Concurrent.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Refined.h>
 #include <fixy/Atom.h>

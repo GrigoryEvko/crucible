@@ -16,7 +16,7 @@
 // bandwidth.  uint32_t would silently truncate those, and the tag is an
 // empty type either way.
 //
-// Old spelling: include/crucible/effects/Resources.h.
+// Old spelling: include/crucible/effects/_Resources.h.
 //
 // Each tag names itself as its row discipline and has no payload, so the
 // discipline fold in foundation/diag/RowHash.h gives every tag a slot of

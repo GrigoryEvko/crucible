@@ -16,7 +16,7 @@
 // oversubscribed schedule pass a fitting check.  Every path that adds
 // budgets therefore proves first that the addition does not wrap.
 //
-// Old spelling: include/crucible/effects/Concurrent.h.
+// Old spelling: include/crucible/effects/_Concurrent.h.
 
 #include <foundation/contracts/Armed.h>
 #include <foundation/diag/RowHash.h>

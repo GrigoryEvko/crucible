@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/cntp/CongestionControl.h>
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Resources.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/_Tagged.h>

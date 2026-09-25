@@ -7,10 +7,10 @@
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/_Modality.h>
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/Concurrent.h>
+#include <crucible/effects/_Concurrent.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Resources.h>
 
 int main() {
     ::crucible::algebra::detail::lattice_self_test::runtime_smoke_test();

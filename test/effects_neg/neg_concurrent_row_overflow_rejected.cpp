@@ -42,8 +42,8 @@
 // "ConcurrentlySchedulable" / "constraint not satisfied" /
 // "GAPS-190" pointing at the static_assert call site below.
 
-#include <crucible/effects/Concurrent.h>
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Concurrent.h>
+#include <crucible/effects/_Resources.h>
 
 #include <cstdint>
 

@@ -40,8 +40,8 @@
 // "constraints not satisfied" / "ResourceTag" /
 // "ConcurrentRow" pointing at the alias instantiation below.
 
-#include <crucible/effects/Concurrent.h>
-#include <crucible/effects/Resources.h>
+#include <crucible/effects/_Concurrent.h>
+#include <crucible/effects/_Resources.h>
 
 namespace eff = crucible::effects;
 
