@@ -10,7 +10,7 @@
 // Tagged is private.
 //
 // Old spellings: include/crucible/safety/Path.h and
-// include/crucible/safety/sanitize/PathTraversal.h.  The two are one
+// include/crucible/safety/sanitize/_PathTraversal.h.  The two are one
 // header here.  The old pair included each other — Path.h named the
 // sanitizer at its foot, and the sanitizer named Path.h at its head —
 // and the old header comment apologized for the ordering that made

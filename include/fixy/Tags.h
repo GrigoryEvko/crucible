@@ -6,15 +6,15 @@
 // runs.  The retag catalog that admits a transition between two tags,
 // the roster of the policy tags and the completeness check over it
 // belong to the wrappers that consume them (fixy/Tagged.h and
-// fixy/Secret.h).  The composition law of the architecture
-// pins, arch_compatible, is defined beside the collision rules that
-// read it (fixy/Collision.h).
+// fixy/Secret.h).  The architecture pins have no composition law in
+// this tree.  Rule V402 in fixy/Collision.h reads the trunks of a
+// binding's scope atom and ISA atom, and no rule reads a source tag.
 //
-// Old spellings: include/crucible/safety/Tagged.h (source, trust,
-// access, version, vessel_trust), include/crucible/safety/source/Path.h
-// and Arch.h (the path and architecture members of source),
-// include/crucible/safety/Secret.h (secret_policy) and
-// include/crucible/Types.h:188 (hash_family), reached from the old
+// Old spellings: include/crucible/safety/_Tagged.h (source, trust,
+// access, version, vessel_trust), include/crucible/safety/source/_Path.h
+// and _Arch.h (the path and architecture members of source),
+// include/crucible/safety/_Secret.h (secret_policy) and
+// include/crucible/Types.h (hash_family), reached from the old
 // fixy tree through the aliases of include/crucible/fixy/Source.h.
 
 namespace fixy::tags {

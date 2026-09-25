@@ -986,6 +986,13 @@ crucible/safety/_SuspendBehavior.h:mint_suspend_behavior  — The mint of the va
 crucible/safety/_IsBudgeted.h:is_budgeted_smoke_test  — A run-time loop over the detector's answers. fixy/Budgeted.h answers IsBudgeted with one reflection query and checks it with static assertions, and test/fixy/test_versioned_budgeted.cpp runs the wrapper.
 crucible/safety/_IsEpochVersioned.h:is_epoch_versioned_smoke_test  — A run-time loop over the detector's answers. fixy/EpochVersioned.h answers IsEpochVersioned with one reflection query and checks it with static assertions, and test/fixy/test_versioned_budgeted.cpp runs the wrapper.
 
+# ── safety: the agreement law of the architecture pins ──────────────
+crucible/safety/source/_Arch.h:arch_compatible  — The law that decides if two architecture pins agree. No rule of the new tree reads two source tags together. Rule V402 in fixy/Collision.h reads the trunks of the scope atom and the ISA atom of one binding.
+crucible/safety/source/_Arch.h:arch_pin_v  — The pin of a source tag. Only the old collision catalog and the old tests read it. fixy/Collision.h reads the ISA atom and the scope atom of a binding, not its source tag.
+crucible/safety/source/_Arch.h:is_arch_pinned_v  — The test for an architecture pin. Only the old tests read it.
+crucible/safety/source/_Arch.h:arch_composable_v  — The agreement test over two source tags. No new-tree header and no production file reads two source tags together.
+crucible/safety/source/_Arch.h:ArchComposable  — The concept form of arch_composable_v. No new-tree header and no production file reads two source tags together.
+
 # ── safety: the Fn aggregator ───────────────────────────────────────────
 crucible/safety/_Fn.h:CollisionRules  → include/fixy/Collision.h  — The per-binding rule check became fixy::collision::rules_of<T, Atoms...> in fixy/Collision.h, which fixy::fn reads at tier 5 through fixy/Reject.h.
 crucible/safety/_Fn.h:CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION  — The include-order handshake between the old Fn.h and CollisionCatalog.h has no successor, because fixy/Reject.h includes fixy/Collision.h before fixy/Fn.h names the rules.

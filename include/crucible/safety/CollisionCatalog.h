@@ -21,7 +21,7 @@
 #include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/_FpMode.h>
 #include <crucible/safety/_IsHotPath.h>
-#include <crucible/safety/source/Arch.h>
+#include <crucible/safety/source/_Arch.h>
 
 #include <array>
 #include <cstdint>

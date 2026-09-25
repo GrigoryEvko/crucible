@@ -17,7 +17,7 @@
 #include <crucible/safety/_Hw.h>
 #include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/_SimdWidthPinned.h>
-#include <crucible/safety/source/Arch.h>
+#include <crucible/safety/source/_Arch.h>
 
 #include <string_view>
 #include <type_traits>

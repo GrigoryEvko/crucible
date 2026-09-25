@@ -264,7 +264,7 @@ crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
 crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h — 10 grant::hw::* families (cache/barrier/tsc/rng/cpuid/msr/port_io/asm_/simd_width/vendor_intrinsic) + 5 §XXI mints
-crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
+crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/_Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
 crucible_test(test_hardware_axis_pins)  # the hot headers pin their compile-time hardware constructs as fixy atoms
 # test_fec_hardware_axis_pin / test_cntp_fec instantiate cntp/Fec.h's `#if __AVX2__` kernels, which
 # call std::start_lifetime_as<const __m256i> — rejected by libstdc++ 16's writable-asm

@@ -30,7 +30,7 @@
 #include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/_Fn.h>
 #include <crucible/safety/_ScopedFence.h>
-#include <crucible/safety/source/Arch.h>
+#include <crucible/safety/source/_Arch.h>
 
 namespace fn = crucible::safety::fn;
 namespace sf = crucible::safety;

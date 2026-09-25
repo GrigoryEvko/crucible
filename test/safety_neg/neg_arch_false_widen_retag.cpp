@@ -18,7 +18,7 @@
 // Expected diagnostic substring: a constraint-not-satisfied family
 // diagnostic mentioning RetagAllowed.
 
-#include <crucible/safety/source/Arch.h>
+#include <crucible/safety/source/_Arch.h>
 #include <crucible/safety/_Tagged.h>
 
 #include <utility>

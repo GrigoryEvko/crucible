@@ -4,7 +4,7 @@
 // same surface through non-constant values, catching consteval and
 // inline-body faults that a static_assert pass alone would mask.
 
-#include <crucible/safety/source/Arch.h>
+#include <crucible/safety/source/_Arch.h>
 
 #include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/_Tagged.h>

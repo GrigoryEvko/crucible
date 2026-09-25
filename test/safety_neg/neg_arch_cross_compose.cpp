@@ -20,7 +20,7 @@
 //
 // Expected diagnostic substring: V-261.
 
-#include <crucible/safety/source/Arch.h>
+#include <crucible/safety/source/_Arch.h>
 
 namespace ss = crucible::safety;
 namespace src = crucible::safety::source;

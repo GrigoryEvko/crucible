@@ -47,7 +47,7 @@
 #include <crucible/ledger/HostFingerprint.h>
 #include <crucible/ledger/Verdict.h>
 #include <crucible/safety/_Path.h>
-#include <crucible/safety/sanitize/PathTraversal.h>
+#include <crucible/safety/sanitize/_PathTraversal.h>
 
 #include <unistd.h>
 

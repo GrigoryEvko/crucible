@@ -3,7 +3,7 @@
 // reddens here rather than hiding behind a neighbouring rule that happens to
 // reject the same input.
 
-#include <crucible/safety/sanitize/PathTraversal.h>
+#include <crucible/safety/sanitize/_PathTraversal.h>
 
 #include <cstdio>
 #include <cstdlib>

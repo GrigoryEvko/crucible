@@ -50,4 +50,4 @@ inline constexpr std::size_t MAX_PATH_BYTES = 16 * 1024;
 // cap declared above, so those declarations must precede it.  It is included
 // here rather than left to the caller so that a typed path and the promoter
 // that advances its provenance arrive together.
-#include <crucible/safety/sanitize/PathTraversal.h>
+#include <crucible/safety/sanitize/_PathTraversal.h>
