@@ -3142,6 +3142,26 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
 # PublishOnceDoublePublish banner from the child.
 fixy_test(test_handle_publish)
 
+# The commit counter: only the publishing stage bumps it, and a reader
+# that sees a count sees the writes made before the bump.  The friend
+# list is the gate, and the fixture is the witness that it refuses.
+fixy_test(test_handle_publish_commit)
+fixy_neg_compile_test(neg_handle_publish_commit_bump_outside_auth
+  "is private within this context"
+  "fixy::handle::PublishCommitCell<Tag, WriteAuth>::bump\\(\\)")
+
+# The one-shot signal: a raise that arrives while the body runs is kept,
+# and several consumers never run two bodies for one raise.  A reset
+# names its proof of quiescence, and the two fixtures refuse a reset with
+# no proof and one with an empty brace.
+fixy_test(test_handle_one_shot_flag)
+fixy_neg_compile_test(neg_handle_one_shot_flag_reset_without_proof
+  "no matching function for call to .fixy::handle::OneShotFlag::reset_in_quiescent_context\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+fixy_neg_compile_test(neg_handle_one_shot_flag_reset_braced_proof
+  "converting to .fixy::handle::OneShotFlag::QuiescenceProof. from initializer list would use explicit constructor"
+  "fixy::handle::OneShotFlag::QuiescenceProof::QuiescenceProof\\(\\)")
+
 # The standing witness for the guard that once admitted
 # PublishOnce<int*> and enforced nothing.  A guard that went
 # tautological again would make this fixture stop failing.

@@ -1189,6 +1189,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::is_stage_inline_safe, kMetafunction},
 
     {^^::fixy::handle::Once, kDescriptor},
+    {^^::fixy::handle::OneShotFlag, kDescriptor},
+    {^^::fixy::handle::PublishCommitCell,
+     "a publication counter: its Tag names one pipeline and its WriteAuth one stage, it holds a count and not a "
+     "value, and it is never a template argument of a kernel signature"},
 
     {^^::fixy::io::IoUringRing, kDescriptor},
     {^^::fixy::io::engine_is_io_uring, kMetafunction},
