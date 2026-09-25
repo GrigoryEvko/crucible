@@ -6,7 +6,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/safety/diag/CanonicalOrder.h>
+#include <crucible/safety/diag/_CanonicalOrder.h>
 
 #include "test_assert.h"
 

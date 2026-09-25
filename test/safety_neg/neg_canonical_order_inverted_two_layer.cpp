@@ -13,7 +13,7 @@
 //   * "CanonicallyOrdered"      — concept name appears in the trace
 //   * "false"                   — the predicate evaluates to false
 
-#include <crucible/safety/diag/CanonicalOrder.h>
+#include <crucible/safety/diag/_CanonicalOrder.h>
 
 namespace co = crucible::safety::diag::canonical_order;
 namespace cs = crucible::safety;

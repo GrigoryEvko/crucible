@@ -3,7 +3,7 @@
 // under the project warning flags, and adds runtime witnesses for stacks
 // the header does not already pin.
 
-#include <crucible/safety/diag/CanonicalOrder.h>
+#include <crucible/safety/diag/_CanonicalOrder.h>
 #include <crucible/safety/Witness.h>  // off-tree neutrality probe
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 

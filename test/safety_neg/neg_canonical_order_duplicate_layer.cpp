@@ -10,7 +10,7 @@
 //   * "static assertion failed" — the gate fires via static_assert
 //   * "CanonicallyOrdered"      — concept name appears in the trace
 
-#include <crucible/safety/diag/CanonicalOrder.h>
+#include <crucible/safety/diag/_CanonicalOrder.h>
 
 namespace co = crucible::safety::diag::canonical_order;
 namespace cs = crucible::safety;
