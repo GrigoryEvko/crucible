@@ -9,6 +9,23 @@
 #   * contract_assert — mid-body invariant
 #   * decide::*       — named-predicate cite (catalog discharge)
 #
+# Only a cite in use counts.  Four kinds of text are removed before the
+# count, because none of them is a contract that production code checks:
+#   * the body of a test namespace, a namespace whose name has the word
+#     test, tests, testing or selftest in it (`self_test`,
+#     `detail::fn_self_test`, `lattice_test`).  Test code is excluded
+#     where it lives in test/, and a header's self-test is test code too.
+#   * a using-declaration, using-directive or using-enum declaration.  It
+#     names a predicate but checks nothing, so a header whose only job is
+#     to re-export contributes no cites.  An alias declaration
+#     (`using X = ...`) stays, because a refinement type can hold a
+#     predicate that is in use.
+#   * a namespace head or namespace alias (`namespace crucible::decide {`).
+#   * a comment or a string literal.
+# The filter is a small C++ lexer in python3.  It reads comments, string,
+# character and raw-string literals and preprocessor lines as opaque, so
+# a brace inside one of them does not move the namespace depth.
+#
 # Output:
 #   * Aggregate counts across the tree
 #   * Per-decide-procedure cite count (the cite-ratio audit reads it —
@@ -26,8 +43,8 @@
 #                      exit if a counter regressed (decreased without
 #                      explanation), zero otherwise
 #
-# Written in plain shell idioms: ripgrep only, set -euo pipefail, and no
-# awk or sed.
+# Written in plain shell idioms: ripgrep for the counts, python3 for the
+# scope filter, set -euo pipefail, and no awk or sed.
 #
 # Exit status:
 #   0  — successful audit (or --check pass)
@@ -107,15 +124,17 @@ case "${1:-}" in
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/include" "$tmp_root/src"
 
-        # Every counted pattern matches at least once, so each regex is
-        # shown to find its form.  The zero-count tree below shows the
-        # opposite case.  The decide:: cites are generated from
-        # decide_procedures above, two lines apiece.
+        # Every counted pattern matches at least once.  Each regex then
+        # shows that it finds its form, and the zero-count tree below
+        # shows the opposite case.  The loop writes two decide:: cites for
+        # each entry of decide_procedures.  The namespace name has no test
+        # word in it, because the guard does not count the body of a test
+        # namespace.
         fixture="$tmp_root/include/selftest_cites.h"
         cat >"$fixture" <<'FIXTURE'
 #pragma once
 // Synthetic contracts-infra fixture for --self-test.
-namespace crucible::selftest {
+namespace crucible::planted {
 inline void planted_macro_forms(int n) {
     CRUCIBLE_PRE(n > 0);
     CRUCIBLE_PRE_FAST(n > 0);
@@ -137,7 +156,7 @@ FIXTURE
         done
         cat >>"$fixture" <<'FIXTURE_TAIL'
 }
-}  // namespace crucible::selftest
+}  // namespace crucible::planted
 FIXTURE_TAIL
         # src/ must exist and hold a cpp-typed file: the scan passes both
         # include/ and src/ to rg, and a missing path is an rg error.
@@ -161,6 +180,23 @@ ANCHOR
                 "$(cat "$tmp_root/json.err")" >&2
             exit 2
         fi
+        # An equal-baseline pass proves nothing if the filter removed the
+        # planted cites.  Each planted form must be counted exactly.
+        planted_counts=(crucible_pre:1 crucible_pre_fast:1 crucible_pre_msg:1
+                        crucible_post:1 crucible_post_fast:1 crucible_post_msg:1
+                        p2900_pre:1 p2900_post:1 contract_assert:1)
+        for proc in "${decide_procedures[@]}"; do
+            planted_counts+=("${proc}:2")
+        done
+        for planted in "${planted_counts[@]}"; do
+            if ! grep -qE "\"${planted%%:*}\":${planted##*:}[,}]" "$match_baseline"; then
+                printf 'audit-pre-callsite-count: SELF-TEST FAILED — the planted tree does not report %s.\n' \
+                    "$planted" >&2
+                printf '── json ─────────────\n%s\n────────────────────\n' \
+                    "$(cat "$match_baseline")" >&2
+                exit 2
+            fi
+        done
 
         # Direction 1: a baseline claiming counts the tree cannot meet.
         high_baseline="$tmp_root/baseline_high.json"
@@ -230,10 +266,85 @@ ANCHOR
             exit 2
         fi
 
+        # ── Alias cites — re-exports and self-tests MUST NOT count ───
+        # The tree has one real cite of each form it uses, in a namespace
+        # whose name holds the letters "test" inside a longer word
+        # (attestation).  Every
+        # other cite is a re-export, a namespace head or alias, or the body
+        # of a test namespace.  The self-test namespace also holds braces
+        # in a character literal, a string, a raw string and a digit
+        # separator, so a lexer that miscounts braces ends it early or runs
+        # it to the end of the file.  Either error moves a count.
+        alias_root="$tmp_root/alias_tree"
+        mkdir -p "$alias_root/include" "$alias_root/src"
+        cp "$tmp_root/src/selftest_anchor.cpp" "$alias_root/src/selftest_anchor.cpp"
+        alias_fixture="$alias_root/include/alias_cites.h"
+        cat >"$alias_fixture" <<'ALIAS_FIXTURE'
+#pragma once
+// Synthetic re-export and self-test fixture for --self-test.
+namespace crucible::fixy::decide {
+using ::crucible::decide::coprime;
+using ::crucible::decide::
+    Interval;
+namespace catalog_alias = ::crucible::decide;
+}  // namespace crucible::fixy::decide
+namespace crucible::decide::oracle {
+}  // namespace crucible::decide::oracle
+namespace crucible::fixy::decide::self_test {
+static_assert(std::is_same_v<decltype(&::crucible::fixy::decide::coprime<int>),
+                             decltype(&::crucible::decide::coprime<int>)>);
+inline constexpr char close_brace = '}';
+inline constexpr const char* closers = "}}";
+inline constexpr const char* raw_closers = R"(}})";
+inline constexpr int separated = 1'000;
+inline void runtime_smoke_test(int n) {
+    if (n > 0) { CRUCIBLE_PRE(decide::coprime(n, 3)); }
+    contract_assert(decide::coprime(n, 3));
+}
+}  // namespace crucible::fixy::decide::self_test
+namespace crucible::detail::coprime_self_test {
+inline bool probe(int n) { return decide::coprime(n, 9); }
+}  // namespace crucible::detail::coprime_self_test
+namespace crucible::lattice_test {
+inline bool probe(int n) { return decide::coprime(n, 11); }
+}  // namespace crucible::lattice_test
+namespace crucible::attestation {
+inline bool real_use(int n) {
+    CRUCIBLE_PRE(decide::coprime(n, 7));
+    return true;
+}
+}  // namespace crucible::attestation
+ALIAS_FIXTURE
+        alias_json="$tmp_root/alias.json"
+        if ! CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$alias_root" \
+             bash "${BASH_SOURCE[0]}" --json >"$alias_json" 2>"$tmp_root/alias.err"; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — --json aborted on the alias tree.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$tmp_root/alias.err")" >&2
+            exit 2
+        fi
+        # The fixture must carry the alias cites a plain text count sees.
+        # Otherwise the exact counts below prove nothing.
+        alias_raw_total=$( { rg -o 'decide::' "$alias_fixture" || true; } | wc -l)
+        if [[ "$alias_raw_total" -lt 10 ]]; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — the alias fixture has %d decide:: tokens, expected 10 or more.\n' \
+                "$alias_raw_total" >&2
+            exit 2
+        fi
+        for planted in decide_total:1 coprime:1 crucible_pre:1 contract_assert:0 \
+                       p2900_pre:0 total_contract_cites:1; do
+            if ! grep -qE "\"${planted%%:*}\":${planted##*:}[,}]" "$alias_json"; then
+                printf 'audit-pre-callsite-count: SELF-TEST FAILED — the alias tree does not report %s.\n' \
+                    "$planted" >&2
+                printf '── json ─────────────\n%s\n────────────────────\n' \
+                    "$(cat "$alias_json")" >&2
+                exit 2
+            fi
+        done
+
         # ── Zero counts — a tree with no cites MUST report zeros ─────
-        # `rg` exits 1 when it finds nothing.  Under `set -o pipefail` that
-        # once aborted the scan, so a counter that fell to zero crashed the
-        # guard instead of being reported.  Every counter here is zero.
+        # A tree with no cites gives a count of zero for each counter.  The
+        # guard must report each zero and must not stop.
         zero_root="$tmp_root/zero_tree"
         mkdir -p "$zero_root/include" "$zero_root/src"
         cp "$tmp_root/src/selftest_anchor.cpp" "$zero_root/src/selftest_anchor.cpp"
@@ -263,8 +374,8 @@ ANCHOR
         fi
 
         # ── Scan errors — a missing scan path MUST fail, not count 0 ─
-        # The zero-count repair accepts only the no-match status of `rg`.
-        # Any other failure must still stop the guard.
+        # The guard treats only the no-match status of `rg` as a zero
+        # count.  Every other failure must stop the guard.
         broken_root="$tmp_root/broken_tree"
         mkdir -p "$broken_root/include"
         if CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$broken_root" \
@@ -273,7 +384,7 @@ ANCHOR
             exit 2
         fi
 
-        printf 'audit-pre-callsite-count: self-test passed — regression caught (%d counters), exact-match and growth both accepted, zero counts reported, scan errors fatal.\n' \
+        printf 'audit-pre-callsite-count: self-test passed — regression caught (%d counters), exact-match and growth both accepted, alias cites not counted, zero counts reported, scan errors fatal.\n' \
             "${#checked_fields[@]}" >&2
         exit 0
         ;;
@@ -305,6 +416,10 @@ if ! command -v rg >/dev/null 2>&1; then
     printf 'audit-pre-callsite-count: ripgrep (rg) is required\n' >&2
     exit 2
 fi
+if ! command -v python3 >/dev/null 2>&1; then
+    printf 'audit-pre-callsite-count: python3 is required for the scope filter\n' >&2
+    exit 2
+fi
 
 # ── Scan-root override for --self-test recursion ─────────────────────
 # The script's OWN location still resolves through BASH_SOURCE above;
@@ -325,11 +440,11 @@ common_globs=(--type=cpp \
 
 # rg_matches ARGS... — run rg, and treat "no match" as a result.
 #
-# `rg` exits 1 when it finds nothing.  Under `set -o pipefail` a pipeline
-# with such a stage fails, so a counter that fell to zero once aborted the
-# guard instead of being reported as 0.  This wrapper maps exit 1 to
-# success with empty output.  Exit 2 (a bad pattern or a path that cannot
-# be read) stays a failure, so a broken scan never reads as a zero count.
+# `rg` exits 1 when it finds nothing.  Under `set -o pipefail`, a pipeline
+# with such a stage fails, and a count of zero stops the script.  This
+# wrapper gives an empty output for exit 1.  Exit 2 (a bad pattern or a
+# path that cannot be read) stays a failure.  A broken scan does not read
+# as a zero count.
 rg_matches() {
     local rg_status=0
     rg "$@" || rg_status=$?
@@ -339,6 +454,150 @@ rg_matches() {
     fi
     return 0
 }
+
+# ── Scope filter: remove every text that is not a cite in use ─────────
+# The program copies each scanned file into count_root and replaces with
+# spaces, line breaks kept:
+#   * the body of a test namespace (the word test, tests, testing or
+#     selftest in its name, where words are split at `_`),
+#   * a using-declaration, using-directive or using-enum (no `=` in it),
+#   * a namespace head or namespace alias,
+#   * a comment or a string literal.
+# An alias declaration (`using X = ...`) stays, because a refinement type
+# can hold a predicate that is in use.  Preprocessor lines are opaque and
+# stay.  The filter reads each file in one pass.
+cite_filter_program='
+import os
+import re
+import sys
+
+# A raw string before a plain string, a character literal before an
+# identifier (so L"x" and L\x27x\x27 are literals), and a pp-number before an
+# identifier (so the digit separator in 1\x27000 opens no character literal).
+TOKEN = re.compile(
+    r"(?P<pp>^[ \t]*#(?:\\\n|[^\n])*)"
+    r"|(?P<lc>//[^\n]*)"
+    r"|(?P<bc>/\*.*?(?:\*/|\Z))"
+    r"|(?P<raw>(?:u8|[uUL])?R\x22(?P<delim>[^()\\\s\x22]{0,16})\(.*?\)(?P=delim)\x22)"
+    r"|(?P<str>(?:u8|[uUL])?\x22(?:\\.|[^\x22\\\n])*\x22?)"
+    r"|(?P<chr>(?:u8|[uUL])?\x27(?:\\.|[^\x27\\\n])*\x27?)"
+    r"|(?P<num>\.?[0-9](?:[eEpP][+-]|[\x27\w.])*)"
+    r"|(?P<id>[A-Za-z_]\w*)"
+    r"|(?P<punct>[{};()=\[])",
+    re.MULTILINE | re.DOTALL,
+)
+TEST_WORD = re.compile(r"(?:^|_)(?:self_?test|tests?|testing)(?:_|$)", re.IGNORECASE)
+
+
+def blank_ranges(text):
+    ranges = []
+    stack = []          # one flag per open brace: true inside a test namespace
+    names = None        # identifiers after the keyword namespace, else None
+    names_at = 0
+    using_at = None     # offset of an open using statement
+    using_level = (0, 0)
+    using_alias = False
+    paren = 0
+    test_open = 0
+    last = ""
+    for m in TOKEN.finditer(text):
+        kind = m.lastgroup
+        tok = m.group()
+        if kind == "id":
+            if tok == "namespace":
+                names = []
+                names_at = m.start()
+            elif tok == "using" and using_at is None and last != "[":
+                using_at = m.start()
+                using_level = (len(stack), paren)
+                using_alias = False
+            elif names is not None:
+                names.append(tok)
+            last = tok
+            continue
+        if kind in ("lc", "bc", "str", "raw"):
+            ranges.append((m.start(), m.end()))
+            continue
+        if kind != "punct":
+            continue
+        at_using_level = using_at is not None and (len(stack), paren) == using_level
+        if tok == "{":
+            is_test = names is not None and any(TEST_WORD.search(n) for n in names)
+            if names is not None:
+                ranges.append((names_at, m.start()))
+            parent = stack[-1] if stack else False
+            if is_test and not parent:
+                test_open = m.start()
+            if at_using_level:
+                using_at = None
+            stack.append(parent or is_test)
+            names = None
+        elif tok == "}":
+            if stack:
+                closing = stack.pop()
+                if closing and not (stack[-1] if stack else False):
+                    ranges.append((test_open, m.end()))
+            if using_at is not None and len(stack) < using_level[0]:
+                using_at = None
+            names = None
+        elif tok == ";":
+            if names is not None:
+                ranges.append((names_at, m.end()))
+            names = None
+            if at_using_level:
+                if not using_alias:
+                    ranges.append((using_at, m.end()))
+                using_at = None
+        elif tok == "=":
+            if at_using_level:
+                using_alias = True
+        elif tok == "(":
+            paren += 1
+            names = None
+        elif tok == ")":
+            paren = max(paren - 1, 0)
+            names = None
+        last = tok
+    if stack and stack[-1]:
+        ranges.append((test_open, len(text)))
+    return ranges
+
+
+def blanked(text, ranges):
+    pieces = []
+    cursor = 0
+    for start, end in sorted(ranges):
+        if end <= cursor:
+            continue
+        start = max(start, cursor)
+        pieces.append(text[cursor:start])
+        pieces.append(re.sub(r"[^\n]", " ", text[start:end]))
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
+scan_root, count_root = sys.argv[1], sys.argv[2]
+for line in sys.stdin:
+    path = line.rstrip("\n")
+    if not path:
+        continue
+    target = os.path.join(count_root, os.path.relpath(path, scan_root))
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(path, encoding="utf-8", errors="surrogateescape") as source:
+        text = source.read()
+    with open(target, "w", encoding="utf-8", errors="surrogateescape") as mirror:
+        mirror.write(blanked(text, blank_ranges(text)))
+'
+
+# The file list comes from rg with the same globs as the counts, so the
+# filtered tree holds exactly the files the counts would read.  A missing
+# scan path fails here, with the rg exit status.
+count_root="$(mktemp -d)"
+trap 'rm -rf "$count_root"' EXIT
+rg_matches --files "${common_globs[@]}" "$scan_root/include" "$scan_root/src" \
+| python3 -c "$cite_filter_program" "$scan_root" "$count_root"
+mkdir -p "$count_root/include" "$count_root/src"
 
 count_pattern() {
     # Count OCCURRENCES, not lines.  `rg -c` reports one line per file with at
@@ -367,12 +626,16 @@ count_pattern() {
     # separate concerns: select lines that do not open as a comment, cut each
     # line at its first `//`, then count occurrences in what is left.
     #
-    # Each stage goes through rg_matches, so a count of zero is printed as 0
-    # and a scan error fails the pipeline.  The caller assigns the result at
+    # Each stage goes through rg_matches.  A count of zero then gives 0, and
+    # a scan error makes the pipeline fail.  The caller assigns the result at
     # the top level, where `set -e` stops the script on that failure.
+    #
+    # The stages read the filtered tree in count_root, where comments,
+    # strings, re-exports and test namespaces are already spaces.  The two
+    # comment guards above are then a second line of defence.
     local pattern="$1"
     rg_matches -N --no-filename -P "^(?!\s*(?://|\*|/\*)).*${pattern}" "${common_globs[@]}" \
-        "$scan_root/include" "$scan_root/src" \
+        "$count_root/include" "$count_root/src" \
     | rg_matches --passthru -P '//.*$' -r '' \
     | rg_matches -oP "${pattern}" \
     | wc -l
@@ -380,15 +643,12 @@ count_pattern() {
 
 # count_decide_procedure PROC — occurrences of `decide::PROC` in code.
 #
-# The catalog header safety/_Decide.h holds the canonical declarations and
-# is excluded.  -o counts occurrences.  -c would count lines and drop a cite
-# whenever two land on one line.
+# The same three stages as every other counter, so two cites on one line
+# count as two.  The catalogs define their procedures unqualified, and
+# their self-tests live in test namespaces, so no catalog path needs to be
+# excluded by name.
 count_decide_procedure() {
-    local proc="$1"
-    rg_matches -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
-        --glob '!include/crucible/safety/_Decide.h' \
-        "$scan_root/include" "$scan_root/src" \
-    | wc -l
+    count_pattern "decide::${1}\\b"
 }
 
 # ── Counts ────────────────────────────────────────────────────────────
@@ -423,10 +683,11 @@ total_contract_cites=$((total_pre_cites + total_post_cites + contract_assert))
 # ── Per-decide-procedure cite count ───────────────────────────────────
 # The catalog itself (decide_procedures) is declared near the top of the
 # script, above the argument dispatcher, so --self-test can build its
-# fixture from the same array.  The counts are taken here at the top level,
-# once, so a scan error stops the script under `set -e`.  Inside the print
-# functions a failure would not stop it, because --check calls print_json
-# in a command substitution, where bash clears `set -e`.
+# fixture from the same array.  The script takes the counts here, one time
+# and at the top level, where `set -e` stops the script on a scan error.
+# Inside the print functions a failure does not stop it, because --check
+# calls print_json in a command substitution, and bash clears `set -e`
+# there.
 declare -A decide_counts=()
 for proc in "${decide_procedures[@]}"; do
     decide_counts[$proc]=$(count_decide_procedure "$proc")
@@ -474,11 +735,11 @@ MIDDLE
     # rg -c gives "file:count" lines; we sort by count desc, take top N.
     rg_matches -cP '(CRUCIBLE_PRE|CRUCIBLE_POST|^\s*pre\s*\(|^\s*post\s*\(|contract_assert)\b' \
        "${common_globs[@]}" \
-       "$scan_root/include" "$scan_root/src" \
+       "$count_root/include" "$count_root/src" \
        | sort -t: -k2 -nr -s \
        | head -n "$top_n" \
        | while IFS=: read -r file count; do
-           rel="${file#"$scan_root"/}"
+           rel="${file#"$count_root"/}"
            printf '  %-60s %s\n' "$rel" "$count"
          done
 

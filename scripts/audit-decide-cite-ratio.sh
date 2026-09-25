@@ -137,14 +137,15 @@ for name in json.load(sys.stdin)["decide_per_procedure"]:
             cp "$selftest_sibling" "$tmp_root/scripts/audit-pre-callsite-count.sh"
             chmod +x "$tmp_root/scripts/audit-pre-callsite-count.sh"
 
-            # Every pattern the sibling counts matches at least once, so the
-            # fixture is a realistic tree.  The per-procedure regex is
-            # line-anchored, so each cite needs its own line.
+            # Every pattern that the sibling counts matches at least once.
+            # The fixture is then a realistic tree.  The namespace name has
+            # no test word in it, because the sibling does not count the
+            # body of a test namespace.
             selftest_fixture="$tmp_root/include/selftest_cites.h"
             cat >"$selftest_fixture" <<'FIXTURE'
 #pragma once
 // Synthetic cite fixture for --self-test.
-namespace crucible::selftest {
+namespace crucible::planted {
 inline void planted_macro_forms(int n) {
     CRUCIBLE_PRE(n > 0);
     CRUCIBLE_PRE_FAST(n > 0);
@@ -169,7 +170,7 @@ FIXTURE
             done
             cat >>"$selftest_fixture" <<'FIXTURE_TAIL'
 }
-}  // namespace crucible::selftest
+}  // namespace crucible::planted
 FIXTURE_TAIL
             cat >"$tmp_root/src/selftest_anchor.cpp" <<'ANCHOR'
 // Synthetic translation unit for --self-test.
