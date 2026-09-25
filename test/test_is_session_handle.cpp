@@ -8,7 +8,7 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/handles/_OneShotFlag.h>
 #include <crucible/safety/_Pinned.h>
 

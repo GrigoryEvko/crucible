@@ -25,7 +25,7 @@
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 
 #include <cstddef>
 #include <cstdint>

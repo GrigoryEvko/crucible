@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 
 #include <cstddef>
 #include <type_traits>

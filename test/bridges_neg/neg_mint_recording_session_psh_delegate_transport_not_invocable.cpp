@@ -27,7 +27,7 @@
 
 #include <crucible/bridges/RecordingPermissionedSessionHandle.h>
 #include <crucible/sessions/SessionDelegate.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/effects/_ExecCtx.h>
 

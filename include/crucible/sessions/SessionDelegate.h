@@ -20,7 +20,7 @@
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 
 #include <concepts>
 #include <cstdint>

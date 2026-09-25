@@ -14,7 +14,7 @@
 #include <crucible/sessions/_SessionDeclassify.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/_SessionDiagnostic.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/_SessionPatterns.h>

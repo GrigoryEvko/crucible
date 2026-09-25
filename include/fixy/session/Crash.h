@@ -163,7 +163,7 @@ inline constexpr bool is_stop_v = is_stop<P>::value;
 
 // How the stopped peer ended, as the detector saw it.  The byte values
 // are the values of the crash lane in the session event log, so a log
-// that crucible/sessions/SessionEventLog.h wrote decodes unchanged.  The
+// that crucible/sessions/_SessionEventLog.h wrote decodes unchanged.  The
 // old tree wrote 3 for a crash graded "no throw", which is a
 // contradiction.  It decodes as Unknown.
 enum class CrashCause : std::uint8_t {

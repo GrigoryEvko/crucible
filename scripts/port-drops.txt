@@ -1132,6 +1132,13 @@ crucible/sessions/_SessionSubtypeReason.h:subtype_diag_agrees_v  → include/fix
 crucible/sessions/_SessionSubtypeReason.h:subtype_rejection_reason  → include/fixy/session/Subtype.h  — The trait class is gone. detail::subtype::reason_of derives the reason from subtype_verdict_v, and subtype_reason_t is its public name.
 crucible/sessions/_SessionSubtypeReason.h:subtype_rejection_reason_t  → include/fixy/session/Subtype.h  — Renamed subtype_reason_t, which reads the verdict of the one walk.
 
+# ── sessions: the event log ─────────────────────────────────────────────
+crucible/sessions/_SessionEventLog.h:CheckpointId  — The new log writes no Checkpoint_Base or Checkpoint_Rollback record. Its coordinated checkpoint records carry a CheckpointRole and a StateHash of the saved state.
+crucible/sessions/_SessionEventLog.h:CipherEventPayload  → include/fixy/session/EventLog.h  — The aggregate is gone. SessionEvent reads the four fields itself with cipher_content, cipher_timestamp_ns, cipher_from_tier and cipher_to_tier.
+crucible/sessions/_SessionEventLog.h:default_payload_hash_fn  — The opt-in hasher is gone. The recorder of fixy/session/Recording.h writes the not-hashed sentinel, and a writer that wants a payload hash gives one to SessionEvent::send.
+crucible/sessions/_SessionEventLog.h:StepIdKeyFn  → include/fixy/session/EventLog.h  — Renamed detail::event_log::StepProjection. Cipher.h orders its own log with this key, so its flip must name the projection or define its own key.
+crucible/sessions/_SessionEventLog.h:StepIdLess  → include/fixy/session/EventLog.h  — Renamed detail::event_log::StepLess, the order that the log of SessionEventLog keeps. Cipher.h uses it for its own log, as it uses StepIdKeyFn.
+
 # ── safety: the stage-shape recognizers and the signature inference ─────
 # No production file and no header of the new tree classifies a function
 # by its parameter shape, infers a row or a tag set from a signature, or

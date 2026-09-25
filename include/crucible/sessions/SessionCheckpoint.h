@@ -25,7 +25,7 @@
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/_SessionSubtype.h>
 
 #include <type_traits>

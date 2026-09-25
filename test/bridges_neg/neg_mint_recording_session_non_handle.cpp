@@ -11,7 +11,7 @@
 //   "no matching function for call to 'mint_recording_session'"
 
 #include <crucible/bridges/RecordingSessionHandle.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 
 namespace proto = ::crucible::safety::proto;
 

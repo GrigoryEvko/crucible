@@ -10,7 +10,7 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/handles/_OneShotFlag.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 
 #include <type_traits>
 #include <utility>

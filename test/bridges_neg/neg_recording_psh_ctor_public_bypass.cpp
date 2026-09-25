@@ -32,7 +32,7 @@
 //   neg_recording_psh_offer_ctor_public_bypass.cpp (Offer<...> arm).
 
 #include <crucible/bridges/RecordingPermissionedSessionHandle.h>
-#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/effects/_ExecCtx.h>
 

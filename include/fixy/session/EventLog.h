@@ -6,7 +6,7 @@
 // ── The record ──────────────────────────────────────────────────────
 //
 // Each event is 72 bytes, with the layout of the record in
-// crucible/sessions/SessionEventLog.h, so a whole log drains to durable
+// crucible/sessions/_SessionEventLog.h, so a whole log drains to durable
 // storage as one block of bytes, and a log that the old tree wrote
 // decodes here.  Each kind of operation reads the two general lanes and
 // the two control bytes in its own way.  The factories write each
