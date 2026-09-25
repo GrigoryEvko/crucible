@@ -3,7 +3,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/wrap/Refined.h>
+#include <crucible/fixy/wrap/_Refined.h>
 #include <crucible/safety/_Borrowed.h>
 #include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>

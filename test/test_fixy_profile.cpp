@@ -1,4 +1,4 @@
-#include <crucible/fixy/Profile.h>
+#include <crucible/fixy/_Profile.h>
 
 #include <type_traits>
 

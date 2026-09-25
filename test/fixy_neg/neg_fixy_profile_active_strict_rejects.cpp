@@ -19,7 +19,7 @@
 // Expected diagnostic: static assertion failure / IsAcceptedActive
 // constraints not satisfied / FixyNotEngaged_Type.
 
-#include <crucible/fixy/Profile.h>
+#include <crucible/fixy/_Profile.h>
 
 namespace crucible_fixy = crucible::fixy;
 

@@ -863,7 +863,7 @@ endif()
 # `IsAccepted` gate (engagement + grant well-formedness + uniqueness
 # + theory corpus).  SKETCH (`OFF`) — IsAccepted's gate is replaced
 # by an always-true concept so hot-loop migration TUs compile against
-# partially-specified Grants packs.  See include/crucible/fixy/Profile.h
+# partially-specified Grants packs.  See include/crucible/fixy/_Profile.h
 # for the concept-toggle semantics.
 option(CRUCIBLE_FIXY_STRICT
   "Build fixy:: in STRICT mode (default).  Set OFF to enable SKETCH mode for hot-loop migration."

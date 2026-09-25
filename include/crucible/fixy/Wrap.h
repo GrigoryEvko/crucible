@@ -44,7 +44,7 @@
 #include <crucible/safety/_RecipeSpec.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/fixy/wrap/Refined.h>
+#include <crucible/fixy/wrap/_Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/_ScopedView.h>
 #include <crucible/safety/_SealedRefined.h>
@@ -459,7 +459,7 @@ using ::crucible::fixy::io::mint_zerocopy_transfer;
 
 }  // namespace crucible::fixy::wrap::io
 
-#include <crucible/fixy/Cipher.h>
+#include <crucible/fixy/_Cipher.h>
 
 namespace crucible::fixy::wrap::cipher {
 

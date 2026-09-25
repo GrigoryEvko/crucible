@@ -306,6 +306,25 @@ crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog tuple becam
 crucible/fixy/_CipherDurable.h:CtxFitsWarmWriterMint  — Ported as CtxFitsDurableMint<Ctx, Stance, Extras...> in fixy/os/CipherDurable.h:116, which folds three textually identical concepts into one parameterised by the stance.
 crucible/fixy/_CipherDurable.h:CtxFitsColdWriterMint  — Ported as CtxFitsDurableMint, the same fold; see the warm-writer entry.
 crucible/fixy/_CipherDurable.h:CtxFitsHeadAdvancerMint  — Ported as CtxFitsDurableMint, the same fold; see the warm-writer entry.
+crucible/fixy/_Cipher.h:engages_warm_writer_stance_v  — The predicate asked whether a grant pack held the three grants of the warm writer. fixy/os/CipherDurable.h:65 makes the stance one named type, warm_writer_stance, so no pack is left to ask about.
+crucible/fixy/_Cipher.h:engages_cold_writer_stance_v  — The same fold as the warm-writer entry. The cold stance is cold_writer_stance at fixy/os/CipherDurable.h:72.
+crucible/fixy/_Cipher.h:engages_head_advance_stance_v  — The same fold as the warm-writer entry. The HEAD stance is head_advance_stance at fixy/os/CipherDurable.h:79.
+crucible/fixy/_Cipher.h:IsCipherWarmWriterStance  — The concept over the pack predicate. DurableStance at fixy/os/CipherDurable.h:89 constrains a stance type, and CtxFitsDurableMint at :117 gates each mint on the stance it names.
+crucible/fixy/_Cipher.h:IsCipherColdWriterStance  — The same fold as the warm-writer concept. DurableStance and CtxFitsDurableMint in fixy/os/CipherDurable.h take its place.
+crucible/fixy/_Cipher.h:IsHeadAdvanceStance  — The same fold as the warm-writer concept. DurableStance and CtxFitsDurableMint in fixy/os/CipherDurable.h take its place.
+crucible/fixy/_Cipher.h:CipherWarmWriterStance  — The canonical grant pack of the warm writer. The stance type warm_writer_stance at fixy/os/CipherDurable.h:65 names the same open mode, sync and commit.
+crucible/fixy/_Cipher.h:CipherColdWriterStance  — The canonical grant pack of the cold writer. The stance type cold_writer_stance at fixy/os/CipherDurable.h:72 pins atomicity::Rename in place of LinkAtomic, which always failed with ENOSYS, as :13 records.
+crucible/fixy/_Cipher.h:HeadAdvanceStance  — The canonical grant pack of the HEAD advance. The stance type head_advance_stance at fixy/os/CipherDurable.h:79 names the same open mode, sync and commit.
+crucible/fixy/_Cipher.h:stance_pack_satisfies_warm  — A trait that applied the warm-writer concept to a pack alias for the header's own self-test. A stance is a type in the new tree, and DurableStance checks it directly.
+crucible/fixy/_Cipher.h:stance_pack_satisfies_warm_v  — The value of the self-test trait above, dropped with it.
+crucible/fixy/_Cipher.h:stance_pack_satisfies_cold  — The cold-writer twin of the self-test trait for the warm writer, dropped for the same reason.
+crucible/fixy/_Cipher.h:stance_pack_satisfies_cold_v  — The value of the cold-writer self-test trait, dropped with it.
+crucible/fixy/_Cipher.h:stance_pack_satisfies_head  — The HEAD-advance twin of the self-test trait for the warm writer, dropped for the same reason.
+crucible/fixy/_Cipher.h:stance_pack_satisfies_head_v  — The value of the HEAD-advance self-test trait, dropped with it.
+crucible/fixy/_Profile.h:fixy_is_strict  — The switch between the strict gate and the sketch gate. fixy/Fn.h:12 records that the engagement tier, sketch mode and CRUCIBLE_FIXY_STRICT are gone, so no build selects a weaker gate.
+crucible/fixy/_Profile.h:IsAcceptedSketch  — The sketch gate accepted every pack, so that a pack without the engagement markers compiled. The new binding needs no markers, because an axis that the pack does not name takes its strict pole (fixy/Fn.h:12).
+crucible/fixy/_Profile.h:IsAcceptedActive  — The alias chose the strict gate or the sketch gate. With sketch mode gone, IsAccepted at fixy/Reject.h:177 is the one gate in every build.
+crucible/fixy/wrap/_Refined.h:predicate_implies  — A re-export of the open implication trait of safety/_Refined.h, which has its own row. fixy/Refined.h:1269 keeps implies_v, and fixy/Refined.h:858 admits an edge only from the namespace admitted_implications.
 crucible/fixy/_Fs.h:CtxAdmitsIoBlock  — Ported twice, because the header separates the two uses the one concept served. fs::CtxAdmitsFs (fixy/os/Fs.h:219) names IO and Block for the three operations that take no atom pack, and fs::CtxAdmitsAtomRow (fixy/os/Fs.h:370) derives the row from the pack for the mint.
 crucible/fixy/_Fs.h:TmpFile  — A placeholder for the dirfd surface atomicity::LinkAtomic needed, refused by the old open gate on every call it was given; with LinkAtomic gone it has nothing left to be a placeholder for (fixy/os/Fs.h:27).
 crucible/fixy/_Fs.h:Directory  — The tag folded O_DIRECTORY and nothing gated or consumed it; the capability survives, because OwnedFd::open_directory sets that bit itself (fixy/os/Fs.h:27).

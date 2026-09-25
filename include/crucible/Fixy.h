@@ -13,7 +13,7 @@
 // Reject.h precedes Profile.h rather than following it alphabetically,
 // because Profile.h instantiates a concept Reject.h declares.
 #include <crucible/fixy/Reject.h>
-#include <crucible/fixy/Profile.h>
+#include <crucible/fixy/_Profile.h>
 
 #include <crucible/fixy/Fn.h>
 

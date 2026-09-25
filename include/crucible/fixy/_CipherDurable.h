@@ -6,7 +6,7 @@
 #include <utility>
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Cipher.h>
+#include <crucible/fixy/_Cipher.h>
 #include <crucible/fixy/_Fs.h>
 #include <crucible/handles/_FileHandle.h>
 #include <crucible/safety/_Linear.h>
