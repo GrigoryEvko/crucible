@@ -14,7 +14,7 @@
 //   "PersistedSession_CtxRequired"
 
 #include <crucible/Cipher.h>
-#include <crucible/bridges/SessionPersistence.h>
+#include <crucible/bridges/_SessionPersistence.h>
 #include <crucible/sessions/SessionMint.h>
 
 namespace proto = ::crucible::safety::proto;

@@ -7,4 +7,4 @@
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/_MachineSessionBridge.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
-#include <crucible/bridges/SessionPersistence.h>
+#include <crucible/bridges/_SessionPersistence.h>

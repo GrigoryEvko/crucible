@@ -274,13 +274,18 @@ quiet=0
 cxx_for_drops=""
 
 # The drop rows admitted to write `→ none`: a superseded header
-# forward-declared the type, and no header anywhere carries it.  Each one
-# is a type the port has not reached.  The set is pinned BY NAME, not by
+# forward-declared the type, or it defined the type over production code
+# that a new-tree header cannot include, and no header anywhere carries
+# it.  Each one is a type the port has not reached.  The set is pinned BY NAME, not by
 # a count, so it can only change by editing this list: a new uncarried
 # row is refused as UNPINNED, and a pin whose row is gone is refused as
 # STALE, so one name swapped for another reports both halves.  The list
 # shrinks in the same commit as the port that gives a type its carrier.
 uncarried_pinned_default="
+crucible/bridges/_SessionPersistence.h:mint_persisted_session
+crucible/bridges/_SessionPersistence.h:PersistedSessionHandle
+crucible/bridges/_SessionPersistence.h:SessionPersistencePolicy
+crucible/bridges/_SessionPersistence.h:SessionPersistenceState
 crucible/effects/_Capabilities.h:HwProbeEntry
 crucible/safety/diag/_RowHashFold.h:Consistency
 crucible/safety/diag/_RowHashFold.h:CrashClass

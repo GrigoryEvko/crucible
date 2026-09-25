@@ -1,6 +1,6 @@
 // fixy-A2-014: SessionPersistence.h no longer pulls Cipher.h.
 #include <crucible/Cipher.h>
-#include <crucible/bridges/SessionPersistence.h>
+#include <crucible/bridges/_SessionPersistence.h>
 
 #include "bench_harness.h"
 

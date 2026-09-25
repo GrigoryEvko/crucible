@@ -14,7 +14,7 @@
 //   "PersistedSession_OpenViewRequired"
 
 #include <crucible/Cipher.h>
-#include <crucible/bridges/SessionPersistence.h>
+#include <crucible/bridges/_SessionPersistence.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/sessions/SessionMint.h>
 

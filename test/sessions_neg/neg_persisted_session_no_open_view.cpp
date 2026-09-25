@@ -5,7 +5,7 @@
 // proof needed before the bridge stores a long-lived Cipher reference.
 
 #include <crucible/Cipher.h>  // fixy-A2-014: explicit; SessionPersistence.h no longer pulls Cipher.h
-#include <crucible/bridges/SessionPersistence.h>
+#include <crucible/bridges/_SessionPersistence.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;

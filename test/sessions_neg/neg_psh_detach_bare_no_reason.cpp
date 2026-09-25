@@ -12,7 +12,7 @@
 //   "DetachReason_Required"  |  "deleted"  |  "matching function"
 
 #include <crucible/Cipher.h>
-#include <crucible/bridges/SessionPersistence.h>
+#include <crucible/bridges/_SessionPersistence.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;

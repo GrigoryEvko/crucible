@@ -137,9 +137,6 @@ include/crucible/Vigil.h:mint_producer_context:constexpr-ok
 include/crucible/CKernel.h:mint_mutable_view:constexpr-ok
 include/crucible/SchemaTable.h:mint_mutable_view:constexpr-ok
 
-# ── bridges/ allocating session mints ────────────────────────────────
-include/crucible/bridges/SessionPersistence.h:mint_persisted_session:constexpr-ok
-
 # ── canopy/ gossip-state mints ───────────────────────────────────────
 include/crucible/canopy/Hlc.h:mint_hlc:constexpr-ok
 include/crucible/canopy/HyParView.h:mint_hyparview:constexpr-ok

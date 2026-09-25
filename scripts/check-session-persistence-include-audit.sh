@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-session-persistence-include-audit.sh — include-lift regression guard.
 #
-# Verifies that <crucible/bridges/SessionPersistence.h> does NOT
+# Verifies that <crucible/bridges/_SessionPersistence.h> does NOT
 # transitively pull <crucible/Cipher.h> (or its heavy substrate
 # transitive set — MerkleDag.h, Arena.h, MetaLog.h, FederationProtocol.h,
 # CipherTierPromotion.h).  The bridge's actual touch on Cipher is FIVE
@@ -46,7 +46,7 @@ Environment:
                                             (a GCC 16 — contracts + reflection)
   CRUCIBLE_SESSION_PERSISTENCE_TEST_ROOT    override the -I root (self-test only)
   CRUCIBLE_SESSION_PERSISTENCE_TARGET       override the probed header path,
-                                            default crucible/bridges/SessionPersistence.h
+                                            default crucible/bridges/_SessionPersistence.h
 
 The bridge header must reach Cipher through the thin
 <crucible/cipher/SessionPersistenceSurface.h>, never the heavy substrate.
@@ -174,7 +174,7 @@ esac
 
 # ── Scan-root / target overrides for --self-test recursion ───────────
 SCAN_ROOT="${CRUCIBLE_SESSION_PERSISTENCE_TEST_ROOT:-$REPO_ROOT}"
-TARGET_HEADER="${CRUCIBLE_SESSION_PERSISTENCE_TARGET:-crucible/bridges/SessionPersistence.h}"
+TARGET_HEADER="${CRUCIBLE_SESSION_PERSISTENCE_TARGET:-crucible/bridges/_SessionPersistence.h}"
 
 PROBE_TU="$(mktemp --suffix=.cpp)"
 TRACE_LOG="$(mktemp)"

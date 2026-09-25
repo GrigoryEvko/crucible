@@ -2,7 +2,7 @@
 // This file constructs a Cipher and calls its methods, so it needs the
 // complete class.
 #include <crucible/Cipher.h>
-#include <crucible/bridges/SessionPersistence.h>
+#include <crucible/bridges/_SessionPersistence.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionMint.h>

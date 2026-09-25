@@ -428,6 +428,13 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
 
+# ── bridges: the persisted-session bridge ───────────────────────────────
+crucible/bridges/_SessionPersistence.h:detach_reason_kind_v  → include/fixy/session/Recording.h  — Folded into detail::recording::detach_kind in fixy/session/Recording.h, which maps the same five detach reasons to the log's reason kind and every other type to Unknown.
+crucible/bridges/_SessionPersistence.h:mint_persisted_session  → none  — The ctx-bound mint of a persisted-session handle, which writes each flush through Cipher. A header of the new tree cannot include Cipher, so no header of the new tree carries the mint.
+crucible/bridges/_SessionPersistence.h:PersistedSessionHandle  → none  — A session handle that records each step and writes the new events through Cipher. A header of the new tree cannot include Cipher, so no header of the new tree carries the handle.
+crucible/bridges/_SessionPersistence.h:SessionPersistencePolicy  → none  — The count and time thresholds of a Cipher flush. Only the persisted-session handle reads the policy, and no header of the new tree carries that handle.
+crucible/bridges/_SessionPersistence.h:SessionPersistenceState  → none  — The event log of one persisted session and the count of its events that Cipher holds. A header of the new tree cannot include Cipher, so no header of the new tree carries the state.
+
 # ── effects: the universe descriptor and the context-to-wrapper lifts ───
 
 crucible/effects/_OsUniverse.h:OsUniverse  → include/foundation/effects/Effect.h  — Dropped, because its consumers read only the cardinality, which is effect_count. effect_name replaces atom_name, the Effect value replaces bit_position, and EffectRowLattice replaces the lattice alias.

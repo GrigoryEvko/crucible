@@ -66,9 +66,6 @@ apply to the row.
 | `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_crash_watched_session(PermissionedSessionHandle<Proto,PS,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_crash_watched_session(SessionHandle<Proto,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_persisted_session(Ctx const&,Cipher&,CipherOpenView const&,Resource&&,SessionTagId,RoleTagId,RoleTagId,SessionPersistencePolicy)` | `include/crucible/bridges/SessionPersistence.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
-| `mint_persisted_session(Ctx const&,PermissionedSessionHandle<Proto,PS,Resource,LoopCtx>,Cipher&,CipherOpenView const&,SessionTagId,RoleTagId,RoleTagId,SessionPersistencePolicy)` | `include/crucible/bridges/SessionPersistence.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
-| `mint_persisted_session(Ctx const&,SessionHandle<Proto,Resource,LoopCtx>,Cipher&,CipherOpenView const&,SessionTagId,RoleTagId,RoleTagId,SessionPersistencePolicy)` | `include/crucible/bridges/SessionPersistence.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
 | `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 12 |
 | `mint_recording_session(CrashWatchedHandle<Proto,Resource,PeerTag,C,LoopCtx,PS>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 12 |
@@ -475,5 +472,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 199 | 99 | 91 | 9 | 0 | 116 | 41 |
+| old (`include/crucible/`) | 196 | 96 | 91 | 9 | 0 | 113 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 101 | 42 | 58 | 1 | 0 | · | 22 |
