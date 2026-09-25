@@ -155,6 +155,7 @@ inline constexpr std::meta::info template_witnesses[] = {
     ^^fp::LentPermission<Region>,
     ^^fp::SharedPermissionGuard<Region, ::foundation::brand::DefaultBrand>,
     ^^fp::SharedPermissionPool<Region, ::foundation::brand::DefaultBrand>,
+    ^^fp::FederationAdmission<Region>,
     ^^fe::Capability<fe::Effect::Alloc, fe::Bg>,
     ^^fe::Capability<fe::Effect::Init, fe::Init>,
     ^^fe::Capability<fe::Effect::Block, fe::Test>,
@@ -265,6 +266,7 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fp::has_split_authoring_witness,
     ^^fp::can_split_into_pack,
     ^^fp::has_split_pack_authoring_witness,
+    ^^fp::tag::FederatedPeer,
 };
 
 struct ForgeVerdict {

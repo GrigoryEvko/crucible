@@ -43,10 +43,11 @@
 // befriended both.
 //
 // Old spelling: include/crucible/permissions/Permission.h, namespaces
-// crucible::safety and crucible::permissions::tag.  The friends that
-// reached the private constructor from the inheritance and federation
-// headers are not carried, because neither header is ported and a
-// friend naming an absent type is an open door.
+// crucible::safety and crucible::permissions::tag.  The friend that
+// reached the private constructor from the inheritance header is not
+// carried, because that header is dropped.  A federation peer token has
+// a key of its own, federation_admission_key below, and the one friend
+// of that key is the admission that fixy/Federation.h defines.
 
 #include <foundation/Brand.h>
 #include <foundation/Pinned.h>
@@ -94,7 +95,24 @@ struct MmapRegionTag {};
 struct GpuMemoryTag {};
 struct NetworkBufferTag {};
 
+// A peer of another organization.  No mint makes a token for a peer
+// from nothing.  The root mint refuses the tag, and the one constructor
+// that builds the token takes federation_admission_key, which only an
+// admission makes, after a handshake verifies.  A peer's authority is
+// over the traffic with that peer, so the row is IO.
+template <typename Org>
+struct FederatedPeer {
+    using org_type = Org;
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
+};
+
 }  // namespace tag
+
+// True when Tag is a federation peer tag.  The test reads the template
+// of the tag by reflection, so a specialization cannot widen or narrow
+// the set of tags that it matches.
+template <typename Tag>
+inline constexpr bool is_federated_peer_tag_v = ::foundation::reflect::IsInstanceOf<Tag, ^^tag::FederatedPeer>;
 
 template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SharedPermissionGuard;
@@ -473,9 +491,16 @@ inline constexpr bool ctx_admits_tuple_v = ctx_admits_tuple<Ctx, TagTuple>::valu
 // admitted by it.  The split alone also takes two contexts, one per
 // child, for a parent that is torn across two scopes.
 
+// A federation peer is admitted by a verified handshake, and never
+// minted from nothing, so the root mint refuses its tag with a context
+// and without one.
+template <typename Tag>
+concept RootMintableTag = !is_federated_peer_tag_v<Tag>;
+
 template <typename Tag, typename... Args>
 concept PermissionRootArgs =
-    (sizeof...(Args) == 0) || (sizeof...(Args) == 1 && (detail::ctx_admits_all_v<Args, Tag> && ...));
+    RootMintableTag<Tag>
+    && ((sizeof...(Args) == 0) || (sizeof...(Args) == 1 && (detail::ctx_admits_all_v<Args, Tag> && ...)));
 
 template <typename L, typename R, typename... Args>
 concept PermissionSplitArgs = detail::MintArgs<2, 1, Args...>
@@ -612,6 +637,42 @@ private:
     friend struct ::foundation::permissions::detail::ForkRebuildAccess;
 };
 
+// ── The federation door ──────────────────────────────────────────────
+//
+// A token for a federation peer comes from one place: a handshake whose
+// tag authenticates under the key of the local organization.
+// FederationAdmission holds that key and does the check.  This header
+// names the class, and fixy/Federation.h defines it, because the check
+// needs fixy::Secret and fixy::siphash.
+//
+// The key below is narrower than perm_mint_key.  The only constructor
+// that takes it builds a token whose tag is a FederatedPeer, so an
+// admission cannot mint a token for any other region.
+//
+// C++ lets a file specialize a class template, or define one member of
+// it for a new argument, and that definition gets the access of the
+// friend.  A reflection check cannot refuse it: GCC gives the location
+// of the primary template for an instance of a partial specialization,
+// and a #line directive moves any location.  The guard
+// scripts/check-federation-admission.py refuses, outside
+// fixy/Federation.h, each class head of FederationAdmission and each
+// qualified definition that names one of its members.
+template <typename Org>
+class FederationAdmission;
+
+// Both constructors are user-provided, for the reason perm_mint_key
+// gives.
+class federation_admission_key {
+    constexpr federation_admission_key() noexcept {}
+
+public:
+    constexpr federation_admission_key(const federation_admission_key&) noexcept {}
+
+private:
+    template <typename Org>
+    friend class FederationAdmission;
+};
+
 // The tag constraint is a class-body static_assert rather than a
 // requires-clause on the primary template.  A requires-clause would
 // force every forward declaration of Permission to repeat it, which
@@ -634,8 +695,20 @@ public:
 
     // Holding the key is the proof of authority, and only the five
     // mints and the post-join rebuild can make one, so this is the sole
-    // route to a Permission.  Permission itself befriends nobody.
-    explicit constexpr Permission(perm_mint_key) noexcept {}
+    // route to a Permission for every tag but a federation peer.
+    // Permission itself befriends nobody.  The constraint keeps a forged
+    // split manifest from reaching a federation peer token through a
+    // split or a combine.
+    explicit constexpr Permission(perm_mint_key) noexcept
+        requires(!is_federated_peer_tag_v<Tag>)
+    {}
+
+    // The sole route to a federation peer token.  Only an admission
+    // makes the key, after a handshake verifies, and the key builds no
+    // other token.
+    explicit constexpr Permission(federation_admission_key) noexcept
+        requires is_federated_peer_tag_v<Tag>
+    {}
 
     // Erasure.  A token of one instance becomes a token on the erased
     // identity, consuming the branded one, so code written before
@@ -1468,7 +1541,7 @@ static_assert(std::is_empty_v<perm_mint_key>, "perm_mint_key must stay empty, so
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_class_type(member)) {
+        if constexpr (std::meta::is_type(member) && std::meta::is_class_type(member)) {
             using Tag = [:member:];
             if (!PermissionTag<Tag>) sound = false;
             if (!token_is_sound<Tag>()) sound = false;
@@ -1485,6 +1558,24 @@ static_assert(std::is_empty_v<perm_mint_key>, "perm_mint_key must stay empty, so
 static_assert(every_canonical_tag_is_sound(), "a tag in permissions::tag is not a sound effectful token: "
                                               "every canonical tag is an empty class with a non-empty row, "
                                               "admitted by the test runner and refused by the foreground.");
+
+// The federation peer tag is a template, so the walk above does not
+// reach it.  An instance is a sound effectful token whose one route in
+// is the admission key, and the admission key builds no other token.
+struct seplog_peer_org {};
+using seplog_peer_tag = ::foundation::permissions::tag::FederatedPeer<seplog_peer_org>;
+static_assert(PermissionTag<seplog_peer_tag> && has_permission_row_v<seplog_peer_tag>
+              && !permission_row_empty_v<seplog_peer_tag>);
+static_assert(!RootMintableTag<seplog_peer_tag> && RootMintableTag<seplog_test_tag>,
+              "the root mint must refuse a federation peer tag and admit every other tag");
+static_assert(!std::is_constructible_v<Permission<seplog_peer_tag, brand_a>, perm_mint_key>,
+              "no mint key may build a federation peer token; only the admission key does");
+static_assert(std::is_constructible_v<Permission<seplog_peer_tag, brand_a>, federation_admission_key>
+              && !std::is_convertible_v<federation_admission_key, Permission<seplog_peer_tag, brand_a>>);
+static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, federation_admission_key>,
+              "the admission key must build a federation peer token and no other");
+static_assert(!std::is_default_constructible_v<federation_admission_key> && std::is_empty_v<federation_admission_key>,
+              "only an admission may build the admission key");
 
 static_assert(token_is_sound<seplog_test_tag>(), "Permission<Tag> must be a 1-byte, trivially destructible, "
                                                  "non-copyable, nothrow-movable token");

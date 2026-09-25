@@ -710,6 +710,10 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::canonical_order::layer, "the names of the layers of the canonical wrapper order: a position is read "
                                        "from each name at compile time, and none of them is a value"},
     {^^::fixy::spin::spinlock_size_probe_, "a layout probe for a static assertion"},
+    {^^::fixy::federation, "the words, the handshake and the replay window of the federation door, and the tag of "
+                           "the local cipher: runtime values and a tag that carry no grade; the peer token that the "
+                           "door admits is the carrier, and it folds"},
+    {^^::fixy::federation::policy, "the lists of organizations that a deployment admits, read at compile time"},
     {^^::fixy::row_discipline, "discipline identities, declared and never defined; they name claims"},
     {^^::fixy::refined::row_discipline, "discipline identities, declared and never defined; they name claims"},
     {^^::foundation::algebra::modality, kGradeVocabulary},
@@ -1012,6 +1016,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^fp::has_split_authoring_witness, kMetafunction},
     {^^fp::has_split_pack_authoring_witness, kMetafunction},
     {^^fp::perm_mint_key, kPasskey},
+    {^^fp::federation_admission_key, kPasskey},
+    {^^fp::FederationAdmission, "the verifier of federation handshakes: it holds the local key and the replay window, "
+                                "the peer tokens that it admits fold, and it is never a value in a signature"},
     {^^fp::PermissionForkRunner,
      "the holder of the fork body: it has static members only, no object of it exists, and it is never a value"},
     {^^fp::perm_set_insert, kMetafunction},

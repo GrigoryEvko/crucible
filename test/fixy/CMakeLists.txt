@@ -895,6 +895,32 @@ fixy_neg_compile_test(neg_refined_mixed_sign_floor
 fixy_test(test_tagged)
 fixy_test(test_secret)
 fixy_test(test_siphash)
+fixy_test(test_federation)
+
+# The admission of a federation peer needs a context whose row holds the
+# IO row of the local cipher and of the peer token.  A foreground
+# context holds no effect.
+fixy_neg_compile_test(neg_federation_admission_foreground_ctx
+  "no matching function for call to .foundation::permissions::FederationAdmission<NegFederationOrg>::mint_federation_admission<fixy::federation::policy::admit_orgs<NegFederationOrg> >\\(const \\{anonymous\\}::ForegroundCtx&"
+  "required for the satisfaction of .CtxFitsFederationAdmission<Ctx, Org, Policy>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "required for the satisfaction of .CtxAdmitsPermission<fixy::federation::LocalCipherTag, Ctx>.")
+
+# A policy that does not name the organization refuses its admission.
+fixy_neg_compile_test(neg_federation_admission_policy_refuses_org
+  "no matching function for call to .foundation::permissions::FederationAdmission<NegStrangerOrg>::mint_federation_admission<fixy::federation::policy::admit_orgs<NegAdmittedOrg> >"
+  "required for the satisfaction of .CtxFitsFederationAdmission<Ctx, Org, Policy>."
+  "the expression .Policy::admits<Org> \\[with Policy = fixy::federation::policy::admit_orgs<NegAdmittedOrg>. Org = NegStrangerOrg\\]. evaluated to .false.")
+
+# A caller cannot name the brand of an admitted peer token.
+fixy_neg_compile_test(neg_federation_admittance_names_brand
+  "no matching function for call to .foundation::permissions::FederationAdmission<NegBrandOrg>::mint_federation_admittance<\\{anonymous\\}::HeldBrand>"
+  "required for the satisfaction of .AdmittanceNamesNoBrand<Explicit \\.\\.\\.>. \\[with Explicit = \\{<unnamed>::HeldBrand\\}\\]")
+
+# An admittance writes the replay window, so a const admission admits
+# nobody.
+fixy_neg_compile_test(neg_federation_admittance_const_admission
+  "passing .const foundation::permissions::FederationAdmission<NegConstOrg>. as .this. argument discards qualifiers"
+  "in call to .constexpr std::pair<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, std::expected<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, Brand>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
 
 # Verified -> Unverified has no edge in admitted_retags; the member
 # retag fails its constraint and the note names RetagAllowed with the

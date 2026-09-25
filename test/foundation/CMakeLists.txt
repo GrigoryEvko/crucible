@@ -987,6 +987,22 @@ foundation_neg_compile_test(neg_permission_root_without_ctx_refuses_row
   "static assertion failed: mint_permission_root<Tag>\\(\\) without an ExecCtx is only valid"
   "permission_row_empty_v<foundation::permissions::tag::HugePageTag>\\)\\). evaluates to false")
 
+# A federation peer token comes only from a verified handshake.  The root
+# mint refuses the tag without a context and with one.
+foundation_neg_compile_test(neg_permission_root_refuses_federated_peer
+  "no matching function for call to .mint_permission_root<foundation::permissions::tag::FederatedPeer<\\{anonymous\\}::PeerOrg> >\\(\\)."
+  "required for the satisfaction of .RootMintableTag<Tag>. \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]"
+  "the expression .!\\(is_federated_peer_tag_v<Tag>\\)")
+foundation_neg_compile_test(neg_permission_root_ctx_refuses_federated_peer
+  "no matching function for call to .mint_permission_root<foundation::permissions::tag::FederatedPeer<\\{anonymous\\}::PeerOrg> >\\(\\{anonymous\\}::IoCtx&\\)."
+  "required for the satisfaction of .RootMintableTag<Tag>. \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]"
+  "the expression .!\\(is_federated_peer_tag_v<Tag>\\)")
+
+# Only an admission builds the key of the federation peer token.
+foundation_neg_compile_test(neg_federation_admission_key_outside_admission
+  ".constexpr foundation::permissions::federation_admission_key::federation_admission_key\\(\\). is private within this context"
+  "foundation/permissions/Permission\\.h:[0-9]+:[0-9]+: note: declared private here")
+
 # The admission and the handoff each refuse a context that does not
 # admit the tag's row, at their own door.
 foundation_neg_compile_test(neg_permission_admit_ctx_refuses_row

@@ -48,6 +48,9 @@ foundation::effects::host::ProducerClaim<forge::brand> | foundation/effects/Ctx.
 foundation::permissions::perm_mint_key | foundation/permissions/Permission.h | foundation::permissions::perm_mint_key{} | private | closed
 foundation::permissions::Permission<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>{} | no-match | closed
 foundation::permissions::detail::ForkRebuildKey | foundation/permissions/Permission.h | foundation::permissions::detail::ForkRebuildKey{} | private | closed
+# Only an admission builds the key of a federation peer token, after a
+# handshake verifies.
+foundation::permissions::federation_admission_key | foundation/permissions/Permission.h | foundation::permissions::federation_admission_key{} | private | closed
 foundation::permissions::PermissionForkRunner | foundation/permissions/PermissionFork.h | foundation::permissions::PermissionForkRunner{} | deleted | closed
 fixy::spawn::ParallelForRunner | fixy/os/Spawn.h | fixy::spawn::ParallelForRunner{} | deleted | closed
 foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>{} | private | closed

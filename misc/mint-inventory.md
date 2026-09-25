@@ -222,6 +222,8 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
+| `foundation::permissions::FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| `foundation::permissions::FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | · | HS14: 2 |
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
@@ -370,7 +372,7 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 147 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 149 |
 | `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 27 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |
@@ -381,4 +383,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 112 | 57 | 46 | 9 | 0 | 101 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 108 | 46 | 60 | 2 | 0 | · | 22 |
+| new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 22 |
