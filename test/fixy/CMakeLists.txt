@@ -3260,6 +3260,22 @@ fixy_neg_compile_test(neg_handle_one_shot_flag_reset_braced_proof
   "converting to .fixy::handle::OneShotFlag::QuiescenceProof. from initializer list would use explicit constructor"
   "fixy::handle::OneShotFlag::QuiescenceProof::QuiescenceProof\\(\\)")
 
+# The lazily established channel gives one session over its resource, to
+# the first observer after the publish.  The mint reads the gate of
+# fixy::session::mint_session, so a value that is not a context and a
+# context without the effect of the protocol are refused.  A Resource
+# that can move has no stable address for the session to hold.
+fixy_test(test_handle_lazy_channel)
+fixy_neg_compile_test(neg_handle_lazy_channel_mint_without_context
+  "no matching function for call to .fixy::handle::LazyEstablishedChannel<.*>::mint_established_session\\(int\\)."
+  "IsExecCtx")
+fixy_neg_compile_test(neg_handle_lazy_channel_mint_context_lacks_io
+  "no matching function for call to .fixy::handle::LazyEstablishedChannel<.*>::mint_established_session"
+  "CtxFitsSession")
+fixy_neg_compile_test(neg_handle_lazy_channel_resource_not_pinned
+  "static assertion failed"
+  "LazyEstablishedChannel<Proto, Resource>: the Resource must derive from foundation::Pinned<Resource>")
+
 # The standing witness for the guard that once admitted
 # PublishOnce<int*> and enforced nothing.  A guard that went
 # tautological again would make this fixture stop failing.

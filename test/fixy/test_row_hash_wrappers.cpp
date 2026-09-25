@@ -75,6 +75,7 @@
 #include <fixy/fp/Canonicalize.h>
 #include <fixy/fp/Polynomial.h>
 #include <fixy/GradedFacade.h>
+#include <fixy/handle/LazyEstablishedChannel.h>
 #include <fixy/handle/Once.h>
 #include <fixy/handle/PublishOnce.h>
 #include <fixy/Insights.h>
@@ -819,6 +820,8 @@ struct SelfRole {};
 
 struct PeerRole {};
 
+struct LazyChannelWire : ::foundation::Pinned<LazyChannelWire> {};
+
 // The tags and the reader brand of the single-writer many-reader witness.
 struct SwmrWriterTag {
     using permission_row = ::foundation::effects::Row<>;
@@ -950,6 +953,8 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::handle::Lazy, ^^::fixy::handle::Lazy<int>},
     {^^::fixy::handle::PublishOnce, ^^::fixy::handle::PublishOnce<int>},
     {^^::fixy::handle::PublishSlot, ^^::fixy::handle::PublishSlot<int>},
+    {^^::fixy::handle::LazyEstablishedChannel,
+     ^^::fixy::handle::LazyEstablishedChannel<::fixy::session::End, LazyChannelWire>},
 
     {^^::fixy::sched::SchedPriority, ^^::fixy::sched::SchedPriority<0>},
     {^^::fixy::spin::SpinLock, ^^::fixy::spin::SpinLock<PureRegionTag>},

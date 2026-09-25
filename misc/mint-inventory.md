@@ -365,6 +365,12 @@ apply to the row.
 | `mint_swmr_writer` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_writer_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 
+## include/fixy/handle/
+
+| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
+|---|---|---|---|---|---|---|---|---|---|
+| `LazyEstablishedChannel::mint_established_session` | `include/fixy/handle/LazyEstablishedChannel.h` | Y | - | Y | Y | member | · | · | HS14: 2 |
+
 ## include/fixy/os/
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
@@ -465,4 +471,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 183 | 94 | 80 | 9 | 0 | 113 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 106 | 45 | 60 | 1 | 0 | · | 22 |
+| new (`include/foundation/`, `include/fixy/`) | 107 | 45 | 60 | 2 | 0 | · | 22 |
