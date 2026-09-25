@@ -101,16 +101,17 @@ crucible/effects/_Capability.h:source_of  — The trait struct is gone; only sou
 crucible/effects/_Capability.h:runtime_smoke_test_capability  — An inline smoke test in a public namespace; its body moved to test/foundation/test_capability.cpp.
 
 # ── effects: the six policy axes ExecCtx dropped at 8fd50215 ────────────
-# The commit records the drop at the axis level: NUMA, allocator, heat,
-# residency, workload and progress had no reader, because every consumer
-# asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t.  One
-# sentence per symbol below is the per-symbol record the commit lacked.
+# The commit records the drop at the axis level.  No production site read
+# the NUMA, allocator, heat, residency, workload or progress axis.  Inside
+# the old substrate the axes had readers, and foundation/effects/Ctx.h
+# lists them.  One sentence per symbol below is the per-symbol record the
+# commit lacked.
 
-crucible/effects/_ExecCtx.h:alloc_class_of_t  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:ByteBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:ChannelBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:ConsumerOnlyChannel  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:DRAM  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:alloc_class_of_t  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:ByteBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:ChannelBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:ConsumerOnlyChannel  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:DRAM  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:HasCap  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
 crucible/effects/_ExecCtx.h:HasNumaPolicy  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
 crucible/effects/_ExecCtx.h:heat_alloc_coherent  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
@@ -119,63 +120,63 @@ crucible/effects/_ExecCtx.h:heat_progress_coherent  — A coherence predicate be
 crucible/effects/_ExecCtx.h:heat_progress_coherent_v  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
 crucible/effects/_ExecCtx.h:heat_resid_coherent  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
 crucible/effects/_ExecCtx.h:heat_resid_coherent_v  — A coherence predicate between two of the six policy axes ExecCtx dropped at 8fd50215; it went with the axes.
-crucible/effects/_ExecCtx.h:hot_path_tier_of_t  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_alloc_class  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsAllocClass  — The allocator-axis recogniser concept, dropped at 8fd50215 with the six policy axes because no consumer read them. The per-band concept of the same name is a different fact and keeps its own row.
+crucible/effects/_ExecCtx.h:hot_path_tier_of_t  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_alloc_class  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsAllocClass  — The allocator-axis recogniser concept, dropped at 8fd50215 with the six policy axes. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate. The per-band concept of the same name is a different fact and keeps its own row.
 crucible/effects/_ExecCtx.h:is_alloc_class_v  — The value spelling of the allocator-axis recogniser, dropped at 8fd50215 with the axis. The per-band trait of the same name keeps its own row.
-crucible/effects/_ExecCtx.h:IsArenaCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsArenaCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:IsBgCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
-crucible/effects/_ExecCtx.h:IsBoundedCtx  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsColdCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsBoundedCtx  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsColdCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:IsFgCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
-crucible/effects/_ExecCtx.h:IsHeapCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_heat_tier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsHeatTier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_heat_tier_v  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsHotCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsHugePageCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsHeapCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_heat_tier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsHeatTier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_heat_tier_v  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsHotCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsHugePageCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:IsInitCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
-crucible/effects/_ExecCtx.h:IsMayDivergeCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_numa_policy  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsNumaPolicy  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_numa_policy_v  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsPoolCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsProductiveCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_progress_class  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsProgressClass  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_progress_class_v  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_residency_tier  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsResidencyTier  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_residency_tier_v  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsStackCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsMayDivergeCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_numa_policy  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsNumaPolicy  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_numa_policy_v  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsPoolCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsProductiveCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_progress_class  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsProgressClass  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_progress_class_v  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_residency_tier  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsResidencyTier  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_residency_tier_v  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsStackCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:IsSubCtx  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
-crucible/effects/_ExecCtx.h:IsTerminatingCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsTerminatingCtx  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:IsTestCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
-crucible/effects/_ExecCtx.h:IsWarmCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_workload_hint  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:IsWorkloadHint  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:is_workload_hint_v  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:ItemBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:L3  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:MayDiverge  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:numa_policy_of_t  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:ProducerOnlyChannel  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:progress_class_of_t  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:IsWarmCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_workload_hint  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:IsWorkloadHint  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_workload_hint_v  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:ItemBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:L3  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:MayDiverge  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:numa_policy_of_t  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:ProducerOnlyChannel  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:progress_class_of_t  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:rebuild_ctx_to  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
-crucible/effects/_ExecCtx.h:residency_of_t  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:residency_of_t  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:SiblingCtx  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
-crucible/effects/_ExecCtx.h:Spread  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:Terminating  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:to_alloc_class_tag  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:to_alloc_class_tag_v  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:to_hot_path_tier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:to_hot_path_tier_v  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:to_residency_heat_tag  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:to_residency_heat_tag_v  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215 because no consumer read them.
-crucible/effects/_ExecCtx.h:Unbound  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:Spread  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:Terminating  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:to_alloc_class_tag  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:to_alloc_class_tag_v  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:to_hot_path_tier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:to_hot_path_tier_v  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:to_residency_heat_tag  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:to_residency_heat_tag_v  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:Unbound  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:Unspecified  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
 crucible/effects/_ExecCtx.h:WellFormedExecCtxAxes  — Dropped at 8fd50215 with the six policy axes it ranged over.
-crucible/effects/_ExecCtx.h:workload_hint_of_t  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215 because no consumer read them.
+crucible/effects/_ExecCtx.h:workload_hint_of_t  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 
 # ── effects: Computation and the F*-style aliases ───────────────────────
 
