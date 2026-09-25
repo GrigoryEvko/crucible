@@ -45,7 +45,7 @@
 //   "fixy-A2-030".
 
 #include <crucible/bridges/CrashTransport.h>
-#include <crucible/permissions/PermissionInherit.h>
+#include <crucible/permissions/_PermissionInherit.h>
 
 #include <expected>
 #include <utility>

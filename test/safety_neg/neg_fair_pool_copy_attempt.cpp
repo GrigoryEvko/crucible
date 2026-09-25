@@ -8,7 +8,7 @@
 // Expected diagnostic: "use of deleted function" or
 // "FairSharedPermissionPool" + "deleted".
 
-#include <crucible/permissions/FairSharedPermissionPool.h>
+#include <crucible/permissions/_FairSharedPermissionPool.h>
 
 namespace saf = crucible::safety;
 

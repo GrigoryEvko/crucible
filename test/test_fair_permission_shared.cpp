@@ -1,4 +1,4 @@
-#include <crucible/permissions/FairSharedPermissionPool.h>
+#include <crucible/permissions/_FairSharedPermissionPool.h>
 
 #include <atomic>
 #include <cstdint>

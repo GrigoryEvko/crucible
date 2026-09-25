@@ -8,7 +8,7 @@
 // Expected diagnostic substring:
 //   "auto_split_n<Parent, N>: N must be greater than zero"
 
-#include <crucible/safety/PermissionTreeGenerator.h>
+#include <crucible/safety/_PermissionTreeGenerator.h>
 
 namespace {
 struct MyTag {};

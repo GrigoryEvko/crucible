@@ -1,6 +1,6 @@
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/PermissionGridGenerator.h>
+#include <crucible/safety/_PermissionGridGenerator.h>
 #include <crucible/sessions/ShardedGridSession.h>
 
 #include <cassert>

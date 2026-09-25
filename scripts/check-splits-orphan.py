@@ -106,8 +106,8 @@ AUTHORING: dict[str, str] = {
     "include/crucible/concurrent/_PermissionedSpscChannel.h": FROZEN_CHANNEL,
     "include/crucible/permissions/FederationPermission.h":
         "the split of a federated peer is partial over its children, which are template parameters",
-    "include/crucible/safety/PermissionTreeGenerator.h": "the generator splits every parent into its slices",
-    "include/crucible/safety/PermissionGridGenerator.h": "the generator splits every parent into its grid cells",
+    "include/crucible/safety/_PermissionTreeGenerator.h": "the generator splits every parent into its slices",
+    "include/crucible/safety/_PermissionGridGenerator.h": "the generator splits every parent into its grid cells",
     "include/fixy/OwnedRegion.h": "the region splits every parent into its slices",
     "test/": "the tests specialize for local tags on purpose, and a negative fixture forges a split to prove "
              "that the mint refuses it",

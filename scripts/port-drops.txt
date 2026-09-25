@@ -1040,3 +1040,39 @@ crucible/safety/_UnaryTransform.h:unary_transform_input_tag_t  — Dropped with 
 crucible/safety/_UnaryTransform.h:unary_transform_input_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
 crucible/safety/_UnaryTransform.h:unary_transform_output_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
 crucible/safety/_UnaryTransform.h:unary_transform_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.
+
+# ── permissions: the generators, the fair pool and inheritance ──────────
+# No production file and no header of the new tree splits a permission
+# into a producer and consumer grid, names shards through auto_split_n,
+# lends through the fair pool, or hands a dead peer's permission to a
+# survivor.  Only old tests and benches do, so the four headers drop.
+
+crucible/permissions/_FairSharedPermissionPool.h:FairSharedPermissionPool  — Dropped, because no production file and no header of the new tree lends a shared permission under a bound on writer wins.
+crucible/permissions/_FairSharedPermissionPool.h:runtime_smoke_test_fair_shared_permission_pool  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/permissions/_PermissionInherit.h:crash_witness_key  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:inheritance_list  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:inheritance_list_contains_v  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:inheritance_list_empty_v  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:inherits_from  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:inherits_from_v  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:mint_permission_inherit  — Dropped, not ported: it reopens the root mint that foundation/permissions/Permission.h withholds, and no production file calls it.
+crucible/permissions/_PermissionInherit.h:mint_permission_inherit_t  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:survivor_registry  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:survivors_t  — Dropped with permission inheritance, because no production file and no header of the new tree hands a dead peer's permission to a survivor.
+crucible/permissions/_PermissionInherit.h:WrapCrashReturnKey  → include/fixy/session/CrashTransport.h  — A forward declaration that let the witness key name the passkey of the old crash bridge. The new crash transport has a session door instead, and the witness key is dropped.
+crucible/safety/_PermissionGridGenerator.h:auto_split_grid  — Dropped with the grid generator, because no production file splits a permission into producers and consumers, and only old benches and tests do.
+crucible/safety/_PermissionGridGenerator.h:can_split_grid_v  — Dropped with the grid generator, because no production file splits a permission into producers and consumers, and only old benches and tests do.
+crucible/safety/_PermissionGridGenerator.h:ConsumerSide  — Dropped with the grid generator, because no production file splits a permission into producers and consumers, and only old benches and tests do.
+crucible/safety/_PermissionGridGenerator.h:GridPermissions  — Dropped with the grid generator, because no production file splits a permission into producers and consumers, and only old benches and tests do.
+crucible/safety/_PermissionGridGenerator.h:mint_grid_permissions  — Dropped with the grid generator, because no production file splits a permission into producers and consumers, and only old benches and tests do.
+crucible/safety/_PermissionGridGenerator.h:ProducerSide  — Dropped with the grid generator, because no production file splits a permission into producers and consumers, and only old benches and tests do.
+crucible/safety/_PermissionGridGenerator.h:runtime_smoke_test_grid  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/safety/_PermissionGridGenerator.h:splits_into  — The side split is dropped with the grid, because no header of the new tree splits a whole into a producer side and a consumer side.
+crucible/safety/_PermissionGridGenerator.h:splits_into_authoring_witness  — The witness of the side split is dropped with the grid, because no header of the new tree splits a whole into two sides.
+crucible/safety/_PermissionTreeGenerator.h:auto_split_n  — Dropped, because nothing outside the old tests names shards through it. fixy/OwnedRegion.h carries Slice and the universal pack split.
+crucible/safety/_PermissionTreeGenerator.h:auto_split_n_permissions_t  — Dropped, because nothing outside the old tests names shards through it. fixy/OwnedRegion.h carries Slice and the universal pack split.
+crucible/safety/_PermissionTreeGenerator.h:auto_split_n_t  — Dropped, because nothing outside the old tests names shards through it. fixy/OwnedRegion.h carries Slice and the universal pack split.
+crucible/safety/_PermissionTreeGenerator.h:can_split_n_v  — Dropped, because nothing outside the old tests asks it. fixy/OwnedRegion.h carries the universal pack split, which admits every arity above zero.
+crucible/safety/_PermissionTreeGenerator.h:runtime_smoke_test  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/safety/_PermissionTreeGenerator.h:splits_into_pack  — The Slice specialization of the old trait. fixy/OwnedRegion.h specializes the renamed can_split_into_pack for its three-parameter Slice.
+crucible/safety/_PermissionTreeGenerator.h:splits_into_pack_authoring_witness  — The witness of the old Slice specialization. fixy/OwnedRegion.h specializes the renamed trait for its three-parameter Slice.

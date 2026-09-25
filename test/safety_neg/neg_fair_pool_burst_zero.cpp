@@ -8,7 +8,7 @@
 // Expected diagnostic: the static_assert message
 //   "FairSharedPermissionPool BurstLimit must be > 0"
 
-#include <crucible/permissions/FairSharedPermissionPool.h>
+#include <crucible/permissions/_FairSharedPermissionPool.h>
 
 namespace saf = crucible::safety;
 

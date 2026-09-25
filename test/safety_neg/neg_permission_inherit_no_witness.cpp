@@ -15,7 +15,7 @@
 // Expected diagnostic: "too few arguments" /
 // "no matching function for call" / "mint_permission_inherit".
 
-#include <crucible/permissions/PermissionInherit.h>
+#include <crucible/permissions/_PermissionInherit.h>
 
 namespace pi = ::crucible::permissions;
 

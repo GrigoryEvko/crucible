@@ -5,7 +5,7 @@
 #include <crucible/permissions/_Permission.h>
 #include <crucible/permissions/_PermissionFork.h>
 #include <crucible/safety/_OwnedRegion.h>
-#include <crucible/safety/PermissionTreeGenerator.h>
+#include <crucible/safety/_PermissionTreeGenerator.h>
 #include <crucible/safety/_Workload.h>
 
 #include <cstddef>

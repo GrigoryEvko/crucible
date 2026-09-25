@@ -14,7 +14,7 @@
 // from, and no new specialization is needed to describe them.
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/PermissionTreeGenerator.h>
+#include <crucible/safety/_PermissionTreeGenerator.h>
 
 #include <cstddef>
 #include <tuple>

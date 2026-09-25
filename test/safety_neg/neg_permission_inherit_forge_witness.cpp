@@ -16,7 +16,7 @@
 // Expected diagnostic: "is private" / "private within this context" /
 // "private member" / "ctor.*private".
 
-#include <crucible/permissions/PermissionInherit.h>
+#include <crucible/permissions/_PermissionInherit.h>
 
 namespace pi = ::crucible::permissions;
 

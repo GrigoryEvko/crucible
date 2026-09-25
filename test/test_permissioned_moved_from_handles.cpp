@@ -26,7 +26,7 @@
 #include <crucible/concurrent/Queue.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/PermissionGridGenerator.h>
+#include <crucible/safety/_PermissionGridGenerator.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>

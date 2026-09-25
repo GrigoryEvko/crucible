@@ -17,7 +17,7 @@
 //   "candidate expects" / "cannot bind"
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/PermissionGridGenerator.h>
+#include <crucible/safety/_PermissionGridGenerator.h>
 
 namespace {
 struct GridTag {};

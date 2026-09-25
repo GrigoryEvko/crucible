@@ -7,7 +7,7 @@
 // Expected diagnostic substring:
 //   "auto_split_grid<Whole, M, N>: N (consumer count) must be > 0"
 
-#include <crucible/safety/PermissionGridGenerator.h>
+#include <crucible/safety/_PermissionGridGenerator.h>
 
 namespace {
 struct GridTag {};

@@ -50,7 +50,7 @@
 #include <crucible/concurrent/_Topology.h>
 #include <crucible/fixy/_Time.h>  // FIXY-V-202
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/PermissionGridGenerator.h>
+#include <crucible/safety/_PermissionGridGenerator.h>
 
 #include "bench_harness.h"
 

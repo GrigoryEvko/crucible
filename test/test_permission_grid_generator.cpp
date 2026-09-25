@@ -3,7 +3,7 @@
 // under the project warning flags, and adds grid shapes larger than the
 // ones the header checks against itself.
 
-#include <crucible/safety/PermissionGridGenerator.h>
+#include <crucible/safety/_PermissionGridGenerator.h>
 
 #include <cstdio>
 #include <cstdlib>

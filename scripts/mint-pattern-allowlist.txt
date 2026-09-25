@@ -178,7 +178,6 @@ include/crucible/observe/SdcDetect.h:mint_sdc_detector:constexpr-ok
 include/crucible/observe/SyntheticProbe.h:mint_synthetic_probes:constexpr-ok
 
 # ── permissions/ token + structured-concurrency mints ────────────────
-include/crucible/permissions/PermissionInherit.h:mint_permission_inherit:requires-ok
 
 # ── foundation/permissions/ — the ported copies of the entries above ──
 # Each permission mint is one template whose argument shape (leading

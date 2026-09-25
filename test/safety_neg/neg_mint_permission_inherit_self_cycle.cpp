@@ -15,7 +15,7 @@
 // inheritance" pins the diagnostic to `validated_perm_tuple`'s
 // no-self-cycle message.
 
-#include <crucible/permissions/PermissionInherit.h>
+#include <crucible/permissions/_PermissionInherit.h>
 
 namespace {
 

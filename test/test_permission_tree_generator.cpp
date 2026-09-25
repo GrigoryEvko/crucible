@@ -4,7 +4,7 @@
 // arguments, and pushes the split traits past the shard counts the header
 // checks against itself.
 
-#include <crucible/safety/PermissionTreeGenerator.h>
+#include <crucible/safety/_PermissionTreeGenerator.h>
 
 #include <cstdio>
 #include <cstdlib>

@@ -4,14 +4,14 @@
 // and crucible::permissions.  The re-export gives a caller that pulls in only
 // the fixy surface an entry point that does not name those namespaces.
 
-#include <crucible/permissions/FairSharedPermissionPool.h>
+#include <crucible/permissions/_FairSharedPermissionPool.h>
 #include <crucible/permissions/FederationPermission.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/permissions/_PermissionFork.h>
-#include <crucible/permissions/PermissionInherit.h>
+#include <crucible/permissions/_PermissionInherit.h>
 #include <crucible/permissions/_ReadView.h>
-#include <crucible/safety/PermissionGridGenerator.h>
-#include <crucible/safety/PermissionTreeGenerator.h>
+#include <crucible/safety/_PermissionGridGenerator.h>
+#include <crucible/safety/_PermissionTreeGenerator.h>
 
 #include <type_traits>
 

@@ -123,7 +123,7 @@ RELATIONS = (
     Relation("predicate_implies", "specialization", ("predicate_implies",),
              ("include/crucible/safety/_Refined.h", "include/crucible/safety/_RefinedAlgebra.h", "test/*")),
     Relation("survivor_registry", "specialization", ("survivor_registry",),
-             ("include/crucible/permissions/PermissionInherit.h", "test/*")),
+             ("include/crucible/permissions/_PermissionInherit.h", "test/*")),
     Relation("is_subsort", "specialization", ("is_subsort",), ("include/crucible/sessions/*.h", "test/*")),
     Relation("admitted_retags", "reopening", ("admitted_retags",), ("include/fixy/Tagged.h", "test/*")),
     Relation("admitted_policies", "reopening", ("admitted_policies",), ("include/fixy/Secret.h", "test/*")),

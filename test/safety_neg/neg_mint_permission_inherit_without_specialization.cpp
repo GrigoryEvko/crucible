@@ -18,7 +18,7 @@
 // recovery edge declared, so the static_assert fires with the
 // "mint_permission_inherit requires inherits_from" message.
 
-#include <crucible/permissions/PermissionInherit.h>
+#include <crucible/permissions/_PermissionInherit.h>
 
 namespace {
 

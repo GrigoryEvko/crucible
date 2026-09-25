@@ -12,7 +12,7 @@
 //   "mint_permission_split_n<Children...>"
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/PermissionTreeGenerator.h>
+#include <crucible/safety/_PermissionTreeGenerator.h>
 
 namespace {
 struct ParentA {};

@@ -4208,7 +4208,7 @@ crucible_neg_compile_effects_test(neg_is_effect_row_non_row_cvref_rejected
 # test-witness); Test's key only on the test-witness.  An
 # unprivileged TU that writes `effects::Bg bg{};` or `effects::Init
 # i{};` must fail to compile.  Mirrors the H-25 passkey-via-passkey
-# pattern from permissions/PermissionInherit.h.
+# pattern from permissions/_PermissionInherit.h.
 crucible_neg_compile_effects_test(neg_effects_bg_default_ctor_private
     "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert"
     "private within this context|fixy-A3-005|is private|explicitly marked as private")

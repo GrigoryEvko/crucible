@@ -41,7 +41,7 @@
 //
 // Old spelling: include/crucible/safety/OwnedRegion.h, the detection
 // surface of include/crucible/safety/IsOwnedRegion.h and the Slice half
-// of include/crucible/safety/PermissionTreeGenerator.h.
+// of include/crucible/safety/_PermissionTreeGenerator.h.
 
 #include <fixy/Borrowed.h>
 #include <foundation/Brand.h>
@@ -68,9 +68,8 @@ namespace fixy {
 // A generated tag tree: the shards of a parent, indexed.  Index-pack
 // deduction covers every arity in one specialization, so a caller
 // splitting a parent into N shards declares nothing per N.  It comes
-// from safety/PermissionTreeGenerator.h, which is not ported; the
-// remainder of that header (auto_split_n, can_split_n_v) has no
-// consumer here.
+// from safety/_PermissionTreeGenerator.h.  The rest of that header
+// (auto_split_n, can_split_n_v) is dropped, because nothing reads it.
 //
 // parent_type is also how a shard finds its effect row: the row
 // relation reads a derived tag's parent, so a shard touches the region
