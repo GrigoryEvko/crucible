@@ -234,7 +234,6 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_fn` | `include/crucible/safety/Fn.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 32 |
 | `mint_join_policy` | `include/crucible/safety/JoinPolicy.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:260` | HS14: 2 |
-| `mint_suspend_behavior` | `include/crucible/safety/SuspendBehavior.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:265` | HS14: 2 |
 
 ## include/crucible/sessions/
 
@@ -464,5 +463,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 184 | 94 | 81 | 9 | 0 | 113 | 41 |
+| old (`include/crucible/`) | 183 | 94 | 80 | 9 | 0 | 113 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 105 | 44 | 60 | 1 | 0 | · | 22 |

@@ -4,7 +4,7 @@
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/GradedExtract.h>
+#include <crucible/safety/_GradedExtract.h>
 #include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/_IsDetSafe.h>
@@ -14,7 +14,7 @@
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OpaqueLifetime.h>
 #include <crucible/safety/_OwnedRegion.h>
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 #include <crucible/safety/_SignatureTraits.h>
 
 #include <cstdio>

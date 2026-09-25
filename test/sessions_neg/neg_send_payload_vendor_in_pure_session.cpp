@@ -1,7 +1,7 @@
 // GAPS-068 fixture #7: a raw/pure session cannot carry Vendor<T>
 // payloads without an explicit VendorPinned/VendorCtx boundary.
 
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

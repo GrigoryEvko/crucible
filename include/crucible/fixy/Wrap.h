@@ -35,7 +35,7 @@
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/NotInherited.h>
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OpaqueLifetime.h>
 #include <crucible/safety/_OwnedRegion.h>
@@ -45,7 +45,7 @@
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/fixy/wrap/_Refined.h>
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 #include <crucible/safety/_ScopedView.h>
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
@@ -54,7 +54,7 @@
 #include <crucible/safety/_SwmrReader.h>
 #include <crucible/safety/_SwmrWriter.h>
 #include <crucible/safety/_SignatureTraits.h>
-#include <crucible/safety/GradedExtract.h>
+#include <crucible/safety/_GradedExtract.h>
 #include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/_Hw.h>
 #include <crucible/safety/JoinPolicy.h>
@@ -64,12 +64,12 @@
 #include <crucible/safety/_StackUse.h>
 #include <crucible/safety/_Stdio.h>
 #include <crucible/safety/_ThreadLocalRef.h>
-#include <crucible/safety/SuspendBehavior.h>
+#include <crucible/safety/_SuspendBehavior.h>
 #include <crucible/safety/_SimdWidthPinned.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/_Path.h>
 #include <crucible/safety/TimeOrdered.h>
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/safety/_Wait.h>
 #include <crucible/safety/_WeakRef.h>
 #include <crucible/safety/_Witness.h>

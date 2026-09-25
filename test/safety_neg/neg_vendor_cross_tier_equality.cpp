@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 
 using namespace crucible::safety;
 

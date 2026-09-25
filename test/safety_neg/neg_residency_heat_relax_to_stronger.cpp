@@ -24,7 +24,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on relax<>().
 
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 
 using namespace crucible::safety;
 

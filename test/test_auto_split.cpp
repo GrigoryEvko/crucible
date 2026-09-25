@@ -3,7 +3,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_NumericalTier.h>
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 #include <crucible/safety/_Wait.h>
 
 #include <algorithm>

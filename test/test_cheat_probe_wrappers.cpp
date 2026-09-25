@@ -13,11 +13,11 @@
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OpaqueLifetime.h>
-#include <crucible/safety/ResidencyHeat.h>
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_ResidencyHeat.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/EpochVersioned.h>
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_RecipeSpec.h>
 
 #include <crucible/safety/IsBudgeted.h>

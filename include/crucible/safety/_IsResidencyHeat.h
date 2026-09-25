@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 
 #include <type_traits>
 

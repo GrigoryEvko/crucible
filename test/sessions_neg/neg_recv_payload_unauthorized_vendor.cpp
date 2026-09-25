@@ -1,7 +1,7 @@
 // GAPS-068 fixture #8: receiving an AMD-pinned payload in an NV-pinned
 // session is rejected at the session mint boundary.
 
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

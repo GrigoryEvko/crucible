@@ -2,7 +2,7 @@
 
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/Consistency.h>
-#include <crucible/safety/GradedExtract.h>
+#include <crucible/safety/_GradedExtract.h>
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/_IsNumericalTier.h>
 #include <crucible/safety/_IsOwnedRegion.h>

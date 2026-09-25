@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 
 #include <utility>
 

@@ -7,7 +7,7 @@
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
-#include <crucible/safety/GradedExtract.h>
+#include <crucible/safety/_GradedExtract.h>
 #include <crucible/safety/IsBudgeted.h>
 #include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/IsConsistency.h>
@@ -20,14 +20,14 @@
 #include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/_IsResidencyHeat.h>
 #include <crucible/safety/_IsVendor.h>
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OpaqueLifetime.h>
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_RecipeSpec.h>
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 #include <crucible/safety/_SignatureTraits.h>
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 
 #include <cstdint>
 #include <cstdio>

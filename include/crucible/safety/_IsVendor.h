@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 
 #include <type_traits>
 

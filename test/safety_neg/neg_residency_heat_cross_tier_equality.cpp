@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 
 using namespace crucible::safety;
 

@@ -27,7 +27,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on relax<>().
 
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 
 using namespace crucible::safety;
 

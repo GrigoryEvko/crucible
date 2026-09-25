@@ -14,7 +14,7 @@
 
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/EpochVersioned.h>
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_RecipeSpec.h>
 
 #include <concepts>

@@ -3,7 +3,7 @@
 // under the project warning flags, and adds the cross-wrapper checks no
 // single wrapper header can state about itself.
 
-#include <crucible/safety/SuspendBehavior.h>
+#include <crucible/safety/_SuspendBehavior.h>
 #include <crucible/safety/_IsSuspendBehavior.h>
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/diag/_RowHashFold.h>

@@ -31,7 +31,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection of cross-tier flow.
 
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 
 #include <utility>
 

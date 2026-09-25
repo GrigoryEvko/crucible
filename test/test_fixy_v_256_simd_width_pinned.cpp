@@ -5,7 +5,7 @@
 
 #include <crucible/safety/_SimdWidthPinned.h>
 #include <crucible/safety/_IsSimdWidthPinned.h>
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 

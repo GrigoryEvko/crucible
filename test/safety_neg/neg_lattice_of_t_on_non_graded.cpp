@@ -19,7 +19,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/GradedExtract.h>
+#include <crucible/safety/_GradedExtract.h>
 
 namespace {
 struct Lookalike {

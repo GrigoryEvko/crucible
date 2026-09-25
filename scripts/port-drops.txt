@@ -927,6 +927,14 @@ crucible/safety/_Stdio.h:NoStdio  — An alias that pinned the NoStdio tier on a
 crucible/safety/_Stdio.h:StdioLattice  — A re-export of the old lattice. The port re-modelled console I/O as the atom family of fixy/atoms/Stdio.h, and no new header re-exports a lattice for it.
 crucible/safety/_Stdio.h:StdioPinned  — The value wrapper, which the port did not carry. Axis::Stdio is the atom family of fixy/atoms/Stdio.h on a binding, and S001 in fixy/Collision.h reads it from the grade of that binding.
 crucible/safety/_Stdio.h:UnbufferedWrite  — An alias that pinned the UnbufferedWrite tier on a value. write<Stream> in fixy/atoms/Stdio.h states a write on a binding, and the atom does not separate a buffered write from an unbuffered one.
+crucible/safety/_GradedExtract.h:graded_extract_smoke_test  — An inline smoke test in a public namespace, retired with the projections that the port did not carry.
+crucible/safety/_GradedExtract.h:graded_type_of_t  — A projection of the graded_type slot of a wrapper. A consumer in the new tree reads the slot directly, and the only includer outside the tests was the old crucible/fixy/Wrap.h.
+crucible/safety/_GradedExtract.h:grade_of_t  — A projection of the grade type through the graded_type slot. A consumer in the new tree reads the slot directly, and the only includer outside the tests was the old crucible/fixy/Wrap.h.
+crucible/safety/_GradedExtract.h:IsGradedWrapper  — A concept over the old substrate. The new tree uses ::foundation::algebra::GradedWrapper as the constraint, and the only includer outside the tests was the old crucible/fixy/Wrap.h.
+crucible/safety/_GradedExtract.h:lattice_of_t  — A projection of the lattice_type slot of a wrapper. A consumer in the new tree reads the slot directly, and the only includer outside the tests was the old crucible/fixy/Wrap.h.
+crucible/safety/_GradedExtract.h:modality_of_v  — A projection of the modality slot of a wrapper. A consumer in the new tree reads the slot directly, and the only includer outside the tests was the old crucible/fixy/Wrap.h.
+crucible/safety/_GradedExtract.h:value_type_of_t  — A projection of the value_type slot of a wrapper. A consumer in the new tree reads the slot directly, and the only includer outside the tests was the old crucible/fixy/Wrap.h.
+crucible/safety/_SuspendBehavior.h:mint_suspend_behavior  — The mint of the value wrapper, which let a caller claim a suspend class for any value. fixy/os/ClockSource.h reads the class from the clock that made the reading, so the port has no mint.
 
 # ── sessions: the classified payloads ───────────────────────────────────
 crucible/sessions/_SessionCT.h:requires_ct  — Replaced by the constant_time_value annotation in fixy/session/Classified.h, which sits on the declaration, so a late specialisation cannot change an answer already given.

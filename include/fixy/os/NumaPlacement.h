@@ -29,7 +29,7 @@
 // The proof carries the brand of the region, so the region that comes
 // back has the identity it was minted with.
 //
-// Old spelling: include/crucible/safety/NumaPlacement.h.  That header is
+// Old spelling: include/crucible/safety/_NumaPlacement.h.  That header is
 // a claim, not a proof.  Its public constructors, anywhere, pinned and
 // peek_mut accepted any node and any core mask, so any caller could
 // state a placement that no call made.  Its combine_max kept the first

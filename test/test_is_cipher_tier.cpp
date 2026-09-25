@@ -9,7 +9,7 @@
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/GradedExtract.h>
+#include <crucible/safety/_GradedExtract.h>
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/_IsNumericalTier.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 
 #include <type_traits>
 

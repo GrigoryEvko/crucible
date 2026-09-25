@@ -1,7 +1,7 @@
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_NumericalTier.h>
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionCrash.h>

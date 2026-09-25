@@ -32,7 +32,7 @@
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/_FixedArray.h>
 #include <crucible/safety/_HotPath.h>
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Machine.h>
 #include <crucible/safety/MemOrder.h>
@@ -47,9 +47,9 @@
 #include <crucible/safety/_Reflected.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/_ResidencyHeat.h>
 #include <crucible/safety/_Saturated.h>
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/safety/_Affine.h>
 #include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/IsJoinPolicy.h>

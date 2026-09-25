@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/SuspendBehavior.h>
+#include <crucible/safety/_SuspendBehavior.h>
 
 #include <type_traits>
 

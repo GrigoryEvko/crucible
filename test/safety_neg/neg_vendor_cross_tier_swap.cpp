@@ -9,7 +9,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <utility>
 
 using namespace crucible::safety;

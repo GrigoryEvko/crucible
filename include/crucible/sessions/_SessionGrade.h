@@ -8,9 +8,9 @@
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/EpochVersioned.h>
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_NumericalTier.h>
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/sessions/Session.h>
 
 #include <cstdint>

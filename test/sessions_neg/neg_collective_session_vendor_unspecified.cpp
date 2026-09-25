@@ -1,7 +1,7 @@
 // GAPS-068 fixture #3: a collective-like protocol with Vendor<T>
 // payloads must declare an explicit VendorPinned/VendorCtx boundary.
 
-#include <crucible/safety/Vendor.h>
+#include <crucible/safety/_Vendor.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

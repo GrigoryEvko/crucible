@@ -18,7 +18,7 @@
 // Expected diagnostic: conversion from / cannot convert / no viable /
 // no match for.
 
-#include <crucible/safety/SuspendBehavior.h>
+#include <crucible/safety/_SuspendBehavior.h>
 
 using namespace crucible::safety;
 

@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/_NumaPlacement.h>
 
 using namespace crucible::safety;
 

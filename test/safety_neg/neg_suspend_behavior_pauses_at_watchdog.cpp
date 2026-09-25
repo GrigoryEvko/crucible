@@ -17,7 +17,7 @@
 // Expected diagnostic: constraints not satisfied / no matching function /
 // satisfies / arm_watchdog.
 
-#include <crucible/safety/SuspendBehavior.h>
+#include <crucible/safety/_SuspendBehavior.h>
 
 using namespace crucible::safety;
 
