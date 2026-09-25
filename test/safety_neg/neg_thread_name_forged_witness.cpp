@@ -4,7 +4,7 @@
 // mint_thread_name is its sole friend.  This fixture is the standing
 // witness that the constructor stayed private in this tree as well.
 
-#include <crucible/safety/ThreadName.h>
+#include <crucible/safety/_ThreadName.h>
 
 int main() {
     ::crucible::safety::ThreadNamed<"forged"> witness{};

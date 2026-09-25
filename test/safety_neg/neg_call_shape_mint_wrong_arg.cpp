@@ -8,7 +8,7 @@
 // Pairs with neg_call_shape_widen_to_lower.cpp.
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/CallShape.h>
+#include <crucible/safety/_CallShape.h>
 
 namespace {
 struct NeedsTwo {

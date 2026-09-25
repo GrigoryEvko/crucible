@@ -9,7 +9,8 @@
 // which is how a failure surfaces. The violating direction cannot be written
 // here at all and lives in compile-failure fixtures.
 
-#include <crucible/safety/Contract.h>
+#include <crucible/safety/_Post.h>
+#include <crucible/safety/_Pre.h>
 #include <contracts>
 
 #include <cstdint>

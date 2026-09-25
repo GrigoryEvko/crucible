@@ -3,7 +3,7 @@
 // Recognizes a function that holds a consumer-side channel handle and
 // drains it into one region.
 
-#include <crucible/safety/IsConsumerHandle.h>
+#include <crucible/safety/_IsConsumerHandle.h>
 #include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/_SignatureTraits.h>
 

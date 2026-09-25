@@ -3,10 +3,10 @@
 // under the project warning flags, and runs each header's runtime smoke
 // test from main.
 
-#include <crucible/safety/CallShape.h>
+#include <crucible/safety/_CallShape.h>
 #include <crucible/safety/ControlFlow.h>
-#include <crucible/safety/GlobalState.h>
-#include <crucible/safety/StackUse.h>
+#include <crucible/safety/_GlobalState.h>
+#include <crucible/safety/_StackUse.h>
 #include <crucible/safety/Stdio.h>
 
 #include <type_traits>

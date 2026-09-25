@@ -18,7 +18,7 @@
 #include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_IsBorrowedRef.h>
-#include <crucible/safety/IsSwmrHandle.h>
+#include <crucible/safety/_IsSwmrHandle.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/_Saturated.h>
 #include <crucible/safety/_CipherTier.h>
@@ -58,10 +58,10 @@
 #include <crucible/safety/BarrierGuarded.h>
 #include <crucible/safety/Hw.h>
 #include <crucible/safety/JoinPolicy.h>
-#include <crucible/safety/CallShape.h>
+#include <crucible/safety/_CallShape.h>
 #include <crucible/safety/ControlFlow.h>
-#include <crucible/safety/GlobalState.h>
-#include <crucible/safety/StackUse.h>
+#include <crucible/safety/_GlobalState.h>
+#include <crucible/safety/_StackUse.h>
 #include <crucible/safety/Stdio.h>
 #include <crucible/safety/_ThreadLocalRef.h>
 #include <crucible/safety/SuspendBehavior.h>

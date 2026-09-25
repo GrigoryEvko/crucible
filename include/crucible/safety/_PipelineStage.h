@@ -5,8 +5,8 @@
 // non-const rvalue reference.  The order is the data-flow order, so a
 // producer parameter ahead of a consumer parameter is not a stage.
 
-#include <crucible/safety/IsConsumerHandle.h>
-#include <crucible/safety/IsProducerHandle.h>
+#include <crucible/safety/_IsConsumerHandle.h>
+#include <crucible/safety/_IsProducerHandle.h>
 #include <crucible/safety/_SignatureTraits.h>
 
 #include <cstddef>

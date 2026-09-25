@@ -238,19 +238,15 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_barrier_guarded` | `include/crucible/safety/BarrierGuarded.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:250` | HS14: 2 |
-| `mint_call_shape` | `include/crucible/safety/CallShape.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:274` | HS14: 2 |
 | `mint_control_flow` | `include/crucible/safety/ControlFlow.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:279` | HS14: 2 |
 | `mint_fn` | `include/crucible/safety/Fn.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 32 |
 | `mint_fp_mode_composite` | `include/crucible/safety/FpMode.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_global_state` | `include/crucible/safety/GlobalState.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:284` | HS14: 2 |
 | `mint_grid_permissions` | `include/crucible/safety/PermissionGridGenerator.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Perm.h:46` | HS14: 12 |
 | `mint_hw` | `include/crucible/safety/Hw.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:245` | HS14: 2 |
 | `mint_join_policy` | `include/crucible/safety/JoinPolicy.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:260` | HS14: 2 |
 | `mint_simd_width_pinned` | `include/crucible/safety/SimdWidthPinned.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:255` | HS14: 2 |
-| `mint_stack_use` | `include/crucible/safety/StackUse.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:289` | HS14: 2 |
 | `mint_stdio` | `include/crucible/safety/Stdio.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:294` | HS14: 2 |
 | `mint_suspend_behavior` | `include/crucible/safety/SuspendBehavior.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:265` | HS14: 2 |
-| `mint_thread_name` | `include/crucible/safety/ThreadName.h` | Y | - (alloc) | Y | Y | ctx | Y | `include/crucible/fixy/Sched.h:244` | HS14: 2 |
 | `mint_witness` | `include/crucible/safety/Witness.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:231` | HS14: 2 |
 
 ## include/crucible/sessions/
@@ -480,5 +476,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 204 | 101 | 94 | 9 | 0 | 103 | 41 |
+| old (`include/crucible/`) | 200 | 100 | 91 | 9 | 0 | 103 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 101 | 42 | 58 | 1 | 0 | · | 22 |

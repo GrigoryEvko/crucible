@@ -2,7 +2,7 @@
 // project warning flags unless some translation unit includes it.  This
 // file is that translation unit for the producer-handle trait.
 
-#include <crucible/safety/IsProducerHandle.h>
+#include <crucible/safety/_IsProducerHandle.h>
 
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/permissions/_Permission.h>

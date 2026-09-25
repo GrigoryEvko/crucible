@@ -18,7 +18,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_PipelineStage.h>
-#include <crucible/safety/IsSwmrHandle.h>
+#include <crucible/safety/_IsSwmrHandle.h>
 #include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/diag/_RowMismatch.h>
 #include <crucible/sessions/SessionRowExtraction.h>

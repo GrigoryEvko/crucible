@@ -14,7 +14,7 @@
 //
 // Expected diagnostic: TASK_COMM_LEN / static assertion / exceeds / too large.
 
-#include <crucible/safety/ThreadName.h>
+#include <crucible/safety/_ThreadName.h>
 
 #include <crucible/effects/_Capabilities.h>
 

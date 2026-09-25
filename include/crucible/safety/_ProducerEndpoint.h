@@ -4,7 +4,7 @@
 // pushes one region of payload into it.
 
 #include <crucible/safety/_IsOwnedRegion.h>
-#include <crucible/safety/IsProducerHandle.h>
+#include <crucible/safety/_IsProducerHandle.h>
 #include <crucible/safety/_SignatureTraits.h>
 
 #include <type_traits>

@@ -8,7 +8,7 @@
 // Pairs with neg_global_state_widen_to_lower.cpp.
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/GlobalState.h>
+#include <crucible/safety/_GlobalState.h>
 
 namespace {
 struct NeedsTwo {

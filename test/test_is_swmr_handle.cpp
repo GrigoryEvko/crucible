@@ -2,7 +2,7 @@
 // project warning flags unless some translation unit includes it.  This
 // file is that translation unit for the writer and reader traits.
 
-#include <crucible/safety/IsSwmrHandle.h>
+#include <crucible/safety/_IsSwmrHandle.h>
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/permissions/_Permission.h>

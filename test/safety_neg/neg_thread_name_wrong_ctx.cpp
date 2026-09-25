@@ -15,7 +15,7 @@
 // Expected diagnostic: constraints not satisfied / no matching function /
 // CtxIsInitPhase / mint_thread_name.
 
-#include <crucible/safety/ThreadName.h>
+#include <crucible/safety/_ThreadName.h>
 
 #include <crucible/effects/_Capabilities.h>
 

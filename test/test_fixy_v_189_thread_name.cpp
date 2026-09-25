@@ -1,7 +1,7 @@
 // Sentinel TU: compiles the header under the project warning flags so its
 // static_asserts run.
 
-#include <crucible/safety/ThreadName.h>
+#include <crucible/safety/_ThreadName.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <string_view>

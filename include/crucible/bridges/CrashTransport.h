@@ -37,7 +37,7 @@
 #include <crucible/Platform.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/permissions/PermissionInherit.h>
-#include <crucible/safety/IsSessionHandle.h>
+#include <crucible/safety/_IsSessionHandle.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>

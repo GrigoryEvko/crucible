@@ -2,7 +2,7 @@
 // project warning flags unless some translation unit includes it.  This
 // file is that translation unit for the session-handle trait.
 
-#include <crucible/safety/IsSessionHandle.h>
+#include <crucible/safety/_IsSessionHandle.h>
 
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/RecordingSessionHandle.h>

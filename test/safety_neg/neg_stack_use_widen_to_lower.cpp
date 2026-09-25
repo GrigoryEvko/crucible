@@ -10,7 +10,7 @@
 // Pairs with neg_stack_use_mint_wrong_arg.cpp.
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/StackUse.h>
+#include <crucible/safety/_StackUse.h>
 
 int main() {
     using namespace crucible::safety;

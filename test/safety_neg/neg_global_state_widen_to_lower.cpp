@@ -11,7 +11,7 @@
 // Pairs with neg_global_state_mint_wrong_arg.cpp.
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/GlobalState.h>
+#include <crucible/safety/_GlobalState.h>
 
 int main() {
     using namespace crucible::safety;

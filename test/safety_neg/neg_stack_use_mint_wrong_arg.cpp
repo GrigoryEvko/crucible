@@ -8,7 +8,7 @@
 // Pairs with neg_stack_use_widen_to_lower.cpp.
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/StackUse.h>
+#include <crucible/safety/_StackUse.h>
 
 namespace {
 struct NeedsTwo {

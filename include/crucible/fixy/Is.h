@@ -19,7 +19,7 @@
 #include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/_IsClockSource.h>
 #include <crucible/safety/IsConsistency.h>
-#include <crucible/safety/IsConsumerHandle.h>
+#include <crucible/safety/_IsConsumerHandle.h>
 #include <crucible/safety/_IsCpuPinned.h>
 #include <crucible/safety/IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
@@ -35,7 +35,7 @@
 #include <crucible/safety/_IsOwnedMmap.h>
 #include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsPermission.h>
-#include <crucible/safety/IsProducerHandle.h>
+#include <crucible/safety/_IsProducerHandle.h>
 #include <crucible/safety/IsProgress.h>
 #include <crucible/safety/_IsRecipeSpec.h>
 #include <crucible/safety/_IsReduceInto.h>
@@ -44,11 +44,11 @@
 #include <crucible/safety/_IsSchedClass.h>
 #include <crucible/safety/_IsScopedFence.h>
 #include <crucible/safety/_IsSecret.h>
-#include <crucible/safety/IsSessionHandle.h>
+#include <crucible/safety/_IsSessionHandle.h>
 #include <crucible/safety/_IsSimdWidthPinned.h>
 #include <crucible/safety/_IsStale.h>
 #include <crucible/safety/_IsSuspendBehavior.h>
-#include <crucible/safety/IsSwmrHandle.h>
+#include <crucible/safety/_IsSwmrHandle.h>
 #include <crucible/safety/_IsTagged.h>
 #include <crucible/safety/_IsVendor.h>
 #include <crucible/safety/_IsWait.h>

@@ -9,8 +9,8 @@
 // rather than through a call expression: a call needs the payload type up
 // front, and recovering it is the point.
 //
-// Old spelling: include/crucible/safety/{IsConsumerHandle,
-// IsProducerHandle,IsSwmrHandle}.h, all three in namespace
+// Old spelling: include/crucible/safety/{_IsConsumerHandle,
+// _IsProducerHandle,_IsSwmrHandle}.h, all three in namespace
 // crucible::safety::extract.  That namespace was not a location — 57
 // headers reopened it, each adding the aliases for the thing it examined
 // — so the three arrive here, beside the channels whose handles they

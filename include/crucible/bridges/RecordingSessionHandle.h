@@ -20,7 +20,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/bridges/CrashTransport.h>
-#include <crucible/safety/IsSessionHandle.h>
+#include <crucible/safety/_IsSessionHandle.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>

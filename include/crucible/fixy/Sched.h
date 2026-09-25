@@ -11,7 +11,7 @@
 
 #include <crucible/safety/_CpuPinned.h>
 #include <crucible/safety/_SchedClass.h>
-#include <crucible/safety/ThreadName.h>
+#include <crucible/safety/_ThreadName.h>
 
 #include <crucible/effects/_ExecCtx.h>
 

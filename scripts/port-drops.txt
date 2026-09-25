@@ -494,6 +494,32 @@ crucible/safety/_IsWait.h:is_wait_smoke_test  — An inline smoke test in a publ
 crucible/safety/_IsWait.h:is_wait_v  — A per-band recogniser trait. fixy::is_band_of_v<WaitLattice, B> in fixy/Bands.h answers it.
 crucible/safety/_IsWait.h:wait_strategy_v  — A per-band tier accessor. fixy::band_tier_v in fixy/Bands.h answers it for every band.
 crucible/safety/_IsWait.h:wait_value_t  — A per-band payload accessor. fixy::band_value_t in fixy/Bands.h answers it for every band.
+crucible/safety/_CallShape.h:BoundedRecurses  — An alias that pinned the BoundedRecurses tier on a value. The port re-modelled call shape as the atom family of fixy/atoms/Dispatch.h, where recurses<MaxDepth> states a bounded recursion on a binding.
+crucible/safety/_CallShape.h:CallShapeLattice  — A re-export of the old lattice. The port re-modelled call shape as the atom family of fixy/atoms/Dispatch.h, and no new header re-exports a lattice for it.
+crucible/safety/_CallShape.h:CallShapePinned  — The value wrapper, which the port did not carry. Axis::CallShape is the atom family of fixy/atoms/Dispatch.h on a binding, and the only includers of the wrapper were the old crucible/fixy/Wrap.h and tests.
+crucible/safety/_CallShape.h:Indirect  — An alias that pinned the Indirect tier on a value. indirect_call<FnPtrFamily> in fixy/atoms/Dispatch.h states an indirect call on a binding.
+crucible/safety/_CallShape.h:mint_call_shape  — The factory of the value wrapper, which the port did not carry. A binding states its call shape with the atoms of fixy/atoms/Dispatch.h, so no factory applies.
+crucible/safety/_CallShape.h:Virtual  — An alias that pinned the Virtual tier on a value. virtual_call<BaseClass> in fixy/atoms/Dispatch.h states a virtual call on a binding.
+crucible/safety/_GlobalState.h:ConstGlobal  — An alias that pinned the ConstGlobal tier on a value. The port re-modelled global state as the atom family of fixy/atoms/Global.h, which carries no alias for this tier.
+crucible/safety/_GlobalState.h:GlobalStateLattice  — A re-export of the old lattice. The port re-modelled global state as the atom family of fixy/atoms/Global.h, and no new header re-exports a lattice for it.
+crucible/safety/_GlobalState.h:GlobalStatePinned  — The value wrapper, which the port did not carry. Axis::GlobalState is the atom family of fixy/atoms/Global.h on a binding, and the only includers of the wrapper were the old crucible/fixy/Wrap.h and tests.
+crucible/safety/_GlobalState.h:InitOrderHazard  — An alias that pinned the InitOrderHazard tier on a value. The port re-modelled global state as the atom family of fixy/atoms/Global.h, which carries no alias for this tier.
+crucible/safety/_GlobalState.h:mint_global_state  — The factory of the value wrapper, which the port did not carry. A binding states its global state with the atoms of fixy/atoms/Global.h, so no factory applies.
+crucible/safety/_GlobalState.h:MutableGlobal  — An alias that pinned the MutableGlobal tier on a value. The atoms singleton, thread_local_ and namespace_static of fixy/atoms/Global.h state mutable global state on a binding.
+crucible/safety/_GlobalState.h:Stateless  — An alias that pinned the Stateless tier on a value. The port re-modelled global state as the atom family of fixy/atoms/Global.h, which carries no alias for this tier.
+crucible/safety/_IsConsumerHandle.h:is_consumer_handle_smoke_test  — An inline smoke test in a public namespace, retired with the old recogniser header, whose recogniser fixy/concurrent/HandleTraits.h carries.
+crucible/safety/_IsProducerHandle.h:is_producer_handle_smoke_test  — An inline smoke test in a public namespace, retired with the old recogniser header, whose recogniser fixy/concurrent/HandleTraits.h carries.
+crucible/safety/_IsSessionHandle.h:IsSessionHandle  — A recogniser for the old session handle base. The new tree folds it into the SteppingGraded concept of fixy/session/Stepping.h, which states what a stepping handle exposes.
+crucible/safety/_IsSessionHandle.h:is_session_handle_smoke_test  — An inline smoke test in a public namespace, retired with the recogniser that SteppingGraded replaces.
+crucible/safety/_IsSessionHandle.h:is_session_handle_v  — A recogniser for the old session handle base. The new tree folds it into the SteppingGraded concept of fixy/session/Stepping.h, which states what a stepping handle exposes.
+crucible/safety/_IsSessionHandle.h:session_handle_proto_t  — A protocol accessor. The member protocol_type of a handle that satisfies SteppingGraded (fixy/session/Stepping.h) answers it.
+crucible/safety/_IsSwmrHandle.h:is_swmr_handle_smoke_test  — An inline smoke test in a public namespace, retired with the old recogniser header, whose recogniser fixy/concurrent/HandleTraits.h carries.
+crucible/safety/_StackUse.h:BoundedByParam  — An alias that pinned the BoundedByParam tier on a value. The port re-modelled stack use as the atom family of fixy/atoms/Stack.h, which carries no alias for this tier.
+crucible/safety/_StackUse.h:BoundedDynamic  — An alias that pinned the BoundedDynamic tier on a value. The port re-modelled stack use as the atom family of fixy/atoms/Stack.h, which carries no alias for this tier.
+crucible/safety/_StackUse.h:ConstantFrame  — An alias that pinned the ConstantFrame tier on a value. ConstantFrame is the strict default of Axis::StackUse, so a binding with no atom of fixy/atoms/Stack.h states it.
+crucible/safety/_StackUse.h:mint_stack_use  — The factory of the value wrapper, which the port did not carry. A binding states its stack use with the atoms of fixy/atoms/Stack.h, so no factory applies.
+crucible/safety/_StackUse.h:StackUseLattice  — A re-export of the old lattice. The port re-modelled stack use as the atom family of fixy/atoms/Stack.h, and no new header re-exports a lattice for it.
+crucible/safety/_StackUse.h:StackUsePinned  — The value wrapper, which the port did not carry. Axis::StackUse is the atom family of fixy/atoms/Stack.h on a binding, and the only includers of the wrapper were the old crucible/fixy/Wrap.h and tests.
 
 # ── sessions: the classified payloads ───────────────────────────────────
 crucible/sessions/_SessionCT.h:requires_ct  — Replaced by the constant_time_value annotation in fixy/session/Classified.h, which sits on the declaration, so a late specialisation cannot change an answer already given.

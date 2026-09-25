@@ -16,7 +16,7 @@
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/_Time.h>
-#include <crucible/safety/IsSessionHandle.h>
+#include <crucible/safety/_IsSessionHandle.h>
 
 #include <chrono>
 #include <cstdint>

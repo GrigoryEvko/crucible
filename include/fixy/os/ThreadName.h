@@ -7,7 +7,7 @@
 // Naming writes to the calling thread's entry under /proc, so the mint takes an
 // init-phase context.  Code that holds no context cannot name a thread.
 //
-// Old spelling: include/crucible/safety/ThreadName.h.
+// Old spelling: include/crucible/safety/_ThreadName.h.
 
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>

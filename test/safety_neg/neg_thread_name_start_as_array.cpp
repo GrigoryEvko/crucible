@@ -3,7 +3,7 @@
 // deleted, so it is not an implicit-lifetime type, and start_as_array
 // refuses it at its constraint.
 
-#include <crucible/safety/ThreadName.h>
+#include <crucible/safety/_ThreadName.h>
 #include <foundation/Lifetime.h>
 
 int main() {
