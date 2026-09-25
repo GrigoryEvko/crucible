@@ -5,7 +5,7 @@
 // static_assert that lives only in a header is never evaluated under
 // the project warning flags until some translation unit includes it.
 
-#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/_Dim.h>
 #include <crucible/safety/_DimensionTraits.h>
 
 #include <array>

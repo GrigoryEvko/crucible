@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/_Dim.h>
 #include <crucible/safety/_NotInherited.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Tagged.h>

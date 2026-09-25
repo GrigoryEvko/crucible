@@ -2,9 +2,9 @@
 
 #include <crucible/Platform.h>
 #include <crucible/fixy/_Grant.h>
-#include <crucible/fixy/Dim.h>
-#include <crucible/fixy/Hw.h>
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Dim.h>
+#include <crucible/fixy/_Hw.h>
+#include <crucible/fixy/_Sched.h>
 
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/_CpuPinned.h>

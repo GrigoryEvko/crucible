@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/fixy/_Grant.h>
-#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/_Dim.h>
 #include <crucible/fixy/grant/_Ctrl.h>
 
 #include <crucible/algebra/lattices/_BarrierStrengthLattice.h>

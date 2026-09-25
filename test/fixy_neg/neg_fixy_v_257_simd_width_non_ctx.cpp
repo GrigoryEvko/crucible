@@ -12,7 +12,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" / "IsExecCtx".
 
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 
 int main() {
     double not_a_ctx = 0.0;

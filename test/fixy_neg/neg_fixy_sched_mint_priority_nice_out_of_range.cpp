@@ -16,7 +16,7 @@
 // "CtxFitsPriorityMint" / "Nice >= -20" / "mint_priority" /
 // "-21".
 
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Sched.h>
 
 int main() {
     // Should FAIL: -21 < -20; CtxFitsPriorityMint's

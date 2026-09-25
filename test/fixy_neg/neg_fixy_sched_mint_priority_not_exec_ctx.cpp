@@ -16,7 +16,7 @@
 // "CtxFitsPriorityMint" / "IsExecCtx" / "is_exec_ctx_v" /
 // "NotAnExecCtx" / "mint_priority".
 
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Sched.h>
 
 namespace test_fixy_sched_mint_priority_not_exec_ctx {
 

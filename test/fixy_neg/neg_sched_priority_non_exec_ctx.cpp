@@ -12,7 +12,7 @@
 // Expected diagnostic: constraints not satisfied / IsExecCtx /
 // no matching function / mint_priority.
 
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Sched.h>
 
 int main() {
     // Should FAIL: 99 (int) is not an effects::IsExecCtx.

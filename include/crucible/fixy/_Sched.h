@@ -7,7 +7,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/fixy/_Grant.h>
-#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/_Dim.h>
 
 #include <crucible/safety/_CpuPinned.h>
 #include <crucible/safety/_SchedClass.h>

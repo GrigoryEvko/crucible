@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/fixy/_Grant.h>
-#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/_Dim.h>
 
 #include <cstddef>
 #include <type_traits>

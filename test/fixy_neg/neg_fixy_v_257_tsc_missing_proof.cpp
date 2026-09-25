@@ -14,7 +14,7 @@
 // Expected diagnostic: "no matching function" / "too few arguments" /
 // "CpuPinProof".
 
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {

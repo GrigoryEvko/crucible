@@ -5,7 +5,7 @@
 
 #include <crucible/Vigil.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Sched.h>
 #include "test_assert.h"
 #include <cstdint>
 #include <expected>

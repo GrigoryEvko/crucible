@@ -13,7 +13,7 @@
 // Expected diagnostic: constraints not satisfied / CtxFitsPriorityMint /
 // no matching function / mint_priority.
 
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Sched.h>
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {

@@ -2,7 +2,7 @@
 // in. Compiling this file runs the included header's own static_asserts
 // under the project warning flags.
 
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 
 #include <crucible/effects/_ExecCtx.h>
 

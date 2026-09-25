@@ -7,7 +7,7 @@
 // than once per binding the retired entry concerns.
 
 #include <crucible/fixy/_Default.h>
-#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/_Dim.h>
 #include <crucible/fixy/_Grant.h>
 #include <crucible/safety/_Fn.h>
 #include <crucible/safety/_Secret.h>

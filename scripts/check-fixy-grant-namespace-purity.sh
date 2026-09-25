@@ -287,7 +287,7 @@ while IFS=: read -r file line text; do
             # structural-validation concepts.
             continue
             ;;
-        include/crucible/fixy/Hw.h)
+        include/crucible/fixy/_Hw.h)
             # HwInstruction / BarrierStrength / SimdIsa / Representation
             # axis-specialized catalog (10 grant::hw::* families: cache<>/
             # barrier<>/tsc<>/rng<>/cpuid<>/msr<>/port_io<>/asm_<>/
@@ -303,7 +303,7 @@ while IFS=: read -r file line text; do
             # which_dim<> only; does NOT extend grant_base hierarchy.
             continue
             ;;
-        include/crucible/fixy/Sched.h)
+        include/crucible/fixy/_Sched.h)
             # SyscallSurface axis-specialized catalog (4 grant::sched::*
             # families: affinity / scheduler_policy<Policy> / priority<Nice> /
             # thread_name → SyscallSurface).  Specializes which_dim<> only;

@@ -4,9 +4,9 @@
 #include <crucible/effects/_Capability.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/fixy/_Default.h>
-#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/_Dim.h>
 #include <crucible/fixy/_Grant.h>
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 #include <crucible/fixy/_Profile.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/safety/_Fn.h>

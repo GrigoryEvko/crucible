@@ -76,7 +76,7 @@
 #include <crucible/perf/Senses.h>
 #endif
 
-#include <crucible/fixy/Sched.h>  // FIXY-V-197: mint_priority<-10>
+#include <crucible/fixy/_Sched.h>  // mint_priority<-10>
 #include <crucible/warden/Hardening.h>
 #include <crucible/warden/Policy.h>
 

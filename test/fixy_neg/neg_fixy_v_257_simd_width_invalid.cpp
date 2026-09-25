@@ -13,7 +13,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" / "CtxFitsSimdWidthMint" / "valid_simd_width".
 
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {

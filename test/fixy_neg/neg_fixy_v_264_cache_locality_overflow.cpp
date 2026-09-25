@@ -19,7 +19,7 @@
 // Expected diagnostic substring: "constraints not satisfied" /
 // "Locality" / "cache" / "associated constraints".
 
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 
 int main() {
     namespace fh = ::crucible::fixy::hw;

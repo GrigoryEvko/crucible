@@ -17,7 +17,7 @@
 // no matching function / apply_affinity_to_cpu.
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Sched.h>
 
 int main() {
     ::crucible::effects::HotFgCtx fg{};

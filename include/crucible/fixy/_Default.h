@@ -7,7 +7,7 @@
 // No default is defined here.  Every specialization aliases the substrate's
 // own default, so the two cannot drift.
 
-#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/_Dim.h>
 #include <crucible/safety/_Fn.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/effects/_EffectRow.h>

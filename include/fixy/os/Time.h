@@ -60,7 +60,7 @@ namespace ml = ::foundation::algebra::lattices;
 using sf::ClockSource_v;
 using sf::MonotonicClockBytes;
 
-// Moved in from include/crucible/fixy/Hw.h, which the port no longer
+// Moved in from include/crucible/fixy/_Hw.h, which the port no longer
 // includes.  Hw.h supplied this one enum and nothing else.
 enum class TscMode : std::uint8_t {
     NotAllowed,

@@ -14,7 +14,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" / "CtxFitsTscMint" / "NotAllowed".
 
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {

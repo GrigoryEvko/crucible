@@ -16,7 +16,7 @@
 // Expected diagnostic: static assertion / CBS admission / RuntimeNs /
 // DeadlineNs.
 
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Sched.h>
 #include <crucible/effects/_ExecCtx.h>
 
 int main() {

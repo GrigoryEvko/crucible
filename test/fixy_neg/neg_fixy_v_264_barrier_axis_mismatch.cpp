@@ -17,8 +17,8 @@
 // Expected diagnostic substring: FIXY-V-264 / "static assertion" /
 // "SimdIsa" / "BarrierStrength".
 
-#include <crucible/fixy/Dim.h>
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Dim.h>
+#include <crucible/fixy/_Hw.h>
 
 int main() {
     namespace fh = ::crucible::fixy::hw;

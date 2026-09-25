@@ -163,18 +163,9 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_affinity` | `include/crucible/fixy/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_asm_grant` | `include/crucible/fixy/Hw.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_fn` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 32 |
 | `mint_fn_for(Type)` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
 | `mint_fn_for(Type)` | `include/crucible/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
-| `mint_msr_grant` | `include/crucible/fixy/Hw.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_priority` | `include/crucible/fixy/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 4 |
-| `mint_scheduler_policy` | `include/crucible/fixy/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_scoped_fence` | `include/crucible/fixy/Hw.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_simd_width` | `include/crucible/fixy/Hw.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_tsc_grant` | `include/crucible/fixy/Hw.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_vendor_intrinsic` | `include/crucible/fixy/Hw.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 
 ## include/crucible/ledger/
 
@@ -464,5 +455,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 176 | 92 | 75 | 9 | 0 | 152 | 41 |
+| old (`include/crucible/`) | 167 | 83 | 75 | 9 | 0 | 152 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 108 | 46 | 60 | 2 | 0 | · | 22 |

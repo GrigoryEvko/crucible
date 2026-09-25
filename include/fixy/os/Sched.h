@@ -5,7 +5,7 @@
 // thread is pinned, real-time or niced must not exist when the syscall failed,
 // so every mint here returns the errno and lets the caller decide.
 //
-// Old spelling: include/crucible/fixy/Sched.h.
+// Old spelling: include/crucible/fixy/_Sched.h.
 //
 // The grant tags grant::sched::{affinity, scheduler_policy, priority,
 // thread_name} and their four which_dim rows are decoration: nothing

@@ -213,6 +213,81 @@ crucible/fixy/_Io.h:which_dim  — The axis registration of the io_uring family.
 crucible/fixy/_Mmap.h:which_dim  — The axis registration of the mmap family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
 crucible/fixy/grant/_Ctrl.h:which_dim  — The axis registration of the control-flow family. fixy/Atom.h:8 records that the atom carries its axis as a static member instead.
 crucible/fixy/_Grant.h:which_dim_v  — The grant tier became the atom tier, as fixy/Atom.h:17 records, and this name has no counterpart on the atom side.
+crucible/fixy/_Dim.h:DimensionAxis  → include/fixy/Axis.h  — A re-export of the old axis enum. fixy/Axis.h:78 declares fixy::Axis with the same 33 enumerators at the same values.
+crucible/fixy/_Dim.h:DIMENSION_AXIS_COUNT  → include/fixy/Axis.h  — The count is axis_count at fixy/Axis.h:140, which reflection reads off the enum.
+crucible/fixy/_Dim.h:dimension_axis_name  → include/fixy/Axis.h  — The name function is axis_name at fixy/Axis.h:147, which reads the enumerator identifier by reflection.
+crucible/fixy/_Dim.h:TierKind  → include/fixy/Axis.h  — The five tier kinds became the Shape enum at fixy/Axis.h:48, as fixy/Axis.h:28 records.
+crucible/fixy/_Dim.h:TIER_KIND_COUNT  — The count of the tier kinds, dropped with them. No reader in the new tree counts the shapes.
+crucible/fixy/_Dim.h:tier_kind_name  — The name function of the tier kinds, dropped with them. foundation::reflect::enum_name gives the name of a Shape value.
+crucible/fixy/_Dim.h:tier_of_axis  → include/fixy/Axis.h  — The tier of an axis is the shape member of axis_traits at fixy/Axis.h:333.
+crucible/fixy/_Dim.h:tier_of_axis_v  → include/fixy/Axis.h  — The value form of the tier query. axis_traits<A>::shape at fixy/Axis.h:333 answers it.
+crucible/fixy/_Dim.h:WrapperKind  → include/fixy/Axis.h  — The 33 wrapper kinds of the old tree. fixy/Axis.h:66 names only the wrappers that the new tree carries, because the band wrappers became spellings in fixy/Bands.h.
+crucible/fixy/_Dim.h:WRAPPER_KIND_COUNT  — The count of the old wrapper kinds, dropped with them.
+crucible/fixy/_Dim.h:wrapper_kind_name  — The name function of the old wrapper kinds, dropped with them.
+crucible/fixy/_Dim.h:wrapper_kind_to_axis  → include/fixy/Axis.h  — The map went from a wrapper kind to its axis. The new table goes the other way, and axis_traits<A>::wrapper at fixy/Axis.h:333 names the wrapper of each axis.
+crucible/fixy/_Dim.h:count_wrappers_on_axis  — A count over the old map from wrapper kind to axis, dropped with the map.
+crucible/fixy/_Dim.h:wrapper_for  → include/fixy/Axis.h  — The map from an axis to its wrapper kind. axis_traits<A>::wrapper at fixy/Axis.h:333 answers it.
+crucible/fixy/_Dim.h:wrapper_for_v  → include/fixy/Axis.h  — The value form of the map from an axis to its wrapper kind. axis_traits<A>::wrapper at fixy/Axis.h:333 answers it.
+crucible/fixy/_Hw.h:which_dim  — The axis registration of the hardware grant family. fixy/Atom.h:8 records that an atom carries its axis as a static member instead.
+crucible/fixy/_Hw.h:accept_default_strict_for_HwInstruction  — The engagement marker that the old resolver demanded. fixy/Fn.h:12 takes the strict pole for every axis that the atom pack does not name, so no marker exists.
+crucible/fixy/_Hw.h:accept_default_strict_for_BarrierStrength  — The engagement marker that the old resolver demanded. fixy/Fn.h:12 takes the strict pole for every axis that the atom pack does not name, so no marker exists.
+crucible/fixy/_Hw.h:accept_default_strict_for_SimdIsa  — The engagement marker that the old resolver demanded. fixy/Fn.h:12 takes the strict pole for every axis that the atom pack does not name, so no marker exists.
+crucible/fixy/_Hw.h:accept_default_strict_for_MemoryScope  — The engagement marker that the old resolver demanded. fixy/Fn.h:12 takes the strict pole for every axis that the atom pack does not name, so no marker exists.
+crucible/fixy/_Hw.h:CacheOp  — The operation enum of the cache grant. An atom of fixy/atoms/Hw.h names an instruction class and cannot carry an operand, as fixy/atoms/Hw.h:39 records.
+crucible/fixy/_Hw.h:BarrierArch  — The fence dialect of the barrier and scope grants. The new tree reads the architecture from the SIMD atom of a binding, and V402 in fixy/Collision.h checks a scope against it.
+crucible/fixy/_Hw.h:TscMode  → include/fixy/os/Time.h  — The enum moved to fixy::time at fixy/os/Time.h:50, beside its only reader.
+crucible/fixy/_Hw.h:RngSource  — The source enum of the RNG grant. Nothing outside the old tests reads the RNG grant, so the enum was not carried.
+crucible/fixy/_Hw.h:valid_simd_width_v  — The width check of the SIMD width grant. An atom of fixy/atoms/Simd.h names the instruction set that a body was emitted for, and that set fixes the width.
+crucible/fixy/_Hw.h:is_sanctioned_cpuid_leaf_v  — The leaf check of the cpuid grant. Nothing outside the old tests reads the cpuid grant, so the check was not carried.
+crucible/fixy/_Hw.h:rationale_nonempty_v  — The rationale check of the assembly and vendor-intrinsic grants, which were not carried. fixy/os/Spawn.h:177 keeps a check of the same name for the spawn rationale.
+crucible/fixy/_Hw.h:scope_arch_trunk_consistent  — The coherence check between a memory scope and a fence dialect. V402 in fixy/Collision.h checks a scope atom against the SIMD atom of the binding instead.
+crucible/fixy/_Hw.h:CpuPinProof  — An empty token that stated that the thread was pinned, and any code could make it. fixy/os/CpuPinned.h carries a pin proof that only mint_affinity makes, after sched_setaffinity succeeds.
+crucible/fixy/_Hw.h:root  — The permission tag of the MSR mint. The MSR grant was not carried, so the tag has no use.
+crucible/fixy/_Hw.h:tsc  — The TSC grant tag. The atom non_deterministic_tsc at fixy/atoms/Hw.h:84 states the tier, and fixy/os/Time.h mints the reader.
+crucible/fixy/_Hw.h:msr  — The MSR grant tag. The atom privileged_msr at fixy/atoms/Hw.h:88 states the tier, and V202 in fixy/Collision.h requires an Init context for it.
+crucible/fixy/_Hw.h:port_io  — The port IO grant tag. The atom privileged_msr at fixy/atoms/Hw.h:88 covers IN and OUT, as fixy/atoms/Hw.h:69 records.
+crucible/fixy/_Hw.h:cpuid  — The cpuid grant tag. Nothing outside the old tests reads it, so it was not carried.
+crucible/fixy/_Hw.h:rng  — The RNG grant tag. Nothing outside the old tests reads it, so it was not carried.
+crucible/fixy/_Hw.h:asm_  — The inline assembly grant tag. Nothing outside the old tests reads it, so it was not carried.
+crucible/fixy/_Hw.h:simd_width  — The SIMD width grant tag. An atom of fixy/atoms/Simd.h names the instruction set that a body was emitted for, and that set fixes the width.
+crucible/fixy/_Hw.h:vendor_intrinsic  — The vendor-intrinsic grant tag. The Vendor band at fixy/Bands.h:256 states the backend that made a value.
+crucible/fixy/_Hw.h:cache_prefetch_rw_t0  — A named cache grant, dropped with the cache grant.
+crucible/fixy/_Hw.h:cache_clflushopt  — A named cache grant, dropped with the cache grant.
+crucible/fixy/_Hw.h:cache_clwb  — A named cache grant, dropped with the cache grant.
+crucible/fixy/_Hw.h:barrier_x86_lfence  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_x86_sfence  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_x86_mfence  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_arm_dmb_ish  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_arm_dmb_ld  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_arm_dmb_st  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_compiler_portable  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_compiler_acquire  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_compiler_release  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:barrier_compiler_seqcst  — A named barrier grant. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
+crucible/fixy/_Hw.h:scope_arm_ish  — A named scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h.
+crucible/fixy/_Hw.h:scope_arm_osh  — A named scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h.
+crucible/fixy/_Hw.h:scope_arm_sy  — A named scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h.
+crucible/fixy/_Hw.h:scope_gpu_cta  — A named scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h.
+crucible/fixy/_Hw.h:scope_gpu_cluster  — A named scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h.
+crucible/fixy/_Hw.h:scope_gpu_device  — A named scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h.
+crucible/fixy/_Hw.h:scope_system  — A named scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h.
+crucible/fixy/_Hw.h:CtxFitsHwGrant  — The context gate that the six hardware grant mints shared. An atom is a type that a binding names, not a value that a context mints, so no gate applies.
+crucible/fixy/_Hw.h:CtxFitsAsmMint  — The context gate of mint_asm_grant, dropped with the mint.
+crucible/fixy/_Hw.h:CtxFitsSimdWidthMint  — The context gate of mint_simd_width, dropped with the mint.
+crucible/fixy/_Hw.h:CtxFitsVendorIntrinsicMint  — The context gate of mint_vendor_intrinsic, dropped with the mint.
+crucible/fixy/_Hw.h:CtxFitsTscMint  — The context gate of mint_tsc_grant, dropped with the mint.
+crucible/fixy/_Hw.h:CtxFitsMsrMint  — The context gate of mint_msr_grant, dropped with the mint.
+crucible/fixy/_Hw.h:CtxFitsScopedFenceMint  — The context gate of the scope grant mint, dropped with the mint.
+crucible/fixy/_Hw.h:mint_asm_grant  — The mint of the inline assembly grant. An atom is a type that a binding names, not a value that a context mints, so no mint applies.
+crucible/fixy/_Hw.h:mint_simd_width  — The mint of the SIMD width grant. An atom is a type that a binding names, not a value that a context mints, so no mint applies.
+crucible/fixy/_Hw.h:mint_vendor_intrinsic  — The mint of the vendor-intrinsic grant. An atom is a type that a binding names, not a value that a context mints, so no mint applies.
+crucible/fixy/_Hw.h:mint_tsc_grant  — The mint of the TSC grant. fixy/os/Time.h mints the TSC reader against a context and a pin proof instead.
+crucible/fixy/_Hw.h:mint_msr_grant  — The mint of the MSR grant. An atom is a type that a binding names, not a value that a context mints, so no mint applies.
+crucible/fixy/_Hw.h:mint_scoped_fence  — The mint of the scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h, and the ScopedFence band of fixy/Bands.h:245 carries a scope on a value.
+crucible/fixy/_Sched.h:affinity  — The CPU pin grant tag. fixy/os/Sched.h:10 records that the four scheduling grant tags were not carried, because nothing outside the old self-test read them.
+crucible/fixy/_Sched.h:thread_name  — The thread-name grant tag. fixy/os/Sched.h:10 records that the four scheduling grant tags were not carried, because nothing outside the old self-test read them.
+crucible/fixy/_Sched.h:which_dim  — The axis registration of the scheduling grant tags, dropped with the tags, as fixy/os/Sched.h:10 records.
+crucible/fixy/_Sched.h:CtxFitsAffinityMint  → include/fixy/os/CpuPinned.h  — The gate moved to namespace fixy at fixy/os/CpuPinned.h:146 with the declaration of mint_affinity, as fixy/os/Sched.h:128 records.
 crucible/fixy/_Default.h:strict_default_for  → include/fixy/Axis.h  — The table of strict defaults became axis_traits at fixy/Axis.h:333, and its strict member names the pole that the old type or value named.
 crucible/fixy/_Default.h:HasStrictDefault  → include/fixy/Axis.h  — The query is HasStrictPole at fixy/Axis.h:531, over the strict member of axis_traits.
 crucible/fixy/_Default.h:HasDerivedDefault  → include/fixy/Axis.h  — The query is HasDerivedPole at fixy/Axis.h:534, over the derived_from member of axis_traits.

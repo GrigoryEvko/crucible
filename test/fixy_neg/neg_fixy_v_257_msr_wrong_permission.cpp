@@ -15,7 +15,7 @@
 // Expected diagnostic: "no matching function" / "could not convert" /
 // "cannot bind" / "Permission".
 
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>
 

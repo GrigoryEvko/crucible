@@ -16,7 +16,7 @@
 // Expected diagnostic: GCC's "constraints not satisfied" pointing at
 // CtxFitsScopedFenceMint.
 
-#include <crucible/fixy/Hw.h>
+#include <crucible/fixy/_Hw.h>
 #include <crucible/effects/_ExecCtx.h>
 
 namespace hw = crucible::fixy::hw;

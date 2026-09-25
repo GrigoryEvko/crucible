@@ -41,7 +41,7 @@
 #if __has_include(<pthread.h>) && __has_include(<sched.h>)
 #include <pthread.h>
 #include <sched.h>
-#include <crucible/fixy/Sched.h>
+#include <crucible/fixy/_Sched.h>
 #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 1
 #else
 #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 0
