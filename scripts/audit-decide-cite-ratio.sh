@@ -137,11 +137,9 @@ for name in json.load(sys.stdin)["decide_per_procedure"]:
             cp "$selftest_sibling" "$tmp_root/scripts/audit-pre-callsite-count.sh"
             chmod +x "$tmp_root/scripts/audit-pre-callsite-count.sh"
 
-            # Every pattern the sibling counts must match at least once: `rg`
-            # exits 1 on no-match and `set -o pipefail` turns that into an
-            # abort, so a fixture missing ONE form would read as a self-test
-            # failure rather than the missing form it is.  The per-procedure
-            # regex is line-anchored, so each cite needs its own line.
+            # Every pattern the sibling counts matches at least once, so the
+            # fixture is a realistic tree.  The per-procedure regex is
+            # line-anchored, so each cite needs its own line.
             selftest_fixture="$tmp_root/include/selftest_cites.h"
             cat >"$selftest_fixture" <<'FIXTURE'
 #pragma once

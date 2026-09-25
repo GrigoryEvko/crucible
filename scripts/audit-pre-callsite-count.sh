@@ -107,13 +107,10 @@ case "${1:-}" in
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/include" "$tmp_root/src"
 
-        # Every counted pattern must match at least once.  `rg` exits 1 on
-        # no-match and `set -o pipefail` turns that into a script abort, so
-        # a fixture missing ONE form would look like a self-test failure
-        # rather than the missing form it is.  The decide:: cites are
-        # generated from decide_procedures above, two lines apiece — the
-        # per-procedure regex is line-anchored, so two cites sharing a line
-        # would count as one.
+        # Every counted pattern matches at least once, so each regex is
+        # shown to find its form.  The zero-count tree below shows the
+        # opposite case.  The decide:: cites are generated from
+        # decide_procedures above, two lines apiece.
         fixture="$tmp_root/include/selftest_cites.h"
         cat >"$fixture" <<'FIXTURE'
 #pragma once
@@ -233,7 +230,50 @@ ANCHOR
             exit 2
         fi
 
-        printf 'audit-pre-callsite-count: self-test passed — regression caught (%d counters), exact-match and growth both accepted.\n' \
+        # ── Zero counts — a tree with no cites MUST report zeros ─────
+        # `rg` exits 1 when it finds nothing.  Under `set -o pipefail` that
+        # once aborted the scan, so a counter that fell to zero crashed the
+        # guard instead of being reported.  Every counter here is zero.
+        zero_root="$tmp_root/zero_tree"
+        mkdir -p "$zero_root/include" "$zero_root/src"
+        cp "$tmp_root/src/selftest_anchor.cpp" "$zero_root/src/selftest_anchor.cpp"
+        zero_json="$tmp_root/zero.json"
+        if ! CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$zero_root" \
+             bash "${BASH_SOURCE[0]}" --json >"$zero_json" 2>"$tmp_root/zero.err"; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — --json aborted on a tree with no cites.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$tmp_root/zero.err")" >&2
+            exit 2
+        fi
+        for field in "${checked_fields[@]}" "${decide_procedures[@]}"; do
+            if ! grep -qE "\"${field}\":0[,}]" "$zero_json"; then
+                printf 'audit-pre-callsite-count: SELF-TEST FAILED — %s is not 0 on a tree with no cites.\n' \
+                    "$field" >&2
+                printf '── json ─────────────\n%s\n────────────────────\n' \
+                    "$(cat "$zero_json")" >&2
+                exit 2
+            fi
+        done
+        if ! CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$zero_root" \
+             bash "${BASH_SOURCE[0]}" >/dev/null 2>"$tmp_root/zero_human.err"; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — the human summary aborted on a tree with no cites.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$tmp_root/zero_human.err")" >&2
+            exit 2
+        fi
+
+        # ── Scan errors — a missing scan path MUST fail, not count 0 ─
+        # The zero-count repair accepts only the no-match status of `rg`.
+        # Any other failure must still stop the guard.
+        broken_root="$tmp_root/broken_tree"
+        mkdir -p "$broken_root/include"
+        if CRUCIBLE_PRE_CALLSITE_TEST_ROOT="$broken_root" \
+           bash "${BASH_SOURCE[0]}" --json >/dev/null 2>&1; then
+            printf 'audit-pre-callsite-count: SELF-TEST FAILED — a tree with no src/ directory was counted as zero.\n' >&2
+            exit 2
+        fi
+
+        printf 'audit-pre-callsite-count: self-test passed — regression caught (%d counters), exact-match and growth both accepted, zero counts reported, scan errors fatal.\n' \
             "${#checked_fields[@]}" >&2
         exit 0
         ;;
@@ -283,6 +323,23 @@ common_globs=(--type=cpp \
               --glob '!test/**' \
               --glob '!bench/**')
 
+# rg_matches ARGS... — run rg, and treat "no match" as a result.
+#
+# `rg` exits 1 when it finds nothing.  Under `set -o pipefail` a pipeline
+# with such a stage fails, so a counter that fell to zero once aborted the
+# guard instead of being reported as 0.  This wrapper maps exit 1 to
+# success with empty output.  Exit 2 (a bad pattern or a path that cannot
+# be read) stays a failure, so a broken scan never reads as a zero count.
+rg_matches() {
+    local rg_status=0
+    rg "$@" || rg_status=$?
+    if [[ $rg_status -gt 1 ]]; then
+        printf 'audit-pre-callsite-count: rg failed with exit %d\n' "$rg_status" >&2
+        return "$rg_status"
+    fi
+    return 0
+}
+
 count_pattern() {
     # Count OCCURRENCES, not lines.  `rg -c` reports one line per file with at
     # least one match, so two cites sharing a line count as one and the total
@@ -309,16 +366,29 @@ count_pattern() {
     # Three stages instead, so the line filter and the occurrence count are
     # separate concerns: select lines that do not open as a comment, cut each
     # line at its first `//`, then count occurrences in what is left.
+    #
+    # Each stage goes through rg_matches, so a count of zero is printed as 0
+    # and a scan error fails the pipeline.  The caller assigns the result at
+    # the top level, where `set -e` stops the script on that failure.
     local pattern="$1"
-    local total=0
-    total=$(
-        rg -N --no-filename -P "^(?!\s*(?://|\*|/\*)).*${pattern}" "${common_globs[@]}" \
-           "$scan_root/include" "$scan_root/src" 2>/dev/null \
-        | rg --passthru -P '//.*$' -r '' \
-        | rg -oP "${pattern}" \
-        | wc -l
-    )
-    printf '%s' "$total"
+    rg_matches -N --no-filename -P "^(?!\s*(?://|\*|/\*)).*${pattern}" "${common_globs[@]}" \
+        "$scan_root/include" "$scan_root/src" \
+    | rg_matches --passthru -P '//.*$' -r '' \
+    | rg_matches -oP "${pattern}" \
+    | wc -l
+}
+
+# count_decide_procedure PROC — occurrences of `decide::PROC` in code.
+#
+# The catalog header safety/_Decide.h holds the canonical declarations and
+# is excluded.  -o counts occurrences.  -c would count lines and drop a cite
+# whenever two land on one line.
+count_decide_procedure() {
+    local proc="$1"
+    rg_matches -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
+        --glob '!include/crucible/safety/_Decide.h' \
+        "$scan_root/include" "$scan_root/src" \
+    | wc -l
 }
 
 # ── Counts ────────────────────────────────────────────────────────────
@@ -353,7 +423,14 @@ total_contract_cites=$((total_pre_cites + total_post_cites + contract_assert))
 # ── Per-decide-procedure cite count ───────────────────────────────────
 # The catalog itself (decide_procedures) is declared near the top of the
 # script, above the argument dispatcher, so --self-test can build its
-# fixture from the same array.
+# fixture from the same array.  The counts are taken here at the top level,
+# once, so a scan error stops the script under `set -e`.  Inside the print
+# functions a failure would not stop it, because --check calls print_json
+# in a command substitution, where bash clears `set -e`.
+declare -A decide_counts=()
+for proc in "${decide_procedures[@]}"; do
+    decide_counts[$proc]=$(count_decide_procedure "$proc")
+done
 
 # ── Top-N file density ────────────────────────────────────────────────
 # Files with the most combined contract cites — the "boundary
@@ -385,19 +462,7 @@ print_human() {
 ── Per-decide-procedure cite count ──────────────────
 HEADER
     for proc in "${decide_procedures[@]}"; do
-        # We count `decide::PROC` outside of the Decide.h definition
-        # itself (which contains the canonical declarations).  Excluding
-        # safety/Decide.h gives the "production cite" count, mirroring
-        # the docstring cross-reference discipline.
-        # -o counts occurrences; -c would count lines and drop a cite whenever
-        # two land on one line.
-        local n=0
-        n=$(
-            rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
-               --glob '!include/crucible/safety/_Decide.h' \
-               "$scan_root/include" "$scan_root/src" 2>/dev/null | wc -l
-        )
-        printf '  %-30s %s\n' "decide::$proc" "$n"
+        printf '  %-30s %s\n' "decide::$proc" "${decide_counts[$proc]}"
     done
 
     cat <<MIDDLE
@@ -407,9 +472,9 @@ MIDDLE
 
     # Build the per-file cite count: pre + post + contract_assert.
     # rg -c gives "file:count" lines; we sort by count desc, take top N.
-    rg -cP '(CRUCIBLE_PRE|CRUCIBLE_POST|^\s*pre\s*\(|^\s*post\s*\(|contract_assert)\b' \
+    rg_matches -cP '(CRUCIBLE_PRE|CRUCIBLE_POST|^\s*pre\s*\(|^\s*post\s*\(|contract_assert)\b' \
        "${common_globs[@]}" \
-       "$scan_root/include" "$scan_root/src" 2>/dev/null \
+       "$scan_root/include" "$scan_root/src" \
        | sort -t: -k2 -nr -s \
        | head -n "$top_n" \
        | while IFS=: read -r file count; do
@@ -455,16 +520,9 @@ print_json() {
     printf '"decide_per_procedure":{'
     local first=1
     for proc in "${decide_procedures[@]}"; do
-        # -o counts occurrences; see the human-summary loop above.
-        local n=0
-        n=$(
-            rg -oP "^(?!\s*(?://|\*|/\*))(?:(?!//).)*?\Kdecide::${proc}\b" "${common_globs[@]}" \
-               --glob '!include/crucible/safety/_Decide.h' \
-               "$scan_root/include" "$scan_root/src" 2>/dev/null | wc -l
-        )
         if [[ $first -eq 0 ]]; then printf ','; fi
         first=0
-        printf '"%s":%s' "$proc" "$n"
+        printf '"%s":%s' "$proc" "${decide_counts[$proc]}"
     done
     printf '}'
 
