@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsWait.h>
+#include <crucible/safety/_IsWait.h>
 
 int main() {
     auto s = crucible::safety::extract::wait_strategy_v<int>;

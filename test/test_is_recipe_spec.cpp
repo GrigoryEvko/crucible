@@ -14,12 +14,12 @@
 #include <crucible/safety/IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/IsEpochVersioned.h>
-#include <crucible/safety/IsNumaPlacement.h>
+#include <crucible/safety/_IsNumaPlacement.h>
 #include <crucible/safety/_IsNumericalTier.h>
 #include <crucible/safety/_IsOpaqueLifetime.h>
 #include <crucible/safety/_IsOwnedRegion.h>
-#include <crucible/safety/IsResidencyHeat.h>
-#include <crucible/safety/IsVendor.h>
+#include <crucible/safety/_IsResidencyHeat.h>
+#include <crucible/safety/_IsVendor.h>
 #include <crucible/safety/NumaPlacement.h>
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OpaqueLifetime.h>

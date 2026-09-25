@@ -9,7 +9,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsNumaPlacement.h>
+#include <crucible/safety/_IsNumaPlacement.h>
 
 int main() {
     using V = crucible::safety::extract::numa_placement_value_t<int>;

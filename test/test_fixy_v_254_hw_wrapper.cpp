@@ -4,7 +4,7 @@
 // single wrapper header can state about itself.
 
 #include <crucible/safety/Hw.h>
-#include <crucible/safety/IsHw.h>
+#include <crucible/safety/_IsHw.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/diag/_RowHashFold.h>

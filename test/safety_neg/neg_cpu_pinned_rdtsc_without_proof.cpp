@@ -18,7 +18,7 @@
 // IsCpuPinned / read_tsc.
 
 #include <crucible/safety/_CpuPinned.h>
-#include <crucible/safety/IsCpuPinned.h>
+#include <crucible/safety/_IsCpuPinned.h>
 
 using namespace crucible::safety;
 

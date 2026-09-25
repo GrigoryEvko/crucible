@@ -7,7 +7,7 @@
 // contribution, and how it composes with other wrappers.
 
 #include <crucible/safety/BarrierGuarded.h>
-#include <crucible/safety/IsBarrierGuarded.h>
+#include <crucible/safety/_IsBarrierGuarded.h>
 #include <crucible/safety/Hw.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/DimensionTraits.h>

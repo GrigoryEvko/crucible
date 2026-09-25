@@ -1,4 +1,4 @@
-#include <crucible/safety/IsResidencyHeat.h>
+#include <crucible/safety/_IsResidencyHeat.h>
 
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/_CipherTier.h>

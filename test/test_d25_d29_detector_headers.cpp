@@ -5,7 +5,7 @@
 #include <crucible/safety/_IsHotPath.h>
 #include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/IsProgress.h>
-#include <crucible/safety/IsWait.h>
+#include <crucible/safety/_IsWait.h>
 
 #include <cstdio>
 #include <cstdlib>

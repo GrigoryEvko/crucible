@@ -17,7 +17,7 @@
 #include <crucible/safety/_AllocClass.h>
 #include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Borrowed.h>
-#include <crucible/safety/IsBits.h>
+#include <crucible/safety/_IsBits.h>
 #include <crucible/safety/_IsBorrowed.h>
 #include <crucible/safety/_IsBorrowedRef.h>
 #include <crucible/safety/Budgeted.h>
@@ -53,7 +53,7 @@
 #include <crucible/safety/_Affine.h>
 #include <crucible/safety/_Diagnostic.h>
 #include <crucible/safety/IsJoinPolicy.h>
-#include <crucible/safety/IsLinear.h>
+#include <crucible/safety/_IsLinear.h>
 #include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/_IsSecret.h>
 #include <crucible/safety/_IsStale.h>

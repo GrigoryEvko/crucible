@@ -25,7 +25,7 @@
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/algebra/lattices/_QttSemiring.h>
 #include <crucible/algebra/lattices/_BoolLattice.h>
-#include <crucible/safety/IsLinear.h>
+#include <crucible/safety/_IsLinear.h>
 
 #include <string_view>
 #include <type_traits>
@@ -340,12 +340,12 @@ static_assert(cheat20_admits, "[CHEAT 20 STATUS CHANGED] trait-spec injection on
 #include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/IsProgress.h>
 #include <crucible/safety/_IsRefined.h>
-#include <crucible/safety/IsResidencyHeat.h>
+#include <crucible/safety/_IsResidencyHeat.h>
 #include <crucible/safety/_IsSecret.h>
 #include <crucible/safety/_IsStale.h>
 #include <crucible/safety/_IsTagged.h>
-#include <crucible/safety/IsVendor.h>
-#include <crucible/safety/IsWait.h>
+#include <crucible/safety/_IsVendor.h>
+#include <crucible/safety/_IsWait.h>
 
 struct Cheat21_FakeLinearViaTraitInjection {
     int payload{0};
@@ -655,11 +655,11 @@ static_assert(cheat51_admits, "[CHEAT 51 STATUS CHANGED] trait-spec injection on
 // harness.  If any of them gains a detection trait, it gains a pair
 // here on the same pattern as the rest.
 
-#include <crucible/safety/IsBits.h>
+#include <crucible/safety/_IsBits.h>
 #include <crucible/safety/_IsBorrowed.h>
 #include <crucible/safety/IsBudgeted.h>
 #include <crucible/safety/IsEpochVersioned.h>
-#include <crucible/safety/IsNumaPlacement.h>
+#include <crucible/safety/_IsNumaPlacement.h>
 #include <crucible/safety/_IsOpaqueLifetime.h>
 #include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/_IsRecipeSpec.h>
@@ -827,12 +827,12 @@ static_assert(cheat67_admits, "[CHEAT 67 STATUS CHANGED] trait-spec injection on
 // The wrappers below carry the derived-from cheat only, so for them the
 // trait-injection surface is uncovered.
 
-#include <crucible/safety/IsHw.h>
-#include <crucible/safety/IsBarrierGuarded.h>
-#include <crucible/safety/IsSimdWidthPinned.h>
+#include <crucible/safety/_IsHw.h>
+#include <crucible/safety/_IsBarrierGuarded.h>
+#include <crucible/safety/_IsSimdWidthPinned.h>
 #include <crucible/safety/_IsScopedFence.h>
 #include <crucible/safety/IsJoinPolicy.h>
-#include <crucible/safety/IsClockSource.h>
+#include <crucible/safety/_IsClockSource.h>
 #include <crucible/safety/witness/IsWitness.h>
 
 struct Cheat68_DerivedFromHw : crucible::safety::Hw<crucible::safety::HwInstruction_v::Scalar, int> {};

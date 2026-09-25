@@ -4,7 +4,7 @@
 // arithmetic works for seven of the eight and loses the last, which
 // only an exhaustive sweep catches.
 
-#include <crucible/safety/IsVendor.h>
+#include <crucible/safety/_IsVendor.h>
 
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/_CipherTier.h>
@@ -17,7 +17,7 @@
 #include <crucible/safety/_IsNumericalTier.h>
 #include <crucible/safety/_IsOpaqueLifetime.h>
 #include <crucible/safety/_IsOwnedRegion.h>
-#include <crucible/safety/IsResidencyHeat.h>
+#include <crucible/safety/_IsResidencyHeat.h>
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OpaqueLifetime.h>
 #include <crucible/safety/_OwnedRegion.h>

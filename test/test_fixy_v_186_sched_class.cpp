@@ -4,7 +4,7 @@
 // single wrapper header can state about itself.
 
 #include <crucible/safety/_SchedClass.h>
-#include <crucible/safety/IsSchedClass.h>
+#include <crucible/safety/_IsSchedClass.h>
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 

@@ -15,7 +15,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/IsVendor.h>
+#include <crucible/safety/_IsVendor.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>

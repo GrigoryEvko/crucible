@@ -427,6 +427,74 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
 
+# ── safety: the detectors of ported bands, ported wrappers and wrappers re-modelled as atoms ──
+crucible/safety/_IsBarrierGuarded.h:barrier_guarded_tier_v  — A tier accessor for the BarrierGuarded wrapper, which the port did not carry. V301 in fixy/Collision.h reads the barrier strength from the grade of a binding.
+crucible/safety/_IsBarrierGuarded.h:barrier_guarded_value_t  — A payload accessor for the BarrierGuarded wrapper, which the port did not carry. The strength is an atom of a binding, and an atom has no payload.
+crucible/safety/_IsBarrierGuarded.h:BarrierStrength_v  — A re-export of the strength enum. The new tree names foundation::algebra::lattices::BarrierStrength directly, as fixy/Collision.h does.
+crucible/safety/_IsBarrierGuarded.h:IsBarrierGuarded  — A recogniser for the BarrierGuarded wrapper, which the port did not carry. The strength is an atom of fixy/atoms/Barrier.h, and the grade of a binding answers mentions<Axis::BarrierStrength>.
+crucible/safety/_IsBarrierGuarded.h:is_barrier_guarded_smoke_test  — An inline smoke test in a public namespace, retired with the recogniser of a wrapper that the port did not carry.
+crucible/safety/_IsBarrierGuarded.h:is_barrier_guarded_v  — A recogniser for the BarrierGuarded wrapper, which the port did not carry. The strength is an atom of fixy/atoms/Barrier.h, and the grade of a binding answers mentions<Axis::BarrierStrength>.
+crucible/safety/_IsBits.h:bits_enum_t  — An enum accessor. The member enum_type of fixy::Bits (fixy/Bits.h) answers it.
+crucible/safety/_IsBits.h:bits_underlying_t  — An accessor for the underlying integer. The member underlying_type of fixy::Bits (fixy/Bits.h) answers it.
+crucible/safety/_IsBits.h:IsBits  — A per-wrapper recogniser concept. foundation::reflect::IsInstanceOf over fixy::Bits answers it, so fixy/Bits.h carries no per-wrapper concept.
+crucible/safety/_IsBits.h:is_bits_v  — A per-wrapper recogniser trait. foundation::reflect::is_instance_of_v over fixy::Bits answers it.
+crucible/safety/_IsClockSource.h:clock_source_source_v  — A source accessor. The static member source of fixy::ClockSource (fixy/os/ClockSource.h) answers it.
+crucible/safety/_IsClockSource.h:clock_source_value_t  — A payload accessor. The payload is the second template argument of fixy::ClockSource, and peek returns it.
+crucible/safety/_IsClockSource.h:IsClockSource  — A per-wrapper recogniser concept. foundation::reflect::IsInstanceOf over fixy::ClockSource answers it, so fixy/os/ClockSource.h carries no per-wrapper concept.
+crucible/safety/_IsClockSource.h:is_clock_source_smoke_test  — An inline smoke test in a public namespace, retired with the per-wrapper recogniser that IsInstanceOf replaces.
+crucible/safety/_IsClockSource.h:is_clock_source_v  — A per-wrapper recogniser trait. foundation::reflect::is_instance_of_v over fixy::ClockSource answers it.
+crucible/safety/_IsCpuPinned.h:cpu_pinned_posture_v  — A posture accessor. The static member posture of fixy::CpuPinned (fixy/os/CpuPinned.h) answers it.
+crucible/safety/_IsCpuPinned.h:cpu_pinned_value_t  — A payload accessor. The member value_type of fixy::CpuPinned (fixy/os/CpuPinned.h) answers it.
+crucible/safety/_IsCpuPinned.h:IsCpuPinned  — A per-wrapper recogniser concept. foundation::reflect::IsInstanceOf over fixy::CpuPinned answers it, so fixy/os/CpuPinned.h carries no per-wrapper concept.
+crucible/safety/_IsCpuPinned.h:is_cpu_pinned_smoke_test  — An inline smoke test in a public namespace, retired with the per-wrapper recogniser that IsInstanceOf replaces.
+crucible/safety/_IsCpuPinned.h:is_cpu_pinned_v  — A per-wrapper recogniser trait. foundation::reflect::is_instance_of_v over fixy::CpuPinned answers it.
+crucible/safety/_IsHw.h:HwInstruction_v  — A re-export of the old tier enum. fixy/atoms/Hw.h declares the five enumerators verbatim as its atom family.
+crucible/safety/_IsHw.h:hw_tier_v  — A tier accessor for the Hw wrapper, which the port did not carry. The tier is an atom of fixy/atoms/Hw.h, which the grade of a binding holds.
+crucible/safety/_IsHw.h:hw_value_t  — A payload accessor for the Hw wrapper, which the port did not carry. The tier is an atom of a binding, and an atom has no payload.
+crucible/safety/_IsHw.h:IsHw  — A recogniser for the Hw wrapper, which the port did not carry. The tier is an atom of fixy/atoms/Hw.h, and the grade of a binding answers mentions<Axis::HwInstruction>.
+crucible/safety/_IsHw.h:is_hw_smoke_test  — An inline smoke test in a public namespace, retired with the recogniser of a wrapper that the port did not carry.
+crucible/safety/_IsHw.h:is_hw_v  — A recogniser for the Hw wrapper, which the port did not carry. The tier is an atom of fixy/atoms/Hw.h, and the grade of a binding answers mentions<Axis::HwInstruction>.
+crucible/safety/_IsLinear.h:IsLinear  — A recogniser for Linear. fixy::Linear is Qtt at grade One, and fixy::detail::IsExactlyOnceQtt in fixy/Qtt.h answers it from the usage_grade member.
+crucible/safety/_IsLinear.h:is_linear_v  — A recogniser for Linear. fixy::Linear is Qtt at grade One, and fixy::detail::IsExactlyOnceQtt in fixy/Qtt.h answers it from the usage_grade member.
+crucible/safety/_IsLinear.h:linear_value_t  — A payload accessor. The payload is the second template argument of fixy::Qtt, and peek returns it.
+crucible/safety/_IsNumaPlacement.h:IsNumaPlacement  — A per-wrapper recogniser concept. foundation::reflect::IsInstanceOf over fixy::NumaPlacement (fixy/os/NumaPlacement.h) answers it.
+crucible/safety/_IsNumaPlacement.h:is_numa_placement_smoke_test  — An inline smoke test in a public namespace, retired with the per-wrapper recogniser that IsInstanceOf replaces.
+crucible/safety/_IsNumaPlacement.h:is_numa_placement_v  — A per-wrapper recogniser trait. foundation::reflect::is_instance_of_v over fixy::NumaPlacement answers it.
+crucible/safety/_IsNumaPlacement.h:numa_placement_value_t  — A payload accessor. fixy::NumaPlacement is a proof over a bound region and carries no payload type, so no accessor applies.
+crucible/safety/_IsOwnedMmap.h:IsOwnedMmap  — A per-wrapper recogniser concept. foundation::reflect::IsInstanceOf over fixy::OwnedMmap (fixy/OwnedMmap.h) answers it.
+crucible/safety/_IsOwnedMmap.h:is_owned_mmap_v  — A per-wrapper recogniser trait. foundation::reflect::is_instance_of_v over fixy::OwnedMmap answers it.
+crucible/safety/_IsResidencyHeat.h:IsResidencyHeat  — A per-band recogniser concept. fixy::IsBandOf<ResidencyHeatLattice, B> in fixy/Bands.h answers it, so fixy/Bands.h carries no per-band concept.
+crucible/safety/_IsResidencyHeat.h:is_residency_heat_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsResidencyHeat.h:is_residency_heat_v  — A per-band recogniser trait. fixy::is_band_of_v<ResidencyHeatLattice, B> in fixy/Bands.h answers it.
+crucible/safety/_IsResidencyHeat.h:residency_heat_tag_v  — A per-band tier accessor. fixy::band_tier_v in fixy/Bands.h answers it for every band.
+crucible/safety/_IsResidencyHeat.h:residency_heat_value_t  — A per-band payload accessor. fixy::band_value_t in fixy/Bands.h answers it for every band.
+crucible/safety/_IsSchedClass.h:IsSchedClass  — A per-wrapper recogniser concept. foundation::reflect::IsInstanceOf over fixy::SchedClass (fixy/os/SchedClass.h) answers it.
+crucible/safety/_IsSchedClass.h:is_sched_class_smoke_test  — An inline smoke test in a public namespace, retired with the per-wrapper recogniser that IsInstanceOf replaces.
+crucible/safety/_IsSchedClass.h:is_sched_class_v  — A per-wrapper recogniser trait. foundation::reflect::is_instance_of_v over fixy::SchedClass answers it.
+crucible/safety/_IsSchedClass.h:sched_class_policy_v  — A policy accessor. The static member policy of fixy::SchedClass (fixy/os/SchedClass.h) answers it.
+crucible/safety/_IsSchedClass.h:sched_class_value_t  — A payload accessor. The payload is the second template argument of fixy::SchedClass, and peek returns it.
+crucible/safety/_IsSimdWidthPinned.h:IsSimdWidthPinned  — A recogniser for the SimdWidthPinned wrapper, which the port did not carry. The ISA is an atom of fixy/atoms/Simd.h, and the grade of a binding answers mentions<Axis::SimdIsa>.
+crucible/safety/_IsSimdWidthPinned.h:is_simd_width_pinned_smoke_test  — An inline smoke test in a public namespace, retired with the recogniser of a wrapper that the port did not carry.
+crucible/safety/_IsSimdWidthPinned.h:is_simd_width_pinned_v  — A recogniser for the SimdWidthPinned wrapper, which the port did not carry. The ISA is an atom of fixy/atoms/Simd.h, and the grade of a binding answers mentions<Axis::SimdIsa>.
+crucible/safety/_IsSimdWidthPinned.h:SimdIsa_v  — A re-export of the old ISA enum. fixy/atoms/Simd.h restates the fifteen enumerators and their trunk nibble verbatim.
+crucible/safety/_IsSimdWidthPinned.h:simd_width_pinned_isa_v  — An ISA accessor for the SimdWidthPinned wrapper, which the port did not carry. V101 and V402 in fixy/Collision.h read the ISA from the grade of a binding.
+crucible/safety/_IsSimdWidthPinned.h:simd_width_pinned_value_t  — A payload accessor for the SimdWidthPinned wrapper, which the port did not carry. The ISA is an atom of a binding, and an atom has no payload.
+crucible/safety/_IsSuspendBehavior.h:IsSuspendBehavior  — A recogniser for the SuspendBehavior wrapper, which the port did not carry. fixy::ClockSource derives the behaviour from its clock source as its static member suspend_behavior.
+crucible/safety/_IsSuspendBehavior.h:is_suspend_behavior_smoke_test  — An inline smoke test in a public namespace, retired with the recogniser of a wrapper that the port did not carry.
+crucible/safety/_IsSuspendBehavior.h:is_suspend_behavior_v  — A recogniser for the SuspendBehavior wrapper, which the port did not carry. fixy::ClockSource derives the behaviour from its clock source as its static member suspend_behavior.
+crucible/safety/_IsSuspendBehavior.h:suspend_behavior_v  — A tier accessor for the SuspendBehavior wrapper, which the port did not carry. The static member suspend_behavior of fixy::ClockSource (fixy/os/ClockSource.h) gives the tier for a clock reading.
+crucible/safety/_IsSuspendBehavior.h:suspend_behavior_value_t  — A payload accessor for the SuspendBehavior wrapper, which the port did not carry. A clock reading keeps its payload in fixy::ClockSource, and peek returns it.
+crucible/safety/_IsVendor.h:IsVendor  — A per-band recogniser concept. fixy::IsBandOf<VendorLattice, B> in fixy/Bands.h answers it, so fixy/Bands.h carries no per-band concept.
+crucible/safety/_IsVendor.h:is_vendor_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsVendor.h:is_vendor_v  — A per-band recogniser trait. fixy::is_band_of_v<VendorLattice, B> in fixy/Bands.h answers it.
+crucible/safety/_IsVendor.h:vendor_backend_v  — A per-band tier accessor. fixy::band_tier_v in fixy/Bands.h answers it for every band.
+crucible/safety/_IsVendor.h:vendor_value_t  — A per-band payload accessor. fixy::band_value_t in fixy/Bands.h answers it for every band.
+crucible/safety/_IsWait.h:IsWait  — A per-band recogniser concept. fixy::IsBandOf<WaitLattice, B> in fixy/Bands.h answers it, so fixy/Bands.h carries no per-band concept.
+crucible/safety/_IsWait.h:is_wait_smoke_test  — An inline smoke test in a public namespace, retired with the old per-band recogniser header whose surface fixy/Bands.h answers generically.
+crucible/safety/_IsWait.h:is_wait_v  — A per-band recogniser trait. fixy::is_band_of_v<WaitLattice, B> in fixy/Bands.h answers it.
+crucible/safety/_IsWait.h:wait_strategy_v  — A per-band tier accessor. fixy::band_tier_v in fixy/Bands.h answers it for every band.
+crucible/safety/_IsWait.h:wait_value_t  — A per-band payload accessor. fixy::band_value_t in fixy/Bands.h answers it for every band.
+
 # ── sessions: the classified payloads ───────────────────────────────────
 crucible/sessions/_SessionCT.h:requires_ct  — Replaced by the constant_time_value annotation in fixy/session/Classified.h, which sits on the declaration, so a late specialisation cannot change an answer already given.
 crucible/sessions/_SessionCT.h:requires_ct_v  — Replaced by the ConstantTimeValue concept in fixy/session/Classified.h, which reads the annotation on the declaration.

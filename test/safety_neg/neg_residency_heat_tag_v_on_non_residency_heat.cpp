@@ -6,7 +6,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsResidencyHeat.h>
+#include <crucible/safety/_IsResidencyHeat.h>
 
 int main() {
     auto t = crucible::safety::extract::residency_heat_tag_v<int>;

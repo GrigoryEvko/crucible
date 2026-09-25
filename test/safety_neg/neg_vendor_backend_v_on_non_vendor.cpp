@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsVendor.h>
+#include <crucible/safety/_IsVendor.h>
 
 int main() {
     auto b = crucible::safety::extract::vendor_backend_v<int>;

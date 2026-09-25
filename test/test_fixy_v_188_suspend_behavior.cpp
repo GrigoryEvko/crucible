@@ -4,7 +4,7 @@
 // single wrapper header can state about itself.
 
 #include <crucible/safety/SuspendBehavior.h>
-#include <crucible/safety/IsSuspendBehavior.h>
+#include <crucible/safety/_IsSuspendBehavior.h>
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 

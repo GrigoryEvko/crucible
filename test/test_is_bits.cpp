@@ -1,4 +1,4 @@
-#include <crucible/safety/IsBits.h>
+#include <crucible/safety/_IsBits.h>
 
 #include <cstdio>
 #include <cstdlib>

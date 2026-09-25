@@ -1,4 +1,4 @@
-#include <crucible/safety/IsWait.h>
+#include <crucible/safety/_IsWait.h>
 
 #include <cstdio>
 #include <cstdlib>

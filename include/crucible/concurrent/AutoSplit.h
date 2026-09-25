@@ -8,8 +8,8 @@
 #include <crucible/safety/_IsAllocClass.h>
 #include <crucible/safety/_IsHotPath.h>
 #include <crucible/safety/_IsNumericalTier.h>
-#include <crucible/safety/IsResidencyHeat.h>
-#include <crucible/safety/IsWait.h>
+#include <crucible/safety/_IsResidencyHeat.h>
+#include <crucible/safety/_IsWait.h>
 
 #include <algorithm>
 #include <array>

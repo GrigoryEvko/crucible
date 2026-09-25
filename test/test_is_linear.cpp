@@ -1,4 +1,4 @@
-#include <crucible/safety/IsLinear.h>
+#include <crucible/safety/_IsLinear.h>
 
 #include <cstdio>
 #include <cstdlib>

@@ -4,7 +4,7 @@
 // single wrapper header can state about itself.
 
 #include <crucible/safety/_CpuPinned.h>
-#include <crucible/safety/IsCpuPinned.h>
+#include <crucible/safety/_IsCpuPinned.h>
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/_SchedClass.h>
 #include <crucible/safety/diag/_RowHashFold.h>
