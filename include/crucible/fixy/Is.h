@@ -15,7 +15,7 @@
 #include <crucible/safety/_IsBits.h>
 #include <crucible/safety/_IsBorrowed.h>
 #include <crucible/safety/_IsBorrowedRef.h>
-#include <crucible/safety/IsBudgeted.h>
+#include <crucible/safety/_IsBudgeted.h>
 #include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/_IsClockSource.h>
 #include <crucible/safety/IsConsistency.h>
@@ -23,7 +23,7 @@
 #include <crucible/safety/_IsCpuPinned.h>
 #include <crucible/safety/_IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
-#include <crucible/safety/IsEpochVersioned.h>
+#include <crucible/safety/_IsEpochVersioned.h>
 #include <crucible/safety/_IsHotPath.h>
 #include <crucible/safety/_IsHw.h>
 #include <crucible/safety/IsJoinPolicy.h>

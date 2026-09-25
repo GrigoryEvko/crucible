@@ -19,7 +19,7 @@
 #include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_IsBorrowedRef.h>
 #include <crucible/safety/_IsSwmrHandle.h>
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 #include <crucible/safety/_Saturated.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
@@ -28,7 +28,7 @@
 #include <crucible/safety/_Cyclic.h>
 #include <crucible/safety/_CyclicBuffer.h>
 #include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_FixedArray.h>
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_Linear.h>

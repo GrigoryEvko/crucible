@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 
 using namespace crucible::safety;
 

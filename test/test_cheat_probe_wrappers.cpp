@@ -15,17 +15,17 @@
 #include <crucible/safety/_OpaqueLifetime.h>
 #include <crucible/safety/_ResidencyHeat.h>
 #include <crucible/safety/_Vendor.h>
-#include <crucible/safety/Budgeted.h>
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_Budgeted.h>
+#include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_RecipeSpec.h>
 
-#include <crucible/safety/IsBudgeted.h>
+#include <crucible/safety/_IsBudgeted.h>
 #include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/_IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
-#include <crucible/safety/IsEpochVersioned.h>
+#include <crucible/safety/_IsEpochVersioned.h>
 #include <crucible/safety/_IsNumaPlacement.h>
 #include <crucible/safety/_IsNumericalTier.h>
 #include <crucible/safety/_IsOpaqueLifetime.h>

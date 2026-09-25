@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 
 #include <type_traits>
 

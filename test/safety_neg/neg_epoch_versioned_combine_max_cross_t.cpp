@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — combine_max parameter-type rejection.
 
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 
 using namespace crucible::safety;
 

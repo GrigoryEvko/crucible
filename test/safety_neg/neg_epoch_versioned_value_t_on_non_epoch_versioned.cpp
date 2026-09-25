@@ -9,7 +9,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsEpochVersioned.h>
+#include <crucible/safety/_IsEpochVersioned.h>
 
 int main() {
     using V = crucible::safety::extract::epoch_versioned_value_t<int>;

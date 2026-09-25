@@ -9,7 +9,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsBudgeted.h>
+#include <crucible/safety/_IsBudgeted.h>
 
 int main() {
     using V = crucible::safety::extract::budgeted_value_t<int>;

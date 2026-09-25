@@ -9,7 +9,7 @@
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/_AllocClass.h>
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 #include <crucible/permissions/_Permission.h>
 
 #include <cstdio>

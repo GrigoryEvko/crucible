@@ -59,8 +59,8 @@
 // A VersionSource is owned by one thread.  Share its versions by passing
 // stamps, which are values.
 //
-// Old spelling: include/crucible/safety/EpochVersioned.h, and the
-// detection surface of include/crucible/safety/IsEpochVersioned.h.
+// Old spelling: include/crucible/safety/_EpochVersioned.h, and the
+// detection surface of include/crucible/safety/_IsEpochVersioned.h.
 
 #include <fixy/GradedFacade.h>
 #include <fixy/SelfContained.h>

@@ -12,7 +12,7 @@
 //
 // [GCC-WRAPPER-TEXT] — assignment-operator type-mismatch rejection.
 
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 
 using namespace crucible::safety;
 

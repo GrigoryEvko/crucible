@@ -26,12 +26,12 @@
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/safety/_AllocClass.h>
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/MemOrder.h>

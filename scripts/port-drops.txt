@@ -936,6 +936,10 @@ crucible/safety/_GradedExtract.h:modality_of_v  — A projection of the modality
 crucible/safety/_GradedExtract.h:value_type_of_t  — A projection of the value_type slot of a wrapper. A consumer in the new tree reads the slot directly, and the only includer outside the tests was the old crucible/fixy/Wrap.h.
 crucible/safety/_SuspendBehavior.h:mint_suspend_behavior  — The mint of the value wrapper, which let a caller claim a suspend class for any value. fixy/os/ClockSource.h reads the class from the clock that made the reading, so the port has no mint.
 
+# ── safety: the budget and version wrappers and their detectors ─────────
+crucible/safety/_IsBudgeted.h:is_budgeted_smoke_test  — A run-time loop over the detector's answers. fixy/Budgeted.h answers IsBudgeted with one reflection query and checks it with static assertions, and test/fixy/test_versioned_budgeted.cpp runs the wrapper.
+crucible/safety/_IsEpochVersioned.h:is_epoch_versioned_smoke_test  — A run-time loop over the detector's answers. fixy/EpochVersioned.h answers IsEpochVersioned with one reflection query and checks it with static assertions, and test/fixy/test_versioned_budgeted.cpp runs the wrapper.
+
 # ── safety: the Fn aggregator ───────────────────────────────────────────
 crucible/safety/_Fn.h:CollisionRules  → include/fixy/Collision.h  — The per-binding rule check became fixy::collision::rules_of<T, Atoms...> in fixy/Collision.h, which fixy::fn reads at tier 5 through fixy/Reject.h.
 crucible/safety/_Fn.h:CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION  — The include-order handshake between the old Fn.h and CollisionCatalog.h has no successor, because fixy/Reject.h includes fixy/Collision.h before fixy/Fn.h names the rules.

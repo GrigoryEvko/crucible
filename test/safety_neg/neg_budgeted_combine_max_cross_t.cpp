@@ -21,7 +21,7 @@
 //
 // [GCC-WRAPPER-TEXT] — combine_max parameter-type rejection.
 
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 
 using namespace crucible::safety;
 

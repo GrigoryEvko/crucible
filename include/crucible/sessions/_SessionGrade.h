@@ -7,7 +7,7 @@
 #include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_Crash.h>
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_Vendor.h>

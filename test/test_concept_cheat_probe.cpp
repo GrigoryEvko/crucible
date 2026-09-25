@@ -657,8 +657,8 @@ static_assert(cheat51_admits, "[CHEAT 51 STATUS CHANGED] trait-spec injection on
 
 #include <crucible/safety/_IsBits.h>
 #include <crucible/safety/_IsBorrowed.h>
-#include <crucible/safety/IsBudgeted.h>
-#include <crucible/safety/IsEpochVersioned.h>
+#include <crucible/safety/_IsBudgeted.h>
+#include <crucible/safety/_IsEpochVersioned.h>
 #include <crucible/safety/_IsNumaPlacement.h>
 #include <crucible/safety/_IsOpaqueLifetime.h>
 #include <crucible/safety/_IsOwnedRegion.h>

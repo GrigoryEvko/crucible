@@ -20,7 +20,7 @@
 //
 // [GCC-WRAPPER-TEXT] — constructor parameter-type mismatch.
 
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 
 using namespace crucible::safety;
 

@@ -2,10 +2,10 @@
 // runtime values rather than template parameters, so there is no tag to
 // extract here and the layout is not free.
 
-#include <crucible/safety/IsBudgeted.h>
+#include <crucible/safety/_IsBudgeted.h>
 
 #include <crucible/algebra/_GradedTrait.h>
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/_Crash.h>

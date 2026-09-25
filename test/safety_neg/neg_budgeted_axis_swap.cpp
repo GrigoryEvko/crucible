@@ -20,7 +20,7 @@
 //
 // [GCC-WRAPPER-TEXT] — constructor parameter type mismatch.
 
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 
 using namespace crucible::safety;
 

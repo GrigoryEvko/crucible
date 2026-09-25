@@ -12,8 +12,8 @@
 #include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/safety/diag/_StableName.h>
 
-#include <crucible/safety/Budgeted.h>
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_Budgeted.h>
+#include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_RecipeSpec.h>
 

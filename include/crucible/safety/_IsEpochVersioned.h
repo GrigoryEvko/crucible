@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 
 #include <type_traits>
 

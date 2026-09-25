@@ -20,7 +20,7 @@
 #include <crucible/safety/_IsBits.h>
 #include <crucible/safety/_IsBorrowed.h>
 #include <crucible/safety/_IsBorrowedRef.h>
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 #include <crucible/safety/_Checked.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_ConstantTime.h>
@@ -28,7 +28,7 @@
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/DimensionTraits.h>
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_Fn.h>
 #include <crucible/safety/_FixedArray.h>
 #include <crucible/safety/_HotPath.h>

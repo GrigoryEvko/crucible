@@ -46,8 +46,8 @@
 // type here: the shrink-only ledger of
 // test/fixy/test_versioned_budgeted_attacks.cpp holds that limit.
 //
-// Old spelling: include/crucible/safety/Budgeted.h, and the detection
-// surface of include/crucible/safety/IsBudgeted.h.
+// Old spelling: include/crucible/safety/_Budgeted.h, and the detection
+// surface of include/crucible/safety/_IsBudgeted.h.
 
 #include <fixy/GradedFacade.h>
 #include <fixy/SelfContained.h>

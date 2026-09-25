@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 
 #include <utility>
 

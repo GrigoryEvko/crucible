@@ -49,13 +49,13 @@
 #include <crucible/fixy/Fn.h>  // fixy::fn + stance::*
 #include <crucible/safety/_AllocClass.h>
 #include <crucible/safety/_BarrierGuarded.h>
-#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/_Budgeted.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_Fn.h>
 #include <crucible/safety/_FpMode.h>
 #include <crucible/safety/_HotPath.h>
