@@ -1,14 +1,14 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-10 negative fixture #4/8:
-// `fixy::substr::calendar_grid::mint_calendar_grid_consumer<
+// Calendar-grid session mint negative fixture 4 of 8:
+// `safety::proto::calendar_grid_session::mint_calendar_grid_consumer<
 //      Grid>(grid, perm)` rejects when the second (perm)
 // parameter cannot bind to
 // `Permission<calendar_tag::Consumer<UserTag>>&&`.
 //
 // Mirrors fixture #2 (producer_wrong_perm) on the consumer side:
-// proves the per-mint parameter shape is preserved through the
-// using-decl INDEPENDENTLY of the producer-side instantiation.
+// proves the per-mint parameter shape holds INDEPENDENTLY of the
+// producer-side instantiation.
 //
 // `PermissionedCalendarGrid<Job, 2, 8, 16, Key, 1'000'000ULL,
 // UserTag>` is a known CalendarGridSessionSurface.  The first
@@ -20,10 +20,10 @@
 // "Permission" / "mint_calendar_grid_consumer".
 
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/CalendarGridSession.h>
 
-namespace fcal = ::crucible::fixy::substr::calendar_grid;
+namespace fcal = ::crucible::safety::proto::calendar_grid_session;
 namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_cal_consumer_wrong_perm {

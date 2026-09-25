@@ -1,14 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-07 negative fixture #8/8:
-// `fixy::substr::chaselev::mint_thief_session<Deque, Ctx>(ctx,
-// handle)` rejects when the second (handle) parameter cannot
+// Chase-Lev session mint negative fixture 8 of 8:
+// `safety::proto::chaselev_session::mint_thief_session<Deque, Ctx>(
+// ctx, handle)` rejects when the second (handle) parameter cannot
 // bind to `typename Deque::ThiefHandle&`.
 //
 // Mirrors fixture #6 (owner_session_wrong_handle) on the thief
-// side: proves that the ThiefHandle reference binding is
-// preserved through the using-decl in Substr.h INDEPENDENTLY of
-// the owner-side instantiation.
+// side: proves that the ThiefHandle reference binding fires
+// INDEPENDENTLY of the owner-side instantiation.
 //
 // `Deque` is supplied explicitly and IS a known
 // ChaseLevSessionSurface.  `HotFgCtx` IS IsExecCtx (its row is
@@ -27,9 +26,9 @@
 
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ChaseLevDequeSession.h>
 
-namespace fchase = ::crucible::fixy::substr::chaselev;
+namespace fchase = ::crucible::safety::proto::chaselev_session;
 namespace eff = ::crucible::effects;
 
 namespace neg_fixy_thief_session_wrong_handle {

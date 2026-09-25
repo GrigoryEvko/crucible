@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-07 negative fixture #6/8:
-// `fixy::substr::chaselev::mint_owner_session<Deque, Ctx>(ctx,
-// handle)` rejects when the second (handle) parameter cannot
+// Chase-Lev session mint negative fixture 6 of 8:
+// `safety::proto::chaselev_session::mint_owner_session<Deque, Ctx>(
+// ctx, handle)` rejects when the second (handle) parameter cannot
 // bind to `typename Deque::OwnerHandle&`.
 //
 // `Deque` is supplied explicitly and IS a known
@@ -23,9 +23,9 @@
 
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ChaseLevDequeSession.h>
 
-namespace fchase = ::crucible::fixy::substr::chaselev;
+namespace fchase = ::crucible::safety::proto::chaselev_session;
 namespace eff = ::crucible::effects;
 
 namespace neg_fixy_owner_session_wrong_handle {

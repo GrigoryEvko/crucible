@@ -1,14 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-07 negative fixture #3/8:
-// `fixy::substr::chaselev::mint_chaselev_thief<Deque>(deque)`
+// Chase-Lev session mint negative fixture 3 of 8:
+// `safety::proto::chaselev_session::mint_chaselev_thief<Deque>(deque)`
 // (single-arg overload, no fractional proof) rejects when Deque
 // is NOT a ChaseLevSessionSurface.
 //
 // Mirrors fixture #1 (owner_non_surface) on the thief side:
-// proves that the ChaseLevSessionSurface concept gate is
-// preserved through the using-decl in Substr.h INDEPENDENTLY of
-// the owner-side instantiation.
+// proves that the ChaseLevSessionSurface concept gate fires
+// INDEPENDENTLY of the owner-side instantiation.
 //
 // Distinct from fixture #4 (thief_wrong_proof): #3 exercises the
 // concept gate on the Deque parameter (single-arg overload); #4
@@ -18,9 +17,9 @@
 // Expected diagnostic: "ChaseLevSessionSurface" / "constraints
 // not satisfied" / "no matching function" / "mint_chaselev_thief".
 
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ChaseLevDequeSession.h>
 
-namespace fchase = ::crucible::fixy::substr::chaselev;
+namespace fchase = ::crucible::safety::proto::chaselev_session;
 
 int main() {
     int not_a_deque = 0;

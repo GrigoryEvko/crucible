@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-11 negative fixture #1/8:
-// `fixy::substr::sharded_calendar_grid::
+// Sharded calendar-grid session mint negative fixture 1 of 8:
+// `safety::proto::sharded_calendar_grid_session::
 //   mint_sharded_calendar_grid_producer<Grid, S>(grid, perm)`
 // rejects when Grid is NOT a ShardedCalendarGridSessionSurface.
 //
@@ -22,10 +22,10 @@
 // "constraints not satisfied" / "no matching function" /
 // "mint_sharded_calendar_grid_producer".
 
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/ShardedCalendarGridSession.h>
 
-namespace fscal = ::crucible::fixy::substr::sharded_calendar_grid;
+namespace fscal = ::crucible::safety::proto::sharded_calendar_grid_session;
 namespace saf = ::crucible::safety;
 
 struct shard_producer_tag_placeholder {};

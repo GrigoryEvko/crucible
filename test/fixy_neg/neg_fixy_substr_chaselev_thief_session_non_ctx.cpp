@@ -1,14 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-07 negative fixture #7/8:
-// `fixy::substr::chaselev::mint_thief_session<Deque, Ctx>(ctx,
-// handle)` rejects when the first (ctx) parameter is NOT an
+// Chase-Lev session mint negative fixture 7 of 8:
+// `safety::proto::chaselev_session::mint_thief_session<Deque, Ctx>(
+// ctx, handle)` rejects when the first (ctx) parameter is NOT an
 // IsExecCtx.
 //
 // Mirrors fixture #5 (owner_session_non_ctx) on the thief side:
-// proves that the IsExecCtx prerequisite is preserved through
-// the using-decl in Substr.h INDEPENDENTLY of the owner-side
-// instantiation.
+// proves that the IsExecCtx prerequisite fires INDEPENDENTLY of
+// the owner-side instantiation.
 //
 // `Deque` is supplied explicitly and IS a known
 // ChaseLevSessionSurface.  `Ctx` is deduced from the first
@@ -23,9 +22,9 @@
 // / "no matching function" / "mint_thief_session".
 
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ChaseLevDequeSession.h>
 
-namespace fchase = ::crucible::fixy::substr::chaselev;
+namespace fchase = ::crucible::safety::proto::chaselev_session;
 
 namespace neg_fixy_thief_session_non_ctx {
 struct UserTag {};

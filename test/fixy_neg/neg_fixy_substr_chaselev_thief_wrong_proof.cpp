@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-07 negative fixture #4/8:
-// `fixy::substr::chaselev::mint_chaselev_thief<Deque>(deque,
+// Chase-Lev session mint negative fixture 4 of 8:
+// `safety::proto::chaselev_session::mint_chaselev_thief<Deque>(deque,
 // proof)` (two-arg overload) rejects when the second (proof)
 // parameter cannot bind to
 // `SharedPermission<typename Deque::thief_tag>`.
@@ -21,10 +21,10 @@
 // / "mint_chaselev_thief".
 
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/ChaseLevDequeSession.h>
 
-namespace fchase = ::crucible::fixy::substr::chaselev;
+namespace fchase = ::crucible::safety::proto::chaselev_session;
 
 namespace neg_fixy_thief_wrong_proof {
 struct UserTag {};

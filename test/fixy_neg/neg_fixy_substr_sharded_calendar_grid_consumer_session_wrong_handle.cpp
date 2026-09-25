@@ -1,17 +1,16 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-11 negative fixture #8/8:
-// `fixy::substr::sharded_calendar_grid::mint_consumer_session<
+// Sharded calendar-grid session mint negative fixture 8 of 8:
+// `safety::proto::sharded_calendar_grid_session::mint_consumer_session<
 //      Grid, S, Ctx>(ctx, handle)` rejects when the second (handle)
 // parameter cannot bind to
 // `typename Grid::template ConsumerHandle<S>&`.
 //
 // Mirrors fixture #6 (producer_session_wrong_handle) on the
 // consumer side: proves the ConsumerHandle<S> reference binding
-// is preserved through the using-decl INDEPENDENTLY of the
-// producer-side instantiation.  Both sharded sides carry the
-// non-deducible shard index `S` (unlike CalendarGrid where only
-// the producer carries `P`).
+// fires INDEPENDENTLY of the producer-side instantiation.  Both
+// sharded sides carry the non-deducible shard index `S` (unlike
+// CalendarGrid where only the producer carries `P`).
 //
 // Distinct from fixture #7 (consumer_session_non_ctx): #7
 // exercises the IsExecCtx prerequisite (first parameter slot);
@@ -24,9 +23,9 @@
 
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ShardedCalendarGridSession.h>
 
-namespace fscal = ::crucible::fixy::substr::sharded_calendar_grid;
+namespace fscal = ::crucible::safety::proto::sharded_calendar_grid_session;
 namespace conc = ::crucible::concurrent;
 namespace eff = ::crucible::effects;
 

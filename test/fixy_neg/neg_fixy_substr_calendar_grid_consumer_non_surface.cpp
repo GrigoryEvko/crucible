@@ -1,14 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-10 negative fixture #3/8:
-// `fixy::substr::calendar_grid::mint_calendar_grid_consumer<
+// Calendar-grid session mint negative fixture 3 of 8:
+// `safety::proto::calendar_grid_session::mint_calendar_grid_consumer<
 //      Grid>(grid, perm)` rejects when Grid is NOT a
 // CalendarGridSessionSurface.
 //
-// Mirrors fixture #1 (producer_non_surface) on the consumer
-// side: proves the CalendarGridSessionSurface concept gate is
-// preserved through the using-decl in Substr.h INDEPENDENTLY of
-// the producer-side instantiation.
+// Mirrors fixture 1 (producer_non_surface) on the consumer
+// side: proves that the CalendarGridSessionSurface concept gate
+// fires INDEPENDENTLY of the producer-side instantiation.
 //
 // Distinct from fixture #4 (consumer_wrong_perm): #3 exercises
 // the concept gate on the first (Grid) parameter; #4 exercises
@@ -19,10 +18,10 @@
 // "constraints not satisfied" / "no matching function" /
 // "mint_calendar_grid_consumer".
 
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/CalendarGridSession.h>
 
-namespace fcal = ::crucible::fixy::substr::calendar_grid;
+namespace fcal = ::crucible::safety::proto::calendar_grid_session;
 namespace saf = ::crucible::safety;
 
 struct consumer_tag_placeholder {};

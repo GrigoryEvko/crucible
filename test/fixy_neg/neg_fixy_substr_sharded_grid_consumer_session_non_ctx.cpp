@@ -1,15 +1,14 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-12 negative fixture #7/8:
-// `fixy::substr::sharded_grid::mint_consumer_session<
+// Sharded-grid session mint negative fixture 7 of 8:
+// `safety::proto::sharded_grid_session::mint_consumer_session<
 //      Grid, J, Ctx>(ctx, handle)` rejects when the first (ctx)
 // parameter is NOT an IsExecCtx.
 //
 // Mirrors fixture #5 (producer_session_non_ctx) on the consumer
-// side: proves the IsExecCtx prerequisite is preserved through
-// the using-decl INDEPENDENTLY of the producer-side
-// instantiation.  Carries the non-deducible consumer shard
-// index `J` (std::size_t).
+// side: proves the IsExecCtx prerequisite fires INDEPENDENTLY of
+// the producer-side instantiation.  Carries the non-deducible
+// consumer shard index `J` (std::size_t).
 //
 // Distinct from fixture #8 (consumer_session_wrong_handle): #7
 // exercises the IsExecCtx prerequisite (first parameter slot);
@@ -20,9 +19,9 @@
 // / "no matching function" / "mint_consumer_session".
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ShardedGridSession.h>
 
-namespace fsg = ::crucible::fixy::substr::sharded_grid;
+namespace fsg = ::crucible::safety::proto::sharded_grid_session;
 namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_sg_consumer_session_non_ctx {

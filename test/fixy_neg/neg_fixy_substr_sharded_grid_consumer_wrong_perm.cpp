@@ -1,15 +1,15 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-12 negative fixture #4/8:
-// `fixy::substr::sharded_grid::
+// Sharded-grid session mint negative fixture 4 of 8:
+// `safety::proto::sharded_grid_session::
 //   mint_sharded_grid_consumer<Grid, J>(grid, perm)`
 // rejects when the second (perm) parameter cannot bind to
 // `Permission<grid_tag::Consumer<typename Grid::user_tag, J>>&&`.
 //
 // Mirrors fixture #2 (producer_wrong_perm) on the consumer side:
 // `PermissionedShardedGrid<int, 2, 3, 8, UserTag>` is a known
-// ShardedGridSessionSurface (it specializes the trait per
-// ShardedGridSession.h:43).  The first parameter binds; the
+// ShardedGridSessionSurface (ShardedGridSession.h specializes the
+// trait for it).  The first parameter binds; the
 // concept passes; the second parameter `int` cannot bind to
 // `Permission<grid_tag::Consumer<UserTag, J>>&&`.
 //
@@ -23,10 +23,10 @@
 // "Permission" / "mint_sharded_grid_consumer".
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/ShardedGridSession.h>
 
-namespace fsg = ::crucible::fixy::substr::sharded_grid;
+namespace fsg = ::crucible::safety::proto::sharded_grid_session;
 namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_sg_consumer_wrong_perm {

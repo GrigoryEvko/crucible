@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-09 negative fixture #1/8:
-// `fixy::substr::chainedge::mint_chainedge_signaler<Edge>(edge,
-// perm)` rejects when Edge is NOT a ChainEdgeSessionSurface.
+// Chain-edge session mint negative fixture 1 of 8:
+// `safety::proto::chainedge_session::mint_chainedge_signaler<Edge>(
+// edge, perm)` rejects when Edge is NOT a ChainEdgeSessionSurface.
 //
 // `int` lacks the ChainEdgeSessionSurface concept's required
 // nested types (signaler_tag, waiter_tag, SignalerHandle,
@@ -18,10 +18,10 @@
 // not satisfied" / "no matching function" /
 // "mint_chainedge_signaler".
 
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/ChainEdgeSession.h>
 
-namespace fchain = ::crucible::fixy::substr::chainedge;
+namespace fchain = ::crucible::safety::proto::chainedge_session;
 namespace saf = ::crucible::safety;
 
 struct signaler_tag_placeholder {};

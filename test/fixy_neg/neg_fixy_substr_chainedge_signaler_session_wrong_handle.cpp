@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-09 negative fixture #6/8:
-// `fixy::substr::chainedge::mint_chainedge_signaler_session<
+// Chain-edge session mint negative fixture 6 of 8:
+// `safety::proto::chainedge_session::mint_chainedge_signaler_session<
 //      Edge, Ctx>(ctx, handle)` rejects when the second (handle)
 // parameter cannot bind to `typename Edge::SignalerHandle&`.
 //
@@ -21,9 +21,9 @@
 
 #include <crucible/concurrent/PermissionedChainEdge.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ChainEdgeSession.h>
 
-namespace fchain = ::crucible::fixy::substr::chainedge;
+namespace fchain = ::crucible::safety::proto::chainedge_session;
 namespace conc = ::crucible::concurrent;
 namespace eff = ::crucible::effects;
 

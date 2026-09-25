@@ -1,14 +1,14 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-12 negative fixture #5/8:
-// `fixy::substr::sharded_grid::mint_producer_session<
+// Sharded-grid session mint negative fixture 5 of 8:
+// `safety::proto::sharded_grid_session::mint_producer_session<
 //      Grid, I, Ctx>(ctx, handle)` rejects when the first (ctx)
 // parameter is NOT an IsExecCtx.
 //
 // Carries the non-deducible producer shard index `I`
-// (std::size_t) — preserved through the using-decl re-export.
-// Proves the IsExecCtx prerequisite is enforced on the sharded
-// grid mint INDEPENDENTLY of the ShardedCalendarGrid family.
+// (std::size_t).  Proves the IsExecCtx prerequisite is enforced
+// on the sharded grid mint INDEPENDENTLY of the
+// ShardedCalendarGrid family.
 //
 // Distinct from fixture #6 (producer_session_wrong_handle): #5
 // exercises the IsExecCtx prerequisite (first parameter slot);
@@ -19,9 +19,9 @@
 // / "no matching function" / "mint_producer_session".
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ShardedGridSession.h>
 
-namespace fsg = ::crucible::fixy::substr::sharded_grid;
+namespace fsg = ::crucible::safety::proto::sharded_grid_session;
 namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_sg_producer_session_non_ctx {

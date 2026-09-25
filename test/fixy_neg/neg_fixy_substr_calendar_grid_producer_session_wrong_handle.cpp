@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-10 negative fixture #6/8:
-// `fixy::substr::calendar_grid::mint_producer_session<
+// Calendar-grid session mint negative fixture 6 of 8:
+// `safety::proto::calendar_grid_session::mint_producer_session<
 //      Grid, P, Ctx>(ctx, handle)` rejects when the second
 // (handle) parameter cannot bind to
 // `typename Grid::template ProducerHandle<P>&`.
@@ -22,9 +22,9 @@
 
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/CalendarGridSession.h>
 
-namespace fcal = ::crucible::fixy::substr::calendar_grid;
+namespace fcal = ::crucible::safety::proto::calendar_grid_session;
 namespace conc = ::crucible::concurrent;
 namespace eff = ::crucible::effects;
 

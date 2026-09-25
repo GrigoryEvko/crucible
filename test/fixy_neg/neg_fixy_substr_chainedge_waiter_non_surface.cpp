@@ -1,13 +1,12 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-09 negative fixture #3/8:
-// `fixy::substr::chainedge::mint_chainedge_waiter<Edge>(edge,
-// perm)` rejects when Edge is NOT a ChainEdgeSessionSurface.
+// Chain-edge session mint negative fixture 3 of 8:
+// `safety::proto::chainedge_session::mint_chainedge_waiter<Edge>(
+// edge, perm)` rejects when Edge is NOT a ChainEdgeSessionSurface.
 //
 // Mirrors fixture #1 (signaler_non_surface) on the waiter side:
-// proves the ChainEdgeSessionSurface concept gate is preserved
-// through the using-decl in Substr.h INDEPENDENTLY of the
-// signaler-side instantiation.
+// proves the ChainEdgeSessionSurface concept gate fires
+// INDEPENDENTLY of the signaler-side instantiation.
 //
 // Distinct from fixture #4 (waiter_wrong_perm): #3 exercises the
 // concept gate on the first (Edge) parameter; #4 exercises the
@@ -18,10 +17,10 @@
 // not satisfied" / "no matching function" /
 // "mint_chainedge_waiter".
 
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/ChainEdgeSession.h>
 
-namespace fchain = ::crucible::fixy::substr::chainedge;
+namespace fchain = ::crucible::safety::proto::chainedge_session;
 namespace saf = ::crucible::safety;
 
 struct waiter_tag_placeholder {};

@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-07 negative fixture #1/8:
-// `fixy::substr::chaselev::mint_chaselev_owner<Deque>(deque, perm)`
-// rejects when Deque is NOT a ChaseLevSessionSurface.
+// Chase-Lev session mint negative fixture 1 of 8:
+// `safety::proto::chaselev_session::mint_chaselev_owner<Deque>(deque,
+// perm)` rejects when Deque is NOT a ChaseLevSessionSurface.
 //
 // Signature: `template <ChaseLevSessionSurface Deque>
 //             constexpr auto mint_chaselev_owner(
@@ -22,10 +22,10 @@
 // Expected diagnostic: "ChaseLevSessionSurface" / "constraints
 // not satisfied" / "no matching function" / "mint_chaselev_owner".
 
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/ChaseLevDequeSession.h>
 
-namespace fchase = ::crucible::fixy::substr::chaselev;
+namespace fchase = ::crucible::safety::proto::chaselev_session;
 namespace saf = ::crucible::safety;
 
 struct owner_tag_placeholder {};

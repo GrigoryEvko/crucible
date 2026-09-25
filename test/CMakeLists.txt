@@ -3481,7 +3481,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_session_non_ctx
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
 
-# fixy-HS14-07 — Substr.h re-export of ChaseLevDeque mints
+# The ChaseLevDeque session mints in sessions/ChaseLevDequeSession.h
 # (mint_chaselev_owner / mint_chaselev_thief / mint_owner_session /
 # mint_thief_session).  Four mints × two distinct mismatch classes
 # each = 8 fixtures.  The pairs split:
@@ -3490,9 +3490,9 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_session_non_ctx
 #   _non_ctx      / _wrong_handle — owner ctx-bound session mint
 #   _non_ctx      / _wrong_handle — thief ctx-bound session mint
 #
-# Witnesses the using-decl preserves the per-mint requires-clause
-# AND the per-parameter binding shape independently across all
-# four ChaseLev mints.
+# The fixtures witness the per-mint requires-clause AND the
+# per-parameter binding shape independently across all four
+# ChaseLev mints.
 crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_owner_non_surface
     "constraints.*not satisfied|no matching function"
     "ChaseLevSessionSurface|mint_chaselev_owner")
@@ -3518,7 +3518,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_session_wrong_hand
     "no matching function|cannot convert"
     "ThiefHandle|mint_thief_session")
 
-# fixy-HS14-09 — Substr.h re-export of ChainEdge mints
+# The ChainEdge session mints in sessions/ChainEdgeSession.h
 # (mint_chainedge_signaler / mint_chainedge_waiter /
 # mint_chainedge_signaler_session / mint_chainedge_waiter_session).
 # Four mints × two distinct mismatch classes each = 8 fixtures.
@@ -3527,9 +3527,9 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_session_wrong_hand
 #   _non_ctx      / _wrong_handle  — signaler/waiter ctx-bound
 #                                    session mints
 #
-# Witnesses the using-decl preserves the per-mint requires-clause
-# AND the per-parameter binding shape independently across all
-# four ChainEdge mints.
+# The fixtures witness the per-mint requires-clause AND the
+# per-parameter binding shape independently across all four
+# ChainEdge mints.
 crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_non_surface
     "constraints.*not satisfied|no matching function"
     "ChainEdgeSessionSurface|mint_chainedge_signaler")
@@ -3555,7 +3555,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_session_wrong_ha
     "no matching function|cannot convert"
     "WaiterHandle|mint_chainedge_waiter_session")
 
-# fixy-HS14-10 — Substr.h re-export of CalendarGrid mints
+# The CalendarGrid session mints in sessions/CalendarGridSession.h
 # (mint_calendar_grid_producer / mint_calendar_grid_consumer /
 # mint_producer_session / mint_consumer_session).  Four mints ×
 # two distinct mismatch classes each = 8 fixtures.  The pairs
@@ -3592,7 +3592,8 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_calendar_grid_consumer_session_wr
     "no matching function|cannot convert"
     "ConsumerHandle|mint_consumer_session")
 
-# fixy-HS14-11 — Substr.h re-export of ShardedCalendarGrid mints
+# The ShardedCalendarGrid session mints in
+# sessions/ShardedCalendarGridSession.h
 # (mint_sharded_calendar_grid_producer /
 # mint_sharded_calendar_grid_consumer / mint_producer_session /
 # mint_consumer_session).  Four mints × two distinct mismatch
@@ -3604,8 +3605,8 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_calendar_grid_consumer_session_wr
 # Note: BOTH producer and consumer sides carry a non-deducible
 # shard-index `S` (std::size_t) — distinct from CalendarGrid where
 # only the producer carries `P`.  Both variants are witnessed at
-# the sharded mints to prove the using-decl preserves the
-# non-deducible-parameter discipline on both sides.
+# the sharded mints to prove the non-deducible-parameter
+# discipline holds on both sides.
 crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_producer_non_surface
     "constraints.*not satisfied|no matching function"
     "ShardedCalendarGridSessionSurface|mint_sharded_calendar_grid_producer")
@@ -3631,7 +3632,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_consumer_se
     "no matching function|cannot convert"
     "ConsumerHandle|mint_consumer_session")
 
-# fixy-HS14-12 — Substr.h re-export of ShardedGrid mints
+# The ShardedGrid session mints in sessions/ShardedGridSession.h
 # (mint_sharded_grid_producer / mint_sharded_grid_consumer /
 # mint_producer_session / mint_consumer_session).  Four mints ×
 # two distinct mismatch classes each = 8 fixtures.  The pairs

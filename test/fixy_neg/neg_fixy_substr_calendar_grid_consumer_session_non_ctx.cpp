@@ -1,15 +1,15 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-10 negative fixture #7/8:
-// `fixy::substr::calendar_grid::mint_consumer_session<
+// Calendar-grid session mint negative fixture 7 of 8:
+// `safety::proto::calendar_grid_session::mint_consumer_session<
 //      Grid, Ctx>(ctx, handle)` rejects when the first (ctx)
 // parameter is NOT an IsExecCtx.
 //
 // Mirrors fixture #5 (producer_session_non_ctx) on the consumer
-// side: proves the IsExecCtx prerequisite is preserved through
-// the using-decl INDEPENDENTLY of the producer-side
-// instantiation.  Distinct from the producer-side because the
-// consumer signature does NOT carry the producer-row index P.
+// side: proves the IsExecCtx prerequisite fires INDEPENDENTLY of
+// the producer-side instantiation.  Distinct from the producer-side
+// because the consumer signature does NOT carry the producer-row
+// index P.
 //
 // Distinct from fixture #8 (consumer_session_wrong_handle): #7
 // exercises the IsExecCtx prerequisite (first parameter slot);
@@ -20,9 +20,9 @@
 // / "no matching function" / "mint_consumer_session".
 
 #include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/CalendarGridSession.h>
 
-namespace fcal = ::crucible::fixy::substr::calendar_grid;
+namespace fcal = ::crucible::safety::proto::calendar_grid_session;
 namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_cal_consumer_session_non_ctx {

@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-11 negative fixture #2/8:
-// `fixy::substr::sharded_calendar_grid::
+// Sharded calendar-grid session mint negative fixture 2 of 8:
+// `safety::proto::sharded_calendar_grid_session::
 //   mint_sharded_calendar_grid_producer<Grid, S>(grid, perm)`
 // rejects when the second (perm) parameter cannot bind to
 // `Permission<typename Grid::template shard_producer_tag<S>>&&`.
@@ -13,8 +13,8 @@
 //
 // `PermissionedShardedCalendarGrid<Job, 2, 8, 16, Key,
 //  1'000'000ULL, UserTag>` is a known
-// ShardedCalendarGridSessionSurface (it specializes the trait
-// per ShardedCalendarGridSession.h:43).  The first parameter
+// ShardedCalendarGridSessionSurface (ShardedCalendarGridSession.h
+// specializes the trait for it).  The first parameter
 // binds; the concept passes; the second parameter `int` cannot
 // bind to `Permission<shard_producer_tag<S>>&&`.
 //
@@ -23,10 +23,10 @@
 // "Permission" / "mint_sharded_calendar_grid_producer".
 
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/ShardedCalendarGridSession.h>
 
-namespace fscal = ::crucible::fixy::substr::sharded_calendar_grid;
+namespace fscal = ::crucible::safety::proto::sharded_calendar_grid_session;
 namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_scal_producer_wrong_perm {

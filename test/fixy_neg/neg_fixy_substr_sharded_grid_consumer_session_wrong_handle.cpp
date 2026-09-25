@@ -1,16 +1,15 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-12 negative fixture #8/8:
-// `fixy::substr::sharded_grid::mint_consumer_session<
+// Sharded-grid session mint negative fixture 8 of 8:
+// `safety::proto::sharded_grid_session::mint_consumer_session<
 //      Grid, J, Ctx>(ctx, handle)` rejects when the second (handle)
 // parameter cannot bind to
 // `typename Grid::template ConsumerHandle<J>&`.
 //
 // Mirrors fixture #6 (producer_session_wrong_handle) on the
 // consumer side: proves the ConsumerHandle<J> reference binding
-// is preserved through the using-decl INDEPENDENTLY of the
-// producer-side instantiation.  Carries the non-deducible
-// consumer shard index `J`.
+// fires INDEPENDENTLY of the producer-side instantiation.
+// Carries the non-deducible consumer shard index `J`.
 //
 // Distinct from fixture #7 (consumer_session_non_ctx): #7
 // exercises the IsExecCtx prerequisite (first parameter slot);
@@ -23,9 +22,9 @@
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/ShardedGridSession.h>
 
-namespace fsg = ::crucible::fixy::substr::sharded_grid;
+namespace fsg = ::crucible::safety::proto::sharded_grid_session;
 namespace conc = ::crucible::concurrent;
 namespace eff = ::crucible::effects;
 

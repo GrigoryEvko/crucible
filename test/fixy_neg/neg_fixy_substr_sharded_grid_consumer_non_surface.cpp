@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-HS14-12 negative fixture #3/8:
-// `fixy::substr::sharded_grid::
+// Sharded-grid session mint negative fixture 3 of 8:
+// `safety::proto::sharded_grid_session::
 //   mint_sharded_grid_consumer<Grid, J>(grid, perm)`
 // rejects when Grid is NOT a ShardedGridSessionSurface.
 //
@@ -20,10 +20,10 @@
 // "constraints not satisfied" / "no matching function" /
 // "mint_sharded_grid_consumer".
 
-#include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
+#include <crucible/sessions/ShardedGridSession.h>
 
-namespace fsg = ::crucible::fixy::substr::sharded_grid;
+namespace fsg = ::crucible::safety::proto::sharded_grid_session;
 namespace saf = ::crucible::safety;
 
 struct consumer_tag_placeholder {};
