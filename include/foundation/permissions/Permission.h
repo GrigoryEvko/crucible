@@ -661,9 +661,7 @@ constexpr void permission_drop(Permission<Tag, Brand>&&) noexcept {}
 // token per tag per program.  Soundness rides on each token's move-only
 // linearity at the scope that holds it, so two live tokens for one tag
 // are sound as long as neither is aliased, and since each call site
-// mints its own brand the two are two types.  Federation peer tags are
-// the exception: for them both overloads here are deleted, and
-// admittance is the only path to a token.
+// mints its own brand the two are two types.
 template <typename Tag, typename... Args, typename Brand>
     requires PermissionRootArgs<Tag, Args...>
 [[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept {
