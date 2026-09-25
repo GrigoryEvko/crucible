@@ -75,7 +75,8 @@ public:
     // There is no default constructor, no in_place constructor and no
     // free mint.  Each built a reading that no clock returned.
     ClockSource() = delete("a default-constructed ClockSource would claim a reading that no clock returned.  Read "
-                           "the clock through a reader from fixy::time::mint_clock_reader or mint_tsc_reader.");
+                           "the clock through a reader from fixy::time::mint_clock_reader, mint_tsc_reader or "
+                           "mint_ptp_clock_reader.");
 
     // A copy of a reading is still a reading of the same clock, so copies
     // stay.  The constructors are trivial, so a reading passes in a

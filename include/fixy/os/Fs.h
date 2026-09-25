@@ -173,7 +173,7 @@ public:
     // carries O_CREAT and ignores it otherwise, so it is passed
     // unconditionally.  Returns the errno on failure and no handle.
     [[nodiscard]] static std::expected<OwnedFd, int> open_path(const char* path, int flags, ::mode_t perms) noexcept {
-        const int fd = ::open(path, flags, perms);  // SYSCALL-CAP-OK: OwnedFd::open_path, sole caller mint_file ctx-gate (CtxFitsFileMint)
+        const int fd = ::open(path, flags, perms);  // SYSCALL-CAP-OK: OwnedFd::open_path, two callers: mint_file ctx-gate (CtxFitsFileMint) and fixy::time::mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
         if (fd < 0) {
             return std::unexpected{errno};
         }

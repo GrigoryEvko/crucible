@@ -382,6 +382,7 @@ apply to the row.
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_parallel_for` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
+| `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_sched_class` | `include/fixy/os/SchedClass.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
@@ -464,4 +465,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 176 | 92 | 75 | 9 | 0 | 152 | 41 |
-| new (`include/foundation/`, `include/fixy/`) | 107 | 45 | 60 | 2 | 0 | · | 22 |
+| new (`include/foundation/`, `include/fixy/`) | 108 | 46 | 60 | 2 | 0 | · | 22 |

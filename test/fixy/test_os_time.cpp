@@ -15,12 +15,16 @@
 // instantiated for runtime evaluation rather than folded.
 
 #include <fixy/Mutation.h>
+#include <fixy/Refined.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
 
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
+#include <limits>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -88,9 +92,10 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
         return 1;
     }
 
-    // A second source, read through its own reader.  The PMU and PTP
-    // sources have no reader in this tree, so their readings cannot be
-    // built at all: the types stay nameable for the gates that read them.
+    // A second source, read through its own reader.  The PMU source has no
+    // reader in this tree, and nothing can build its readings.  Its type
+    // stays nameable for the gates that read it.  The PTP source has a
+    // reader of its own, and a case below exercises it.
     auto realtime_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(init);
     const fixy::RealtimeClockBytes<std::uint64_t> realtime = realtime_reader.read();
     if (realtime.peek() == 0) {
@@ -202,6 +207,67 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
     return 0;
 }
 
+// The PTP reader.  A build host usually has no /dev/ptpN.  This case then
+// takes the device-missing path: the mint refuses with the errno of the
+// failed open and gives no reader.  If the device exists, one read must
+// give a reading or an error, and never a clamped value.
+//
+// The case also drives the two pure steps of a read with values that no
+// working clock returns.  The first step gives the clock id of a
+// descriptor, and the case decodes that id back to the descriptor.  The
+// second step converts a timespec.  It refuses a negative field, an
+// out-of-range nanosecond field and a count that does not fit in 64 bits.
+[[nodiscard]] int ptp_reader_refuses_what_it_cannot_stamp() {
+    using BgFsWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block>>;
+    BgFsWitness bg{eff::testing::bg()};
+
+    std::uint16_t absent_index = 254;
+    const fixy::time::PtpDeviceIndex index = fixy::mint_refined<fixy::bounded_above<std::uint16_t{255}>>(absent_index);
+    auto reader = fixy::time::mint_ptp_clock_reader(bg, index);
+    if (reader) {
+        const auto reading = reader->read();
+        if (!reading && reading.error() == std::errc::result_out_of_range) {
+            std::fprintf(stderr, "the PTP clock returned a negative or out-of-range timespec\n");
+            return 1;
+        }
+    } else if (reader.error() != std::errc::no_such_file_or_directory && reader.error() != std::errc::permission_denied) {
+        std::fprintf(stderr, "the PTP mint failed with an unexpected error: %s\n", reader.error().message().c_str());
+        return 1;
+    }
+
+    for (int descriptor : {0, 3, 17, 1023}) {
+        const ::clockid_t id = fixy::time::detail::ptp_clockid_from_fd(descriptor);
+        const unsigned int decoded = ~static_cast<unsigned int>(id) >> 3u;
+        if (decoded != static_cast<unsigned int>(descriptor) || (static_cast<unsigned int>(id) & 7u) != 3u) {
+            std::fprintf(stderr, "the PTP clock id of descriptor %d does not decode back to it\n", descriptor);
+            return 1;
+        }
+    }
+
+    long seconds = 2;
+    long nanos = 5;
+    const auto good = fixy::time::detail::ptp_nanos_from_timespec(std::timespec{seconds, nanos});
+    if (!good || *good != 2000000005ULL) {
+        std::fprintf(stderr, "the PTP conversion changed a valid reading\n");
+        return 1;
+    }
+    for (std::timespec refused : {std::timespec{-seconds, 0}, std::timespec{0, -nanos},
+                                  std::timespec{0, 1000000000L}}) {
+        const auto result = fixy::time::detail::ptp_nanos_from_timespec(refused);
+        if (result || result.error() != std::errc::result_out_of_range) {
+            std::fprintf(stderr, "the PTP conversion accepted a negative or out-of-range timespec\n");
+            return 1;
+        }
+    }
+    const auto overflow = fixy::time::detail::ptp_nanos_from_timespec(
+        std::timespec{std::numeric_limits<std::time_t>::max(), 999999999L});
+    if (overflow || overflow.error() != std::errc::value_too_large) {
+        std::fprintf(stderr, "the PTP conversion did not refuse a count past 64 bits\n");
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -209,5 +275,6 @@ int main() {
     if (const int rc = readers_and_sleeper_run(); rc != 0) return rc;
     if (const int rc = tsc_read_through_an_earned_pin(); rc != 0) return rc;
     if (const int rc = monotonic_reader_never_regresses(); rc != 0) return rc;
+    if (const int rc = ptp_reader_refuses_what_it_cannot_stamp(); rc != 0) return rc;
     return 0;
 }

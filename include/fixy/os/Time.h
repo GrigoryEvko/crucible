@@ -15,17 +15,32 @@
 // through one reader from regressing.  Neither came with the first port
 // of this header, because its source never had them, and the wrapper
 // port that dropped the class did not say so.
+//
+// The PTP hardware clock has a reader of its own, PtpClockReader.  The
+// old tree had none.  src/topology/Ptp.cpp read the clock itself and
+// stamped the value through mint_clock_source, a factory that stamps any
+// value with any source.  Before the stamp, Ptp.cpp clamped a negative
+// field to zero.  The stamp then claimed a reading that the clock never
+// returned.  The reader here owns the /dev/ptpN descriptor, stamps only
+// what clock_gettime returned on it, and refuses a negative field.
 
 #include <fixy/Mutation.h>
+#include <fixy/Refined.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
+#include <fixy/os/Fs.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Instance.h>
 
+#include <array>
+#include <cerrno>
 #include <cstdint>
 #include <ctime>
+#include <expected>
+#include <limits>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -122,6 +137,40 @@ template <TscMode Mode>
     return Mode == TscMode::SerializedPinned ? ClockSource_v::TscSerialized : ClockSource_v::TscRaw;
 }
 
+// The kernel names the clock behind an open /dev/ptpN descriptor as
+// (~fd << 3) | CLOCKFD, where CLOCKFD is 3.  No userspace header defines
+// the macro, and this function does the arithmetic itself.  It uses
+// unsigned arithmetic, and it shifts no signed value.  The conversion
+// back to clockid_t keeps all 32 bits, and the kernel decodes them.
+inline constexpr unsigned int ptp_clockfd_tag = 3u;
+
+[[nodiscard]] constexpr ::clockid_t ptp_clockid_from_fd(int fd) noexcept {
+    const unsigned int complemented = ~static_cast<unsigned int>(fd);
+    return static_cast<::clockid_t>((complemented << 3u) | ptp_clockfd_tag);
+}
+
+// The nanosecond count of one PTP reading, or the reason there is none.
+// The function refuses a negative second or nanosecond field, and a
+// nanosecond field of a full second or more.  It clamps no value into
+// range, because a stamp must hold what the clock returned.  It refuses a
+// count that does not fit in 64 bits as an overflow.  It is a pure
+// function of the timespec, and a test can give it the values that no
+// working clock returns.
+[[nodiscard]] constexpr std::expected<std::uint64_t, std::error_code> ptp_nanos_from_timespec(
+    std::timespec const& reading) noexcept {
+    constexpr std::uint64_t nanos_per_second = 1000000000ULL;
+    if (reading.tv_sec < 0 || reading.tv_nsec < 0 || reading.tv_nsec >= static_cast<long>(nanos_per_second)) {
+        return std::unexpected{std::make_error_code(std::errc::result_out_of_range)};
+    }
+    const auto seconds = static_cast<std::uint64_t>(reading.tv_sec);
+    const auto nanos = static_cast<std::uint64_t>(reading.tv_nsec);
+    constexpr auto limit = std::numeric_limits<std::uint64_t>::max();
+    if (seconds > (limit - nanos) / nanos_per_second) {
+        return std::unexpected{std::make_error_code(std::errc::value_too_large)};
+    }
+    return seconds * nanos_per_second + nanos;
+}
+
 }  // namespace detail
 
 // A multi-core mask still lets the thread migrate, and the counter is
@@ -207,10 +256,12 @@ template <TscMode Mode, typename PinT>
     requires(Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>
 struct TscReader;
 
+struct PtpClockReader;
+
 // The one door that stamps a value with the clock it came from.  The
 // constructor of ClockSource is private and this struct is its sole
 // friend.  The stamp here is private too, and the only friends are the
-// two readers below, each of which calls it on the value it has just
+// three readers below, each of which calls it on the value it has just
 // read from that same clock.  A reading of Boot therefore holds a value
 // that CLOCK_BOOTTIME returned, which is the fact the SuspendBehavior
 // and DetSafe folds rest on.
@@ -230,6 +281,8 @@ private:
     template <TscMode Mode, typename PinT>
         requires(Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>
     friend struct ::fixy::time::TscReader;
+
+    friend struct ::fixy::time::PtpClockReader;
 };
 }  // namespace detail
 
@@ -316,6 +369,64 @@ private:
     PinT pin_;
 };
 
+// A PTP hardware clock sits behind an open /dev/ptpN descriptor, and the
+// open is a file system call that can hold the caller.  The mint needs
+// the monotonic-clock gate, which keeps a clock read off the
+// replay-bound foreground path.  It also needs the file system gate,
+// which demands IO and Block.
+template <typename Ctx>
+concept CtxFitsPtpClockReaderMint = CtxFitsMonotonicClock<Ctx> && ::fixy::fs::CtxAdmitsFs<Ctx>;
+
+// The index of a /dev/ptpN device.  The kernel numbers PTP clocks from
+// zero, and the bound keeps the device path in the fixed buffer that the
+// mint builds it in.
+using PtpDeviceIndex = sf::Capped<std::uint16_t{255}, std::uint16_t>;
+
+// The reader of one PTP hardware clock.  It owns the descriptor of the
+// device.  The clock id that it reads through then names a descriptor
+// that is still open.
+//
+// The reader clamps no read.  The servo that disciplines a PHC can step
+// it.  For that reason is_non_decreasing(PtpHwClock) is false, and a floor
+// here invents an order that the clock does not have.  A read that fails,
+// or that returns a value the stamp cannot hold, gives an error and no
+// reading.
+struct PtpClockReader final {
+    using result_type = sf::PtpHwClockBytes<std::uint64_t>;
+    static constexpr ClockSource_v source = ClockSource_v::PtpHwClock;
+    static constexpr bool is_clamped = is_non_decreasing(ClockSource_v::PtpHwClock);
+    static_assert(!is_clamped, "a clock that can step must not have a floor, because the floor invents an order");
+
+    PtpClockReader(const PtpClockReader&) = delete("the reader owns its device descriptor, and a copy closes it two times");
+    PtpClockReader& operator=(const PtpClockReader&) = delete("the reader owns its device descriptor");
+    PtpClockReader(PtpClockReader&&) noexcept = default;
+    PtpClockReader& operator=(PtpClockReader&&) noexcept = default;
+    ~PtpClockReader() = default;
+
+    [[nodiscard]] std::expected<result_type, std::error_code> read() const noexcept {
+        std::timespec now{};
+        if (::clock_gettime(detail::ptp_clockid_from_fd(fd_.get()), &now) != 0) {  // SYSCALL-CAP-OK: PtpClockReader::read, sole builder mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
+            return std::unexpected{std::error_code{errno, std::system_category()}};
+        }
+        auto nanos = detail::ptp_nanos_from_timespec(now);
+        if (!nanos) {
+            return std::unexpected{nanos.error()};
+        }
+        return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(*nanos);
+    }
+
+private:
+    // One door.  The mint opens the device and gives the descriptor to
+    // this constructor.  The mint is the only friend.
+    explicit PtpClockReader(::fixy::fs::OwnedFd fd) noexcept : fd_{std::move(fd)} {}
+
+    template <eff::IsExecCtx Ctx>
+        requires CtxFitsPtpClockReaderMint<Ctx>
+    friend std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex) noexcept;
+
+    ::fixy::fs::OwnedFd fd_;
+};
+
 template <std::uint64_t MaxNanos>
     requires(MaxNanos > 0)
 struct BoundedSleeper final {
@@ -351,6 +462,39 @@ template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
     requires CtxFitsBoundedSleepMint<Ctx, MaxNanos>
 [[nodiscard]] constexpr BoundedSleeper<MaxNanos> mint_bounded_sleep(Ctx const&) noexcept {
     return {};
+}
+
+// Opens /dev/ptpN read-only and returns its reader, or the errno of a
+// failed open.  The mint builds the device path from the index itself.
+// A caller cannot point the reader at a file that is not a PTP device
+// node.
+//
+// §XXI carve-out: cx=alloc — opening /dev/ptpN invokes the kernel.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsPtpClockReaderMint<Ctx>
+[[nodiscard]] std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&,
+                                                                                  PtpDeviceIndex index) noexcept {
+    // "/dev/ptp", a maximum of three digits for an index of 255 or less,
+    // and the null at the end: 12 bytes, in a buffer of 16.
+    std::array<char, 16> path{'/', 'd', 'e', 'v', '/', 'p', 't', 'p'};
+    std::size_t length = 8;
+    std::array<char, 3> digits{};
+    std::size_t digit_count = 0;
+    std::uint16_t remaining = index.value();
+    do {
+        digits[digit_count++] = static_cast<char>('0' + remaining % 10u);
+        remaining = static_cast<std::uint16_t>(remaining / 10u);
+    } while (remaining != 0);
+    while (digit_count > 0) {
+        path[length++] = digits[--digit_count];
+    }
+    path[length] = '\0';
+
+    auto fd = ::fixy::fs::OwnedFd::open_path(path.data(), O_RDONLY | O_CLOEXEC, 0);
+    if (!fd) {
+        return std::unexpected{std::error_code{fd.error(), std::system_category()}};
+    }
+    return PtpClockReader{std::move(*fd)};
 }
 
 }  // namespace fixy::time
@@ -417,6 +561,28 @@ static_assert(!std::is_copy_constructible_v<MonotonicClock>);
 static_assert(!std::is_move_constructible_v<MonotonicClock>);
 static_assert(!std::is_default_constructible_v<ClockReader<ClockSource_v::Realtime>>);
 static_assert(std::is_copy_constructible_v<ClockReader<ClockSource_v::Realtime>>);
+
+// The PTP reader.  Its readings are PtpHwClock readings and are never
+// clamped.  It is not built from outside: no default constructor, no
+// public constructor from a descriptor.  It moves, because it owns the
+// descriptor, and it does not copy.  Its mint needs the clock gate and
+// the filesystem gate, so a context that lacks Block is refused as well
+// as the foreground one.
+using BackgroundFsCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block>>;
+static_assert(std::is_same_v<PtpClockReader::result_type, sf::PtpHwClockBytes<std::uint64_t>>);
+static_assert(!PtpClockReader::is_clamped);
+static_assert(!std::is_default_constructible_v<PtpClockReader>);
+static_assert(!std::is_constructible_v<PtpClockReader, ::fixy::fs::OwnedFd>);
+static_assert(!std::is_copy_constructible_v<PtpClockReader>);
+static_assert(std::is_nothrow_move_constructible_v<PtpClockReader>);
+static_assert(CtxFitsPtpClockReaderMint<BackgroundFsCtx>);
+static_assert(!CtxFitsPtpClockReaderMint<BackgroundCtx>);
+static_assert(!CtxFitsPtpClockReaderMint<ForegroundCtx>);
+
+// The clock id of descriptor 3 is (~3 << 3) | 3, which is -29 as a
+// clockid_t, and the kernel's decode (~id >> 3) gives the descriptor back.
+static_assert(detail::ptp_clockid_from_fd(3) == -29);
+static_assert((~static_cast<unsigned int>(detail::ptp_clockid_from_fd(3)) >> 3u) == 3u);
 
 // The readers and the sleeper are exercised in test/fixy/test_os_time.cpp,
 // which is also where the TSC leg lives: a TSC read needs a pin from

@@ -3346,6 +3346,26 @@ fixy_neg_compile_test(neg_os_clock_reader_foreground_ctx
 fixy_neg_compile_test(neg_os_clock_reader_direct_ctor
   "is private within this context"
   "ClockReader\\(\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic\\]")
+
+# The PTP clock reader.  Its gate folds the clock gate and the file
+# system gate into one concept, because the mint opens /dev/ptpN.  The
+# first fixture is a foreground context, and the clock half refuses it.
+# The second is a background context with IO and without Block.  The
+# clock half admits it, and the file system half refuses it.  In each,
+# the first regex holds the anonymous-namespace prefix.  The second names
+# the half that failed, the third names the folded gate, and the fourth
+# names the effects that the half demanded.  The compiler spells all four,
+# and the source spells none of them.
+fixy_neg_compile_test(neg_os_ptp_clock_reader_foreground_ctx
+  "no matching function for call to .mint_ptp_clock_reader\\(const \\{anonymous\\}::ForegroundCtx&, fixy::time::PtpDeviceIndex&\\)"
+  "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]"
+  "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]"
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init, foundation::effects::Effect::Test\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_ptp_clock_reader_ctx_lacks_block
+  "no matching function for call to .mint_ptp_clock_reader\\(const \\{anonymous\\}::BackgroundIoCtx&, fixy::time::PtpDeviceIndex&\\)"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]"
+  "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]"
+  "Es = \\{foundation::effects::Effect::IO, foundation::effects::Effect::Block\\}\\]. evaluated to .false.")
 fixy_test(test_os_sched)
 
 # ── The pin proof has one door ───────────────────────────────────────

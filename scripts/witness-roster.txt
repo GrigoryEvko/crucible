@@ -158,6 +158,10 @@ fixy::NumaPlacement<fixy::detail::numa_placement_invariants::ProbeRegion, fixy::
 # so the reader's one door is mint_clock_reader, gated on a context that
 # owns Bg, Init or Test.
 fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic> | fixy/os/Time.h | fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic>{} | private | closed
+# A PTP reader stamps what clock_gettime returned on its descriptor.  Its
+# one door is mint_ptp_clock_reader, which opens /dev/ptpN itself, so a
+# forger who holds another descriptor cannot build a reader over it.
+fixy::time::PtpClockReader | fixy/os/Time.h | fixy::time::PtpClockReader{forge::rvalue<fixy::fs::OwnedFd>()} | private | closed
 fixy::OwnedMmap<int, int, int> | fixy/OwnedMmap.h | fixy::OwnedMmap<int, int, int>{static_cast<void*>(nullptr), std::size_t{0}} | private | closed
 # OwnedFile fcloses what it holds, so a public FILE* constructor let
 # `OwnedFile{stdin}` close standard input.  The constructor is private;

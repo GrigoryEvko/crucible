@@ -1302,6 +1302,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::spin::UnwitnessedSpinLock, kDescriptor},
     {^^::fixy::time::ClockReader, kFactory},
     {^^::fixy::time::TscReader, kFactory},
+    {^^::fixy::time::PtpClockReader, kFactory},
     {^^::fixy::time::BoundedSleeper, kFactory},
     {^^::fixy::witness::AtProtocol, kVocabulary},
     {^^::fixy::witness::UnderRow, kVocabulary},
