@@ -50,9 +50,10 @@ struct co_await_only final {};
 struct generator final {};
 struct async_task final {};
 
-// The build compiles without exceptions, so no binding can hold this
-// atom. It exists so a binding compiled with exceptions can name the
-// family it throws.
+// Nothing in this tree throws, and scripts/check-no-throw-no-rtti.sh
+// fails the build when __cxa_throw reaches an artifact, so no binding
+// here holds this atom. It exists so a binding outside the tree can name
+// the family it throws.
 template <class ExceptionFamily = any_exception>
 struct throws final : atom_of<Axis::ControlFlow> {};
 
@@ -72,6 +73,12 @@ struct exit final : atom_of<Axis::ControlFlow> {};
 struct builtin_trap_ok final : atom_of<Axis::ControlFlow> {};
 struct unreachable_ok final : atom_of<Axis::ControlFlow> {};
 
+// The binding raises a signal, or it runs code that a signal can
+// interrupt at any instruction boundary.  A rule on async-signal safety
+// reads this atom.  Old spelling: the MaySignal tier of
+// crucible::algebra::lattices::ControlFlow.
+struct raises_signal final : atom_of<Axis::ControlFlow> {};
+
 template <class SuspensionPolicy>
 struct coroutine final : atom_of<Axis::ControlFlow> {};
 
@@ -85,7 +92,7 @@ using ctrl_atom_roster =
     std::tuple<ctrl::throws<>, ctrl::throws<ctrl_sample_exception>, ctrl::abort<"oom unrecoverable">,
                ctrl::longjmp_unsafe<"setjmp island">, ctrl::exit<ctrl::at_exit>, ctrl::exit<ctrl::no_cleanup>,
                ctrl::exit<ctrl::exit_immediate>, ctrl::builtin_trap_ok, ctrl::unreachable_ok,
-               ctrl::coroutine<ctrl::co_await_only>, ctrl::coroutine<ctrl::generator>,
+               ctrl::raises_signal, ctrl::coroutine<ctrl::co_await_only>, ctrl::coroutine<ctrl::generator>,
                ctrl::coroutine<ctrl::async_task>>;
 
 }  // namespace fixy::atom::detail
