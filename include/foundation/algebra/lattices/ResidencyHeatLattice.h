@@ -12,6 +12,8 @@
 // A structurally identical chain grades a different axis and stays a
 // separate type.  The axes are independent, so the grades must never
 // collapse into one.
+//
+// Old spelling: include/crucible/algebra/lattices/_ResidencyHeatLattice.h.
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
