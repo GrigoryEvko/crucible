@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-A4-022 negative fixture #2 (HS14 ≥2 floor): SnapshotSessionSurface
-// concept-rejection route (distinct mismatch class from #1's
-// role-mismatch).
+// Snapshot session mint negative fixture 2 of 2 (HS14 ≥2 floor):
+// SnapshotSessionSurface concept-rejection route (distinct mismatch
+// class from #1's role-mismatch).
 //
 // `mint_snapshot_writer_session<Snap>(ctx, handle)` is constrained by
 // `SnapshotSessionSurface<Snap>` — the substrate must expose the
@@ -12,11 +12,8 @@
 // SwmrSession-like type that lacks the publish() method) must reject
 // at the concept gate.
 //
-// Pre-A4-022 the snapshot family had NO session header — the
-// concept did not exist; callers reached the raw substrate via
-// `fixy::substr::concurrent::PermissionedSnapshot` with no §XXI
-// requires-clause guarding misuse.  Post-A4-022 the concept gate IS
-// the guard.
+// The concept gate is the guard.  Without it, a caller reaches the
+// raw PermissionedSnapshot with no §XXI requires-clause.
 //
 // Reject sequence: `mint_snapshot_writer_session<Snap>` template
 // instantiation begins → SnapshotSessionSurface<Snap> evaluates →
@@ -27,11 +24,11 @@
 // "SnapshotSessionSurface" / "no matching function".
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SnapshotSession.h>
 
 #include <utility>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace eff = crucible::effects;
 
 namespace neg_fixy_substr_snapshot_unfit_snap {
@@ -57,6 +54,6 @@ int main() {
     Handle handle{};
     eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Snap does not satisfy SnapshotSessionSurface → concept-rejection.
-    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_writer_session<Snap>(ctx, handle);
+    [[maybe_unused]] auto bad = fsnap::mint_snapshot_writer_session<Snap>(ctx, handle);
     return 0;
 }

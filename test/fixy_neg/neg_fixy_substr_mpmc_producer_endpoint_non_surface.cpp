@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074k fixture #1 for fixy::substr::mpmc::mint_mpmc_producer_endpoint
-// (token mint, single-argument, MpmcChannelSession.h:239).  The
+// MPMC endpoint fixture 1 for
+// safety::proto::mpmc_channel_session::mint_mpmc_producer_endpoint
+// (token mint, single-argument, sessions/MpmcChannelSession.h).  The
 // template-parameter constraint `MpmcChannelSessionSurface Channel` rejects
 // a plain type that exposes NONE of the required surface — it fails at the
 // very first requirement (`typename Channel::value_type`).
@@ -15,9 +16,9 @@
 // Expected diagnostic: MpmcChannelSessionSurface / constraints not
 // satisfied / no matching function.
 
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/MpmcChannelSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fmpmc = ::crucible::safety::proto::mpmc_channel_session;
 
 namespace neg_fixy_substr_mpmc_producer_endpoint_non_surface {
 // No nested types, no producer()/consumer() — MpmcChannelSessionSurface
@@ -28,6 +29,6 @@ struct FakeChannel {};
 int main() {
     neg_fixy_substr_mpmc_producer_endpoint_non_surface::FakeChannel fake{};
 
-    [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_producer_endpoint(fake);
+    [[maybe_unused]] auto bad = fmpmc::mint_mpmc_producer_endpoint(fake);
     return 0;
 }

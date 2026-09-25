@@ -1,10 +1,11 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074k fixture #2 for fixy::substr::mpmc::mint_mpmc_producer_endpoint
-// (token mint, single-argument, MpmcChannelSession.h:239).  The
+// MPMC endpoint fixture 2 for
+// safety::proto::mpmc_channel_session::mint_mpmc_producer_endpoint
+// (token mint, single-argument, sessions/MpmcChannelSession.h).  The
 // template-parameter constraint `MpmcChannelSessionSurface Channel` requires
 // `{ ch.producer() } -> std::same_as<std::optional<ProducerHandle>>`
-// (MpmcChannelSession.h:216-217).  NearMissChannel satisfies EVERY other
+// (a clause of that concept).  NearMissChannel satisfies EVERY other
 // clause — all six nested types, consumer()->optional<ConsumerHandle>,
 // try_push()->bool, try_pop()->optional<value_type> — but producer()
 // returns ProducerHandle DIRECTLY instead of optional<ProducerHandle>, so
@@ -22,9 +23,9 @@
 
 #include <optional>
 
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/MpmcChannelSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fmpmc = ::crucible::safety::proto::mpmc_channel_session;
 
 namespace neg_fixy_substr_mpmc_producer_endpoint_near_miss {
 struct UTag {};
@@ -57,6 +58,6 @@ struct NearMissChannel {
 int main() {
     neg_fixy_substr_mpmc_producer_endpoint_near_miss::NearMissChannel ch{};
 
-    [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_producer_endpoint(ch);
+    [[maybe_unused]] auto bad = fmpmc::mint_mpmc_producer_endpoint(ch);
     return 0;
 }

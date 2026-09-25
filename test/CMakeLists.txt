@@ -3279,10 +3279,9 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_wrong_admittance
     "no matching function|cannot convert"
     "SharedPermission|FederatedPeer|mint_coord")
 
-# ── FIXY-MINT-Substr — fixy/Substr.h re-export of per-substrate
-# session minters (SPSC, SWMR, ChaseLev, MetaLog, ChainEdge, MPMC,
-# CalendarGrid, ShardedCalendarGrid, ShardedGrid).  Two HS14
-# fixtures pin the producer/consumer + writer/reader role gates:
+# ── The per-substrate session mints in sessions/SpscSession.h and
+# sessions/SwmrSession.h.  Two HS14 fixtures pin the
+# producer/consumer + writer/reader role gates:
 crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_wrong_handle
     "cannot convert|no matching function"
     "ProducerHandle|ConsumerHandle")
@@ -3290,12 +3289,10 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_wrong_handle
     "cannot convert|no matching function"
     "WriterHandle|ReaderHandle")
 
-# fixy-A4-022 — Substr.h promotes PermissionedSnapshot from the
-# `concurrent::` sub-namespace into its own `snapshot::` sub-namespace
-# with a typed-session surface (SnapshotSession.h).  Two HS14 fixtures
-# pin distinct mismatch classes: role swap (writer-mint receives
-# reader handle) and concept rejection (substrate fails
-# SnapshotSessionSurface).
+# The typed-session surface of PermissionedSnapshot
+# (sessions/SnapshotSession.h).  Two HS14 fixtures pin distinct
+# mismatch classes: role swap (writer-mint receives reader handle)
+# and concept rejection (substrate fails SnapshotSessionSurface).
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_wrong_handle
     "cannot convert|no matching function"
     "WriterHandle|ReaderHandle")
@@ -3303,10 +3300,9 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_unfit_snap
     "constraints.*not satisfied|no matching function"
     "SnapshotSessionSurface")
 
-# FIXY-U-074h HS14 floor: mint_snapshot_reader_session was HS14:0 (the
-# writer_session variant is covered by snapshot_wrong_handle).  Role-swap
-# (WriterHandle->reader_session) + non-ExecCtx → HS14:2.  Closes the last
-# ctx-bound substr session mint below floor.
+# HS14 floor of mint_snapshot_reader_session (the writer_session
+# variant is covered by snapshot_wrong_handle): role swap
+# (WriterHandle->reader_session) and a non-ExecCtx context.
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_session_wrong_handle
     "cannot convert|no matching function"
     "WriterHandle|ReaderHandle")
@@ -3314,7 +3310,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_session_non_ctx
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
 
-# FIXY-U-074i HS14 floor: the SWMR TOKEN mints (no ctx param, so the
+# HS14 floor of the SWMR TOKEN mints (no ctx param, so the
 # non-ExecCtx class does not apply).  mint_swmr_writer gates on
 # SwmrSessionSurface + an exact-type Permission<writer_tag>&& proof;
 # mint_swmr_reader gates on SwmrSessionSurface (1-arg) and takes a
@@ -3334,7 +3330,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_exclusive_perm
     "cannot convert|no matching function"
     "SharedPermission|reader_tag")
 
-# FIXY-U-074j HS14 floor: the SNAPSHOT TOKEN mints (no ctx param).
+# HS14 floor of the SNAPSHOT TOKEN mints (no ctx param).
 # mint_snapshot_writer gates on SnapshotSessionSurface + an exact-type
 # Permission<writer_tag>&& proof → wrong-perm-tag vs non-surface.
 # mint_snapshot_reader is single-overload surface-gated (no SharedPermission
@@ -3354,7 +3350,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_near_miss_surface
     "constraints.*not satisfied|no matching function"
     "SnapshotSessionSurface")
 
-# FIXY-U-074k HS14 floor: the MPMC ENDPOINT token mints (single-arg,
+# HS14 floor of the MPMC ENDPOINT token mints (single-arg,
 # surface-only gated on MpmcChannelSessionSurface, no permission param).
 # Same shape as snapshot_reader → two surface-failure modes each: bare
 # non-surface (fails first nested-type clause) vs near-miss (the relevant
@@ -3421,11 +3417,11 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_stage_from_endpoints_non_ctx
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
 
-# FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
-# HS14:0.  Two distinct rejection conjuncts of its requires-clause
-# (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
-# CtxFitsPermissionedProtocol ∧ IsExecCtx Ctx): non-bridgeable direction
-# (Snapshot+Producer) and non-ExecCtx first argument.  Brings it to 2.
+# HS14 floor of concurrent::mint_substrate_session: two distinct
+# rejection conjuncts of its requires-clause (IsBridgeableDirection ∧
+# SubstrateFitsCtxResidency ∧ CtxFitsPermissionedProtocol ∧ IsExecCtx
+# Ctx): non-bridgeable direction (Snapshot+Producer) and non-ExecCtx
+# first argument.
 crucible_neg_compile_fixy_test(neg_fixy_substr_substrate_session_non_bridgeable
     "constraints.*not satisfied|no matching function"
     "IsBridgeableDirection|handle_for")
@@ -3433,10 +3429,10 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_substrate_session_non_ctx
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
 
-# FIXY-U-074e HS14 floor: SWMR session mints.  mint_writer_session sat
-# at HS14:1 (only swmr_wrong_handle, role swap); mint_reader_session at
-# HS14:0.  Two distinct classes per ctx-bound mint — role mismatch
-# (wrong handle type) and non-ExecCtx first arg — bring both to 2.
+# HS14 floor of the SWMR session mints (mint_writer_session with
+# swmr_wrong_handle above, and mint_reader_session).  Two distinct
+# classes per ctx-bound mint: role mismatch (wrong handle type) and
+# non-ExecCtx first arg.
 crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_writer_session_non_ctx
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
@@ -3447,10 +3443,10 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_session_non_ctx
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
 
-# FIXY-U-074f HS14 floor: SWMR runtime-session mints (writer/reader),
-# both HS14:0.  Same handle types + IsExecCtx constraint as the typed
-# session variants (SwmrSession.h:241/250) → same two distinct classes
-# (role-swap wrong-handle + non-ExecCtx) bring both to 2.
+# HS14 floor of the SWMR runtime-session mints (writer/reader).  Same
+# handle types + IsExecCtx constraint as the typed session variants in
+# sessions/SwmrSession.h, so the same two distinct classes apply
+# (role-swap wrong-handle + non-ExecCtx).
 crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_writer_runtime_session_wrong_handle
     "cannot convert|no matching function"
     "WriterHandle|ReaderHandle")
@@ -3464,10 +3460,10 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_runtime_session_non_c
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
 
-# FIXY-U-074g HS14 floor: MPMC session mints (producer/consumer), both
-# HS14:0.  ctx-bound, take Channel::{Producer,Consumer}Handle&
-# (MpmcChannelSession.h:271/281) — same two distinct classes
-# (role-swap wrong-handle + non-ExecCtx) bring both to 2.
+# HS14 floor of the MPMC session mints (producer/consumer).  They are
+# ctx-bound and take Channel::{Producer,Consumer}Handle&
+# (sessions/MpmcChannelSession.h), so the same two distinct classes
+# apply (role-swap wrong-handle + non-ExecCtx).
 crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_producer_session_wrong_handle
     "cannot convert|no matching function"
     "ProducerHandle|ConsumerHandle")

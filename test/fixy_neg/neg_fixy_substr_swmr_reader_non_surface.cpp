@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074i fixture #3 for fixy::substr::swmr::mint_swmr_reader
-// (token mint, single-argument overload, SwmrSession.h:207).  The
+// SWMR token mint fixture 3 for
+// safety::proto::swmr_session::mint_swmr_reader
+// (token mint, single-argument overload, sessions/SwmrSession.h).  The
 // template-parameter constraint `SwmrSessionSurface Swmr` rejects a
 // plain type that exposes none of the required surface (value_type,
 // writer_tag, reader_tag, WriterHandle/ReaderHandle, writer()/reader()).
@@ -17,9 +18,9 @@
 // no matching function.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SwmrSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fswmr = ::crucible::safety::proto::swmr_session;
 
 namespace neg_fixy_substr_swmr_reader_non_surface {
 // No nested types, no writer()/reader() — SwmrSessionSurface must reject.
@@ -29,6 +30,6 @@ struct FakeSurface {};
 int main() {
     neg_fixy_substr_swmr_reader_non_surface::FakeSurface fake{};
 
-    [[maybe_unused]] auto bad = fsubstr::swmr::mint_swmr_reader(fake);
+    [[maybe_unused]] auto bad = fswmr::mint_swmr_reader(fake);
     return 0;
 }

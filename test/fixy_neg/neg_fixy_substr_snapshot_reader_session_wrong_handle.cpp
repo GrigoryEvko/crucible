@@ -1,8 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074h fixture for fixy::substr::snapshot::mint_snapshot_reader_session:
+// Snapshot session mint fixture for
+// safety::proto::snapshot_session::mint_snapshot_reader_session:
 // rejects a WriterHandle (wrong role).  mint_snapshot_reader_session
-// takes `typename Snap::ReaderHandle&` (SnapshotSession.h:127);
+// takes `typename Snap::ReaderHandle&` (sessions/SnapshotSession.h);
 // passing a WriterHandle fails type match — the role-inverse of
 // neg_fixy_substr_snapshot_wrong_handle.cpp (which passes a
 // ReaderHandle to mint_snapshot_writer_session).
@@ -16,9 +17,9 @@
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SnapshotSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace conc = crucible::concurrent;
 namespace eff = crucible::effects;
 namespace fsafe = crucible::safety;
@@ -36,6 +37,6 @@ int main() {
     eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the WriterHandle to mint_snapshot_reader_session — expects
     // Snap::ReaderHandle&.
-    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_reader_session<Snap>(ctx, writer);
+    [[maybe_unused]] auto bad = fsnap::mint_snapshot_reader_session<Snap>(ctx, writer);
     return 0;
 }

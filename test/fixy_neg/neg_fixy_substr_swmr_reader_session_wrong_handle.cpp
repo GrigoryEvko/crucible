@@ -1,16 +1,15 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074e fixture #2 for fixy::substr::swmr::mint_reader_session:
+// SWMR session mint fixture 2 for
+// safety::proto::swmr_session::mint_reader_session:
 // rejects a WriterHandle (wrong role).
 //
 // `mint_reader_session<Swmr>(ctx, handle)` takes
 // `typename Swmr::ReaderHandle&`.  Passing a WriterHandle fails type
 // match at the call site — the role-inverse of
 // neg_fixy_substr_swmr_wrong_handle.cpp (which passes a ReaderHandle
-// to mint_writer_session).  Routing through
-// `fixy::substr::swmr::mint_reader_session` must reject identically,
-// proving the §XXI role-discriminating signature survives the fixy
-// re-export.
+// to mint_writer_session).  The fixture proves the §XXI
+// role-discriminating signature.
 //
 // Distinct mismatch class from neg_fixy_substr_swmr_reader_session_non_ctx
 // (#3, non-ExecCtx): this supplies a valid HotFg-class ctx but the
@@ -21,9 +20,9 @@
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SwmrSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;
 namespace eff = crucible::effects;
 namespace fsafe = crucible::safety;
@@ -41,6 +40,6 @@ int main() {
     eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the WriterHandle to mint_reader_session — fails because the
     // reader-session mint expects Snap::ReaderHandle&.
-    [[maybe_unused]] auto bad = fsubstr::swmr::mint_reader_session<Snap>(ctx, writer);
+    [[maybe_unused]] auto bad = fswmr::mint_reader_session<Snap>(ctx, writer);
     return 0;
 }

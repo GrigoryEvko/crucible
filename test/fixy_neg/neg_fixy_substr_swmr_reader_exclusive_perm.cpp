@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074i fixture #4 for fixy::substr::swmr::mint_swmr_reader
-// (token mint, two-argument overload, SwmrSession.h:211).  That overload
+// SWMR token mint fixture 4 for
+// safety::proto::swmr_session::mint_swmr_reader
+// (token mint, two-argument overload, sessions/SwmrSession.h).  That overload
 // takes a fractional `SharedPermission<typename Swmr::reader_tag>` proof
 // by value.  Passing an EXCLUSIVE `Permission<reader_tag>` (minted via
 // mint_permission_root) is a distinct, non-convertible type — the
@@ -19,9 +20,9 @@
 // pointing at SharedPermission<reader_tag> vs Permission<reader_tag>.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SwmrSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;
 namespace fsafe = crucible::safety;
 
@@ -38,6 +39,6 @@ int main() {
     // SharedPermission<typename Snap::reader_tag>; an exclusive root
     // Permission for the same tag is a distinct, non-convertible type.
     [[maybe_unused]] auto bad =
-        fsubstr::swmr::mint_swmr_reader(snap, fsafe::mint_permission_root<typename Snap::reader_tag>());
+        fswmr::mint_swmr_reader(snap, fsafe::mint_permission_root<typename Snap::reader_tag>());
     return 0;
 }

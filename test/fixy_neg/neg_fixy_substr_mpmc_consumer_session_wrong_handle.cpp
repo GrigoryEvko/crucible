@@ -1,8 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074g fixture for fixy::substr::mpmc::mint_mpmc_consumer_session:
+// MPMC session mint fixture for
+// safety::proto::mpmc_channel_session::mint_mpmc_consumer_session:
 // rejects a ProducerHandle (wrong role).  mint_mpmc_consumer_session
-// takes `typename Channel::ConsumerHandle&` (MpmcChannelSession.h:281);
+// takes `typename Channel::ConsumerHandle&` (sessions/MpmcChannelSession.h);
 // passing a ProducerHandle fails type match — the role-inverse of the
 // producer-session fixture.
 //
@@ -15,9 +16,9 @@
 
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/MpmcChannelSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fmpmc = ::crucible::safety::proto::mpmc_channel_session;
 namespace conc = crucible::concurrent;
 namespace eff = crucible::effects;
 
@@ -33,6 +34,6 @@ int main() {
     eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the ProducerHandle to the consumer-session mint — expects
     // Channel::ConsumerHandle&.
-    [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_consumer_session<decltype(ch)>(ctx, *producer_opt);
+    [[maybe_unused]] auto bad = fmpmc::mint_mpmc_consumer_session<decltype(ch)>(ctx, *producer_opt);
     return 0;
 }

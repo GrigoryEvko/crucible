@@ -1,10 +1,11 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074j fixture #4 for fixy::substr::snapshot::mint_snapshot_reader
-// (token mint, single-argument overload, SnapshotSession.h:110).  The
+// Snapshot token mint fixture 4 for
+// safety::proto::snapshot_session::mint_snapshot_reader
+// (token mint, single-argument overload, sessions/SnapshotSession.h).  The
 // template-parameter constraint `SnapshotSessionSurface Snap` requires
 // `{ snap.reader() } -> std::same_as<std::optional<ReaderHandle>>`
-// (SnapshotSession.h:90-91).  NearMissSnap satisfies EVERY other clause —
+// (a clause of that concept).  NearMissSnap satisfies EVERY other clause —
 // all five nested types, writer()->WriterHandle, publish() noexcept,
 // load()->value_type, try_load()->optional<value_type> — but reader()
 // returns ReaderHandle DIRECTLY instead of optional<ReaderHandle>, so the
@@ -22,12 +23,12 @@
 #include <optional>
 
 // PermissionedSnapshot.h transitively provides crucible::safety::Permission
-// (via crucible/permissions/Permission.h) — no direct include needed, same
+// (via crucible/permissions/_Permission.h) — no direct include needed, same
 // as the writer fixtures' use of fsafe::mint_permission_root.
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SnapshotSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace fsafe = crucible::safety;
 
 namespace neg_fixy_substr_snapshot_reader_near_miss_surface {
@@ -64,6 +65,6 @@ struct NearMissSnap {
 int main() {
     neg_fixy_substr_snapshot_reader_near_miss_surface::NearMissSnap snap{};
 
-    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_reader(snap);
+    [[maybe_unused]] auto bad = fsnap::mint_snapshot_reader(snap);
     return 0;
 }

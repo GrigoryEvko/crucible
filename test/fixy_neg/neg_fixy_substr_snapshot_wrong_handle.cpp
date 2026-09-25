@@ -1,13 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-A4-022 negative fixture #1 (HS14 ≥2 floor): role-mismatch route.
+// Snapshot session mint negative fixture 1 of 2 (HS14 ≥2 floor):
+// role-mismatch route.
 //
-// `mint_snapshot_writer_session<Snap>(ctx, handle)` takes
-// `typename Snap::WriterHandle&`.  Passing a `ReaderHandle` (wrong
-// role) fails type match at the call site.  Routing through
-// `fixy::substr::snapshot::mint_snapshot_writer_session` must reject
-// identically — proves the §XXI Universal Mint Pattern's
-// role-discriminating signature is preserved across the fixy re-export.
+// `safety::proto::snapshot_session::mint_snapshot_writer_session<Snap>(
+// ctx, handle)` takes `typename Snap::WriterHandle&`.  Passing a
+// `ReaderHandle` (wrong role) fails type match at the call site.  The
+// fixture proves the role-discriminating signature of the §XXI
+// Universal Mint Pattern.
 //
 // Reject sequence: template instantiation begins with Snap fixed →
 // non-deducible second-parameter type is `Snap::WriterHandle&` →
@@ -19,11 +19,11 @@
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SnapshotSession.h>
 
 #include <utility>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace conc = crucible::concurrent;
 namespace eff = crucible::effects;
 namespace fsafe = crucible::safety;
@@ -44,6 +44,6 @@ int main() {
     // Pass the (optional unwrapped) ReaderHandle to the WRITER session
     // mint — fails because mint_snapshot_writer_session expects
     // `Snap::WriterHandle&`.
-    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_writer_session<Snap>(ctx, *reader_opt);
+    [[maybe_unused]] auto bad = fsnap::mint_snapshot_writer_session<Snap>(ctx, *reader_opt);
     return 0;
 }

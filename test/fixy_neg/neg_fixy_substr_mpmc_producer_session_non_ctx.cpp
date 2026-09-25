@@ -1,6 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074g fixture for fixy::substr::mpmc::mint_mpmc_producer_session:
+// MPMC session mint fixture for
+// safety::proto::mpmc_channel_session::mint_mpmc_producer_session:
 // the `::crucible::effects::IsExecCtx Ctx` template-parameter constraint
 // rejects a non-ExecCtx first argument.
 //
@@ -13,9 +14,9 @@
 // no matching function.
 
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/MpmcChannelSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fmpmc = ::crucible::safety::proto::mpmc_channel_session;
 namespace conc = crucible::concurrent;
 
 namespace neg_fixy_substr_mpmc_producer_session_non_ctx {
@@ -28,7 +29,7 @@ int main() {
 
     auto producer_opt = ch.producer();
 
-    [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_producer_session<decltype(ch)>(
+    [[maybe_unused]] auto bad = fmpmc::mint_mpmc_producer_session<decltype(ch)>(
         neg_fixy_substr_mpmc_producer_session_non_ctx::NotAnExecCtx{}, *producer_opt);
     return 0;
 }

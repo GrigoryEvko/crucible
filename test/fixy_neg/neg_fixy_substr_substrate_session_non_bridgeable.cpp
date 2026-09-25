@@ -1,15 +1,14 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074d HS14 fixture #1 for fixy::substr::mint_substrate_session:
-// rejects when the (Substrate, Direction) pair is not bridgeable.
+// Substrate session mint fixture 1 of 2 for
+// concurrent::mint_substrate_session: rejects when the (Substrate,
+// Direction) pair is not bridgeable.
 //
 // PermissionedSnapshot's only directions are SwmrWriter / SwmrReader
 // (see effects_neg/neg_endpoint_non_bridgeable_direction.cpp).  Requesting
 // Direction::Producer has no default_proto_for / handle_for
 // specialization, so the requires-clause conjunct
-// IsBridgeableDirection<Snap, Producer> is false.  Routing through
-// `fixy::substr::mint_substrate_session` must reject identically to
-// the substrate `concurrent::mint_substrate_session`.
+// IsBridgeableDirection<Snap, Producer> is false.
 //
 // Distinct mismatch class from
 // neg_fixy_substr_substrate_session_non_ctx.cpp (#2): that supplies a
@@ -22,10 +21,9 @@
 // satisfied.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
 
-namespace fsubstr = crucible::fixy::substr;
 namespace conc = crucible::concurrent;
 namespace eff = crucible::effects;
 
@@ -41,6 +39,6 @@ int main() {
     eff::HotFgCtx fg;
 
     // Snapshot + Producer → IsBridgeableDirection<Snap, Producer> false.
-    [[maybe_unused]] auto bad = fsubstr::mint_substrate_session<Snap, conc::Direction::Producer>(fg, *fake_handle);
+    [[maybe_unused]] auto bad = conc::mint_substrate_session<Snap, conc::Direction::Producer>(fg, *fake_handle);
     return 0;
 }

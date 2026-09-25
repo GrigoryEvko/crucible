@@ -1,9 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074d HS14 fixture #2 for fixy::substr::mint_substrate_session:
-// the ctx-bound factory's template-parameter constraint
-// `::crucible::effects::IsExecCtx Ctx` rejects when the supplied first
-// argument's type does not satisfy IsExecCtx.
+// Substrate session mint fixture 2 of 2 for
+// concurrent::mint_substrate_session: the ctx-bound factory's
+// template-parameter constraint `::crucible::effects::IsExecCtx Ctx`
+// rejects when the supplied first argument's type does not satisfy
+// IsExecCtx.
 //
 // Distinct mismatch class from
 // neg_fixy_substr_substrate_session_non_bridgeable.cpp (#1): that
@@ -19,9 +20,8 @@
 // no matching function.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/concurrent/SubstrateSessionBridge.h>
 
-namespace fsubstr = crucible::fixy::substr;
 namespace conc = crucible::concurrent;
 
 namespace neg_fixy_substr_substrate_session_non_ctx {
@@ -40,7 +40,7 @@ int main() {
     // on the non-ExecCtx first argument.
     typename Snap::WriterHandle* fake_handle = nullptr;
 
-    [[maybe_unused]] auto bad = fsubstr::mint_substrate_session<Snap, conc::Direction::SwmrWriter>(
+    [[maybe_unused]] auto bad = conc::mint_substrate_session<Snap, conc::Direction::SwmrWriter>(
         neg_fixy_substr_substrate_session_non_ctx::NotAnExecCtx{}, *fake_handle);
     return 0;
 }

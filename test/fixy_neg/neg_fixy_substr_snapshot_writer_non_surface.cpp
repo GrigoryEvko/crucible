@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074j fixture #2 for fixy::substr::snapshot::mint_snapshot_writer
-// (token mint, SnapshotSession.h:102).  The template-parameter constraint
+// Snapshot token mint fixture 2 for
+// safety::proto::snapshot_session::mint_snapshot_writer
+// (token mint, sessions/SnapshotSession.h).  The template-parameter constraint
 // `SnapshotSessionSurface Snap` rejects a type that exposes a `writer_tag`
 // (so the second parameter `Permission<typename Snap::writer_tag>&&`
 // substitutes cleanly) but is MISSING the rest of the surface (value_type,
@@ -17,9 +18,9 @@
 // no matching function.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SnapshotSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace fsafe = crucible::safety;
 
 namespace neg_fixy_substr_snapshot_writer_non_surface {
@@ -38,6 +39,6 @@ int main() {
     // Permission tag matches FakeSurface::writer_tag, so the parameter
     // binds; SnapshotSessionSurface<FakeSurface> is the failing gate.
     [[maybe_unused]] auto bad =
-        fsubstr::snapshot::mint_snapshot_writer(fake, fsafe::mint_permission_root<ns::FakeWriterTag>());
+        fsnap::mint_snapshot_writer(fake, fsafe::mint_permission_root<ns::FakeWriterTag>());
     return 0;
 }

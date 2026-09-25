@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074j fixture #1 for fixy::substr::snapshot::mint_snapshot_writer
-// (token mint, SnapshotSession.h:102).  The mint's second parameter is the
+// Snapshot token mint fixture 1 for
+// safety::proto::snapshot_session::mint_snapshot_writer
+// (token mint, sessions/SnapshotSession.h).  The mint's second parameter is the
 // EXACT type `Permission<typename Snap::writer_tag>&&`; supplying a
 // Permission carrying an UNRELATED tag fails the parameter match.
 //
@@ -15,9 +16,9 @@
 // pointing at Permission<writer_tag> vs Permission<WrongTag>.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SnapshotSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace conc = crucible::concurrent;
 namespace fsafe = crucible::safety;
 
@@ -34,7 +35,7 @@ int main() {
     // mint_snapshot_writer wants Permission<typename Snap::writer_tag>&&;
     // an exclusive root token for WrongTag is a distinct, non-convertible
     // Permission instantiation.
-    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_writer(
+    [[maybe_unused]] auto bad = fsnap::mint_snapshot_writer(
         snap, fsafe::mint_permission_root<neg_fixy_substr_snapshot_writer_wrong_perm_tag::WrongTag>());
     return 0;
 }

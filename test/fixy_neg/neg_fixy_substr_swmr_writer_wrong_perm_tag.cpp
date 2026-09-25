@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074i fixture #1 for fixy::substr::swmr::mint_swmr_writer
-// (token mint, SwmrSession.h:199).  The mint's second parameter is the
+// SWMR token mint fixture 1 for
+// safety::proto::swmr_session::mint_swmr_writer
+// (token mint, sessions/SwmrSession.h).  The mint's second parameter is the
 // EXACT type `Permission<typename Swmr::writer_tag>&&`; supplying a
 // Permission carrying an UNRELATED tag fails the parameter match.
 //
@@ -15,9 +16,9 @@
 // pointing at Permission<writer_tag> vs Permission<WrongTag>.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SwmrSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;
 namespace fsafe = crucible::safety;
 
@@ -34,7 +35,7 @@ int main() {
     // mint_swmr_writer wants Permission<typename Snap::writer_tag>&& as
     // its second argument; an exclusive root token for WrongTag is a
     // distinct, non-convertible Permission instantiation.
-    [[maybe_unused]] auto bad = fsubstr::swmr::mint_swmr_writer(
+    [[maybe_unused]] auto bad = fswmr::mint_swmr_writer(
         snap, fsafe::mint_permission_root<neg_fixy_substr_swmr_writer_wrong_perm_tag::WrongTag>());
     return 0;
 }

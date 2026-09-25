@@ -1,6 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074f fixture for fixy::substr::swmr::mint_writer_runtime_session:
+// SWMR runtime session mint fixture for
+// safety::proto::swmr_session::mint_writer_runtime_session:
 // the `::crucible::effects::IsExecCtx Ctx` template-parameter
 // constraint rejects a non-ExecCtx first argument.
 //
@@ -15,9 +16,9 @@
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SwmrSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;
 namespace fsafe = crucible::safety;
 
@@ -32,7 +33,7 @@ int main() {
     Snap snap{};
     auto writer = snap.writer(fsafe::mint_permission_root<typename Snap::writer_tag>());
 
-    [[maybe_unused]] auto bad = fsubstr::swmr::mint_writer_runtime_session<Snap>(
+    [[maybe_unused]] auto bad = fswmr::mint_writer_runtime_session<Snap>(
         neg_fixy_substr_swmr_writer_runtime_session_non_ctx::NotAnExecCtx{}, writer);
     return 0;
 }

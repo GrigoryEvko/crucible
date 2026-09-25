@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074j fixture #3 for fixy::substr::snapshot::mint_snapshot_reader
-// (token mint, single-argument overload, SnapshotSession.h:110).  The
+// Snapshot token mint fixture 3 for
+// safety::proto::snapshot_session::mint_snapshot_reader
+// (token mint, single-argument overload, sessions/SnapshotSession.h).  The
 // template-parameter constraint `SnapshotSessionSurface Snap` rejects a
 // plain type that exposes NONE of the required surface — it fails at the
 // very first requirement (`typename Snap::value_type`).
@@ -16,9 +17,9 @@
 // no matching function.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SnapshotSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fsnap = ::crucible::safety::proto::snapshot_session;
 
 namespace neg_fixy_substr_snapshot_reader_non_surface {
 // No nested types, no writer()/reader() — SnapshotSessionSurface must
@@ -29,6 +30,6 @@ struct FakeSurface {};
 int main() {
     neg_fixy_substr_snapshot_reader_non_surface::FakeSurface fake{};
 
-    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_reader(fake);
+    [[maybe_unused]] auto bad = fsnap::mint_snapshot_reader(fake);
     return 0;
 }

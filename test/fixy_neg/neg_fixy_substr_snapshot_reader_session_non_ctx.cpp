@@ -1,6 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074h fixture for fixy::substr::snapshot::mint_snapshot_reader_session:
+// Snapshot session mint fixture for
+// safety::proto::snapshot_session::mint_snapshot_reader_session:
 // the `::crucible::effects::IsExecCtx Ctx` template-parameter constraint
 // rejects a non-ExecCtx first argument.
 //
@@ -14,9 +15,9 @@
 // no matching function.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SnapshotSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace conc = crucible::concurrent;
 
 namespace neg_fixy_substr_snapshot_reader_session_non_ctx {
@@ -30,7 +31,7 @@ int main() {
     Snap snap{};
     auto reader_opt = snap.reader();
 
-    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_reader_session<Snap>(
+    [[maybe_unused]] auto bad = fsnap::mint_snapshot_reader_session<Snap>(
         neg_fixy_substr_snapshot_reader_session_non_ctx::NotAnExecCtx{}, *reader_opt);
     return 0;
 }

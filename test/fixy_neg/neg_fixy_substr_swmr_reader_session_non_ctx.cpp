@@ -1,6 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074e fixture #3 for fixy::substr::swmr::mint_reader_session:
+// SWMR session mint fixture 3 for
+// safety::proto::swmr_session::mint_reader_session:
 // the ctx-bound factory's `::crucible::effects::IsExecCtx Ctx`
 // template-parameter constraint rejects a non-ExecCtx first argument.
 //
@@ -15,9 +16,9 @@
 // no matching function.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SwmrSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;
 
 namespace neg_fixy_substr_swmr_reader_session_non_ctx {
@@ -34,6 +35,6 @@ int main() {
     // Correct ReaderHandle, but NotAnExecCtx fails the IsExecCtx Ctx
     // template-parameter constraint of mint_reader_session.
     [[maybe_unused]] auto bad =
-        fsubstr::swmr::mint_reader_session<Snap>(neg_fixy_substr_swmr_reader_session_non_ctx::NotAnExecCtx{}, reader);
+        fswmr::mint_reader_session<Snap>(neg_fixy_substr_swmr_reader_session_non_ctx::NotAnExecCtx{}, reader);
     return 0;
 }

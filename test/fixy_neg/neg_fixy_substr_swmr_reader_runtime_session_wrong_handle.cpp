@@ -1,8 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074f fixture for fixy::substr::swmr::mint_reader_runtime_session:
+// SWMR runtime session mint fixture for
+// safety::proto::swmr_session::mint_reader_runtime_session:
 // rejects a WriterHandle (wrong role).  mint_reader_runtime_session
-// takes `typename Swmr::ReaderHandle&` (SwmrSession.h:250); passing a
+// takes `typename Swmr::ReaderHandle&` (sessions/SwmrSession.h); passing a
 // WriterHandle fails type match — the role-inverse of the writer
 // runtime fixture.
 //
@@ -15,9 +16,9 @@
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SwmrSession.h>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fswmr = ::crucible::safety::proto::swmr_session;
 namespace conc = crucible::concurrent;
 namespace eff = crucible::effects;
 namespace fsafe = crucible::safety;
@@ -35,6 +36,6 @@ int main() {
     eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the WriterHandle to the reader-runtime mint — expects
     // Snap::ReaderHandle&.
-    [[maybe_unused]] auto bad = fsubstr::swmr::mint_reader_runtime_session<Snap>(ctx, writer);
+    [[maybe_unused]] auto bad = fswmr::mint_reader_runtime_session<Snap>(ctx, writer);
     return 0;
 }

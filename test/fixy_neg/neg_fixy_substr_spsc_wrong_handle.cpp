@@ -1,24 +1,24 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-MINT-Substr fixture #1: mint_producer_session via fixy::
-// alias rejects a ConsumerHandle (wrong direction).
+// SPSC session mint fixture:
+// safety::proto::spsc_session::mint_producer_session rejects a
+// ConsumerHandle (wrong direction).
 //
 // Violation: `mint_producer_session<Channel>(ctx, handle)` takes
 // `typename Channel::ProducerHandle&`.  Passing a ConsumerHandle
 // fails the template argument deduction / type match at the call
-// site.  Routing through `fixy::substr::spsc::mint_producer_session`
-// must reject identically.
+// site.
 //
 // Expected diagnostic: "cannot convert" / "no matching function"
 // pointing at ProducerHandle vs ConsumerHandle.
 
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Substr.h>
+#include <crucible/sessions/SpscSession.h>
 
 #include <utility>
 
-namespace fsubstr = crucible::fixy::substr;
+namespace fspsc = ::crucible::safety::proto::spsc_session;
 namespace conc = crucible::concurrent;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
@@ -39,6 +39,6 @@ int main() {
 
     eff::BgCompileCtx ctx{::crucible::effects::testing::bg()};
     // Pass the ConsumerHandle to mint_producer_session — fails.
-    [[maybe_unused]] auto bad = fsubstr::spsc::mint_producer_session<Channel>(ctx, cons_handle);
+    [[maybe_unused]] auto bad = fspsc::mint_producer_session<Channel>(ctx, cons_handle);
     return 0;
 }
