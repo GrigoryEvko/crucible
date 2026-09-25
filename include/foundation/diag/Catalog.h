@@ -1263,59 +1263,47 @@ struct HugePageAllocationFailed : tag_base {
 
 struct PublishOnceDoublePublish : tag_base {
     static constexpr std::string_view name = "PublishOnceDoublePublish";
-    static constexpr std::string_view description = "handles::PublishOnce<T>::publish(T*) observed a non-nullptr "
-                                                    "value in the slot at the moment of the publish CAS.  The "
-                                                    "channel was already claimed by a prior publisher, and the "
-                                                    "incoming call attempted to overwrite the published payload.  "
-                                                    "PublishOnce is a one-shot publication primitive — exactly one "
-                                                    "publisher across the lifetime of the slot, with arbitrarily "
-                                                    "many observers.  A second publish is a structural soundness "
-                                                    "violation: it (a) silently discards the new payload (CAS "
-                                                    "fails, but the caller's wire contract assumed success), or "
-                                                    "(b) under a weaker primitive would race against readers that "
-                                                    "already acquired the prior value via observe() / try_observe() "
-                                                    "and produce a torn channel state.";
-    static constexpr std::string_view remediation = "Audit the publisher tree feeding this PublishOnce — at most "
-                                                    "one call site must reach the publish path.  Common causes: "
-                                                    "(a) two threads racing to establish the same channel without "
-                                                    "an outer Once/OneShotFlag guard, (b) a retry loop that "
-                                                    "re-enters publish after a transient error instead of failing "
-                                                    "upward, (c) a refactor that introduced a second publisher "
-                                                    "without the original's `if (already_published()) return;` "
-                                                    "early-out.  Permanent fix is structural: front the publish "
-                                                    "site with Once::call_once / OneShotFlag::try_set, or use "
-                                                    "LazyEstablishedChannel::establish (which serializes via the "
-                                                    "Once latch and routes the would-be-second-establisher into "
-                                                    "the wait-for-published-pointer observer path instead).  When "
-                                                    "PublishOnce is used as a federation-cache slot, the upstream "
-                                                    "compile-and-publish pipeline owns the single-publisher "
-                                                    "contract — a second publish indicates a cache-key collision "
-                                                    "or a duplicate compile entry in flight.";
+    static constexpr std::string_view description = "fixy::handle::PublishOnce<T>::publish found the slot already "
+                                                    "published.  PublishOnce takes one publisher over the full life "
+                                                    "of the slot, and any number of observers.  The exchange from "
+                                                    "null to the new pointer failed, so a different publisher came "
+                                                    "first.  publish then prints this entry and ends the process, "
+                                                    "under each contract semantic.";
+    static constexpr std::string_view remediation = "Find the second path that reaches publish.  One slot takes at "
+                                                    "most one publish call.  The usual causes are two threads that "
+                                                    "both establish one channel, a retry loop that calls publish "
+                                                    "again after an error, and a refactored call site that adds a "
+                                                    "second publisher.  When several threads can publish, call "
+                                                    "publish inside fixy::handle::Once::call.  The first thread "
+                                                    "publishes, and the other threads wait and do not publish.  "
+                                                    "fixy::handle::LazyEstablishedChannel does not serialize "
+                                                    "establish: establish calls publish directly, so a second "
+                                                    "establish also ends the process.  After establish, the channel "
+                                                    "gives its one session to the first observer, and it refuses "
+                                                    "each later request with AlreadyClaimed.  When the slot holds a "
+                                                    "federation cache entry, a second publish shows a key collision "
+                                                    "or two compiles of one entry.";
 
     static constexpr Severity severity = Severity::Fatal;
     static constexpr std::string_view why_this_matters =
-        "handles::PublishOnce<T> is a one-shot publication primitive — "
-        "exactly one publisher across the slot's lifetime, arbitrarily "
-        "many observers.  The publish CAS goes nullptr → ptr and the "
-        "single-publisher invariant is a soundness gate: a second "
-        "successful publish would silently overwrite the channel "
-        "payload, racing against observers that already acquired the "
-        "prior value.  Pre-fix the post-CAS check was contract_assert "
-        "only — under -fcontract-evaluation-semantic=ignore (the "
-        "hot-path default per CLAUDE.md §V) the assert is elided, so "
-        "the collision was silent.  Post-fix the publish path emits "
-        "this tag before terminating, restoring the gate independent "
-        "of contract semantic.";
+        "Observers read the published pointer with an acquire load and "
+        "keep it.  If a second publish could replace the pointer, an "
+        "observer could hold a pointer that the slot no longer "
+        "publishes, and two observers could disagree about the channel.  "
+        "A contract assertion cannot carry this check, because hot-path "
+        "translation units build with the contract semantic set to "
+        "ignore, and the assertion then does nothing.  publish calls an "
+        "abort helper instead, and the helper runs under each semantic.";
     static constexpr std::string_view symptom_pattern =
-        "Two threads racing to establish the same channel without an "
-        "outer Once / OneShotFlag guard.  Or a retry loop that "
-        "re-enters publish after a transient error instead of failing "
-        "upward.  When PublishOnce backs a federation-cache slot, the "
-        "tag fires on a cache-key collision or duplicate compile entry.";
+        "Two threads that each establish one channel, with no Once around "
+        "the call.  Or a retry loop that calls publish again after an "
+        "error and does not return the error.  When PublishOnce holds a "
+        "federation cache entry, the entry fires on a key collision or "
+        "on two compiles of one entry.";
     static constexpr std::string_view correct_example =
-        "Once::call_once(latch, [&]{ slot.publish(p); });  // serialized";
+        "once.call([&]() noexcept { slot.publish(p); });  // one publisher";
     static constexpr std::string_view violating_example =
-        "if (need_publish) slot.publish(p);  // no outer serialization";
+        "if (need_publish) slot.publish(p);  // a second thread can publish too";
 };
 
 struct BitsInvariantViolation : tag_base {
