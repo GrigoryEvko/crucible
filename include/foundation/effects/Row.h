@@ -673,7 +673,7 @@ static_assert(L::leq(row_descriptor_v<Row<Effect::IO>>, row_descriptor_v<Row<Eff
 // value-level set of Effect atoms that can be recorded, transmitted and
 // compared against a declared row.
 //
-// Old spelling: include/crucible/effects/EffectRowProjection.h.
+// Old spelling: include/crucible/effects/_EffectRowProjection.h.
 //
 // The carrier is the lattice element, so a mask and the descriptor of a
 // row are one encoding: bit n is the atom whose underlying value is n.

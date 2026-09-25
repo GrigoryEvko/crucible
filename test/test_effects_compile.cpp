@@ -11,7 +11,7 @@
 #include <crucible/effects/_CtxWrapperLift.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_EffectRowLattice.h>
-#include <crucible/effects/EffectRowProjection.h>
+#include <crucible/effects/_EffectRowProjection.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/effects/_FxAliases.h>
 #include <crucible/effects/_OsUniverse.h>

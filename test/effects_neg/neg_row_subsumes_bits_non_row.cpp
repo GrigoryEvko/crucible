@@ -13,7 +13,7 @@
 // "constraints not satisfied" / "no matching function" pointing at
 // the row_subsumes_bits<int>(...) call site.
 
-#include <crucible/effects/EffectRowProjection.h>
+#include <crucible/effects/_EffectRowProjection.h>
 #include <crucible/safety/_Bits.h>
 
 namespace eff = crucible::effects;

@@ -42,7 +42,7 @@
 //   "non-constant condition" / "not a constant expression" /
 //   "__builtin_trap" / "call to non-constexpr function".
 
-#include <crucible/effects/EffectRowProjection.h>
+#include <crucible/effects/_EffectRowProjection.h>
 
 #include <cstdint>
 

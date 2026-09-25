@@ -13,7 +13,7 @@
 // "constraints not satisfied" / "no matching function" pointing at
 // the bits_from_row<int>() call site.
 
-#include <crucible/effects/EffectRowProjection.h>
+#include <crucible/effects/_EffectRowProjection.h>
 
 namespace eff = crucible::effects;
 
