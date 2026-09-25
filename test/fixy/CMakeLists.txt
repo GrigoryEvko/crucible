@@ -894,6 +894,7 @@ fixy_neg_compile_test(neg_refined_mixed_sign_floor
 
 fixy_test(test_tagged)
 fixy_test(test_secret)
+fixy_test(test_siphash)
 
 # Verified -> Unverified has no edge in admitted_retags; the member
 # retag fails its constraint and the note names RetagAllowed with the
