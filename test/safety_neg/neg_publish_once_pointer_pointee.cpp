@@ -10,7 +10,7 @@
 // `is_pointer_v<T*> || is_same_v<T, T>`, whose second disjunct holds
 // for every T.  That version admitted this file.
 
-#include <crucible/handles/PublishOnce.h>
+#include <crucible/handles/_PublishOnce.h>
 
 struct CompiledKernel;
 

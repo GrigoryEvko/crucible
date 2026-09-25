@@ -3,7 +3,7 @@
 // PublishSlot<T> owns an atomic publication cell.  Copying it would
 // duplicate the channel identity and split observers across two cells.
 
-#include <crucible/handles/PublishOnce.h>
+#include <crucible/handles/_PublishOnce.h>
 
 int main() {
     crucible::safety::PublishSlot<int> a;

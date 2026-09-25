@@ -8,12 +8,12 @@
 #include <crucible/handles/LazyEstablishedChannel.h>
 #include <crucible/handles/_Once.h>
 #include <crucible/handles/OneShotFlag.h>
-#include <crucible/handles/PublishOnce.h>
+#include <crucible/handles/_PublishOnce.h>
 #include <crucible/safety/_AlignedBuffer.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/_HugePageBuffer.h>
 #include <crucible/safety/_OwnedFile.h>
-#include <crucible/safety/PublishCommit.h>
+#include <crucible/safety/_PublishCommit.h>
 
 #include <cstdint>
 #include <type_traits>

@@ -10,7 +10,7 @@
 // string.  This fixture verifies a copy attempt is rejected at
 // compile time.
 
-#include <crucible/safety/PublishCommit.h>
+#include <crucible/safety/_PublishCommit.h>
 
 namespace saf = crucible::safety;
 

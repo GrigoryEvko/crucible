@@ -2,7 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/handles/PublishOnce.h>
+#include <crucible/handles/_PublishOnce.h>
 #include <crucible/sessions/Session.h>
 
 #include <optional>

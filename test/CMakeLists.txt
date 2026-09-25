@@ -12979,7 +12979,7 @@ crucible_neg_compile_effects_test(neg_effects_epoch_ctx_over_fg_forged_by_checke
 
 # ─── HS14 fixtures #1 + #2 for safety::PublishCommitCell ────────────
 #
-# GAPS-FLUSH-RACE harness — see safety/PublishCommit.h.  The cell's
+# GAPS-FLUSH-RACE harness — see safety/_PublishCommit.h.  The cell's
 # write surface (bump_by, bump) is friend-gated so only the listed
 # WriteAuth type can advance the counter.  Two fixtures, each a
 # distinct mismatch class:

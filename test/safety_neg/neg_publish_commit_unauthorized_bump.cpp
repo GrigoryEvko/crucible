@@ -10,7 +10,7 @@
 // its members) are friends; bump_by/bump are private.  An unrelated
 // caller (here, OtherStage) cannot invoke them.
 
-#include <crucible/safety/PublishCommit.h>
+#include <crucible/safety/_PublishCommit.h>
 
 namespace saf = crucible::safety;
 

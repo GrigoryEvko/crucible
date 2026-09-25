@@ -40,7 +40,7 @@
 #include <crucible/bridges/_VigilModeHandle.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_FxAliases.h>
-#include <crucible/handles/PublishOnce.h>
+#include <crucible/handles/_PublishOnce.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Policy.h>

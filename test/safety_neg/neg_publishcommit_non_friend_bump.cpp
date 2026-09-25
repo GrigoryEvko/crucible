@@ -46,7 +46,7 @@
 //
 // FIXY-U-157 — second PublishCommitCell HS14 fixture.
 
-#include <crucible/safety/PublishCommit.h>
+#include <crucible/safety/_PublishCommit.h>
 
 namespace {
 

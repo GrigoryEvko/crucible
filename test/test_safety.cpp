@@ -1,5 +1,5 @@
 #include <crucible/handles/FileHandle.h>
-#include <crucible/handles/PublishOnce.h>
+#include <crucible/handles/_PublishOnce.h>
 #include <crucible/safety/_Checked.h>
 #include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/_Linear.h>

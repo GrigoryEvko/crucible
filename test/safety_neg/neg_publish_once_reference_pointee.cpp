@@ -6,7 +6,7 @@
 // to a reference type inside <atomic>, which names neither this header
 // nor the mistake.
 
-#include <crucible/handles/PublishOnce.h>
+#include <crucible/handles/_PublishOnce.h>
 
 struct CompiledKernel;
 

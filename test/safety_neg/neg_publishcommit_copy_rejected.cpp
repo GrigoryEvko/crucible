@@ -44,7 +44,7 @@
 // ZERO neg-coverage before this ship; closes its slice of #146
 // A8-P2).
 
-#include <crucible/safety/PublishCommit.h>
+#include <crucible/safety/_PublishCommit.h>
 
 namespace {
 

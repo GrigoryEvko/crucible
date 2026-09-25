@@ -3,7 +3,7 @@
 // PublishSlot<T> carries the same pointee-not-pointer contract as
 // PublishOnce, for the same reason: the slot adds the star itself.
 
-#include <crucible/handles/PublishOnce.h>
+#include <crucible/handles/_PublishOnce.h>
 
 struct RegionNode;
 
