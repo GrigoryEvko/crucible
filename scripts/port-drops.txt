@@ -453,6 +453,7 @@ crucible/bridges/_SessionPersistence.h:mint_persisted_session  → none  — The
 crucible/bridges/_SessionPersistence.h:PersistedSessionHandle  → none  — A session handle that records each step and writes the new events through Cipher. A header of the new tree cannot include Cipher, so no header of the new tree carries the handle.
 crucible/bridges/_SessionPersistence.h:SessionPersistencePolicy  → none  — The count and time thresholds of a Cipher flush. Only the persisted-session handle reads the policy, and no header of the new tree carries that handle.
 crucible/bridges/_SessionPersistence.h:SessionPersistenceState  → none  — The event log of one persisted session and the count of its events that Cipher holds. A header of the new tree cannot include Cipher, so no header of the new tree carries the state.
+crucible/sessions/_SessionContentAddressed.h:is_subsort  → include/fixy/session/Subtype.h  — Four partial specializations that related a payload to its marked form, one layer deep or through every layer. The payload order holds them as the content_addressed axiom, which strips every layer from both sides, so it also relates depths two or more apart.
 
 # ── effects: the universe descriptor and the context-to-wrapper lifts ───
 

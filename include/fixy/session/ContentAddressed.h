@@ -21,7 +21,7 @@
 // order and the payload walk can both name the marker without either
 // one reaching the other.
 //
-// Old spelling: include/crucible/sessions/SessionContentAddressed.h,
+// Old spelling: include/crucible/sessions/_SessionContentAddressed.h,
 // namespace crucible::safety::proto.
 
 #include <foundation/contracts/Armed.h>

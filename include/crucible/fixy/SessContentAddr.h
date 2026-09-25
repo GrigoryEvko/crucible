@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/sessions/SessionContentAddressed.h>
+#include <crucible/sessions/_SessionContentAddressed.h>
 
 #include <cstddef>
 #include <type_traits>

@@ -4,7 +4,7 @@
 // identically, which is what protocol-level equivalence claims.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionContentAddressed.h>
+#include <crucible/sessions/_SessionContentAddressed.h>
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/_SessionSubtype.h>
 
