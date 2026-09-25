@@ -182,7 +182,6 @@ crucible_test(test_fixy_l11_short_circuit)  # fixy-L-11 OR-fold short-circuit + 
 crucible_test(test_fixy_fn)
 crucible_test(test_fixy_profile)
 crucible_test(test_fixy_rule_helpers)
-crucible_test(test_fixy_rules_compose)  # FIXY-U-062 — §6.8 aggregator surface
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
 crucible_test(test_fixy_substr_spsc_permissioned_spsc_channel) # FIXY-V-045 — fixy::substr::spsc:: PermissionedSpscChannel surface
@@ -8281,8 +8280,8 @@ crucible_neg_compile_test(neg_collision_L007_borrow_bg_row_marker
 # and F001_OK<F> are tautologically true because pack-rule semantics
 # require ≥2 Fns to evaluate.  The real enforcement is
 # `pack::no_linear_region_alias_v<Fs...>` and
-# `pack::frame_axis_consistent_v<Fs...>` (re-exported as
-# `fixy::rule::pack::*_v`).  test_fixy_rule_helpers asserts these
+# `pack::frame_axis_consistent_v<Fs...>` in the collision catalog.
+# test_fixy_rule_helpers asserts these
 # predicates RETURN false on violations via `static_assert(!*_v<...>)`
 # — that's a positive correctness test of the predicate body.  The HS14
 # fixtures below complement it: they witness that the rule fires as a

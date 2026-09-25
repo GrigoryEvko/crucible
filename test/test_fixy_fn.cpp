@@ -2,7 +2,6 @@
 // assertions into the build graph.
 
 #include <crucible/fixy/Fn.h>
-#include <crucible/fixy/Rules.h>
 
 #include <type_traits>
 #include <utility>
@@ -53,13 +52,6 @@ static_assert(crucible_fixy::stance::AsyncEndpoint<int>::reentrancy_v == crucibl
 static_assert(std::is_same_v<typename crucible_fixy::stance::BgWorker<int>::effect_row_t,
                              crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>>,
               "stance::BgWorker's Effect row must contain Bg + Alloc.");
-
-// The bijection is checked in the header.  These only witness that the
-// alias names resolve and stay distinct.
-
-static_assert(!std::is_same_v<crucible_fixy::rule::R001, crucible_fixy::rule::R002>);
-static_assert(!std::is_same_v<crucible_fixy::rule::R013, crucible_fixy::rule::R017>);
-static_assert(!std::is_same_v<crucible_fixy::rule::R019, crucible_fixy::rule::R020>);
 
 // declassify requires the policy to derive from secret_policy_base.
 namespace policy_tags {

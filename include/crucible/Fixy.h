@@ -14,7 +14,6 @@
 // because Profile.h instantiates a concept Reject.h declares.
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Profile.h>
-#include <crucible/fixy/Rules.h>
 
 #include <crucible/fixy/Fn.h>
 

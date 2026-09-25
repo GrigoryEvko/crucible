@@ -36,7 +36,7 @@
 // Expected diagnostic substring: "L005:".
 
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/fixy/Rules.h>
+#include <crucible/safety/CollisionCatalog.h>
 #include <crucible/safety/Fn.h>
 
 namespace sfn = crucible::safety::fn;
@@ -76,7 +76,7 @@ struct marks_lifetime_region_unprotected<::LinearAClone> : std::false_type {};
 // holds for a pack containing two Linears in the same region.  It does
 // NOT hold — the predicate returns false — so the static_assert fires
 // L005's compile error.
-static_assert(crucible::fixy::rule::pack::no_linear_region_alias_v<LinearA, LinearAClone>,
+static_assert(crucible::safety::fn::collision::pack::no_linear_region_alias_v<LinearA, LinearAClone>,
               "L005: two Linear-usage Fns sharing lifetime::In<7> alias the "
               "region — Linear values are exclusive owners; aliasing breaks the "
               "linearity invariant. Move ownership into a single binding, or pin "

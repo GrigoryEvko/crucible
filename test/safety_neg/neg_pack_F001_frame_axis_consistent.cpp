@@ -21,7 +21,7 @@
 // Expected diagnostic substring: "F001:".
 
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/fixy/Rules.h>
+#include <crucible/safety/CollisionCatalog.h>
 #include <crucible/safety/Fn.h>
 
 namespace sfn = crucible::safety::fn;
@@ -58,7 +58,7 @@ struct marks_lifetime_region_unprotected<::PublicFn> : std::false_type {};
 // THIS is the F001 violation: assert frame_axis_consistent_v holds for
 // a security-disagreeing pack.  It does not — the predicate returns
 // false — so the static_assert fires F001's compile error.
-static_assert(crucible::fixy::rule::pack::frame_axis_consistent_v<LinearA, PublicFn>,
+static_assert(crucible::safety::fn::collision::pack::frame_axis_consistent_v<LinearA, PublicFn>,
               "F001: frame composes Fns with disagreeing Security axes — LinearA "
               "carries Classified, PublicFn carries Public; declaring both in one "
               "frame would merge two disjoint information-flow domains. Pick one "
