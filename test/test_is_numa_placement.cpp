@@ -4,14 +4,14 @@
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/GradedExtract.h>
 #include <crucible/safety/IsBudgeted.h>
 #include <crucible/safety/_IsCipherTier.h>
 #include <crucible/safety/IsConsistency.h>
-#include <crucible/safety/IsCrash.h>
+#include <crucible/safety/_IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/IsEpochVersioned.h>
 #include <crucible/safety/_IsNumericalTier.h>

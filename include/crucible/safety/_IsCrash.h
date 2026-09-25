@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 
 #include <type_traits>
 

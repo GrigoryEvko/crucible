@@ -45,7 +45,7 @@
 //   "no matching function" / "could not convert" /
 //   "cannot convert" / "not a valid template argument".
 
-#include <crucible/handles/OneShotFlag.h>
+#include <crucible/handles/_OneShotFlag.h>
 
 namespace {
 

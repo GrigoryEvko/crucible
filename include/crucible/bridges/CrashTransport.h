@@ -35,7 +35,7 @@
 // handle enters the permissioned crash surface with an empty permission set.
 
 #include <crucible/Platform.h>
-#include <crucible/handles/OneShotFlag.h>
+#include <crucible/handles/_OneShotFlag.h>
 #include <crucible/permissions/PermissionInherit.h>
 #include <crucible/safety/_IsSessionHandle.h>
 #include <crucible/sessions/PermissionedSession.h>

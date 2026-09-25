@@ -12,7 +12,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 #include <utility>
 
 using namespace crucible::safety;

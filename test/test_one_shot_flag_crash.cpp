@@ -1,5 +1,5 @@
-#include <crucible/handles/OneShotFlag.h>
-#include <crucible/safety/Crash.h>
+#include <crucible/handles/_OneShotFlag.h>
+#include <crucible/safety/_Crash.h>
 #include "test_assert.h"
 
 #include <atomic>

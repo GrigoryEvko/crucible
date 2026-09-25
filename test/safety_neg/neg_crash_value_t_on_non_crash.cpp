@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsCrash.h>
+#include <crucible/safety/_IsCrash.h>
 
 int main() {
     using V = crucible::safety::extract::crash_value_t<int>;

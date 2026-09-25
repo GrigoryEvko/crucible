@@ -61,7 +61,7 @@
 //   "candidate function not viable" / "expects 1 argument" /
 //   "expected.*argument".
 
-#include <crucible/handles/OneShotFlag.h>
+#include <crucible/handles/_OneShotFlag.h>
 
 namespace {
 

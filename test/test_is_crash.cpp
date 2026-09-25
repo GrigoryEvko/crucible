@@ -1,9 +1,9 @@
-#include <crucible/safety/IsCrash.h>
+#include <crucible/safety/_IsCrash.h>
 
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/GradedExtract.h>
 #include <crucible/safety/_IsCipherTier.h>

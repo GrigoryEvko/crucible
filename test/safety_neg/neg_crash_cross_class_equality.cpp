@@ -17,7 +17,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 
 using namespace crucible::safety;
 

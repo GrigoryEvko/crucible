@@ -428,6 +428,17 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
 
+# ── safety: the crash-class wrapper and its detector ────────────────────
+crucible/safety/_Crash.h:CrashClass_v  — An alias of the crash-class enum. The classes fold into the fixy ctrl atoms, and the new tree has no crash-class enum, because nothing in it throws.
+crucible/safety/_Crash.h:CrashLattice  — The chain order of the four crash classes. The new tree has no crash-class lattice: a binding that can leave its frame names a ctrl atom.
+crucible/safety/_Crash.h:NoThrow  — The crash::NoThrow alias named the strongest class. That class is the strict default of the control-flow axis, so a plain value states it with no wrapper.
+crucible/safety/_IsCrash.h:crash_class_v  — This variable read the class of a Crash wrapper. The new tree has no Crash wrapper, so no class is left to read.
+crucible/safety/_IsCrash.h:CrashClass_v  — A second spelling of the crash-class alias in the extract namespace. It goes with the alias, which the _Crash.h row drops.
+crucible/safety/_IsCrash.h:crash_value_t  — This alias read the payload type of a Crash wrapper. The new tree has no Crash wrapper, so no payload type is left to read.
+crucible/safety/_IsCrash.h:IsCrash  — The concept form of the detector. The new tree has no Crash wrapper, so the concept has no type to admit.
+crucible/safety/_IsCrash.h:is_crash_smoke_test  — This runtime smoke test used the detector. It goes with the detector.
+crucible/safety/_IsCrash.h:is_crash_v  — This variable detected a Crash wrapper. The new tree has no Crash wrapper, so the detector has no type to detect.
+
 # ── algebra: the lattices that became atoms ─────────────────────────────
 #
 # Each of these lattices graded one axis of a binding.  The binding now

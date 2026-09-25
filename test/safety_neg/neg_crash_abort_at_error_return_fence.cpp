@@ -29,7 +29,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection of Abort-into-ErrorReturn.
 
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 
 #include <utility>
 

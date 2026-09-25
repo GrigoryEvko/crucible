@@ -21,7 +21,7 @@
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/_IsConsumerHandle.h>
 #include <crucible/safety/_IsCpuPinned.h>
-#include <crucible/safety/IsCrash.h>
+#include <crucible/safety/_IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/IsEpochVersioned.h>
 #include <crucible/safety/_IsHotPath.h>

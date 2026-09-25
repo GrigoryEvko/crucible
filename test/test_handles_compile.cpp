@@ -4,7 +4,7 @@
 #include <crucible/handles/FileHandle.h>
 #include <crucible/handles/LazyEstablishedChannel.h>
 #include <crucible/handles/_Once.h>
-#include <crucible/handles/OneShotFlag.h>
+#include <crucible/handles/_OneShotFlag.h>
 #include <crucible/handles/_PublishOnce.h>
 
 #include <cstdio>

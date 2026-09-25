@@ -23,7 +23,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
-#include <crucible/handles/OneShotFlag.h>
+#include <crucible/handles/_OneShotFlag.h>
 #include <crucible/permissions/_PermissionFork.h>
 #include <crucible/permissions/_PermSet.h>
 #include <crucible/permissions/_Permission.h>

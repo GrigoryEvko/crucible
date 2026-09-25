@@ -7,7 +7,7 @@
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/_HotPath.h>

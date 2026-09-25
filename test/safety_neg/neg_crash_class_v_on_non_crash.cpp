@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsCrash.h>
+#include <crucible/safety/_IsCrash.h>
 
 int main() {
     auto c = crucible::safety::extract::crash_class_v<int>;

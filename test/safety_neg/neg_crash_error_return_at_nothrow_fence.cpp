@@ -33,7 +33,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection of ErrorReturn-into-NoThrow.
 
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 
 #include <utility>
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Crash.h>
+#include <crucible/safety/_Crash.h>
 
 #include <atomic>
 #include <concepts>
