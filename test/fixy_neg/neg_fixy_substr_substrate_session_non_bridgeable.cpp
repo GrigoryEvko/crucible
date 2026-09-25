@@ -4,7 +4,7 @@
 // rejects when the (Substrate, Direction) pair is not bridgeable.
 //
 // PermissionedSnapshot's only directions are SwmrWriter / SwmrReader
-// (see neg_fixy_pipe_endpoint_non_bridgeable.cpp).  Requesting
+// (see effects_neg/neg_endpoint_non_bridgeable_direction.cpp).  Requesting
 // Direction::Producer has no default_proto_for / handle_for
 // specialization, so the requires-clause conjunct
 // IsBridgeableDirection<Snap, Producer> is false.  Routing through

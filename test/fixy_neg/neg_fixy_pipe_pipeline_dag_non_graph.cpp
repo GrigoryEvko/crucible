@@ -1,28 +1,30 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-AUDIT-D7 fixture: `mint_pipeline_dag` via fixy:: alias rejects
-// when the Graph parameter is not a StageGraph specialisation.
+// `mint_pipeline_dag` rejects a call when the Graph argument is not a
+// StageGraph specialisation.
 //
-// Violation: passes a bare int as the `Graph` parameter.
-// `CtxFitsPipelineDag<Ctx, int>` is false (int is not an IsStageGraph)
-// → `CtxFitsPipelineDagMint` fails → requires-clause fires.
+// Violation: a bare int is the `Graph` argument.
+// `CtxFitsPipelineDag<Ctx, int>` is false, because int does not satisfy
+// IsStageGraph.  Then `CtxFitsPipelineDagMint` is false, and the requires
+// clause rejects the call.
 //
 // Expected diagnostic: "associated constraints are not satisfied"
-// pointing at CtxFitsPipelineDagMint / CtxFitsPipelineDag /
-// IsStageGraph / pipeline_dag_mint_gate.
+// at CtxFitsPipelineDagMint, CtxFitsPipelineDag, IsStageGraph or
+// pipeline_dag_mint_gate.
 //
-// Distinct rejection class from the stage-pack-mismatch fixture:
-// this exercises the IsStageGraph well-formedness gate (Phase 1 of
-// the mint gate), not the stage-pack equality gate (Phase 2).
+// The stage-pack fixture stops at a different check.  This fixture stops
+// at the IsStageGraph check, and that fixture stops at the stage-pack
+// equality check.
 
+#include <crucible/concurrent/_Pipeline.h>
+#include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Pipe.h>
 
 #include <optional>
 #include <utility>
 
 namespace eff = crucible::effects;
-namespace fpipe = crucible::fixy::pipe;
+namespace conc = crucible::concurrent;
 
 template <typename T>
 struct FakeConsumer {
@@ -39,11 +41,11 @@ inline void pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 int main() {
     eff::HotFgCtx ctx;
 
-    auto stage = fpipe::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto stage = conc::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
 
-    int not_a_graph = 0;  // ← must be a StageGraph<StagePack<...>, EdgePack<...>>
+    int not_a_graph = 0;  // This argument must be a StageGraph<StagePack<...>, EdgePack<...>>.
 
-    auto bad = fpipe::mint_pipeline_dag(ctx, not_a_graph, std::move(stage));
+    auto bad = conc::mint_pipeline_dag(ctx, not_a_graph, std::move(stage));
     (void)bad;
     return 0;
 }

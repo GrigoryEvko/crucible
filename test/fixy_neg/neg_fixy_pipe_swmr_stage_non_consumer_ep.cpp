@@ -1,28 +1,27 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-AUDIT-D7 fixture: `mint_swmr_stage` via fixy:: alias rejects
-// when the first (consumer endpoint) parameter is not an
-// IsConsumerEndpoint.
+// `mint_swmr_stage` rejects a call when the first parameter (the consumer
+// endpoint) does not satisfy IsConsumerEndpoint.
 //
-// Violation: passes a bare int as the consumer endpoint.
-// `swmr_stage_from_endpoint_gate::compute()` short-circuits on
-// `!IsConsumerEndpoint<consumer_ep>` and returns false →
-// `CtxFitsSwmrStageFromEndpoint` fails → requires-clause fires.
+// Violation: a bare int is the consumer endpoint.
+// `swmr_stage_from_endpoint_gate::compute()` stops at
+// `!IsConsumerEndpoint<consumer_ep>` and returns false.  Then
+// `CtxFitsSwmrStageFromEndpoint` is false, and the requires clause rejects
+// the call.
 //
 // Expected diagnostic: "associated constraints are not satisfied"
-// pointing at CtxFitsSwmrStageFromEndpoint /
-// swmr_stage_from_endpoint_gate / IsConsumerEndpoint.
+// at CtxFitsSwmrStageFromEndpoint, swmr_stage_from_endpoint_gate or
+// IsConsumerEndpoint.
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Pipe.h>
 #include <crucible/permissions/_Permission.h>
 
 #include <optional>
 #include <utility>
 
 namespace eff = crucible::effects;
-namespace fpipe = crucible::fixy::pipe;
 namespace conc = crucible::concurrent;
 namespace saf = crucible::safety;
 
@@ -46,7 +45,7 @@ int main() {
 
     int not_an_endpoint = 0;
 
-    auto bad = fpipe::mint_swmr_stage<&swmr_publish_body>(ctx, not_an_endpoint, std::move(writer));
+    auto bad = conc::mint_swmr_stage<&swmr_publish_body>(ctx, not_an_endpoint, std::move(writer));
     (void)bad;
     return 0;
 }

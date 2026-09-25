@@ -1,27 +1,24 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-AUDIT-D7 fixture: `mint_mpmc_stage_from_endpoints` via fixy::
-// alias rejects when one of the variadic endpoint pack arguments is
-// not a (Producer|Consumer)Endpoint.
+// `mint_mpmc_stage_from_endpoints` rejects a call when one argument of
+// the endpoint pack is not a producer endpoint or a consumer endpoint.
 //
-// Violation: passes a bare int in place of the producer endpoint.
+// Violation: a bare int takes the position of the producer endpoint.
 // `StageHandlesMatchEndpointsExtended<FnPtr, inputs, outputs>` in
-// `mpmc_stage_from_endpoints_gate::compute()` cannot match an `int`
-// to the producer-handle slot of fan_in_body's signature.
+// `mpmc_stage_from_endpoints_gate::compute()` cannot match an `int` to
+// the producer handle in the signature of fan_in_body.
 //
 // Expected diagnostic: "associated constraints are not satisfied"
-// pointing at CtxFitsMpmcStageFromEndpoints /
-// mpmc_stage_from_endpoints_gate.
+// at CtxFitsMpmcStageFromEndpoints or mpmc_stage_from_endpoints_gate.
 
 #include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Pipe.h>
 
 #include <optional>
 #include <utility>
 
 namespace eff = crucible::effects;
-namespace fpipe = crucible::fixy::pipe;
 namespace conc = crucible::concurrent;
 
 template <typename T>
@@ -41,12 +38,12 @@ inline void fan_in_body(FakeConsumer<int>&&, FakeConsumer<int>&&, FakeProducer<i
 int main() {
     eff::HotFgCtx ctx;
 
-    // First two slots are valid; the third (must be a Producer
-    // endpoint) is a bare int — the variadic gate fails.
+    // The first two arguments are correct.  The third argument must be a
+    // producer endpoint, but it is a bare int.
     int not_an_endpoint = 0;
 
-    auto bad = fpipe::mint_mpmc_stage_from_endpoints<&fan_in_body>(ctx, FakeConsumer<int>{}, FakeConsumer<int>{},
-                                                                   not_an_endpoint);
+    auto bad = conc::mint_mpmc_stage_from_endpoints<&fan_in_body>(ctx, FakeConsumer<int>{}, FakeConsumer<int>{},
+                                                                  not_an_endpoint);
     (void)bad;
     return 0;
 }

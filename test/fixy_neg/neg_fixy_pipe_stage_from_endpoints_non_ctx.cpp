@@ -1,35 +1,29 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-U-074o fixture #1 for fixy::pipe::mint_stage_from_endpoints
-// (StageEndpointBridge.h:510).  The factory's template parameter list
-// constrains `::crucible::effects::IsExecCtx Ctx`; a plain struct that
-// does NOT satisfy IsExecCtx fails that constraint regardless of how
-// well-formed the endpoints are.  The endpoints here are VALID (one
-// Consumer, one Producer, built with a real HotFgCtx) so the ONLY reason
-// the call is rejected is the non-ExecCtx ctx argument.
+// `concurrent::mint_stage_from_endpoints` rejects a context that is not an
+// execution context.  The template parameter list of the factory
+// constrains `::crucible::effects::IsExecCtx Ctx`.  A plain struct does not
+// satisfy IsExecCtx, so the constraint rejects the call also with correct
+// endpoints.  The endpoints here are correct: one consumer and one
+// producer, made with a real HotFgCtx.  The context argument is the only
+// cause of the rejection.
 //
-// (The substrate-side equivalents live in test/effects_neg/, which
-// gen-mint-inventory does not count toward the fixy umbrella's HS14 floor.)
+// The effects_neg fixture with swapped endpoint directions stops at a
+// different check.  That fixture has a correct context, and this fixture
+// has correct endpoints.
 //
-// Distinct mismatch class from
-// neg_fixy_pipe_stage_from_endpoints_swapped_direction.cpp (#2): there the
-// ctx is valid and the ENDPOINT DIRECTIONS are swapped (endpoint-shape
-// axis); here the endpoints are correctly paired and the CTX axis fails.
-//
-// Expected diagnostic: IsExecCtx / constraints not satisfied /
+// Expected diagnostic: IsExecCtx, constraints not satisfied, or
 // no matching function.
 
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Pipe.h>
 
 #include <utility>
 
 namespace conc = crucible::concurrent;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
-namespace fpipe = crucible::fixy::pipe;
 
 namespace neg_fixy_pipe_stage_from_endpoints_non_ctx {
 struct UTag1 {};
@@ -61,12 +55,12 @@ int main() {
     auto cons1 = ch1.consumer(std::move(cp1));
     auto prod2 = ch2.producer(std::move(pp2));
 
-    // Endpoints are VALID (built with a real HotFgCtx).
+    // The endpoints are correct, because a real HotFgCtx makes them.
     auto cons_ep = conc::mint_endpoint<ns::Ch1, conc::Direction::Consumer>(ctx, cons1);
     auto prod_ep = conc::mint_endpoint<ns::Ch2, conc::Direction::Producer>(ctx, prod2);
 
-    // Bad ctx: NotAnExecCtx fails the IsExecCtx Ctx template constraint.
-    auto bad = fpipe::mint_stage_from_endpoints<&ns::body>(ns::NotAnExecCtx{}, std::move(cons_ep), std::move(prod_ep));
+    // NotAnExecCtx does not satisfy the IsExecCtx template constraint.
+    auto bad = conc::mint_stage_from_endpoints<&ns::body>(ns::NotAnExecCtx{}, std::move(cons_ep), std::move(prod_ep));
     (void)bad;
     (void)pp1;
     (void)cp2;

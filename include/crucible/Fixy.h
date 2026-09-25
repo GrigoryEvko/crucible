@@ -23,7 +23,6 @@
 #include <crucible/fixy/_Mach.h>
 #include <crucible/fixy/Perm.h>
 #include <crucible/fixy/Handle.h>
-#include <crucible/fixy/Pipe.h>
 #include <crucible/fixy/SessContentAddr.h>
 #include <crucible/fixy/SessEventLog.h>
 #include <crucible/fixy/Struct.h>

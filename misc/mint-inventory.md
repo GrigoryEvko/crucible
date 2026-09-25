@@ -152,12 +152,12 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Pipe.h:27` | HS14: 13 |
-| `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Pipe.h:35` | HS14: 3 |
-| `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Pipe.h:34` | HS14: 7 |
+| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
+| `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
+| `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
 | `mint_substrate_session(Ctx const&,handle_for_t<Substr,Dir,Shard>&)` | `include/crucible/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:438` | HS14: 12 |
 | `mint_substrate_session(Ctx const&,handle_for_t<Substr,Dir>&)` | `include/crucible/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Substr.h:438` | HS14: 12 |
-| `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | `include/crucible/fixy/Pipe.h:36` | HS14: 2 |
+| `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 
 ## include/crucible/fixy/
 
@@ -469,5 +469,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 193 | 94 | 90 | 9 | 0 | 110 | 41 |
+| old (`include/crucible/`) | 193 | 94 | 90 | 9 | 0 | 114 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 101 | 42 | 58 | 1 | 0 | · | 22 |

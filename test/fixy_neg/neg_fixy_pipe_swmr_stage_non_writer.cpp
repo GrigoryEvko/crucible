@@ -1,32 +1,33 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-AUDIT-D7 fixture: `mint_swmr_stage` via fixy:: alias rejects
-// when the second (writer) parameter is not a SWMR writer handle.
+// `mint_swmr_stage` rejects a call when the second parameter (the writer)
+// is not a SWMR writer handle.
 //
-// Violation: passes a bare int as the writer.  In
-// `swmr_stage_from_endpoint_gate::compute()`, the short-circuit
-// `!safety::extract::is_swmr_writer_v<writer>` returns false →
-// `CtxFitsSwmrStageFromEndpoint` fails → requires-clause fires.
+// Violation: a bare int is the writer.  In
+// `swmr_stage_from_endpoint_gate::compute()`, the check
+// `!safety::extract::is_swmr_writer_v<writer>` returns false.  Then
+// `CtxFitsSwmrStageFromEndpoint` is false, and the requires clause rejects
+// the call.
 //
-// Distinct rejection class from the non-consumer-endpoint fixture:
-// this exercises the is_swmr_writer_v gate rather than the
-// IsConsumerEndpoint gate.
+// The non-consumer-endpoint fixture stops at a different check.  This
+// fixture stops at the is_swmr_writer_v check, and that fixture stops at
+// the IsConsumerEndpoint check.
 //
 // Expected diagnostic: "associated constraints are not satisfied"
-// pointing at CtxFitsSwmrStageFromEndpoint /
-// swmr_stage_from_endpoint_gate / is_swmr_writer.
+// at CtxFitsSwmrStageFromEndpoint, swmr_stage_from_endpoint_gate or
+// is_swmr_writer.
 
+#include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Pipe.h>
 #include <crucible/permissions/_Permission.h>
 
 #include <optional>
 #include <utility>
 
 namespace eff = crucible::effects;
-namespace fpipe = crucible::fixy::pipe;
 namespace conc = crucible::concurrent;
 namespace saf = crucible::safety;
 
@@ -50,11 +51,11 @@ int main() {
     (void)prod_perm;
 
     auto cons = in.consumer(std::move(cons_perm));
-    auto in_ep = fpipe::mint_endpoint<InChannel, fpipe::Direction::Consumer>(ctx, cons);
+    auto in_ep = conc::mint_endpoint<InChannel, conc::Direction::Consumer>(ctx, cons);
 
     int not_a_writer = 0;
 
-    auto bad = fpipe::mint_swmr_stage<&swmr_publish_body>(ctx, std::move(in_ep), not_a_writer);
+    auto bad = conc::mint_swmr_stage<&swmr_publish_body>(ctx, std::move(in_ep), not_a_writer);
     (void)bad;
     return 0;
 }

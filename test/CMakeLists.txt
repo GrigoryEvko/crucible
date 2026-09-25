@@ -193,17 +193,16 @@ crucible_test(test_fixy_substr_shardcal_permissioned_sharded_calendar_grid) # FI
 crucible_test(test_fixy_substr_calendar_permissioned_calendar_grid) # FIXY-V-050 — fixy::substr::calendar_grid:: PermissionedCalendarGrid surface
 crucible_test(test_fixy_substr_chainedge_permissioned_chain_edge) # FIXY-V-052 — fixy::substr::chainedge:: PermissionedChainEdge surface
 crucible_test(test_fixy_substr_completeness)  # FIXY-AUDIT-C10
-crucible_test(test_fixy_pipe)
-crucible_test(test_fixy_pipe_chain)  # FIXY-AUDIT-C2
+# The chain concepts and the two mints of the old pipeline headers.
+crucible_test(test_fixy_pipe_chain)
 
-# ── FIXY-V-223 — build-time cache-size constexpr surface ──────────
-# Default-build variant: verifies fixy::pipe::topology::l*_v default
-# to substrate conservative_l* (no -DCRUCIBLE_L*_BYTES override).
+# The cache-size constants of concurrent/_TopologyConstexpr.h.  This build
+# defines no CRUCIBLE_L*_BYTES macro, so each constant must equal its
+# conservative floor.
 crucible_test(test_fixy_pipe_topology_constexpr)
 
-# Override variant: same TU compiled with -DCRUCIBLE_L*_BYTES values
-# baked in via target_compile_definitions; witnesses fixture #2
-# (cross-compilation override compiles + matches expected sizes).
+# The same constants with the three CRUCIBLE_L*_BYTES macros defined on
+# the command line.  Each constant must equal its macro.
 crucible_test(test_fixy_pipe_topology_override)
 target_compile_definitions(test_fixy_pipe_topology_override PRIVATE
     CRUCIBLE_L1D_PER_CORE_BYTES=65536      # 64 KiB
@@ -3171,30 +3170,10 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_mint_session_bare_deleted
     "use of deleted function"
     "is removed|mint_permissioned_session")
 
-# ── FIXY-MINT-Pipe — fixy/Pipe.h re-export of Tier-3 composition
-# (mint_endpoint, mint_stage, mint_pipeline, mint_pipeline_dag,
-# mint_stage_from_endpoints, mint_mpmc_stage_from_endpoints,
-# mint_swmr_stage, mint_substrate_session).  Two HS14 fixtures pin
-# the endpoint substrate-fit gate and the pipeline chain gate:
-crucible_neg_compile_fixy_test(neg_fixy_pipe_endpoint_non_bridgeable
-    "constraints.*not satisfied|constraints.*not satisfied|incomplete type"
-    "IsBridgeableDirection|CtxFitsEndpointMint|handle_for")
-crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_non_stage
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsPipeline|pipeline_chain|IsStage")
-# FIXY-U-074c HS14 floor: mint_pipeline sat at HS14:1 (only non_stage).
-# Second distinct class — two valid Stages that fail the stages_chain
-# adjacent-compatibility fold (int->int then double->double), distinct
-# from non_stage's IsStage-conjunct failure.  Brings mint_pipeline to 2.
-crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_chain_break
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsPipeline|pipeline_chain|stages_chain")
-
-# ── FIXY-AUDIT-D7 — mint_pipeline_dag / mint_mpmc_stage_from_endpoints
-# / mint_swmr_stage HS14 floor.
-#
-# Three ctx-bound mints with multi-conjunct requires-clauses.  Two
-# fixtures per factory pin distinct rejection classes:
+# The HS14 fixtures of three context-bound mints of the old concurrent
+# headers.  Each mint has a requires clause with more than one
+# conjunct.  Two fixtures for each factory hold two different rejection
+# classes:
 #
 #   mint_pipeline_dag:
 #     _non_graph              — Graph param is not IsStageGraph
@@ -3226,58 +3205,6 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_swmr_stage_non_writer
     "constraints.*not satisfied|constraints.*not satisfied"
     "CtxFitsSwmrStageFromEndpoint|swmr_stage_from_endpoint_gate|is_swmr_writer")
 
-# ── FIXY-V-076 HS14 — fixy::pipe re-export of cost-model surface
-# (Tier / NumaPolicy / ParallelismDecision / ParallelismRule /
-# WorkBudget + 8 WorkingSet helpers).  Two HS14 fixtures pin the
-# using-decls as TRUE aliases — a regression that silently widens
-# Tier to int (typedef alias) or conflates Tier ↔ NumaPolicy
-# (typedef misorder) would let bad values slip through DetSafe.
-crucible_neg_compile_fixy_test(neg_fixy_pipe_tier_to_int_implicit
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "cannot convert.*Tier.*to.*int|invalid conversion from .*Tier|narrowing conversion of|enum-conversion|conversion")
-crucible_neg_compile_fixy_test(neg_fixy_pipe_numa_to_tier_implicit
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "cannot convert.*NumaPolicy.*to.*Tier|invalid conversion from .*NumaPolicy|no known conversion|enum-conversion|conversion")
-
-# ── FIXY-V-077 HS14 — fixy::pipe re-export of AutoRouter + AutoSplit
-# surface (12 AutoRouter + 18 AutoSplit using-decls).  Two HS14
-# fixtures pin the using-decls as TRUE aliases on TWO distinct drift
-# classes:
-#   (1) CROSS-ENUM-CONVERSION: RouteIntent (AutoRouter semantic) vs
-#       SchedulingIntent (AutoSplit appetite) — both 6-element enum
-#       classes whose typedef collapse would silently misroute work.
-#   (2) SAME-ENUMERATOR-NAME-COLLISION: AutoSplitPartitionStrategy
-#       and AutoSplitScheduleMode both expose an `Inline` enumerator
-#       — typedef collapse would let cross-axis decisions compile.
-crucible_neg_compile_fixy_test(neg_fixy_pipe_route_intent_to_scheduling_intent_implicit
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "cannot convert.*RouteIntent.*to.*SchedulingIntent|invalid conversion from .*RouteIntent|no known conversion|enum-conversion|conversion")
-crucible_neg_compile_fixy_test(neg_fixy_pipe_partition_to_schedule_mode_implicit
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "cannot convert.*AutoSplitPartitionStrategy.*to.*AutoSplitScheduleMode|invalid conversion from .*AutoSplitPartitionStrategy|no known conversion|enum-conversion|conversion")
-
-# ── FIXY-V-215 HS14 — fixy::pipe::pool_submit Pool-submission
-# gate.  AdaptiveScheduler::Pool::submit accepts ANY closure satisfying
-# is_invocable_r_v<void, Job&>; a closure that captures a move-only
-# Permission<Tag> by value silently transfers ownership to a worker
-# jthread, bypassing the CSL parallel-rule (splits_into_pack +
-# structured fork-join + RAII rejoin) that mint_permission_fork
-# enforces.  V-215's fixy-side mint adds PermissionFreeJob as a
-# conjunct in CtxFitsPoolSubmit; the two HS14 fixtures pin the
-# distinct rejection AXES (not just two values on the same axis):
-#   (1) permission_capture — Ctx admits Bg but the JOB is non-copy-
-#       constructible (captured Permission<Tag> deletes copy).
-#       Rejects on the PermissionFreeJob conjunct.
-#   (2) ctx_no_bg          — Ctx does NOT admit Bg (HotFgCtx::row =
-#       Row<>) and the JOB is copy-constructible.  Rejects on the
-#       CtxOwnsCapability<Effect::Bg> conjunct.
-crucible_neg_compile_fixy_test(neg_fixy_pipe_pool_submit_permission_capture
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsPoolSubmit|PermissionFreeJob|is_copy_constructible")
-crucible_neg_compile_fixy_test(neg_fixy_pipe_pool_submit_ctx_no_bg
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsPoolSubmit|CtxOwnsCapability|row_contains|Effect::Bg")
-
 # ── FIXY-V-216 — fixy::handle::EpochVersioned re-export of
 # safety::EpochVersioned<T> (Canopy fleet epoch + per-Relay generation;
 # FOUND-G68 substrate).  One mismatch axis is kept through the alias:
@@ -3288,27 +3215,6 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_pool_submit_ctx_no_bg
 crucible_neg_compile_fixy_test(neg_fixy_handle_epoch_versioned_axis_swap
     "no matching function|cannot convert"
     "EpochVersioned|Epoch|Generation|no known conversion")
-
-# ── FIXY-V-218 — fixy::pipe::stance::HotPathInline<P, L1d, L2> stance
-# Lifts Pipeline::will_run_inline() (runtime Topology probe) into a
-# compile-time witness Pipeline::will_run_inline_v<L1d, L2>() that
-# band-3 stances can wrap as a requires-clause.  Two HS14 fixtures
-# pin the stance's two distinct rejection axes:
-#   (1) oversized — Pipeline IS inline_safe + WS known, but aggregate
-#       (100 MiB) exceeds BOTH default L1d (32 KiB) AND L2 (1 MiB).
-#       Rejects on the (ws ≤ L1d || ws ≤ L2) comparison branch.
-#       Tests the WORKING-SET-TOO-LARGE axis.
-#   (2) not_inline_safe — stages haven't opted in via
-#       stage_inline_safe specialisation; default primary template
-#       std::false_type makes Pipeline::inline_safe == false; the
-#       !inline_safe early-out fires before the WS compare runs.
-#       Tests the INLINE-SAFETY-MISSING axis (distinct from #1).
-crucible_neg_compile_fixy_test(neg_fixy_pipe_hot_path_inline_oversized
-    "static assertion failed"
-    "HotPathInline|will_run_inline_v|fixture #1")
-crucible_neg_compile_fixy_test(neg_fixy_pipe_hot_path_inline_not_inline_safe
-    "static assertion failed"
-    "HotPathInline|inline_safe|fixture #2")
 
 # FIXY-V-197 HS14 floor for fixy::sched::mint_priority (closes V-191 gap).
 crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_not_exec_ctx
@@ -3509,18 +3415,12 @@ crucible_neg_compile_fixy_test(neg_fixy_source_mint_self_signed_non_empty_org
     "constraints.*not satisfied|no matching function"
     "FederationOrgTag|is_empty")
 
-# FIXY-U-074o HS14 floor: fixy::pipe::mint_stage_from_endpoints — the last
-# fixy-re-exported mint below floor (4-conjunct CtxFitsStageFromEndpoints
-# gate + IsExecCtx Ctx template constraint).  (Substrate equivalents in
-# test/effects_neg/ don't count toward the fixy umbrella.)  Two orthogonal
-# classes: non-ExecCtx ctx (ctx axis, valid endpoints) vs swapped endpoint
-# directions (endpoint-shape axis, valid ctx).
+# concurrent::mint_stage_from_endpoints with a context that does not
+# satisfy IsExecCtx and with correct endpoints.  The effects_neg fixture
+# neg_mint_stage_from_endpoints_swapped_direction holds the endpoint axis.
 crucible_neg_compile_fixy_test(neg_fixy_pipe_stage_from_endpoints_non_ctx
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
-crucible_neg_compile_fixy_test(neg_fixy_pipe_stage_from_endpoints_swapped_direction
-    "constraints.*not satisfied"
-    "CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
 
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
