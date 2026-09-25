@@ -18,7 +18,7 @@
 //
 // [GCC-WRAPPER-TEXT] — operator== overload-resolution rejection.
 
-#include <crucible/safety/Consistency.h>
+#include <crucible/safety/_Consistency.h>
 
 using namespace crucible::safety;
 

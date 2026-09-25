@@ -458,7 +458,7 @@ crucible/permissions/_ReadView.h:mint_read_view  → include/foundation/permissi
 # type no header carries yet: its definition is still in an old header
 # nobody has marked, and the guard pins every such row by name.
 crucible/safety/diag/_RowHashFold.h:BarrierGuarded  → include/fixy/atoms/Barrier.h  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: Axis::BarrierStrength moved to the binding as the atom family of fixy/atoms/Barrier.h over foundation's BarrierStrengthLattice, V301 in fixy/Collision.h reads the strength there, and the value form's only consumer was a using-declaration in the old crucible/fixy/Wrap.h.
-crucible/safety/diag/_RowHashFold.h:Consistency  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/Consistency.h, which no port has marked superseded.
+crucible/safety/diag/_RowHashFold.h:Consistency  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/_Consistency.h, whose rows defer it because its chain order is wrong.
 crucible/safety/diag/_RowHashFold.h:CrashClass  → include/fixy/atoms/Ctrl.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the crash classes fold into the ctrl atoms of the carrier, where NoThrow is the strict default.
 crucible/safety/diag/_RowHashFold.h:FpComplexLayout  → include/fixy/atoms/Fp.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier's head comment names complex layout among the seven FpModeLattice settings no collision rule reads, which it does not restate.
 crucible/safety/diag/_RowHashFold.h:FpConstantRounding  → include/fixy/atoms/Fp.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier's head comment names constant rounding among the seven FpModeLattice settings no collision rule reads, which it does not restate.
@@ -470,7 +470,7 @@ crucible/safety/diag/_RowHashFold.h:FpRounding  → include/fixy/atoms/Fp.h  —
 crucible/safety/diag/_RowHashFold.h:FpTrapMask  → include/fixy/atoms/Fp.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier's head comment names trap mask among the seven FpModeLattice settings no collision rule reads, which it does not restate.
 crucible/safety/diag/_RowHashFold.h:Hw  → include/fixy/atoms/Hw.h  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: the HwInstruction tier it pinned moved to the binding as the atom family of the carrier, which declares the five enumerators verbatim.
 crucible/safety/diag/_RowHashFold.h:HwInstruction  → include/fixy/atoms/Hw.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier declares the five enumerators verbatim, same names and same values, for its atom family.
-crucible/safety/diag/_RowHashFold.h:JoinPolicy  → none  — Two forward declarations, the wrapper and its tier enum, and no header in the new tree carries either: they are defined in crucible/safety/JoinPolicy.h and crucible/algebra/lattices/JoinPolicyLattice.h, which no port has marked superseded, and the JoinMechanism of fixy/os/Spawn.h ports the spawn grant of the old fixy tree, a different ladder.
+crucible/safety/diag/_RowHashFold.h:JoinPolicy  → none  — Two forward declarations, the wrapper and its tier enum, and no header in the new tree carries either: they are defined in crucible/safety/_JoinPolicy.h and crucible/algebra/lattices/_JoinPolicyLattice.h, whose rows defer them because the chain order is wrong, and the JoinMechanism of fixy/os/Spawn.h ports the spawn grant of the old fixy tree, a different ladder.
 crucible/safety/diag/_RowHashFold.h:MemOrder  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/_MemOrder.h, whose rows drop it because no production file reads it.
 crucible/safety/diag/_RowHashFold.h:MemOrderTag  → none  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and no header in the new tree carries the enum: it is defined in crucible/algebra/lattices/_MemOrderLattice.h, whose rows drop it because no production file reads a pinned memory order.
 crucible/safety/diag/_RowHashFold.h:pred_canonical_id  — Generalised to lattice_canonical_id in foundation/diag/RowHash.h. A refinement's predicate is a template argument of its lattice in the new tree, so one rename hook keyed on the lattice covers the predicate case and every other axis with it.
@@ -980,6 +980,55 @@ crucible/safety/_Progress.h:ProgressClass_v  — A local alias of the dropped te
 crucible/safety/_Progress.h:ProgressLattice  — A local alias of the dropped termination lattice.
 crucible/safety/_Progress.h:Terminating  — An alias of the dropped Progress wrapper at the terminating class.
 crucible/safety/_TimeOrdered.h:TimeOrdered  — Dropped, because no production file reads it. foundation/algebra/lattices/HappensBefore.h carries its vector-clock lattice, HappensBeforeLattice.
+
+# ── algebra and safety: the consistency and join-policy bands, deferred because their orders are wrong ──
+crucible/algebra/lattices/_ConsistencyLattice.h:BoundedStalenessTier  — A pinned element of the deferred consistency lattice, deferred with it.
+crucible/algebra/lattices/_ConsistencyLattice.h:CausalPrefixTier  — A pinned element of the deferred consistency lattice, deferred with it.
+crucible/algebra/lattices/_ConsistencyLattice.h:Consistency  — The enum of the deferred consistency lattice. The levels need a partial order, and bounded staleness has a carrier already in the staleness semiring of fixy/Stale.h.
+crucible/algebra/lattices/_ConsistencyLattice.h:consistency_count  — The enumerator count of the deferred consistency enum.
+crucible/algebra/lattices/_ConsistencyLattice.h:ConsistencyLattice  — Deferred, because its chain order is wrong. A read that is K steps stale can miss a write that the reader made, so BOUNDED_STALENESS does not imply READ_YOUR_WRITES.
+crucible/algebra/lattices/_ConsistencyLattice.h:consistency_name  — The name function of the deferred consistency enum.
+crucible/algebra/lattices/_ConsistencyLattice.h:EventualTier  — A pinned element of the deferred consistency lattice, deferred with it.
+crucible/algebra/lattices/_ConsistencyLattice.h:ReadYourWritesTier  — A pinned element of the deferred consistency lattice, deferred with it.
+crucible/algebra/lattices/_ConsistencyLattice.h:StrongTier  — A pinned element of the deferred consistency lattice, deferred with it.
+crucible/algebra/lattices/_JoinPolicyLattice.h:AbandonTier  — A pinned element of the deferred join-policy lattice, deferred with it.
+crucible/algebra/lattices/_JoinPolicyLattice.h:CancelTier  — A pinned element of the deferred join-policy lattice, deferred with it.
+crucible/algebra/lattices/_JoinPolicyLattice.h:DetachTier  — A pinned element of the deferred join-policy lattice, deferred with it.
+crucible/algebra/lattices/_JoinPolicyLattice.h:ForgetTier  — A pinned element of the deferred join-policy lattice, deferred with it.
+crucible/algebra/lattices/_JoinPolicyLattice.h:JoinAllTier  — A pinned element of the deferred join-policy lattice, deferred with it.
+crucible/algebra/lattices/_JoinPolicyLattice.h:JoinPolicy  — The enum of the deferred join-policy lattice. CANCEL and WAIT_DEADLINE have no mechanism in the new tree, and the JoinMechanism of fixy/os/Spawn.h overlaps the rest.
+crucible/algebra/lattices/_JoinPolicyLattice.h:join_policy_count  — The enumerator count of the deferred join-policy enum.
+crucible/algebra/lattices/_JoinPolicyLattice.h:JoinPolicyLattice  — Deferred, because its chain order is wrong. WAIT_DEADLINE sits above CANCEL, but a wait that times out can end as ABANDON with no stop request.
+crucible/algebra/lattices/_JoinPolicyLattice.h:join_policy_name  — The name function of the deferred join-policy enum.
+crucible/algebra/lattices/_JoinPolicyLattice.h:WaitDeadlineTier  — A pinned element of the deferred join-policy lattice, deferred with it.
+crucible/safety/_Consistency.h:BoundedStaleness  — An alias of the deferred Consistency wrapper at one level, deferred with it.
+crucible/safety/_Consistency.h:CausalPrefix  — An alias of the deferred Consistency wrapper at one level, deferred with it.
+crucible/safety/_Consistency.h:Consistency  — Deferred with its lattice, because the chain order is wrong. No production file reads it, and a partial order must come before a port.
+crucible/safety/_Consistency.h:ConsistencyLattice  — A local alias of the deferred consistency lattice.
+crucible/safety/_Consistency.h:Consistency_v  — A local alias of the deferred consistency enum.
+crucible/safety/_Consistency.h:Eventual  — An alias of the deferred Consistency wrapper at one level, deferred with it.
+crucible/safety/_Consistency.h:ReadYourWrites  — An alias of the deferred Consistency wrapper at one level, deferred with it.
+crucible/safety/_Consistency.h:Strong  — An alias of the deferred Consistency wrapper at one level, deferred with it.
+crucible/safety/_IsConsistency.h:consistency_level_v  — A level accessor for the deferred Consistency wrapper, deferred with it.
+crucible/safety/_IsConsistency.h:Consistency_v  — A local alias of the deferred consistency enum.
+crucible/safety/_IsConsistency.h:consistency_value_t  — A value-type accessor for the deferred Consistency wrapper, deferred with it.
+crucible/safety/_IsConsistency.h:IsConsistency  — A recognizer for the deferred Consistency wrapper, deferred with it.
+crucible/safety/_IsConsistency.h:is_consistency_smoke_test  — An inline smoke test of a deferred header, so nothing in the new tree calls it.
+crucible/safety/_IsConsistency.h:is_consistency_v  — The trait form of the deferred Consistency recognizer.
+crucible/safety/_IsJoinPolicy.h:IsJoinPolicy  — A recognizer for the deferred JoinPolicy wrapper, deferred with it.
+crucible/safety/_IsJoinPolicy.h:is_join_policy_smoke_test  — An inline smoke test of a deferred header, so nothing in the new tree calls it.
+crucible/safety/_IsJoinPolicy.h:is_join_policy_v  — The trait form of the deferred JoinPolicy recognizer.
+crucible/safety/_IsJoinPolicy.h:join_policy_tier_v  — A tier accessor for the deferred JoinPolicy wrapper, deferred with it.
+crucible/safety/_IsJoinPolicy.h:JoinPolicy_v  — A local alias of the deferred join-policy enum.
+crucible/safety/_IsJoinPolicy.h:join_policy_value_t  — A value-type accessor for the deferred JoinPolicy wrapper, deferred with it.
+crucible/safety/_JoinPolicy.h:Abandon  — An alias of the deferred JoinPolicy wrapper at one tier, deferred with it.
+crucible/safety/_JoinPolicy.h:Forget  — An alias of the deferred JoinPolicy wrapper at one tier, deferred with it.
+crucible/safety/_JoinPolicy.h:JoinAll  — An alias of the deferred JoinPolicy wrapper at one tier, deferred with it.
+crucible/safety/_JoinPolicy.h:JoinPolicy  — Deferred with its lattice, because the chain order is wrong. No production file reads it, and the tiers need a written meaning before a port.
+crucible/safety/_JoinPolicy.h:JoinPolicyLattice  — A local alias of the deferred join-policy lattice.
+crucible/safety/_JoinPolicy.h:JoinPolicy_v  — A local alias of the deferred join-policy enum.
+crucible/safety/_JoinPolicy.h:mint_join_policy  — The mint of the deferred JoinPolicy wrapper, deferred with it.
+crucible/safety/_JoinPolicy.h:WaitDeadline  — An alias of the deferred JoinPolicy wrapper at one tier, deferred with it.
 
 # ── concurrent: the parallelism rule, its tier math and the workload helpers ──
 crucible/concurrent/_SubstrateCtxFit.h:SubstrateFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this gate to read, so only its tier math came, as fits_in_tier_v.

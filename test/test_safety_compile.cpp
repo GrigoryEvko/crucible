@@ -24,7 +24,7 @@
 #include <crucible/safety/_Checked.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_ConstantTime.h>
-#include <crucible/safety/Consistency.h>
+#include <crucible/safety/_Consistency.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/_DimensionTraits.h>
@@ -52,13 +52,13 @@
 #include <crucible/safety/_Vendor.h>
 #include <crucible/safety/_Affine.h>
 #include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/IsJoinPolicy.h>
+#include <crucible/safety/_IsJoinPolicy.h>
 #include <crucible/safety/_IsLinear.h>
 #include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/_IsSecret.h>
 #include <crucible/safety/_IsStale.h>
 #include <crucible/safety/_IsTagged.h>
-#include <crucible/safety/JoinPolicy.h>
+#include <crucible/safety/_JoinPolicy.h>
 #include <crucible/safety/_ThreadLocalRef.h>
 #include <crucible/safety/_ScopedView.h>
 #include <crucible/safety/_SealedRefined.h>

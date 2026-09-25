@@ -30,7 +30,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on JoinPolicy::relax<>().
 
-#include <crucible/safety/JoinPolicy.h>
+#include <crucible/safety/_JoinPolicy.h>
 
 using namespace crucible::safety;
 

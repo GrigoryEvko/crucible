@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Consistency.h>
+#include <crucible/safety/_Consistency.h>
 
 #include <type_traits>
 

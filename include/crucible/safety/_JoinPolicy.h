@@ -25,7 +25,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/JoinPolicyLattice.h>
+#include <crucible/algebra/lattices/_JoinPolicyLattice.h>
 
 #include <cstdlib>
 #include <string_view>

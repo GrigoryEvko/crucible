@@ -20,7 +20,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on relax<>().
 
-#include <crucible/safety/Consistency.h>
+#include <crucible/safety/_Consistency.h>
 
 using namespace crucible::safety;
 

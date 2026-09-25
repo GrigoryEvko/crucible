@@ -200,12 +200,6 @@ apply to the row.
 | `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h` | Y | Y | Y | - | token | · | `include/crucible/fixy/Source.h:68` | HS14: 26 |
 | `mint_self_signed_handshake` | `include/crucible/permissions/FederationPermission.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Source.h:67` | HS14: 4 |
 
-## include/crucible/safety/
-
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_join_policy` | `include/crucible/safety/JoinPolicy.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Wrap.h:260` | HS14: 2 |
-
 ## include/crucible/sessions/
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
@@ -411,5 +405,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 128 | 61 | 58 | 9 | 0 | 113 | 41 |
+| old (`include/crucible/`) | 127 | 61 | 57 | 9 | 0 | 113 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 108 | 46 | 60 | 2 | 0 | · | 22 |

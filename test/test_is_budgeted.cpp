@@ -7,12 +7,12 @@
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/safety/_Budgeted.h>
 #include <crucible/safety/_CipherTier.h>
-#include <crucible/safety/Consistency.h>
+#include <crucible/safety/_Consistency.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/_GradedExtract.h>
 #include <crucible/safety/_IsCipherTier.h>
-#include <crucible/safety/IsConsistency.h>
+#include <crucible/safety/_IsConsistency.h>
 #include <crucible/safety/_IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/_IsNumericalTier.h>

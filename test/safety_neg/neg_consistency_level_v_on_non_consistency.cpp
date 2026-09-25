@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsConsistency.h>
+#include <crucible/safety/_IsConsistency.h>
 
 int main() {
     auto t = crucible::safety::extract::consistency_level_v<int>;

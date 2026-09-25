@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/JoinPolicy.h>
+#include <crucible/safety/_JoinPolicy.h>
 
 #include <type_traits>
 

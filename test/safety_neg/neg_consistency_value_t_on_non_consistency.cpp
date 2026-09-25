@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsConsistency.h>
+#include <crucible/safety/_IsConsistency.h>
 
 int main() {
     using V = crucible::safety::extract::consistency_value_t<int>;

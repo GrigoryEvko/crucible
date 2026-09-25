@@ -333,7 +333,7 @@ static_assert(cheat20_admits, "[CHEAT 20 STATUS CHANGED] trait-spec injection on
 
 #include <crucible/safety/_IsAllocClass.h>
 #include <crucible/safety/_IsCipherTier.h>
-#include <crucible/safety/IsConsistency.h>
+#include <crucible/safety/_IsConsistency.h>
 #include <crucible/safety/_IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/_IsHotPath.h>
@@ -831,7 +831,7 @@ static_assert(cheat67_admits, "[CHEAT 67 STATUS CHANGED] trait-spec injection on
 #include <crucible/safety/_IsBarrierGuarded.h>
 #include <crucible/safety/_IsSimdWidthPinned.h>
 #include <crucible/safety/_IsScopedFence.h>
-#include <crucible/safety/IsJoinPolicy.h>
+#include <crucible/safety/_IsJoinPolicy.h>
 #include <crucible/safety/_IsClockSource.h>
 #include <crucible/safety/witness/_IsWitness.h>
 

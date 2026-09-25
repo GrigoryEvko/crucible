@@ -26,7 +26,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on mint_join_policy.
 
-#include <crucible/safety/JoinPolicy.h>
+#include <crucible/safety/_JoinPolicy.h>
 
 using namespace crucible::safety;
 

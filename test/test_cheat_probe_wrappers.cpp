@@ -8,7 +8,7 @@
 // detector that refuses every type would satisfy each rejection below.
 
 #include <crucible/safety/_CipherTier.h>
-#include <crucible/safety/Consistency.h>
+#include <crucible/safety/_Consistency.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/_NumericalTier.h>
@@ -22,7 +22,7 @@
 
 #include <crucible/safety/_IsBudgeted.h>
 #include <crucible/safety/_IsCipherTier.h>
-#include <crucible/safety/IsConsistency.h>
+#include <crucible/safety/_IsConsistency.h>
 #include <crucible/safety/_IsCrash.h>
 #include <crucible/safety/_IsDetSafe.h>
 #include <crucible/safety/_IsEpochVersioned.h>

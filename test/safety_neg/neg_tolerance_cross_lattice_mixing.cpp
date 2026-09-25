@@ -16,7 +16,7 @@
 // [GCC-WRAPPER-TEXT] — same rationale as the consistency-vs-lifetime
 // test.
 
-#include <crucible/algebra/lattices/ConsistencyLattice.h>
+#include <crucible/algebra/lattices/_ConsistencyLattice.h>
 #include <crucible/algebra/lattices/_ToleranceLattice.h>
 
 using namespace crucible::algebra::lattices;

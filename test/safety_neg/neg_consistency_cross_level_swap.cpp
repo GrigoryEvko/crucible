@@ -16,7 +16,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/Consistency.h>
+#include <crucible/safety/_Consistency.h>
 #include <utility>
 
 using namespace crucible::safety;

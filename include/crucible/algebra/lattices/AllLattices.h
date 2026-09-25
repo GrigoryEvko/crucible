@@ -29,7 +29,7 @@
 #include <crucible/algebra/lattices/_CipherTierLattice.h>
 #include <crucible/algebra/lattices/_ClockSourceLattice.h>
 #include <crucible/algebra/lattices/_ConfLattice.h>
-#include <crucible/algebra/lattices/ConsistencyLattice.h>
+#include <crucible/algebra/lattices/_ConsistencyLattice.h>
 #include <crucible/algebra/lattices/_ControlFlowLattice.h>
 #include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/algebra/lattices/_DetSafeLattice.h>
@@ -41,7 +41,7 @@
 #include <crucible/algebra/lattices/_HappensBefore.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
 #include <crucible/algebra/lattices/_HwInstructionLattice.h>
-#include <crucible/algebra/lattices/JoinPolicyLattice.h>
+#include <crucible/algebra/lattices/_JoinPolicyLattice.h>
 #include <crucible/algebra/lattices/_LifetimeLattice.h>
 #include <crucible/algebra/lattices/_MemOrderLattice.h>
 #include <crucible/algebra/lattices/_ProgressLattice.h>

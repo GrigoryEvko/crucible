@@ -28,7 +28,7 @@
 // is a structural C++ property the framework can't make more
 // explicit without subverting `enum class`.
 
-#include <crucible/algebra/lattices/ConsistencyLattice.h>
+#include <crucible/algebra/lattices/_ConsistencyLattice.h>
 #include <crucible/algebra/lattices/_LifetimeLattice.h>
 
 using namespace crucible::algebra::lattices;

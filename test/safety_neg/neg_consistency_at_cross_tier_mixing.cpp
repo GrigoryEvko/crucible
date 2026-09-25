@@ -19,7 +19,7 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection on the nested-
 // struct template identity.
 
-#include <crucible/algebra/lattices/ConsistencyLattice.h>
+#include <crucible/algebra/lattices/_ConsistencyLattice.h>
 
 using namespace crucible::algebra::lattices;
 

@@ -514,40 +514,29 @@ struct CrashClassMismatch : tag_base {
 
 struct ConsistencyMismatch : tag_base {
     static constexpr std::string_view name = "ConsistencyMismatch";
-    static constexpr std::string_view description = "A Forge Phase K BatchPolicy axis pinned at "
-                                                    "Consistency<STRONG> was configured against a runtime "
-                                                    "consistency tier of EVENTUAL, READ_YOUR_WRITES, "
-                                                    "CAUSAL_PREFIX, or BOUNDED_STALENESS (or vice versa: "
-                                                    "EVENTUAL caller invoked a STRONG-required collective).  "
-                                                    "TP / DP / PP / EP / CP axes have different consistency "
-                                                    "requirements per CRUCIBLE.md §L13 5D parallelism rules.";
-    static constexpr std::string_view remediation = "Verify the per-axis consistency declaration in BatchPolicy "
-                                                    "matches the axis's actual requirement: TP must be STRONG "
-                                                    "(weight identity within a step is unconditional); DP can be "
-                                                    "BOUNDED_STALENESS (DiLoCo allows pseudo-gradient drift); "
-                                                    "EP can be EVENTUAL (expert routing converges over rounds).  "
-                                                    "See FORGE.md §K for the per-axis specification.";
+    static constexpr std::string_view description = "Reserved for a replicated value that reaches a consumer at a "
+                                                    "weaker consistency level than the consumer needs.  No binding "
+                                                    "or wrapper in this tree carries a consistency level, so nothing "
+                                                    "emits this category.  The old Consistency wrapper is deferred, "
+                                                    "because its chain order is wrong.";
+    static constexpr std::string_view remediation = "No action is necessary, because nothing emits this category.  "
+                                                    "A consistency level needs a written meaning and a partial order "
+                                                    "before a wrapper can carry it again.";
 
     static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = "Distributed-state consistency tiers (algebra/lattices/"
-                                                         "ConsistencyLattice.h: EVENTUAL ⊑ READ_YOUR_WRITES ⊑ "
-                                                         "CAUSAL_PREFIX ⊑ BOUNDED_STALENESS ⊑ STRONG) are NOT "
-                                                         "interchangeable.  TP/PP axes in 5D parallelism (CRUCIBLE.md "
-                                                         "§L13) require STRONG (every replica sees identical state at "
-                                                         "every step); DP axes tolerate BOUNDED_STALENESS (DiLoCo "
-                                                         "outer-step model).  Configuring a TP axis as EVENTUAL "
-                                                         "produces silently-wrong gradients — the symptom is loss "
-                                                         "divergence after some hours of training, attribution is "
-                                                         "near-impossible without compile-time fencing.";
-    static constexpr std::string_view symptom_pattern = "Surfaces at fleet-join (Canopy reshard) when a peer's "
-                                                        "declared consistency tier doesn't satisfy the partition's "
-                                                        "axis requirement.  Or at BatchPolicy<Axis, Level> "
-                                                        "construction in Forge Phase K when the level lattice fails "
-                                                        "the axis's minimum.  Diagnostic names BOTH the axis and the "
-                                                        "two consistency tiers (caller's vs callee's required).";
-    static constexpr std::string_view correct_example = "BatchPolicy<TpAxis, Consistency::Strong>(...);";
+    static constexpr std::string_view why_this_matters = "The old chain put BOUNDED_STALENESS above READ_YOUR_WRITES.  "
+                                                         "A read that is K steps stale can miss a write that the "
+                                                         "reader made, so bounded staleness does not imply "
+                                                         "read-your-writes, and the levels need a partial order.  "
+                                                         "Bounded staleness also has a carrier already: the staleness "
+                                                         "semiring of fixy/Stale.h.  The category keeps its index, "
+                                                         "because each index is an ordinal pin of the federation "
+                                                         "cache keys.";
+    static constexpr std::string_view symptom_pattern = "Does not surface.  Nothing in this tree emits the category.";
+    static constexpr std::string_view correct_example =
+        "// No example: nothing in this tree carries a consistency level.";
     static constexpr std::string_view violating_example =
-        "BatchPolicy<TpAxis, Consistency::Eventual>(...);  // BREAKS TP";
+        "// No example: nothing in this tree emits ConsistencyMismatch.";
 };
 
 struct LifetimeViolation : tag_base {

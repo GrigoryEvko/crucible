@@ -22,7 +22,7 @@
 #include <crucible/safety/_Budgeted.h>
 #include <crucible/safety/_Saturated.h>
 #include <crucible/safety/_CipherTier.h>
-#include <crucible/safety/Consistency.h>
+#include <crucible/safety/_Consistency.h>
 #include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_Cyclic.h>
@@ -57,7 +57,7 @@
 #include <crucible/safety/_GradedExtract.h>
 #include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/_Hw.h>
-#include <crucible/safety/JoinPolicy.h>
+#include <crucible/safety/_JoinPolicy.h>
 #include <crucible/safety/_CallShape.h>
 #include <crucible/safety/_ControlFlow.h>
 #include <crucible/safety/_GlobalState.h>
