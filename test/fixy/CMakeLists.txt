@@ -2883,6 +2883,64 @@ fixy_neg_compile_test(neg_channel_foreign_tag_permission
   "spsc_tag::Producer<.*TraceTag"
   "spsc_tag::Producer<.*MetaTag")
 
+# ── The channel sessions, the endpoints and the stage bridge ──────────
+#
+# A channel handle bridges to a session of its role, an endpoint binds the
+# handle to a context, and the stage mints consume endpoints by move.
+fixy_test(test_endpoint)
+
+# The session of a channel handle admits each effect that its payload
+# carries, it owns the handle, and the table names only its two channels.
+fixy_neg_compile_test(neg_substrate_session_payload_row_outside_ctx
+  "no matching function for call to .mint_substrate_session<substrate_row_fixture::Channel"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>."
+  "satisfaction of .CtxFitsSubstrateSessionMint<Substr, Dir, Ctx>.")
+fixy_neg_compile_test(neg_substrate_session_lvalue_handle
+  "no matching function for call to .mint_substrate_session<substrate_lvalue_fixture::Channel"
+  "cannot convert .producer.")
+fixy_neg_compile_test(neg_substrate_session_not_bridgeable
+  "no matching function for call to .mint_substrate_session<substrate_table_fixture::FakeChannel"
+  "incomplete type .struct fixy::concurrent::handle_for<substrate_table_fixture::FakeChannel")
+
+# An endpoint binds a handle to an execution context, and its gate is the
+# gate of the session that the endpoint can start.
+fixy_neg_compile_test(neg_endpoint_int_as_ctx
+  "no matching function for call to .mint_endpoint<endpoint_ctx_fixture::Channel"
+  "satisfaction of .IsExecCtx<Ctx>. .with Ctx = int.")
+fixy_neg_compile_test(neg_endpoint_payload_row_outside_ctx
+  "no matching function for call to .mint_endpoint<endpoint_row_fixture::Channel"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>."
+  "satisfaction of .CtxFitsEndpointMint<Substr, Dir, Ctx>.")
+
+# The stage mints consume their endpoints by move, in the direction the
+# body names, one endpoint for each parameter of the body.
+fixy_neg_compile_test(neg_stage_from_endpoints_lvalue_endpoint
+  "no matching function for call to .mint_stage_from_endpoints<stage_lvalue_fixture::body>"
+  "satisfaction of .IsMovedEndpoint<ConsumerEp>.")
+fixy_neg_compile_test(neg_stage_from_endpoints_swapped_direction
+  "no matching function for call to .mint_stage_from_endpoints<stage_swap_fixture::body>"
+  "satisfaction of .IsConsumerEndpoint<ConsumerEp>.")
+fixy_neg_compile_test(neg_mpmc_stage_from_endpoints_arity_mismatch
+  "no matching function for call to .mint_mpmc_stage_from_endpoints<mpmc_arity_fixture::fan_in>"
+  "satisfaction of .CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints ...>.")
+fixy_neg_compile_test(neg_mpmc_stage_from_endpoints_lvalue_endpoint
+  "no matching function for call to .mint_mpmc_stage_from_endpoints<mpmc_lvalue_fixture::fan_in>"
+  "satisfaction of .CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints ...>.")
+fixy_neg_compile_test(neg_swmr_stage_non_writer
+  "no matching function for call to .mint_swmr_stage<swmr_writer_fixture::body>"
+  "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>.")
+fixy_neg_compile_test(neg_swmr_stage_producer_endpoint
+  "no matching function for call to .mint_swmr_stage<swmr_direction_fixture::body>"
+  "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>.")
+
+# The recording wrapper takes an endpoint and a session event log.
+fixy_neg_compile_test(neg_recording_endpoint_non_endpoint
+  "no matching function for call to .mint_recording_endpoint"
+  "is not derived from .fixy::concurrent::Endpoint<Substr, Dir, Ctx>.")
+fixy_neg_compile_test(neg_recording_endpoint_wrong_log_type
+  "no matching function for call to .mint_recording_endpoint"
+  "cannot convert .not_a_log. .type .int.. to type .fixy::session::SessionEventLog&.")
+
 # ── The handle poles and the stage shape ──────────────────────────────
 #
 # Which pole of a channel a handle is, and what shape a pipeline-stage

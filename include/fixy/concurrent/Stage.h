@@ -13,9 +13,9 @@
 // whatever assembles the chain.
 //
 // Old spelling: include/crucible/concurrent/Stage.h.  MpmcStage and
-// SwmrStage have a private constructor and no friend, so no code can build
-// one.  The port of the endpoint bridge adds the factory for each, with its
-// definition and its mint.
+// SwmrStage have a private constructor.  Their one friend is the door of
+// fixy/concurrent/StageEndpointBridge.h, which builds each stage for its
+// mint.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -251,6 +251,10 @@ private:
     producer_handle_type out_;
 };
 
+// The door that builds MpmcStage and SwmrStage.  It is defined in
+// fixy/concurrent/StageEndpointBridge.h.
+class StageEndpointDoor;
+
 // The body's parameters are all consumer handles first and all producer
 // handles after, and the two tuples have to match those two runs exactly.
 
@@ -335,6 +339,8 @@ private:
                                                output_tuple_type&& outputs) noexcept
         : ctx_{ctx}, inputs_{std::move(inputs)}, outputs_{std::move(outputs)} {}
 
+    friend class StageEndpointDoor;
+
     template <std::size_t... Is, std::size_t... Os>
     void run_impl_(std::index_sequence<Is...>, std::index_sequence<Os...>) && noexcept {
         FnPtr(std::move(std::get<Is>(inputs_))..., std::move(std::get<Os>(outputs_))...);
@@ -398,6 +404,8 @@ private:
     [[nodiscard]] explicit constexpr SwmrStage(Ctx const& ctx, consumer_handle_type&& in,
                                                writer_handle_type&& writer) noexcept
         : ctx_{ctx}, in_{std::move(in)}, writer_{std::move(writer)} {}
+
+    friend class StageEndpointDoor;
 
     [[no_unique_address]] Ctx ctx_;
     consumer_handle_type in_;
