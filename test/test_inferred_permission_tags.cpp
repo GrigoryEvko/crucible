@@ -3,7 +3,7 @@
 // one pulls the tag-inference header through the test target's warning
 // matrix and runs its inline smoke body.
 
-#include <crucible/safety/InferredPermissionTags.h>
+#include <crucible/safety/_InferredPermissionTags.h>
 
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/permissions/_Permission.h>

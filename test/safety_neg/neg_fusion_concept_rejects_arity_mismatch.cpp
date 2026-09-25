@@ -6,7 +6,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/Fusion.h>
+#include <crucible/safety/_Fusion.h>
 
 inline int producer(int x) noexcept { return x; }
 inline int consumer_binary(int a, int b) noexcept { return a + b; }

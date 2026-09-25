@@ -20,7 +20,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/UnaryTransform.h>
+#include <crucible/safety/_UnaryTransform.h>
 #include <crucible/safety/_OwnedRegion.h>
 
 namespace {

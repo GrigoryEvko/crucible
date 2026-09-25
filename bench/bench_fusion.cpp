@@ -64,7 +64,7 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <crucible/safety/Fusion.h>
+#include <crucible/safety/_Fusion.h>
 
 #include "bench_harness.h"
 

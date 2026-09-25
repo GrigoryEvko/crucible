@@ -15,14 +15,14 @@
 
 #include <crucible/safety/_PipelineStage.h>
 
-#include <crucible/safety/BinaryTransform.h>
-#include <crucible/safety/ConsumerEndpoint.h>
-#include <crucible/safety/InferredPermissionTags.h>
+#include <crucible/safety/_BinaryTransform.h>
+#include <crucible/safety/_ConsumerEndpoint.h>
+#include <crucible/safety/_InferredPermissionTags.h>
 #include <crucible/safety/_OwnedRegion.h>
-#include <crucible/safety/ProducerEndpoint.h>
-#include <crucible/safety/SwmrReader.h>
-#include <crucible/safety/SwmrWriter.h>
-#include <crucible/safety/UnaryTransform.h>
+#include <crucible/safety/_ProducerEndpoint.h>
+#include <crucible/safety/_SwmrReader.h>
+#include <crucible/safety/_SwmrWriter.h>
+#include <crucible/safety/_UnaryTransform.h>
 
 #include <cstdio>
 #include <cstdlib>

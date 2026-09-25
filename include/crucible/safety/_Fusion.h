@@ -26,7 +26,7 @@
 // semantic.  And legality is not profitability: whether fusing pays
 // for itself is a question for the cost model.
 
-#include <crucible/safety/InferredRow.h>
+#include <crucible/safety/_InferredRow.h>
 #include <crucible/safety/_SignatureTraits.h>
 
 #include <type_traits>

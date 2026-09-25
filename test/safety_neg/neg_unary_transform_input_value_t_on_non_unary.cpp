@@ -16,7 +16,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/UnaryTransform.h>
+#include <crucible/safety/_UnaryTransform.h>
 
 inline void neg_witness_binary(int, int) noexcept {}
 

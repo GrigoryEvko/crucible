@@ -3,10 +3,10 @@
 // one pulls the transform-shape header through the test target's warning
 // matrix and runs its inline smoke body.
 
-#include <crucible/safety/UnaryTransform.h>
+#include <crucible/safety/_UnaryTransform.h>
 
-#include <crucible/safety/BinaryTransform.h>
-#include <crucible/safety/InferredPermissionTags.h>
+#include <crucible/safety/_BinaryTransform.h>
+#include <crucible/safety/_InferredPermissionTags.h>
 #include <crucible/safety/_OwnedRegion.h>
 
 #include <cstdio>

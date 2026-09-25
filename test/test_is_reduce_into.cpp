@@ -2,8 +2,8 @@
 // a header-only file carries are never compiled under the project warning
 // flags until some translation unit pulls the header in.
 
-#include <crucible/safety/IsReduceInto.h>
-#include <crucible/safety/reduce_into.h>
+#include <crucible/safety/_IsReduceInto.h>
+#include <crucible/safety/_reduce_into.h>
 
 #include <bit>
 #include <cstdint>

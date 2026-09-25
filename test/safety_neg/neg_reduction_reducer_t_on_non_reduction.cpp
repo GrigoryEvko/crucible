@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/Reduction.h>
+#include <crucible/safety/_Reduction.h>
 
 inline int neg_witness_returns_int(int) noexcept { return 0; }
 

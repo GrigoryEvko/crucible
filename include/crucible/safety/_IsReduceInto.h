@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/reduce_into.h>
+#include <crucible/safety/_reduce_into.h>
 
 #include <type_traits>
 

@@ -8,7 +8,7 @@
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
 #include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/InferredRow.h>
+#include <crucible/safety/_InferredRow.h>
 
 inline void f_with_alloc(crucible::effects::Alloc, int) noexcept {}
 

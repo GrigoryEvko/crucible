@@ -426,3 +426,93 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 # ── bridges: the machine bridge and the Vigil mode cell ─────────────────
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
+
+# ── safety: the stage-shape recognizers and the signature inference ─────
+# No production file and no header of the new tree classifies a function
+# by its parameter shape, infers a row or a tag set from a signature, or
+# fuses two functions.  The dispatcher that was to read the shapes never
+# existed, so the whole family is dropped rather than ported.
+
+crucible/safety/_BinaryTransform.h:BinaryTransform  — Dropped with its shape family, because no production file and no header of the new tree classifies a function by this shape.
+crucible/safety/_BinaryTransform.h:binary_transform_has_same_tag_v  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_BinaryTransform.h:binary_transform_lhs_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_BinaryTransform.h:binary_transform_lhs_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_BinaryTransform.h:binary_transform_output_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_BinaryTransform.h:binary_transform_rhs_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_BinaryTransform.h:binary_transform_rhs_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_BinaryTransform.h:binary_transform_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.
+crucible/safety/_BinaryTransform.h:is_binary_transform_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_BinaryTransform.h:is_in_place_binary_transform_v  — Dropped with the concept it refines, because no production file and no header of the new tree asks this question.
+crucible/safety/_CanonicalShape.h:CanonicalShape  — Dropped with the shape family it joins, because no production file and no header of the new tree classifies a function by its shape.
+crucible/safety/_CanonicalShape.h:CanonicalShapeKind  — Dropped with the shape family, because no production file and no header of the new tree names the kind of a shape.
+crucible/safety/_CanonicalShape.h:canonical_shape_kind_v  — Dropped with the shape family, because no production file and no header of the new tree names the kind of a shape.
+crucible/safety/_CanonicalShape.h:canonical_shape_name  — Dropped with the shape family, because no production file and no header of the new tree prints the kind of a shape.
+crucible/safety/_CanonicalShape.h:canonical_shape_name_of_v  — Dropped with the shape family, because no production file and no header of the new tree prints the kind of a shape.
+crucible/safety/_CanonicalShape.h:canonical_shape_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.
+crucible/safety/_CanonicalShape.h:is_canonical_shape_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_CanonicalShape.h:is_non_canonical_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_CanonicalShape.h:NonCanonical  — Dropped with the shape family it complements, because no production file and no header of the new tree classifies a function by its shape.
+crucible/safety/_ConsumerEndpoint.h:ConsumerEndpoint  — Dropped with its shape family, because no production file and no header of the new tree classifies a function by this shape.
+crucible/safety/_ConsumerEndpoint.h:consumer_endpoint_handle_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_ConsumerEndpoint.h:consumer_endpoint_region_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_ConsumerEndpoint.h:consumer_endpoint_region_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_ConsumerEndpoint.h:consumer_endpoint_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.
+crucible/safety/_ConsumerEndpoint.h:consumer_endpoint_value_consistent_v  — Dropped with its shape concept, because no production file and no header of the new tree asks this question.
+crucible/safety/_ConsumerEndpoint.h:is_consumer_endpoint_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_Fusion.h:can_fuse_v  — Dropped, because it trusts the purity test of the dropped InferredRow header, and no production file fuses two functions.
+crucible/safety/_Fusion.h:fuse  — Dropped, because it trusts the purity test of the dropped InferredRow header, and no production file fuses two functions.
+crucible/safety/_Fusion.h:IsFusable  — Dropped, because it trusts the purity test of the dropped InferredRow header, and no production file fuses two functions.
+crucible/safety/_InferredPermissionTags.h:function_has_tag_v  — Dropped, because the inference sees only OwnedRegion and Permission parameters, and no production file reads the inferred tag set.
+crucible/safety/_InferredPermissionTags.h:inferred_permission_tags_count_v  — Dropped, because the inference sees only OwnedRegion and Permission parameters, and no production file reads the inferred tag set.
+crucible/safety/_InferredPermissionTags.h:inferred_permission_tags_raw_t  — Dropped, because the inference sees only OwnedRegion and Permission parameters, and no production file reads the inferred tag set.
+crucible/safety/_InferredPermissionTags.h:inferred_permission_tags_smoke_test  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/safety/_InferredPermissionTags.h:inferred_permission_tags_t  — Dropped, because the inference sees only OwnedRegion and Permission parameters, and no production file reads the inferred tag set.
+crucible/safety/_InferredPermissionTags.h:IsTagFreeFunction  — Dropped, because a function that takes a ReadView, a Borrowed or a ScopedView still reads as tag-free, and no production file asks.
+crucible/safety/_InferredPermissionTags.h:is_tag_free_function_v  — Dropped, because a function that takes a ReadView, a Borrowed or a ScopedView still reads as tag-free, and no production file asks.
+crucible/safety/_InferredRow.h:function_has_effect_v  — Dropped, because the inferred row ignores Computation return rows and context rows, and no production file reads it.
+crucible/safety/_InferredRow.h:inferred_row_count_v  — Dropped, because the inferred row ignores Computation return rows and context rows, and no production file reads it.
+crucible/safety/_InferredRow.h:inferred_row_smoke_test  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/safety/_InferredRow.h:inferred_row_t  — Dropped, because the inferred row ignores Computation return rows and context rows, and no production file reads it.
+crucible/safety/_InferredRow.h:IsPureFunction  — Dropped, not ported: it calls a function pure when no parameter is a capability tag, and no production file reads it.
+crucible/safety/_InferredRow.h:is_pure_function_v  — Dropped, not ported: it calls a function pure when no parameter is a capability tag, and no production file reads it.
+crucible/safety/_IsReduceInto.h:IsReduceInto  — Dropped with the reduce_into accumulator, whose only reader outside the old tests was the dropped Reduction shape.
+crucible/safety/_IsReduceInto.h:is_reduce_into_smoke_test  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/safety/_IsReduceInto.h:is_reduce_into_v  — Dropped with the reduce_into accumulator, whose only reader outside the old tests was the dropped Reduction shape.
+crucible/safety/_IsReduceInto.h:reduce_into_accumulator_t  — Dropped with the reduce_into accumulator, whose only reader outside the old tests was the dropped Reduction shape.
+crucible/safety/_IsReduceInto.h:reduce_into_reducer_t  — Dropped with the reduce_into accumulator, whose only reader outside the old tests was the dropped Reduction shape.
+crucible/safety/_ProducerEndpoint.h:is_producer_endpoint_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_ProducerEndpoint.h:ProducerEndpoint  — Dropped with its shape family, because no production file and no header of the new tree classifies a function by this shape.
+crucible/safety/_ProducerEndpoint.h:producer_endpoint_handle_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_ProducerEndpoint.h:producer_endpoint_region_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_ProducerEndpoint.h:producer_endpoint_region_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_ProducerEndpoint.h:producer_endpoint_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.
+crucible/safety/_ProducerEndpoint.h:producer_endpoint_value_consistent_v  — Dropped with its shape concept, because no production file and no header of the new tree asks this question.
+crucible/safety/_reduce_into.h:is_reduction_op_v  — Dropped with the reduce_into accumulator, whose only reader outside the old tests was the dropped Reduction shape.
+crucible/safety/_reduce_into.h:reduce_into  — Dropped, because its only reader outside the old tests was the Reduction shape, which is also dropped.
+crucible/safety/_reduce_into.h:reduce_into_smoke_test  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/safety/_Reduction.h:is_reduction_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_Reduction.h:Reduction  — Dropped with its shape family, because no production file and no header of the new tree classifies a function by this shape.
+crucible/safety/_Reduction.h:reduction_accumulator_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_Reduction.h:reduction_input_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_Reduction.h:reduction_input_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_Reduction.h:reduction_reducer_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_Reduction.h:reduction_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.
+crucible/safety/_SwmrReader.h:is_swmr_reader_function_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_SwmrReader.h:SwmrReader  — Dropped with its shape family. fixy/concurrent/HandleTraits.h classifies reader handles, and no production file classifies reader functions.
+crucible/safety/_SwmrReader.h:swmr_reader_handle_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_SwmrReader.h:swmr_reader_returned_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_SwmrReader.h:swmr_reader_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.
+crucible/safety/_SwmrReader.h:swmr_reader_value_consistent_v  — Dropped with its shape concept, because no production file and no header of the new tree asks this question.
+crucible/safety/_SwmrWriter.h:is_swmr_writer_function_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_SwmrWriter.h:SwmrWriter  — Dropped with its shape family. fixy/concurrent/HandleTraits.h classifies writer handles, and no production file classifies writer functions.
+crucible/safety/_SwmrWriter.h:swmr_writer_handle_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_SwmrWriter.h:swmr_writer_published_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_SwmrWriter.h:swmr_writer_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.
+crucible/safety/_SwmrWriter.h:swmr_writer_value_consistent_v  — Dropped with its shape concept, because no production file and no header of the new tree asks this question.
+crucible/safety/_UnaryTransform.h:is_in_place_unary_transform_v  — Dropped with the concept it refines, because no production file and no header of the new tree asks this question.
+crucible/safety/_UnaryTransform.h:is_unary_transform_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
+crucible/safety/_UnaryTransform.h:UnaryTransform  — Dropped with its shape family, because no production file and no header of the new tree classifies a function by this shape.
+crucible/safety/_UnaryTransform.h:unary_transform_input_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_UnaryTransform.h:unary_transform_input_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_UnaryTransform.h:unary_transform_output_tag_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.
+crucible/safety/_UnaryTransform.h:unary_transform_smoke_test  — An inline smoke test of a dropped shape, so nothing in the new tree calls it.

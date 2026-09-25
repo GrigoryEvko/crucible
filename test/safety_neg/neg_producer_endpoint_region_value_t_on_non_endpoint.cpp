@@ -8,7 +8,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/ProducerEndpoint.h>
+#include <crucible/safety/_ProducerEndpoint.h>
 
 inline void neg_witness_two_ints(int, int) noexcept {}
 

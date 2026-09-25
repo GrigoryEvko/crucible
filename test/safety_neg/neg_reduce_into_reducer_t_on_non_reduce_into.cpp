@@ -19,7 +19,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsReduceInto.h>
+#include <crucible/safety/_IsReduceInto.h>
 
 struct NotReduceInto {
     int accumulator;

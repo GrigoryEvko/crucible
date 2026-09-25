@@ -27,7 +27,7 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution diagnostic naming the
 // deleted copy constructor.
 
-#include <crucible/safety/reduce_into.h>
+#include <crucible/safety/_reduce_into.h>
 
 struct PlusOp {
     constexpr int operator()(int const& a, int const& b) const noexcept { return a + b; }

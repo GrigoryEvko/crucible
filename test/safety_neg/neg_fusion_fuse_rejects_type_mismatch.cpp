@@ -11,7 +11,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/Fusion.h>
+#include <crucible/safety/_Fusion.h>
 
 inline int producer(int x) noexcept { return x * 2; }
 inline int consumer(double x) noexcept { return static_cast<int>(x); }

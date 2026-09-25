@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/Fusion.h>
+#include <crucible/safety/_Fusion.h>
 
 inline int producer(int x) { return x * 2; }  // not noexcept
 inline int consumer(int x) noexcept { return x + 1; }

@@ -19,7 +19,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/BinaryTransform.h>
+#include <crucible/safety/_BinaryTransform.h>
 #include <crucible/safety/_OwnedRegion.h>
 
 namespace {

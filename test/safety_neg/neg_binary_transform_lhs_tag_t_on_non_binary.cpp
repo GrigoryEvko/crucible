@@ -18,7 +18,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/BinaryTransform.h>
+#include <crucible/safety/_BinaryTransform.h>
 
 inline void neg_witness_two_ints(int, int) noexcept {}
 

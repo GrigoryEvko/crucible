@@ -1,4 +1,4 @@
-#include <crucible/safety/InferredRow.h>
+#include <crucible/safety/_InferredRow.h>
 
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>

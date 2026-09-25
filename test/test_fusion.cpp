@@ -5,7 +5,7 @@
 // takes exactly one argument, neither function throws or carries an
 // effect, and the types match with no conversion in between.
 
-#include <crucible/safety/Fusion.h>
+#include <crucible/safety/_Fusion.h>
 
 #include <crucible/effects/_Capabilities.h>
 

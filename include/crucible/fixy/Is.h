@@ -38,7 +38,7 @@
 #include <crucible/safety/IsProducerHandle.h>
 #include <crucible/safety/IsProgress.h>
 #include <crucible/safety/_IsRecipeSpec.h>
-#include <crucible/safety/IsReduceInto.h>
+#include <crucible/safety/_IsReduceInto.h>
 #include <crucible/safety/_IsRefined.h>
 #include <crucible/safety/IsResidencyHeat.h>
 #include <crucible/safety/IsSchedClass.h>

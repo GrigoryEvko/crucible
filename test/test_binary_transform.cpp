@@ -2,11 +2,11 @@
 // it carries are never compiled under the project warning flags until
 // some translation unit pulls it in.
 
-#include <crucible/safety/BinaryTransform.h>
+#include <crucible/safety/_BinaryTransform.h>
 
-#include <crucible/safety/InferredPermissionTags.h>
+#include <crucible/safety/_InferredPermissionTags.h>
 #include <crucible/safety/_OwnedRegion.h>
-#include <crucible/safety/UnaryTransform.h>
+#include <crucible/safety/_UnaryTransform.h>
 
 #include <cstdio>
 #include <cstdlib>

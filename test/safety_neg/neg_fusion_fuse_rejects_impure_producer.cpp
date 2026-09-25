@@ -10,7 +10,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/Fusion.h>
+#include <crucible/safety/_Fusion.h>
 #include <crucible/effects/_Capabilities.h>
 
 inline int producer(::crucible::effects::Alloc, int x) noexcept { return x; }

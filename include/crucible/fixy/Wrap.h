@@ -51,8 +51,8 @@
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/_SwissTableBuffer.h>
-#include <crucible/safety/SwmrReader.h>
-#include <crucible/safety/SwmrWriter.h>
+#include <crucible/safety/_SwmrReader.h>
+#include <crucible/safety/_SwmrWriter.h>
 #include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/GradedExtract.h>
 #include <crucible/safety/BarrierGuarded.h>

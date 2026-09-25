@@ -21,7 +21,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsReduceInto.h>
+#include <crucible/safety/_IsReduceInto.h>
 
 int main() {
     // int is not a reduce_into → alias is ill-formed.

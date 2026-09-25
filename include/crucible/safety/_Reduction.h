@@ -4,7 +4,7 @@
 // elements into one borrowed accumulator.
 
 #include <crucible/safety/_IsOwnedRegion.h>
-#include <crucible/safety/IsReduceInto.h>
+#include <crucible/safety/_IsReduceInto.h>
 #include <crucible/safety/_SignatureTraits.h>
 
 #include <type_traits>

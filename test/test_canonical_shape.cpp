@@ -1,8 +1,8 @@
-#include <crucible/safety/CanonicalShape.h>
+#include <crucible/safety/_CanonicalShape.h>
 
-#include <crucible/safety/InferredPermissionTags.h>
+#include <crucible/safety/_InferredPermissionTags.h>
 #include <crucible/safety/_OwnedRegion.h>
-#include <crucible/safety/reduce_into.h>
+#include <crucible/safety/_reduce_into.h>
 
 #include <cstdio>
 #include <cstdlib>
