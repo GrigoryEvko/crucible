@@ -3,7 +3,7 @@
 // therefore drives a path that must NOT abort.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionMint.h>

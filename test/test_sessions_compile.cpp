@@ -6,7 +6,7 @@
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionAssoc.h>
-#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionContext.h>
 #include <crucible/sessions/_SessionCT.h>

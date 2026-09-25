@@ -5,7 +5,7 @@
 // helper fires a classified static_assert.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/_SessionCheckpoint.h>
 
 using namespace crucible::safety::proto;
 

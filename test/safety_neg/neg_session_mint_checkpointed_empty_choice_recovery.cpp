@@ -28,7 +28,7 @@
 //   "is_empty_choice"          |  "Select<>"
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/_SessionCheckpoint.h>
 
 namespace proto = ::crucible::safety::proto;
 

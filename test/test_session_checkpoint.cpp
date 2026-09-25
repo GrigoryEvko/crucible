@@ -2,7 +2,7 @@
 // wire, once down the commit path and once down the rollback path.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <cstdio>

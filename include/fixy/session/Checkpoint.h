@@ -74,7 +74,7 @@
 //
 // ── What the ported source did wrong ────────────────────────────────
 //
-// crucible/sessions/SessionCheckpoint.h had CheckpointedSession<Base,
+// crucible/sessions/_SessionCheckpoint.h had CheckpointedSession<Base,
 // Rollback>, a choice that each endpoint made alone, and a dual that
 // mirrored the choice onto the peer as a second local choice.  The two
 // endpoints could take different branches, and nothing on the wire told

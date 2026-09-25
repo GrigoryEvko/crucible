@@ -28,7 +28,7 @@
 #include <crucible/permissions/_PermSet.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionGlobal.h>

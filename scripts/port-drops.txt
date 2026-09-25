@@ -1150,6 +1150,19 @@ crucible/sessions/_SessionEventLog.h:default_payload_hash_fn  — The opt-in has
 crucible/sessions/_SessionEventLog.h:StepIdKeyFn  → include/fixy/session/EventLog.h  — Renamed detail::event_log::StepProjection. Cipher.h orders its own log with this key, so its flip must name the projection or define its own key.
 crucible/sessions/_SessionEventLog.h:StepIdLess  → include/fixy/session/EventLog.h  — Renamed detail::event_log::StepLess, the order that the log of SessionEventLog keeps. Cipher.h uses it for its own log, as it uses StepIdKeyFn.
 
+# ── sessions: the checkpoint combinator ─────────────────────────────────
+crucible/sessions/_SessionCheckpoint.h:assert_checkpointed_matches  — Dropped with CheckpointedSession, whose two arms it compared with two expected arms. A coordinated checkpoint has no pair of arms to compare.
+crucible/sessions/_SessionCheckpoint.h:checkpoint_base  — Dropped with CheckpointedSession. The primitive Commit<K> names its continuation as Commit<K>::next, and Roll and Abort have no continuation.
+crucible/sessions/_SessionCheckpoint.h:checkpoint_base_t  — Dropped with checkpoint_base. Commit<K>::next is the continuation after a checkpoint.
+crucible/sessions/_SessionCheckpoint.h:Checkpointed  → include/fixy/session/Checkpoint.h  — The concept is gone. is_checkpoint_primitive recognizes Commit, Roll and Abort, the three labels that replace the combinator.
+crucible/sessions/_SessionCheckpoint.h:CheckpointedSession  → include/fixy/session/Checkpoint.h  — Replaced by the labels Commit, Roll and Abort, which one party selects and the other party receives. The old combinator let each endpoint choose its arm alone.
+crucible/sessions/_SessionCheckpoint.h:checkpoint_rollback  — Dropped with CheckpointedSession. Roll returns both parties to their last checkpoints, so no protocol names a rollback arm.
+crucible/sessions/_SessionCheckpoint.h:checkpoint_rollback_t  — Dropped with checkpoint_rollback, for the same reason.
+crucible/sessions/_SessionCheckpoint.h:is_checkpointed_session  → include/fixy/session/Checkpoint.h  — Replaced by is_checkpoint_primitive, which recognizes the three labels Commit, Roll and Abort.
+crucible/sessions/_SessionCheckpoint.h:is_checkpointed_session_v  — Dropped with is_checkpointed_session. is_checkpoint_primitive has no variable form.
+crucible/sessions/_SessionCheckpoint.h:is_dual_involutive  — Dropped with CheckpointedSession. dual_of maps Commit<K> to Commit of the dual of K and keeps Roll and Abort, so duality stays an involution when it is one on K.
+crucible/sessions/_SessionCheckpoint.h:is_subtype_sync_structural  — Dropped with CheckpointedSession. The new tree states no subtype rule for a checkpoint protocol, and mint_checkpoint_session checks the pair with checkpoint_compliant_v.
+
 # ── safety: the stage-shape recognizers and the signature inference ─────
 # No production file and no header of the new tree classifies a function
 # by its parameter shape, infers a row or a tag set from a signature, or

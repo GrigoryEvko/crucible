@@ -17,7 +17,7 @@
 #include <crucible/Platform.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionEventLog.h>
 
 #include <cstddef>

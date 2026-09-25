@@ -26,7 +26,7 @@
 //   "is_well_formed"           |  "Continue"
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/_SessionCheckpoint.h>
 
 namespace proto = ::crucible::safety::proto;
 
