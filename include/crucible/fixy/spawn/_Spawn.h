@@ -6,7 +6,7 @@
 #include <crucible/permissions/_PermissionFork.h>
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/PermissionTreeGenerator.h>
-#include <crucible/safety/Workload.h>
+#include <crucible/safety/_Workload.h>
 
 #include <cstddef>
 #include <tuple>

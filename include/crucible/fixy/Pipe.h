@@ -4,12 +4,12 @@
 #include <crucible/concurrent/AutoRouter.h>
 #include <crucible/concurrent/AutoSplit.h>
 #include <crucible/concurrent/Endpoint.h>
-#include <crucible/concurrent/ParallelismRule.h>
+#include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/concurrent/_Pipeline.h>
 #include <crucible/concurrent/_Stage.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
-#include <crucible/concurrent/TopologyConstexpr.h>
+#include <crucible/concurrent/_TopologyConstexpr.h>
 #include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_ExecCtx.h>

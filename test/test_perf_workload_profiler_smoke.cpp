@@ -1,4 +1,4 @@
-#include <crucible/concurrent/ParallelismRule.h>
+#include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/perf/Senses.h>

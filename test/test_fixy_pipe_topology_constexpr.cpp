@@ -4,8 +4,8 @@
 // from them unsound on the narrowest host in the fleet. These assertions fail
 // when the floor moves.
 
-#include <crucible/concurrent/SubstrateCtxFit.h>
-#include <crucible/concurrent/TopologyConstexpr.h>
+#include <crucible/concurrent/_SubstrateCtxFit.h>
+#include <crucible/concurrent/_TopologyConstexpr.h>
 #include <crucible/fixy/Pipe.h>
 
 #include <cstddef>

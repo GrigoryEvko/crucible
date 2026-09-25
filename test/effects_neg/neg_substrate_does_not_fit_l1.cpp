@@ -18,7 +18,7 @@
 // pointing at SubstrateFitsCtxResidency / fits_in_tier_v on
 // per_call_working_set_v<S> for L1Resident.
 
-#include <crucible/concurrent/SubstrateCtxFit.h>
+#include <crucible/concurrent/_SubstrateCtxFit.h>
 
 namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;

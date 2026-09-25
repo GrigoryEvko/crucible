@@ -3,7 +3,7 @@
 // tests state invariants that hold on any supported machine instead of
 // pinning the values one machine happens to produce.
 
-#include <crucible/concurrent/ParallelismRule.h>
+#include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/concurrent/_Topology.h>
 
 #include <cstdio>

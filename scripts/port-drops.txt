@@ -427,6 +427,27 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
 
+# ── concurrent: the parallelism rule, its tier math and the workload helpers ──
+crucible/concurrent/_SubstrateCtxFit.h:SubstrateFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this gate to read, so only its tier math came, as fits_in_tier_v.
+crucible/concurrent/_SubstrateCtxFit.h:StorageFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this construction gate to read, so only its tier math came, as fits_in_tier_v.
+crucible/concurrent/_SubstrateCtxFit.h:SubstrateBenefitsFromParallelism  → include/fixy/concurrent/ParallelismRule.h  — It read the byte footprint of the substrate descriptor, which the new tree does not carry, and ParallelismRule::recommend answers the same question from a WorkBudget.
+crucible/concurrent/_SubstrateCtxFit.h:substrate_required_tier_v  → include/fixy/concurrent/ParallelismRule.h  — It read the byte footprint of the substrate descriptor, which the new tree does not carry, so required_tier_for_footprint takes the footprint directly.
+crucible/concurrent/_SubstrateCtxFit.h:substrate_hot_path_required_tier_v  → include/fixy/concurrent/ParallelismRule.h  — It read the per-call footprint of the substrate descriptor, which the new tree does not carry, so required_tier_for_footprint takes the footprint directly.
+crucible/safety/_LocalityHint.h:HasLocalityHint  — Not carried, because no file includes the header, and the rule chooses the NUMA policy from the working set alone.
+crucible/safety/_LocalityHint.h:locality_hint_of_v  — Not carried, because no file includes the header, and the rule chooses the NUMA policy from the working set alone.
+crucible/safety/_LocalityHint.h:LocalityIgnore_t  — A hint tag of the dropped locality hint, whose header no file includes.
+crucible/safety/_LocalityHint.h:LocalityLocal_t  — A hint tag of the dropped locality hint, whose header no file includes.
+crucible/safety/_LocalityHint.h:LocalitySpread_t  — A hint tag of the dropped locality hint, whose header no file includes.
+crucible/safety/_LocalityHint.h:recommend_parallelism_with_locality  — Not carried, because no file includes the header, and a caller hint on the NUMA policy is the kind of unchecked hint the rule refuses.
+crucible/safety/_Workload.h:WorkBudget  → include/fixy/concurrent/ParallelismRule.h  — Folded into fixy::concurrent::WorkBudget, the one budget type of the new tree, whose byte counts saturate.
+crucible/safety/_Workload.h:should_parallelize  → include/fixy/concurrent/ParallelismRule.h  — Folded into ParallelismRule::recommend, whose is_parallel() gives the same answer.
+crucible/safety/_Workload.h:parallel_for_views  → include/fixy/os/Spawn.h  — Ported as fixy::spawn::mint_parallel_for, which recombines the shards rather than rebuild the parent through the forgeable rebuild_parent_.
+crucible/safety/_Workload.h:parallel_reduce_views  — Not carried, because no production file reduced over shards, and the old form rebuilt the parent through the forgeable rebuild_parent_.
+crucible/safety/_Workload.h:parallel_apply_pair  — Not carried, because no production file split two regions together, and the old form rebuilt both parents through the forgeable rebuild_parent_.
+crucible/safety/_Workload.h:parallel_for_views_adaptive  — Not carried, because no production file called it, and a caller asks ParallelismRule::recommend before it calls mint_parallel_for.
+crucible/safety/_Workload.h:parallel_for_smart  — Not carried, because no production file called it, and a caller asks ParallelismRule::recommend for the factor before it calls mint_parallel_for.
+crucible/safety/_Workload.h:log_topology_at_startup  — Not carried, because nothing called it, and fixy::concurrent::Topology::instance().log_summary() prints the same summary.
+
 # ── safety: the detectors of ported bands, ported wrappers and wrappers re-modelled as atoms ──
 crucible/safety/_IsBarrierGuarded.h:barrier_guarded_tier_v  — A tier accessor for the BarrierGuarded wrapper, which the port did not carry. V301 in fixy/Collision.h reads the barrier strength from the grade of a binding.
 crucible/safety/_IsBarrierGuarded.h:barrier_guarded_value_t  — A payload accessor for the BarrierGuarded wrapper, which the port did not carry. The strength is an atom of a binding, and an atom has no payload.

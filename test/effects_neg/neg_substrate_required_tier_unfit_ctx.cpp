@@ -16,7 +16,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at SubstrateFitsCtxResidency.
 
-#include <crucible/concurrent/SubstrateCtxFit.h>
+#include <crucible/concurrent/_SubstrateCtxFit.h>
 
 namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;

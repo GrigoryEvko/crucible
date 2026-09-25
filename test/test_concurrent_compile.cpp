@@ -11,7 +11,7 @@
 #include <crucible/concurrent/_Stage.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/Substrate.h>
-#include <crucible/concurrent/SubstrateCtxFit.h>
+#include <crucible/concurrent/_SubstrateCtxFit.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 
 #include <cstdio>

@@ -7,7 +7,7 @@
 // this file needs a user-level atomic or a spin loop.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/ParallelismRule.h>
+#include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/concurrent/_Topology.h>
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/permissions/_Permission.h>

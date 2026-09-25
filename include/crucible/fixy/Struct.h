@@ -10,7 +10,7 @@
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Simd.h>
-#include <crucible/safety/Workload.h>
+#include <crucible/safety/_Workload.h>
 
 #include <type_traits>
 

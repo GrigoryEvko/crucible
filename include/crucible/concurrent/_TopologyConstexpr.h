@@ -8,7 +8,7 @@
 // stated explicitly. Reading the build host's own cache topology would bake
 // the wrong silicon's numbers into the binary.
 
-#include <crucible/concurrent/SubstrateCtxFit.h>
+#include <crucible/concurrent/_SubstrateCtxFit.h>
 
 #include <cstddef>
 

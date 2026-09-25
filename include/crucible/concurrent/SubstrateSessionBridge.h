@@ -7,7 +7,7 @@
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/Substrate.h>
-#include <crucible/concurrent/SubstrateCtxFit.h>
+#include <crucible/concurrent/_SubstrateCtxFit.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>

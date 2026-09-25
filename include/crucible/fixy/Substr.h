@@ -28,7 +28,7 @@
 #include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/concurrent/_SpscRing.h>
 #include <crucible/concurrent/Substrate.h>
-#include <crucible/concurrent/SubstrateCtxFit.h>
+#include <crucible/concurrent/_SubstrateCtxFit.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>

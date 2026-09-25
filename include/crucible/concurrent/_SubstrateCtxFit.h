@@ -34,7 +34,7 @@
 // means lowering them there and re-auditing the callers.
 
 #include <crucible/concurrent/ExecCtxBridge.h>
-#include <crucible/concurrent/ParallelismRule.h>
+#include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/effects/_ExecCtx.h>

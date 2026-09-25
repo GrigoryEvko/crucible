@@ -4,8 +4,8 @@
 // data cache per core, 1 MiB of second-level per core, and 32 MiB of
 // last-level in total.  Every assertion below pins one of them.
 
-#include <crucible/concurrent/SubstrateCtxFit.h>  // conservative_l*
-#include <crucible/concurrent/TopologyConstexpr.h>
+#include <crucible/concurrent/_SubstrateCtxFit.h>  // conservative_l*
+#include <crucible/concurrent/_TopologyConstexpr.h>
 #include <crucible/fixy/Pipe.h>
 
 #include <cstddef>

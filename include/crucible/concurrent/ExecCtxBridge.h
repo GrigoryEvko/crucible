@@ -9,7 +9,7 @@
 // invert that.  This layer already knows about the effect layer, so
 // adding the surface here costs no new edge.
 
-#include <crucible/concurrent/ParallelismRule.h>
+#include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <cstddef>

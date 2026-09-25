@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/ParallelismRule.h>
+#include <crucible/concurrent/_ParallelismRule.h>
 #include <crucible/concurrent/_SpinLock.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/_Topology.h>

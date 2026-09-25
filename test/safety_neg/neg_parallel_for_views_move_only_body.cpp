@@ -24,7 +24,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_OwnedRegion.h>
-#include <crucible/safety/Workload.h>
+#include <crucible/safety/_Workload.h>
 
 #include <cstdint>
 #include <memory>

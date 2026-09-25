@@ -69,7 +69,7 @@
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/_Wait.h>
 #include <crucible/safety/Witness.h>
-#include <crucible/safety/Workload.h>
+#include <crucible/safety/_Workload.h>
 
 #include <cstdio>
 #include <cstdlib>
