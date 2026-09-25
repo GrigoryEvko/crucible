@@ -7,7 +7,7 @@
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/SessionMint.h>
-#include <crucible/sessions/SessionPatterns.h>
+#include <crucible/sessions/_SessionPatterns.h>
 
 #include <cstdio>
 #include <deque>

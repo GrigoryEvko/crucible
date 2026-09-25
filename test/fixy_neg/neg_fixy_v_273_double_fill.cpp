@@ -16,7 +16,7 @@
 //
 // Expected diagnostic: no member named 'send' / has no member.
 
-#include <crucible/sessions/AsyncPipelineSession.h>
+#include <crucible/sessions/_AsyncPipelineSession.h>
 
 #include <utility>
 

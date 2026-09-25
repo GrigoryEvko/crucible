@@ -51,7 +51,7 @@
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/_Wait.h>
 #include <crucible/sessions/SessionContentAddressed.h>
-#include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/_SessionPermPayloads.h>
 
 #include <type_traits>
 

@@ -23,7 +23,7 @@
 #include <crucible/effects/_Computation.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/AsyncPipelineSession.h>
+#include <crucible/sessions/_AsyncPipelineSession.h>
 #include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>
 #include <crucible/sessions/MpmcChannelSession.h>

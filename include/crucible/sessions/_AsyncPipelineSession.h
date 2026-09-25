@@ -29,9 +29,9 @@
 #include <crucible/safety/_ScopedFence.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionGrade.h>
+#include <crucible/sessions/_SessionGrade.h>
 #include <crucible/sessions/SessionMint.h>
-#include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/_SessionPermPayloads.h>
 
 #include <concepts>
 #include <cstddef>

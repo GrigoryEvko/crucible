@@ -13,7 +13,7 @@
 // Expected diagnostic: constraints not satisfied / no matching function /
 //                      CtxFitsAsyncPipeline.
 
-#include <crucible/sessions/AsyncPipelineSession.h>
+#include <crucible/sessions/_AsyncPipelineSession.h>
 
 #include <utility>
 

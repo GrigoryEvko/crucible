@@ -1,4 +1,4 @@
-#include <crucible/sessions/SessionView.h>
+#include <crucible/sessions/_SessionView.h>
 
 #include <cstdio>
 #include <string_view>

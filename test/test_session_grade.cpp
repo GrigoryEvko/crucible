@@ -6,8 +6,8 @@
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
-#include <crucible/sessions/SessionGrade.h>
-#include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/_SessionGrade.h>
+#include <crucible/sessions/_SessionPermPayloads.h>
 
 #include <cstdio>
 #include <type_traits>

@@ -4,7 +4,7 @@
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
-#include <crucible/sessions/SessionDiagnostic.h>
+#include <crucible/sessions/_SessionDiagnostic.h>
 
 #include <cstdio>
 

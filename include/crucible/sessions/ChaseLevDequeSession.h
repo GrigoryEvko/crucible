@@ -6,7 +6,7 @@
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionMint.h>
-#include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/_SessionPermPayloads.h>
 
 #include <concepts>
 #include <cstddef>

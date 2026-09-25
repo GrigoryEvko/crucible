@@ -294,6 +294,7 @@ crucible/safety/diag/_RowHashFold.h:MemOrder
 crucible/safety/diag/_RowHashFold.h:MemOrderTag
 crucible/safety/diag/_RowHashFold.h:TimeOrdered
 crucible/safety/diag/_RowHashFold.h:Witness
+crucible/sessions/_SessionGrade.h:ContentAddressed
 "
 uncarried_pinned="${PORT_GUARD_UNCARRIED-$uncarried_pinned_default}"
 

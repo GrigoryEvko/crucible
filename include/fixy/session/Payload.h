@@ -148,7 +148,7 @@
 //
 // The crash attack campaign pins each of these on its ledger.
 //
-// Old spelling: include/crucible/sessions/SessionPermPayloads.h,
+// Old spelling: include/crucible/sessions/_SessionPermPayloads.h,
 // namespace crucible::safety::proto.
 
 #include <foundation/Brand.h>

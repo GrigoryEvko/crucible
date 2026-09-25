@@ -13,19 +13,19 @@
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/_SessionDeclassify.h>
 #include <crucible/sessions/SessionDelegate.h>
-#include <crucible/sessions/SessionDiagnostic.h>
+#include <crucible/sessions/_SessionDiagnostic.h>
 #include <crucible/sessions/SessionEventLog.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/SessionPatterns.h>
+#include <crucible/sessions/_SessionPatterns.h>
 #include <crucible/sessions/SessionPayloadSubsort.h>
-#include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/_SessionPermPayloads.h>
 #include <crucible/sessions/SessionQueue.h>
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/SessionSubtypeReason.h>
-#include <crucible/sessions/SessionView.h>
+#include <crucible/sessions/_SessionView.h>
 #include <crucible/sessions/Sessions.h>
 
 #include <cstdio>

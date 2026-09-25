@@ -249,8 +249,6 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_async_pipeline_consumer_session` | `include/crucible/sessions/AsyncPipelineSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_async_pipeline_producer_session` | `include/crucible/sessions/AsyncPipelineSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_calendar_grid_consumer` | `include/crucible/sessions/CalendarGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:266` | HS14: 2 |
 | `mint_calendar_grid_producer` | `include/crucible/sessions/CalendarGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:265` | HS14: 2 |
 | `mint_chainedge_signaler` | `include/crucible/sessions/ChainEdgeSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:202` | HS14: 2 |
@@ -283,7 +281,6 @@ apply to the row.
 | `mint_receiver` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
 | `mint_sender` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 12 |
 | `mint_session_handle` | `include/crucible/sessions/Session.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 25 |
-| `mint_session_view` | `include/crucible/sessions/SessionView.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
 | `mint_sharded_calendar_grid_consumer` | `include/crucible/sessions/ShardedCalendarGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:300` | HS14: 2 |
 | `mint_sharded_calendar_grid_producer` | `include/crucible/sessions/ShardedCalendarGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:299` | HS14: 2 |
 | `mint_sharded_grid_consumer` | `include/crucible/sessions/ShardedGridSession.h` | Y | Y | Y | Y | token | · | `include/crucible/fixy/Substr.h:333` | HS14: 2 |
@@ -472,5 +469,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 196 | 96 | 91 | 9 | 0 | 113 | 41 |
+| old (`include/crucible/`) | 193 | 94 | 90 | 9 | 0 | 110 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 101 | 42 | 58 | 1 | 0 | · | 22 |

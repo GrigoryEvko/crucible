@@ -14,7 +14,7 @@
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
-#include <crucible/sessions/SessionDiagnostic.h>
+#include <crucible/sessions/_SessionDiagnostic.h>
 #include <crucible/sessions/SessionSubtype.h>
 
 #include <cstddef>

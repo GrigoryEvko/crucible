@@ -11,7 +11,7 @@
 // with the framework-controlled prefix [PhiDfViolation_HasEmptyBranch].
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionPhi.h>
+#include <crucible/sessions/_SessionPhi.h>
 
 using namespace crucible::safety::proto;
 

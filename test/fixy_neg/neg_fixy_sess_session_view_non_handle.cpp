@@ -8,7 +8,7 @@
 // Expected diagnostic: static assertion failed / HandleIsAt /
 // mint_session_view.
 
-#include <crucible/sessions/SessionView.h>
+#include <crucible/sessions/_SessionView.h>
 
 namespace sp = crucible::safety::proto;
 

@@ -7,7 +7,7 @@
 // rung is admitted at every weaker rung, and the file checks those
 // implications as well as the individual answers.
 
-#include <crucible/sessions/SessionPhi.h>
+#include <crucible/sessions/_SessionPhi.h>
 
 namespace proto = ::crucible::safety::proto;
 

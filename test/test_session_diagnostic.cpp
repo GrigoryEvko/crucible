@@ -2,7 +2,7 @@
 // What is left for here is the runtime side: reading the strings off each
 // tag, and putting the classified-assertion macro through a call site.
 
-#include <crucible/sessions/SessionDiagnostic.h>
+#include <crucible/sessions/_SessionDiagnostic.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/Session.h>
 

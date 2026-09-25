@@ -14,7 +14,7 @@
 // Expected diagnostic: permission_flow_closes / constraints not satisfied /
 //                      static assertion failed.
 
-#include <crucible/sessions/AsyncPipelineSession.h>
+#include <crucible/sessions/_AsyncPipelineSession.h>
 
 #include <utility>
 

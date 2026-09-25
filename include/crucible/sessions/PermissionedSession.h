@@ -32,7 +32,7 @@
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionGlobal.h>
-#include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/_SessionPermPayloads.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <fixy/session/NetworkModel.h>
 

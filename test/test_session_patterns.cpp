@@ -3,7 +3,7 @@
 // alias is a usable handle position, rather than a type that merely
 // type-checks on its own.
 
-#include <crucible/sessions/SessionPatterns.h>
+#include <crucible/sessions/_SessionPatterns.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <cstdio>

@@ -7,7 +7,7 @@
 // an Offer is not a subtype even though it preserves the branch set.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionGrade.h>
+#include <crucible/sessions/_SessionGrade.h>
 
 #include <cstddef>
 #include <tuple>

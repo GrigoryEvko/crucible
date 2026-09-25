@@ -4,7 +4,7 @@
 #include <crucible/permissions/_PermSet.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
-#include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/_SessionPermPayloads.h>
 
 #include <algorithm>
 #include <array>

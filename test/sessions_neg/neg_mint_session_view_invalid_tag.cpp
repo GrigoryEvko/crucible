@@ -28,7 +28,7 @@
 //   "constraints not satisfied" / "HandleIsAt" / "handle_is_at" /
 //   "no matching function" / "mint_session_view"
 
-#include <crucible/sessions/SessionView.h>
+#include <crucible/sessions/_SessionView.h>
 
 namespace neg_mint_session_view_invalid_tag {
 

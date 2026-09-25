@@ -2,7 +2,7 @@
 
 #include <crucible/sessions/_SessionCT.h>
 #include <crucible/sessions/_SessionDeclassify.h>
-#include <crucible/sessions/SessionView.h>
+#include <crucible/sessions/_SessionView.h>
 
 #include <cstdio>
 

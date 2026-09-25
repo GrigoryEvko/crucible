@@ -21,7 +21,7 @@
 //   "is_dual_involutive"
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionPatterns.h>
+#include <crucible/sessions/_SessionPatterns.h>
 
 namespace proto = ::crucible::safety::proto;
 

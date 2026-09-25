@@ -2,7 +2,7 @@
 // in. Compiling this file runs the included header's own static_asserts
 // under the project warning flags, then drives one round trip per side.
 
-#include <crucible/sessions/AsyncPipelineSession.h>
+#include <crucible/sessions/_AsyncPipelineSession.h>
 
 #include <cstdint>
 #include <cstdio>
