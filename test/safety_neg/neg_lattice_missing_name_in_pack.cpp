@@ -1,9 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-A3-017 audit fixture: pins the load-bearing name-coverage
-// assertion in algebra/lattices/AllLattices.h.  The umbrella ships a
+// This fixture pins the name-coverage assertion in
+// test/test_algebra_compile.cpp.  That file holds a
 // `static_assert((HasLatticeName<Ls> && ...))` over every canonical
-// lattice instantiation; this fixture WITNESSES that the assertion
+// lattice instantiation of the old tree.  This fixture shows that the assertion
 // fires when ANY listed lattice lacks `name()`.
 //
 // Test-only lattice `UnnamedTestLattice` is a structurally-valid
@@ -20,8 +20,8 @@
 // inverts and the discipline is preserved.
 //
 // Expected diagnostic: "static assertion failed" / "static_assert" /
-// "Lattice_Missing_Name" (the local fold-static_assert mirrors the
-// umbrella's, fires on the missing-name lattice).
+// "Lattice_Missing_Name" (the local fold-static_assert has the shape of
+// the one in test_algebra_compile.cpp, and fires on the missing-name lattice).
 
 #include <crucible/algebra/_Lattice.h>
 
@@ -54,7 +54,7 @@ static_assert(alg::lattice_name<UnnamedTestLattice>() == std::string_view{"<unna
               "Sentinel fallback path must remain — A3-017 fires WHEN this is "
               "true AND HasLatticeName<L> is false.");
 
-// Local fold mirroring the umbrella's assertion shape.  Including
+// Local fold with the shape of the name-coverage assertion.  Including
 // UnnamedTestLattice in the pack MUST fail — `HasLatticeName` is false
 // for it, the fold collapses to `false`, the static_assert fires.
 template <typename... Ls>
@@ -65,9 +65,9 @@ template <typename... Ls>
 int main() {
     static_assert(every_lattice_has_name_local<UnnamedTestLattice>(),
                   "fixy-A3-017: [Lattice_Missing_Name] UnnamedTestLattice lacks "
-                  "`name()` — the umbrella's name-coverage fold MUST reject this. "
+                  "`name()` — the name-coverage fold MUST reject this. "
                   "If this assertion ever silently passes, the production fold-"
-                  "static_assert in AllLattices.h has regressed to a vacuous "
+                  "static_assert in test_algebra_compile.cpp has regressed to a vacuous "
                   "fold and lattices without name() can be added unnoticed.");
     return 0;
 }

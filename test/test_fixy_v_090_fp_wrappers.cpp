@@ -3,7 +3,6 @@
 #include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/lattices/_FpModeLattice.h>
-#include <crucible/algebra/lattices/AllLattices.h>
 
 #include <type_traits>
 

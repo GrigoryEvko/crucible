@@ -5,49 +5,124 @@
 // included and each of their smoke tests is called.
 //
 // A new header here needs both: the include and its own call in the
-// list at the bottom.  The umbrella header alone would pull the code in
-// without naming it, and a missing entry would be invisible.
+// list at the bottom.  A new lattice header also needs its lattice in
+// the name-coverage pack below.  No check finds a lattice missing there.
 
-#include <crucible/algebra/Algebra.h>
 #include <crucible/algebra/_Graded.h>
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/_Modality.h>
 #include <crucible/algebra/lattices/_AffinityLattice.h>
-#include <crucible/algebra/lattices/AllLattices.h>
 #include <crucible/algebra/lattices/_AllocClassLattice.h>
+#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
 #include <crucible/algebra/lattices/_BitsBudgetLattice.h>
 #include <crucible/algebra/lattices/_BoolLattice.h>
+#include <crucible/algebra/lattices/_CallShapeLattice.h>
 #include <crucible/algebra/lattices/_ChainLattice.h>
 #include <crucible/algebra/lattices/_CipherTierLattice.h>
+#include <crucible/algebra/lattices/_ClockSourceLattice.h>
 #include <crucible/algebra/lattices/_ConfLattice.h>
 #include <crucible/algebra/lattices/_ConsistencyLattice.h>
+#include <crucible/algebra/lattices/_ControlFlowLattice.h>
 #include <crucible/algebra/lattices/_CrashLattice.h>
+#include <crucible/algebra/lattices/_DetSafeLattice.h>
+#include <crucible/algebra/lattices/_EnumValuePins.h>
 #include <crucible/algebra/lattices/_EpochLattice.h>
+#include <crucible/algebra/lattices/_FpModeLattice.h>
 #include <crucible/algebra/lattices/_FractionalLattice.h>
 #include <crucible/algebra/lattices/_GenerationLattice.h>
+#include <crucible/algebra/lattices/_GlobalStateLattice.h>
 #include <crucible/algebra/lattices/_HappensBefore.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
+#include <crucible/algebra/lattices/_HwInstructionLattice.h>
 #include <crucible/algebra/lattices/_JoinPolicyLattice.h>
 #include <crucible/algebra/lattices/_LifetimeLattice.h>
 #include <crucible/algebra/lattices/_MemOrderLattice.h>
 #include <crucible/algebra/lattices/_MonotoneLattice.h>
 #include <crucible/algebra/lattices/_NumaNodeLattice.h>
 #include <crucible/algebra/lattices/_PeakBytesLattice.h>
+#include <crucible/algebra/lattices/_PinningRequirementLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
 #include <crucible/algebra/lattices/_ProgressLattice.h>
 #include <crucible/algebra/lattices/_QttSemiring.h>
 #include <crucible/algebra/lattices/_RecipeFamilyLattice.h>
 #include <crucible/algebra/lattices/_ResidencyHeatLattice.h>
+#include <crucible/algebra/lattices/_SchedulerPolicyLattice.h>
 #include <crucible/algebra/lattices/_SeqPrefixLattice.h>
+#include <crucible/algebra/lattices/_SimdIsaLattice.h>
+#include <crucible/algebra/lattices/_StackUseLattice.h>
 #include <crucible/algebra/lattices/_StalenessSemiring.h>
+#include <crucible/algebra/lattices/_StdioLattice.h>
+#include <crucible/algebra/lattices/_SuspendBehaviorLattice.h>
+#include <crucible/algebra/lattices/_SyscallFamilyLattice.h>
 #include <crucible/algebra/lattices/_ToleranceLattice.h>
 #include <crucible/algebra/lattices/_TrustLattice.h>
 #include <crucible/algebra/lattices/_VendorLattice.h>
 #include <crucible/algebra/lattices/_WaitLattice.h>
 #include <crucible/algebra/lattices/_WitnessLattice.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
+
+namespace crucible::algebra::lattices::detail::lattice_name_coverage {
+
+// A lattice with no name() member renders as an "<unnamed lattice>"
+// sentinel in every diagnostic that mentions it, which no test sees.
+// The pack below is the guard, and it is maintained by hand: adding a
+// lattice header to the includes above without adding the lattice here
+// does not fire.  The pack is the grep point for that discipline.
+//
+// A templated lattice's name() does not depend on its arguments, so one
+// representative instantiation per template is enough to catch a
+// removed member.
+
+// Stateless tags that exist only to fill a template parameter.  No
+// lattice operation is exercised here.
+struct LatticeNameProbeTruePred {
+    template <typename T>
+    [[nodiscard]] static constexpr bool check(T const&) noexcept {
+        return true;
+    }
+};
+struct LatticeNameProbeSource {};
+struct LatticeNameProbeElement {
+    std::uint32_t v = 0;
+    [[nodiscard]] constexpr bool operator==(LatticeNameProbeElement const&) const noexcept = default;
+};
+
+template <typename... Ls>
+[[nodiscard]] consteval bool every_lattice_has_name() noexcept {
+    return (HasLatticeName<Ls> && ...);
+}
+
+static_assert(
+    every_lattice_has_name<
+        AffinityLattice, AllocClassLattice, BarrierStrengthLattice, BitsBudgetLattice,
+        BoolLattice<LatticeNameProbeTruePred>, CallShapeLattice, CipherTierLattice, ClockSourceLattice, ConfLattice,
+        ConsistencyLattice, ControlFlowLattice, CrashLattice, DetSafeLattice, EpochLattice, FpComplexLayoutLattice,
+        FpConstantRoundingLattice, FpContractLattice, FpDenormalInputLattice, FpFtzLattice, FpInfPolicyLattice,
+        FpLibmPolicyLattice, FpNanPolicyLattice, FpReassociateLattice, FpRoundingLattice, FpTrapMaskLattice,
+        FractionalLattice, GenerationLattice, GlobalStateLattice, HappensBeforeLattice<4>, HotPathLattice,
+        HwInstructionLattice, LifetimeLattice, MemOrderLattice, MonotoneLattice<int, std::less<int>>, NumaNodeLattice,
+        PeakBytesLattice, PinningRequirementLattice, ProductLattice<HotPathLattice, DetSafeLattice>,
+        // The binary product above already covers the template
+        // structurally.  Pinning the eleven-way form as well guards
+        // against an arity refactor slipping past this pack.
+        ProductLattice<FpRoundingLattice, FpFtzLattice, FpContractLattice, FpTrapMaskLattice, FpDenormalInputLattice,
+                       FpNanPolicyLattice, FpInfPolicyLattice, FpComplexLayoutLattice, FpLibmPolicyLattice,
+                       FpReassociateLattice, FpConstantRoundingLattice>,
+        ProgressLattice, QttSemiring, RecipeFamilyLattice, ResidencyHeatLattice, SchedulerPolicyLattice,
+        SeqPrefixLattice<LatticeNameProbeElement>, SimdIsaLattice, StackUseLattice, StalenessSemiring, StdioLattice,
+        SuspendBehaviorLattice, SyscallFamilyLattice, ToleranceLattice, TrustLattice<LatticeNameProbeSource>,
+        VendorLattice, WaitLattice, WitnessLattice>(),
+    "[Lattice_Missing_Name] At least one shipped lattice does not "
+    "satisfy HasLatticeName<L>, so `lattice_name<L>()` returns the "
+    "`<unnamed lattice>` sentinel and every diagnostic naming that "
+    "lattice degrades silently.  Add `static consteval "
+    "std::string_view name() noexcept` to the lattice.");
+
+}  // namespace crucible::algebra::lattices::detail::lattice_name_coverage
 
 namespace {
 

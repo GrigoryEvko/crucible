@@ -1,4 +1,3 @@
-#include <crucible/algebra/lattices/AllLattices.h>
 #include <crucible/algebra/lattices/_FpModeLattice.h>
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/algebra/_Modality.h>
@@ -11,10 +10,9 @@ namespace ca = ::crucible::algebra;
 
 namespace {
 
-// A lattice header that is included but never added to the umbrella's
-// name-coverage pack ships an unnamed lattice, and nothing complains. These
-// assertions reach every one of the eleven through the umbrella alone, so
-// dropping an include from it stops this file compiling.
+// A lattice without a name() member renders as the unnamed sentinel in each
+// diagnostic that names it, and no other test sees that. These assertions
+// hold the member on each of the eleven floating-point lattices.
 static_assert(::crucible::algebra::HasLatticeName<cal::FpRoundingLattice>);
 static_assert(::crucible::algebra::HasLatticeName<cal::FpFtzLattice>);
 static_assert(::crucible::algebra::HasLatticeName<cal::FpContractLattice>);

@@ -5537,8 +5537,8 @@ crucible_neg_compile_test(neg_is_graded_specialization_cvref_nongraded
 
 # ─── A3-017 lattice name-coverage fold (HS14 pair) ─────────────────
 #
-# Two fixtures pin the load-bearing umbrella fold-static_assert in
-# algebra/lattices/AllLattices.h that rejects shipped lattices without
+# Two fixtures pin the name-coverage fold-static_assert in
+# test/test_algebra_compile.cpp that rejects old-tree lattices without
 # a `name()` member.  Companion forms:
 #  (1) `in_pack` — proves the fold itself rejects when an unnamed
 #      lattice is added to the pack.

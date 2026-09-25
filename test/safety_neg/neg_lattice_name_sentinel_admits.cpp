@@ -2,7 +2,7 @@
 //
 // fixy-A3-017 audit fixture (companion to neg_lattice_missing_name_-
 // in_pack.cpp): pins the OPPOSITE side of the gate.  Where the
-// companion proves the umbrella fold REJECTS a lattice without
+// companion proves the name-coverage fold REJECTS a lattice without
 // `name()`, this fixture proves the SENTINEL itself isn't silently
 // promoted to a valid name — `lattice_name<L>()` returning the
 // sentinel-string MUST NOT satisfy `HasLatticeName<L>`.
@@ -16,7 +16,7 @@
 // A future bug could conflate them — e.g., "if lattice_name<L>()
 // returns a non-empty string, treat HasLatticeName as true".  This
 // fixture proves the concept rejects sentinel-only lattices: if the
-// concept ever drifts to "any string return", the umbrella fold goes
+// concept ever drifts to "any string return", the name-coverage fold goes
 // vacuously true on lattices that ship NO `name()` member, exactly
 // the silent diagnostic-degradation that A3-017 forecloses.
 //
@@ -51,8 +51,8 @@ int main() {
     // though lattice_name() returned a non-empty string.  Asserting
     // the opposite MUST fail to compile.  If a future refactor
     // conflates the two and HasLatticeName silently fires `true` on
-    // sentinel-only lattices, the A3-017 fold-assertion in
-    // AllLattices.h becomes vacuously true — silent regression.
+    // sentinel-only lattices, the name-coverage fold-assertion in
+    // test/test_algebra_compile.cpp becomes true for every pack, and nothing reports it.
     static_assert(alg::HasLatticeName<UnnamedTestLattice>,
                   "fixy-A3-017: HasLatticeName MUST be false when the lattice "
                   "ships no `name()` member, regardless of what lattice_name() "
