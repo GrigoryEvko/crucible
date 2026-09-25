@@ -4,7 +4,7 @@
 #include <crucible/safety/_Vendor.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionContentAddressed.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/_SessionGrade.h>
 #include <crucible/sessions/_SessionPermPayloads.h>

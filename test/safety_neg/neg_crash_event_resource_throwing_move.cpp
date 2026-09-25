@@ -32,7 +32,7 @@
 //   "fixy-A2-033" | "nothrow-move-constructible" |
 //   "static assertion failed" | "noexcept"
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 
 namespace proto = crucible::safety::proto;
 

@@ -5,7 +5,7 @@
 // below turns on that single asymmetry.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 #include <cstdio>
 #include <tuple>

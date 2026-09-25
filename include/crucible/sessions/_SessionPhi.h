@@ -28,7 +28,7 @@
 // finite structural witness and confirming one in general does not.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <type_traits>
 
 namespace crucible::safety::proto {

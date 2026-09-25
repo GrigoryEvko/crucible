@@ -4,7 +4,7 @@
 // OneShotFlag.  Declaring that same peer CrashClass::NoThrow is a type
 // contradiction and must be rejected at the handle boundary.
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

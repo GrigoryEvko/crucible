@@ -5,7 +5,7 @@
 // continuation.  A weaker Stop_g<Throw> means the strong recovery path
 // is not present at the protocol boundary.
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

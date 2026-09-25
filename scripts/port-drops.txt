@@ -1949,6 +1949,30 @@ crucible/sessions/_SessionCheckpoint.h:is_checkpointed_session_v  — Dropped wi
 crucible/sessions/_SessionCheckpoint.h:is_dual_involutive  — Dropped with CheckpointedSession. dual_of maps Commit<K> to Commit of the dual of K and keeps Roll and Abort, so duality stays an involution when it is one on K.
 crucible/sessions/_SessionCheckpoint.h:is_subtype_sync_structural  — Dropped with CheckpointedSession. The new tree states no subtype rule for a checkpoint protocol, and mint_checkpoint_session checks the pair with checkpoint_compliant_v.
 
+# ── sessions: crash-stop and the crash transport ────────────────────────
+crucible/bridges/_CrashTransport.h:CrashEvent  — Dropped. On a crash the decorator of fixy/session/CrashTransport.h runs the declared crash branch, whose head Recv<Crash<Peer>, K> gives the crash record.
+crucible/bridges/_CrashTransport.h:CrashEventMatchesSurvivors  — Dropped with CrashEvent and with permission inheritance, which has no carrier.
+crucible/bridges/_CrashTransport.h:CrashWatchedHandle  → include/fixy/session/CrashTransport.h  — Replaced by CrashWatched, one decorator for every head. The old class had one specialization for each head, six in all.
+crucible/bridges/_CrashTransport.h:mint_crash_watched_session  → include/fixy/session/CrashTransport.h  — Replaced by mint_crash_session, whose gate CrashSessionAdmissible also reads the set of reliable roles.
+crucible/bridges/_CrashTransport.h:on_crash  — Dropped. It ran a handler on the error that a crashed handle returned, and a crash now runs the crash branch of the protocol.
+crucible/bridges/_CrashTransport.h:wrap_crash_return  — Dropped. It built the CrashEvent that a crashed handle returned, and the new decorator returns no error on a crash.
+crucible/bridges/_CrashTransport.h:WrapCrashReturnKey  → include/fixy/session/CrashTransport.h  — The passkey of wrap_crash_return, which is dropped. The new crash transport has a session door, CrashSessionDoor, instead.
+crucible/sessions/_SessionCrash.h:assert_every_offer_has_crash_branch_for  → include/fixy/session/CrashTransport.h  — Folded into CrashSessionAdmissible, the gate of mint_crash_session, which requires every_reception_handles_crash_v.
+crucible/sessions/_SessionCrash.h:assert_has_crash_branch_for  — Dropped. The gate of mint_crash_session checks every reception of the protocol, so no check for one Offer is necessary.
+crucible/sessions/_SessionCrash.h:CrashClass  → include/fixy/session/Crash.h  — The using-declaration re-exported the crash class of _CrashLattice.h. The new tree records how a peer stopped as CrashCause, which orders nothing.
+crucible/sessions/_SessionCrash.h:CrashLattice  — The using-declaration re-exported the crash lattice. The new tree has no crash lattice, because the crash cause is metadata and not a grade.
+crucible/sessions/_SessionCrash.h:every_offer_has_crash_branch_for_peer_v  → include/fixy/session/Crash.h  — Replaced by every_reception_handles_crash_v, which also reads the reliable set and refuses a bare Recv from an unreliable peer.
+crucible/sessions/_SessionCrash.h:has_crash_branch_for_peer  — Dropped. every_reception_handles_crash_v checks each reception of the protocol, so no check for one Offer is necessary.
+crucible/sessions/_SessionCrash.h:has_crash_branch_for_peer_v  — Dropped with has_crash_branch_for_peer, for the same reason.
+crucible/sessions/_SessionCrash.h:is_crash  → include/fixy/session/Crash.h  — Renamed is_crash_payload.
+crucible/sessions/_SessionCrash.h:is_crash_v  → include/fixy/session/Crash.h  — Renamed is_crash_payload_v.
+crucible/sessions/_SessionCrash.h:is_dual_involutive  — Dropped. Stop is registered with the protocol registry as self-dual, and fixy/session/Protocol.h makes duality an involution on each registered combinator.
+crucible/sessions/_SessionCrash.h:is_reliable  → include/fixy/session/Crash.h  — Renamed is_in_reliable_set.
+crucible/sessions/_SessionCrash.h:is_reliable_v  — Dropped with is_reliable. is_in_reliable_set has no variable form.
+crucible/sessions/_SessionCrash.h:is_subtype_sync_structural  — Dropped. The old rule made Stop the bottom of the subtype order, and the new registration relates Stop only to itself, as rule Sub-stop says.
+crucible/sessions/_SessionCrash.h:Stop_g  → include/fixy/session/Crash.h  — Replaced by Stop, which carries no crash class. The calculus has no crash classes, and the crash cause travels on the crash record.
+crucible/sessions/_SessionCrash.h:UnreliableAll  → include/fixy/session/Crash.h  — Renamed NoReliableRoles, the empty ReliableSet.
+
 # ── safety: the stage-shape recognizers and the signature inference ─────
 # No production file and no header of the new tree classifies a function
 # by its parameter shape, infers a row or a tag set from a signature, or

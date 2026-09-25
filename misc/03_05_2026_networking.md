@@ -7007,7 +7007,7 @@ Concrete C++26 sketch tying together every piece in §38.4–§38.13 for a singl
 #include <crucible/cntp/mrc/MrcRdmaQp.h>
 #include <crucible/cntp/mrc/MrcConfig.h>
 #include <crucible/cntp/mrc/MrcMr.h>
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/PermissionedSession.h>

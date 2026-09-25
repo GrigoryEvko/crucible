@@ -2,7 +2,7 @@
 // The body of main exists only so the harness has something to execute.
 // The scenario below is a two-peer asynchronous channel.
 
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/SessionQueue.h>
 
 #include <cstdio>

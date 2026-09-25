@@ -20,7 +20,7 @@
 // pointing at CtxFitsProtocol.
 
 #include <crucible/sessions/SessionMint.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/effects/_Computation.h>
 
 namespace eff = crucible::effects;

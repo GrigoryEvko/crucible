@@ -17,7 +17,7 @@
 //   "no matching function for call to 'mint_crash_watched_session<...>'"
 //   "could not match 'SessionHandle<...>' against 'int'"
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 
 namespace proto = crucible::safety::proto;
 using crucible::safety::OneShotFlag;

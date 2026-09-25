@@ -19,11 +19,11 @@
 // to a concrete protocol step before a handle of either kind exists.
 
 #include <crucible/Platform.h>
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/safety/_IsSessionHandle.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/_SessionEventLog.h>
 

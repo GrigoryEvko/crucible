@@ -9,7 +9,7 @@
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/_SessionSubtype.h>
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #endif
 

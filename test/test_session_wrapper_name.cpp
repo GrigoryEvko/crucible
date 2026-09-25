@@ -3,7 +3,7 @@
 // which of them aborted. wrapper_name() spells the derived class's bare
 // template name, and this file pins what each one renders.
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/sessions/Session.h>
 

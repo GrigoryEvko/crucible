@@ -121,7 +121,7 @@
 //
 // ── What the ported source did wrong ────────────────────────────────
 //
-// crucible/sessions/SessionCrash.h made Stop the bottom of the subtype
+// crucible/sessions/_SessionCrash.h made Stop the bottom of the subtype
 // order, carried the crash class as a type parameter ordered by a
 // lattice, checked Offers only (a bare Recv from an unreliable peer
 // passed), never read the reliable set, and let a Select carry a crash

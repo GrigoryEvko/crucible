@@ -33,7 +33,7 @@
 //   "use of deleted function" | "passkey cannot be copied"
 //   | "fixy-A2-032" | "deleted"
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 
 namespace {
 

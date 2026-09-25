@@ -28,7 +28,7 @@
 // Expected diagnostic: [CrashBranch_Missing_In_Tree] / static
 //                       assertion failed.
 
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 using namespace crucible::safety::proto;
 

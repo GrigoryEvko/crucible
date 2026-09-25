@@ -20,7 +20,7 @@
 //   "is_well_formed"
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 namespace proto = ::crucible::safety::proto;
 

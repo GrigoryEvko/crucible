@@ -66,7 +66,7 @@
 //
 // ── What the ported source did wrong ────────────────────────────────
 //
-// crucible/bridges/CrashTransport.h wrapped each head in its own
+// crucible/bridges/_CrashTransport.h wrapped each head in its own
 // specialization, six in all.  On a crash it detached the handle and
 // returned an error, so no declared crash branch ever ran.  Its Offer
 // arm could not receive a label, it had no arm for delegation or

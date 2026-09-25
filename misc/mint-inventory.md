@@ -63,8 +63,6 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_crash_watched_session(PermissionedSessionHandle<Proto,PS,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_crash_watched_session(SessionHandle<Proto,Resource,LoopCtx>,OneShotFlag&)` | `include/crucible/bridges/CrashTransport.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 12 |
 | `mint_recording_session(CrashWatchedHandle<Proto,Resource,PeerTag,C,LoopCtx,PS>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 12 |
 | `mint_recording_session(SessionHandle<Proto,Resource,LoopCtx>,SessionEventLog&,RoleTagId,RoleTagId)` | `include/crucible/bridges/RecordingSessionHandle.h` | Y | Y | Y | Y (taut) | token | · | [✗ NO-FIXY] | HS14: 12 |
@@ -390,5 +388,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 117 | 57 | 51 | 9 | 0 | 106 | 41 |
+| old (`include/crucible/`) | 115 | 57 | 49 | 9 | 0 | 104 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 108 | 46 | 60 | 2 | 0 | · | 22 |

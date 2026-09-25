@@ -10,7 +10,7 @@
 #include <crucible/sessions/_SessionContentAddressed.h>
 #include <crucible/sessions/SessionContext.h>
 #include <crucible/sessions/_SessionCT.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionDeclassify.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/_SessionDiagnostic.h>

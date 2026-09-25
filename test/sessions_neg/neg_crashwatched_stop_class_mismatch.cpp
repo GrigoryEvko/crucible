@@ -4,7 +4,7 @@
 // continuation.  Bare Stop aliases Stop_g<Abort>; the mismatch must
 // remain visible at compile time.
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

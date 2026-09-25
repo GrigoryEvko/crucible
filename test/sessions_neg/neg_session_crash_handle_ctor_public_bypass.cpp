@@ -23,7 +23,7 @@
 // MUST contain "is private".
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 #include <utility>
 

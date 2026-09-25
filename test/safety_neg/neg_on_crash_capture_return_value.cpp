@@ -44,7 +44,7 @@
 //   "cannot deduce auto", "cannot declare variable of type void",
 //   "fixy-A2-030".
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/permissions/_PermissionInherit.h>
 
 #include <expected>

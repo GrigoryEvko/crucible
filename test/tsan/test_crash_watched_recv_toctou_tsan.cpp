@@ -47,7 +47,7 @@
 // Runs under every preset, and under the `tsan` preset with
 // -fsanitize=thread through the shared crucible_test factory.
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/sessions/SessionMint.h>
 #include "../test_assert.h"
 

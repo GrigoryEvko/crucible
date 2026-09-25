@@ -6,7 +6,7 @@
 // aggregate walker fires the framework-controlled
 // "[CrashBranch_Missing_In_Tree]" diagnostic.
 
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 using namespace crucible::safety::proto;
 

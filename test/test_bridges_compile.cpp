@@ -2,7 +2,7 @@
 // matrix so their static_asserts run.
 
 #include <crucible/bridges/Bridges.h>
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/bridges/_EndpointMint.h>
 #include <crucible/bridges/_MachineSessionBridge.h>
 #include <crucible/bridges/RecordingSessionHandle.h>

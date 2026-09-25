@@ -32,7 +32,7 @@
 //   "is private within this context"  |  "private"  |
 //   "WrapCrashReturnKey"
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 
 #include <tuple>
 

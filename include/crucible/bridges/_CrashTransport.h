@@ -40,7 +40,7 @@
 #include <crucible/safety/_IsSessionHandle.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 #include <atomic>
 #include <cstddef>

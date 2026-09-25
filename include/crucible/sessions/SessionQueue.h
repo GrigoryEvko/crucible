@@ -22,7 +22,7 @@
 // system has a fixed capacity, so the bound is both true and necessary.
 
 #include <crucible/Platform.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 #include <cstddef>
 #include <type_traits>

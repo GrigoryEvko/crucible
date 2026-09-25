@@ -5,7 +5,7 @@
 // L8 SessionCrash.h's assertion helper fires.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 using namespace crucible::safety::proto;
 

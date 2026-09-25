@@ -20,7 +20,7 @@
 //   "no matching function for call to 'mint_crash_watched_session(...)'"
 //   or "couldn't infer template argument 'PeerTag'".
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionMint.h>
 

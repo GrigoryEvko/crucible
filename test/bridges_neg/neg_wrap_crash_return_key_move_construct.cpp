@@ -34,7 +34,7 @@
 //   "use of deleted function" | "passkey cannot be moved"
 //   | "fixy-A2-032" | "deleted"
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 
 #include <utility>
 

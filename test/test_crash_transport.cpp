@@ -1,4 +1,4 @@
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <atomic>

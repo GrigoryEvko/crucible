@@ -1,7 +1,7 @@
 // Every claim here is a static_assert.  main() only prints, so that the
 // harness records a pass.
 
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 
 #include <cstdio>

@@ -4,7 +4,7 @@
 // whose SurvivorTags pack omits any tag from survivors_t<PeerTag>.
 // on_crash() enforces the equality before invoking the handler.
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 
 #include <expected>
 #include <utility>

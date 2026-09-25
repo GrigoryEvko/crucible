@@ -4,7 +4,7 @@
 // umbrella keeps the whole-surface include unchanged, while direct
 // consumers of SessionPersistence.h skip the heavy transitive.
 #include <crucible/Cipher.h>
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/bridges/_MachineSessionBridge.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/bridges/_SessionPersistence.h>

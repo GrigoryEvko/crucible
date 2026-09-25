@@ -23,7 +23,7 @@
 //                       assertion failed.
 
 #include <crucible/sessions/_SessionCheckpoint.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 
 using namespace crucible::safety::proto;
 

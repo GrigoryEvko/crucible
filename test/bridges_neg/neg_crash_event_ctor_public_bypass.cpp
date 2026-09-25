@@ -45,7 +45,7 @@
 // Expected diagnostic family (one or more should match):
 //   "is private within this context"  |  "private"
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 
 #include <tuple>
 #include <utility>

@@ -5,7 +5,7 @@
 // exact Stop_g boundary so recovery code cannot silently observe a
 // different crash contract than the protocol declared.
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

@@ -4,7 +4,7 @@
 // resource_type.  A mismatched resource would make CrashEvent lie about
 // the recovered runtime state.
 
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/sessions/SessionMint.h>
 
 #include <utility>

@@ -50,7 +50,7 @@
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 

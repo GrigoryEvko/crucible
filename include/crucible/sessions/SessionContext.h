@@ -3,7 +3,7 @@
 #include <crucible/Platform.h>
 #include <crucible/permissions/_PermSet.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionPermPayloads.h>
 
 #include <algorithm>

@@ -6,7 +6,7 @@
 // free functions in a dedicated header the include cost is opt-in.
 
 #include <crucible/Platform.h>
-#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/_CrashTransport.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/concurrent/_Endpoint.h>
 #include <crucible/handles/_OneShotFlag.h>
