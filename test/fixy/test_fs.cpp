@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -283,6 +284,66 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
+// write_full puts every byte of the span, file_size reports them, and
+// read_full returns them.  A span longer than the file stops at the end
+// of the file, and an empty handle is refused with EBADF.
+[[nodiscard]] int full_reads_and_writes_round_trip(const ScratchDir& scratch) {
+    IoBlockCtx ctx{eff::testing::test()};
+    std::uint8_t pattern[kPayloadBytes];
+    fill_pattern(pattern, 4);
+    const std::string path = scratch.file("full");
+
+    auto writer = fs::mint_file<fixy::atom::fs::mode<fs::open_mode::WriteTruncate>>(ctx, sanitized(path));
+    if (!writer) {
+        std::fprintf(stderr, "mint_file WriteTruncate failed (%s)\n", writer.error().message().c_str());
+        return 1;
+    }
+    if (auto written = fs::write_full(ctx, writer->peek(), std::as_bytes(std::span{pattern})); !written) {
+        std::fprintf(stderr, "write_full failed (%s)\n", written.error().message().c_str());
+        return 1;
+    }
+    const auto size = fs::file_size(ctx, writer->peek());
+    if (!size || *size != static_cast<::off_t>(kPayloadBytes)) {
+        std::fprintf(stderr, "file_size did not report the bytes that write_full put\n");
+        return 1;
+    }
+    { auto closed = std::move(*writer).consume(); (void)closed; }
+
+    auto reader = fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadOnly>>(ctx, sanitized(path));
+    if (!reader) {
+        std::fprintf(stderr, "mint_file ReadOnly failed (%s)\n", reader.error().message().c_str());
+        return 1;
+    }
+    std::byte readback[kPayloadBytes * 2]{};
+    const auto got = fs::read_full(ctx, reader->peek(), std::span{readback});
+    if (!got || *got != kPayloadBytes) {
+        std::fprintf(stderr, "read_full did not stop at the end of the file\n");
+        return 1;
+    }
+    if (std::memcmp(readback, pattern, kPayloadBytes) != 0) {
+        std::fprintf(stderr, "read_full returned bytes that write_full did not put\n");
+        return 1;
+    }
+
+    const fs::OwnedFd empty{};
+    const auto refused = fs::read_full(ctx, empty, std::span{readback});
+    if (refused || refused.error().value() != EBADF) {
+        std::fprintf(stderr, "read_full on an empty handle was not refused with EBADF\n");
+        return 1;
+    }
+    const auto refused_write = fs::write_full(ctx, empty, std::as_bytes(std::span{pattern}));
+    if (refused_write || refused_write.error().value() != EBADF) {
+        std::fprintf(stderr, "write_full on an empty handle was not refused with EBADF\n");
+        return 1;
+    }
+    const auto refused_size = fs::file_size(ctx, empty);
+    if (refused_size || refused_size.error().value() != EBADF) {
+        std::fprintf(stderr, "file_size on an empty handle was not refused with EBADF\n");
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -295,5 +356,6 @@ int main() {
     if (const int rc = cold_writer_commit_succeeds_where_it_was_enosys(scratch); rc != 0) return rc;
     if (const int rc = no_replace_commit_refuses_an_existing_target(scratch); rc != 0) return rc;
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
+    if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
     return 0;
 }

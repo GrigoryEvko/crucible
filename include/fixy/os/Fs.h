@@ -71,9 +71,11 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdio>
 #include <expected>
 #include <meta>
+#include <span>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -496,6 +498,71 @@ template <eff::IsExecCtx Ctx>
         return std::unexpected{std::error_code{fd.error(), std::system_category()}};
     }
     return Dirfd{std::move(*fd)};
+}
+
+// The three calls below read and write through a handle that is open.
+// A signal that interrupts a read or a write restarts it, and every other
+// error returns.  read_full stops at the end of the file, so it returns
+// fewer bytes than the span holds only there.
+//
+// Old spelling: read_full, write_full and file_size in
+// include/crucible/handles/FileHandle.h.  Each took the old FileHandle and
+// no context.  Each takes an OwnedFd here, and the context the other calls
+// in this header take, because each call can park the caller on the disk.
+//
+// Not mints: these act on an existing handle and synthesize nothing.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline std::expected<std::size_t, std::error_code> read_full(Ctx const&, const OwnedFd& handle,
+                                                                           std::span<std::byte> buffer) noexcept {
+    if (!handle.is_open()) {
+        return std::unexpected{std::error_code{EBADF, std::system_category()}};
+    }
+    std::size_t total = 0;
+    while (total < buffer.size()) {
+        const ::ssize_t transferred =
+            ::read(handle.get(), buffer.data() + total, buffer.size() - total);  // SYSCALL-CAP-OK: read_full ctx-gate (CtxAdmitsFs)
+        if (transferred == 0) break;
+        if (transferred < 0) {
+            if (errno == EINTR) continue;
+            return std::unexpected{std::error_code{errno, std::system_category()}};
+        }
+        total += static_cast<std::size_t>(transferred);
+    }
+    return total;
+}
+
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline std::expected<void, std::error_code> write_full(Ctx const&, const OwnedFd& handle,
+                                                                     std::span<const std::byte> buffer) noexcept {
+    if (!handle.is_open()) {
+        return std::unexpected{std::error_code{EBADF, std::system_category()}};
+    }
+    std::size_t total = 0;
+    while (total < buffer.size()) {
+        const ::ssize_t transferred =
+            ::write(handle.get(), buffer.data() + total, buffer.size() - total);  // SYSCALL-CAP-OK: write_full ctx-gate (CtxAdmitsFs)
+        if (transferred < 0) {
+            if (errno == EINTR) continue;
+            return std::unexpected{std::error_code{errno, std::system_category()}};
+        }
+        total += static_cast<std::size_t>(transferred);
+    }
+    return {};
+}
+
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline std::expected<::off_t, std::error_code> file_size(Ctx const&, const OwnedFd& handle) noexcept {
+    if (!handle.is_open()) {
+        return std::unexpected{std::error_code{EBADF, std::system_category()}};
+    }
+    struct ::stat status{};
+    if (::fstat(handle.get(), &status) < 0) {  // SYSCALL-CAP-OK: file_size ctx-gate (CtxAdmitsFs)
+        return std::unexpected{std::error_code{errno, std::system_category()}};
+    }
+    return status.st_size;
 }
 
 // The read-only open, spelled once.  The old header exported the same
