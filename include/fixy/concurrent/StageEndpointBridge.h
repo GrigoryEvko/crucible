@@ -22,6 +22,7 @@
 #include <fixy/concurrent/StageShape.h>
 
 #include <foundation/Platform.h>
+#include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/diag/RowMismatch.h>
 #include <foundation/effects/Ctx.h>
@@ -421,3 +422,14 @@ static_assert(
 }  // namespace detail::stage_endpoint_bridge_self_test
 
 }  // namespace fixy::concurrent
+
+// An endpoint of either direction is an endpoint.  The handle that it owns
+// is not, and the trait sees a reference as no endpoint: IsEndpoint strips
+// the reference before it asks.
+template <>
+struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_endpoint> {
+    using accepts = witnesses<::fixy::concurrent::detail::stage_endpoint_bridge_self_test::ConsEp,
+                              ::fixy::concurrent::detail::stage_endpoint_bridge_self_test::ProdEp>;
+    using refuses = witnesses<int, ::fixy::concurrent::detail::stage_endpoint_bridge_self_test::Ch1::ConsumerHandle,
+                              ::fixy::concurrent::detail::stage_endpoint_bridge_self_test::ConsEp&>;
+};

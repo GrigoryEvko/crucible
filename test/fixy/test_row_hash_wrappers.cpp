@@ -43,9 +43,11 @@
 #include <fixy/Bits.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Budgeted.h>
+#include <fixy/CanonicalOrder.h>
 #include <fixy/Checked.h>
 #include <fixy/Collision.h>
 #include <fixy/concurrent/ChaseLevDeque.h>
+#include <fixy/concurrent/Endpoint.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
@@ -55,7 +57,9 @@
 #include <fixy/concurrent/RingValue.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/concurrent/Stage.h>
+#include <fixy/concurrent/StageEndpointBridge.h>
 #include <fixy/concurrent/StageShape.h>
+#include <fixy/concurrent/SubstrateSessionBridge.h>
 #include <fixy/concurrent/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <fixy/ConstantTime.h>
@@ -161,9 +165,11 @@
 #include <foundation/diag/Runtime.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
+#include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
+#include <foundation/effects/Resources.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Fwd.h>
 #include <foundation/permissions/Permission.h>
@@ -594,6 +600,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::foundation::permissions,
     ^^::foundation::simd,
     ^^::foundation::effects,
+    ^^::foundation::effects::resource,
     ^^::fixy,
     ^^::fixy::session,
     ^^::fixy::session::vigil_mode,
@@ -691,6 +698,9 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::refined_algebra, "refinement predicate combinators, which are grade vocabulary"},
     {^^::fixy::collision, kMachinery},
     {^^::fixy::corpus, kMachinery},
+    {^^::fixy::canonical_order, kMachinery},
+    {^^::fixy::canonical_order::layer, "the names of the layers of the canonical wrapper order: a position is read "
+                                       "from each name at compile time, and none of them is a value"},
     {^^::fixy::spin::spinlock_size_probe_, "a layout probe for a static assertion"},
     {^^::fixy::row_discipline, "discipline identities, declared and never defined; they name claims"},
     {^^::fixy::refined::row_discipline, "discipline identities, declared and never defined; they name claims"},
@@ -703,6 +713,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::effects::ctx_cap, kGradeVocabulary},
     {^^::foundation::effects::host, "the owners a context is minted for, never passed as values"},
     {^^::foundation::effects::testing, "the test context's witness, never passed as a value"},
+    {^^::foundation::effects::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::permissions::tag, kGradeVocabulary},
     {^^::foundation::permissions::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::brand, "brands, which are identities of instances and never fold"},
@@ -773,6 +784,7 @@ struct NamespaceVerdict {
 
 inline constexpr NamespaceVerdict kNamespaceVerdict = namespace_verdict();
 
+
 static_assert(kNamespaceVerdict.declaring > 0, "no namespace under fixy or foundation declares a class, so the "
                                                "namespace census proves nothing");
 static_assert(kNamespaceVerdict.disposed == kNamespaceVerdict.declaring,
@@ -835,6 +847,33 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^fe::ExecCtx, ^^fe::ExecCtx<fe::ctx_cap::Fg, fe::Row<>>},
     {^^fe::Computation, ^^fe::Computation<fe::Row<>, int>},
     {^^fe::Capability, ^^fe::Capability<fe::Effect::Alloc, fe::Bg>},
+    {^^fe::ConcurrentRow, ^^fe::ConcurrentRow<fe::resource::SmBudget<32>>},
+
+    // Each resource tag folds its own identity, so a concurrent row that
+    // names one axis takes a slot apart from a row that names another.
+    {^^fe::resource::SmBudget, ^^fe::resource::SmBudget<1>},
+    {^^fe::resource::WarpSchedulerSlots, ^^fe::resource::WarpSchedulerSlots<1>},
+    {^^fe::resource::RegistersPerWarp, ^^fe::resource::RegistersPerWarp<1>},
+    {^^fe::resource::SmemBytes, ^^fe::resource::SmemBytes<1>},
+    {^^fe::resource::L2Bytes, ^^fe::resource::L2Bytes<1>},
+    {^^fe::resource::HbmBytes, ^^fe::resource::HbmBytes<1>},
+    {^^fe::resource::HbmBandwidth, ^^fe::resource::HbmBandwidth<1>},
+    {^^fe::resource::NvlinkBandwidth, ^^fe::resource::NvlinkBandwidth<1>},
+    {^^fe::resource::PcieBandwidth, ^^fe::resource::PcieBandwidth<1>},
+    {^^fe::resource::NicQueueBudget, ^^fe::resource::NicQueueBudget<1>},
+    {^^fe::resource::NicRingDepth, ^^fe::resource::NicRingDepth<1>},
+    {^^fe::resource::NicQp, ^^fe::resource::NicQp<1>},
+    {^^fe::resource::NicCq, ^^fe::resource::NicCq<1>},
+    {^^fe::resource::NicMr, ^^fe::resource::NicMr<1>},
+    {^^fe::resource::SwitchEgressBw, ^^fe::resource::SwitchEgressBw<1>},
+    {^^fe::resource::SwitchBufferCells, ^^fe::resource::SwitchBufferCells<1>},
+    {^^fe::resource::TcamEntries, ^^fe::resource::TcamEntries<1>},
+    {^^fe::resource::CpuCoreBudget, ^^fe::resource::CpuCoreBudget<1>},
+    {^^fe::resource::LlcBytes, ^^fe::resource::LlcBytes<1>},
+    {^^fe::resource::PowerWatts, ^^fe::resource::PowerWatts<1>},
+    {^^fe::resource::ThermalCelsius, ^^fe::resource::ThermalCelsius<1>},
+    {^^fe::resource::RackPowerKw, ^^fe::resource::RackPowerKw<1>},
+    {^^fe::resource::CarbonGramsPerKwh, ^^fe::resource::CarbonGramsPerKwh<1>},
 
     {^^::fixy::BorrowedRef, ^^::fixy::BorrowedRef<int>},
     {^^::fixy::Borrowed, ^^BorrowedInt},
@@ -965,6 +1004,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^fe::cap_permitted_row, kMetafunction},
     {^^fe::is_exec_ctx, kMetafunction},
     {^^fe::cap_mint_key, kPasskey},
+    {^^fe::ResourceTagDescriptor, kPayload},
+    {^^fe::concurrent_row_value, kMetafunction},
+    {^^fe::concurrent_row_descriptors, kMetafunction},
 
     {^^::fixy::axis_traits, kMetafunction},
     {^^::fixy::Bits, kPayload},
@@ -1191,6 +1233,19 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::StageEdge, kGraphShape},
     {^^::fixy::concurrent::StageGraph, kGraphShape},
     {^^::fixy::concurrent::is_stage_inline_safe, kMetafunction},
+    {^^::fixy::concurrent::handle_for, kMetafunction},
+    {^^::fixy::concurrent::default_proto_for, kMetafunction},
+    {^^::fixy::concurrent::Endpoint,
+     "a builder that binds a channel handle to a context once: a stage mint or a session mint consumes it, the "
+     "stage or the session handle that comes out folds, and an endpoint is never a template argument of a kernel "
+     "signature"},
+    {^^::fixy::concurrent::EndpointPack,
+     "a list of endpoint types that the stage gate reads at compile time: it has no member, and it is never a value"},
+    {^^::fixy::concurrent::EndpointDoor,
+     "the door of the endpoint mint: it has static members only, no object of it exists, and it is never a value"},
+    {^^::fixy::concurrent::StageEndpointDoor,
+     "the door of the stage mints that take endpoints: it has static members only, no object of it exists, and it "
+     "is never a value"},
 
     {^^::fixy::handle::Once, kDescriptor},
     {^^::fixy::handle::OneShotFlag, kDescriptor},
@@ -1224,6 +1279,7 @@ inline constexpr StatedZero kZeros[] = {
 };
 
 inline constexpr Verdict kVerdict = run<kCensusNamespaces, kCarriers, kZeros>();
+
 
 static_assert(kVerdict.roster > 0, "the reflected carrier roster is empty, so the census proves nothing");
 static_assert(kVerdict.proven == kVerdict.roster,

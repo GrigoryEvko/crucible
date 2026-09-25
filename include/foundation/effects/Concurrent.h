@@ -18,6 +18,7 @@
 //
 // Old spelling: include/crucible/effects/Concurrent.h.
 
+#include <foundation/contracts/Armed.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Resources.h>
 
@@ -760,3 +761,12 @@ static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>> != row_hash_c
 static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<0>>> == row_hash_contribution_v<EmptyConcurrentRow>);
 
 }  // namespace foundation::effects::detail::row_hash_concurrent_row_self_test
+
+// A concurrent row is a ConcurrentRow over resource tags, empty or not.  A
+// resource tag alone is no row.
+template <>
+struct foundation::contracts::armed_cell<::foundation::effects::detail::is_concurrent_row> {
+    using accepts = witnesses<::foundation::effects::ConcurrentRow<>,
+                              ::foundation::effects::ConcurrentRow<::foundation::effects::resource::SmBudget<32>>>;
+    using refuses = witnesses<int, ::foundation::effects::resource::SmBudget<32>>;
+};
