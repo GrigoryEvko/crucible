@@ -38,6 +38,7 @@ foundation_test(test_lattices_bands)
 foundation_test(test_lattices_counters)
 foundation_test(test_counter_clock_attacks)
 foundation_test(test_effects_core)
+foundation_test(test_effects_resources)
 foundation_test(test_ctx)
 foundation_test(test_capability)
 foundation_test(test_computation)
@@ -152,6 +153,20 @@ foundation_neg_compile_test(neg_strong_counter_count_is_private
 foundation_neg_compile_test(neg_strong_counter_from_integer
   "element_type::element_type\\(uint64_t\\) .with Tag = foundation::algebra::lattices::counter_tags::epoch.* is private within this context"
   "StrongCounterLattice<Tag>::element_type::element_type")
+
+# A concurrent row admits resource tags only, a pair whose sum wraps on
+# one axis is not schedulable together, and a tag whose kind names no
+# axis is not a tag.  The second regex of each names the constraint
+# that refused.
+foundation_neg_compile_test(neg_concurrent_row_refuses_a_non_tag
+  "template constraint failure for .template<class ... Tags>"
+  "requires \\(\\.\\.\\. && ResourceTag<Tags>\\) struct foundation::effects::ConcurrentRow")
+foundation_neg_compile_test(neg_concurrent_rows_that_wrap_are_not_schedulable
+  "constraints not satisfied"
+  "satisfaction of .ConcurrentlySchedulable<First, Second>.")
+foundation_neg_compile_test(neg_resource_tag_refuses_a_forged_kind
+  "constraints not satisfied"
+  "nested requirement .IsResourceKind<.*>. is not satisfied")
 foundation_neg_compile_test(neg_strong_counter_bit_cast_retag
   "no matching function for call to .bit_cast<foundation::algebra::lattices::Generation>"
   "the expression .is_trivially_copyable_v<_To> .with _To = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation>::element_type.. evaluated to .false.")
