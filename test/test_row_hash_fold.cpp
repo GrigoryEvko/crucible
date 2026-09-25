@@ -8,7 +8,7 @@
 // consteval path that disagrees with the runtime path stays hidden.
 
 #include <crucible/safety/diag/_RowHashFold.h>
-#include <crucible/safety/diag/RowHashGrade.h>
+#include <crucible/safety/diag/_RowHashGrade.h>
 #include <crucible/Types.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/safety/_HotPath.h>

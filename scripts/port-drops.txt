@@ -1351,6 +1351,12 @@ crucible/safety/source/_Arch.h:is_arch_pinned_v  — The test for an architectur
 crucible/safety/source/_Arch.h:arch_composable_v  — The agreement test over two source tags. No new-tree header and no production file reads two source tags together.
 crucible/safety/source/_Arch.h:ArchComposable  — The concept form of arch_composable_v. No new-tree header and no production file reads two source tags together.
 
+# ── safety: the permission detector and the grade-aware row hash ────
+crucible/safety/_IsPermission.h:is_permission_smoke_test  — A run-time loop over the detector's answers. foundation/permissions/Permission.h checks the detectors and the tag extractors with static assertions, and test/foundation/test_permissions_compile.cpp pins the extractors.
+crucible/safety/diag/_RowHashGrade.h:row_hash_with_grade  — The row hash of one instance, with its runtime grade folded in. No production file and no header of the new tree asks which instance a value is, so the question is not ported.
+crucible/safety/diag/_RowHashGrade.h:row_hash_grade_extractor  — The per-wrapper reader of the runtime grade for row_hash_with_grade. Only that function and its test read it.
+crucible/safety/diag/_RowHashGrade.h:HasRowHashGradeExtractor  — The gate of row_hash_with_grade. Only that function and its test read it.
+
 # ── safety: the Fn aggregator ───────────────────────────────────────────
 crucible/safety/_Fn.h:CollisionRules  → include/fixy/Collision.h  — The per-binding rule check became fixy::collision::rules_of<T, Atoms...> in fixy/Collision.h, which fixy::fn reads at tier 5 through fixy/Reject.h.
 crucible/safety/_Fn.h:CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION  — The include-order handshake between the old Fn.h and CollisionCatalog.h has no successor, because fixy/Reject.h includes fixy/Collision.h before fixy/Fn.h names the rules.

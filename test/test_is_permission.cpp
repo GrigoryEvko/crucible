@@ -3,7 +3,7 @@
 // one pulls the permission-trait header through the test target's
 // warning matrix and runs its inline smoke body.
 
-#include <crucible/safety/IsPermission.h>
+#include <crucible/safety/_IsPermission.h>
 
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_OwnedRegion.h>

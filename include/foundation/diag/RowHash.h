@@ -51,9 +51,9 @@
 // has no stated reason to.
 //
 // The old header had a sibling, RowHashGrade.h, answering the other
-// question: which instance is this, rather than which type. That surface
-// is not ported here and its old header is not marked, so a reader
-// looking for row_hash_with_grade finds it where it has always been.
+// question: which instance is this, rather than which type. No
+// production file and no header of this tree asks it, so the surface is
+// not ported, and include/crucible/safety/diag/_RowHashGrade.h is marked.
 //
 // Portability bound, and it is not one bound but three. The arithmetic,
 // the effect enum values and the salts are portable. A lattice identity

@@ -12,7 +12,7 @@
 
 #include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/_IsOwnedRegion.h>
-#include <crucible/safety/IsPermission.h>
+#include <crucible/safety/_IsPermission.h>
 
 #include <crucible/permissions/_PermSet.h>
 

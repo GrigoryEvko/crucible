@@ -23,7 +23,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsPermission.h>
+#include <crucible/safety/_IsPermission.h>
 
 namespace {
 struct neg_test_tag {};
