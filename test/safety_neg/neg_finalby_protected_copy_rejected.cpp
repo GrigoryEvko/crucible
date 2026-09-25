@@ -39,7 +39,7 @@
 // Companion to U-146 NotInherited (concept-rejection) and U-146
 // Stale (rvalue-only-consume) — three primitives closed in one ship.
 
-#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/_NotInherited.h>
 
 namespace {
 // Production-shape consumer: a class whose extensibility is

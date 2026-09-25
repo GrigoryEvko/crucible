@@ -367,41 +367,38 @@ struct NumericalTierMismatch : tag_base {
 
 struct MemOrderViolation : tag_base {
     static constexpr std::string_view name = "MemOrderViolation";
-    static constexpr std::string_view description = "A function in concurrent/* used or required MemOrder<SeqCst>.  "
-                                                    "Crucible discipline (CLAUDE.md §IX) forbids seq_cst on the "
-                                                    "hot path: x86 emits MFENCE (~30ns latency); ARM emits DMB "
-                                                    "ISH (~2-5 cycles); both serialize the store buffer.  "
-                                                    "Acquire/release semantics suffice for every SPSC/MPMC ring, "
-                                                    "every snapshot, every lock-free pattern Crucible needs.";
-    static constexpr std::string_view remediation = "Replace memory_order_seq_cst with memory_order_acq_rel "
-                                                    "(for read-modify-write), memory_order_release (for store), "
-                                                    "or memory_order_acquire (for load).  Audit the ordering "
-                                                    "requirement: if you genuinely need a total store order "
-                                                    "across multiple atomics, reconsider the design — it's "
-                                                    "almost always a sign that ownership boundaries are wrong.  "
-                                                    "See CLAUDE.md §IX 'The latency hierarchy' for the structural "
-                                                    "argument.";
+    static constexpr std::string_view description = "A hot binding names a fence at or above seq_cst.  The "
+                                                    "BarrierStrength atoms of fixy/atoms/Barrier.h record the "
+                                                    "fence strength that a binding provides, and collision rule "
+                                                    "V301 refuses a hot binding that names seq_cst or full_fence.  "
+                                                    "A binding that names no strength provides no fence, and V301 "
+                                                    "does not fire on it.";
+    static constexpr std::string_view remediation = "Name the weakest fence that the protocol needs: acq_rel for a "
+                                                    "read-modify-write, release_store for a publication, and "
+                                                    "acquire_load for a read of a publication.  If the code needs "
+                                                    "one total order across more than one atomic, examine the "
+                                                    "ownership boundaries again.  A total order is almost always a "
+                                                    "sign that they are wrong.  If the total order is necessary, "
+                                                    "move the fence to a binding that is not hot.";
 
     static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = "memory_order_seq_cst emits MFENCE on x86 (~30 ns serializing "
-                                                         "the store buffer) and DMB ISH on ARM (full system barrier).  "
-                                                         "Acquire/release semantics suffice for every SPSC ring, every "
-                                                         "snapshot, every lock-free pattern Crucible needs (CLAUDE.md "
-                                                         "§IX).  seq_cst on the hot path is a 30-100x latency hit and "
-                                                         "is almost always wrong — it usually indicates the engineer "
-                                                         "didn't think about the actual ordering requirement and "
-                                                         "reached for the strongest available primitive 'just to be "
-                                                         "safe'.  The discipline is to think about acquire/release.";
-    static constexpr std::string_view symptom_pattern = "Surfaces in code that was written outside the project's "
-                                                        "discipline (e.g., copied from a stack-overflow lock-free "
-                                                        "snippet) or refactored from a mutex-protected region without "
-                                                        "the author auditing the actual ordering need.  Less commonly: "
-                                                        "true total-order requirement (rare; if you genuinely need "
-                                                        "this, the ownership boundary is wrong — escalate to design "
-                                                        "review).";
-    static constexpr std::string_view correct_example = "x.store(v, std::memory_order_release); // publish";
+    static constexpr std::string_view why_this_matters = "A standalone seq_cst fence emits MFENCE on x86 and DMB ISH "
+                                                         "on ARM, and each one waits for the store buffer to drain.  "
+                                                         "Acquire and release ordering is sufficient for every ring, "
+                                                         "every snapshot and every lock-free pattern that Crucible "
+                                                         "uses (CLAUDE.md section IX).  A seq_cst fence on the hot "
+                                                         "path costs one or two orders of magnitude of latency, and it "
+                                                         "usually shows that nobody examined the ordering that the "
+                                                         "protocol needs.";
+    static constexpr std::string_view symptom_pattern = "Surfaces in code that came from outside the project, for "
+                                                        "example a lock-free fragment copied from a reference.  Or in "
+                                                        "code refactored from a region under a mutex without an "
+                                                        "examination of the ordering that it needs.  The diagnostic "
+                                                        "names the hot binding and the strength that it provides.";
+    static constexpr std::string_view correct_example =
+        "x.store(v, std::memory_order_release);  // release_store: a publication needs no more";
     static constexpr std::string_view violating_example =
-        "x.store(v, std::memory_order_seq_cst); // banned; emit MFENCE";
+        "std::atomic_thread_fence(std::memory_order_seq_cst);  // seq_cst on a hot binding: V301";
 };
 
 struct AllocClassViolation : tag_base {
@@ -639,39 +636,36 @@ struct WaitStrategyViolation : tag_base {
 
 struct ProgressClassViolation : tag_base {
     static constexpr std::string_view name = "ProgressClassViolation";
-    static constexpr std::string_view description = "A function declared with Progress<Bounded> (terminates within "
-                                                    "a fixed wall-clock budget) or Progress<Productive> (every "
-                                                    "step makes observable progress) invoked a callee whose "
-                                                    "progress class is MayDiverge.  Forge phases are declared "
-                                                    "Bounded per FORGE.md §5 wall-clock budgets; admitting "
-                                                    "MayDiverge callees breaks the compile-time-burden contract.";
-    static constexpr std::string_view remediation = "Either bound the callee's iteration count (replace while-true "
-                                                    "loops with bounded-iteration loops; replace recursion with "
-                                                    "tail iteration plus a depth limit), OR if the callee genuinely "
-                                                    "may diverge (Inferlet user code, by design), the caller's "
-                                                    "Progress declaration is wrong — relax to MayDiverge and "
-                                                    "wrap the call in a wall-clock-bounded supervisor.";
+    static constexpr std::string_view description = "A hot binding has Block in its row, so a call into it can wait "
+                                                    "with no bound on when the wait ends.  This tree has no "
+                                                    "termination class.  fixy/Aliases.h spells divergence as Block, "
+                                                    "the effect atom for a wait with no guaranteed bound.  Collision "
+                                                    "rule W001 refuses a hot binding whose row contains Block: a "
+                                                    "kernel wait, a system call that can park the caller, or a "
+                                                    "stated Block.";
+    static constexpr std::string_view remediation = "Two routes.  (a) Replace the kernel wait with a wait that "
+                                                    "stays in user space, which fixy/atoms/Sync.h records as "
+                                                    "spin_pause or bounded_spin.  (b) If the binding must wait in "
+                                                    "the kernel, it is not hot.  Move the wait to a background "
+                                                    "binding, or remove the hot tier and keep Block in the row.";
 
     static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = "Progress<Class, T> (28_04 §4.3.5) classifies termination "
-                                                         "guarantees: MayDiverge ⊏ Terminating ⊏ Productive ⊏ "
-                                                         "Bounded.  Forge phases are declared Bounded (FORGE.md §5 "
-                                                         "hard wall-clock budgets); embedding a MayDiverge helper "
-                                                         "(e.g., a `while (!converged)` loop without an iteration "
-                                                         "cap) breaks the phase's wall-clock guarantee.  Lean proofs "
-                                                         "demand Terminating; embedding a MayDiverge fact in a "
-                                                         "Lean-extractable kernel breaks proof discharge.  The fence "
-                                                         "preserves both the operational (wall-clock) and logical "
-                                                         "(proof) termination contracts.";
-    static constexpr std::string_view symptom_pattern = "Surfaces when a refactor adds an unbounded fixed-point "
-                                                        "iteration to a Bounded-phase helper without adding a "
-                                                        "cap_iters parameter.  Or when an inferlet (MayDiverge by "
-                                                        "design — escape hatch) is composed into a Terminating "
-                                                        "outer wrapper.  Diagnostic names the offending helper's "
-                                                        "Progress class and the outer's required class.";
-    static constexpr std::string_view correct_example = "Progress<Bounded, T> phase_step(int max_iters) noexcept;";
+    static constexpr std::string_view why_this_matters = "The scheduler bounds a kernel wait, and that bound is "
+                                                         "microseconds or more.  The hot path has a budget of "
+                                                         "nanoseconds.  A hot binding that reaches such a wait "
+                                                         "through a callee misses its budget, and nothing at the call "
+                                                         "site shows the cause.  The row carries the wait up to the "
+                                                         "binding, and W001 reads the row.  A new atom that can block "
+                                                         "puts Block in its lift, and W001 then refuses it with no "
+                                                         "edit to the rule.";
+    static constexpr std::string_view symptom_pattern = "Surfaces after a refactor adds a lock, a condition wait or a "
+                                                        "system call that can park the caller to a helper that a hot "
+                                                        "binding calls.  The atoms of the helper put Block in the row, "
+                                                        "and the diagnostic names the hot binding.";
+    static constexpr std::string_view correct_example =
+        "while (!flag.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;  // user space, no Block";
     static constexpr std::string_view violating_example =
-        "Progress<MayDiverge, T> unbounded_loop();  // breaks Bounded outer";
+        "flag.wait(false);  // a kernel wait puts Block in the row of a hot binding: W001";
 };
 
 struct CipherTierViolation : tag_base {

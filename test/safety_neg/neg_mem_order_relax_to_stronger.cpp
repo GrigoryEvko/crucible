@@ -28,7 +28,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on relax<>().
 
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 
 using namespace crucible::safety;
 

@@ -9,7 +9,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/Progress.h>
+#include <crucible/safety/_Progress.h>
 #include <utility>
 
 using namespace crucible::safety;

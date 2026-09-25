@@ -14,7 +14,7 @@
 //
 // [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
 
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 #include <utility>
 
 using namespace crucible::safety;

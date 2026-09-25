@@ -6,7 +6,7 @@
 #include <crucible/_Saturate.h>
 #include <crucible/safety/_Checked.h>
 #include <crucible/safety/_ConstantTime.h>
-#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/_NotInherited.h>
 #include <crucible/safety/_OwnedRegion.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Simd.h>

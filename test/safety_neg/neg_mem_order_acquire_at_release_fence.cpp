@@ -8,7 +8,7 @@
 // compiled and a publication that needed its earlier stores ordered was
 // handed a value that orders only its later loads.
 
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 
 #include <utility>
 

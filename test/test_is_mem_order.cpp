@@ -1,4 +1,4 @@
-#include <crucible/safety/IsMemOrder.h>
+#include <crucible/safety/_IsMemOrder.h>
 
 #include <cstdio>
 #include <cstdlib>

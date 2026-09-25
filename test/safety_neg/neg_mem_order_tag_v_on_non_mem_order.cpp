@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsMemOrder.h>
+#include <crucible/safety/_IsMemOrder.h>
 
 int main() {
     auto t = crucible::safety::extract::mem_order_tag_v<int>;

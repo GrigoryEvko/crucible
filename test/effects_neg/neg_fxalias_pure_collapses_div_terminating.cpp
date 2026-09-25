@@ -25,7 +25,7 @@
 
 #include <crucible/effects/_FxAliases.h>
 #include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/Progress.h>
+#include <crucible/safety/_Progress.h>
 
 #include <type_traits>
 

@@ -25,7 +25,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause rejection on relax<>().
 
-#include <crucible/safety/Progress.h>
+#include <crucible/safety/_Progress.h>
 
 using namespace crucible::safety;
 

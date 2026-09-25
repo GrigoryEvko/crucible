@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/Progress.h>
+#include <crucible/safety/_Progress.h>
 
 #include <type_traits>
 

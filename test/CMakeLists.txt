@@ -11539,7 +11539,7 @@ crucible_neg_compile_test(neg_session_sender_role_missing_crash
 # `[NotInherited_Not_Final]`.  This neg-test passes a non-final
 # struct to the helper and checks the diagnostic by name — exercising
 # the WITNESS half of the FinalBy/NotInherited pair documented in
-# include/crucible/safety/NotInherited.h.  The ENFORCEMENT half
+# include/crucible/safety/_NotInherited.h.  The ENFORCEMENT half
 # (FinalBy<Derived> CRTP private-ctor) carries `[FinalBy_Subclass_
 # Forbidden]` in every deleted-copy/move reason; a separate neg-test
 # for that is task #146 (broader neg-compile coverage sweep).

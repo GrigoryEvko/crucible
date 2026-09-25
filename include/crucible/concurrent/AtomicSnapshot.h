@@ -40,7 +40,7 @@
 // the sequence counter at any moment.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Wait.h>

@@ -12,7 +12,7 @@
 //
 // [GCC-WRAPPER-TEXT] — assignment-operator type-mismatch rejection.
 
-#include <crucible/safety/Progress.h>
+#include <crucible/safety/_Progress.h>
 
 using namespace crucible::safety;
 

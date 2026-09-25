@@ -5,7 +5,7 @@
 // FinalBy/NotInherited pair (companion to
 // neg_notinherited_non_final.cpp which exercises the WITNESS half).
 //
-// Mechanism (per safety/NotInherited.h):
+// Mechanism (per safety/_NotInherited.h):
 //   1. FinalBy<Derived>::FinalBy() is PRIVATE.
 //   2. Derived is friend Derived; — only Derived may call the ctor.
 //   3. `class MyType : public virtual FinalBy<MyType>` — MyType is the
@@ -31,9 +31,9 @@
 // permit subclassing — this test fires before such drift ships.
 //
 // Task #148 (A8-P3 FinalBy<T>/NotInherited<T>); see
-// include/crucible/safety/NotInherited.h.
+// include/crucible/safety/_NotInherited.h.
 
-#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/_NotInherited.h>
 
 class MyProtectedType : public virtual crucible::safety::FinalBy<MyProtectedType> {
 public:

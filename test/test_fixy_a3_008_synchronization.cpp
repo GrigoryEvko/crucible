@@ -1,5 +1,5 @@
 #include <crucible/safety/DimensionTraits.h>
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 #include <crucible/safety/_Wait.h>
 
 namespace cs = ::crucible::safety;

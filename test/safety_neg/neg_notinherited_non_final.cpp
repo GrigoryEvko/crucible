@@ -11,9 +11,9 @@
 // expansion.
 //
 // Task #148 (A8-P3 FinalBy<T>/NotInherited<T>); see
-// include/crucible/safety/NotInherited.h for the mechanism.
+// include/crucible/safety/_NotInherited.h for the mechanism.
 
-#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/_NotInherited.h>
 
 struct NotFinal {};  // missing `final` keyword
 

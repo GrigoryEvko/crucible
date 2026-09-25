@@ -44,7 +44,7 @@
 // met).  Companion to U-146 FinalBy (deleted-copy-of-protected)
 // and U-146 Stale (rvalue-only-consume).
 
-#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/_NotInherited.h>
 
 namespace {
 // Non-final type — fails the std::is_final_v<T> predicate baked

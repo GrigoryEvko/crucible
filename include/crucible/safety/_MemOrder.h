@@ -26,7 +26,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/MemOrderLattice.h>
+#include <crucible/algebra/lattices/_MemOrderLattice.h>
 
 #include <cstdlib>
 #include <string_view>

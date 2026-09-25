@@ -1,6 +1,6 @@
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/_HotPath.h>
-#include <crucible/safety/Progress.h>
+#include <crucible/safety/_Progress.h>
 
 namespace cs = ::crucible::safety;
 

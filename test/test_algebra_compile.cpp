@@ -29,12 +29,12 @@
 #include <crucible/algebra/lattices/_HotPathLattice.h>
 #include <crucible/algebra/lattices/JoinPolicyLattice.h>
 #include <crucible/algebra/lattices/_LifetimeLattice.h>
-#include <crucible/algebra/lattices/MemOrderLattice.h>
+#include <crucible/algebra/lattices/_MemOrderLattice.h>
 #include <crucible/algebra/lattices/_MonotoneLattice.h>
 #include <crucible/algebra/lattices/_NumaNodeLattice.h>
 #include <crucible/algebra/lattices/_PeakBytesLattice.h>
 #include <crucible/algebra/lattices/_ProductLattice.h>
-#include <crucible/algebra/lattices/ProgressLattice.h>
+#include <crucible/algebra/lattices/_ProgressLattice.h>
 #include <crucible/algebra/lattices/_QttSemiring.h>
 #include <crucible/algebra/lattices/_RecipeFamilyLattice.h>
 #include <crucible/algebra/lattices/_ResidencyHeatLattice.h>

@@ -396,15 +396,15 @@ crucible/safety/diag/_RowHashFold.h:FpTrapMask  → include/fixy/atoms/Fp.h  —
 crucible/safety/diag/_RowHashFold.h:Hw  → include/fixy/atoms/Hw.h  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: the HwInstruction tier it pinned moved to the binding as the atom family of the carrier, which declares the five enumerators verbatim.
 crucible/safety/diag/_RowHashFold.h:HwInstruction  → include/fixy/atoms/Hw.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier declares the five enumerators verbatim, same names and same values, for its atom family.
 crucible/safety/diag/_RowHashFold.h:JoinPolicy  → none  — Two forward declarations, the wrapper and its tier enum, and no header in the new tree carries either: they are defined in crucible/safety/JoinPolicy.h and crucible/algebra/lattices/JoinPolicyLattice.h, which no port has marked superseded, and the JoinMechanism of fixy/os/Spawn.h ports the spawn grant of the old fixy tree, a different ladder.
-crucible/safety/diag/_RowHashFold.h:MemOrder  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/MemOrder.h, which no port has marked superseded.
-crucible/safety/diag/_RowHashFold.h:MemOrderTag  → none  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and no header in the new tree carries the enum: it is defined in crucible/algebra/lattices/MemOrderLattice.h, which no port has marked superseded.
+crucible/safety/diag/_RowHashFold.h:MemOrder  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/_MemOrder.h, whose rows drop it because no production file reads it.
+crucible/safety/diag/_RowHashFold.h:MemOrderTag  → none  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and no header in the new tree carries the enum: it is defined in crucible/algebra/lattices/_MemOrderLattice.h, whose rows drop it because no production file reads a pinned memory order.
 crucible/safety/diag/_RowHashFold.h:pred_canonical_id  — Generalised to lattice_canonical_id in foundation/diag/RowHash.h. A refinement's predicate is a template argument of its lattice in the new tree, so one rename hook keyed on the lattice covers the predicate case and every other axis with it.
 crucible/safety/diag/_RowHashFold.h:pred_canonical_id_v  — The variable template of the same trait, generalised with it to lattice_canonical_id_v in foundation/diag/RowHash.h.
 crucible/safety/diag/_RowHashFold.h:Progress  → include/fixy/Aliases.h  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the carrier's head comment records that the band had no consumer outside the old substrate and did not survive the port.
 crucible/safety/diag/_RowHashFold.h:ProgressClass  → include/fixy/Aliases.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the enum is the tier of the Progress band, which the carrier's head comment records did not survive the port.
 crucible/safety/diag/_RowHashFold.h:SimdIsa  → include/fixy/atoms/Simd.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier restates the fifteen enumerators and their trunk nibble verbatim for its atom family.
 crucible/safety/diag/_RowHashFold.h:SimdWidthPinned  → include/fixy/atoms/Simd.h  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: Axis::SimdIsa moved to the binding as the atom family of fixy/atoms/Simd.h, which restates the fifteen enumerators and their trunk nibble verbatim because foundation ports no SimdIsa lattice, V101 and V402 in fixy/Collision.h read the pin there, and the value form's only consumer was a using-declaration in the old crucible/fixy/Wrap.h.
-crucible/safety/diag/_RowHashFold.h:TimeOrdered  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/TimeOrdered.h, which no port has marked superseded.
+crucible/safety/diag/_RowHashFold.h:TimeOrdered  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/_TimeOrdered.h, whose rows drop it because no production file reads it.
 crucible/safety/diag/_RowHashFold.h:Witness  → include/fixy/Tags.h  — Two forward declarations, the wrapper and its tier enum. The witness ladder folds into the trust tags of the carrier, and the Witness of fixy/OwnedRegion.h is brand machinery, a different thing.
 
 # ── concurrent: the ring predicates and the working-set trait ───────────
@@ -625,6 +625,52 @@ crucible/safety/_Witness.h:Unwitnessed  → include/fixy/Tags.h  — The bottom 
 crucible/safety/_Witness.h:Witness  → include/fixy/Tags.h  — The value-level wrapper over the witness chain folds into fixy::Tagged over the trust tags.
 crucible/safety/_Witness.h:WitnessLattice  — A local alias of the witness lattice, dropped with it.
 crucible/safety/_Witness.h:Witness_v  — The value spelling of the old tier accessor, gone with the wrapper.
+
+# ── algebra and safety: the memory-order, termination and time-order bands, and NotInherited ──
+crucible/algebra/lattices/_MemOrderLattice.h:AcqRelTag  — A pinned element of the dropped memory-order lattice. No production file reads a pinned memory order.
+crucible/algebra/lattices/_MemOrderLattice.h:AcquireTag  — A pinned element of the dropped memory-order lattice. No production file reads a pinned memory order.
+crucible/algebra/lattices/_MemOrderLattice.h:mem_order_height  — The height helper of the dropped memory-order lattice. Only its own order, join and meet used it.
+crucible/algebra/lattices/_MemOrderLattice.h:MemOrderLattice  — Dropped, because no production file reads a pinned memory order. The BarrierStrength atoms of fixy/atoms/Barrier.h carry the fence strength that a binding provides.
+crucible/algebra/lattices/_MemOrderLattice.h:MemOrderTag  — The enum of the dropped memory-order lattice. The BarrierStrength enum of foundation keeps the same diamond, with acquire and release incomparable.
+crucible/algebra/lattices/_MemOrderLattice.h:mem_order_tag_count  — The enumerator count of the dropped memory-order enum.
+crucible/algebra/lattices/_MemOrderLattice.h:mem_order_tag_name  — The name function of the dropped memory-order enum.
+crucible/algebra/lattices/_MemOrderLattice.h:RelaxedTag  — A pinned element of the dropped memory-order lattice. No production file reads a pinned memory order.
+crucible/algebra/lattices/_MemOrderLattice.h:ReleaseTag  — A pinned element of the dropped memory-order lattice. No production file reads a pinned memory order.
+crucible/algebra/lattices/_MemOrderLattice.h:SeqCstTag  — A pinned element of the dropped memory-order lattice. No production file reads a pinned memory order.
+crucible/algebra/lattices/_ProgressLattice.h:BoundedClass  — A pinned element of the dropped termination lattice. No production file reads a termination class.
+crucible/algebra/lattices/_ProgressLattice.h:MayDivergeClass  — A pinned element of the dropped termination lattice. No production file reads a termination class.
+crucible/algebra/lattices/_ProgressLattice.h:ProductiveClass  — A pinned element of the dropped termination lattice. No production file reads a termination class.
+crucible/algebra/lattices/_ProgressLattice.h:ProgressClass  — The enum of the dropped termination lattice. Block in an effect row is how the new tree spells divergence, as fixy/Aliases.h records.
+crucible/algebra/lattices/_ProgressLattice.h:progress_class_count  — The enumerator count of the dropped termination enum.
+crucible/algebra/lattices/_ProgressLattice.h:progress_class_name  — The name function of the dropped termination enum.
+crucible/algebra/lattices/_ProgressLattice.h:ProgressLattice  — Dropped, because no production file reads a termination class. The new tree spells divergence as Block in the effect row, and W001 reads that row.
+crucible/algebra/lattices/_ProgressLattice.h:TerminatingClass  — A pinned element of the dropped termination lattice. No production file reads a termination class.
+crucible/safety/_IsMemOrder.h:IsMemOrder  — A recognizer for the dropped MemOrder wrapper, dropped with it.
+crucible/safety/_IsMemOrder.h:is_mem_order_smoke_test  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/safety/_IsMemOrder.h:is_mem_order_v  — The trait form of the dropped MemOrder recognizer.
+crucible/safety/_IsMemOrder.h:mem_order_tag_v  — A tag accessor for the dropped MemOrder wrapper, dropped with it.
+crucible/safety/_IsMemOrder.h:MemOrderTag_v  — A local alias of the dropped memory-order enum.
+crucible/safety/_IsMemOrder.h:mem_order_value_t  — A value-type accessor for the dropped MemOrder wrapper, dropped with it.
+crucible/safety/_IsProgress.h:IsProgress  — A recognizer for the dropped Progress wrapper, dropped with it.
+crucible/safety/_IsProgress.h:is_progress_smoke_test  — An inline smoke test of a dropped header, so nothing in the new tree calls it.
+crucible/safety/_IsProgress.h:is_progress_v  — The trait form of the dropped Progress recognizer.
+crucible/safety/_IsProgress.h:progress_class_v  — A class accessor for the dropped Progress wrapper, dropped with it.
+crucible/safety/_IsProgress.h:ProgressClass_v  — A local alias of the dropped termination enum.
+crucible/safety/_IsProgress.h:progress_value_t  — A value-type accessor for the dropped Progress wrapper, dropped with it.
+crucible/safety/_MemOrder.h:Acquire  — An alias of the dropped MemOrder wrapper at the acquire tier.
+crucible/safety/_MemOrder.h:MemOrder  — Dropped, because no production file reads it. The pinned loads of the old AtomicSnapshot had no reader, and the port of AtomicSnapshot to fixy/concurrent did not keep them.
+crucible/safety/_MemOrder.h:MemOrderLattice  — A local alias of the dropped memory-order lattice.
+crucible/safety/_MemOrder.h:MemOrderTag_v  — A local alias of the dropped memory-order enum.
+crucible/safety/_MemOrder.h:Release  — An alias of the dropped MemOrder wrapper at the release tier.
+crucible/safety/_NotInherited.h:assert_not_inherited  — Dropped with NotInherited. A static_assert on std::is_final_v states the same fact at the use site.
+crucible/safety/_NotInherited.h:FinalBy  — Dropped, because the final keyword closes a class where its author writes it. No production file derives from FinalBy.
+crucible/safety/_NotInherited.h:NotInherited  — Dropped, because the final keyword carries the fact. The concept only asked std::is_final_v, and no production file names it.
+crucible/safety/_Progress.h:MayDiverge  — An alias of the dropped Progress wrapper at the divergent class.
+crucible/safety/_Progress.h:Progress  — Dropped, because no production file reads a termination class. Block in the effect row spells divergence, and W001 refuses it on a hot binding.
+crucible/safety/_Progress.h:ProgressClass_v  — A local alias of the dropped termination enum.
+crucible/safety/_Progress.h:ProgressLattice  — A local alias of the dropped termination lattice.
+crucible/safety/_Progress.h:Terminating  — An alias of the dropped Progress wrapper at the terminating class.
+crucible/safety/_TimeOrdered.h:TimeOrdered  — Dropped, because no production file reads it. foundation/algebra/lattices/HappensBefore.h carries its vector-clock lattice, HappensBeforeLattice.
 
 # ── concurrent: the parallelism rule, its tier math and the workload helpers ──
 crucible/concurrent/_SubstrateCtxFit.h:SubstrateFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this gate to read, so only its tier math came, as fits_in_tier_v.

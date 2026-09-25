@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 
 #include <type_traits>
 

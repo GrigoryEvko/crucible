@@ -34,12 +34,12 @@
 #include <crucible/safety/_EpochVersioned.h>
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_Linear.h>
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 #include <crucible/safety/_Mutation.h>
 #include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_OpaqueLifetime.h>
-#include <crucible/safety/Progress.h>
+#include <crucible/safety/_Progress.h>
 #include <crucible/safety/_RecipeSpec.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_ResidencyHeat.h>
@@ -47,7 +47,7 @@
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/_TimeOrdered.h>
 #include <crucible/safety/_Vendor.h>
 #include <crucible/safety/_Wait.h>
 #include <crucible/sessions/SessionContentAddressed.h>

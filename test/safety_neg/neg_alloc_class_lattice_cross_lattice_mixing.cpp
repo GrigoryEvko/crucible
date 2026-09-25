@@ -19,7 +19,7 @@
 // type-mismatch rejection.
 
 #include <crucible/algebra/lattices/_AllocClassLattice.h>
-#include <crucible/algebra/lattices/ProgressLattice.h>
+#include <crucible/algebra/lattices/_ProgressLattice.h>
 
 using namespace crucible::algebra::lattices;
 

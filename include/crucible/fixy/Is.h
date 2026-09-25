@@ -28,7 +28,7 @@
 #include <crucible/safety/_IsHw.h>
 #include <crucible/safety/IsJoinPolicy.h>
 #include <crucible/safety/_IsLinear.h>
-#include <crucible/safety/IsMemOrder.h>
+#include <crucible/safety/_IsMemOrder.h>
 #include <crucible/safety/_IsNumaPlacement.h>
 #include <crucible/safety/_IsNumericalTier.h>
 #include <crucible/safety/_IsOpaqueLifetime.h>
@@ -36,7 +36,7 @@
 #include <crucible/safety/_IsOwnedRegion.h>
 #include <crucible/safety/IsPermission.h>
 #include <crucible/safety/_IsProducerHandle.h>
-#include <crucible/safety/IsProgress.h>
+#include <crucible/safety/_IsProgress.h>
 #include <crucible/safety/_IsRecipeSpec.h>
 #include <crucible/safety/_IsReduceInto.h>
 #include <crucible/safety/_IsRefined.h>

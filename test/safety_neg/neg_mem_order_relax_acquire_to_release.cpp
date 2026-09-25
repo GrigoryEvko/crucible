@@ -5,7 +5,7 @@
 // and relax refuses the step.  The value relaxes to AcqRel, which
 // orders both sides of the operation.
 
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 
 #include <utility>
 

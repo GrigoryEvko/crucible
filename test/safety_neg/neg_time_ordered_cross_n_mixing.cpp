@@ -19,7 +19,7 @@
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection at the
 // happens_before call site.
 
-#include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/_TimeOrdered.h>
 
 using namespace crucible::safety;
 

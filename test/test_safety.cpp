@@ -5,7 +5,7 @@
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Machine.h>
 #include <crucible/safety/_Mutation.h>
-#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/_NotInherited.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Tagged.h>

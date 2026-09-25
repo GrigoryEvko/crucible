@@ -5,8 +5,8 @@
 // leq(Required, Self), and Release and Acquire are incomparable.
 
 #include <crucible/concurrent/AtomicSnapshot.h>
-#include <crucible/safety/IsMemOrder.h>
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_IsMemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 #include <crucible/safety/_Wait.h>
 #include "test_assert.h"
 

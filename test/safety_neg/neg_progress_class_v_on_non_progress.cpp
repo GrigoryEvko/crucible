@@ -5,7 +5,7 @@
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure.
 
-#include <crucible/safety/IsProgress.h>
+#include <crucible/safety/_IsProgress.h>
 
 int main() {
     auto c = crucible::safety::extract::progress_class_v<int>;

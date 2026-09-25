@@ -5,7 +5,7 @@
 
 #include <crucible/safety/diag/_CanonicalOrder.h>
 #include <crucible/safety/_Witness.h>  // off-tree neutrality probe
-#include <crucible/algebra/lattices/MemOrderLattice.h>
+#include <crucible/algebra/lattices/_MemOrderLattice.h>
 
 #include "test_assert.h"
 

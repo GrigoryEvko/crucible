@@ -22,9 +22,9 @@
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_Linear.h>
-#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/_MemOrder.h>
 #include <crucible/safety/_NumericalTier.h>
-#include <crucible/safety/Progress.h>
+#include <crucible/safety/_Progress.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_ResidencyHeat.h>
 #include <crucible/safety/_Secret.h>

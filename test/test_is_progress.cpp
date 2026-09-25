@@ -1,4 +1,4 @@
-#include <crucible/safety/IsProgress.h>
+#include <crucible/safety/_IsProgress.h>
 
 #include <cstdio>
 #include <cstdlib>

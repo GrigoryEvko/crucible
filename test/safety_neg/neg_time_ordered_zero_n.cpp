@@ -18,7 +18,7 @@
 // [FRAMEWORK-CONTROLLED] — diagnostic regex matches the wrapper's
 // static_assert string.
 
-#include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/_TimeOrdered.h>
 
 int main() {
     // Should FAIL: N=0 trips TimeOrdered's static_assert.

@@ -21,7 +21,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/_Graded.h>
-#include <crucible/algebra/lattices/ProgressLattice.h>
+#include <crucible/algebra/lattices/_ProgressLattice.h>
 
 #include <cstdlib>
 #include <string_view>

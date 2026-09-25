@@ -14,7 +14,7 @@
 //
 // [GCC-WRAPPER-TEXT] — overload-resolution rejection.
 
-#include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/_TimeOrdered.h>
 
 using namespace crucible::safety;
 
