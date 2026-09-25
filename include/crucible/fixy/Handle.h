@@ -5,7 +5,7 @@
 // name that namespace.
 
 #include <crucible/handles/_FileHandle.h>
-#include <crucible/handles/LazyEstablishedChannel.h>
+#include <crucible/handles/_LazyEstablishedChannel.h>
 #include <crucible/handles/_Once.h>
 #include <crucible/handles/_OneShotFlag.h>
 #include <crucible/handles/_PublishOnce.h>

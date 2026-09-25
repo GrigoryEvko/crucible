@@ -1,4 +1,4 @@
-#include <crucible/handles/LazyEstablishedChannel.h>
+#include <crucible/handles/_LazyEstablishedChannel.h>
 
 #include <atomic>
 #include <cstdio>
