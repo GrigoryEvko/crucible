@@ -26,7 +26,7 @@
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionContext.h>
 #include <crucible/sessions/SessionGlobal.h>
-#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtype.h>
 
 #include <cstddef>
 #include <type_traits>

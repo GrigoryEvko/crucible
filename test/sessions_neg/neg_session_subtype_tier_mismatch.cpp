@@ -3,7 +3,7 @@
 // GAPS-066 fixture #3: Send is covariant in payload, so a RELAXED
 // producer cannot subtype a BITEXACT producer contract.
 
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
 namespace safe = crucible::safety;

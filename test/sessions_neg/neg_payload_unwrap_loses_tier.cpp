@@ -4,7 +4,7 @@
 // static tolerance certificate.  A bare payload cannot flow into a
 // BITEXACT-pinned boundary without an explicit tier-aware producer.
 
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
 namespace safe = crucible::safety;

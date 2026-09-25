@@ -5,7 +5,7 @@
 // started from, and that the reasoned answer never disagrees with the
 // plain one.
 
-#include <crucible/sessions/SessionSubtypeReason.h>
+#include <crucible/sessions/_SessionSubtypeReason.h>
 
 #include <cstdio>
 #include <string_view>

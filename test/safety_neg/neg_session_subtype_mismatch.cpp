@@ -5,7 +5,7 @@
 // static_assert.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtype.h>
 
 using namespace crucible::safety::proto;
 

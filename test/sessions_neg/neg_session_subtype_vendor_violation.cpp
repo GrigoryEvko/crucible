@@ -1,7 +1,7 @@
 // GAPS-068 fixture #4: protocol-level subtyping rejects incomparable
 // vendor pins.
 
-#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtype.h>
 
 namespace proto = ::crucible::safety::proto;
 

@@ -1,5 +1,5 @@
-#include <crucible/sessions/SessionSubtype.h>
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionSubtype.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 
 #include <cstdio>
 #include <cstdlib>

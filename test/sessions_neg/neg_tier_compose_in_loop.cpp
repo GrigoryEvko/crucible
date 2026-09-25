@@ -5,7 +5,7 @@
 // at every iteration step.  The failure must be visible through
 // recursive SessionSubtype composition, not only at a flat Send.
 
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
 namespace safe = crucible::safety;

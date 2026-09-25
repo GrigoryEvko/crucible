@@ -188,6 +188,12 @@
 // empty base or an empty member, so a subtype payload has the size and
 // the bytes of its supertype payload.  The test suite checks this for
 // each axiom.
+//
+// Old spellings: include/crucible/sessions/_SessionSubtype.h,
+// include/crucible/sessions/_SessionSubtypeReason.h and
+// include/crucible/sessions/_SessionPayloadSubsort.h.  The old relation
+// walked the protocol a second time to find a reason, and its payload
+// order was an open trait that any header could specialize.
 
 #include <fixy/Bands.h>
 #include <fixy/Refined.h>

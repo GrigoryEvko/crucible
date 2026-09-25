@@ -1,6 +1,6 @@
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 
 #include <cstdio>
 

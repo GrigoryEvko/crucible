@@ -10,7 +10,7 @@
 // foreign origin, runs the validator, and hands the internal pipeline a value
 // tagged as validated.
 
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 
 #include <cstdio>

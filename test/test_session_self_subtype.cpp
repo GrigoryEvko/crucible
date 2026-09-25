@@ -1,6 +1,6 @@
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 
-#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtype.h>
 
 #include <cstdio>
 

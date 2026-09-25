@@ -1115,6 +1115,23 @@ crucible/sessions/_SessionView.h:session_view_message_type  — Dropped with the
 crucible/sessions/_SessionView.h:session_view_message_type_t  — Dropped with the header: no production file reaches it, and no ported header reads a view of a session handle.
 crucible/sessions/_SessionView.h:session_view_protocol_name  — Dropped with the header: no production file reaches it, and no ported header reads a view of a session handle.
 
+# ── sessions: the subtype relation, its reasons and the payload order ──
+crucible/sessions/_SessionPayloadSubsort.h:is_subsort  → include/fixy/session/Subtype.h  — The specializations of this header were axioms on an open trait. The carrier states each axiom once in the sealed payload_axioms namespace, and a later header cannot add one.
+crucible/sessions/_SessionSubtype.h:assert_vendor_subtype_sync  → include/fixy/session/Subtype.h  — Folded into assert_subtype_sync, whose message names the failure class, Subtype_Vendor for a vendor mismatch. VendorPinned now needs the same vendor on both sides, so a Portable protocol no longer stands where a pinned one is required.
+crucible/sessions/_SessionSubtype.h:is_subsort  → include/fixy/session/Subtype.h  — The open trait is gone. The payload order is is_payload_subsort_v, which is reflexive and admits only the axioms in the sealed payload_axioms namespace.
+crucible/sessions/_SessionSubtype.h:is_subsort_v  → include/fixy/session/Subtype.h  — Renamed is_payload_subsort_v, which reads the sealed payload_axioms and not an open trait.
+crucible/sessions/_SessionSubtype.h:is_subtype_sync  → include/fixy/session/Subtype.h  — The trait class is gone. is_subtype_sync_v reads subtype_verdict_v, and is_sync_subtype over SubtypeQuery is the one-argument form that holds an armed cell.
+crucible/sessions/_SessionSubtype.h:is_subtype_sync_structural  → include/fixy/session/Subtype.h  — The per-combinator specializations became the refinement preorder of foundation/algebra/Transition.h, one walk over the two type graphs. That walk matches a keyed choice by label and keeps the exits of the supertype, which the positional prefix rule did not.
+crucible/sessions/_SessionSubtype.h:protocol_grade_satisfies_v  — Dropped with the protocol grade of _SessionGrade.h, which has no carrier. The new relation compares protocols by the refinement walk alone, with no grade filter.
+crucible/sessions/_SessionSubtypeReason.h:assert_subtype_sync_diag  → include/fixy/session/Subtype.h  — Folded into assert_subtype_sync, whose message names the class of the failure and the failed pair.
+crucible/sessions/_SessionSubtypeReason.h:is_rejection_reason  → include/fixy/session/Subtype.h  — No recognizer is necessary. subtype_reason_t is SubtypeOk when the pair holds and a SubtypeRejection when it does not, so a reader compares it with SubtypeOk.
+crucible/sessions/_SessionSubtypeReason.h:is_rejection_reason_v  → include/fixy/session/Subtype.h  — Dropped with is_rejection_reason. A reader compares subtype_reason_t with SubtypeOk.
+crucible/sessions/_SessionSubtypeReason.h:is_subtype_sync_diag_v  → include/fixy/session/Subtype.h  — The reason comes from the same walk as the verdict, so is_subtype_sync_v answers the question that this second walk answered.
+crucible/sessions/_SessionSubtypeReason.h:RejectionReason  → include/fixy/session/Subtype.h  — Renamed SubtypeRejection, which is keyed by the mismatch value of the transition algebra and not by a diagnostic class of the catalog.
+crucible/sessions/_SessionSubtypeReason.h:subtype_diag_agrees_v  → include/fixy/session/Subtype.h  — It checked that a second walk agreed with the first. The carrier has one walk only, so the two cannot disagree.
+crucible/sessions/_SessionSubtypeReason.h:subtype_rejection_reason  → include/fixy/session/Subtype.h  — The trait class is gone. detail::subtype::reason_of derives the reason from subtype_verdict_v, and subtype_reason_t is its public name.
+crucible/sessions/_SessionSubtypeReason.h:subtype_rejection_reason_t  → include/fixy/session/Subtype.h  — Renamed subtype_reason_t, which reads the verdict of the one walk.
+
 # ── safety: the stage-shape recognizers and the signature inference ─────
 # No production file and no header of the new tree classifies a function
 # by its parameter shape, infers a row or a tag set from a signature, or

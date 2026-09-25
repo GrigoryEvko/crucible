@@ -17,7 +17,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtype.h>
 
 #include <cstddef>
 #include <type_traits>

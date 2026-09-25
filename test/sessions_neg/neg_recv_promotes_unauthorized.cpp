@@ -4,7 +4,7 @@
 // downstream code to treat that receive endpoint as BITEXACT.  Recv is
 // contravariant, but it cannot conjure a stronger payload certificate.
 
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
 namespace safe = crucible::safety;

@@ -5,7 +5,7 @@
 // CompatibleClient<Send<P>, Recv<C>> reduces to P <= C through
 // SessionSubtype's Send covariance and the receiver's dual.
 
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
 namespace safe = crucible::safety;

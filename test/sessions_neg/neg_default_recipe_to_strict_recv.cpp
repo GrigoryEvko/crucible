@@ -6,7 +6,7 @@
 // cross-vendor numerics CI ever runs.
 
 #include <crucible/safety/_RecipeSpec.h>
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
 namespace safe = crucible::safety;

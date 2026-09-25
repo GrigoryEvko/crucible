@@ -1,4 +1,4 @@
-#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtype.h>
 
 #include <type_traits>
 

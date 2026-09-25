@@ -16,13 +16,13 @@
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/_SessionPatterns.h>
-#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/_SessionPayloadSubsort.h>
 #include <crucible/sessions/_SessionPermPayloads.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 #include <crucible/sessions/SessionQueue.h>
 #include <crucible/sessions/_SessionGrade.h>
-#include <crucible/sessions/SessionSubtype.h>
-#include <crucible/sessions/SessionSubtypeReason.h>
+#include <crucible/sessions/_SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtypeReason.h>
 #include <crucible/sessions/_SessionView.h>
 #include <crucible/sessions/SpscSession.h>
 #include <crucible/sessions/MpmcChannelSession.h>

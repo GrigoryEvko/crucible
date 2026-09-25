@@ -3,7 +3,7 @@
 // tag, and putting the classified-assertion macro through a call site.
 
 #include <crucible/sessions/_SessionDiagnostic.h>
-#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtype.h>
 #include <crucible/sessions/Session.h>
 
 #include <array>

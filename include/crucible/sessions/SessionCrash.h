@@ -23,7 +23,7 @@
 #include <crucible/algebra/lattices/_CrashLattice.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionEventLog.h>
-#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/_SessionSubtype.h>
 
 #include <cstddef>
 #include <type_traits>
