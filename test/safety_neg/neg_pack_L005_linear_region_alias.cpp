@@ -36,7 +36,7 @@
 // Expected diagnostic substring: "L005:".
 
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/CollisionCatalog.h>
+#include <crucible/safety/_CollisionCatalog.h>
 #include <crucible/safety/_Fn.h>
 
 namespace sfn = crucible::safety::fn;

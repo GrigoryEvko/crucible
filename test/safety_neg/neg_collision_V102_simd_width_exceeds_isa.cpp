@@ -17,7 +17,7 @@
 //
 // Expected diagnostic substring: V102.
 
-#include <crucible/safety/CollisionCatalog.h>
+#include <crucible/safety/_CollisionCatalog.h>
 
 #include <type_traits>
 

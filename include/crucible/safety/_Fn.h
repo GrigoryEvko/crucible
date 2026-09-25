@@ -276,7 +276,7 @@ struct Fn {
 }  // namespace crucible::safety::fn
 
 #define CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION 1
-#include <crucible/safety/CollisionCatalog.h>
+#include <crucible/safety/_CollisionCatalog.h>
 #undef CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION
 
 namespace crucible::safety::fn {

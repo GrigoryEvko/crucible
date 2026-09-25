@@ -3,7 +3,7 @@
 // Pairs of grades that must not coexist on one binding.
 //
 // Each rule here is a theorem about two axes, carried over from
-// include/crucible/safety/CollisionCatalog.h with its citation.  The
+// include/crucible/safety/_CollisionCatalog.h with its citation.  The
 // rules are knowledge, not boilerplate: the reason a pair is refused is
 // the point, and the message a reader sees is the theorem.
 //
@@ -51,7 +51,7 @@
 // same struct with void for the payload, under which every payload rule
 // stands down, so a pack-only cell keeps meaning what it says.
 //
-// Old spelling: include/crucible/safety/CollisionCatalog.h.
+// Old spelling: include/crucible/safety/_CollisionCatalog.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -359,7 +359,7 @@ inline constexpr std::size_t pending_rule_count = pending_rules.size();
 // against the members live_rules actually defines, so no one of the three
 // can drift without one of the others reporting it.
 //
-// Source: include/crucible/safety/CollisionCatalog.h, whose RuleCode enum
+// Source: include/crucible/safety/_CollisionCatalog.h, whose RuleCode enum
 // has 54 enumerators.
 
 enum class Disposition : std::uint8_t {
@@ -804,7 +804,7 @@ static_assert(every_pending_axis_is_still_empty(),
 // Fifty-four inherited codes plus three written here.
 //
 // The 54 come from the RuleCode enum of
-// include/crucible/safety/CollisionCatalog.h and the count is stated
+// include/crucible/safety/_CollisionCatalog.h and the count is stated
 // against that external list, so a code dropped from this one stops being
 // reported as absent — the failure this list exists to prevent.
 //
@@ -821,7 +821,7 @@ static_assert(every_pending_axis_is_still_empty(),
 // binding that holds one and states no wait.
 static_assert(rule_corpus_size == 57,
               "fixy/Collision.h: the rule corpus must account for the 54 codes inherited from the RuleCode "
-              "enum of include/crucible/safety/CollisionCatalog.h, plus B002, R004 and W003, which are written "
+              "enum of include/crucible/safety/_CollisionCatalog.h, plus B002, R004 and W003, which are written "
               "here.  A code dropped from this list stops being reported as absent.");
 
 // Every code the corpus says ships has an enumerator, and every code it

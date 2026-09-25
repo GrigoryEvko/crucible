@@ -1,7 +1,7 @@
 // Every helper below is exercised twice, once on a pack it must accept
 // and once on a pack it must reject, so both branches are witnessed.
 
-#include <crucible/safety/CollisionCatalog.h>
+#include <crucible/safety/_CollisionCatalog.h>
 #include <crucible/safety/_Fn.h>
 
 #include <type_traits>

@@ -1346,6 +1346,220 @@ crucible/safety/_DimensionTraits.h:wrapper_tier_v  — No successor. It read the
 crucible/safety/_DimensionTraits.h:WRAPPER_KIND_COUNT  — No successor. fixy/Axis.h counts fixy::Wrapper through std::meta::enumerators_of.
 crucible/safety/_DimensionTraits.h:WrapperKind  — fixy::Wrapper in fixy/Axis.h names the eight wrappers that carry an axis discipline. The other kinds became atoms or bands, or have their own drop rows.
 
+# ── safety: the collision catalog ───────────────────────────────────
+crucible/safety/_CollisionCatalog.h:AllRulesOK  — The conjunction of the old verdicts. rules_of<T, Atoms...>::valid in fixy/Collision.h folds the live verdicts.
+crucible/safety/_CollisionCatalog.h:B001_BgObservableBoundedResource  — The rule tag of B001. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:B001_OK  — The verdict of B001. rules_of<T, Atoms...>::B001_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:barrier_at_or_above_v  — It read a BarrierGuarded wrapper type at a floor. rules_of in fixy/Collision.h reads the BarrierStrength grade of the binding at a floor, for V301 and V401.
+crucible/safety/_CollisionCatalog.h:barrier_tier_of  — It read the strength from a BarrierGuarded wrapper type. rules_of in fixy/Collision.h reads the BarrierStrength grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:BarrierGuarded  → include/fixy/atoms/Barrier.h  — A forward declaration that let the old rules name the wrapper without its header. V301 and V401 in fixy/Collision.h read the BarrierStrength grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:C001_AbortRequiresControlFlowWitness  — The rule tag of C001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and the note there says why.
+crucible/safety/_CollisionCatalog.h:C001_OK  — The verdict of C001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:cf_at_or_above_v  — It read a ControlFlowPinned wrapper type at a floor. rules_of in fixy/Collision.h reads the ControlFlow grade of the binding, for L006 and the failure rules.
+crucible/safety/_CollisionCatalog.h:classified_v  — rules_of<T, Atoms...>::classified in fixy/Collision.h, which reads the Security grade of the binding.
+crucible/safety/_CollisionCatalog.h:CollisionDiagnostic  — The diagnostic of the first failed rule. rules_of<T, Atoms...>::failing_codes() in fixy/Collision.h names every failed rule, and fixy::fn puts the codes in its tier 5 message.
+crucible/safety/_CollisionCatalog.h:CollisionDiagnosticByRule  — The goal, gap, suggestion and reference strings of each rule. The static_assert message of each rule in rules_of<T, Atoms...>::validate() of fixy/Collision.h carries the theorem and the remedy.
+crucible/safety/_CollisionCatalog.h:CollisionRules  — Renamed fixy::collision::rules_of<T, Atoms...> in fixy/Collision.h. It reads the payload and the atom pack of a binding, not the nineteen parameters of the old Fn.
+crucible/safety/_CollisionCatalog.h:concurrent_context_v  — rules_of<T, Atoms...>::concurrent in fixy/Collision.h, which reads a coroutine, a suspension in the control flow or Bg in the row of the binding.
+crucible/safety/_CollisionCatalog.h:control_flow_tier_of  — It read the tier from a ControlFlowPinned wrapper type. rules_of in fixy/Collision.h reads the ControlFlow grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:ControlFlowPinned  → include/fixy/atoms/Ctrl.h  — A forward declaration that let the old rules name the wrapper without its header. L006 and the failure rules in fixy/Collision.h read the ControlFlow grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:CRUCIBLE_COLLISION_DIAGNOSTIC  — The macro that wrote one CollisionDiagnosticByRule specialisation for each rule. The theorem and the remedy of a rule are the text of its static_assert in fixy/Collision.h.
+crucible/safety/_CollisionCatalog.h:CRUCIBLE_SAFETY_COLLISION_CATALOG_BODY  — The include guard of the catalog body. fixy/Collision.h has pragma once and needs no body guard.
+crucible/safety/_CollisionCatalog.h:D001_IndirectCallNoexcept  — The rule tag of D001. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:D001_OK  — The verdict of D001. rules_of<T, Atoms...>::D001_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:D002_OK  — The verdict of D002. rules_of<T, Atoms...>::D002_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:D002_RecursionRequiresBound  — The rule tag of D002. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:E044_ConstantTimeAsync  — The rule tag of E044. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:E044_OK  — The verdict of E044. rules_of<T, Atoms...>::E044_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:F001_FrameDeclaresAxisCollision  — The rule tag of F001. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, and the note there names the missing premise.
+crucible/safety/_CollisionCatalog.h:F001_OK  — The verdict of F001. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it. It was always true in the old tree, because the rule held across a set of bindings.
+crucible/safety/_CollisionCatalog.h:F002_FederationPeerTerminatingBudget  — The rule tag of F002. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, and the note there names the missing premise.
+crucible/safety/_CollisionCatalog.h:F002_OK  — The verdict of F002. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:F101_OK  — The verdict of F101. rules_of<T, Atoms...>::F101_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:F101_ReplayFpReassocPermitted  — The rule tag of F101. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:F102_OK  — The verdict of F102. rules_of<T, Atoms...>::F102_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:F102_ReplayFpContractFast  — The rule tag of F102. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:F103_CtFpReassocPermitted  — The rule tag of F103. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:F103_OK  — The verdict of F103. rules_of<T, Atoms...>::F103_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:F104_CtFpDenormalInputHonored  — The rule tag of F104. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:F104_OK  — The verdict of F104. rules_of<T, Atoms...>::F104_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:F105_CtFpFtzPreserved  — The rule tag of F105. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:F105_OK  — The verdict of F105. rules_of<T, Atoms...>::F105_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:fail_error_secret_v  — rules_of<T, Atoms...>::fails_with_plain_error in fixy/Collision.h reads whether the error type of a failure is Secret, from the payload or from ctrl::throws<E>.
+crucible/safety/_CollisionCatalog.h:first_failure  — It returned the first failed rule. rules_of<T, Atoms...>::failing_codes() in fixy/Collision.h returns every failed rule.
+crucible/safety/_CollisionCatalog.h:first_failure_v  — The value of first_failure. rules_of<T, Atoms...>::failing_codes() in fixy/Collision.h returns every failed rule.
+crucible/safety/_CollisionCatalog.h:FpComplexLayout  → include/fixy/atoms/Fp.h  — A forward declaration of an FP mode enum that no collision rule reads. The head comment of fixy/atoms/Fp.h names it among the seven enums that the port did not restate.
+crucible/safety/_CollisionCatalog.h:FpConstantRounding  → include/fixy/atoms/Fp.h  — A forward declaration of an FP mode enum that no collision rule reads. The head comment of fixy/atoms/Fp.h names it among the seven enums that the port did not restate.
+crucible/safety/_CollisionCatalog.h:FpInfPolicy  → include/fixy/atoms/Fp.h  — A forward declaration of an FP mode enum that no collision rule reads. The head comment of fixy/atoms/Fp.h names it among the seven enums that the port did not restate.
+crucible/safety/_CollisionCatalog.h:FpLibmPolicy  → include/fixy/atoms/Fp.h  — A forward declaration of an FP mode enum that no collision rule reads. The head comment of fixy/atoms/Fp.h names it among the seven enums that the port did not restate.
+crucible/safety/_CollisionCatalog.h:FpModePinned  → include/fixy/atoms/Fp.h  — A forward declaration that let the old rules name the wrapper without its header. F101 to F105 in fixy/Collision.h read the FpMode grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:FpNanPolicy  → include/fixy/atoms/Fp.h  — A forward declaration of an FP mode enum that no collision rule reads. The head comment of fixy/atoms/Fp.h names it among the seven enums that the port did not restate.
+crucible/safety/_CollisionCatalog.h:FpRounding  → include/fixy/atoms/Fp.h  — A forward declaration of an FP mode enum that no collision rule reads. The head comment of fixy/atoms/Fp.h names it among the seven enums that the port did not restate.
+crucible/safety/_CollisionCatalog.h:FpTrapMask  → include/fixy/atoms/Fp.h  — A forward declaration of an FP mode enum that no collision rule reads. The head comment of fixy/atoms/Fp.h names it among the seven enums that the port did not restate.
+crucible/safety/_CollisionCatalog.h:frame_axis_consistent  — The pack check of F001. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, because no gate takes a set of fixy::fn bindings.
+crucible/safety/_CollisionCatalog.h:frame_axis_consistent_v  — The value of frame_axis_consistent. The code F001 is Absent in fixy::collision::rule_corpus of fixy/Collision.h.
+crucible/safety/_CollisionCatalog.h:G001_OK  — The verdict of G001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:G001_ThreadLocalNeedsTag  — The rule tag of G001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and the note there says why.
+crucible/safety/_CollisionCatalog.h:G002_OK  — The verdict of G002. rules_of<T, Atoms...>::G002_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:G002_ThreadLocalAtomicNonsensical  — The rule tag of G002. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:H001_HotPathBoundedCost  — The rule tag of H001. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:H001_OK  — The verdict of H001. rules_of<T, Atoms...>::H001_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:H002_HotPathWitnessFloor  — The rule tag of H002. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:H002_OK  — The verdict of H002. rules_of<T, Atoms...>::H002_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:H003_HotPathTerminatingAllocIo  — The rule tag of H003. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:H003_OK  — The verdict of H003. rules_of<T, Atoms...>::H003_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:H010_HotPathBgContradiction  — The rule tag of H010. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:H010_OK  — The verdict of H010. rules_of<T, Atoms...>::H010_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:has_async_v  — rules_of<T, Atoms...>::concurrent in fixy/Collision.h, which reads a coroutine, a suspension in the control flow or Bg in the row of the binding.
+crucible/safety/_CollisionCatalog.h:has_borrow_capture_v  — rules_of<T, Atoms...>::borrow in fixy/Collision.h, which reads the borrow grade on the Usage axis. The old read of a Borrowed payload type has no successor.
+crucible/safety/_CollisionCatalog.h:has_ct_v  — rules_of<T, Atoms...>::constant_time in fixy/Collision.h, which reads the Security grade atom::constant_time.
+crucible/safety/_CollisionCatalog.h:has_fail_v  — rules_of<T, Atoms...>::fails in fixy/Collision.h, which reads a std::expected payload or ctrl::throws<E> on the ControlFlow axis.
+crucible/safety/_CollisionCatalog.h:hot_path_tier_is_hot  — It read the tier of a HotPath wrapper type. rules_of<T, Atoms...>::hot in fixy/Collision.h reads the hot atom on the Regime axis instead.
+crucible/safety/_CollisionCatalog.h:Hw  → include/fixy/atoms/Hw.h  — A forward declaration that let the old rules name the wrapper without its header. V201, V202 and V203 in fixy/Collision.h read the HwInstruction grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:hw_at_or_above_v  — It read a Hw wrapper type at a floor. rules_of in fixy/Collision.h reads the HwInstruction grade of the binding at a floor, for V201 to V203.
+crucible/safety/_CollisionCatalog.h:hw_tier_of  — It read the tier from a Hw wrapper type. rules_of in fixy/Collision.h reads the HwInstruction grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:I002_ClassifiedFailPayload  — The rule tag of I002. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:I002_OK  — The verdict of I002. rules_of<T, Atoms...>::I002_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:I003_ConstantTimeFailOnSecret  — The rule tag of I003. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:I003_OK  — The verdict of I003. rules_of<T, Atoms...>::I003_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:I004_ClassifiedAsyncSession  — The rule tag of I004. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:I004_OK  — The verdict of I004. rules_of<T, Atoms...>::I004_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:inner_scope_tier_of  — It read the inner scope of two nested ScopedFence wrappers. A fixy::fn binding takes one MemoryScope grade, because tier 4 of fixy/Reject.h admits at most one atom on each axis.
+crucible/safety/_CollisionCatalog.h:is_active_spin_v  — rules_of<T, Atoms...>::core_burning_spin in fixy/Collision.h reads the Synchronization grade through the predicate of fixy/atoms/Sync.h, for W002.
+crucible/safety/_CollisionCatalog.h:is_borrowed_carrier  — No successor. L002 and L007 in fixy/Collision.h read the borrow grade on the Usage axis and not the payload type.
+crucible/safety/_CollisionCatalog.h:is_exact_decimal  — The premise of N002. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, because the tree has no decimal type.
+crucible/safety/_CollisionCatalog.h:is_hot_path_v  — rules_of<T, Atoms...>::hot in fixy/Collision.h, which reads the hot atom on the Regime axis.
+crucible/safety/_CollisionCatalog.h:is_kernel_wait_v  — No successor by name. W001 in fixy/Collision.h reads Block in the row of the binding, and a kernel wait lifts to that row.
+crucible/safety/_CollisionCatalog.h:is_linear_in_region_v  — A premise of L005. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, because no gate takes a set of bindings.
+crucible/safety/_CollisionCatalog.h:is_region_lifetime  — A premise of L004 and L005. The two codes are Absent in fixy::collision::rule_corpus of fixy/Collision.h, and the notes there name the missing premises.
+crucible/safety/_CollisionCatalog.h:is_trivial_refinement  — rules_of<T, Atoms...>::no_witness_floor in fixy/Collision.h, which is true when the binding says nothing on the Refinement axis.
+crucible/safety/_CollisionCatalog.h:is_unbounded_cost  — rules_of<T, Atoms...>::unbounded_cost and cost_unstated in fixy/Collision.h read the Complexity axis of the binding.
+crucible/safety/_CollisionCatalog.h:L002_BorrowAsync  — The rule tag of L002. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:L002_OK  — The verdict of L002. rules_of<T, Atoms...>::L002_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:L003_BorrowUnscopedSpawn  — The rule tag of L003. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:L003_OK  — The verdict of L003. rules_of<T, Atoms...>::L003_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:L004_LinearLifetimeNeedsPermission  — The rule tag of L004. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, and the note there names the missing premise.
+crucible/safety/_CollisionCatalog.h:L004_OK  — The verdict of L004. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:L005_LinearAliasSameRegionTag  — The rule tag of L005. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, and the note there names the missing premise.
+crucible/safety/_CollisionCatalog.h:L005_OK  — The verdict of L005. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it. It was always true in the old tree, because the rule held across a set of bindings.
+crucible/safety/_CollisionCatalog.h:L006_NoLongjmpAcrossLinear  — The rule tag of L006. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:L006_OK  — The verdict of L006. rules_of<T, Atoms...>::L006_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:L007_BorrowBgRow  — The rule tag of L007. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:L007_OK  — The verdict of L007. rules_of<T, Atoms...>::L007_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:M001_DontNeedRequiresReleaseAware  — The rule tag of M001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and the note there says why.
+crucible/safety/_CollisionCatalog.h:M011_LinearFailNoCleanup  — The rule tag of M011. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and the note there says why.
+crucible/safety/_CollisionCatalog.h:M011_OK  — The verdict of M011. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:M012_MonotonicConcurrentNoAtomic  — The rule tag of M012. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:M012_OK  — The verdict of M012. rules_of<T, Atoms...>::M012_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:marks_aborts  — The marker of C001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, because ctrl::abort<Reason> is itself the ControlFlow grade.
+crucible/safety/_CollisionCatalog.h:marks_async  — The old opt-in marker. rules_of<T, Atoms...>::concurrent in fixy/Collision.h reads the concurrency from the atoms of the binding instead.
+crucible/safety/_CollisionCatalog.h:marks_borrow_capture  — The old opt-in marker. rules_of<T, Atoms...>::borrow in fixy/Collision.h reads the borrow grade on the Usage axis instead.
+crucible/safety/_CollisionCatalog.h:marks_concurrent_context  — The old opt-in marker. rules_of<T, Atoms...>::concurrent in fixy/Collision.h reads a coroutine, a suspension or Bg in the row of the binding instead.
+crucible/safety/_CollisionCatalog.h:marks_ct  — The old opt-in marker. rules_of<T, Atoms...>::constant_time in fixy/Collision.h reads the Security grade atom::constant_time instead.
+crucible/safety/_CollisionCatalog.h:marks_externally_observable  — The old opt-in marker. rules_of<T, Atoms...>::observes_something in fixy/Collision.h reads the Observability grade of fixy/atoms/Observe.h instead.
+crucible/safety/_CollisionCatalog.h:marks_fail  — The old opt-in marker. rules_of<T, Atoms...>::fails in fixy/Collision.h reads a std::expected payload or ctrl::throws<E> instead.
+crucible/safety/_CollisionCatalog.h:marks_fail_error_secret  — The old opt-in marker. rules_of<T, Atoms...>::fails_with_plain_error in fixy/Collision.h reads the error type of the failure instead.
+crucible/safety/_CollisionCatalog.h:marks_fail_on_secret  — The old third premise of I003. The new I003 in fixy/Collision.h needs no marker, because a failure in a constant-time body is a branch on the secret.
+crucible/safety/_CollisionCatalog.h:marks_federation_peer  — The marker of F002. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, because no atom, band or role names a federation peer.
+crucible/safety/_CollisionCatalog.h:marks_fork_worker  — A marker of P003. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, because mint_spawn refuses a worker whose type carries ctrl::throws.
+crucible/safety/_CollisionCatalog.h:marks_hot_path  — The old opt-in marker. rules_of<T, Atoms...>::hot in fixy/Collision.h reads the hot atom on the Regime axis instead.
+crucible/safety/_CollisionCatalog.h:marks_indirect_call_not_noexcept  — The marker of D001. rules_of<T, Atoms...>::indirect_call_may_throw in fixy/Collision.h reads the family of the indirect call on the CallShape axis instead.
+crucible/safety/_CollisionCatalog.h:marks_lifetime_region_unprotected  — The marker of L004. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, because a binding sees no Permission argument.
+crucible/safety/_CollisionCatalog.h:marks_linear_uncleaned_fail  — The marker of M011. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, because a failure runs every destructor in scope and L006 refuses longjmp.
+crucible/safety/_CollisionCatalog.h:marks_longjmp_unsafe  — The old opt-in marker. rules_of<T, Atoms...>::longjmp_unsafe in fixy/Collision.h reads the ControlFlow grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:marks_recurses_unbounded  — The marker of D002. rules_of<T, Atoms...>::recurses in fixy/Collision.h reads the CallShape grade, and D002 reads it against an unbounded cost.
+crucible/safety/_CollisionCatalog.h:marks_replay_required  — The old opt-in marker. rules_of<T, Atoms...>::replay_deterministic in fixy/Collision.h reads the DetSafe band of the payload instead.
+crucible/safety/_CollisionCatalog.h:marks_replay_stable  — The exemption of S011. The new S011 in fixy/Collision.h admits no exemption, because a capability is minted for one run and a replay cannot mint it again.
+crucible/safety/_CollisionCatalog.h:marks_runtime_ghost_use  — The marker of P002. rules_of<T, Atoms...>::emits_outside_the_row in fixy/Collision.h reads the Stdio and SyscallSurface axes of a ghost binding instead.
+crucible/safety/_CollisionCatalog.h:marks_scope_arch_cross_trunk  — The marker of V402. rules_of<T, Atoms...>::trunks_cohere in fixy/Collision.h reads the trunks of the MemoryScope and SimdIsa grades instead.
+crucible/safety/_CollisionCatalog.h:marks_simd_width_exceeds_isa  — The marker of V102. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, because the one SimdIsa grade of a binding fixes its width.
+crucible/safety/_CollisionCatalog.h:marks_singleton_init_cycle  — The marker of S004. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, and crucible/SingletonInitGraph.h refuses a cycle at its own gate.
+crucible/safety/_CollisionCatalog.h:marks_thread_local_atomic  — The marker of G002. rules_of<T, Atoms...>::thread_local_state and atomic_repr in fixy/Collision.h read the GlobalState and Representation grades instead.
+crucible/safety/_CollisionCatalog.h:marks_thread_local_untagged  — The marker of G001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, because atom::global::thread_local_<StaticTag> requires the tag.
+crucible/safety/_CollisionCatalog.h:marks_throws  — A marker of P003. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and a throw is the ControlFlow grade ctrl::throws<E>.
+crucible/safety/_CollisionCatalog.h:marks_unscoped_spawn  — The marker of L003. rules_of<T, Atoms...>::spawn_outlives_the_frame in fixy/Collision.h reads the spawn atom on the Protocol axis instead.
+crucible/safety/_CollisionCatalog.h:marks_vendor_cross_arch  — The marker of V002. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, because a binding takes one SimdIsa grade.
+crucible/safety/_CollisionCatalog.h:marks_vendor_isa_inconsistent  — The marker of V001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, because a binding takes one SimdIsa grade.
+crucible/safety/_CollisionCatalog.h:N002_DecimalOverflowWrap  — The rule tag of N002. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, and the note there names the missing premise.
+crucible/safety/_CollisionCatalog.h:N002_OK  — The verdict of N002. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:nested_scope_cross_trunk_v  — It read two nested ScopedFence scopes. A fixy::fn binding takes one MemoryScope grade, so V402 in fixy/Collision.h reads the scope against the SimdIsa grade instead.
+crucible/safety/_CollisionCatalog.h:no_linear_region_alias  — The pack check of L005. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, because no gate takes a set of bindings.
+crucible/safety/_CollisionCatalog.h:no_linear_region_alias_v  — The value of no_linear_region_alias. The code L005 is Absent in fixy::collision::rule_corpus of fixy/Collision.h.
+crucible/safety/_CollisionCatalog.h:P002_GhostRuntimeUse  — The rule tag of P002. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:P002_OK  — The verdict of P002. rules_of<T, Atoms...>::P002_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:P003_ForkBodyNoThrows  — The rule tag of P003. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and the note there says why.
+crucible/safety/_CollisionCatalog.h:P003_OK  — The verdict of P003. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:P010_GhostNonErasable  — The rule tag of P010. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:P010_OK  — The verdict of P010. rules_of<T, Atoms...>::P010_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:R001_CoroutineHotPath  — The rule tag of R001. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:R001_OK  — The verdict of R001. rules_of<T, Atoms...>::R001_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:R002_CoroutineBorrow  — The rule tag of R002. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:R002_OK  — The verdict of R002. rules_of<T, Atoms...>::R002_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:R003_CoroutineBgRow  — The rule tag of R003. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:R003_OK  — The verdict of R003. rules_of<T, Atoms...>::R003_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:region_tag_of  — A helper of the L005 pack check. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h.
+crucible/safety/_CollisionCatalog.h:region_tag_of_t  — The alias of region_tag_of, a helper of the L005 pack check. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h.
+crucible/safety/_CollisionCatalog.h:row_has_effect_v  — An alias of the old effects::row_contains_v. fixy/Collision.h reads foundation::effects::row_contains_v on the row of the binding directly.
+crucible/safety/_CollisionCatalog.h:rule_bijection_v  — It checked that the enum and the tag of each rule agree. fixy/Collision.h keys a rule by its code string and has no tag type to agree with.
+crucible/safety/_CollisionCatalog.h:rule_code_count  — No successor by name. The pins of fixy/Collision.h walk fixy::collision::RuleCode through std::meta::enumerators_of, and rule_corpus_size counts the corpus.
+crucible/safety/_CollisionCatalog.h:rule_code_of  — It mapped a rule tag to its enumerator. fixy/Collision.h has no tag types, so the code string is the key.
+crucible/safety/_CollisionCatalog.h:rule_code_of_v  — The value of rule_code_of. fixy/Collision.h has no tag types, so the code string is the key.
+crucible/safety/_CollisionCatalog.h:rule_tag  — It mapped an enumerator to its rule tag. fixy/Collision.h keys each rule by the code string in rule_corpus.
+crucible/safety/_CollisionCatalog.h:rule_tag_t  — The alias of rule_tag. fixy/Collision.h keys each rule by the code string in rule_corpus.
+crucible/safety/_CollisionCatalog.h:RuleCode  — fixy::collision::RuleCode in fixy/Collision.h names only the live codes. An Absent or Retired code is a string in rule_corpus.
+crucible/safety/_CollisionCatalog.h:S001_OK  — The verdict of S001. rules_of<T, Atoms...>::S001_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:S001_StdioForbiddenOnHotPath  — The rule tag of S001. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:S004_MeyersSingletonInitCycle  — The rule tag of S004. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, and the note there names the missing premise.
+crucible/safety/_CollisionCatalog.h:S004_OK  — The verdict of S004. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:S010_OK  — The verdict of S010. rules_of<T, Atoms...>::S010_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:S010_StalenessConstantTime  — The rule tag of S010. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:S011_CapabilityReplay  — The rule tag of S011. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:S011_OK  — The verdict of S011. rules_of<T, Atoms...>::S011_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:same_region_tag_v  — A helper of the L005 pack check. The code is Absent in fixy::collision::rule_corpus of fixy/Collision.h.
+crucible/safety/_CollisionCatalog.h:scope_arch_cross_trunk_v  — It read a scope against the arch pin of the source tag. V402 in fixy/Collision.h reads the scope trunk against the SimdIsa trunk of the binding instead.
+crucible/safety/_CollisionCatalog.h:scope_at_or_above_v  — It read a ScopedFence wrapper type at a floor. rules_of<T, Atoms...>::scope_cluster_or_above in fixy/Collision.h reads the MemoryScope grade instead.
+crucible/safety/_CollisionCatalog.h:scope_contradicts_host_arch  — It compared a scope with the arch pin of the source tag. V402 in fixy/Collision.h compares the scope trunk with the SimdIsa trunk instead.
+crucible/safety/_CollisionCatalog.h:scope_tier_of  — It read the scope from a ScopedFence wrapper type. rules_of in fixy/Collision.h reads the MemoryScope grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:scopes_cross_trunk  — It compared two nested scopes. A fixy::fn binding takes one MemoryScope grade, so there is no second scope to compare.
+crucible/safety/_CollisionCatalog.h:session_protocol_v  — rules_of<T, Atoms...>::session_protocol in fixy/Collision.h, which reads the Protocol grade of the binding.
+crucible/safety/_CollisionCatalog.h:simd_isa_of  — It read the ISA from a SimdWidthPinned wrapper type. rules_of in fixy/Collision.h reads the SimdIsa grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:simd_isa_pins_specific_vector_v  — rules_of<T, Atoms...>::isa_pinned in fixy/Collision.h, which reads whether the SimdIsa grade pins one trunk.
+crucible/safety/_CollisionCatalog.h:SimdWidthPinned  → include/fixy/atoms/Simd.h  — A forward declaration that let the old rules name the wrapper without its header. V101 and V402 in fixy/Collision.h read the SimdIsa grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:singleton_init_acyclic  — The cycle check of S004. crucible/SingletonInitGraph.h states the edges and refuses a cycle at its own gate, and S004 is Absent in rule_corpus of fixy/Collision.h.
+crucible/safety/_CollisionCatalog.h:singleton_init_has_cycle  — The negation of singleton_init_acyclic. crucible/SingletonInitGraph.h refuses a cycle at its own gate, and S004 is Absent in rule_corpus of fixy/Collision.h.
+crucible/safety/_CollisionCatalog.h:stdio_at_or_above_v  — It read a StdioPinned wrapper type at a floor. S001 in fixy/Collision.h refuses a hot binding that names the Stdio axis at all.
+crucible/safety/_CollisionCatalog.h:stdio_tier_of  — It read the tier from a StdioPinned wrapper type. S001 and P002 in fixy/Collision.h read the Stdio axis of the binding instead.
+crucible/safety/_CollisionCatalog.h:StdioPinned  → include/fixy/atoms/Stdio.h  — A forward declaration that let the old rules name the wrapper without its header. S001 and P002 in fixy/Collision.h read the Stdio axis of the binding instead.
+crucible/safety/_CollisionCatalog.h:T001_OK  — The verdict of T001. rules_of<T, Atoms...>::T001_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:T001_UnverifiedCapability  — The rule tag of T001. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:V001_OK  — The verdict of V001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:V001_VendorIsaInconsistent  — The rule tag of V001. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and the note there says why.
+crucible/safety/_CollisionCatalog.h:V002_OK  — The verdict of V002. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:V002_VendorCrossArch  — The rule tag of V002. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and the note there says why.
+crucible/safety/_CollisionCatalog.h:V101_OK  — The verdict of V101. rules_of<T, Atoms...>::V101_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:V101_ReplaySimdIsaPinned  — The rule tag of V101. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:V102_OK  — The verdict of V102. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, so rules_of has no verdict for it.
+crucible/safety/_CollisionCatalog.h:V102_SimdWidthExceedsIsa  — The rule tag of V102. The code is Retired in fixy::collision::rule_corpus of fixy/Collision.h, and the note there says why.
+crucible/safety/_CollisionCatalog.h:V201_HotPathNondetTscOrPrivileged  — The rule tag of V201. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:V201_OK  — The verdict of V201. rules_of<T, Atoms...>::V201_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:V202_OK  — The verdict of V202. rules_of<T, Atoms...>::V202_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:V202_PrivilegedMsrNeedsInit  — The rule tag of V202. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:V203_OK  — The verdict of V203. rules_of<T, Atoms...>::V203_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:V203_ReplayNondetTsc  — The rule tag of V203. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:V301_HotPathFullFence  — The rule tag of V301. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:V301_OK  — The verdict of V301. rules_of<T, Atoms...>::V301_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:V401_OK  — The verdict of V401. rules_of<T, Atoms...>::V401_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:V401_ScopeStrengthInsufficient  — The rule tag of V401. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:V402_OK  — The verdict of V402. rules_of<T, Atoms...>::V402_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:V402_ScopeArchCrossTrunk  — The rule tag of V402. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:W001_HotPathWaitParkOrBlocker  — The rule tag of W001. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:W001_OK  — The verdict of W001. rules_of<T, Atoms...>::W001_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:W002_BgWaitActiveSpin  — The rule tag of W002. The code is Live in fixy::collision::rule_corpus of fixy/Collision.h, and rules_of<T, Atoms...>::failing_codes() reports the rule by that code.
+crucible/safety/_CollisionCatalog.h:W002_OK  — The verdict of W002. rules_of<T, Atoms...>::W002_ok in fixy/Collision.h is its successor.
+crucible/safety/_CollisionCatalog.h:wait_strategy_of  — It read the strategy from a Wait wrapper type. W001 in fixy/Collision.h reads Block in the row of the binding, and W002 and W003 read the Synchronization grade.
+crucible/safety/_CollisionCatalog.h:wraps_fp_axis_mode  — It read one FP mode value from an FpModePinned wrapper type. rules_of in fixy/Collision.h reads the value from the FpMode grade of the binding instead.
+crucible/safety/_CollisionCatalog.h:wraps_fp_axis_mode_v  — The value of wraps_fp_axis_mode. rules_of in fixy/Collision.h reads the FP mode value from the FpMode grade of the binding instead.
+
 # ── sessions: the classified payloads ───────────────────────────────────
 crucible/sessions/_SessionCT.h:requires_ct  — Replaced by the constant_time_value annotation in fixy/session/Classified.h, which sits on the declaration, so a late specialisation cannot change an answer already given.
 crucible/sessions/_SessionCT.h:requires_ct_v  — Replaced by the ConstantTimeValue concept in fixy/session/Classified.h, which reads the annotation on the declaration.

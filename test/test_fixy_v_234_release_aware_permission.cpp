@@ -6,7 +6,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/safety/CollisionCatalog.h>
+#include <crucible/safety/_CollisionCatalog.h>
 
 #include <cstdio>
 #include <cstdlib>

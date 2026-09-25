@@ -12,7 +12,7 @@
 //
 // Expected diagnostic: the static_assert message (cycle / fiasco / S004).
 
-#include <crucible/safety/CollisionCatalog.h>  // pack::singleton_init_acyclic
+#include <crucible/safety/_CollisionCatalog.h>  // pack::singleton_init_acyclic
 
 #include <array>
 #include <cstddef>
