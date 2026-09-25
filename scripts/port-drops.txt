@@ -427,6 +427,23 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
 
+# ── sessions: the classified payloads ───────────────────────────────────
+crucible/sessions/_SessionCT.h:requires_ct  — Replaced by the constant_time_value annotation in fixy/session/Classified.h, which sits on the declaration, so a late specialisation cannot change an answer already given.
+crucible/sessions/_SessionCT.h:requires_ct_v  — Replaced by the ConstantTimeValue concept in fixy/session/Classified.h, which reads the annotation on the declaration.
+crucible/sessions/_SessionCT.h:RequiresCT  — Renamed ConstantTimeValue in fixy/session/Classified.h, and CTPayload states the trivially copyable half in its own requires clause.
+crucible/sessions/_SessionCT.h:is_ct_payload  — Dropped: no file outside the old session headers read it, and is_instance_of_v in foundation/reflect/Instance.h answers the same question.
+crucible/sessions/_SessionCT.h:is_ct_payload_v  — Dropped: no file outside the old session headers read it, and is_instance_of_v in foundation/reflect/Instance.h answers the same question.
+crucible/sessions/_SessionCT.h:CTPayloadType  — Dropped: no file outside the old session headers read it, and IsInstanceOf in foundation/reflect/Instance.h answers the same question.
+crucible/sessions/_SessionCT.h:ct_payload_value_type  — Dropped: no file outside the old session headers read it, and CTPayload<T>::value_type in fixy/session/Classified.h names the wrapped type.
+crucible/sessions/_SessionCT.h:ct_payload_value_type_t  — Dropped: no file outside the old session headers read it, and CTPayload<T>::value_type in fixy/session/Classified.h names the wrapped type.
+crucible/sessions/_SessionDeclassify.h:is_declassify_on_send  — Dropped: no file outside the old session headers read it, and is_instance_of_v in foundation/reflect/Instance.h answers the same question.
+crucible/sessions/_SessionDeclassify.h:is_declassify_on_send_v  — Dropped: no file outside the old session headers read it, and is_instance_of_v in foundation/reflect/Instance.h answers the same question.
+crucible/sessions/_SessionDeclassify.h:DeclassifyOnSendable  — Dropped: no file outside the old session headers read it, and IsInstanceOf in foundation/reflect/Instance.h answers the same question.
+crucible/sessions/_SessionDeclassify.h:wire_payload_type  — Dropped: no file outside the old session headers read it, and DeclassifyOnSend<T, Policy>::value_type in fixy/session/Classified.h names the payload.
+crucible/sessions/_SessionDeclassify.h:wire_payload_type_t  — Dropped: no file outside the old session headers read it, and DeclassifyOnSend<T, Policy>::value_type in fixy/session/Classified.h names the payload.
+crucible/sessions/_SessionDeclassify.h:wire_policy  — Dropped: no file outside the old session headers read it, and DeclassifyOnSend<T, Policy>::policy_type in fixy/session/Classified.h names the policy.
+crucible/sessions/_SessionDeclassify.h:wire_policy_t  — Dropped: no file outside the old session headers read it, and DeclassifyOnSend<T, Policy>::policy_type in fixy/session/Classified.h names the policy.
+
 # ── safety: the stage-shape recognizers and the signature inference ─────
 # No production file and no header of the new tree classifies a function
 # by its parameter shape, infers a row or a tag set from a signature, or

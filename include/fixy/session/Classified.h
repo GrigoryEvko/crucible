@@ -26,8 +26,8 @@
 // check, and it cannot be separated from the type.  A trait
 // specialization or a roster entry could do both.
 //
-// Old spellings: include/crucible/sessions/SessionDeclassify.h and
-// include/crucible/sessions/SessionCT.h, which accepted any policy that
+// Old spellings: include/crucible/sessions/_SessionDeclassify.h and
+// include/crucible/sessions/_SessionCT.h, which accepted any policy that
 // derived from the policy base.  Here the policy must be admitted, as
 // Secret::declassify requires.
 

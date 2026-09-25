@@ -1,7 +1,7 @@
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 
-#include <crucible/sessions/SessionCT.h>
-#include <crucible/sessions/SessionDeclassify.h>
+#include <crucible/sessions/_SessionCT.h>
+#include <crucible/sessions/_SessionDeclassify.h>
 #include <crucible/sessions/SessionView.h>
 
 #include <cstdio>

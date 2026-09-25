@@ -9,9 +9,9 @@
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionContext.h>
-#include <crucible/sessions/SessionCT.h>
+#include <crucible/sessions/_SessionCT.h>
 #include <crucible/sessions/SessionCrash.h>
-#include <crucible/sessions/SessionDeclassify.h>
+#include <crucible/sessions/_SessionDeclassify.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionDiagnostic.h>
 #include <crucible/sessions/SessionEventLog.h>

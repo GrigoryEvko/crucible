@@ -1,4 +1,4 @@
-#include <crucible/sessions/SessionDeclassify.h>
+#include <crucible/sessions/_SessionDeclassify.h>
 
 #include <cstdio>
 #include <string>

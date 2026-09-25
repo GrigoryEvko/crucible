@@ -10,7 +10,7 @@
 
 #include <crucible/cntp/MtlsTransport.h>
 #include <crucible/safety/_ConstantTime.h>
-#include <crucible/sessions/SessionCT.h>
+#include <crucible/sessions/_SessionCT.h>
 
 #include <array>
 #include <cstddef>
