@@ -123,7 +123,7 @@ RELATIONS = (
     Relation("predicate_implies", "specialization", ("predicate_implies",),
              ("include/crucible/safety/_Refined.h", "include/crucible/safety/_RefinedAlgebra.h", "test/*")),
     Relation("survivor_registry", "specialization", ("survivor_registry",),
-             ("include/crucible/permissions/PermissionInherit.h", "include/crucible/fixy/Bridge.h", "test/*")),
+             ("include/crucible/permissions/PermissionInherit.h", "test/*")),
     Relation("is_subsort", "specialization", ("is_subsort",), ("include/crucible/sessions/*.h", "test/*")),
     Relation("admitted_retags", "reopening", ("admitted_retags",), ("include/fixy/Tagged.h", "test/*")),
     Relation("admitted_policies", "reopening", ("admitted_policies",), ("include/fixy/Secret.h", "test/*")),
@@ -390,7 +390,7 @@ def self_test() -> int:
             "namespace crucible::safety { template <> struct retag_policy<source::Raw, source::Sanitized> {}; }\n"),
         "include/crucible/sessions/Planted.h": (
             "namespace crucible::safety::proto { template <> struct is_subsort<A, B> : std::true_type {}; }\n"),
-        "include/crucible/fixy/Bridge.h": (
+        "test/planted_survivor.cpp": (
             "namespace crucible::safety { template <> struct survivor_registry<Dead> {}; }\n"),
         "include/crucible/safety/_Machine.h": (
             "CRUCIBLE_ALLOW_MACHINE_TRANSITION(PlantedFrom, PlantedTo)\n"

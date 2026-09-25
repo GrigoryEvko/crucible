@@ -26,7 +26,7 @@
 # Concept aliases (a) are not checked structurally — concept names
 # parse via `concept IsX = ...` in substrate and `concept IsX = ...`
 # in fixy::is::; both have the same identifier, so a missing fixy
-# concept would surface as a compile error in test_fixy_umbrella
+# concept would surface as a compile error in test_fixy_is
 # when downstream code references `fixy::is::IsX`.  The trait + alias
 # tiers (b)+(c) are the ones this script audits.
 #
@@ -49,7 +49,7 @@
 #
 # So a reflection walk would trade this scan's blind spots for a
 # different, quieter set.  Reach through `fixy::is::` is instead
-# asserted in-language, per symbol, in test/test_fixy_umbrella_reach.cpp.
+# asserted in-language, per symbol, in test/test_fixy_is.cpp.
 #
 # Exit status:
 #   0 — parity verified (every public alias re-exported)

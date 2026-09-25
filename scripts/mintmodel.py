@@ -657,8 +657,8 @@ def reexports(paths: list[Path] | None = None) -> dict[str, tuple[str, int]]:
     A re-export is a `using_declaration` whose one child is a
     `qualified_identifier`.  The key is that qualified name verbatim, so a
     lookup matches the mint the using actually names.  A bare-name key cannot:
-    `fixy/Bridge.h:55` reads `using ::crucible::mint_vigil_mode_bridge;`, which
-    names the overload in namespace `crucible`, not the one in
+    a re-export `using ::crucible::mint_vigil_mode_bridge;` names the
+    overload in namespace `crucible`, not the one in
     `crucible::vigil_mode` that the inventory pairs it with.
 
     Args:

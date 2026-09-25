@@ -18,36 +18,21 @@
 
 #include <crucible/fixy/Fn.h>
 
-#include <crucible/fixy/Bridge.h>
-#include <crucible/fixy/Cap.h>
-#include <crucible/fixy/Contract.h>
 #include <crucible/fixy/Decide.h>
 #include <crucible/fixy/Is.h>
 #include <crucible/fixy/_Mach.h>
 #include <crucible/fixy/Perm.h>
 #include <crucible/fixy/Handle.h>
 #include <crucible/fixy/Pipe.h>
-#include <crucible/fixy/Safety.h>
 #include <crucible/fixy/Sess.h>
-#include <crucible/fixy/SessGlobal.h>
-#include <crucible/fixy/Mpst.h>
 #include <crucible/fixy/SessContentAddr.h>
 #include <crucible/fixy/SessEventLog.h>
-#include <crucible/fixy/SessAssoc.h>
-#include <crucible/fixy/SessDelegate.h>
-#include <crucible/fixy/SessCheckpoint.h>
-#include <crucible/fixy/SessRowExtraction.h>
-#include <crucible/fixy/SessView.h>
-#include <crucible/fixy/SessCrash.h>
 #include <crucible/fixy/SessFederation.h>
 #include <crucible/fixy/SessShape.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>
 
-#include <crucible/fixy/Algebra.h>
 #include <crucible/fixy/Diag.h>
-#include <crucible/fixy/Eff.h>
 #include <crucible/fixy/_Insights.h>
-#include <crucible/fixy/Modality.h>
 #include <crucible/fixy/Source.h>

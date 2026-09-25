@@ -183,9 +183,7 @@ crucible_test(test_fixy_fn)
 crucible_test(test_fixy_profile)
 crucible_test(test_fixy_rule_helpers)
 crucible_test(test_fixy_rules_compose)  # FIXY-U-062 — §6.8 aggregator surface
-crucible_test(test_fixy_modality)       # FIXY-U-060 — top-level modality surface
 crucible_test(test_fixy_sess_federation) # FIXY-U-072 — federation per-role reach
-crucible_test(test_fixy_cap)
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
 crucible_test(test_fixy_substr_spsc_permissioned_spsc_channel) # FIXY-V-045 — fixy::substr::spsc:: PermissionedSpscChannel surface
@@ -199,8 +197,6 @@ crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
 crucible_test(test_fixy_sess_patterns)  # FIXY-AUDIT-C6
 crucible_test(test_fixy_sess_mint_removed_diag)  # FIXY-AUDIT-B6
-crucible_test(test_fixy_contract_cipher)  # FIXY-AUDIT-B9
-crucible_test(test_fixy_bridge_fwddecl)  # FIXY-AUDIT-C5
 crucible_test(test_fixy_substr_completeness)  # FIXY-AUDIT-C10
 crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_pipe_chain)  # FIXY-AUDIT-C2
@@ -219,34 +215,20 @@ target_compile_definitions(test_fixy_pipe_topology_override PRIVATE
     CRUCIBLE_L2_PER_CORE_BYTES=1048576     #  1 MiB
     CRUCIBLE_L3_TOTAL_BYTES=33554432       # 32 MiB
 )
-crucible_test(test_fixy_bridge)
-crucible_test(test_fixy_perf)    # FIXY-U-121 — fixy::perf:: re-export reach
 crucible_test(test_fixy_substr)
-crucible_test(test_fixy_mach_safety)
 crucible_test(test_fixy_mach_transitions)  # FIXY-AUDIT-C1
 crucible_test(test_fixy_wrap)
 crucible_test(test_fixy_struct)
 crucible_test(test_fixy_is)
-crucible_test(test_fixy_umbrella)
-crucible_test(test_fixy_umbrella_reach)  # fixy-A4-001 + fixy-A4-002
 
-# ── FIXY-ALGEBRA / EFF / DIAG / SOURCE — Phase D surfaces ─────────
+# ── FIXY-DIAG / SOURCE — Phase D surfaces ─────────────────────────
 #
-# Algebra: Graded<M, L, T> substrate + 30 lattices + GradedWrapper
-#   concept + Modality enum + law verifiers.
-# Eff: full Met(X) surface — Row<>, Computation<>, Subrow,
-#   row_union_t/difference_t/intersection_t, F* aliases (Pure/Tot/
-#   Ghost/Div/ST/All), Capability<>, ExecCtx + 5 canonical ctxs,
-#   21+ Resource budget tags, ConcurrentRow, OsUniverse, EffectMask.
 # Diag: Category + Catalog + tag_of_t / category_of_v bijection +
 #   28 tag classes + stable_name / type_id / function_id +
 #   canonicalize_pack + insight_provider + row_hash_contribution.
 # Source: source::* / trust::* / access::* / version::* /
 #   vessel_trust::* / secret_policy::* / hash_family::* tag
 #   namespaces — pure phantom-type aliases.
-crucible_test(test_fixy_algebra)
-crucible_test(test_fixy_eff)
-crucible_test(test_fixy_eff_alias)  # FIXY-AUDIT-B12 HS14 sentinel
 crucible_test(test_fixy_diag)
 crucible_test(test_fixy_diag_catalog)  # FIXY-AUDIT-C8 reconciliation
 crucible_test(test_fixy_insights)      # fixy-H-14 insight_provider sentinel
@@ -378,7 +360,6 @@ crucible_test(test_row_hash_translation_units_safety
 # old-collision triple pair now produces distinct row_hash.
 crucible_test(test_row_hash_sched_class_collision)
 crucible_test(test_canonical_order)              # FIXY-FOUND-048
-crucible_test(test_fixy_mint_inventory)
 crucible_test(test_fixy_decide)
 crucible_test(test_fixy_sess_mint_handle_reach)  # FIXY-U-022
 crucible_test(test_cost_model)
@@ -2789,16 +2770,6 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_channel_no_row_bg_compile
     "constraints.*not satisfied|no matching function"
     "CtxFitsFederation|EffectRowMismatch")
 
-# FIXY-AUDIT-E10 — HS14 floor for fixy::safety::mint_secret re-export.
-# is_constructible_v gate covered with two distinct argument shapes:
-# type-mismatch (int <- const char*) and arity-mismatch (int(a,b,c)).
-crucible_neg_compile_fixy_test(neg_fixy_safety_secret_not_constructible
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "is_constructible_v")
-crucible_neg_compile_fixy_test(neg_fixy_safety_secret_too_many_args
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "is_constructible_v")
-
 # FIXY-AUDIT-D3 — HS14 floor for fixy::fn class-body static_assert.
 # Distinct from D2 (mint_fn requires-clause): the class-body assert
 # fires inside class-template instantiation, not overload resolution.
@@ -3169,15 +3140,6 @@ crucible_neg_compile_fixy_test(neg_fixy_lat_unverified_only        "use of delet
 crucible_neg_compile_fixy_test(neg_fixy_lat_external_only          "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
     "FixyNotEngaged_Type")
 
-# ── FIXY-MINT-Cap — fixy/Cap.h re-export of effects::mint_cap +
-# effects::mint_from_ctx.  Two HS14 fixtures pin the alias's gate:
-crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_fg
-    "no matching function|constraints.*not satisfied"
-    "mint_cap")
-crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_ctx_wrong_effect
-    "no matching function|constraints.*not satisfied"
-    "mint_from_ctx")
-
 # ── FIXY-MINT-Perm — fixy/Perm.h re-export of permission token mints
 # (mint_permission_root/split/combine/split_n/combine_n/share/fork/
 # inherit).  Six HS14 fixtures pin the alias's gate — two per frame-rule
@@ -3234,28 +3196,6 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_combine_witness_missing
 crucible_neg_compile_fixy_test(neg_fixy_perm_combine_n_witness_missing
     "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
     "splits_into_pack_authoring_witness")
-
-# ── FIXY-MINT-Contract — fixy/Contract.h re-export of Cipher tier
-# migration mints (mint_promote, mint_demote, mint_restore).  HS14
-# floor: two fixtures pin the chain-direction concept gate
-# (PromotableTier / DemotableTier reduce to can_promote_tier_v /
-# can_demote_tier_v, which reduce to tier_replaces() over the
-# CipherTier lattice ordinal: Cold=0 < Warm=1 < Hot=2).  A promotion
-# DOWN the chain (Hot → Cold) and a demotion UP the chain (Cold → Hot)
-# are both structurally invalid; routing through the fixy:: alias must
-# reject identically to the substrate:
-crucible_neg_compile_fixy_test(neg_fixy_contract_promote_wrong_direction
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "PromotableTier|can_promote_tier")
-crucible_neg_compile_fixy_test(neg_fixy_contract_promote_source_tier_mismatch
-    "no matching function|constraints.*not satisfied"
-    "mint_promote")
-crucible_neg_compile_fixy_test(neg_fixy_contract_demote_wrong_direction
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "DemotableTier|can_demote_tier")
-crucible_neg_compile_fixy_test(neg_fixy_contract_demote_source_tier_mismatch
-    "no matching function|constraints.*not satisfied"
-    "mint_demote")
 
 # ── FIXY-MINT-Sess — fixy/Sess.h re-export of session minters
 # (mint_session=deleted, mint_permissioned_session, mint_channel,
@@ -3380,40 +3320,16 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_pool_submit_ctx_no_bg
     "constraints.*not satisfied|constraints.*not satisfied"
     "CtxFitsPoolSubmit|CtxOwnsCapability|row_contains|Effect::Bg")
 
-# ── FIXY-V-216 — fixy::handle::EpochVersioned + fixy::bridge::EpochVersioned
-# re-export of safety::EpochVersioned<T> (Canopy fleet epoch + per-Relay
-# generation; FOUND-G68 substrate).  HS14 floor satisfied by two distinct
-# mismatch axes preserved through the alias:
-#   (1) handle_axis_swap   — Strong-typed Epoch/Generation distinction at
+# ── FIXY-V-216 — fixy::handle::EpochVersioned re-export of
+# safety::EpochVersioned<T> (Canopy fleet epoch + per-Relay generation;
+# FOUND-G68 substrate).  One mismatch axis is kept through the alias:
+#   handle_axis_swap — Strong-typed Epoch/Generation distinction at
 #       ctor parameter position; swapping the (Epoch, Generation) pair
 #       fails because neither newtype is implicitly constructible from
 #       the other.  Tests the AXIS rejection axis.
-#   (2) bridge_cross_t_combine — combine_max requires same-T on both
-#       sides of the fan-in fold; EpochVersioned<int>::combine_max with
-#       EpochVersioned<double> argument fails for cross-T composition.
-#       Tests the COMPOSITION rejection axis.
 crucible_neg_compile_fixy_test(neg_fixy_handle_epoch_versioned_axis_swap
     "no matching function|cannot convert"
     "EpochVersioned|Epoch|Generation|no known conversion")
-crucible_neg_compile_fixy_test(neg_fixy_bridge_epoch_versioned_cross_t_combine
-    "no matching function|cannot convert"
-    "EpochVersioned|combine_max|no known conversion")
-
-# ── FIXY-V-217 — fixy::cap::CtxAdmitsCap<Ctx, Cap> concept ────────
-# Two HS14 fixtures pin the concept's two distinct rejection axes:
-#   (1) IsExecCtx STRUCTURAL rejection — passing a non-ExecCtx
-#       type (int) reds via the IsExecCtx<Ctx> clause.  Tests the
-#       structural-fitness axis.
-#   (2) row_contains_v SEMANTIC rejection — HotFgCtx::row = Row<>
-#       (empty) reds because the Effect atom is not in the
-#       claimed row.  Tests the row-membership axis (distinct
-#       from CtxCanMint's permitted_row-membership axis).
-crucible_neg_compile_fixy_test(neg_fixy_cap_ctx_admits_not_exec_ctx
-    "static assertion failed"
-    "CtxAdmitsCap|IsExecCtx|fixture #1")
-crucible_neg_compile_fixy_test(neg_fixy_cap_ctx_admits_row_miss
-    "static assertion failed"
-    "CtxAdmitsCap|row_contains|fixture #2")
 
 # ── FIXY-V-218 — fixy::pipe::stance::HotPathInline<P, L1d, L2> stance
 # Lifts Pipeline::will_run_inline() (runtime Topology probe) into a
@@ -3436,140 +3352,6 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_hot_path_inline_not_inline_safe
     "static assertion failed"
     "HotPathInline|inline_safe|fixture #2")
 
-# ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
-# (mint_recording_session, mint_crash_watched_session,
-# mint_persisted_session, mint_recording_endpoint,
-# mint_crash_watched_endpoint, mint_vigil_mode_bridge).  Two HS14
-# fixtures pin the persisted-session ctx gate and the
-# crash-watched NoThrow contradiction:
-crucible_neg_compile_fixy_test(neg_fixy_bridge_persisted_session_hot_ctx
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "PersistedSession|CipherTier|HotFgCtx|IO|Block")
-# fixy-HS14-01 — mint_recording_session HS14 floor (≥2 fixtures via
-# the fixy::bridge:: re-export).  Two distinct mismatch classes:
-# (#1) non-handle first argument trips overload-set rejection across
-# all three substrate overloads (bare SessionHandle, CrashWatched,
-# PSH); (#2) valid first argument selects the bare overload, then
-# wrong-log-type second argument fails reference-binding.  Mirrors
-# the substrate-side pair (test/bridges_neg/neg_mint_recording_session_*)
-# at the fixy:: wrapping boundary.
-crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_session_non_handle
-    "no matching function|constraints.*not satisfied"
-    "mint_recording_session|IsSessionHandle")
-crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_session_wrong_log_type
-    "no matching function|cannot bind|could not convert"
-    "mint_recording_session|SessionEventLog")
-crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_nothrow
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
-    "CrashWatched_NoThrow_Rejected|crash-watched|NoThrow")
-# fixy-HS14-02 — mint_crash_watched_session HS14 floor (≥2 fixtures).
-# Sibling fixture exercises the survivor-registry gate via the MINT
-# factory call site (distinct mismatch class + distinct entry point
-# from _nothrow which goes through the class-template ctor).
-crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_unregistered_peer
-    "static assertion failed"
-    "survivor_registry|require_crash_survivors_declared_|mint_permission_inherit survivors|inheritance_list_empty")
-
-# fixy-HS14-03 — mint_recording_endpoint HS14 floor (≥2 fixtures via
-# the fixy::bridge:: re-export).  Two GENUINELY distinct mismatch
-# classes — substrate-side equivalent collapsed both into the
-# first-param gate; the fixy-side pair separates them:
-# (#1) non_endpoint — first-param template deduction fails (passing
-#      `int` to `Endpoint<Substr, Dir, Ctx>&&` — no specialization
-#      matches), producing "no matching function for call to /
-#      could not deduce" against the whole template;
-# (#2) wrong_log_type — first-param successfully deduces (a real
-#      Endpoint is built via fpipe::mint_endpoint<Channel,
-#      Direction::Consumer>(ctx, cons)), THEN the second-param
-#      reference type `SessionEventLog&` cannot bind to `int`.  This
-#      is the post-deduction reference-binding gate — distinct
-#      diagnostic shape from #1.
-crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_endpoint_non_endpoint
-    "no matching function|could not deduce"
-    "mint_recording_endpoint|no matching template|deduction failed")
-crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_endpoint_wrong_log_type
-    "no matching function|cannot bind|could not convert"
-    "mint_recording_endpoint|SessionEventLog")
-
-# fixy-HS14-04 — mint_crash_watched_endpoint HS14 floor (≥2 fixtures
-# via the fixy::bridge:: re-export).  Two distinct mismatch classes,
-# mirroring the HS14-03 pair structure but on the crash-watched
-# wrapper family:
-# (#1) non_endpoint — first-param `Endpoint<Substr, Dir, Ctx>&&`
-#      template deduction fails when passed `int`; PeerTag is
-#      explicit, so substitution still bails out.
-# (#2) wrong_flag_type — first-param deduces successfully (a real
-#      Endpoint built via fpipe::mint_endpoint), PeerTag has
-#      survivor_registry specialization (body static_assert
-#      passes), and the failure is the second-parameter
-#      `OneShotFlag&` reference binding rejecting `int`.
-# Distinct from HS14-02 fixtures: HS14-02 covers the substrate
-# session-level mint (mint_crash_watched_session); HS14-04 covers
-# the endpoint wrapper mint surface (mint_crash_watched_endpoint).
-crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_endpoint_non_endpoint
-    "no matching function|could not deduce"
-    "mint_crash_watched_endpoint|no matching template|deduction failed")
-crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_endpoint_wrong_flag_type
-    "no matching function|cannot bind|could not convert"
-    "mint_crash_watched_endpoint|OneShotFlag")
-
-# FIXY-U-117b — mint_atomic_session HS14 floor (≥2 fixtures via the
-# `fixy::bridge::` re-export at Bridge.h:105 — FIXY-U-117 landing).
-# Substrate at bridges/MachineSessionBridge.h:281 in `crucible::safety::`
-# namespace (NOT bridges::, despite the file path).  Concept gate is
-# `AtomicMachineCell<Cell> && safety::proto::is_well_formed_v<Proto>`
-# — two distinct mismatch classes:
-# (#1) non_cell — Cell-side concept gate.  Empty struct lacks
-#      `state_type` + `load(memory_order)` → AtomicMachineCell<Cell>
-#      false → requires-clause unsatisfied → overload removed.
-# (#2) ill_formed_proto — Proto-side trait gate.  Empty struct
-#      matches no `is_well_formed` specialization → access to
-#      ::value is ill-formed → substitution fails → overload removed.
-# Each fixture isolates ONE conjunct of the requires-clause (the
-# other argument is valid), so a regression that drops a single
-# conjunct surfaces in exactly one fixture.
-crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_non_cell
-    "no matching function|constraints.*not satisfied"
-    "mint_atomic_session|AtomicMachineCell|state_type")
-crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_ill_formed_proto
-    "no matching function|incomplete type|no type named|constraints.*not satisfied"
-    "mint_atomic_session|is_well_formed")
-
-# The perf mints that crucible/fixy/Perf.h re-exports through
-# `fixy::perf::`.  Each mint is gated on IsExecCtx and on a context row
-# that contains Alloc, IO and Block.  Each gets two fixtures, one for
-# each conjunct:
-#   bg_ctx       — BgDrainCtx is an execution context, and its row has
-#                  no IO and no Block.
-#   not_exec_ctx — a struct with no row is not an execution context.
-# The second argument of each call is a valid startup load context, so
-# the gate is the one reason for each refusal.  The fixtures prove that
-# the constraint fires through the re-export.  test_fixy_perf.cpp pins
-# that each re-export names the mint it re-exports.
-crucible_neg_compile_fixy_test(neg_fixy_perf_lock_contention_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
-crucible_neg_compile_fixy_test(neg_fixy_perf_lock_contention_not_exec_ctx
-    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_lock_contention_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
-    "no matching function for call to .mint_lock_contention\\(test_fixy_perf_lock_contention_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
-crucible_neg_compile_fixy_test(neg_fixy_perf_pmu_sample_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
-crucible_neg_compile_fixy_test(neg_fixy_perf_pmu_sample_not_exec_ctx
-    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_pmu_sample_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
-    "no matching function for call to .mint_pmu_sample\\(test_fixy_perf_pmu_sample_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
-crucible_neg_compile_fixy_test(neg_fixy_perf_sched_switch_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
-crucible_neg_compile_fixy_test(neg_fixy_perf_sched_switch_not_exec_ctx
-    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_sched_switch_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
-    "no matching function for call to .mint_sched_switch\\(test_fixy_perf_sched_switch_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
-crucible_neg_compile_fixy_test(neg_fixy_perf_sched_tp_btf_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
-crucible_neg_compile_fixy_test(neg_fixy_perf_sched_tp_btf_not_exec_ctx
-    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_sched_tp_btf_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
-    "no matching function for call to .mint_sched_tp_btf\\(test_fixy_perf_sched_tp_btf_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
 # FIXY-V-197 HS14 floor for fixy::sched::mint_priority (closes V-191 gap).
 crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_not_exec_ctx
     "no matching function|constraints.*not satisfied"
@@ -3577,30 +3359,6 @@ crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_not_exec_ctx
 crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_nice_out_of_range
     "no matching function|constraints.*not satisfied"
     "mint_priority|CtxFitsPriorityMint|Nice|-21|-20")
-crucible_neg_compile_fixy_test(neg_fixy_perf_sense_hub_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
-crucible_neg_compile_fixy_test(neg_fixy_perf_sense_hub_not_exec_ctx
-    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_sense_hub_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
-    "no matching function for call to .mint_sense_hub\\(test_fixy_perf_sense_hub_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
-crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_latency_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
-crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_latency_not_exec_ctx
-    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_syscall_latency_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
-    "no matching function for call to .mint_syscall_latency\\(test_fixy_perf_syscall_latency_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
-crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_tp_btf_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<crucible::effects::Effect::Bg, crucible::effects::Effect::Alloc>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::Bg,")
-crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_tp_btf_not_exec_ctx
-    "the expression .is_exec_ctx_v<T> .with T = test_fixy_perf_syscall_tp_btf_not_exec_ctx::NotAnExecCtx.. evaluated to .false."
-    "no matching function for call to .mint_syscall_tp_btf\\(test_fixy_perf_syscall_tp_btf_not_exec_ctx::NotAnExecCtx, fixy::InitLoadCtx\\).")
-crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_bg_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_workload_profiler|CtxFitsWorkloadProfilerMint|Init|row_contains")
-crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_not_exec_ctx
-    "no matching function|constraints.*not satisfied"
-    "mint_workload_profiler|CtxFitsWorkloadProfilerMint|IsExecCtx|NotAnExecCtx")
 
 # FIXY-V-074 — `dispatch_workload_decision` HS14 floor (2 fixtures, two
 # distinct mismatch classes per HS14 discipline).  The Tagged<>-typed
@@ -3617,19 +3375,6 @@ crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_hot_fg
     "no matching function|constraints.*not satisfied"
     "dispatch_workload_decision|CtxFitsWorkloadDecisionDispatch|Bg|row_contains")
 crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision
-    "no matching function|cannot convert"
-    "dispatch_workload_decision|TaggedParallelismDecision|Tagged|ParallelismDecision")
-
-# FIXY-V-074-AUDIT — same two mismatch classes routed through the
-# `fixy::perf::` umbrella re-export instead of the substrate.  Proves
-# the using-decl `crucible::fixy::perf::dispatch_workload_decision`
-# inherits the requires-clause and parameter-type unchanged; closes
-# the audit-found gap where band-3 production code reaching for V-074
-# dispatch had no fixy::-routed negative-compile coverage.
-crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_hot_fg_via_fixy
-    "no matching function|constraints.*not satisfied"
-    "dispatch_workload_decision|CtxFitsWorkloadDecisionDispatch|Bg|row_contains")
-crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision_via_fixy
     "no matching function|cannot convert"
     "dispatch_workload_decision|TaggedParallelismDecision|Tagged|ParallelismDecision")
 
@@ -3686,20 +3431,6 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_mint_receiver_wrong_admittance
 crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_wrong_admittance
     "no matching function|cannot convert"
     "SharedPermission|FederatedPeer|mint_coord")
-
-# ── FIXY-AUDIT-D6 — mint_vigil_mode_bridge HS14 floor.
-#
-# `mint_vigil_mode_bridge(const Vigil&)` is a parameter-typed token
-# mint — the gate is the `const Vigil&` parameter slot.  Two
-# rejection classes:
-#   _non_vigil  — unrelated user struct fails reference binding
-#   _nullptr    — nullptr_t cannot bind to class-typed reference
-crucible_neg_compile_fixy_test(neg_fixy_bridge_vigil_mode_non_vigil
-    "no matching function|cannot bind|could not convert"
-    "mint_vigil_mode_bridge|invalid initialization|invalid conversion")
-crucible_neg_compile_fixy_test(neg_fixy_bridge_vigil_mode_nullptr
-    "no matching function|cannot bind|could not convert"
-    "mint_vigil_mode_bridge|invalid initialization|invalid conversion")
 
 # ── FIXY-MINT-Substr — fixy/Substr.h re-export of per-substrate
 # session minters (SPSC, SWMR, ChaseLev, MetaLog, ChainEdge, MPMC,
@@ -3815,24 +3546,6 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_consumer_endpoint_non_surfac
 crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_consumer_endpoint_near_miss
     "constraints.*not satisfied|no matching function"
     "SpscChannelSessionSurface|same_as")
-
-# FIXY-U-074l HS14 floor: fixy::safety::mint_view + mint_linear_view.
-# These gate via a `pre(view_ok(c, type_identity<Tag>{}))` contract (NOT a
-# requires-concept) — view_ok is a per-Carrier hidden friend with no global
-# default.  Two distinct classes each: no view_ok at all (ADL miss) vs
-# view_ok wired for a different Tag (overload exists, doesn't match).
-crucible_neg_compile_fixy_test(neg_fixy_safety_mint_view_no_view_ok
-    "was not declared in this scope|no matching function"
-    "view_ok")
-crucible_neg_compile_fixy_test(neg_fixy_safety_mint_view_wrong_tag
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "view_ok|type_identity")
-crucible_neg_compile_fixy_test(neg_fixy_safety_mint_linear_view_no_view_ok
-    "was not declared in this scope|no matching function"
-    "view_ok")
-crucible_neg_compile_fixy_test(neg_fixy_safety_mint_linear_view_wrong_tag
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "view_ok|type_identity")
 
 # FIXY-U-074m HS14 floor: fixy::sess::mint_session_view gates via
 # `requires HandleIsAt<Handle, Tag>`.  Probed with static_assert(requires{...})
@@ -4153,14 +3866,8 @@ crucible_neg_compile_fixy_test(neg_fixy_reject_effectrow_misclassified
     "static assertion failed"
     "EffectRowMismatch|fixy-A4-030")
 
-# ── FIXY-MINT-Mach + FIXY-MINT-Safety — fixy/Mach.h + fixy/Safety.h
-# re-export of state-machine + safety-wrapper token mints
-# (mint_machine, transition_to, mint_linear, mint_secret, mint_view).
-# Two HS14 fixtures pin the Linear-copy ban and the is_constructible
-# gate via fixy:::
-crucible_neg_compile_fixy_test(neg_fixy_safety_linear_copy
-    "deleted function|use of deleted function"
-    "move-only")
+# ── FIXY-MINT-Mach — fixy/Mach.h re-export of the state-machine token
+# mints (mint_machine, transition_to):
 crucible_neg_compile_fixy_test(neg_fixy_mach_construct_unbuildable
     "constraints.*not satisfied|constraints.*not satisfied"
     "is_constructible")
@@ -4211,35 +3918,17 @@ crucible_neg_compile_fixy_test(neg_fixy_wrap_timeordered_zero_processes
     "static assertion"
     "TimeOrdered<T, 0>|forbidden|N > 0|N >= 1")
 
-# ── FIXY-ALGEBRA / EFF / DIAG / SOURCE HS14 fixtures ────────────────
+# ── FIXY-DIAG / SOURCE HS14 fixtures ────────────────────────────────
 #
-# Phase D surfaces: 2 fixtures per surface area (8 total) pinning
-# distinct concept-rejection classes.
+# Phase D surfaces: 2 fixtures per surface area pinning distinct
+# concept-rejection classes.
 #
-# Algebra:
-#   _non_lattice  — Lattice concept rejects type with no element_type
-#   _non_graded   — IsGraded rejects bare types
-# Eff:
-#   _subrow_missing            — Subrow rejects when atom is absent
-#   _capability_wrong_source   — CanMintCap rejects Fg → Block
 # Diag:
 #   _non_tag              — is_diagnostic_class_v rejects int
 #   _diagnostic_non_tag   — Diagnostic<int, ...> requires-clause fires
 # Source:
 #   _cross_axis_tagged   — Tagged<T, FromUser> != Tagged<T, Sanitized>
 #   _trust_vs_source     — source::FromUser != trust::Verified
-crucible_neg_compile_fixy_test(neg_fixy_algebra_non_lattice
-    "static assertion|constraints.*not satisfied"
-    "Lattice|element_type")
-# fix-09 — Lattice<L> now requires a law witness (laws_hold<L>() at the
-# lattice's own bottom/top): a signature-valid but law-violating lattice is
-# rejected at the concept gate, not silently accepted into Graded/row_hash.
-crucible_neg_compile_fixy_test(neg_fixy_algebra_lattice_nonidempotent
-    "static assertion|constraints.*not satisfied"
-    "Lattice|laws_hold")
-crucible_neg_compile_fixy_test(neg_fixy_algebra_lattice_nonassociative
-    "static assertion|constraints.*not satisfied"
-    "Lattice|laws_hold")
 # fix-13 — Graded regime-2/3 two-arg ctor discards `grade` after an
 # equivalence check; the vanilla pre() was consteval-bypassable + NDEBUG-
 # strippable.  Migrated to in-body contract_assert (layering-correct: algebra/
@@ -4248,15 +3937,6 @@ crucible_neg_compile_test(neg_graded_regime2_ctor_grade_mismatch
     "contract predicate is false in constant expression")
 crucible_neg_compile_test(neg_graded_regime3_ctor_grade_mismatch
     "contract predicate is false in constant expression")
-crucible_neg_compile_fixy_test(neg_fixy_algebra_non_graded
-    "static assertion|constraints.*not satisfied"
-    "IsGraded")
-crucible_neg_compile_fixy_test(neg_fixy_eff_subrow_missing
-    "static assertion|constraints.*not satisfied"
-    "Subrow|is_subrow")
-crucible_neg_compile_fixy_test(neg_fixy_eff_capability_wrong_source
-    "static assertion|constraints.*not satisfied"
-    "CanMintCap")
 crucible_neg_compile_fixy_test(neg_fixy_diag_non_tag
     "static assertion"
     "is_diagnostic_class_v|tag_base|DiagnosticAccessor_NonTag")
@@ -7253,12 +6933,16 @@ crucible_neg_compile_test(neg_json_buffer_size_write
 #   * neg_congestion_control_dctcp_cross_dc: DCTCP is lossless-fabric only.
 #   * neg_congestion_control_custom_missing_name: custom CC modules must
 #     provide a constexpr kernel congestion-control name.
+#   * neg_congestion_control_custom_invalid_name: that name must also be
+#     a valid kernel name, which has no uppercase letter.
 crucible_neg_compile_test(neg_congestion_control_raw_algorithm_apply
   "could not convert|no matching function|DeclaredCcChoice|Tagged")
 crucible_neg_compile_test(neg_congestion_control_dctcp_cross_dc
   "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
 crucible_neg_compile_test(neg_congestion_control_custom_missing_name
   "constraints not satisfied|CustomCcModule|congestion_control_name")
+crucible_neg_compile_test(neg_congestion_control_custom_invalid_name
+  "constraints not satisfied|CustomCcModule|has_value")
 
 # GAPS-196 — cog/Calibrate.h per-Cog calibration substrate.
 #   * neg_calibrate_psu_rail: only schedulable substrates calibrate.
@@ -14636,28 +14320,6 @@ crucible_neg_compile_fixy_test(neg_fixy_theory_internal_bg_multi_effect
     "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|passing "
     "NotInTheoryCorpus|internal_bg_without_declassify")
 
-# ── FIXY-ALGEBRA round 2 — concept-gate fixture depth ───────────────
-# Existing Algebra.h coverage pins 2 fixtures (#1 non_lattice / #2
-# non_graded); this round adds 3 more across distinct rejection
-# classes within the Graded<M, L, T> + Lattice / Semiring / Bounded /
-# GradedWrapper concept lattice:
-#   #3 semiring_missing_zero — Semiring concept rejects a structure
-#     with add/mul/one() but no zero() additive identity.
-#   #4 bounded_missing_top   — BoundedLattice concept rejects a
-#     half-bounded lattice (has bottom(), missing top()).
-#   #5 gw_missing_name       — GradedWrapper concept rejects a
-#     wrapper missing the value_type_name() / lattice_name() consteval
-#     forwarders (CHEAT-3 diagnostic-surface gate).
-crucible_neg_compile_fixy_test(neg_fixy_algebra_semiring_missing_zero
-    "associated constraints|constraints.*not satisfied"
-    "Semiring|zero")
-crucible_neg_compile_fixy_test(neg_fixy_algebra_bounded_missing_top
-    "associated constraints|constraints.*not satisfied"
-    "BoundedLattice|BoundedAboveLattice|top")
-crucible_neg_compile_fixy_test(neg_fixy_algebra_gw_missing_name
-    "associated constraints|constraints.*not satisfied"
-    "GradedWrapper|value_type_name")
-
 # ══════════════════════════════════════════════════════════════════════
 # FIXY-GAP-A — Agent A round 2
 # ══════════════════════════════════════════════════════════════════════
@@ -14714,39 +14376,6 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_mint_grid_permissions_zero_m
 crucible_neg_compile_fixy_test(neg_fixy_perm_mint_grid_permissions_zero_n
     "constraints.*not satisfied"
     "can_split_grid|mint_grid_permissions|no matching")
-
-# ── FIXY-MINT-Contract round 2 — restore + persisted_session ────────
-# Existing contract coverage pins promote/demote chain-direction; this
-# round closes the remaining two mints.  Four fixtures:
-#   - restore_unmovable — RestorableTier requires move_constructible,
-#     fixy-routed equivalent of neg_cipher_tier_restore_unmovable_payload.
-#   - restore_type_mismatch — cold handle T must match explicit
-#     mint_restore<T>, fixy-routed equivalent of
-#     neg_cipher_tier_restore_wrong_value_type.
-#   - persisted_session_no_ctx — deleted overload with the structured
-#     tag [PersistedSession_CtxRequired]; the bare no-Ctx form.
-#   - persisted_session_no_openview — deleted overload with the
-#     structured tag [PersistedSession_OpenViewRequired]; the
-#     missing-OpenView form.
-crucible_neg_compile_fixy_test(neg_fixy_contract_restore_unmovable
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "RestorableTier|move_constructible")
-crucible_neg_compile_fixy_test(neg_fixy_contract_restore_type_mismatch
-    "no matching function|could not convert"
-    "Cold")
-# fixy-CR-10 fixture: production-shape payload (movable, no
-# content_hash_projection specialization) must red at the
-# RestorableHashed gate when routed through the fixy:: alias —
-# mirrors substrate fixture neg_cipher_tier_restore_no_hash_projection.
-crucible_neg_compile_fixy_test(neg_fixy_contract_restore_no_hash_projection
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "RestorableTier|RestorableHashed|content_hash_projection")
-crucible_neg_compile_fixy_test(neg_fixy_contract_persisted_session_no_ctx
-    "use of deleted function|deleted"
-    "PersistedSession_CtxRequired")
-crucible_neg_compile_fixy_test(neg_fixy_contract_persisted_session_no_openview
-    "use of deleted function|deleted"
-    "PersistedSession_OpenViewRequired")
 
 # ── FIXY-V-031 — Cipher::open trust-boundary fixtures (HS14) ────────
 # Cipher::open()'s signature was changed from `const std::string& root`
@@ -15112,32 +14741,6 @@ crucible_neg_compile_fixy_test(neg_fixy_profile_active_strict_rejects
     "static assertion failed|constraints.*not satisfied"
     "FixyNotEngaged|IsAcceptedActive")
 
-# ─────────────────────────────────────────────────────────────────
-# FIXY-GAP-B — Agent B round 2 (B3 — Cap.h rejection-class depth)
-# ─────────────────────────────────────────────────────────────────
-#
-# Existing Cap.h coverage pins 2 fixtures (mint_from_fg /
-# mint_from_ctx_wrong_effect) — BOTH reject on the SECOND clause
-# (row containment) of CanMintCap / CtxCanMint.  This round adds 2
-# more rejecting on the FIRST (structural) clause:
-#   - mint_plain_source — plain int as Source; CanMintCap rejects
-#     on is_cap_type_v<int> == false.  Distinct from mint_from_fg,
-#     which uses a valid Fg cap_type and fails on row.
-#   - mint_from_non_ctx — non-ExecCtx struct passed to
-#     mint_from_ctx; CtxCanMint rejects on IsExecCtx == false.
-#     Distinct from mint_from_ctx_wrong_effect, which uses a valid
-#     HotFgCtx and fails on row.
-#
-# The two-clause structure of CanMintCap / CtxCanMint is now
-# saturated: structural gate × row-containment gate = 2 × 2 = 4
-# rejection cells, one fixture per cell.
-crucible_neg_compile_fixy_test(neg_fixy_cap_mint_plain_source
-    "associated constraints|constraints.*not satisfied"
-    "CanMintCap|is_cap_type")
-crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_non_ctx
-    "associated constraints|constraints.*not satisfied"
-    "CtxCanMint|IsExecCtx")
-
 # ── FIXY-FEDERATION round 2 — cross-org isolation + handshake gate ──
 # Existing Source.h federation coverage pins 2 fixtures (wrong_org /
 # missing_proof) — both reject at the mint_federation_admittance
@@ -15207,187 +14810,6 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_session_no_admittance
 crucible_neg_compile_fixy_test(neg_fixy_federation_session_wrong_org
     "no matching function for call to .mint_sender<NegFedWrongOrg_OrgB>\\(FederationFitCtx&, NegFedWrongOrg_Endpoint, crucible::safety::SharedPermission<crucible::permissions::tag::FederatedPeer<NegFedWrongOrg_OrgA> >\\)."
     "\\(type .crucible::safety::SharedPermission<crucible::permissions::tag::FederatedPeer<NegFedWrongOrg_OrgA> >.\\) to type .crucible::safety::SharedPermission<crucible::permissions::tag::FederatedPeer<NegFedWrongOrg_OrgB> >.")
-
-# FIXY-V-059 HS14 floor — `fixy::sess::assoc::assert_associated<Gamma, G,
-# SessionTag>()` at the fixy umbrella boundary (re-export of
-# safety::proto::assert_associated, HYK24 Hou-Yoshida-Kuhn 2024 Δ ⊑_s G
-# association invariant).  Three distinct mismatch shapes — each fires
-# condition (1) (dom(Δ) = roles(G)) via a different structural deviation:
-#   shape A (subset)   — Γ ⊂ G   (strict subset; Follower role missing
-#                         from Γ entirely; cardinality mismatch).
-#   shape B (typo)     — Γ ↔ G   (same cardinality 2 = 2, but identities
-#                         differ: Coord+Stranger ≠ Coord+Follower —
-#                         Stranger ∉ roles(G), catches the cardinality-
-#                         only regression class).
-#   shape C (tag)      — Γ ↦ τ′  (Γ DOES contain valid entries but ALL
-#                         tagged with OtherSession; assert_associated is
-#                         invoked with MySession, so Γ's domain restricted
-#                         to MySession is empty while G's roles are not).
-# Routing through the fixy::sess::assoc:: umbrella drift-protects the
-# re-export chain — a future refactor that strips `using
-# safety::proto::assert_associated` from SessAssoc.h reds at HS14.
-crucible_neg_compile_fixy_test(neg_fixy_sess_assoc_domain_mismatch_missing_role
-    "static assertion failed"
-    "Association_Domain_Mismatch|assert_associated|is_associated|condition.*1|domain_matches")
-crucible_neg_compile_fixy_test(neg_fixy_sess_assoc_role_list_missing_coverage
-    "static assertion failed"
-    "Association_Domain_Mismatch|assert_associated|is_associated|role_list|set-equality|domain_matches")
-crucible_neg_compile_fixy_test(neg_fixy_sess_assoc_wrong_session_tag
-    "static assertion failed"
-    "Association_Domain_Mismatch|assert_associated|is_associated|SessionTag|projection|domain_matches")
-
-# FIXY-V-060 HS14 floor — three neg-compile fixtures across the
-# fixy::sess::delegate:: surface, one per regression shape:
-#   shape α (delegate carrier)  — assert_delegates_to rejects Send-as-
-#                                 carrier (Send moves VALUE, Delegate
-#                                 moves ENDPOINT — concept rejects).
-#   shape β (accept carrier)    — assert_accepts_from rejects Recv-as-
-#                                 carrier (dual side of α; protects
-#                                 the AcceptsFrom concept route).
-#   shape γ (crash propagation) — assert_delegated_crash_propagates
-#                                 rejects (T, R, K) triples where T
-#                                 can emit but K offers no Crash<R>
-#                                 recovery branch.  Catches the
-#                                 [DelegatedCrashPropagation_Missing-
-#                                 Recovery] regression class.
-# Routing through the fixy::sess::delegate:: umbrella drift-protects
-# the re-export chain — a future refactor that strips `using
-# safety::proto::assert_delegates_to` from SessDelegate.h reds at HS14.
-crucible_neg_compile_fixy_test(neg_fixy_sess_delegate_assert_wrong_carrier_shape
-    "static assertion failed"
-    "ProtocolViolation_State|assert_delegates_to|DelegatesTo|Delegate|delegated_proto")
-crucible_neg_compile_fixy_test(neg_fixy_sess_delegate_assert_wrong_accept_carrier
-    "static assertion failed"
-    "ProtocolViolation_State|assert_accepts_from|AcceptsFrom|Accept|delegated_proto")
-crucible_neg_compile_fixy_test(neg_fixy_sess_delegate_crash_must_abort
-    "static assertion failed"
-    "DelegatedCrashPropagation_MissingRecovery|assert_delegated_crash_propagates|MustAbort|delegated_crash_propagation")
-
-# FIXY-V-061 HS14 floor — three neg-compile fixtures across the
-# fixy::sess::checkpoint:: surface, one per static_assert clause
-# inside `assert_checkpointed_matches`:
-#   shape α (not a checkpoint)   — first static_assert fires:
-#                                  "P is not a CheckpointedSession"
-#   shape β (wrong base branch)  — second static_assert fires:
-#                                  "base branch does not match"
-#   shape γ (wrong rollback)     — third static_assert fires:
-#                                  "rollback branch does not match"
-# Distinct diagnostics per arm let reviewers identify the failure
-# class without reading the call site source.  Routing through the
-# fixy::sess::checkpoint:: umbrella drift-protects the re-export
-# chain — a future refactor that strips `using safety::proto::
-# assert_checkpointed_matches` from SessCheckpoint.h reds at HS14.
-crucible_neg_compile_fixy_test(neg_fixy_sess_checkpoint_not_a_checkpoint
-    "static assertion failed"
-    "ProtocolViolation_State|assert_checkpointed_matches|is_checkpointed_session|CheckpointedSession|not a CheckpointedSession")
-crucible_neg_compile_fixy_test(neg_fixy_sess_checkpoint_wrong_base_branch
-    "static assertion failed"
-    "ProtocolViolation_State|assert_checkpointed_matches|checkpoint_base|base branch")
-crucible_neg_compile_fixy_test(neg_fixy_sess_checkpoint_wrong_rollback_branch
-    "static assertion failed"
-    "ProtocolViolation_State|assert_checkpointed_matches|checkpoint_rollback|rollback branch")
-
-# FIXY-V-062 HS14 floor — three neg-compile fixtures across the
-# fixy::sess::row:: surface, one per structural discipline class:
-#   shape α (non-protocol input)         — primary template of
-#                                          protocol_effect_row<P> is
-#                                          forward-declared without
-#                                          definition; non-protocol
-#                                          P fires "incomplete type"
-#                                          / "use of undefined".
-#   shape β (NumericalTier non-Tolerance) — first template parameter
-#                                          of NumericalPayloadRow is
-#                                          a strong-enum NTTP; int
-#                                          literal cannot bind, fires
-#                                          "could not convert template
-#                                          argument".
-#   shape γ (Tagged unwrap drift)        — wrong-direction static
-#                                          assertion that pins the
-#                                          transparent-unwrap
-#                                          discipline; fires only as
-#                                          long as substrate keeps
-#                                          the Tagged specialisation.
-# Routing through the fixy::sess::row:: umbrella drift-protects the
-# re-export chain — a future refactor that strips
-# `using safety::proto::protocol_effect_row` (etc.) from
-# SessRowExtraction.h reds at HS14.
-crucible_neg_compile_fixy_test(neg_fixy_sess_row_non_protocol_input
-    "incomplete type|no type named"
-    "use of undefined|protocol_effect_row|invalid use of incomplete")
-crucible_neg_compile_fixy_test(neg_fixy_sess_row_numerical_tier_non_tolerance
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "could not convert template argument|invalid conversion|Tolerance|enum class|expected primary-expression")
-crucible_neg_compile_fixy_test(neg_fixy_sess_row_tagged_unwrap_drift
-    "static assertion failed"
-    "Tagged|payload_row|transparent")
-
-# FIXY-V-063 HS14 floor — three neg-compile fixtures across the
-# fixy::sess::view:: surface, one per structural discipline class:
-#   shape α (wrong position)            — mint_session_view's
-#                                         `HandleIsAt<H, Tag>`
-#                                         requires-clause rejects
-#                                         a tag that doesn't match
-#                                         the handle's Proto.
-#   shape β (message_type non-Send/Recv) — primary template of
-#                                         session_view_message_type
-#                                         has no `type` member;
-#                                         instantiation on
-#                                         AtSelect / AtOffer view
-#                                         fires "no type named
-#                                         'type'".
-#   shape γ (branch_count non-Sel/Off)  — primary template of
-#                                         session_view_branch_count
-#                                         has no `value` member;
-#                                         instantiation on AtSend
-#                                         / AtRecv view fires
-#                                         "no member named 'value'".
-# Routing through the fixy::sess::view:: umbrella drift-protects
-# the re-export chain — a future refactor that strips
-# `using safety::proto::mint_session_view` (etc.) from SessView.h
-# reds at HS14.
-crucible_neg_compile_fixy_test(neg_fixy_sess_view_wrong_position
-    "constraints.*not satisfied"
-    "no matching function for call|HandleIsAt|handle_is_at|mint_session_view")
-crucible_neg_compile_fixy_test(neg_fixy_sess_view_message_type_on_non_send_recv
-    "no type named|incomplete type"
-    "use of undefined|session_view_message_type")
-crucible_neg_compile_fixy_test(neg_fixy_sess_view_branch_count_on_non_select_offer
-    "incomplete type"
-    "no member named|use of undefined|session_view_branch_count|value")
-
-# FIXY-V-064 HS14 floor — three neg-compile fixtures across the
-# fixy::sess::crash:: surface, one per structural discipline class:
-#   shape α (oblivious protocol)         — CrashAwareForTransport's
-#                                          per-tree crash-branch
-#                                          walker rejects a well-
-#                                          formed but crash-oblivious
-#                                          client (NormalOffer in tree).
-#   shape β (ill-formed protocol)        — CrashAwareForTransport's
-#                                          well-formedness gate rejects
-#                                          a vacuously-crash-covered
-#                                          but ill-formed protocol
-#                                          (Loop<End>); the two-part
-#                                          gate keeps both predicates
-#                                          load-bearing.
-#   shape γ (per-Offer assertion miss)  — assert_has_crash_branch_for
-#                                         <NormalOffer, Alice>() fires
-#                                         the consteval embedded
-#                                         static_assert; distinct
-#                                         diagnostic surface from the
-#                                         concept-overload-rejection
-#                                         of α/β.
-# Routing through the fixy::sess::crash:: umbrella drift-protects
-# the re-export chain — a future refactor that strips the substrate
-# predicates or the synthesis concept from SessCrash.h reds at HS14.
-crucible_neg_compile_fixy_test(neg_fixy_sess_crash_oblivious_protocol
-    "static assertion failed"
-    "CrashAwareForTransport|every_offer_has_crash_branch|FIXY-V-064 fixture 1")
-crucible_neg_compile_fixy_test(neg_fixy_sess_crash_ill_formed
-    "static assertion failed"
-    "CrashAwareForTransport|is_well_formed|FIXY-V-064 fixture 2")
-crucible_neg_compile_fixy_test(neg_fixy_sess_crash_assert_per_offer_missing
-    "static assertion failed"
-    "CrashBranch_Missing|assert_has_crash_branch_for|has_crash_branch_for_peer")
 
 # fixy-A2-016 — 12 negative-compile fixtures across 6 bridges/* mint
 # factories (≥2 per factory).  Each fixture's expected diagnostic
@@ -15671,33 +15093,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_bg_drain_reject
 crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_hot_fg_reject
     "is_subrow_v<R1, R2> .with R1 = crucible::effects::Row<crucible::effects::Effect::Alloc, crucible::effects::Effect::IO, crucible::effects::Effect::Block>. R2 = crucible::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
-
-# ── FIXY-V-212 — fixy::cap::cntp:: CC mint re-export HS14 ─────────
-#
-# fixy/Cap.h re-exports cntp::mint_cc_choice + mint_custom_cc_choice
-# under the fixy::cap::cntp:: surface.  The two substrate concept
-# gates (CcCompatible<Algorithm, Link>, CustomCcModule<Module>) MUST
-# survive the using-decl re-export — pointer-identity self_test
-# proves the same function template is named on both sides, but the
-# concept gate only fires at instantiation, so HS14 demands two
-# fixtures, one per gate:
-#
-#   #1 CcCompatible mismatch — DCTCP requires lossless fabric; calling
-#                              mint_cc_choice<Dctcp, CrossDatacenter>()
-#                              through the fixy surface must fail with
-#                              the substrate's requires-clause.
-#   #2 CustomCcModule mismatch — a struct lacking the static
-#                                congestion_control_name() accessor
-#                                is not a CustomCcModule; calling
-#                                mint_custom_cc_choice<NotAModule, ...>()
-#                                through the fixy surface must fail
-#                                with the substrate's concept gate.
-crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_cc_choice_dctcp_cross_dc
-    "constraints.*not satisfied"
-    "CcCompatible|LosslessDatacenterFabric")
-crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_custom_cc_missing_name
-    "constraints.*not satisfied"
-    "CustomCcModule|congestion_control_name")
 
 # ── Stage A1 — the sibling substrate and its three guards ─────────
 #
