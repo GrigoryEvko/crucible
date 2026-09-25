@@ -160,8 +160,9 @@ include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
 # declaration, so no row names them.
 #
 # fixy/os/Spawn.h: neither mint of the ported pair can be constexpr and
-# mean it: mint_spawn starts one jthread per child, and mint_parallel_for
-# does the same for every shard but the single-shard case.  A constexpr on
+# mean it: mint_spawn reads the probed cache sizes and starts one jthread
+# per child for a set past L2, and mint_parallel_for starts one for every
+# shard but the single-shard case.  A constexpr on
 # either would claim a compile-time cost for a call that schedules threads.
 include/fixy/os/Spawn.h:mint_parallel_for:constexpr-ok
 include/fixy/os/Spawn.h:mint_spawn:constexpr-ok

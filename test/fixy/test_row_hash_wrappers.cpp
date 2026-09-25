@@ -1182,6 +1182,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::StageArity, kMetafunction},
     {^^::fixy::concurrent::Topology, "a measured description of the host, read by the scheduler and never a "
                                      "template argument of a kernel signature"},
+    {^^::fixy::concurrent::WorkBudget, kPayload},
+    {^^::fixy::concurrent::ParallelismDecision, kPayload},
+    {^^::fixy::concurrent::ParallelismRule,
+     "the parallelism rule: it has static members only, no object of it exists, and it is never a value"},
     {^^::fixy::concurrent::StagePack, kGraphShape},
     {^^::fixy::concurrent::EdgePack, kGraphShape},
     {^^::fixy::concurrent::StageEdge, kGraphShape},

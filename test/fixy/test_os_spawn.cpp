@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <cstdio>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -54,6 +55,12 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 
 namespace {
 
+// A budget past the L3 of this host, so the parallelism rule chooses the
+// spawning arm.
+[[nodiscard]] fixy::concurrent::WorkBudget dram_bound_budget() noexcept {
+    return fixy::concurrent::WorkBudget{.read_bytes = fixy::concurrent::Topology::instance().l3_total_bytes() * 2};
+}
+
 [[nodiscard]] int spawn_runs_every_child_and_returns_the_parent() {
     BgCtx ctx{eff::testing::bg()};
     auto whole = perm::mint_permission_root<Whole>();
@@ -61,7 +68,7 @@ namespace {
     std::atomic<int> ran{0};
 
     auto rebuilt = spawn::mint_spawn<Left, Right>(
-        ctx, std::move(whole),
+        ctx, dram_bound_budget(), std::move(whole),
         [&ran](perm::Permission<Left>, BgCtx const&) noexcept { ran.fetch_add(1, std::memory_order_acq_rel); },
         [&ran](perm::Permission<Right>, BgCtx const&) noexcept { ran.fetch_add(2, std::memory_order_acq_rel); });
 
@@ -80,6 +87,37 @@ namespace {
     static_assert(::foundation::brand::IsBranded<decltype(rebuilt)>,
                   "the rebuilt parent carries the brand of the parent that was consumed");
     (void)rebuilt;
+    return 0;
+}
+
+// The parallelism rule chooses the arm from the budget.  A set in one
+// core's private cache runs both bodies on the calling thread, and a set
+// past L3 runs each body on a thread of its own.
+[[nodiscard]] int spawn_arm_follows_the_budget() {
+    BgCtx ctx{eff::testing::bg()};
+    const std::thread::id caller = std::this_thread::get_id();
+
+    std::array<std::thread::id, 2> inline_ids{};
+    auto after_inline = spawn::mint_spawn<Left, Right>(
+        ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, perm::mint_permission_root<Whole>(),
+        [&inline_ids](auto, BgCtx const&) noexcept { inline_ids[0] = std::this_thread::get_id(); },
+        [&inline_ids](auto, BgCtx const&) noexcept { inline_ids[1] = std::this_thread::get_id(); });
+    (void)after_inline;
+    if (inline_ids[0] != caller || inline_ids[1] != caller) {
+        std::fprintf(stderr, "mint_spawn: a 64-byte budget must run both bodies on the calling thread\n");
+        return 1;
+    }
+
+    std::array<std::thread::id, 2> spawned_ids{};
+    auto after_spawn = spawn::mint_spawn<Left, Right>(
+        ctx, dram_bound_budget(), perm::mint_permission_root<Whole>(),
+        [&spawned_ids](auto, BgCtx const&) noexcept { spawned_ids[0] = std::this_thread::get_id(); },
+        [&spawned_ids](auto, BgCtx const&) noexcept { spawned_ids[1] = std::this_thread::get_id(); });
+    (void)after_spawn;
+    if (spawned_ids[0] == caller || spawned_ids[1] == caller || spawned_ids[0] == spawned_ids[1]) {
+        std::fprintf(stderr, "mint_spawn: a budget past L3 must run each body on a thread of its own\n");
+        return 1;
+    }
     return 0;
 }
 
@@ -164,6 +202,7 @@ namespace {
 
 int main() {
     if (const int rc = spawn_runs_every_child_and_returns_the_parent(); rc != 0) return rc;
+    if (const int rc = spawn_arm_follows_the_budget(); rc != 0) return rc;
     if (const int rc = parallel_for_visits_every_element_once(); rc != 0) return rc;
     if (const int rc = parallel_for_with_one_shard_runs_inline(); rc != 0) return rc;
     return 0;

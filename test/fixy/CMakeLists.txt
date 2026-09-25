@@ -3712,9 +3712,15 @@ fixy_test(test_fp_polynomial)
 fixy_test(test_os_spinlock)
 
 # test_os_spawn runs both mints for real: that every child body ran, that
-# the parent Permission comes back, and that a recombined region still
-# describes the storage it started with.
+# the parent Permission comes back, that the budget chooses the arm, and
+# that a recombined region still describes the storage it started with.
 fixy_test(test_os_spawn)
+
+# test_parallelism_rule_fixy asks the cost model the questions whose
+# answers hold on any host: the tier boundaries, the sequential answer
+# inside L2, the factor ladder and the container cap.  The old test of the
+# same name is a separate target, and a CMake target name is global.
+fixy_test(test_parallelism_rule_fixy test_parallelism_rule.cpp)
 
 # Every second regex is text the compiler emits and the fixture source
 # does not: a signature with its permission_t parameter spelled out, a

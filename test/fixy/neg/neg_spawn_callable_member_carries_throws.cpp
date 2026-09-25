@@ -49,7 +49,7 @@ int main() {
     BgCtx ctx{eff::testing::bg()};
     auto whole = perm::mint_permission_root<Whole>();
     [[maybe_unused]] auto rebuilt = fixy::spawn::mint_spawn<Left, Right>(
-        ctx, std::move(whole), HoldsMarkedMember{},
+        ctx, fixy::concurrent::WorkBudget{}, std::move(whole), HoldsMarkedMember{},
         [](perm::Permission<Right>, BgCtx const&) noexcept {});
     return 0;
 }

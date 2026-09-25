@@ -45,7 +45,7 @@ int main() {
     BgCtx ctx{eff::testing::bg()};
     auto whole = perm::mint_permission_root<Whole>();
     [[maybe_unused]] auto rebuilt = fixy::spawn::mint_spawn<Left, Right>(
-        ctx, std::move(whole), MarkedBody<fixy::atom::ctrl::throws<SampleException>>{},
+        ctx, fixy::concurrent::WorkBudget{}, std::move(whole), MarkedBody<fixy::atom::ctrl::throws<SampleException>>{},
         [](perm::Permission<Right>, BgCtx const&) noexcept {});
     return 0;
 }

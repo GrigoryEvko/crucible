@@ -46,20 +46,27 @@
 //     parent.  The body signature changes with it; both mints had no
 //     callers outside the old header, so nothing had to be adapted.
 //
-//  5. mint_spawn forwards to the spawning arm.  foundation ships two,
-//     mint_permission_fork (one thread per child, needs Effect::Bg) and
-//     mint_permission_fork_inline (bodies in child order, needs nothing),
-//     and no cost model chooses between them.  The old choice came from
-//     ctx_workbudget and parallelism_decision_for, neither of which is in
-//     the new tree.  mint_spawn is the spawning arm; a caller that wants
-//     the inline arm names it directly until a fixy-side cost model
-//     exists to choose.
+//  5. mint_spawn takes the budget of its children as a parameter, and
+//     fixy/concurrent/ParallelismRule.h chooses the arm from it.
+//     foundation ships two arms: mint_permission_fork (one thread per
+//     child, needs Effect::Bg) and mint_permission_fork_inline (bodies in
+//     child order on the calling thread).  A working set in the private
+//     cache of one core runs inline, and a larger one starts one thread
+//     per child.  The old choice read ctx_workbudget and
+//     parallelism_decision_for, which read a workload axis of the old
+//     context.  The new context carries no such axis, and
+//     foundation/effects/Ctx.h tells a fork to take its budget as a
+//     parameter.  The context must still own Effect::Bg, because the
+//     choice happens at run time and the spawning arm must be admissible.
+//     Bodies that wait on each other must not share a fork, because the
+//     inline arm runs them one after another.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 #include <fixy/OwnedRegion.h>
 #include <fixy/Throws.h>
 #include <fixy/atoms/Ctrl.h>
+#include <fixy/concurrent/ParallelismRule.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -307,10 +314,13 @@ inline constexpr bool no_callable_throws_v =
 template <typename Ctx, typename Parent, typename ChildrenTuple, typename CallablesTuple>
 concept CtxFitsSpawn = detail::can_ctx_fit_spawn<Ctx, Parent, ChildrenTuple, CallablesTuple>::value;
 
-// The call returns once every child has joined.
+// The call returns once every child has joined.  The budget states the
+// bytes the children touch together, and the parallelism rule chooses
+// the arm from it, per deviation 5.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsSpawn<Ctx, Parent, std::tuple<Children...>, std::tuple<std::decay_t<Callables>...>>
-[[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, perm::Permission<Parent, Brand>&& parent,
+[[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
+                                                        perm::Permission<Parent, Brand>&& parent,
                                                         Callables&&... callables) noexcept {
     // Deviation 1.  The clause above has already checked each callable's
     // noexcept specification through foundation's gate; this is the
@@ -320,6 +330,10 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
                   "mint_spawn: a callable's type carries fixy::atom::ctrl::throws. A noexcept declaration is "
                   "a promise the callable can still break, and a throw out of a child tears through the join "
                   "instead of unwinding it. Remove the atom from the callable's type, or do not spawn it.");
+    if (::fixy::concurrent::ParallelismRule::is_core_resident(budget.working_set_bytes())) {
+        return perm::mint_permission_fork_inline<Children...>(ctx, std::move(parent),
+                                                              std::forward<Callables>(callables)...);
+    }
     return perm::mint_permission_fork<Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 

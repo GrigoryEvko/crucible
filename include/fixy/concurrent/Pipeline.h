@@ -10,7 +10,8 @@
 // A stage can opt out of that, but only if its body is a single bounded call
 // rather than a drain loop, and only if the working sets are known and small
 // enough to stay in one core's private cache.  Splitting bounded work across
-// threads at that size costs more than it saves.
+// threads at that size costs more than it saves.  ParallelismRule answers the
+// size question, so this header holds no cache threshold of its own.
 //
 // This suits a few long-lived stages.  Many short tasks want a work queue
 // instead, since each run here pays for creating and joining the threads.
@@ -24,6 +25,7 @@
 // included the SPSC channel and the permission token and used neither.
 
 #include <fixy/Ctx.h>
+#include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
@@ -578,12 +580,7 @@ private:
 
     [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
         if constexpr (inline_safe && aggregate_working_set_known) {
-            const auto& topology = Topology::instance();
-            const std::size_t aggregate = aggregate_per_call_working_set;
-            if (aggregate <= topology.l1d_per_core_bytes()) {
-                return PipelineDispatchKind::Inline;
-            }
-            if (aggregate <= topology.l2_per_core_bytes()) {
+            if (ParallelismRule::is_core_resident(aggregate_per_call_working_set)) {
                 return PipelineDispatchKind::Inline;
             }
         }
@@ -713,12 +710,7 @@ private:
 
     [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
         if constexpr (inline_safe && aggregate_working_set_known) {
-            const auto& topology = Topology::instance();
-            const std::size_t aggregate = aggregate_per_call_working_set;
-            if (aggregate <= topology.l1d_per_core_bytes()) {
-                return PipelineDispatchKind::Inline;
-            }
-            if (aggregate <= topology.l2_per_core_bytes()) {
+            if (ParallelismRule::is_core_resident(aggregate_per_call_working_set)) {
                 return PipelineDispatchKind::Inline;
             }
         }
