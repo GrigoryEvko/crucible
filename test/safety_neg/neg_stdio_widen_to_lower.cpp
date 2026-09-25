@@ -10,7 +10,7 @@
 // Pairs with neg_stdio_mint_wrong_arg.cpp.
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/Stdio.h>
+#include <crucible/safety/_Stdio.h>
 
 int main() {
     using namespace crucible::safety;

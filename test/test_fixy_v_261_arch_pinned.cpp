@@ -6,7 +6,7 @@
 
 #include <crucible/safety/source/Arch.h>
 
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 

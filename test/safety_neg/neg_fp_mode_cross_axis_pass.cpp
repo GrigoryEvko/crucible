@@ -28,7 +28,7 @@
 // Substring "cannot convert" / "no match" / "could not match"
 // pins the diagnostic family.
 
-#include <crucible/safety/FpMode.h>
+#include <crucible/safety/_FpMode.h>
 
 namespace {
 

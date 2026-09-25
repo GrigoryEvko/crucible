@@ -34,7 +34,7 @@
 // but the structural shape (class-type cross-conversion impossible)
 // is invariant.
 
-#include <crucible/safety/FpMode.h>
+#include <crucible/safety/_FpMode.h>
 
 int main() {
     using namespace crucible::safety;

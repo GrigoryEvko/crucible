@@ -12,7 +12,7 @@
 // Expected diagnostic: "constraints not satisfied" / "is_constructible"
 // / "no matching function" / "no default constructor" / "deleted".
 
-#include <crucible/safety/Hw.h>
+#include <crucible/safety/_Hw.h>
 
 using namespace ::crucible::safety;
 

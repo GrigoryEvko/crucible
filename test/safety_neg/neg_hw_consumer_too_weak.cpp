@@ -20,7 +20,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" naming the satisfies-gated admit_at_tsc_ceiling template.
 
-#include <crucible/safety/Hw.h>
+#include <crucible/safety/_Hw.h>
 
 namespace sf = ::crucible::safety;
 using Hw_t = sf::HwInstruction_v;

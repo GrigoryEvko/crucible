@@ -3,7 +3,7 @@
 // under the project warning flags, and adds the cross-wrapper checks no
 // single wrapper header can state about itself.
 
-#include <crucible/safety/SimdWidthPinned.h>
+#include <crucible/safety/_SimdWidthPinned.h>
 #include <crucible/safety/_IsSimdWidthPinned.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/DimensionTraits.h>

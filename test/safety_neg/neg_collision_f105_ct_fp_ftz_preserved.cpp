@@ -40,7 +40,7 @@
 // Expected diagnostic substring: "F105:"
 
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/FpMode.h>
+#include <crucible/safety/_FpMode.h>
 
 namespace fn = crucible::safety::fn;
 namespace fx = crucible::effects;

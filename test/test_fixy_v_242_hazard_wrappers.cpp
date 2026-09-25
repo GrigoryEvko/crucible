@@ -4,10 +4,10 @@
 // test from main.
 
 #include <crucible/safety/_CallShape.h>
-#include <crucible/safety/ControlFlow.h>
+#include <crucible/safety/_ControlFlow.h>
 #include <crucible/safety/_GlobalState.h>
 #include <crucible/safety/_StackUse.h>
-#include <crucible/safety/Stdio.h>
+#include <crucible/safety/_Stdio.h>
 
 #include <type_traits>
 

@@ -19,7 +19,7 @@
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/_Borrowed.h>
 #include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/FpMode.h>
+#include <crucible/safety/_FpMode.h>
 #include <crucible/safety/_IsHotPath.h>
 #include <crucible/safety/source/Arch.h>
 

@@ -1,4 +1,4 @@
-#include <crucible/safety/FpMode.h>
+#include <crucible/safety/_FpMode.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/algebra/_Lattice.h>

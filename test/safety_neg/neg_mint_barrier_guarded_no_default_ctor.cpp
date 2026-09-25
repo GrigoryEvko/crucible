@@ -15,7 +15,7 @@
 // / "no matching function" / "no default constructor" / "no
 // matching constructor for initialization".
 
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 
 using namespace ::crucible::safety;
 

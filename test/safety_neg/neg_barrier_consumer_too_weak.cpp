@@ -20,7 +20,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" naming the satisfies-gated require_acqrel_floor template.
 
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 
 namespace sf = ::crucible::safety;
 using Bs_t = sf::BarrierStrength_v;

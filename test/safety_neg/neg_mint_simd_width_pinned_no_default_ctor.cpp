@@ -11,7 +11,7 @@
 // Expected diagnostic: "constraints not satisfied" / "is_constructible"
 // / "no matching function" / "no default constructor" / "deleted".
 
-#include <crucible/safety/SimdWidthPinned.h>
+#include <crucible/safety/_SimdWidthPinned.h>
 
 using namespace ::crucible::safety;
 

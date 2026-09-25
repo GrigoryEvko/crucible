@@ -25,7 +25,7 @@
 //
 // Expected diagnostic substring: "L006:"
 
-#include <crucible/safety/ControlFlow.h>
+#include <crucible/safety/_ControlFlow.h>
 #include <crucible/safety/Fn.h>
 
 namespace fn = crucible::safety::fn;

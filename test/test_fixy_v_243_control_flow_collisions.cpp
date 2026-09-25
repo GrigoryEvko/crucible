@@ -7,9 +7,9 @@
 // something opts in. Only the first kind can be exercised from a positive
 // composition here.
 
-#include <crucible/safety/ControlFlow.h>
+#include <crucible/safety/_ControlFlow.h>
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/Stdio.h>
+#include <crucible/safety/_Stdio.h>
 
 #include <array>
 #include <string_view>

@@ -19,7 +19,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" naming the satisfies-gated require_avx512_provider template.
 
-#include <crucible/safety/SimdWidthPinned.h>
+#include <crucible/safety/_SimdWidthPinned.h>
 
 namespace sf = ::crucible::safety;
 using Si_t = sf::SimdIsa_v;

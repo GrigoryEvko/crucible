@@ -21,7 +21,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" / "relax" naming the rejected relax<> overload.
 
-#include <crucible/safety/SimdWidthPinned.h>
+#include <crucible/safety/_SimdWidthPinned.h>
 
 namespace sf = ::crucible::safety;
 using Si_t = sf::SimdIsa_v;

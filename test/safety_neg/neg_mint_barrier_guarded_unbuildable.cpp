@@ -26,7 +26,7 @@
 // Expected diagnostic: "constraints not satisfied" / "is_constructible"
 // / "no matching function" / "cannot convert".
 
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 
 using namespace ::crucible::safety;
 

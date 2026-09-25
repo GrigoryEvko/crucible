@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 
 #include <type_traits>
 

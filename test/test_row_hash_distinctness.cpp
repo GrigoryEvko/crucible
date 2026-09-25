@@ -19,7 +19,7 @@
 #include <crucible/Expr.h>
 #include <crucible/fixy/Fn.h>
 #include <crucible/safety/_AllocClass.h>
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_ClockSource.h>
@@ -27,8 +27,8 @@
 #include <crucible/safety/_Crash.h>
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
-#include <crucible/safety/FpMode.h>
-#include <crucible/safety/Hw.h>
+#include <crucible/safety/_FpMode.h>
+#include <crucible/safety/_Hw.h>
 #include <crucible/safety/JoinPolicy.h>
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/_HotPath.h>
@@ -46,7 +46,7 @@
 #include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
-#include <crucible/safety/SimdWidthPinned.h>
+#include <crucible/safety/_SimdWidthPinned.h>
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/SuspendBehavior.h>
 #include <crucible/safety/_Tagged.h>

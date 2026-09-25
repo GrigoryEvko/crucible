@@ -23,7 +23,7 @@
 // Expected diagnostic substring: "S001:"
 
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/Stdio.h>
+#include <crucible/safety/_Stdio.h>
 
 namespace fn = crucible::safety::fn;
 namespace sf = crucible::safety;

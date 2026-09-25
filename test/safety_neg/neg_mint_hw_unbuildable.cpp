@@ -13,7 +13,7 @@
 // Expected diagnostic: "constraints not satisfied" / "is_constructible"
 // / "no matching function" / "cannot convert".
 
-#include <crucible/safety/Hw.h>
+#include <crucible/safety/_Hw.h>
 
 using namespace ::crucible::safety;
 

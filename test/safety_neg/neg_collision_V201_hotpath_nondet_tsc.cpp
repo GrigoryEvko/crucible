@@ -21,7 +21,7 @@
 // Expected diagnostic substring: "V201:".
 
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/Hw.h>
+#include <crucible/safety/_Hw.h>
 
 namespace fn = crucible::safety::fn;
 namespace sf = crucible::safety;

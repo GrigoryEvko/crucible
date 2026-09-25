@@ -6,9 +6,9 @@
 // itself: its place in the dimension table, the distinctness of its hash
 // contribution, and how it composes with other wrappers.
 
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/_IsBarrierGuarded.h>
-#include <crucible/safety/Hw.h>
+#include <crucible/safety/_Hw.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/diag/_RowHashFold.h>

@@ -8,7 +8,7 @@
 // Pairs with neg_stdio_widen_to_lower.cpp.
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/Stdio.h>
+#include <crucible/safety/_Stdio.h>
 
 namespace {
 struct NeedsTwo {

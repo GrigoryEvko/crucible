@@ -14,7 +14,7 @@
 // Expected diagnostic: "constraints not satisfied" / "is_constructible"
 // / "no matching function" / "no default constructor" / "deleted".
 
-#include <crucible/safety/FpMode.h>
+#include <crucible/safety/_FpMode.h>
 
 namespace cs = ::crucible::safety;
 

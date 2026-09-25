@@ -9,10 +9,10 @@
 // marker that grant-pack analysis specializes, so they stay silent
 // until something opts in.
 
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/Fn.h>  // pulls in the collision catalog
-#include <crucible/safety/Hw.h>
-#include <crucible/safety/SimdWidthPinned.h>
+#include <crucible/safety/_Hw.h>
+#include <crucible/safety/_SimdWidthPinned.h>
 
 #include <string_view>
 #include <type_traits>

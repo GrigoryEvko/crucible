@@ -13,7 +13,7 @@
 //
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/ControlFlow.h>
+#include <crucible/safety/_ControlFlow.h>
 
 int main() {
     using namespace crucible::safety;

@@ -18,7 +18,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" / "widen" naming the rejected widen<> overload.
 
-#include <crucible/safety/Hw.h>
+#include <crucible/safety/_Hw.h>
 
 namespace sf = ::crucible::safety;
 using Hw_t = sf::HwInstruction_v;

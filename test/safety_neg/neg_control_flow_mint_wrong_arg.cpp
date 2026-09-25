@@ -12,7 +12,7 @@
 //
 // Expected diagnostic: the constraint-failure family.
 
-#include <crucible/safety/ControlFlow.h>
+#include <crucible/safety/_ControlFlow.h>
 
 namespace {
 struct NeedsTwo {

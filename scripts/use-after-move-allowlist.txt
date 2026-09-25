@@ -122,4 +122,4 @@ test/fixy/test_versioned_budgeted_attacks.cpp:attack_one_grant_on_two_values:sta
 # constructor.  The guard refuses a move inside a macro, because each use of
 # the macro hides the move.  The old tree is deleted, not edited, so the
 # entry goes with the file.
-include/crucible/safety/FpMode.h:CRUCIBLE_FP_AXIS_MINT:forward
+include/crucible/safety/_FpMode.h:CRUCIBLE_FP_AXIS_MINT:forward

@@ -3,7 +3,7 @@
 #include <crucible/algebra/_GradedTrait.h>
 #include <crucible/algebra/_Lattice.h>
 #include <crucible/safety/_AllocClass.h>
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/Consistency.h>
@@ -11,7 +11,7 @@
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/_HotPath.h>
-#include <crucible/safety/Hw.h>
+#include <crucible/safety/_Hw.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/_Mutation.h>
@@ -25,12 +25,12 @@
 #include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/_SealedRefined.h>
 #include <crucible/safety/_Secret.h>
-#include <crucible/safety/SimdWidthPinned.h>
+#include <crucible/safety/_SimdWidthPinned.h>
 #include <crucible/safety/_Stale.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
-#include <crucible/safety/FpMode.h>
+#include <crucible/safety/_FpMode.h>
 #include <crucible/safety/JoinPolicy.h>
 #include <crucible/safety/_Wait.h>
 #include <crucible/safety/Witness.h>

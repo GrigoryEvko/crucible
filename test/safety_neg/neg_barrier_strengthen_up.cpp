@@ -19,7 +19,7 @@
 // Expected diagnostic: "constraints not satisfied" / "no matching
 // function" / "weaken" naming the rejected weaken<> overload.
 
-#include <crucible/safety/BarrierGuarded.h>
+#include <crucible/safety/_BarrierGuarded.h>
 
 namespace sf = ::crucible::safety;
 using Bs_t = sf::BarrierStrength_v;

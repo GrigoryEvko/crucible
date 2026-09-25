@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/safety/SimdWidthPinned.h>
+#include <crucible/safety/_SimdWidthPinned.h>
 
 #include <type_traits>
 
