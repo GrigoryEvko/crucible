@@ -1,4 +1,4 @@
-#include <crucible/concurrent/Queue.h>
+#include <crucible/concurrent/_Queue.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/permissions/_PermissionFork.h>
 

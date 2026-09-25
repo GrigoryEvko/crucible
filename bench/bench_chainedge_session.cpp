@@ -10,9 +10,9 @@
 #include <memory>
 #include <utility>
 
-#include <crucible/concurrent/PermissionedChainEdge.h>
+#include <crucible/concurrent/_PermissionedChainEdge.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChainEdgeSession.h>
+#include <crucible/sessions/_ChainEdgeSession.h>
 
 #include "bench_harness.h"
 

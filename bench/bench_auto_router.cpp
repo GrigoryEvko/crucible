@@ -5,7 +5,7 @@
 // snapshot; if a future edit replaces consteval policy with runtime dispatch,
 // this target should become noisy immediately.
 
-#include <crucible/concurrent/AutoRouter.h>
+#include <crucible/concurrent/_AutoRouter.h>
 #include <crucible/concurrent/_Topology.h>
 #include <foundation/Simd.h>
 

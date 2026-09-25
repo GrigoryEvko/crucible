@@ -49,7 +49,7 @@
 #include <cstdint>
 #include <span>
 
-#include <crucible/concurrent/MpmcRing.h>
+#include <crucible/concurrent/_MpmcRing.h>
 #include <crucible/concurrent/_MpscRing.h>
 #include <crucible/concurrent/_SpscRing.h>
 

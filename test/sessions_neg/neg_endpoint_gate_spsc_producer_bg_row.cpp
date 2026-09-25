@@ -7,7 +7,7 @@
 
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/SpscSession.h>
+#include <crucible/sessions/_SpscSession.h>
 
 namespace eff = ::crucible::effects;
 namespace ses = ::crucible::safety::proto::spsc_session;

@@ -20,9 +20,9 @@
 // 'mint_consumer_session'" / "cannot convert" / "ConsumerHandle"
 // / "mint_consumer_session".
 
-#include <crucible/concurrent/PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/ShardedGridSession.h>
+#include <crucible/sessions/_ShardedGridSession.h>
 
 namespace fsg = ::crucible::safety::proto::sharded_grid_session;
 namespace conc = ::crucible::concurrent;

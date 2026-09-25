@@ -19,7 +19,7 @@
 // Expected diagnostic: "cannot convert" / "no matching function"
 // pointing at SharedPermission<reader_tag> vs Permission<reader_tag>.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/sessions/SwmrSession.h>
 
 namespace fswmr = ::crucible::safety::proto::swmr_session;

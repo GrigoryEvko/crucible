@@ -4,10 +4,10 @@
 // Send-only.  ProducerHandle<P> must not expose recv through the generic
 // substrate bridge.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
-#include <crucible/sessions/CalendarGridSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
 
 #include <cstdint>
 #include <tuple>

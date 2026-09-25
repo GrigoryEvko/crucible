@@ -4,9 +4,9 @@
 // background row refuses the foreground context.  The reader receives the
 // value and its row, which the context does not admit.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/SnapshotSession.h>
+#include <crucible/sessions/_SnapshotSession.h>
 
 namespace eff = ::crucible::effects;
 namespace ses = ::crucible::safety::proto::snapshot_session;

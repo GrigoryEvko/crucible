@@ -1,5 +1,5 @@
 #include <crucible/concurrent/_Pipeline.h>
-#include <crucible/concurrent/StageEndpointBridge.h>
+#include <crucible/concurrent/_StageEndpointBridge.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>
 

@@ -18,8 +18,8 @@
 // Expected diagnostic: "IsExecCtx" / "constraints not satisfied"
 // / "no matching function" / "mint_producer_session".
 
-#include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/sessions/ShardedGridSession.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
+#include <crucible/sessions/_ShardedGridSession.h>
 
 namespace fsg = ::crucible::safety::proto::sharded_grid_session;
 namespace conc = ::crucible::concurrent;

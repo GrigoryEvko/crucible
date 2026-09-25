@@ -4,7 +4,7 @@
 // MaxShards=0 must be rejected at instantiation, not repaired by a
 // runtime branch.
 
-#include <crucible/concurrent/AutoRouter.h>
+#include <crucible/concurrent/_AutoRouter.h>
 
 namespace {
 struct RouteTag {};

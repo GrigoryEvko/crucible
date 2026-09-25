@@ -13,8 +13,8 @@
 // Expected diagnostic: IsExecCtx / constraints not satisfied /
 // no matching function.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/sessions/MpmcChannelSession.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
 
 namespace fmpmc = ::crucible::safety::proto::mpmc_channel_session;
 namespace conc = crucible::concurrent;

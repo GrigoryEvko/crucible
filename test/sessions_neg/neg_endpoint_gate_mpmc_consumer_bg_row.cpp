@@ -4,9 +4,9 @@
 // background row refuses the foreground context.  The receive side of the
 // protocol brings the row into the receiver, which the context does not admit.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/MpmcChannelSession.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
 
 namespace eff = ::crucible::effects;
 namespace ses = ::crucible::safety::proto::mpmc_channel_session;

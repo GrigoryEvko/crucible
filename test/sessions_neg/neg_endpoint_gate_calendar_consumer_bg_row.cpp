@@ -4,9 +4,9 @@
 // row refuses the foreground context.  The receive side of the protocol brings
 // the row into the receiver, which the context does not admit.
 
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/CalendarGridSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
 
 #include <cstdint>
 

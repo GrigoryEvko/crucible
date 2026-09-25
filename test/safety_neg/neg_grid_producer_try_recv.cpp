@@ -3,7 +3,7 @@
 // FOUND-A15 — PermissionedShardedGrid::ProducerHandle<I> exposes
 // only try_push.  Calling try_pop must be a hard compile error.
 
-#include <crucible/concurrent/PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
 

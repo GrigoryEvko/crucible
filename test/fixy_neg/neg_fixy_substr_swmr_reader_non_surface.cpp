@@ -17,7 +17,7 @@
 // Expected diagnostic: SwmrSessionSurface / constraints not satisfied /
 // no matching function.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/sessions/SwmrSession.h>
 
 namespace fswmr = ::crucible::safety::proto::swmr_session;

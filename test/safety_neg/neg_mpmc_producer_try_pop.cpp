@@ -3,7 +3,7 @@
 // FOUND-A09 — PermissionedMpmcChannel::ProducerHandle exposes only
 // try_push.  Calling try_pop must be a hard compile error.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 
 namespace {
 

@@ -4,9 +4,9 @@
 // pop_bottom, not thief steal_top.  Trying to use the thief borrowed
 // transport through the owner protocol is rejected structurally.
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 #include <utility>
 

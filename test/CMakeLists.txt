@@ -3270,7 +3270,7 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_wrong_admittance
     "no matching function|cannot convert"
     "SharedPermission|FederatedPeer|mint_coord")
 
-# ── The per-substrate session mints in sessions/SpscSession.h and
+# ── The per-substrate session mints in sessions/_SpscSession.h and
 # sessions/SwmrSession.h.  Two HS14 fixtures pin the
 # producer/consumer + writer/reader role gates:
 crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_wrong_handle
@@ -3281,7 +3281,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_wrong_handle
     "WriterHandle|ReaderHandle")
 
 # The typed-session surface of PermissionedSnapshot
-# (sessions/SnapshotSession.h).  Two HS14 fixtures pin distinct
+# (sessions/_SnapshotSession.h).  Two HS14 fixtures pin distinct
 # mismatch classes: role swap (writer-mint receives reader handle)
 # and concept rejection (substrate fails SnapshotSessionSurface).
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_wrong_handle
@@ -3432,7 +3432,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_runtime_session_non_c
 
 # HS14 floor of the MPMC session mints (producer/consumer).  They are
 # ctx-bound and take Channel::{Producer,Consumer}Handle&
-# (sessions/MpmcChannelSession.h), so the same two distinct classes
+# (sessions/_MpmcChannelSession.h), so the same two distinct classes
 # apply (role-swap wrong-handle + non-ExecCtx).
 crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_producer_session_wrong_handle
     "cannot convert|no matching function"
@@ -3447,7 +3447,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_session_non_ctx
     "constraints.*not satisfied|no matching function"
     "IsExecCtx")
 
-# The ChaseLevDeque session mints in sessions/ChaseLevDequeSession.h
+# The ChaseLevDeque session mints in sessions/_ChaseLevDequeSession.h
 # (mint_chaselev_owner / mint_chaselev_thief / mint_owner_session /
 # mint_thief_session).  Four mints × two distinct mismatch classes
 # each = 8 fixtures.  The pairs split:
@@ -3484,7 +3484,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_session_wrong_hand
     "no matching function|cannot convert"
     "ThiefHandle|mint_thief_session")
 
-# The ChainEdge session mints in sessions/ChainEdgeSession.h
+# The ChainEdge session mints in sessions/_ChainEdgeSession.h
 # (mint_chainedge_signaler / mint_chainedge_waiter /
 # mint_chainedge_signaler_session / mint_chainedge_waiter_session).
 # Four mints × two distinct mismatch classes each = 8 fixtures.
@@ -3521,7 +3521,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_session_wrong_ha
     "no matching function|cannot convert"
     "WaiterHandle|mint_chainedge_waiter_session")
 
-# The CalendarGrid session mints in sessions/CalendarGridSession.h
+# The CalendarGrid session mints in sessions/_CalendarGridSession.h
 # (mint_calendar_grid_producer / mint_calendar_grid_consumer /
 # mint_producer_session / mint_consumer_session).  Four mints ×
 # two distinct mismatch classes each = 8 fixtures.  The pairs
@@ -3559,7 +3559,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_calendar_grid_consumer_session_wr
     "ConsumerHandle|mint_consumer_session")
 
 # The ShardedCalendarGrid session mints in
-# sessions/ShardedCalendarGridSession.h
+# sessions/_ShardedCalendarGridSession.h
 # (mint_sharded_calendar_grid_producer /
 # mint_sharded_calendar_grid_consumer / mint_producer_session /
 # mint_consumer_session).  Four mints × two distinct mismatch
@@ -3598,7 +3598,7 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_consumer_se
     "no matching function|cannot convert"
     "ConsumerHandle|mint_consumer_session")
 
-# The ShardedGrid session mints in sessions/ShardedGridSession.h
+# The ShardedGrid session mints in sessions/_ShardedGridSession.h
 # (mint_sharded_grid_producer / mint_sharded_grid_consumer /
 # mint_producer_session / mint_consumer_session).  Four mints ×
 # two distinct mismatch classes each = 8 fixtures.  The pairs

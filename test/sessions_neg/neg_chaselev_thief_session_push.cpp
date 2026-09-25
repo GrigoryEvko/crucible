@@ -4,8 +4,8 @@
 // A thief may steal borrowed work; it cannot push work into the owner
 // side of the Chase-Lev deque.
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 #include <utility>
 

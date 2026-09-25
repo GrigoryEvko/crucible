@@ -13,9 +13,9 @@
 // Expected diagnostic: "cannot convert" / "no matching function"
 // pointing at ProducerHandle vs ConsumerHandle.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/MpmcChannelSession.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
 
 namespace fmpmc = ::crucible::safety::proto::mpmc_channel_session;
 namespace conc = crucible::concurrent;

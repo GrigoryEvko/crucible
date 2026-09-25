@@ -25,8 +25,8 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at CtxFitsStageFromEndpoints / IsConsumerEndpoint.
 
-#include <crucible/concurrent/Endpoint.h>
-#include <crucible/concurrent/StageEndpointBridge.h>
+#include <crucible/concurrent/_Endpoint.h>
+#include <crucible/concurrent/_StageEndpointBridge.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <utility>

@@ -3,7 +3,7 @@
 // ChainEdge raw semaphore observation is substrate-only.  Production code must
 // carry the Waiter Permission inside PermissionedChainEdge::WaiterHandle.
 
-#include <crucible/concurrent/ChainEdge.h>
+#include <crucible/concurrent/_ChainEdge.h>
 
 namespace conc = ::crucible::concurrent;
 

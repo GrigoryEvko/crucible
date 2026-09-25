@@ -20,9 +20,9 @@
 // 'mint_consumer_session'" / "cannot convert" / "ConsumerHandle"
 // / "mint_consumer_session".
 
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/CalendarGridSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
 
 namespace fcal = ::crucible::safety::proto::calendar_grid_session;
 namespace conc = ::crucible::concurrent;

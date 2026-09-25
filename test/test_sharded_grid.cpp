@@ -5,7 +5,7 @@
 // the grid dropped work, a repeated one means two consumers were handed
 // the same work.
 
-#include <crucible/concurrent/ShardedGrid.h>
+#include <crucible/concurrent/_ShardedGrid.h>
 #include <crucible/concurrent/_SpscRing.h>
 
 #include <atomic>

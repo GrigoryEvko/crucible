@@ -522,6 +522,239 @@ crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → includ
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
 
+# ── concurrent: the dropped channels, their session wirings and the endpoint clauses ──
+# No production file reaches these headers.  The new tree carries two
+# permissioned channels, fixy/concurrent/PermissionedSpscChannel.h and
+# PermissionedMpscChannel.h, and one single-writer many-reader channel,
+# fixy/concurrent/SwmrSession.h.  The other channels, their session
+# wirings, the router that chose among them and their descriptors drop.
+
+crucible/bridges/_EndpointMint.h:mint_crash_watched_endpoint  → include/fixy/concurrent/EndpointMint.h  — The crash session of fixy/session/CrashTransport.h admits only a protocol with a crash branch on each receive, and the default protocol of an endpoint has none.
+crucible/concurrent/_AutoRouter.h:AutoRoute  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:auto_route_decision  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:AutoRouteDecision  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:auto_route_decision_runtime  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:AutoRouteRuntimeProfile  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:auto_route_runtime_profile_from_topology  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:auto_route_runtime_profile_from_topology_snapshot  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:auto_route_runtime_profile_refresh  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:auto_route_runtime_profile_reprobe  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:AutoRoute_t  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:auto_route_v  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:auto_shard_factor  — Dropped with the router. No production file reaches it, and the new tree has no sharded channel for a shard factor to size.
+crucible/concurrent/_AutoRouter.h:auto_shard_factor_runtime  — Dropped with the router. No production file reaches it, and the new tree has no sharded channel for a shard factor to size.
+crucible/concurrent/_AutoRouter.h:RouteIntent  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:RouteKind  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:StaticAutoRoute  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:StaticAutoRoute_t  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_AutoRouter.h:static_auto_route_v  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
+crucible/concurrent/_ChainEdge.h:ChainEdge  — Dropped with the header. No production file reaches it, and no header of the new tree builds the execution plan whose semaphore edges it modeled.
+crucible/concurrent/_ChainEdge.h:ChainEdgeId  — Dropped with the chain edge. No production file reaches it, and no header of the new tree builds an execution plan.
+crucible/concurrent/_ChainEdge.h:PermissionedChainEdge  → include/fixy/concurrent/SubstrateSessionBridge.h  — A forward declaration that let the access key of the edge befriend its permissioned wrapper. The wrapper drops, and the bridge records that each other channel left.
+crucible/concurrent/_ChainEdge.h:PlanId  — Dropped with the chain edge. No production file reaches it, and no header of the new tree builds an execution plan.
+crucible/concurrent/_ChainEdge.h:SemaphoreSignal  — Dropped with the chain edge. No production file reaches it, and no header of the new tree builds an execution plan.
+crucible/concurrent/_Endpoint.h:default_topology_shape  → include/fixy/concurrent/Endpoint.h  — The old gate asked that the channel topology fits the workload hint of the context, and the new context carries no such axis.
+crucible/concurrent/_Endpoint.h:endpoint_recommendation  → include/fixy/concurrent/Endpoint.h  — The old gate asked that the channel topology fits the workload hint of the context, and the new context carries no such axis.
+crucible/concurrent/_Endpoint.h:SubstrateMatchesEndpointRecommendation  → include/fixy/concurrent/Endpoint.h  — The old gate asked that the channel topology fits the workload hint of the context, and the new context carries no such axis.
+crucible/concurrent/_Endpoint.h:workload_shape  → include/fixy/concurrent/Endpoint.h  — The old gate asked that the channel topology fits the workload hint of the context, and the new context carries no such axis.
+crucible/concurrent/_MpmcRing.h:MpmcRing  — Dropped with the header. No production file reaches it, and the new tree carries the SPSC and the MPSC ring only.
+crucible/concurrent/_MpmcRing.h:mpmc_test_value  — A value type that only a static assertion of the dropped ring used.
+crucible/concurrent/_MpmcRing.h:MpmcValue  — Dropped with the ring it constrained. fixy/concurrent/RingValue.h is the value predicate of the two rings that the new tree carries.
+crucible/concurrent/_PermissionedCalendarGrid.h:KeyExtractorOf  — Dropped with the calendar grid. No production file reaches it, and the new tree has no keyed channel.
+crucible/concurrent/_PermissionedCalendarGrid.h:PermissionedCalendarGrid  — Dropped with the header. No production file reaches it, and the bridge table of the new tree holds the SPSC and the MPSC channel only.
+crucible/concurrent/_PermissionedChainEdge.h:PermissionedChainEdge  — Dropped with the header. No production file reaches it, and the bridge table of the new tree holds the SPSC and the MPSC channel only.
+crucible/concurrent/_PermissionedChainEdge.h:Signaler  — A role tag of the dropped chain edge, so its tag tree drops with it.
+crucible/concurrent/_PermissionedChainEdge.h:splits_into  — The header specialized the binary manifest for the tag tree of its channel, and the tree drops with the channel.
+crucible/concurrent/_PermissionedChainEdge.h:splits_into_authoring_witness  — The same for the binary witness, which drops with the channel.
+crucible/concurrent/_PermissionedChainEdge.h:splits_into_pack  — The same for the pack manifest, which drops with the channel.
+crucible/concurrent/_PermissionedChainEdge.h:splits_into_pack_authoring_witness  — The same for the pack witness, which drops with the channel.
+crucible/concurrent/_PermissionedChainEdge.h:Waiter  — A role tag of the dropped chain edge, so its tag tree drops with it.
+crucible/concurrent/_PermissionedChaseLevDeque.h:PermissionedChaseLevDeque  — The deque itself is fixy/concurrent/ChaseLevDeque.h. No production file reaches this permissioned wrapper, so the wrapper drops.
+crucible/concurrent/_PermissionedChaseLevDeque.h:splits_into  — The header specialized the binary manifest for the tag tree of its wrapper, and the tree drops with the wrapper.
+crucible/concurrent/_PermissionedChaseLevDeque.h:splits_into_authoring_witness  — The same for the binary witness, which drops with the wrapper.
+crucible/concurrent/_PermissionedChaseLevDeque.h:splits_into_pack  — The same for the pack manifest, which drops with the wrapper.
+crucible/concurrent/_PermissionedChaseLevDeque.h:splits_into_pack_authoring_witness  — The same for the pack witness, which drops with the wrapper.
+crucible/concurrent/_PermissionedChaseLevDeque.h:Thief  — A role tag of the dropped wrapper, so its tag tree drops with it.
+crucible/concurrent/_PermissionedMpmcChannel.h:Closed  — The closed state of a dropped MPMC handle, so it drops with the channel.
+crucible/concurrent/_PermissionedMpmcChannel.h:PermissionedMpmcChannel  — Dropped with the header. No production file reaches it, and the bridge table of the new tree holds the SPSC and the MPSC channel only.
+crucible/concurrent/_PermissionedMpmcChannel.h:splits_into  — The header specialized the binary manifest for the tag tree of its channel, and the tree drops with the channel.
+crucible/concurrent/_PermissionedMpmcChannel.h:splits_into_authoring_witness  — The same for the binary witness, which drops with the channel.
+crucible/concurrent/_PermissionedMpmcChannel.h:splits_into_pack  — The same for the pack manifest, which drops with the channel.
+crucible/concurrent/_PermissionedMpmcChannel.h:splits_into_pack_authoring_witness  — The same for the pack witness, which drops with the channel.
+crucible/concurrent/_PermissionedShardedCalendarGrid.h:PermissionedShardedCalendarGrid  — Dropped with the header. No production file reaches it, and the bridge table of the new tree holds the SPSC and the MPSC channel only.
+crucible/concurrent/_PermissionedShardedCalendarGrid.h:ShardedCalendarKeyExtractorOf  — Dropped with the sharded calendar grid. No production file reaches it, and the new tree has no keyed channel.
+crucible/concurrent/_PermissionedShardedGrid.h:PermissionedShardedGrid  — Dropped with the header. No production file reaches it, and the bridge table of the new tree holds the SPSC and the MPSC channel only.
+crucible/concurrent/_PermissionedSnapshot.h:PermissionedSnapshot  — The old tree had two permissioned single-writer many-reader channels over AtomicSnapshot. The port keeps fixy/concurrent/SwmrSession.h, and this second one drops.
+crucible/concurrent/_PermissionedSnapshot.h:splits_into  — The header specialized the binary manifest for the tag tree of its channel, and the tree drops with the channel.
+crucible/concurrent/_PermissionedSnapshot.h:splits_into_authoring_witness  — The same for the binary witness, which drops with the channel.
+crucible/concurrent/_PermissionedSnapshot.h:splits_into_pack  — The same for the pack manifest, which drops with the channel.
+crucible/concurrent/_PermissionedSnapshot.h:splits_into_pack_authoring_witness  — The same for the pack witness, which drops with the channel.
+crucible/concurrent/_Queue.h:auto_queue_t  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:is_mpsc_kind  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:is_mpsc_kind_v  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:is_sharded_kind  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:is_sharded_kind_v  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:is_spsc_kind  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:is_spsc_kind_v  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:is_work_stealing_kind  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:is_work_stealing_kind_v  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:mpsc  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:pick_kind  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:Queue  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:QueueConsumer  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:QueueProducer  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:sharded  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:splits_into  — The header specialized the binary manifest for the tag tree of its facade, and the tree drops with the facade.
+crucible/concurrent/_Queue.h:splits_into_authoring_witness  — The same for the binary witness, which drops with the facade.
+crucible/concurrent/_Queue.h:splits_into_pack  — The same for the pack manifest, which drops with the facade.
+crucible/concurrent/_Queue.h:splits_into_pack_authoring_witness  — The same for the pack witness, which drops with the facade.
+crucible/concurrent/_Queue.h:spsc  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:Stealable  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_Queue.h:WorkloadHint  — Dropped with the queue facade. No production file reaches it, and fixy/concurrent/ParallelismRule.h reads a WorkBudget where the facade read this hint.
+crucible/concurrent/_Queue.h:work_stealing  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
+crucible/concurrent/_ShardedGrid.h:AffinityRouting  — Dropped with the sharded grid. No production file reaches it, and the new tree has no sharded channel.
+crucible/concurrent/_ShardedGrid.h:HashKeyRouting  — Dropped with the sharded grid. No production file reaches it, and the new tree has no sharded channel.
+crucible/concurrent/_ShardedGrid.h:RoundRobinRouting  — Dropped with the sharded grid. No production file reaches it, and the new tree has no sharded channel.
+crucible/concurrent/_ShardedGrid.h:ShardedSpscGrid  — Dropped with the header. No production file reaches it, and the new tree has no sharded channel.
+crucible/concurrent/_Substrate.h:channel_byte_footprint_v  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:ChannelTopology  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:conservative_cliff_l2_per_core  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:IsManyToManySubstrate  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:IsManyToOneSubstrate  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:IsOneToManyLatestSubstrate  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:IsOneToOneSubstrate  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:is_substrate  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:IsSubstrate  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:is_substrate_v  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:IsWorkStealingSubstrate  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:per_call_working_set_v  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:recommend_topology  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:recommend_topology_for_workload  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:Substrate  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:substrate_capacity_v  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:Substrate_t  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:substrate_topology_v  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:substrate_traits  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:substrate_user_tag_t  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_Substrate.h:substrate_value_type_t  — Dropped with the substrate descriptor, which no production file reaches and no header of the new tree reads.
+crucible/concurrent/_SubstrateSessionBridge.h:CalendarConsumerId  → include/fixy/concurrent/SubstrateSessionBridge.h  — A shard row of the old table, which served the grid channels. Those channels drop, and the new table holds the SPSC and the MPSC channel only.
+crucible/concurrent/_SubstrateSessionBridge.h:CalendarProducerId  → include/fixy/concurrent/SubstrateSessionBridge.h  — A shard row of the old table, which served the grid channels. Those channels drop, and the new table holds the SPSC and the MPSC channel only.
+crucible/concurrent/_SubstrateSessionBridge.h:CtxFitsShardSubstrateSessionMint  → include/fixy/concurrent/SubstrateSessionBridge.h  — The gate of the shard mint, which served the grid channels. Those channels drop, and the new table holds the SPSC and the MPSC channel only.
+crucible/concurrent/_SubstrateSessionBridge.h:IsBridgeableShardDirection  → include/fixy/concurrent/SubstrateSessionBridge.h  — A shard row of the old table, which served the grid channels. Those channels drop, and the new table holds the SPSC and the MPSC channel only.
+crucible/concurrent/_SubstrateSessionBridge.h:ShardId  → include/fixy/concurrent/SubstrateSessionBridge.h  — A shard row of the old table, which served the grid channels. Those channels drop, and the new table holds the SPSC and the MPSC channel only.
+crucible/concurrent/_SubstrateSessionBridge.h:ShardSubstrateFitsCtxResidency  → include/fixy/concurrent/SubstrateSessionBridge.h  — It asked that one call of a shard fits the residency tier of the context, and the new context carries no residency tier.
+crucible/concurrent/traits/_Concepts.h:FifoChannel  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:HasCapacity  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:HasEmptyApprox  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:HasIsExclusiveActive  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:HasLinearRecombinedAccess  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:HasPoolDrainedAccess  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:HasSizeApprox  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:HasUnifiedTypedefs  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:LinearOnlyChannel  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:PermissionedChannel  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/concurrent/traits/_Concepts.h:PoolBasedChannel  — Dropped with the channel concept set. No production file asks it, and fixy/concurrent/HandleTraits.h classifies a handle by the member it exposes.
+crucible/sessions/_CalendarGridSession.h:blocking_pop  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:blocking_push  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:CalendarGridSessionSurface  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:ConsumerProto  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:ConsumerSessionHandle  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:consumer_session_try_pop  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:is_calendar_grid_session_surface  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:mint_calendar_grid_consumer  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:mint_calendar_grid_producer  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:mint_consumer_session  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:mint_producer_session  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:ProducerProto  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:ProducerSessionHandle  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_CalendarGridSession.h:producer_session_try_push  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:ChainEdgeSessionSurface  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:mint_chainedge_signaler  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:mint_chainedge_signaler_session  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:mint_chainedge_waiter  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:mint_chainedge_waiter_session  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:Signal  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:SignalerProto  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:SignalerSessionHandle  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:signal_transport  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:WaiterProto  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:WaiterSessionHandle  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChainEdgeSession.h:wait_transport  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ChaseLevDequeSession.h:blocking_owner_pop  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:blocking_owner_push  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:blocking_steal_borrowed  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:ChaseLevSessionSurface  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:mint_chaselev_owner  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:mint_chaselev_thief  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:mint_owner_session  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:mint_thief_session  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:owner_pop_branch  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:OwnerProto  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:owner_push_branch  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:OwnerSessionHandle  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:owner_session_try_pop  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:owner_session_try_push  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:ThiefProto  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:ThiefSessionHandle  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_ChaseLevDequeSession.h:thief_session_steal_borrowed  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
+crucible/sessions/_MpmcChannelSession.h:blocking_pop  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:blocking_push  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:ConsumerProto  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:ConsumerSessionHandle  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:mint_mpmc_consumer_endpoint  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:mint_mpmc_consumer_session  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:mint_mpmc_producer_endpoint  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:mint_mpmc_producer_session  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:MpmcChannelSessionSurface  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:ProducerProto  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_MpmcChannelSession.h:ProducerSessionHandle  — Dropped with the MPMC channel. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:blocking_pop  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:blocking_push  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:ConsumerProto  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:ConsumerSessionHandle  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:consumer_session_try_pop  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:is_sharded_calendar_grid_session_surface  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:mint_consumer_session  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:mint_producer_session  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:mint_sharded_calendar_grid_consumer  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:mint_sharded_calendar_grid_producer  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:ProducerProto  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:ProducerSessionHandle  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:producer_session_try_push  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedCalendarGridSession.h:ShardedCalendarGridSessionSurface  — Dropped with the sharded calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:blocking_pop  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:blocking_push  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:ConsumerProto  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:ConsumerSessionHandle  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:consumer_session_try_pop  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:is_sharded_grid_session_surface  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:mint_consumer_session  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:mint_producer_session  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:mint_sharded_grid_consumer  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:mint_sharded_grid_producer  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:ProducerProto  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:ProducerSessionHandle  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:producer_session_try_push  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_ShardedGridSession.h:ShardedGridSessionSurface  — Dropped with the sharded grid. No production file reaches this session wiring, and the new tree has no such channel.
+crucible/sessions/_SnapshotSession.h:blocking_load  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:blocking_publish  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:blocking_try_load  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:mint_snapshot_reader  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:mint_snapshot_reader_session  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:mint_snapshot_writer  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:mint_snapshot_writer_session  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:ReaderProto  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:ReaderSessionHandle  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:SnapshotSessionSurface  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:WriterProto  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SnapshotSession.h:WriterSessionHandle  → include/fixy/concurrent/SwmrSession.h  — Dropped with PermissionedSnapshot. SwmrSession.h carries the writer and reader sessions of the one single-writer many-reader channel that the port keeps.
+crucible/sessions/_SpscSession.h:blocking_pop  → include/fixy/session/Handle.h  — A spin that waited where the watch cannot see it. Handle.h refuses that transport shape, so a caller gives a polling read and the handle waits through the watch.
+crucible/sessions/_SpscSession.h:blocking_push  → include/fixy/session/Handle.h  — A spin that waited where the watch cannot see it. Handle.h refuses that transport shape, so a caller gives a trying write and the handle waits through the watch.
+crucible/sessions/_SpscSession.h:ConsumerProto  → include/fixy/concurrent/SubstrateSessionBridge.h  — default_proto_for of the consumer role of PermissionedSpscChannel names the same loop.
+crucible/sessions/_SpscSession.h:mint_consumer_session  → include/fixy/concurrent/SubstrateSessionBridge.h  — mint_substrate_session starts the same consumer session, and it takes the handle by move where the old mint stored its address.
+crucible/sessions/_SpscSession.h:mint_producer_session  → include/fixy/concurrent/SubstrateSessionBridge.h  — mint_substrate_session starts the same producer session, and it takes the handle by move where the old mint stored its address.
+crucible/sessions/_SpscSession.h:ProducerProto  → include/fixy/concurrent/SubstrateSessionBridge.h  — default_proto_for of the producer role of PermissionedSpscChannel names the same loop.
+
 # ── bridges: the persisted-session bridge ───────────────────────────────
 crucible/bridges/_SessionPersistence.h:detach_reason_kind_v  → include/fixy/session/Recording.h  — Folded into detail::recording::detach_kind in fixy/session/Recording.h, which maps the same five detach reasons to the log's reason kind and every other type to Unknown.
 crucible/bridges/_SessionPersistence.h:mint_persisted_session  → none  — The ctx-bound mint of a persisted-session handle, which writes each flush through Cipher. A header of the new tree cannot include Cipher, so no header of the new tree carries the mint.

@@ -5,9 +5,9 @@
 #include <thread>
 #include <utility>
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/SnapshotSession.h>
+#include <crucible/sessions/_SnapshotSession.h>
 
 namespace {
 

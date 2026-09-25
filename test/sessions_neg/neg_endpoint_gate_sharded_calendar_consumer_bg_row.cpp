@@ -4,9 +4,9 @@
 // background row refuses the foreground context.  The receive side of the
 // protocol brings the row into the receiver, which the context does not admit.
 
-#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/ShardedCalendarGridSession.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
 
 #include <cstdint>
 

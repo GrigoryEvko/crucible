@@ -11,14 +11,14 @@
 // and hands the permission back.  Every wrapper belongs to exactly one
 // family, and the checks below pin that as well.
 
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
-#include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
-#include <crucible/concurrent/traits/Concepts.h>
+#include <crucible/concurrent/traits/_Concepts.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
 

@@ -3,7 +3,7 @@
 // ChainEdge raw semaphore mutation is substrate-only.  Production code must
 // carry the Signaler Permission inside PermissionedChainEdge::SignalerHandle.
 
-#include <crucible/concurrent/ChainEdge.h>
+#include <crucible/concurrent/_ChainEdge.h>
 
 namespace conc = ::crucible::concurrent;
 

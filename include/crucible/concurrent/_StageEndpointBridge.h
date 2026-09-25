@@ -5,7 +5,7 @@
 // stage machinery.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/_Endpoint.h>
 #include <crucible/concurrent/_Stage.h>
 #include <crucible/safety/_Decide.h>
 

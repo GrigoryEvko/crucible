@@ -7,9 +7,9 @@
 // MpmcChannelSession version pins the same role-discrimination claim
 // for the fractional × fractional cell of the channel-permission family.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/MpmcChannelSession.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
 
 #include <utility>
 

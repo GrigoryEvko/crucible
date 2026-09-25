@@ -1,4 +1,4 @@
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/permissions/_PermissionFork.h>
 

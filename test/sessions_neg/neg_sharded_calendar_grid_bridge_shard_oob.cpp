@@ -3,7 +3,7 @@
 // GAPS-084 fixture #3 - ShardId<S> is part of the bridge type.  A shard
 // outside [0, NumShards) must fail before any runtime handle exists.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 #include <cstdint>
 

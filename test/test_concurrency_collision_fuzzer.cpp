@@ -15,16 +15,16 @@
 
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/ChaseLevDeque.h>
-#include <crucible/concurrent/MpmcRing.h>
+#include <crucible/concurrent/_MpmcRing.h>
 #include <crucible/concurrent/_MpscRing.h>
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
-#include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
-#include <crucible/concurrent/ShardedGrid.h>
+#include <crucible/concurrent/_ShardedGrid.h>
 #include <crucible/concurrent/_SpscRing.h>
 #include <crucible/concurrent/scheduler/_Policies.h>
 #include <crucible/Arena.h>

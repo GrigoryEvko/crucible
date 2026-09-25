@@ -4,7 +4,7 @@
 
 #include <crucible/safety/_IsSwmrHandle.h>
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/SwmrSession.h>
 

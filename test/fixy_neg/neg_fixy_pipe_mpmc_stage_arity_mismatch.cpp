@@ -16,7 +16,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // at CtxFitsMpmcStageFromEndpoints or mpmc_stage_from_endpoints_gate.
 
-#include <crucible/concurrent/StageEndpointBridge.h>
+#include <crucible/concurrent/_StageEndpointBridge.h>
 #include <crucible/effects/_ExecCtx.h>
 
 #include <optional>

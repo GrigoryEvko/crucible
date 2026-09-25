@@ -11,7 +11,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at SubstrateFitsCtxResidency or IsExecCtx.
 
-#include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/_Endpoint.h>
 
 namespace conc = crucible::concurrent;
 namespace saf = crucible::safety;

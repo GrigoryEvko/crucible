@@ -1,4 +1,4 @@
-#include <crucible/concurrent/PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
 

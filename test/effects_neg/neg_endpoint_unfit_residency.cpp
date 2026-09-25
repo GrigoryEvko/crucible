@@ -12,7 +12,7 @@
 // Violation: SPSC<Big{64 KB}, 4>.  Per-call WS ≥ 64 KB ≫ 32 KB.
 // HotFgCtx claims L1Resident.  SubstrateFitsCtxResidency fails.
 
-#include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/_Endpoint.h>
 
 namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;

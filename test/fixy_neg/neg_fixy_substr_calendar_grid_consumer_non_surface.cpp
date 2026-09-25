@@ -19,7 +19,7 @@
 // "mint_calendar_grid_consumer".
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/CalendarGridSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
 
 namespace fcal = ::crucible::safety::proto::calendar_grid_session;
 namespace saf = ::crucible::safety;

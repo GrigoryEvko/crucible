@@ -4,7 +4,7 @@
 // type.  A producer row outside [0, NumProducers) must fail before any
 // runtime handle exists.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 #include <cstdint>
 

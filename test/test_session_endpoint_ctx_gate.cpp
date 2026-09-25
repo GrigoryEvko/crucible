@@ -13,23 +13,23 @@
 // main() mints a session over a background-row channel with a background
 // context and moves one value through it.
 
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/_AsyncPipelineSession.h>
-#include <crucible/sessions/CalendarGridSession.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
-#include <crucible/sessions/MpmcChannelSession.h>
-#include <crucible/sessions/ShardedCalendarGridSession.h>
-#include <crucible/sessions/ShardedGridSession.h>
-#include <crucible/sessions/SnapshotSession.h>
-#include <crucible/sessions/SpscSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
+#include <crucible/sessions/_ShardedGridSession.h>
+#include <crucible/sessions/_SnapshotSession.h>
+#include <crucible/sessions/_SpscSession.h>
 #include <crucible/sessions/SwmrSession.h>
 
 #include <cstdint>

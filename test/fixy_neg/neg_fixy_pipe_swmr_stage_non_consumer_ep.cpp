@@ -13,8 +13,8 @@
 // at CtxFitsSwmrStageFromEndpoint, swmr_stage_from_endpoint_gate or
 // IsConsumerEndpoint.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/StageEndpointBridge.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
+#include <crucible/concurrent/_StageEndpointBridge.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>
 

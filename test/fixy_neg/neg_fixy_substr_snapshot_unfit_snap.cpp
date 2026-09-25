@@ -24,7 +24,7 @@
 // "SnapshotSessionSurface" / "no matching function".
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SnapshotSession.h>
+#include <crucible/sessions/_SnapshotSession.h>
 
 #include <utility>
 

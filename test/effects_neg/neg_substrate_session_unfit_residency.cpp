@@ -14,7 +14,7 @@
 // Violation: SPSC<Big{64 KB}, 4>.  Per-call WS ≥ 64 KB > 32 KB
 // L1d.  HotFgCtx (L1Resident) → fit fails.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;

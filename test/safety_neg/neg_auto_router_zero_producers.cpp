@@ -4,7 +4,7 @@
 // StaticAutoRoute / AutoRoute_t surface.  Producers=0 must be rejected
 // at instantiation, not normalized in runtime planner code.
 
-#include <crucible/concurrent/AutoRouter.h>
+#include <crucible/concurrent/_AutoRouter.h>
 
 namespace {
 struct RouteTag {};

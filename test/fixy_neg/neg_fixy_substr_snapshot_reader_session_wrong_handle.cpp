@@ -15,9 +15,9 @@
 // Expected diagnostic: "cannot convert" / "no matching function"
 // pointing at WriterHandle vs ReaderHandle.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SnapshotSession.h>
+#include <crucible/sessions/_SnapshotSession.h>
 
 namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace conc = crucible::concurrent;

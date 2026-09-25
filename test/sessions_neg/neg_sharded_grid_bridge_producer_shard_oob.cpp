@@ -4,7 +4,7 @@
 // producer shard outside [0, M) must fail before any runtime handle or
 // endpoint exists.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 namespace cc = crucible::concurrent;
 

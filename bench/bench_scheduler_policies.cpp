@@ -41,12 +41,12 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/concurrent/scheduler/_Policies.h>
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
-#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
 #include <crucible/concurrent/_Topology.h>
 #include <crucible/fixy/_Time.h>  // FIXY-V-202
 #include <crucible/permissions/_Permission.h>

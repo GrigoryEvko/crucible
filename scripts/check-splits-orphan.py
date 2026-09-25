@@ -97,13 +97,13 @@ NEEDLES = re.compile(b"|".join(re.escape(name.encode()) for name in sorted(TRAIT
 FROZEN_CHANNEL = ("a frozen channel of the old tree, which spells its tags relative to crucible::safety, "
                   "so the lookup reaches a namespace that the guard cannot close without the other headers")
 AUTHORING: dict[str, str] = {
-    "include/crucible/concurrent/PermissionedChainEdge.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/PermissionedChaseLevDeque.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/PermissionedMpmcChannel.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/PermissionedSnapshot.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/Queue.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/_PermissionedChainEdge.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/_PermissionedChaseLevDeque.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/_PermissionedMpmcChannel.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/_PermissionedMpscChannel.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/_PermissionedSnapshot.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/_PermissionedSpscChannel.h": FROZEN_CHANNEL,
+    "include/crucible/concurrent/_Queue.h": FROZEN_CHANNEL,
     "include/crucible/permissions/FederationPermission.h":
         "the split of a federated peer is partial over its children, which are template parameters",
     "include/crucible/safety/_PermissionTreeGenerator.h": "the generator splits every parent into its slices",
@@ -651,7 +651,7 @@ def self_test() -> int:
         expect("a file beside a listed file is not", "include/fixy/Other.h" in exempt)
         expect("test/ is an authoring location", "test/fixy/Local.cpp" not in exempt, True)
         expect("a location that admits a site is not stale", bool(result.needed["include/fixy/OwnedRegion.h"]), True)
-        expect("a location that admits no site is stale", not result.needed["include/crucible/concurrent/Queue.h"])
+        expect("a location that admits no site is stale", not result.needed["include/crucible/concurrent/_Queue.h"])
         expect("the planted tree parses", not broken)
 
         def captured(cwd: Path) -> tuple[int, str]:

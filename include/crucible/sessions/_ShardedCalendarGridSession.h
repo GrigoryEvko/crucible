@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>

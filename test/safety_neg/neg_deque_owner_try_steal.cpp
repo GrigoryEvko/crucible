@@ -6,7 +6,7 @@
 // owner thread is just slower for the same outcome (and a sign of
 // confused intent).
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/permissions/_Permission.h>
 
 namespace {

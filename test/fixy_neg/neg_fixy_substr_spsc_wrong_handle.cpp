@@ -14,7 +14,7 @@
 
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SpscSession.h>
+#include <crucible/sessions/_SpscSession.h>
 
 #include <utility>
 

@@ -6,7 +6,7 @@
 // → with_drained_access could spuriously succeed while a copy is
 // still alive, racing the body against the copied handle.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 
 namespace {
 

@@ -1,6 +1,6 @@
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 #include <array>
 #include <atomic>

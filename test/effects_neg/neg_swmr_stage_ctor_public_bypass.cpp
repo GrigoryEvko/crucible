@@ -26,7 +26,7 @@
 // attempts the rejected direct construction.  Build MUST fail; diagnostic
 // MUST contain "private".
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/concurrent/_Stage.h>
 #include <crucible/effects/_ExecCtx.h>

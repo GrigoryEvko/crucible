@@ -19,8 +19,8 @@
 // Expected diagnostic: "IsExecCtx" / "constraints not satisfied"
 // / "no matching function" / "mint_chainedge_signaler_session".
 
-#include <crucible/concurrent/PermissionedChainEdge.h>
-#include <crucible/sessions/ChainEdgeSession.h>
+#include <crucible/concurrent/_PermissionedChainEdge.h>
+#include <crucible/sessions/_ChainEdgeSession.h>
 
 namespace fchain = ::crucible::safety::proto::chainedge_session;
 namespace conc = ::crucible::concurrent;

@@ -21,8 +21,8 @@
 // Expected diagnostic: "IsExecCtx" / "constraints not satisfied"
 // / "no matching function" / "mint_thief_session".
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 namespace fchase = ::crucible::safety::proto::chaselev_session;
 

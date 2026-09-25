@@ -2,8 +2,8 @@
 // both pushes and pops, and the thief endpoint only receives what it steals.
 // What is under test is that the bridge preserves that asymmetry.
 
-#include <crucible/concurrent/Endpoint.h>
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_Endpoint.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 #include <crucible/permissions/_Permission.h>
 
 #include <cassert>

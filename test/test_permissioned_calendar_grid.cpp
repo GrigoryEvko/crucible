@@ -1,4 +1,4 @@
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
 

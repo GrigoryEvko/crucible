@@ -2,7 +2,7 @@
 // every claim below is a static_assert: a decision is a constexpr value
 // and the route alias resolves to an existing permissioned primitive.
 
-#include <crucible/concurrent/AutoRouter.h>
+#include <crucible/concurrent/_AutoRouter.h>
 
 #include <cstdio>
 #include <cstdlib>

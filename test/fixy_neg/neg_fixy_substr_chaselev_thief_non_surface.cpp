@@ -17,7 +17,7 @@
 // Expected diagnostic: "ChaseLevSessionSurface" / "constraints
 // not satisfied" / "no matching function" / "mint_chaselev_thief".
 
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 namespace fchase = ::crucible::safety::proto::chaselev_session;
 

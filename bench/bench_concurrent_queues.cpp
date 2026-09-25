@@ -32,7 +32,7 @@
 
 #include <crucible/TraceRing.h>
 #include <crucible/concurrent/AtomicSnapshot.h>
-#include <crucible/concurrent/MpmcRing.h>
+#include <crucible/concurrent/_MpmcRing.h>
 #include <crucible/concurrent/_SpscRing.h>
 
 #include "bench_harness.h"

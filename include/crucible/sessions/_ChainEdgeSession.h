@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/PermissionedChainEdge.h>
+#include <crucible/concurrent/_PermissionedChainEdge.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>

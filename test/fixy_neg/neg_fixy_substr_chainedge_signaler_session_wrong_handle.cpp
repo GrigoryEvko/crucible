@@ -19,9 +19,9 @@
 // 'mint_chainedge_signaler_session'" / "cannot convert" /
 // "SignalerHandle" / "mint_chainedge_signaler_session".
 
-#include <crucible/concurrent/PermissionedChainEdge.h>
+#include <crucible/concurrent/_PermissionedChainEdge.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/ChainEdgeSession.h>
+#include <crucible/sessions/_ChainEdgeSession.h>
 
 namespace fchain = ::crucible::safety::proto::chainedge_session;
 namespace conc = ::crucible::concurrent;

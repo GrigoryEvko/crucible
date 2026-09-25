@@ -16,7 +16,7 @@
 // Expected diagnostic:
 //   "no matching function for call to 'mint_crash_watched_endpoint'"
 
-#include <crucible/bridges/EndpointMint.h>
+#include <crucible/bridges/_EndpointMint.h>
 #include <crucible/handles/_OneShotFlag.h>
 
 namespace bridges = ::crucible::bridges;

@@ -17,7 +17,7 @@
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/concurrent/_ChaseLevDeque.h>
 #include <crucible/concurrent/_MpscRing.h>
-#include <crucible/concurrent/ShardedGrid.h>
+#include <crucible/concurrent/_ShardedGrid.h>
 #include <crucible/concurrent/_SpscRing.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>

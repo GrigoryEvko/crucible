@@ -5,7 +5,7 @@
 // rather than adding a missed-slot protocol above the queue.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>

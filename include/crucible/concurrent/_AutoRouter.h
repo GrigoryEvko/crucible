@@ -10,8 +10,8 @@
 // work is shardable can be routed into the grid, because sharding is
 // what gives up the order.
 
-#include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/concurrent/Substrate.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
+#include <crucible/concurrent/_Substrate.h>
 #include <crucible/concurrent/_Topology.h>
 
 #include <cstddef>

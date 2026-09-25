@@ -23,7 +23,7 @@
 
 #include <optional>
 
-#include <crucible/sessions/MpmcChannelSession.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
 
 namespace fmpmc = ::crucible::safety::proto::mpmc_channel_session;
 

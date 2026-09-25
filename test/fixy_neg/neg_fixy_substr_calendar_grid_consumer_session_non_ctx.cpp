@@ -19,8 +19,8 @@
 // Expected diagnostic: "IsExecCtx" / "constraints not satisfied"
 // / "no matching function" / "mint_consumer_session".
 
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/sessions/CalendarGridSession.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
+#include <crucible/sessions/_CalendarGridSession.h>
 
 namespace fcal = ::crucible::safety::proto::calendar_grid_session;
 namespace conc = ::crucible::concurrent;

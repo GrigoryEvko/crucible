@@ -2,7 +2,7 @@
 // an exclusive permission and works the bottom of the queue.  Each thief
 // holds a share and steals from the top.
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/permissions/_Permission.h>
 
 #include <atomic>

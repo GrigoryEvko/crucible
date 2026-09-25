@@ -20,7 +20,7 @@
 // runtime.
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/ShardedGrid.h>
+#include <crucible/concurrent/_ShardedGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
 #include <crucible/safety/_PermissionTreeGenerator.h>

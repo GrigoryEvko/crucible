@@ -4,10 +4,10 @@
 // Recv-only for its shard.  The generic bridge must not expose send on
 // ConsumerHandle<S>.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
-#include <crucible/sessions/ShardedCalendarGridSession.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
 
 #include <cstdint>
 #include <tuple>

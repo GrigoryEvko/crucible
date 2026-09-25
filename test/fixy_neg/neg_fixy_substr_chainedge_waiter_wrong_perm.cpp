@@ -18,10 +18,10 @@
 // 'mint_chainedge_waiter'" / "cannot convert" / "Permission" /
 // "mint_chainedge_waiter".
 
-#include <crucible/concurrent/ChainEdge.h>
-#include <crucible/concurrent/PermissionedChainEdge.h>
+#include <crucible/concurrent/_ChainEdge.h>
+#include <crucible/concurrent/_PermissionedChainEdge.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChainEdgeSession.h>
+#include <crucible/sessions/_ChainEdgeSession.h>
 
 namespace fchain = ::crucible::safety::proto::chainedge_session;
 namespace conc = ::crucible::concurrent;

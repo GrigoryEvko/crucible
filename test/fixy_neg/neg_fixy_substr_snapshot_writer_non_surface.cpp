@@ -17,8 +17,8 @@
 // Expected diagnostic: SnapshotSessionSurface / constraints not satisfied /
 // no matching function.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/sessions/SnapshotSession.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
+#include <crucible/sessions/_SnapshotSession.h>
 
 namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace fsafe = crucible::safety;

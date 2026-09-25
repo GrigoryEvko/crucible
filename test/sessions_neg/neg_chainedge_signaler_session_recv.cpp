@@ -2,9 +2,9 @@
 //
 // GAPS-062 fixture #4 — SignalerProto is Send-only.
 
-#include <crucible/concurrent/PermissionedChainEdge.h>
+#include <crucible/concurrent/_PermissionedChainEdge.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChainEdgeSession.h>
+#include <crucible/sessions/_ChainEdgeSession.h>
 
 #include <utility>
 

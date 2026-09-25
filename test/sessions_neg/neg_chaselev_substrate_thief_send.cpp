@@ -4,7 +4,7 @@
 // to the Chase-Lev thief Recv-only protocol.  A thief session cannot
 // send work into the owner side.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 #include <utility>
 

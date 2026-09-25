@@ -3,10 +3,10 @@
 // identity onto the real handle type, and that the queue's present-versus-
 // empty observation survives the optional-returning consumer surface.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
-#include <crucible/sessions/CalendarGridSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
 
 #include <array>
 #include <cassert>

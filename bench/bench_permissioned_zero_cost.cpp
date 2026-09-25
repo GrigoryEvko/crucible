@@ -41,13 +41,13 @@
 #include <utility>
 
 #include <crucible/concurrent/_ChaseLevDeque.h>
-#include <crucible/concurrent/MpmcRing.h>
+#include <crucible/concurrent/_MpmcRing.h>
 #include <crucible/concurrent/_MpscRing.h>
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
-#include <crucible/concurrent/PermissionedShardedGrid.h>
-#include <crucible/concurrent/ShardedGrid.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
+#include <crucible/concurrent/_ShardedGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
 

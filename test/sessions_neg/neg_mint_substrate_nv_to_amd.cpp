@@ -1,7 +1,7 @@
 // GAPS-068 fixture #1: an NV-pinned substrate session cannot mint a
 // producer endpoint whose wire payload is AMD-pinned.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 #include <utility>
 

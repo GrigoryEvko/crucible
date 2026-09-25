@@ -3,10 +3,10 @@
 // of their own: a slot is observed through the item's priority key and
 // through an empty pop result.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
-#include <crucible/sessions/ShardedCalendarGridSession.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
 
 #include <array>
 #include <cassert>

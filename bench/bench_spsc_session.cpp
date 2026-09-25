@@ -89,7 +89,7 @@
 
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/SpscSession.h>
+#include <crucible/sessions/_SpscSession.h>
 #include <foundation/Platform.h>
 
 #include "bench_harness.h"

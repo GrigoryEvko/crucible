@@ -15,8 +15,8 @@
 // Expected diagnostic: "cannot convert" / "no matching function"
 // pointing at Permission<writer_tag> vs Permission<WrongTag>.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/sessions/SnapshotSession.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
+#include <crucible/sessions/_SnapshotSession.h>
 
 namespace fsnap = ::crucible::safety::proto::snapshot_session;
 namespace conc = crucible::concurrent;

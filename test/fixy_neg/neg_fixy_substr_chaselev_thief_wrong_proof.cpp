@@ -20,9 +20,9 @@
 // 'mint_chaselev_thief'" / "cannot convert" / "SharedPermission"
 // / "mint_chaselev_thief".
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 namespace fchase = ::crucible::safety::proto::chaselev_session;
 

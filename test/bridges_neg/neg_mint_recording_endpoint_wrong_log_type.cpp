@@ -11,7 +11,7 @@
 // Expected diagnostic:
 //   "no matching function for call to 'mint_recording_endpoint'"
 
-#include <crucible/bridges/EndpointMint.h>
+#include <crucible/bridges/_EndpointMint.h>
 
 namespace bridges = ::crucible::bridges;
 namespace proto = ::crucible::safety::proto;

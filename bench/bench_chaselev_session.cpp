@@ -10,9 +10,9 @@
 // same size as the bare SessionHandle for the same protocol head.  Tier
 // B is timed measurement for regression visibility.
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 #include "bench_harness.h"
 

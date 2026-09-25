@@ -12,7 +12,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at IsBridgeableDirection.
 
-#include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/_Endpoint.h>
 
 namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;

@@ -4,9 +4,9 @@
 // background row refuses the foreground context.  The thief receives stolen
 // items and their row, which the context does not admit.
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 namespace eff = ::crucible::effects;
 namespace ses = ::crucible::safety::proto::chaselev_session;

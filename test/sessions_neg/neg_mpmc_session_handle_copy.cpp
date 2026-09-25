@@ -15,8 +15,8 @@
 // they cover the four canonical mismatch classes for the typed-
 // session MPMC facade.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
-#include <crucible/sessions/MpmcChannelSession.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
 
 #include <utility>
 

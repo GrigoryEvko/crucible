@@ -4,10 +4,10 @@
 // Send-only for its shard.  ProducerHandle<S> must not expose recv
 // through the generic substrate bridge.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
-#include <crucible/sessions/ShardedCalendarGridSession.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
 
 #include <cstdint>
 #include <tuple>

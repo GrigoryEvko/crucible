@@ -1,20 +1,20 @@
 #pragma once
 
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/concurrent/_PermissionedMpscChannel.h>
-#include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
+#include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
-#include <crucible/concurrent/Substrate.h>
+#include <crucible/concurrent/_Substrate.h>
 #include <crucible/concurrent/_SubstrateCtxFit.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/CalendarGridSession.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionMint.h>
-#include <crucible/sessions/ShardedCalendarGridSession.h>
-#include <crucible/sessions/ShardedGridSession.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
+#include <crucible/sessions/_ShardedGridSession.h>
 
 #include <cstdint>
 #include <source_location>

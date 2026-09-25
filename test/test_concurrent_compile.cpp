@@ -5,14 +5,14 @@
 // the test. When a new concurrent header adds an embedded block, add its
 // include and a probe here.
 
-#include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/_Endpoint.h>
 #include <crucible/concurrent/_ExecCtxBridge.h>
 #include <crucible/concurrent/_Pipeline.h>
 #include <crucible/concurrent/_Stage.h>
-#include <crucible/concurrent/StageEndpointBridge.h>
-#include <crucible/concurrent/Substrate.h>
+#include <crucible/concurrent/_StageEndpointBridge.h>
+#include <crucible/concurrent/_Substrate.h>
 #include <crucible/concurrent/_SubstrateCtxFit.h>
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 #include <cstdio>
 #include <cstdlib>

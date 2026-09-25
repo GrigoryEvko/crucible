@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
 #include <crucible/sessions/PermissionedSession.h>

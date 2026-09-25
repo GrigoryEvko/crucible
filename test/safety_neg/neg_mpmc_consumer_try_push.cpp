@@ -5,7 +5,7 @@
 // type system enforces role discipline that no existing MPMC
 // library encodes.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 
 namespace {
 

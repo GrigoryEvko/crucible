@@ -6,7 +6,7 @@
 // bottom_) — the CL algorithm's single-owner contract would break
 // silently with no compile error.
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/permissions/_Permission.h>
 
 namespace {

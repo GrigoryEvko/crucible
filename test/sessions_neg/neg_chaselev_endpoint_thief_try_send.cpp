@@ -4,7 +4,7 @@
 // steal/Recv side.  It must not surface try_send/try_push through the
 // generic endpoint API.
 
-#include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/_Endpoint.h>
 
 namespace cc = crucible::concurrent;
 

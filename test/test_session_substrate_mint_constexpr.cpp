@@ -14,17 +14,17 @@
 
 #include <crucible/MetaLogSession.h>
 #include <crucible/PermissionedMetaLog.h>
-#include <crucible/concurrent/PermissionedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedChainEdge.h>
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
-#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
-#include <crucible/concurrent/PermissionedShardedGrid.h>
+#include <crucible/concurrent/_PermissionedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedChainEdge.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
+#include <crucible/concurrent/_PermissionedShardedGrid.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/CalendarGridSession.h>
-#include <crucible/sessions/ChainEdgeSession.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
-#include <crucible/sessions/ShardedCalendarGridSession.h>
-#include <crucible/sessions/ShardedGridSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
+#include <crucible/sessions/_ChainEdgeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
+#include <crucible/sessions/_ShardedGridSession.h>
 #include <crucible/sessions/SwmrSession.h>
 
 #include <fixy/Ctx.h>

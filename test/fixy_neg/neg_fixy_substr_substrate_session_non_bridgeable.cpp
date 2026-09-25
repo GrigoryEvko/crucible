@@ -20,8 +20,8 @@
 // Expected diagnostic: IsBridgeableDirection / constraints not
 // satisfied.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 #include <crucible/effects/_ExecCtx.h>
 
 namespace conc = crucible::concurrent;

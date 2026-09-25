@@ -24,9 +24,9 @@
 // 'mint_thief_session'" / "cannot convert" / "ThiefHandle" /
 // "mint_thief_session".
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 namespace fchase = ::crucible::safety::proto::chaselev_session;
 namespace eff = ::crucible::effects;

@@ -17,9 +17,9 @@
 // at CtxFitsSwmrStageFromEndpoint, swmr_stage_from_endpoint_gate or
 // is_swmr_writer.
 
-#include <crucible/concurrent/Endpoint.h>
-#include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/StageEndpointBridge.h>
+#include <crucible/concurrent/_Endpoint.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
+#include <crucible/concurrent/_StageEndpointBridge.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/permissions/_Permission.h>

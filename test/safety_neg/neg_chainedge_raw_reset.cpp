@@ -3,7 +3,7 @@
 // ChainEdge reset also mutates semaphore state.  It must be gated by the
 // Whole Permission through PermissionedChainEdge::reset_under_quiescence.
 
-#include <crucible/concurrent/ChainEdge.h>
+#include <crucible/concurrent/_ChainEdge.h>
 
 namespace conc = ::crucible::concurrent;
 

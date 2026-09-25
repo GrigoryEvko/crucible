@@ -7,7 +7,7 @@
 // Violation: PermissionedSpscChannel + Direction::SwmrWriter →
 // IsBridgeableDirection fails.
 
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;

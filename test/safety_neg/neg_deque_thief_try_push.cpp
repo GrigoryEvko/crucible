@@ -5,7 +5,7 @@
 // the OWNER may push to bottom (CL's single-owner contract on
 // push_bottom is enforced structurally by the type system).
 
-#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 
 namespace {
 

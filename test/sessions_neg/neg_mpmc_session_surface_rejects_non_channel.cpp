@@ -14,9 +14,9 @@
 // the first failure point, so users see the concept name in the
 // diagnostic and know which contract they violated.
 
-#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/MpmcChannelSession.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
 
 #include <optional>
 

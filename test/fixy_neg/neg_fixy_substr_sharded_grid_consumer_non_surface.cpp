@@ -21,7 +21,7 @@
 // "mint_sharded_grid_consumer".
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ShardedGridSession.h>
+#include <crucible/sessions/_ShardedGridSession.h>
 
 namespace fsg = ::crucible::safety::proto::sharded_grid_session;
 namespace saf = ::crucible::safety;

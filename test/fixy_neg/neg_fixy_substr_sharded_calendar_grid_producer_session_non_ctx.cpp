@@ -19,8 +19,8 @@
 // Expected diagnostic: "IsExecCtx" / "constraints not satisfied"
 // / "no matching function" / "mint_producer_session".
 
-#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
-#include <crucible/sessions/ShardedCalendarGridSession.h>
+#include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
 
 namespace fscal = ::crucible::safety::proto::sharded_calendar_grid_session;
 namespace conc = ::crucible::concurrent;

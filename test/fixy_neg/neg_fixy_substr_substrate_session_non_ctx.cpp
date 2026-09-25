@@ -19,8 +19,8 @@
 // Expected diagnostic: IsExecCtx / constraints not satisfied /
 // no matching function.
 
-#include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/_PermissionedSnapshot.h>
+#include <crucible/concurrent/_SubstrateSessionBridge.h>
 
 namespace conc = crucible::concurrent;
 

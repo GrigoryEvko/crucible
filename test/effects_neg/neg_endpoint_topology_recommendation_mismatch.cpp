@@ -5,7 +5,7 @@
 // DRAM-scale channel workload must use a ManyToMany substrate; an SPSC
 // OneToOne endpoint is a topology recommendation mismatch.
 
-#include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/_Endpoint.h>
 
 namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;

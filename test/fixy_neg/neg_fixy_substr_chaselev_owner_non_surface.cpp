@@ -23,7 +23,7 @@
 // not satisfied" / "no matching function" / "mint_chaselev_owner".
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
 
 namespace fchase = ::crucible::safety::proto::chaselev_session;
 namespace saf = ::crucible::safety;

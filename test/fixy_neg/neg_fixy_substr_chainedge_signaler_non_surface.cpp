@@ -19,7 +19,7 @@
 // "mint_chainedge_signaler".
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/ChainEdgeSession.h>
+#include <crucible/sessions/_ChainEdgeSession.h>
 
 namespace fchain = ::crucible::safety::proto::chainedge_session;
 namespace saf = ::crucible::safety;

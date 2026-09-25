@@ -9,7 +9,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at IsOneToOneSubstrate.
 
-#include <crucible/concurrent/Substrate.h>
+#include <crucible/concurrent/_Substrate.h>
 
 namespace conc = crucible::concurrent;
 

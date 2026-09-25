@@ -4,7 +4,7 @@
 // relying on whichever Permissioned* substrate happens to instantiate
 // later.  A void stream payload is not SpscValue<T>.
 
-#include <crucible/concurrent/AutoRouter.h>
+#include <crucible/concurrent/_AutoRouter.h>
 
 namespace {
 struct RouteTag {};
