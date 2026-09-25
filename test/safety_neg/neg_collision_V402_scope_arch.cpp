@@ -28,7 +28,7 @@
 // Expected diagnostic substring: "V402:".
 
 #include <crucible/safety/_BarrierGuarded.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/source/Arch.h>
 

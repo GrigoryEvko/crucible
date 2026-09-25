@@ -45,7 +45,7 @@
 // grade choices reflect "data structure" rather than "callable".
 // ════════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <cstdint>
 #include <cstdio>

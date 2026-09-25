@@ -1,5 +1,5 @@
 #ifndef CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #else
 #ifndef CRUCIBLE_SAFETY_COLLISION_CATALOG_BODY
 #define CRUCIBLE_SAFETY_COLLISION_CATALOG_BODY

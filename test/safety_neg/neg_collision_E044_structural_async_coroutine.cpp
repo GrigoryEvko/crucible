@@ -26,7 +26,7 @@
 // Expected diagnostic substring: "E044".
 
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 

@@ -46,7 +46,7 @@
 // Expected diagnostic substring: "R001:".
 
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_HotPath.h>
 
 namespace fn = crucible::safety::fn;

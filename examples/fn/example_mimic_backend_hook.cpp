@@ -33,7 +33,7 @@
 // compile pool.
 // ════════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <cstddef>
 #include <cstdint>

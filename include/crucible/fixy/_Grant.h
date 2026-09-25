@@ -4,7 +4,7 @@
 #include <crucible/safety/NotInherited.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 

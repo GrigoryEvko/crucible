@@ -37,7 +37,7 @@
 // Expected diagnostic substring: "V401:".
 
 #include <crucible/safety/_BarrierGuarded.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_ScopedFence.h>
 
 namespace fn = crucible::safety::fn;

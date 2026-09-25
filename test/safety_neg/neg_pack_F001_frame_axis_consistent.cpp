@@ -22,7 +22,7 @@
 
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/safety/CollisionCatalog.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 namespace sfn = crucible::safety::fn;
 namespace fx = crucible::effects;

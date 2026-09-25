@@ -31,7 +31,7 @@
 // Expected diagnostic: "Fn<volatile T, ...> is malformed.
 // volatile is a hardware-memory annotation".
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 namespace neg = crucible::safety::fn;
 

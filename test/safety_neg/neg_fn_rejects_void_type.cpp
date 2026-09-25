@@ -25,7 +25,7 @@
 // type" / "Reject: void, reference types" pointing at the
 // static_assert in safety/Fn.h's class-template body.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 namespace neg = crucible::safety::fn;
 

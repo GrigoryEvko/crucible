@@ -8,7 +8,7 @@
 // own default, so the two cannot drift.
 
 #include <crucible/fixy/Dim.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/effects/_EffectRow.h>
 

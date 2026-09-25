@@ -24,7 +24,7 @@
 //
 // Old spellings: include/crucible/safety/DimensionTraits.h
 // (DimensionAxis, tier_of_axis), include/crucible/fixy/Default.h
-// (strict_default_for) and include/crucible/safety/Fn.h (the pole
+// (strict_default_for) and include/crucible/safety/_Fn.h (the pole
 // sentinel types, here under fixy::pole).  The old tier kinds S, L,
 // T, F and V become the shape; the old Tier S was a catch-all whose
 // chains are lattices here, and only the two counted resources keep

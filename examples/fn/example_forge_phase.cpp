@@ -35,7 +35,7 @@
 // recipe path) accepts only Forge-internal callables.
 // ════════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <cstddef>
 #include <cstdio>

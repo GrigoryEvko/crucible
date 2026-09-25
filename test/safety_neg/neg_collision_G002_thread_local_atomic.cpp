@@ -16,7 +16,7 @@
 //
 // Expected diagnostic substring: G002 / thread_local / atomic.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 namespace fn = crucible::safety::fn;
 

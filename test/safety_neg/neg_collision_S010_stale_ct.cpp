@@ -2,7 +2,7 @@
 //
 // GAPS-016 / S010: runtime staleness checks defeat CT timing.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 

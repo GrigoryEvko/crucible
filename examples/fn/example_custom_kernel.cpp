@@ -24,7 +24,7 @@
 // pattern but for a pure-functional IR transformation.
 // ════════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <cstdio>
 

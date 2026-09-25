@@ -45,7 +45,7 @@
 //
 // Expected diagnostic substring: "F101:"
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_FpMode.h>
 
 namespace fn = crucible::safety::fn;

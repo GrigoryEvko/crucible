@@ -2,7 +2,7 @@
 //
 // GAPS-015 / M011: linear resources live across Fail need cleanup.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 

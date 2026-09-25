@@ -33,7 +33,7 @@
 // Expected diagnostic: "Fn<T[N], ...> is malformed.  C arrays
 // decay to pointers in function parameters".
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 namespace neg = crucible::safety::fn;
 

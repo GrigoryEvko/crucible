@@ -13,7 +13,7 @@
 // concept alone does not gate instantiation of a composed carrier.
 
 #include <crucible/safety/_BarrierGuarded.h>
-#include <crucible/safety/Fn.h>  // pulls in the collision catalog
+#include <crucible/safety/_Fn.h>  // pulls in the collision catalog
 #include <crucible/safety/_Hw.h>
 #include <crucible/safety/_ScopedFence.h>
 #include <crucible/safety/_SimdWidthPinned.h>

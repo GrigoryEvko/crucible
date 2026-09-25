@@ -2,7 +2,7 @@
 //
 // GAPS-010 / M012: concurrent monotonic mutation needs atomic repr.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 namespace fn = crucible::safety::fn;
 

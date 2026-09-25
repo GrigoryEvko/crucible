@@ -31,7 +31,7 @@
 // qualifying the value type silently deletes copy- and move-
 // assignment of the wrapper".
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 namespace neg = crucible::safety::fn;
 

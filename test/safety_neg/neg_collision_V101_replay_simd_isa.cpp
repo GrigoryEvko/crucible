@@ -24,7 +24,7 @@
 //
 // Expected diagnostic substring: "V101:".
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_SimdWidthPinned.h>
 
 namespace fn = crucible::safety::fn;

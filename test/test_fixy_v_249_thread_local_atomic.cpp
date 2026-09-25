@@ -3,7 +3,7 @@
 // because each thread holds its own instance.  The rule is marker-driven: the
 // grant layer specializes marks_thread_local_atomic when both are present.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <atomic>
 #include <string_view>

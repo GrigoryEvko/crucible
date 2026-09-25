@@ -25,7 +25,7 @@
 // Expected diagnostic substring: "P003:"
 
 #include <crucible/safety/_ControlFlow.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 namespace fn = crucible::safety::fn;
 namespace sf = crucible::safety;

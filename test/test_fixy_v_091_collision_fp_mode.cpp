@@ -15,7 +15,7 @@
 //   F105  constant-time with preserved subnormal outputs. The output-side
 //         dual of F104, where result magnitude leaks through cycle count.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_FpMode.h>
 
 #include <string_view>

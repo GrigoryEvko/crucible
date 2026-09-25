@@ -3,7 +3,7 @@
 // GAPS-012 / I004: classified async session traffic needs CT or
 // explicit declassification.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/sessions/Session.h>
 
 #include <type_traits>

@@ -29,7 +29,7 @@
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/EpochVersioned.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_FixedArray.h>
 #include <crucible/safety/_HotPath.h>
 #include <crucible/safety/_NumaPlacement.h>

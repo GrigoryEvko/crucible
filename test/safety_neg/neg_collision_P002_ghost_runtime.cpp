@@ -2,7 +2,7 @@
 //
 // GAPS-011 / P002: ghost values are erased and cannot drive runtime code.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 

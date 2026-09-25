@@ -9,7 +9,7 @@
 #include <crucible/fixy/Hw.h>
 #include <crucible/fixy/_Profile.h>
 #include <crucible/fixy/Reject.h>
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/safety/_Tagged.h>
 
 #include <concepts>

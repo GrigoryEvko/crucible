@@ -936,6 +936,13 @@ crucible/safety/_GradedExtract.h:modality_of_v  — A projection of the modality
 crucible/safety/_GradedExtract.h:value_type_of_t  — A projection of the value_type slot of a wrapper. A consumer in the new tree reads the slot directly, and the only includer outside the tests was the old crucible/fixy/Wrap.h.
 crucible/safety/_SuspendBehavior.h:mint_suspend_behavior  — The mint of the value wrapper, which let a caller claim a suspend class for any value. fixy/os/ClockSource.h reads the class from the clock that made the reading, so the port has no mint.
 
+# ── safety: the Fn aggregator ───────────────────────────────────────────
+crucible/safety/_Fn.h:CollisionRules  → include/fixy/Collision.h  — The per-binding rule check became fixy::collision::rules_of<T, Atoms...> in fixy/Collision.h, which fixy::fn reads at tier 5 through fixy/Reject.h.
+crucible/safety/_Fn.h:CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION  — The include-order handshake between the old Fn.h and CollisionCatalog.h has no successor, because fixy/Reject.h includes fixy/Collision.h before fixy/Fn.h names the rules.
+crucible/safety/_Fn.h:Fn  — Renamed fixy::fn<Type, Atoms...> in fixy/Fn.h. The nineteen positional grade parameters became a pack of atoms, and an axis the pack does not name takes its strict pole.
+crucible/safety/_Fn.h:SecLevel  — The five-level enum is not carried. The atoms as_unclassified, as_public, as_internal, as_classified, as_secret, constant_time and declassify<Policy> in fixy/Atom.h grade the Security axis.
+crucible/safety/_Fn.h:UsageMode  — The enum is not carried. The atoms affine, copy, ghost, borrow and capability_usage in fixy/Atom.h grade the Usage axis, and its strict pole is the linear QttGrade::One.
+
 # ── sessions: the classified payloads ───────────────────────────────────
 crucible/sessions/_SessionCT.h:requires_ct  — Replaced by the constant_time_value annotation in fixy/session/Classified.h, which sits on the declaration, so a late specialisation cannot change an answer already given.
 crucible/sessions/_SessionCT.h:requires_ct_v  — Replaced by the ConstantTimeValue concept in fixy/session/Classified.h, which reads the annotation on the declaration.

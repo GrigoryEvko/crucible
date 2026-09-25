@@ -10,7 +10,7 @@
 // until something opts in.
 
 #include <crucible/safety/_BarrierGuarded.h>
-#include <crucible/safety/Fn.h>  // pulls in the collision catalog
+#include <crucible/safety/_Fn.h>  // pulls in the collision catalog
 #include <crucible/safety/_Hw.h>
 #include <crucible/safety/_SimdWidthPinned.h>
 

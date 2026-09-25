@@ -5,7 +5,7 @@
 // marker traits for body/effect facts that the C++ substrate cannot
 // infer from a Fixy IR yet.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 

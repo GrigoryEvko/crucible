@@ -23,7 +23,7 @@
 // axis to the enum needs no edit here, and adding an atom needs no edit
 // anywhere but the atom's own declaration.
 //
-// Old spelling: include/crucible/fixy/Fn.h, include/crucible/safety/Fn.h.
+// Old spelling: include/crucible/fixy/Fn.h, include/crucible/safety/_Fn.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>

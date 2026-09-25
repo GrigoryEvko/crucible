@@ -3,7 +3,7 @@
 // GAPS-013 / N002: exact decimal types do not have modular wrap
 // overflow semantics.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 

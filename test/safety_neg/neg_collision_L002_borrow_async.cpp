@@ -2,7 +2,7 @@
 //
 // GAPS-007 / L002: a borrow capture cannot bridge async suspension.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 

@@ -2,7 +2,7 @@
 //
 // GAPS-008 / E044: constant-time code cannot include async scheduling.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 

@@ -38,7 +38,7 @@
 //
 // Expected diagnostic substring: "I004:".
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 #include <crucible/sessions/Session.h>
 
 #include <type_traits>

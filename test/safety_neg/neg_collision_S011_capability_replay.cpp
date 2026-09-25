@@ -3,7 +3,7 @@
 // GAPS-017 / S011: ephemeral capabilities cannot be replay-stable
 // inputs unless a content-addressed reconstruction path is declared.
 
-#include <crucible/safety/Fn.h>
+#include <crucible/safety/_Fn.h>
 
 #include <type_traits>
 
