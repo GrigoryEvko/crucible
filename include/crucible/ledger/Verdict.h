@@ -33,7 +33,8 @@
 #include <crucible/cog/Calibrate.h>
 #include <crucible/cog/OpcodeLatencyTable.h>
 #include <crucible/ledger/Competence.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 #include <cstdint>
 #include <expected>
@@ -485,13 +486,16 @@ enum class LedgerError : std::uint8_t {
     }
 }
 
+// A measured verdict value, marked as produced by this host's calibration.
+using CalibratedVerdictValue = ::fixy::Tagged<VerdictValue, ::fixy::tags::source::Calibrated>;
+
 struct LedgerEntry {
     VerdictId id = VerdictId::TimerFloorNanos;
 
     // Tagged Calibrated for the same reason cog::TargetCaps tags its
     // measured fields: a reader that sees an untagged number cannot tell a
     // vendor datasheet figure from something this host actually did.
-    safety::Tagged<VerdictValue, safety::source::Calibrated> value{VerdictValue{}};
+    CalibratedVerdictValue value = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(VerdictValue{});
 
     Confidence confidence = Confidence::Unknown;
     VerdictEvidence evidence{};
@@ -541,7 +545,7 @@ admit_entry(VerdictId id, VerdictValue value, VerdictEvidence const& evidence, C
     }
     return LedgerEntry{
         .id = id,
-        .value = safety::Tagged<VerdictValue, safety::source::Calibrated>{value},
+        .value = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(value),
         .confidence = confidence,
         .evidence = evidence,
         .competence_defects_at_measurement = competence.defect_word(),

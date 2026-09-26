@@ -135,7 +135,6 @@ include/crucible/ledger/HostFingerprint.h
 include/crucible/ledger/Ledger.h
 include/crucible/ledger/LedgerStore.h
 include/crucible/ledger/RefreshDaemon.h
-include/crucible/ledger/Verdict.h
 include/crucible/mimic/CogMimic.h
 include/crucible/mimic/Semaphore.h
 include/crucible/mimic/_wip/network/Backend.h

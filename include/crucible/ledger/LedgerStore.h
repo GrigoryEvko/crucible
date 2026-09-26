@@ -587,7 +587,7 @@ template <typename T>
             }
             LedgerEntry entry{};
             entry.id = *id;
-            entry.value = safety::Tagged<VerdictValue, safety::source::Calibrated>{VerdictValue{*value}};
+            entry.value = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(VerdictValue{*value});
             entry.confidence = confidence;
             entry.evidence.sample_count = *samples;
             entry.evidence.quantiles.p50_ns = *p50;
