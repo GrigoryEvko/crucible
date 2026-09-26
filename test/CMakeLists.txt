@@ -14971,7 +14971,7 @@ add_test(NAME flip_list_self_test
 add_test(NAME flip_list
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.py)
 set_tests_properties(flip_list flip_list_self_test PROPERTIES
-    LABELS "ci_guard;stage-C")
+    LABELS "ci_guard;stage-C;ast")
 set_tests_properties(flip_list flip_list_self_test PROPERTIES SKIP_RETURN_CODE 3)
 
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under

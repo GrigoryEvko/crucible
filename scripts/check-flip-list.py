@@ -28,31 +28,38 @@ THE RULE
 
 WHAT NAMES THE OLD SUBSTRATE
     N is one of safety, fixy, algebra, effects, permissions, sessions,
-    bridges, handles or concurrent.  The guard reads the tokens of each file
-    with its comments blanked by scripts/cxx_lex.py, so white space, a line
-    break or a comment between two tokens changes nothing, and a `//` inside a
-    string or a raw string is not a comment.  Four shapes name N:
-      1. a qualified name crucible::N, which also covers a namespace
-         definition `namespace crucible::N`, a using-directive and a
-         namespace alias;
-      2. an include of crucible/N/... or of the frozen umbrella crucible/Fixy.h;
-      3. an unqualified N:: with no identifier character and no `:` before
-         it, which code inside `namespace crucible {` uses to reach N.  This
-         shape leaves out fixy, because an unqualified fixy:: names the new
-         tree;
-      4. a namespace N that the parse shows is opened inside namespace
-         crucible, as `namespace crucible { namespace N {`.
+    bridges, handles or concurrent.  The guard reads the parse tree of each
+    file (scripts/tsast.py), so white space, a line break or a comment inside
+    a name changes nothing, and a comment names nothing.  Five shapes name N:
+      1. a name that resolves to crucible::N: a qualified name from `::`, a
+         relative name that an enclosing namespace or a using-directive in
+         force makes reach crucible::N, and a name whose leading namespace
+         alias resolves to it.  A relative fixy:: is left out, because an
+         unqualified fixy:: names the new tree;
+      2. a using-directive, a using-declaration or a namespace alias whose
+         target resolves to crucible::N the same way;
+      3. a namespace definition whose full name, inline namespaces left out,
+         starts with crucible::N, as `namespace crucible { namespace N {`;
+      4. an include of crucible/N/... or of the frozen umbrella crucible/Fixy.h;
+      5. a string literal whose content spells crucible::N, or an unqualified
+         N:: for an N other than fixy, such as a reflected type name in a
+         golden.
 
 WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
-    - A macro body is raw text: a name spelled in a macro counts, and a name
-      that a macro builds from pieces does not.
-    - A string literal is not blanked.  A literal that spells an old name,
-      such as a reflected type name in a golden, counts as a use.
+    - A macro body is read as tokens, because a replacement list is not C++
+      on its own.  A qualified name crucible::N and an unqualified N:: in the
+      body count, and a name that a macro builds from pieces does not.
+    - A relative name counts when one enclosing namespace makes it reach
+      crucible::N.  The guard does not know which nearer namespaces exist, so
+      `effects::` inside `namespace crucible::cntp` counts even when
+      crucible::cntp::effects exists.
     - A file that reaches the old substrate only through a header that
       includes it, and spells none of it, is not a consumer.  It drains when
       its header drains.
     - Unqualified fixy:: inside namespace crucible finds the old
       crucible::fixy when that namespace is declared, and it is not read.
+    - A BPF program is C (`.bpf.c`), and the kit reads C++, so a C file is out
+      of scope.
 
 Exit 0 when every consumer is listed and every listed file is a consumer, 1 on
 an unlisted consumer, a drained or missing entry, a bad entry or a parse
@@ -73,27 +80,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 LIST = "scripts/flip-list.txt"
 PATHS_FILE = "scripts/frozen-paths.txt"
 SCAN_ROOTS = ("include/crucible", "src", "vessel", "bench", "tools", "examples", "fuzz")
-SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".H", ".C", ".c", ".cc", ".cpp", ".cxx", ".inl", ".ipp",
-                      ".tpp"})
 OLD_NAMES = ("safety", "fixy", "algebra", "effects", "permissions", "sessions", "bridges", "handles",
              "concurrent")
-OLD = "|".join(OLD_NAMES)
-OLD_NO_FIXY = "|".join(name for name in OLD_NAMES if name != "fixy")
-INCLUDE = re.compile(r'#\s*include\s*[<"]\s*crucible/(?:(?:' + OLD + r')/|Fixy\.h\s*[>"])')
-# The two name spellings inside a literal, which counts as a use.
-IN_LITERAL = (re.compile(r"\bcrucible::(?:" + OLD + r")\b"), re.compile(r"(?<![\w:])(?:" + OLD_NO_FIXY + r")::"))
-PUNCTUATION = re.compile(r"::|\S")
-LITERALS = frozenset({"string", "raw", "char"})
-# A namespace definition that can reopen an old namespace.  Only a file with
-# one is parsed, because only the parse can say what encloses it.
-REOPEN_HINT = re.compile(r"\bnamespace\s+(?:inline\s+)?(?:" + OLD + r")\b")
+OLD = frozenset(OLD_NAMES)
+OLD_NO_FIXY = OLD - {"fixy"}
+UMBRELLA = "crucible/Fixy.h"
+# The two name spellings inside literal content, which counts as a use.
+IN_LITERAL = (re.compile(r"\bcrucible::(?:" + "|".join(OLD_NAMES) + r")\b"),
+              re.compile(r"(?<![\w:])(?:" + "|".join(sorted(OLD_NO_FIXY)) + r")::"))
+# The outermost name nodes that can spell a namespace.
+NAME_NODES = ("qualified_identifier", "nested_namespace_specifier")
 
 
 class Refused(Exception):
@@ -140,88 +142,115 @@ def candidate_files(root: Path, prefixes: list[str]) -> list[str]:
         paths = sorted({p for p in listed if p})
     else:
         paths = sorted(str(p.relative_to(root)) for r in SCAN_ROOTS for p in (root / r).rglob("*") if p.is_file())
-    return [p for p in paths if Path(p).suffix in SUFFIXES and (root / p).is_file() and not is_frozen(p, prefixes)]
+    return [p for p in paths if tsast.is_in_cpp_scope(p) and (root / p).is_file() and not is_frozen(p, prefixes)]
 
 
-def names_old(text: str) -> bool:
-    """Return True when a comment-blanked text names the old substrate by an include or a name.
+def is_old_namespace(parts: tuple[str, ...]) -> bool:
+    """Return True when a name from the root lies in crucible::N for an old N."""
+    return len(parts) >= 2 and parts[0] == "crucible" and parts[1] in OLD
 
-    The names are read from tokens, so white space, a line break or a blanked
-    comment between crucible, :: and N changes nothing.  A literal is one
-    token, and its text is searched for the same names, because a literal that
-    spells an old name counts as a use.  Complexity: linear in the length of
-    the text.
+
+def visible_at(using: tsast.UsingDecl, at: tsast.Node) -> bool:
+    """Return True when a using declaration is in force at a node: its scope holds the node and it ends first."""
+    scope = using.scope
+    return scope.start <= at.start and at.end <= scope.end and using.node.end <= at.start
+
+
+def resolves_old(parts: tuple[str, ...], is_global: bool, at: tsast.Node, aliases: list[tsast.NamespaceAlias],
+                 directives: list[tsast.UsingDecl]) -> bool:
+    """Return True when a name spelled at a node can resolve to crucible::N for an old N.
+
+    A leading namespace alias resolves first.  A relative name then gets one
+    candidate for each enclosing namespace and one for each using-directive in
+    force.  A relative name that starts with fixy is left out, because an
+    unqualified fixy:: names the new tree.
+
+    Complexity: O(depth + directives) for each name.
     """
-    if INCLUDE.search(text):
+    resolved = tsast.resolve_namespace(parts, at, aliases, is_global=is_global)
+    if is_old_namespace(resolved):
         return True
-    tokens: list[str] = []
-    cursor = 0
-    for match in cxx_lex.LEXER.finditer(text):
-        tokens += PUNCTUATION.findall(text[cursor:match.start()])
-        if match.lastgroup in LITERALS and any(p.search(match.group()) for p in IN_LITERAL):
-            return True
-        tokens.append(match.group())
-        cursor = match.end()
-    tokens += PUNCTUATION.findall(text[cursor:])
-    for i, token in enumerate(tokens[:-1]):
-        if tokens[i + 1] != "::":
-            continue
-        if token == "crucible" and i + 2 < len(tokens) and tokens[i + 2] in OLD_NAMES:
-            return True
-        if token in OLD_NAMES and token != "fixy" and (i == 0 or tokens[i - 1] != "::"):
-            return True
-    return False
-
-
-def enclosing_names(node: tsast.Node) -> list[str]:
-    """Return the name components of a namespace definition and of every namespace around it.
-
-    An inline namespace is transparent: its members are members of the
-    namespace around it, so its name is left out.
-    """
-    parts: list[str] = []
-    current: tsast.Node | None = node
-    while current is not None:
-        if current.type == "namespace_definition" and not current.text.lstrip().startswith("inline"):
-            name = current.child_by_field("name")
-            if name is not None:
-                parts[:0] = re.sub(r"\s+", "", name.text).split("::")
-        current = current.parent
-    return parts
-
-
-def reopens_old(tree: tsast.Tree) -> bool:
-    """Return True when the parse opens crucible::N for an old N, at any nesting."""
-    for node in tree.find("namespace_definition"):
-        parts = [part for part in enclosing_names(node) if part]
-        for i in range(len(parts) - 1):
-            if parts[i] == "crucible" and parts[i + 1] in OLD_NAMES:
+    if is_global or not resolved or resolved[0] == "fixy":
+        return False
+    enclosing = tsast.namespace_path(at, skip_inline=True)
+    if any(is_old_namespace(enclosing[:depth] + resolved) for depth in range(len(enclosing), 0, -1)):
+        return True
+    for directive in directives:
+        if directive.node.index != at.index and visible_at(directive, at):
+            target = tsast.resolve_namespace(directive.target, directive.node, aliases, is_global=directive.is_global)
+            if is_old_namespace(target + resolved):
                 return True
     return False
+
+
+def include_is_old(path: tsast.Node) -> bool:
+    """Return True when an include path names crucible/N/... or the frozen umbrella."""
+    inner = path.text.strip()[1:-1].strip()
+    return inner == UMBRELLA or any(inner.startswith(f"crucible/{name}/") for name in OLD_NAMES)
+
+
+def macro_names_old(tree: tsast.Tree) -> bool:
+    """Return True when a macro body spells crucible::N, an unqualified old N::, or a literal that does.
+
+    A replacement list is not C++ on its own, so its tokens are read, not a parse.
+    """
+    for define in tree.find("preproc_def", "preproc_function_def"):
+        values = [child for child in define.children if child.field == "value"]
+        if not values:
+            continue
+        tokens = tsast.pp_tokens(tree.slice(values[0].start, values[-1].end), values[0].start[0])
+        if any(token.kind == "string" and any(p.search(token.text) for p in IN_LITERAL) for token in tokens):
+            return True
+        for is_global, parts, _row in tsast.token_qualified_names(tokens):
+            if is_old_namespace(parts) or (not is_global and len(parts) >= 2 and parts[0] in OLD_NO_FIXY):
+                return True
+    return False
+
+
+def names_old(tree: tsast.Tree) -> bool:
+    """Return True when a parsed file names the old substrate in one of the five shapes.
+
+    Complexity: linear in the node count of the file, times the candidates of each name.
+    """
+    if any(include_is_old(path) for node in tree.find("preproc_include")
+           if (path := node.child_by_field("path")) is not None):
+        return True
+    if any(p.search(node.text) for node in tree.find("string_content", "raw_string_content") for p in IN_LITERAL):
+        return True
+    for node in tree.find("namespace_definition"):
+        body = node.child_by_field("body")
+        if is_old_namespace(tsast.namespace_path(body if body is not None else node, skip_inline=True)):
+            return True
+    aliases = tsast.namespace_aliases(tree)
+    usings = tsast.using_names(tree)
+    directives = [using for using in usings if using.is_directive]
+    targets = [(alias.target, alias.is_global, alias.node) for alias in aliases]
+    targets += [(using.target, using.is_global, using.node) for using in usings]
+    if any(resolves_old(target, is_global, at, aliases, directives) for target, is_global, at in targets):
+        return True
+    for node in tree.find(*NAME_NODES):
+        if node.parent is not None and node.parent.type in NAME_NODES:
+            continue
+        spelled = tsast.qualified_parts(node)
+        if spelled is not None and spelled[1] and resolves_old(spelled[1], spelled[0], node, aliases, directives):
+            return True
+    return macro_names_old(tree)
 
 
 def consumers(root: Path, files: list[str]) -> tuple[list[str], list[str]]:
     """Return the files that name the old substrate, and a problem line for each file that does not parse.
 
-    Complexity: one lexical pass over each file, plus one parse of each file
-    that opens a namespace with an old name.
+    Complexity: one parse of each file, in one run of the kit.
     """
-    found: set[str] = set()
-    to_parse: list[str] = []
-    for path in files:
-        text, _ = cxx_lex.blank(cxx_lex.splice((root / path).read_text(errors="replace"))[0])
-        if names_old(text):
-            found.add(path)
-        elif REOPEN_HINT.search(text):
-            to_parse.append(path)
+    found: list[str] = []
     problems: list[str] = []
-    for tree in tsast.parse([root / p for p in to_parse], strict=False):
-        rel = str(Path(tree.path).relative_to(root))
-        if tree.diagnostic is not None and rel not in tsast.UNPARSEABLE:
-            problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot tell what "
-                            f"its namespaces open: {tree.diagnostic}")
-        elif reopens_old(tree):
-            found.add(rel)
+    for tree in tsast.parse([root / p for p in files], strict=False):
+        rel = Path(tree.path).relative_to(root).as_posix()
+        if tree.diagnostic is not None:
+            problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot tell what it "
+                            f"names: {tree.diagnostic}")
+        elif names_old(tree):
+            found.append(rel)
     return sorted(found), problems
 
 
@@ -340,7 +369,8 @@ def self_test() -> int:
               "#include <fixy/Linear.h>\n// crucible::safety::Linear was the old spelling.\n"
               "/* #include <crucible/safety/Linear.h>\n   effects::Row as well */\n"
               "namespace crucible { fixy::Linear a; foundation::effects::Row<> r; fixy::concurrent::Q q;\n"
-              "namespace fixy2 { int n; } }\nnamespace fixy::concurrent { int m; }\n")
+              "namespace fixy2 { int n; } }\nnamespace fixy::concurrent { int m; }\n"
+              "namespace foundation { effects::Row<> r2; }\nconcurrent::Queue* q2 = nullptr;\n")
         listing(root)
         expect(root, 0, "0 listed file(s) remain", "an empty list over a clean tree")
 
@@ -372,6 +402,10 @@ def self_test() -> int:
             "src/CommentInRaw.cpp": 'const char* r = R"(/*)"; int h = sizeof(crucible::safety::Linear);\n',
             "src/MacroBody.cpp": "#define USE_OLD crucible::safety::Linear\n",
             "src/QuotedInclude.cpp": '#include "crucible/effects/Row.h"\n',
+            "src/AliasOfCrucible.cpp": "namespace cr = crucible;\nint x = sizeof(cr::safety::Linear);\n",
+            "src/DirectiveThenRelative.cpp": "using namespace crucible;\neffects::Row<> r;\n",
+            "src/RelativeDirective.cpp": "namespace crucible { using namespace safety; }\n",
+            "src/OldInLiteral.cpp": 'const char* name = "crucible::safety::Linear";\n',
         }
         for rel, text in planted.items():
             write(root, rel, text)
