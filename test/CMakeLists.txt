@@ -842,24 +842,21 @@ add_test(NAME raw_array_member
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-array-member.py)
 set_tests_properties(raw_array_member raw_array_member_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
-# FIXY-V-094 fast-math-family flag ban enforcement (CLAUDE.md §V "NEVER"
-# matrix + cmake/FpStrict.cmake floor).  scripts/check-no-ffast-math.sh
-# is the per-TU guard against `#pragma GCC optimize("fast-math")` or
-# `__attribute__((optimize("-ffast-math")))` overrides that would punch
-# through the `crucible_fp_strict` INTERFACE floor — and against any
-# build-file (CMakeLists.txt, *.cmake, presets) adding a fast-math flag
-# directly.  The allowlist (scripts/no-ffast-math-allowlist.txt) is
-# empty at ship; every entry that ever gets added requires a documented
-# rationale in the surrounding code.  Self-test plants build-file
-# violation, source-pragma violation, allowlist exempt, inline marker
-# exempt, comment-line filter, and stale-allowlist-entry detection.
+# The fast-math family is banned (CLAUDE.md §V, cmake/FpStrict.cmake is
+# the floor).  scripts/check-no-ffast-math.py reads the flags of this build
+# from its compile database, the flag variables of every configure preset,
+# and each optimize attribute, GCC optimize pragma and _Pragma from the
+# parse tree, macro bodies included.  The self-test configures a planted
+# project, so a flag inside a generator expression is judged as the
+# compiler receives it.
 add_test(NAME no_ffast_math_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.sh
-          --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.py
+          --self-test --cmake ${CMAKE_COMMAND} --cxx ${CMAKE_CXX_COMPILER})
 add_test(NAME no_ffast_math
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.py
+          --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # FIXY-U-096z migration lock-in.  The FIXY-U-096* sweep brought 14
 # top-level include/crucible/*.h headers to literal-zero `safety::`
 # (reaching the substrate only through the fixy:: umbrella).

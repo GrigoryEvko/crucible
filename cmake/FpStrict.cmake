@@ -82,7 +82,7 @@
 #                                   stripping the discipline).
 #
 # Two flags from CLAUDE.md §V "NEVER" list are NOT in our SET but
-# ARE in the `check-no-ffast-math.sh` deny-list because they would
+# ARE in the `check-no-ffast-math.py` deny-list because they would
 # break the floor if applied per-TU:
 #
 #   -funsafe-math-optimizations   — global blanket disable; one flag
@@ -102,8 +102,10 @@
 # uses no fp-strict math).  We add to a target, not CMAKE_CXX_FLAGS,
 # precisely to localize the effect.
 #
-# Verification: the grep-guard `scripts/check-no-ffast-math.sh`
-# rejects any per-TU override that would punch through the floor.
+# Verification: `scripts/check-no-ffast-math.py` reads the flags of each
+# TU from the compile database and each optimize attribute or pragma
+# from the parse tree. It rejects an override that punches through the
+# floor.
 # `test/test_fp_strict_floor.cpp` is a sentinel TU that links the
 # INTERFACE target and asserts (via a static-assert proxy) that the
 # floor is actually engaged — if the floor ever silently degrades to

@@ -209,10 +209,13 @@ jobs:
           python3 scripts/check-brand-drain.py --self-test
           python3 scripts/check-brand-drain.py
 
+      # The compile-database half of the scan runs in the build legs through
+      # ctest. Here the self-test runs, and the scan reads the presets and
+      # the sources.
       - name: no -ffast-math (self-test + scan)
         run: |
-          bash scripts/check-no-ffast-math.sh --self-test
-          bash scripts/check-no-ffast-math.sh
+          python3 scripts/check-no-ffast-math.py --self-test
+          python3 scripts/check-no-ffast-math.py
 
       - name: fixy clean headers (self-test + scan)
         run: |
