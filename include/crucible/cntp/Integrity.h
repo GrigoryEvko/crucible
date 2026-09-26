@@ -5,10 +5,10 @@
 // the same value.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/_Linear.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Qtt.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
 #include <foundation/Simd.h>
-#include <crucible/safety/_Tagged.h>
 
 #include <array>
 #include <bit>
@@ -37,12 +37,12 @@ enum class IntegrityMode : std::uint8_t {
     OptInPerFlow,
 };
 
-using IntegrityHash = safety::Refined<safety::non_zero, std::uint64_t>;
-using IntegritySampleRate = safety::Refined<safety::positive, std::uint16_t>;
+using IntegrityHash = ::fixy::Refined<::fixy::non_zero, std::uint64_t>;
+using IntegritySampleRate = ::fixy::Refined<::fixy::positive, std::uint16_t>;
 
 struct IntegrityPolicy {
     IntegrityMode mode = IntegrityMode::AlwaysOn;
-    IntegritySampleRate sample_rate{1};
+    IntegritySampleRate sample_rate = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
     bool flow_opt_in = true;
 
     [[nodiscard]] constexpr bool enabled(std::uint64_t sequence) const noexcept {
@@ -86,10 +86,13 @@ struct IntegrityWrappedMessage {
 };
 
 template <typename Payload>
-using IntegrityOwnedPayload = safety::Linear<Payload>;
+using IntegrityOwnedPayload = ::fixy::Linear<Payload>;
 
+// IntegrityVerified is an earned tag.  unwrap reaches it by the retag from
+// External, the edge whose discharge is the receiver recomputing the hash
+// and matching the one on the wire.
 template <typename Payload>
-using IntegrityVerifiedPayload = safety::Tagged<IntegrityOwnedPayload<Payload>, safety::source::IntegrityVerified>;
+using IntegrityVerifiedPayload = ::fixy::Tagged<IntegrityOwnedPayload<Payload>, ::fixy::tags::source::IntegrityVerified>;
 
 template <typename T>
 concept BytePayloadElement =
@@ -230,7 +233,7 @@ template <ByteContiguousPayload Payload>
     if (hash == 0) {
         return std::unexpected(IntegrityError::ZeroHash);
     }
-    return IntegrityHash{hash, IntegrityHash::Trusted{}};
+    return ::fixy::mint_refined<::fixy::non_zero>(hash);
 }
 
 [[nodiscard]] CRUCIBLE_HOT std::uint64_t xxhash64_raw(std::span<const std::byte> data,
@@ -357,7 +360,7 @@ wrap(Payload payload) noexcept(std::is_nothrow_move_constructible_v<Payload>) {
         return std::unexpected(hash.error());
     }
     return IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>>{
-        .payload = IntegrityOwnedPayload<Payload>{std::move(payload)},
+        .payload = ::fixy::mint_linear<Payload>(std::move(payload)),
         .hash = *hash,
     };
 }
@@ -373,7 +376,8 @@ unwrap(IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>> message) noexcept
     if (actual->value() != message.hash.value()) {
         return std::unexpected(IntegrityError::HashMismatch);
     }
-    return IntegrityVerifiedPayload<Payload>{std::move(message.payload)};
+    return ::fixy::mint_tagged<::fixy::tags::source::External>(std::move(message.payload))
+        .template retag<::fixy::tags::source::IntegrityVerified>();
 }
 
 static_assert(sizeof(IntegrityHash) == sizeof(std::uint64_t));

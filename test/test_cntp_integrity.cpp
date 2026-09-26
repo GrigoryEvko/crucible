@@ -72,7 +72,7 @@ int main() {
 
     ci::IntegrityPolicy sampled{
         .mode = ci::IntegrityMode::Sampled,
-        .sample_rate = ci::IntegritySampleRate{4},
+        .sample_rate = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{4}),
         .flow_opt_in = true,
     };
     assert(sampled.enabled(0));
@@ -81,7 +81,7 @@ int main() {
 
     ci::IntegrityPolicy opt_in{
         .mode = ci::IntegrityMode::OptInPerFlow,
-        .sample_rate = ci::IntegritySampleRate{1},
+        .sample_rate = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1}),
         .flow_opt_in = false,
     };
     assert(!opt_in.enabled(0));

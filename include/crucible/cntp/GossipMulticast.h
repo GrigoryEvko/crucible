@@ -128,7 +128,7 @@ template <std::uint16_t MaxNeighbors>
     requires GossipNeighborShape<MaxNeighbors>
 struct GossipReplicationPlan {
     DeclaredGossipTopic topic{};
-    IntegrityHash packet_id{std::uint64_t{1}};
+    IntegrityHash packet_id = ::fixy::mint_refined<::fixy::non_zero>(std::uint64_t{1});
     GossipNeighborList<MaxNeighbors> neighbors{};
     dataplane::XdpAction terminal_action = dataplane::XdpAction::Drop;
 };
