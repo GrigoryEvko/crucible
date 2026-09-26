@@ -71,7 +71,7 @@ struct PoolConfig {
 template <TransportClass T>
     requires PoolTransportClass<T>
 struct Connection {
-    SocketFd socket{0, typename SocketFd::Trusted{}};
+    SocketFd socket = ::fixy::mint_refined<::fixy::non_negative>(0);
     cog::Uuid remote_uuid{};
     PositiveConnectionId connection_id{std::uint64_t{1}};
     bool healthy = true;
@@ -85,7 +85,7 @@ struct PoolEvent {
     PoolEventKind kind = PoolEventKind::Added;
     TransportClass transport = TransportClass::Tcp;
     cog::Uuid remote_uuid{};
-    SocketFd socket{0, typename SocketFd::Trusted{}};
+    SocketFd socket = ::fixy::mint_refined<::fixy::non_negative>(0);
     std::uint64_t connection_id = 0;
     std::uint64_t sequence = 0;
 };
@@ -141,7 +141,8 @@ static_assert(sizeof(PositiveIdleTimeoutNs) == sizeof(std::uint64_t));
 static_assert(sizeof(PositiveConnectionId) == sizeof(std::uint64_t));
 static_assert(sizeof(DeclaredPoolEvent) == sizeof(PoolEvent));
 static_assert(std::is_trivially_copyable_v<PoolConfig>);
-static_assert(std::is_trivially_copyable_v<PoolEvent>);
-static_assert(std::is_trivially_copyable_v<Connection<TransportClass::Tcp>>);
+static_assert(std::is_trivially_copy_constructible_v<PoolEvent> && std::is_trivially_destructible_v<PoolEvent>);
+static_assert(std::is_trivially_copy_constructible_v<Connection<TransportClass::Tcp>>
+              && std::is_trivially_destructible_v<Connection<TransportClass::Tcp>>);
 
 }  // namespace crucible::cntp

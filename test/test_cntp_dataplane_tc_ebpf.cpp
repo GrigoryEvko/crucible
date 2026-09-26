@@ -95,7 +95,7 @@ void test_flow_class_map() {
     static_assert(std::same_as<decltype(cls)::tag_type, saf::source::TcEbpf>);
 
     dataplane::TcFlowClassMap<2> map{};
-    auto key = dataplane::tc_flow_key(cntp::SocketFd{7});
+    auto key = dataplane::tc_flow_key(cntp::admit_socket_fd(7).value());
     assert(map.update(key, cls).has_value());
     auto found = map.lookup(key);
     assert(found.has_value());

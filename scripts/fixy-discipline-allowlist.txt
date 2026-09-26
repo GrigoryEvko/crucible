@@ -45,16 +45,14 @@ include/crucible/canopy/Scuttlebutt.h
 include/crucible/canopy/Swim.h
 include/crucible/canopy/VectorClock.h
 
-# ── cntp/ (25 files: 18 stable + 7 _wip) ────────────────────────
+# ── cntp/ ──────────────────────────────────────────────────────
 include/crucible/cntp/AfXdp.h
 include/crucible/cntp/Backpressure.h
-include/crucible/cntp/CongestionControl.h
 include/crucible/cntp/ConnectionPool.h
 include/crucible/cntp/ConnectionPoolRuntime.h
 include/crucible/cntp/Fec.h
 include/crucible/cntp/Fountain.h
 include/crucible/cntp/GossipMulticast.h
-include/crucible/cntp/IncastControl.h
 include/crucible/cntp/Integrity.h
 include/crucible/cntp/MtlsTransport.h
 include/crucible/cntp/OverlayMulticast.h

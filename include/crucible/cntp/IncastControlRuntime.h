@@ -1,10 +1,12 @@
 #pragma once
 
 #include <crucible/cntp/IncastControl.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Pinned.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <fixy/os/Fs.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstddef>
@@ -16,24 +18,25 @@
 namespace crucible::cntp {
 
 template <class Ctx>
-concept CtxFitsIncastConfigure = effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Bg>;
+concept CtxFitsIncastConfigure =
+    ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Init, ::foundation::effects::Effect::Bg>;
 
 template <class Ctx>
-concept CtxFitsIncastCredit = effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+concept CtxFitsIncastCredit = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
 
 struct IncastCreditGrant {
-    cntp::SocketFd fd{0, typename cntp::SocketFd::Trusted{}};
-    cntp::PositiveCreditBytes bytes{std::uint32_t{1}};
+    cntp::SocketFd fd = ::fixy::mint_refined<::fixy::non_negative>(0);
+    cntp::PositiveCreditBytes bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
     std::uint64_t sequence = 0;
 };
 
 template <std::size_t MaxFlows>
-class IncastController : public safety::Pinned<IncastController<MaxFlows>> {
+class IncastController : public ::foundation::Pinned<IncastController<MaxFlows>> {
     static_assert(MaxFlows > 0, "IncastController requires flow slots");
 
     struct FlowSlot {
         bool occupied = false;
-        cntp::SocketFd fd{0, typename cntp::SocketFd::Trusted{}};
+        cntp::SocketFd fd = ::fixy::mint_refined<::fixy::non_negative>(0);
         std::uint32_t credit_bytes = 0;
         std::uint64_t sequence = 0;
     };
@@ -79,11 +82,13 @@ class IncastController : public safety::Pinned<IncastController<MaxFlows>> {
 public:
     constexpr IncastController() noexcept = default;
 
+    // Applying the config reads the kernel's algorithm list, so the context
+    // must carry what apply_incast_config demands as well.
     template <class Ctx>
-        requires CtxFitsIncastConfigure<Ctx>
-    [[nodiscard]] std::expected<void, cntp::IncastError> configure_socket(Ctx const&, cntp::SocketFd fd,
+        requires CtxFitsIncastConfigure<Ctx> && ::fixy::fs::CtxFitsFileMint<Ctx, cntp::ProcFileReadMode>
+    [[nodiscard]] std::expected<void, cntp::IncastError> configure_socket(Ctx const& ctx, cntp::SocketFd fd,
                                                                           cntp::DeclaredIncastConfig config) noexcept {
-        auto applied = cntp::apply_incast_config(fd, config);
+        auto applied = cntp::apply_incast_config(ctx, fd, config);
         if (!applied.has_value()) {
             return std::unexpected(applied.error());
         }
@@ -145,7 +150,7 @@ public:
         }
         const std::uint32_t granted = flow->credit_bytes;
         flow->credit_bytes = 0;
-        return cntp::PositiveCreditBytes{granted, typename cntp::PositiveCreditBytes::Trusted{}};
+        return ::fixy::mint_refined<::fixy::positive>(granted);
     }
 
     [[nodiscard]] constexpr std::expected<cntp::PositiveCreditBytes, cntp::IncastError>
@@ -157,21 +162,27 @@ public:
         if (flow->credit_bytes == 0) {
             return std::unexpected(cntp::IncastError::CreditUnavailable);
         }
-        return cntp::PositiveCreditBytes{flow->credit_bytes, typename cntp::PositiveCreditBytes::Trusted{}};
+        return ::fixy::mint_refined<::fixy::positive>(flow->credit_bytes);
     }
 };
 
 template <std::size_t MaxFlows, class Ctx>
-    requires effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>
+    requires ::foundation::effects::IsExecCtx<Ctx>
+             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
 [[nodiscard]] constexpr IncastController<MaxFlows> mint_incast_controller(Ctx const&) noexcept {
     return {};
 }
 
-static_assert(std::is_trivially_copyable_v<IncastCreditGrant>);
-static_assert(CtxFitsIncastConfigure<effects::ColdInitCtx>);
-static_assert(CtxFitsIncastConfigure<effects::BgDrainCtx>);
-static_assert(!CtxFitsIncastConfigure<effects::HotFgCtx>);
-static_assert(CtxFitsIncastCredit<effects::BgDrainCtx>);
-static_assert(!CtxFitsIncastCredit<effects::HotFgCtx>);
+static_assert(std::is_trivially_copy_constructible_v<IncastCreditGrant>
+              && std::is_trivially_destructible_v<IncastCreditGrant>);
+static_assert(CtxFitsIncastConfigure<::fixy::ColdInitCtx>);
+static_assert(CtxFitsIncastConfigure<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsIncastConfigure<::fixy::HotFgCtx>);
+static_assert(CtxFitsIncastCredit<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsIncastCredit<::fixy::HotFgCtx>);
+// Configuring a socket also reads /proc, so only a context whose row holds
+// IO and Block may do it.
+static_assert(::fixy::fs::CtxFitsFileMint<::fixy::InitLoadCtx, ProcFileReadMode>);
+static_assert(!::fixy::fs::CtxFitsFileMint<::fixy::ColdInitCtx, ProcFileReadMode>);
 
 }  // namespace crucible::cntp

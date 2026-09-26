@@ -1,5 +1,7 @@
 #include <crucible/cntp/IncastControl.h>
 #include <crucible/cntp/IncastControlRuntime.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
 #include <cassert>
 #include <cstdio>
@@ -10,9 +12,7 @@
 #include <unistd.h>
 
 namespace cntp = crucible::cntp;
-namespace effects = crucible::effects;
-namespace cntp = crucible::cntp;
-namespace saf = crucible::safety;
+namespace fe = ::foundation::effects;
 
 namespace {
 
@@ -107,8 +107,8 @@ void test_config_minting() {
 }
 
 void test_credit_pacing_state() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
     auto controller = cntp::mint_incast_controller<2>(init);
 
     auto fd0 = cntp::admit_socket_fd(10);
@@ -148,8 +148,8 @@ void test_credit_pacing_state() {
     // accepted and then ignored reads as a working timeout to every
     // caller.  Naming the exact member type is what pins it.
     using ConsumeFn = std::expected<cntp::PositiveCreditBytes, cntp::IncastError> (cntp::IncastController<2>::*)(
-        effects::BgDrainCtx const&, cntp::SocketFd) noexcept;
-    static_cast<void>(static_cast<ConsumeFn>(&cntp::IncastController<2>::try_consume_credit<effects::BgDrainCtx>));
+        ::fixy::BgDrainCtx const&, cntp::SocketFd) noexcept;
+    static_cast<void>(static_cast<ConsumeFn>(&cntp::IncastController<2>::try_consume_credit<::fixy::BgDrainCtx>));
 
     assert(controller.start_credit_flow(init, *fd1, *initial).has_value());
     auto overflow = controller.start_credit_flow(init, *fd2, *initial);
@@ -185,13 +185,16 @@ int main() {
     static_assert(sizeof(cntp::PositiveCreditBytes) == sizeof(std::uint32_t));
     static_assert(sizeof(cntp::PositiveRtoMinUsec) == sizeof(std::uint32_t));
     static_assert(sizeof(cntp::DeclaredIncastConfig) == sizeof(cntp::IncastConfig));
-    static_assert(std::is_trivially_copyable_v<cntp::IncastConfig>);
-    static_assert(std::same_as<cntp::DeclaredIncastConfig::tag_type, saf::source::IncastConfig>);
-    static_assert(cntp::CtxFitsIncastConfigure<effects::ColdInitCtx>);
-    static_assert(cntp::CtxFitsIncastConfigure<effects::BgDrainCtx>);
-    static_assert(!cntp::CtxFitsIncastConfigure<effects::HotFgCtx>);
-    static_assert(cntp::CtxFitsIncastCredit<effects::BgDrainCtx>);
-    static_assert(!cntp::CtxFitsIncastCredit<effects::HotFgCtx>);
+    static_assert(std::is_trivially_copy_constructible_v<cntp::IncastConfig>
+                  && std::is_trivially_destructible_v<cntp::IncastConfig>);
+    static_assert(!std::is_trivially_copyable_v<cntp::IncastConfig>,
+                  "a refined field must keep a byte copy from building a config");
+    static_assert(std::same_as<cntp::DeclaredIncastConfig::tag_type, ::fixy::tags::source::IncastConfig>);
+    static_assert(cntp::CtxFitsIncastConfigure<::fixy::ColdInitCtx>);
+    static_assert(cntp::CtxFitsIncastConfigure<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsIncastConfigure<::fixy::HotFgCtx>);
+    static_assert(cntp::CtxFitsIncastCredit<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsIncastCredit<::fixy::HotFgCtx>);
 
     std::printf("test_cntp_incast_control:\n");
     test_admission_and_names();

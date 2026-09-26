@@ -112,14 +112,11 @@ include/crucible/cipher/SessionPersistenceSurface.h
 include/crucible/cntp/AfXdp.h
 include/crucible/cntp/Backpressure.h
 include/crucible/cntp/BackpressureRuntime.h
-include/crucible/cntp/CongestionControl.h
 include/crucible/cntp/ConnectionPool.h
 include/crucible/cntp/ConnectionPoolRuntime.h
 include/crucible/cntp/Fec.h
 include/crucible/cntp/Fountain.h
 include/crucible/cntp/GossipMulticast.h
-include/crucible/cntp/IncastControl.h
-include/crucible/cntp/IncastControlRuntime.h
 include/crucible/cntp/Integrity.h
 include/crucible/cntp/MtlsTransport.h
 include/crucible/cntp/OverlayMulticast.h
@@ -180,7 +177,6 @@ include/crucible/topology/TopologyGraph.h
 include/crucible/warden/DeadlineWatchdog.h
 include/crucible/warden/Quarantine.h
 src/_DiagRuntime.cpp
-src/cntp/CongestionControl.cpp
 src/cntp/Pacing.cpp
 src/cntp/RoceConfig.cpp
 src/cog/NicOffloadAudit.cpp

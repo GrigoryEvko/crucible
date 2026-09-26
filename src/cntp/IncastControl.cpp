@@ -55,24 +55,4 @@ std::expected<void, IncastError> set_socket_rto_min_usec(SocketFd fd, PositiveRt
 #endif
 }
 
-std::expected<void, IncastError> apply_incast_config(SocketFd fd, DeclaredIncastConfig config) noexcept {
-    auto const& raw = config.value();
-    if (raw.enable_dctcp) {
-        if (!kernel_supports(CcAlgorithm::Dctcp)) {
-            return std::unexpected(IncastError::AlgorithmUnavailable);
-        }
-        auto choice = mint_cc_choice<CcAlgorithm::Dctcp, LinkClass::LosslessDatacenterFabric>();
-        auto set = set_cc_for_socket(fd, choice);
-        if (!set.has_value()) {
-            return std::unexpected(IncastError::SetCcFailed);
-        }
-    }
-
-    auto rto = set_socket_rto_min_usec(fd, raw.rto_min_usec);
-    if (!rto.has_value()) {
-        return std::unexpected(rto.error());
-    }
-    return {};
-}
-
 }  // namespace crucible::cntp

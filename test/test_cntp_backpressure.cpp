@@ -204,9 +204,11 @@ int main() {
     static_assert(sizeof(cntp::PositiveBackpressureBytes) == sizeof(std::uint32_t));
     static_assert(sizeof(cntp::PositiveConnectionLimit) == sizeof(std::uint16_t));
     static_assert(sizeof(cntp::DeclaredAdmissionDecision) == sizeof(cntp::AdmissionDecision));
-    static_assert(std::is_trivially_copyable_v<cntp::ConnectionRequest>);
+    static_assert(std::is_trivially_copy_constructible_v<cntp::ConnectionRequest>
+                  && std::is_trivially_destructible_v<cntp::ConnectionRequest>);
     static_assert(std::is_trivially_copyable_v<cntp::ResourcePressure>);
-    static_assert(std::is_trivially_copyable_v<cntp::AdmissionDecision>);
+    static_assert(std::is_trivially_copy_constructible_v<cntp::AdmissionDecision>
+                  && std::is_trivially_destructible_v<cntp::AdmissionDecision>);
     static_assert(std::same_as<cntp::DeclaredAdmissionDecision::tag_type, saf::source::AdmissionDecision>);
     static_assert(cntp::CtxFitsBackpressureMint<effects::ColdInitCtx>);
     static_assert(!cntp::CtxFitsBackpressureMint<effects::BgDrainCtx>);

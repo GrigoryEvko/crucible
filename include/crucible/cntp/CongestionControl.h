@@ -1,18 +1,24 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Bits.h>
+#include <fixy/Path.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/atoms/Os.h>
+#include <fixy/os/Fs.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::cntp {
 
@@ -48,8 +54,8 @@ enum class CcError : std::uint8_t {
 [[nodiscard]] std::string_view cc_algorithm_name(CcAlgorithm algorithm) noexcept;
 [[nodiscard]] std::string_view link_class_name(LinkClass link) noexcept;
 
-using SocketFd = safety::NonNegative<int>;
-using CcAlgorithmMask = safety::Bits<CcAlgorithm>;
+using SocketFd = ::fixy::NonNegative<int>;
+using CcAlgorithmMask = ::fixy::Bits<CcAlgorithm>;
 
 // The stored length is private and from() is its only writer, so every
 // KernelCcName satisfies view().size() < max_bytes by construction.
@@ -104,7 +110,7 @@ struct CcSelection {
     KernelCcName kernel_name{};
 };
 
-using DeclaredCcChoice = safety::Tagged<CcSelection, safety::source::CcAlgorithm>;
+using DeclaredCcChoice = ::fixy::Tagged<CcSelection, ::fixy::tags::source::CcAlgorithm>;
 
 struct CcAvailability {
     CcAlgorithmMask algorithms{};
@@ -125,7 +131,7 @@ concept CustomCcModule = requires {
     if (fd < 0) {
         return std::unexpected(CcError::InvalidSocketFd);
     }
-    return SocketFd{fd, typename SocketFd::Trusted{}};
+    return ::fixy::mint_refined<::fixy::non_negative>(fd);
 }
 
 [[nodiscard]] constexpr std::expected<KernelCcName, CcError> kernel_name_for(CcAlgorithm algorithm) noexcept {
@@ -157,10 +163,10 @@ template <CcAlgorithm Algorithm, LinkClass Link>
     requires CcCompatible<Algorithm, Link>
 [[nodiscard]] constexpr DeclaredCcChoice mint_cc_choice() noexcept {
     auto name = kernel_name_for(Algorithm);
-    return DeclaredCcChoice{CcSelection{
+    return ::fixy::mint_tagged<::fixy::tags::source::CcAlgorithm>(CcSelection{
         .algorithm = Algorithm,
         .kernel_name = name.value(),
-    }};
+    });
 }
 
 template <class Module, LinkClass Link>
@@ -168,19 +174,55 @@ template <class Module, LinkClass Link>
 [[nodiscard]] constexpr DeclaredCcChoice mint_custom_cc_choice() noexcept {
     static_cast<void>(Link);
     auto name = KernelCcName::from(Module::congestion_control_name());
-    return DeclaredCcChoice{CcSelection{
+    return ::fixy::mint_tagged<::fixy::tags::source::CcAlgorithm>(CcSelection{
         .algorithm = CcAlgorithm::Custom,
         .kernel_name = name.value(),
-    }};
+    });
 }
 
 [[nodiscard]] std::expected<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept;
 
 [[nodiscard]] std::expected<CcAvailability, CcError> parse_available_congestion_control(std::string_view text) noexcept;
 
-[[nodiscard]] std::expected<CcAvailability, CcError> read_available_congestion_control() noexcept;
+// The kernel lists its algorithms in a file under /proc.  The fs door
+// opens it, and that door counts an open and a read as IO and Block, so
+// only a context that carries both can ask what the kernel supports.
+using ProcFileReadMode = ::fixy::atom::fs::mode<::fixy::fs::open_mode::ReadOnly>;
 
-[[nodiscard]] bool kernel_supports(CcAlgorithm algorithm) noexcept;
+namespace detail {
+
+inline constexpr std::string_view available_cc_path = "/proc/sys/net/ipv4/tcp_available_congestion_control";
+
+// Reads and parses the list through a descriptor the door opened.
+[[nodiscard]] std::expected<CcAvailability, CcError>
+read_available_congestion_control_from(::fixy::fs::OwnedFd const& fd) noexcept;
+
+}  // namespace detail
+
+// The path is a literal, and it still takes the traversal check, because
+// that check is the one way to a path the door accepts.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
+[[nodiscard]] std::expected<CcAvailability, CcError> read_available_congestion_control(Ctx const& ctx) noexcept {
+    auto path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(
+        std::filesystem::path{detail::available_cc_path}));
+    if (!path.has_value()) {
+        return std::unexpected(CcError::SysctlUnavailable);
+    }
+    auto opened = ::fixy::fs::mint_file<ProcFileReadMode>(ctx, std::move(*path));
+    if (!opened.has_value()) {
+        return std::unexpected(CcError::SysctlUnavailable);
+    }
+    const ::fixy::fs::OwnedFd fd = std::move(*opened).consume();
+    return detail::read_available_congestion_control_from(fd);
+}
+
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
+[[nodiscard]] bool kernel_supports(Ctx const& ctx, CcAlgorithm algorithm) noexcept {
+    auto availability = read_available_congestion_control(ctx);
+    return availability.has_value() && availability->contains(algorithm);
+}
 
 template <LinkClass Link>
 [[nodiscard]] constexpr std::expected<DeclaredCcChoice, CcError> recommend_cc(CcAvailability availability) noexcept {
@@ -217,33 +259,27 @@ template <LinkClass Link>
 
 [[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(SocketFd fd) noexcept;
 
-// The four operations below cross the kernel boundary, through setsockopt,
-// getsockopt or a read under /proc, so each needs a context carrying
-// Effect::IO.  The unparameterized forms above stay for callers that thread no
-// context, which means the gate can still be bypassed by calling those.
-template <effects::IsExecCtx Ctx>
-    requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
+// The three operations below cross the kernel boundary through setsockopt or
+// getsockopt, so each needs a context carrying Effect::IO.  The
+// unparameterized forms above stay for callers that thread no context,
+// which means the gate can still be bypassed by calling those.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
 [[nodiscard]] std::expected<void, CcError> set_cc_for_socket(Ctx const&, SocketFd fd,
                                                              DeclaredCcChoice choice) noexcept {
     return set_cc_for_socket(fd, choice);
 }
 
-template <effects::IsExecCtx Ctx>
-    requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
 [[nodiscard]] std::expected<CcAlgorithm, CcError> query_cc_for_socket(Ctx const&, SocketFd fd) noexcept {
     return query_cc_for_socket(fd);
 }
 
-template <effects::IsExecCtx Ctx>
-    requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
 [[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(Ctx const&, SocketFd fd) noexcept {
     return query_cc_selection_for_socket(fd);
-}
-
-template <effects::IsExecCtx Ctx>
-    requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
-[[nodiscard]] std::expected<CcAvailability, CcError> read_available_congestion_control(Ctx const&) noexcept {
-    return read_available_congestion_control();
 }
 
 }  // namespace crucible::cntp

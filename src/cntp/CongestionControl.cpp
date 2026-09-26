@@ -1,11 +1,8 @@
 #include <crucible/cntp/CongestionControl.h>
 
-#include <crucible/handles/_FileHandle.h>
-
 #include <cerrno>
 #include <cstring>
 
-#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
@@ -14,10 +11,6 @@
 namespace crucible::cntp {
 
 namespace {
-
-constexpr char available_cc_path[] = "/proc/sys/net/ipv4/tcp_available_congestion_control";
-
-using LocalFd = ::crucible::safety::FileHandle;
 
 [[nodiscard]] bool is_space(char c) noexcept { return c == ' ' || c == '\n' || c == '\t' || c == '\r'; }
 
@@ -143,23 +136,13 @@ std::expected<CcAvailability, CcError> parse_available_congestion_control(std::s
     return availability;
 }
 
-std::expected<CcAvailability, CcError> read_available_congestion_control() noexcept {
-    LocalFd fd{::open(available_cc_path, O_RDONLY | O_CLOEXEC)};
-    if (!fd.is_open()) {
-        return std::unexpected(CcError::SysctlUnavailable);
-    }
-
+std::expected<CcAvailability, CcError> detail::read_available_congestion_control_from(::fixy::fs::OwnedFd const& fd) noexcept {
     std::array<char, 512> buffer{};
     const auto nread = ::read(fd.get(), buffer.data(), buffer.size() - 1);
     if (nread <= 0) {
         return std::unexpected(CcError::SysctlUnavailable);
     }
     return parse_available_congestion_control(std::string_view{buffer.data(), static_cast<std::size_t>(nread)});
-}
-
-bool kernel_supports(CcAlgorithm algorithm) noexcept {
-    auto availability = read_available_congestion_control();
-    return availability.has_value() && availability->contains(algorithm);
 }
 
 std::expected<void, CcError> set_cc_for_socket(SocketFd fd, DeclaredCcChoice choice) noexcept {

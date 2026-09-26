@@ -1,5 +1,8 @@
 #include <crucible/cntp/CongestionControl.h>
-#include <crucible/effects/_ExecCtx.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/Fs.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <cassert>
 #include <cstdio>
@@ -11,8 +14,7 @@
 #include <unistd.h>
 
 namespace cntp = crucible::cntp;
-namespace saf = crucible::safety;
-namespace eff = crucible::effects;
+namespace fe = ::foundation::effects;
 
 namespace {
 
@@ -136,7 +138,8 @@ void test_live_socket_roundtrip_if_available() {
     auto fd = cntp::admit_socket_fd(socket.raw());
     assert(fd.has_value());
 
-    auto availability = cntp::read_available_congestion_control();
+    ::fixy::InitLoadCtx load{fe::testing::init()};
+    auto availability = cntp::read_available_congestion_control(load);
     if (!availability.has_value()) {
         std::printf("  test_live_socket_roundtrip_if_available: SKIPPED\n");
         return;
@@ -176,15 +179,12 @@ void test_io_gated_overload_dispatches() {
     auto fd = cntp::admit_socket_fd(/*invalid*/ 0xFFFE);
     assert(fd.has_value());
 
-    auto choice = cntp::DeclaredCcChoice{cntp::CcSelection{
-        .algorithm = cntp::CcAlgorithm::Cubic,
-        .kernel_name = cntp::KernelCcName::from("cubic").value(),
-    }};
+    auto choice = cntp::mint_cc_choice<cntp::CcAlgorithm::Cubic, cntp::LinkClass::CrossDatacenter>();
 
-    // This context carries the input and output effect, so every gate
-    // below admits it.  The contexts that do not are rejected during
+    // This context carries the input and output effect, so every socket
+    // gate below admits it.  The contexts that do not are rejected during
     // substitution, and the assertions at file scope witness that.
-    eff::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
 
     {
         auto gated = cntp::set_cc_for_socket(init, *fd, choice);
@@ -213,22 +213,16 @@ void test_io_gated_overload_dispatches() {
         }
     }
 
-    // Reading the available algorithms changes nothing and depends
-    // only on the running kernel, so the two forms must agree exactly.
+    // Reading the available algorithms goes through the fs door, which
+    // needs Block as well, so it takes the load context.  The list changes
+    // nothing and depends only on the running kernel, so kernel_supports
+    // must answer from the same list for every algorithm.
     {
-        auto gated = cntp::read_available_congestion_control(init);
-        auto bare = cntp::read_available_congestion_control();
-        assert(gated.has_value() == bare.has_value());
-        if (gated.has_value()) {
-            // The result is a bit mask, so agreement is checked one
-            // algorithm at a time.
-            for (auto algo :
-                 {cntp::CcAlgorithm::Cubic, cntp::CcAlgorithm::Reno, cntp::CcAlgorithm::Bbr1, cntp::CcAlgorithm::Bbr2,
-                  cntp::CcAlgorithm::Bbr3, cntp::CcAlgorithm::Dctcp, cntp::CcAlgorithm::Vegas}) {
-                assert(gated->contains(algo) == bare->contains(algo));
-            }
-        } else {
-            assert(gated.error() == bare.error());
+        ::fixy::InitLoadCtx load{fe::testing::init()};
+        auto listed = cntp::read_available_congestion_control(load);
+        for (auto algo : {cntp::CcAlgorithm::Cubic, cntp::CcAlgorithm::Reno, cntp::CcAlgorithm::Bbr1, cntp::CcAlgorithm::Bbr2,
+                          cntp::CcAlgorithm::Bbr3, cntp::CcAlgorithm::Dctcp, cntp::CcAlgorithm::Vegas}) {
+            assert(cntp::kernel_supports(load, algo) == (listed.has_value() && listed->contains(algo)));
         }
     }
 
@@ -241,18 +235,22 @@ void test_io_gated_overload_dispatches() {
 // the call.  A requires-expression naming the call inside a static
 // assertion is a hard error under this compiler instead of a
 // substitution failure, so it cannot serve as a negative witness.
-static_assert(eff::CtxOwnsCapability<eff::ColdInitCtx, eff::Effect::IO>,
+static_assert(fe::CtxOwnsCapability<::fixy::ColdInitCtx, fe::Effect::IO>,
               "A cold-init context must carry the input and output effect.");
-static_assert(eff::CtxOwnsCapability<eff::BgCompileCtx, eff::Effect::IO>,
+static_assert(fe::CtxOwnsCapability<::fixy::BgCompileCtx, fe::Effect::IO>,
               "A background-compile context must carry the input and output "
               "effect.");
-static_assert(!eff::CtxOwnsCapability<eff::HotFgCtx, eff::Effect::IO>,
+static_assert(!fe::CtxOwnsCapability<::fixy::HotFgCtx, fe::Effect::IO>,
               "A hot foreground context must not carry the input and output "
               "effect.  Keeping hot-path code away from the socket call is what "
               "the gate is for.");
-static_assert(!eff::CtxOwnsCapability<eff::BgDrainCtx, eff::Effect::IO>,
+static_assert(!fe::CtxOwnsCapability<::fixy::BgDrainCtx, fe::Effect::IO>,
               "A background-drain context must not carry the input and output "
               "effect without being promoted first.");
+static_assert(::fixy::fs::CtxFitsFileMint<::fixy::InitLoadCtx, cntp::ProcFileReadMode>,
+              "The startup load context carries IO and Block, so it may read the algorithm list.");
+static_assert(!::fixy::fs::CtxFitsFileMint<::fixy::ColdInitCtx, cntp::ProcFileReadMode>,
+              "A cold-init context lacks Block, so the fs door refuses it the /proc read.");
 
 int main() {
     static_assert(sizeof(cntp::SocketFd) == sizeof(int));
@@ -262,7 +260,7 @@ int main() {
     static_assert(cntp::CustomCcModule<UserCc>);
     static_assert(std::is_trivially_copyable_v<cntp::KernelCcName>);
     static_assert(std::is_trivially_copyable_v<cntp::CcSelection>);
-    static_assert(std::same_as<cntp::DeclaredCcChoice::tag_type, saf::source::CcAlgorithm>);
+    static_assert(std::same_as<cntp::DeclaredCcChoice::tag_type, ::fixy::tags::source::CcAlgorithm>);
 
     assert(cntp::cc_algorithm_name(cntp::CcAlgorithm::Bbr3) == std::string_view{"bbr3"});
     assert(cntp::link_class_name(cntp::LinkClass::PublicInternet) == std::string_view{"public-internet"});

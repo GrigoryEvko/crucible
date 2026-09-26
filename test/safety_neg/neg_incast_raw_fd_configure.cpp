@@ -1,13 +1,16 @@
 #include <crucible/cntp/IncastControlRuntime.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
 
-// GAPS-124 fixture #1: socket tuning requires an admitted SocketFd.
-// Raw int descriptors cannot cross the incast-control boundary.
+// Socket tuning requires an admitted SocketFd.  A raw int descriptor
+// cannot cross the incast-control boundary.  The load context passes the
+// context gate, so the descriptor is the only reason for the refusal.
 
 int main() {
-    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    auto controller = crucible::cntp::mint_incast_controller<1>(init);
+    ::fixy::InitLoadCtx load{::foundation::effects::testing::init()};
+    auto controller = crucible::cntp::mint_incast_controller<1>(load);
     auto config = crucible::cntp::mint_incast_config(crucible::cntp::IncastConfig{});
-    auto result = controller.configure_socket(init, 3, *config);
+    auto result = controller.configure_socket(load, 3, *config);
     (void)result;
     return 0;
 }
