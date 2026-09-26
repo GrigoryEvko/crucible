@@ -141,13 +141,13 @@ class Finding:
         kind: `violation` or `parse` exit 1, every other kind exits 2
         where: `path:line`, or the row text for a row finding
         name: The mint the finding names, or the marker kind for a dangling one
-        text: The report line
+        message: The report line
     """
 
     kind: str
     where: str
     name: str
-    text: str
+    message: str
 
 
 FAILING_KINDS = frozenset({"violation", "parse"})
@@ -461,7 +461,7 @@ def run(files: list[Path], allowlist: Path, frozen: tuple[str, ...]) -> int:
     rows, malformed = read_allowlist(allowlist)
     findings += malformed + evaluate(mints, rows, frozen, dangling)
     for finding in findings:
-        print(finding.text, file=sys.stderr)
+        print(finding.message, file=sys.stderr)
     failing = sum(finding.kind in FAILING_KINDS for finding in findings)
     if findings:
         print(f"\ncheck-mint-pattern: {len(findings)} finding(s) across {len(mints)} mints: {failing} "
@@ -583,7 +583,7 @@ def self_test() -> int:
             encoding="utf-8",
         )
         rows, malformed = read_allowlist(allow)
-        texts = " ".join(finding.text for finding in malformed)
+        texts = " ".join(finding.message for finding in malformed)
         check("a well-formed row is read", rows == {("a.h", "mint_good", "constexpr")})
         check("a bare key with no axis is malformed", "a.h:mint_bare —" in texts, True)
         check("a row keyed by a line is malformed", "names the mint, never a line" in texts, True)
@@ -659,7 +659,7 @@ def self_test() -> int:
 
         def mentions(kind: str, text: str) -> bool:
             """Report whether a finding of one kind holds a text."""
-            return any(f.kind == kind and text in f.text for f in found)
+            return any(f.kind == kind and text in f.message for f in found)
 
         check("the planted rows parse", not malformed)
         check("a runtime-only mint is admitted by its row",
