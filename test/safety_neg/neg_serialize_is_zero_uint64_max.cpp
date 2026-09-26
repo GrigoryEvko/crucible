@@ -1,40 +1,25 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Serialize-5 #1014, mismatch class #2 of 2:
-// CONSTRUCTING `Refined<is_zero, uint64_t>` WITH `UINT64_MAX`
-// (UPPER-BOUND WIDE MISS) MUST FIRE THE PREDICATE CONTRACT AT CONSTEVAL.
+// Fixture 2 of 2 for the zero constants of write_meta in Serialize.h.
 //
-// Companion to neg_serialize_is_zero_nonzero_construct.cpp.  The
-// boundary edge there (v == 1) catches "predicate accidentally
-// relaxed to admit any non-negative value" regressions.  THIS
-// fixture catches the more disastrous "drop the predicate entirely"
-// regression — if Refined<is_zero, ...> were ever silently
-// downgraded to a transparent wrapper (e.g. by a future refactor
-// that aliases `Refined<...>` to `T` for "compatibility"), the
-// UINT64_MAX construction would compile cleanly and a uint64_t
-// representation of a uint64_t-typed pointer would silently enter
-// the on-disk bytes.  DetSafe bit-stable replay would break,
-// process-local addresses would leak through a cipher roundtrip,
-// and there'd be no compile-time evidence of the wire-format drift.
+// write_meta writes the tensor data pointer and the gradient-function
+// hash as zero.  Each zero is a constexpr fixy::Refined<is_zero,
+// uint64_t>, so a later edit that feeds the live field in does not
+// compile.  A refined constant that holds UINT64_MAX must stop the
+// constant evaluation at the predicate.
 //
-// Pinning the wide-miss fixture forces every future refactor to
-// preserve the strict equality semantics of `is_zero` rather than
-// a "close enough" relaxation.
-//
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
-// demonstrating a distinct mismatch class.
+// Distinct mismatch class from neg_serialize_is_zero_nonzero_construct.cpp:
+//   * Companion: the boundary edge, 1.
+//   * This fixture: the wide miss, UINT64_MAX.  It catches a refinement
+//     that no longer runs its predicate, so that a process-local
+//     address could reach the bytes on disk.
 
-#include <crucible/safety/_Refined.h>
+#include <fixy/Refined.h>
 
-#include <climits>
 #include <cstdint>
 
 int main() {
-    // Constant evaluation forces the Refined ctor's pre clause
-    // (`is_zero(v)`) to be exercised at compile time.  v == UINT64_MAX
-    // → predicate(v) == false → contract violation → not a constant
-    // expression → ill-formed.
-    constexpr crucible::safety::Refined<crucible::safety::is_zero, std::uint64_t> bad{UINT64_MAX};
+    constexpr auto bad = ::fixy::mint_refined<::fixy::is_zero>(UINT64_MAX);
     (void)bad;
     return 0;
 }

@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #2 of 2 for #1013 WRAP-Serialize-4
-// (CDAG_VERSION raw uint32_t -> Tagged<uint32_t, source::FormatVersion>).
+// Fixture 2 of 2 for CDAG_VERSION, a Tagged<uint32_t,
+// source::FormatVersion>.
 //
 // Premise: disk-read header versions enter as source::External and
 // are validated against the in-process source::FormatVersion constant.
@@ -13,12 +13,12 @@
 //   * This fixture: cross-tag assignment rejected.
 
 #include <crucible/Serialize.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
 
 #include <cstdint>
 
 int main() {
-    using ExternalVersion = crucible::safety::Tagged<std::uint32_t, crucible::safety::source::External>;
+    using ExternalVersion = ::fixy::Tagged<std::uint32_t, ::fixy::tags::source::External>;
 
     // MUST fail: source::FormatVersion is not source::External.
     ExternalVersion disk = crucible::CDAG_VERSION;

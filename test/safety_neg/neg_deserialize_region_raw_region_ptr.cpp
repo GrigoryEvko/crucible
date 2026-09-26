@@ -1,16 +1,15 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for #1017 WRAP-Serialize-8
-// (deserialize_region raw RegionNode* -> Tagged<RegionNode*, source::Loaded>).
+// Fixture 1 of 2 for the loaded-region door of deserialize_region.
 //
-// Premise: deserialized regions carry source::Loaded provenance.  A
-// caller may explicitly unwrap at a legacy pointer boundary with
-// `.value()`, but deserialize_region itself must not silently hand out
-// a raw RegionNode*.
+// Premise: deserialize_region returns an optional region under the
+// earned source::Loaded tag.  A caller unwraps the pointer with
+// `->value()` after it has seen that a region came back.  The result
+// never converts to a raw RegionNode* by itself.
 //
 // Distinct mismatch class from neg_deserialize_region_cross_tag.cpp:
-//   * This fixture: Tagged -> raw RegionNode* implicit extraction rejected.
-//   * Companion: Loaded -> External cross-tag assignment rejected.
+//   * This fixture: the result converts to no raw pointer.
+//   * Companion: a Loaded region does not pass as an External one.
 
 #include <crucible/Serialize.h>
 
@@ -18,7 +17,7 @@ int main() {
     crucible::Arena arena{1024};
     std::span<const std::uint8_t> bytes{};
 
-    // MUST fail: deserialize_region returns LoadedRegionNode.
-    crucible::RegionNode* raw = crucible::deserialize_region(crucible::effects::Alloc{}, bytes, arena);
+    // MUST fail: deserialize_region returns std::optional<LoadedRegionNode>.
+    crucible::RegionNode* raw = crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena);
     return raw == nullptr ? 0 : 1;
 }

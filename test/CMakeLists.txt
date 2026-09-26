@@ -6075,8 +6075,9 @@ crucible_neg_compile_test(neg_transaction_log_zero_capacity
 # serialized-region provenance must fail at the commit boundary.
 crucible_neg_compile_test(neg_transaction_region_raw_pointer
   "no match|no known conversion|cannot convert|could not convert")
-crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
-  "no match|no known conversion|cannot convert|could not convert")
+crucible_neg_compile_multi_test(neg_transaction_region_loaded_cross_tag
+  "cannot convert .const fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Loaded>. to .crucible::Transaction::ArenaRegion."
+  "neg_transaction_region_loaded_cross_tag.cpp:30")
 
 # WRAP-Lower-4 (#934) — lower_trace_to_graph requires Recorded/Replayed
 # TraceGraph provenance and propagates that source to the returned Graph.
@@ -6142,99 +6143,82 @@ crucible_neg_compile_multi_test(neg_trace_node_kind_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(255\\)")
 
-# WRAP-Serialize-4 (#1013) — CDAG_VERSION =
-#   safety::Tagged<uint32_t, source::FormatVersion>.  Disk-read
-# header versions enter as source::External and must be explicitly
-# checked against the in-process format constant before the wire body
-# is trusted.  HS14 fixtures pin both escape directions.
+# CDAG_VERSION is a fixy::Tagged<uint32_t, source::FormatVersion>.
+# Disk-read header versions enter as source::External and are compared
+# with the in-process format constant before the wire body is trusted.
+# The two fixtures pin both escape directions.
 #
 #   * neg_cdag_version_raw_uint32.cpp — read-side raw extraction
 #     rejected; byte writers must spell `.value()` at the boundary.
 #   * neg_cdag_version_external_cross_tag.cpp — cross-tag assignment
 #     rejected; source::FormatVersion cannot masquerade as
 #     source::External.
-crucible_neg_compile_test(neg_cdag_version_raw_uint32
-  "conversion from|cannot convert|could not convert|no match for|Tagged")
-crucible_neg_compile_test(neg_cdag_version_external_cross_tag
-  "conversion from|cannot convert|could not convert|no match for|Tagged|External|FormatVersion")
+crucible_neg_compile_multi_test(neg_cdag_version_raw_uint32
+  "cannot convert .const crucible::CdagFormatVersion. \\{aka .const fixy::Tagged<unsigned int, fixy::tags::source::FormatVersion>.\\} to .uint32_t."
+  "neg_cdag_version_raw_uint32.cpp:20")
+crucible_neg_compile_multi_test(neg_cdag_version_external_cross_tag
+  "conversion from .Tagged<\\[...\\],fixy::tags::source::FormatVersion>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
+  "neg_cdag_version_external_cross_tag.cpp:24")
 
-# WRAP-Serialize-8 (#1017) — deserialize_region() returns
-#   safety::Tagged<RegionNode*, source::Loaded>.  The raw RegionNode*
-# only appears after explicit `.value()` at call sites that still need
-# pointer interop.  HS14 fixtures pin the two escape directions.
+# deserialize_region returns std::optional<LoadedRegionNode>, a region
+# under the earned source::Loaded tag, reached on the Replayed to
+# Loaded edge after the fold of the operations matches the recorded
+# content hash.  The two fixtures pin the two escape directions.
 #
-#   * neg_deserialize_region_raw_region_ptr.cpp — implicit raw pointer
-#     extraction rejected.
+#   * neg_deserialize_region_raw_region_ptr.cpp — the result converts
+#     to no raw RegionNode*.
 #   * neg_deserialize_region_cross_tag.cpp — Loaded provenance cannot
 #     pass as source::External.
-crucible_neg_compile_test(neg_deserialize_region_raw_region_ptr
-  "conversion from|cannot convert|could not convert|no match for|Tagged|RegionNode")
-crucible_neg_compile_test(neg_deserialize_region_cross_tag
-  "conversion from|cannot convert|could not convert|no match for|Tagged|External|Loaded")
+crucible_neg_compile_multi_test(neg_deserialize_region_raw_region_ptr
+  "cannot convert .std::optional<fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Loaded> >. to .crucible::RegionNode\\*. in initialization"
+  "neg_deserialize_region_raw_region_ptr.cpp:21")
+crucible_neg_compile_multi_test(neg_deserialize_region_cross_tag
+  "conversion from .Tagged<\\[...\\],fixy::tags::source::Loaded>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
+  "neg_deserialize_region_cross_tag.cpp:25")
 
-# WRAP-TraceLoader-3 (#1051) — ValidSchemaNameLen =
-#   safety::Refined<safety::in_range<SCHEMA_NAME_LEN_MIN,
-#                                    SCHEMA_NAME_LEN_MAX>, uint16_t>
-# pinning the typed gate at every uint16_t → schema-name-length
-# widening site (TraceLoader::load_trace is the canonical example;
-# the .crtrace optional schema-name table feeds a 257-byte stack
-# buffer, so admitting any value outside [1, 256] is either an empty-
-# name SchemaTable poison entry (lower) or a stack-buffer overflow
-# (upper)).  HS14 mandate: ≥2 negative-compile fixtures per soundness
-# gate, each demonstrating a distinct mismatch class.
-#
+# kSchemaNameLenRange is the typed gate of a .crtrace schema-name
+# length, in_range<1, 256>.  load_trace takes each length only through
+# its mint.  The name feeds a 257-byte stack buffer, so a length outside
+# [1, 256] is either an empty-name entry in the global schema table
+# (lower) or a stack-buffer overflow (upper).  Two fixtures:
 #   * neg_schema_name_len_below_min.cpp — lower-bound edge (= 0).
-#     Catches drift where `in_range<1, 256>` widens to
-#     `in_range<0, 256>` and silently admits a zero-length name.
-#     The trailing `name_buf[name_len] = '\0'` would associate the
-#     SchemaHash with the empty string in the global SchemaTable —
-#     every subsequent lookup() would return the empty entry instead
-#     of the real one.
+#     Catches a range that widens to in_range<0, 256>.
 #   * neg_schema_name_len_above_max.cpp — wide miss (= UINT16_MAX).
-#     Catches "drop the bound entirely" regression where
-#     ValidSchemaNameLen degenerates from
-#     `Refined<in_range<1, 256>, uint16_t>` into a plain `uint16_t`
-#     typedef; under that drift any 16-bit value is silently accepted
-#     at construction and the only remaining defense is the
-#     per-call-site `raw_name_len > SCHEMA_NAME_LEN_MAX` comparison
-#     inside load_trace — losing the type-system gate that fires
-#     BEFORE any fread call ever lands.
-crucible_neg_compile_test(neg_schema_name_len_below_min
-  "contract|Refined|in_range|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_schema_name_len_above_max
-  "contract|Refined|in_range|not a constant|non-constant|constexpr")
+#     Catches a gate that no longer runs its predicate.
+crucible_neg_compile_multi_test(neg_schema_name_len_below_min
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<InRange<1, 256>\\(\\), short unsigned int>\\(0\\)")
+crucible_neg_compile_multi_test(neg_schema_name_len_above_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<InRange<1, 256>\\(\\), short unsigned int>\\(65535\\)")
 
-# ─── WRAP-TraceLoader-2 (#1050) ValidTraceNum* neg-compile fixtures ──
-#
-# Three uint32_t header-count widening sites in load_trace gain typed
-# Refined gates: ValidTraceNumOps (cap MAX_OPS = 1<<22 = 4 M ops),
-# ValidTraceNumMetas (cap MAX_METAS = 1<<24 = 16 M metas), and
-# ValidTraceNumNames (cap SCHEMA_TABLE_CAP = 512 schema-name entries).
-# Each gate gets two fixtures per HS14 mandate: a boundary-edge one
-# (cap + 1) catching "bound widens to admit one more" drift, and a
-# wide-miss one (UINT32_MAX) catching "drop the bound entirely"
-# regression that would degenerate the alias into a plain uint32_t
-# typedef.  Six fixtures, three gates, one PR.
-#
-# Without these gates a corrupted .crtrace header could request multi-
-# GB allocations (320 MB for num_ops × 80B; 2.7 GB for num_metas ×
-# 168B; or — in the silent-truncation case — drive the schema-name
-# loop past the SchemaTable's fixed-size entries[] array).  The
-# runtime if-checks in load_trace catch the first wave; the typed
-# gates catch the rest, and the fixtures wedge each bound at the type
-# system so future readers / aggregate-init paths inherit the gate.
-crucible_neg_compile_test(neg_trace_num_ops_above_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_trace_num_ops_uint32_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_trace_num_metas_above_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_trace_num_metas_uint32_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_trace_num_names_above_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_trace_num_names_uint32_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+# The three header counts of a .crtrace file each have a typed gate:
+# kTraceNumOpsBound (MAX_OPS = 1 << 22), kTraceNumMetasBound
+# (MAX_METAS = 1 << 24) and kTraceNumNamesBound (SCHEMA_TABLE_CAP).
+# load_trace takes each count only through the mint of its gate.
+# Without the gates a corrupted header could request multi-GB
+# allocations, or drive the schema-name loop past the fixed entries
+# of the schema table.  Each gate has two fixtures: a boundary edge
+# (cap + 1) that catches a bound that widens by one, and a wide miss
+# (UINT32_MAX) that catches a gate that no longer runs its predicate.
+crucible_neg_compile_multi_test(neg_trace_num_ops_above_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<4194304>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::MAX_OPS\\) \\+ 1\\)\\)")
+crucible_neg_compile_multi_test(neg_trace_num_ops_uint32_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<4194304>\\(\\), unsigned int>\\(4294967295\\)")
+crucible_neg_compile_multi_test(neg_trace_num_metas_above_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<16777216>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::MAX_METAS\\) \\+ 1\\)\\)")
+crucible_neg_compile_multi_test(neg_trace_num_metas_uint32_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<16777216>\\(\\), unsigned int>\\(4294967295\\)")
+crucible_neg_compile_multi_test(neg_trace_num_names_above_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<512>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::SCHEMA_TABLE_CAP\\) \\+ 1\\)\\)")
+crucible_neg_compile_multi_test(neg_trace_num_names_uint32_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<512>\\(\\), unsigned int>\\(4294967295\\)")
 
 # WRAP-TraceGraph-3 (#1044) — TraceGraph build counters are
 # WriteOnce<uint32_t>.  The fixtures pin both soundness directions:
@@ -6384,28 +6368,22 @@ crucible_neg_compile_test(neg_tensor_meta_layout_below_min
 crucible_neg_compile_test(neg_tensor_meta_layout_above_max
   "contract|Refined|valid_layout|not a constant|non-constant|constexpr")
 
-# WRAP-Serialize-5 #1014 — write_meta() zero_ptr / zero_grad_fn_hash
-# wire-format invariants now ride through safety::Refined<is_zero,
-# uint64_t>.  The wrapper pins "must-be-zero on disk" at the type
-# level: a future refactor that swaps the `0` literal for any non-
-# zero expression (typically `m.data_ptr` cast or `grad_fn_hash`
-# leakage) contract-fires at the construction site instead of
-# silently corrupting DetSafe bit-stable replay.  Two fixtures per
-# HS14 mandate:
+# write_meta writes the data pointer and the gradient-function hash as
+# zero.  Each zero is a constexpr fixy::Refined<is_zero, uint64_t>, so
+# an edit that feeds the live field in does not compile, where it would
+# otherwise break DetSafe bit-stable replay.  Two fixtures:
 #   * neg_serialize_is_zero_nonzero_construct — boundary edge (v == 1)
-#     catches "predicate accidentally relaxed to admit non-negative
-#     values" regressions (since for uint64_t both >= 0 and <= 0
-#     admit zero AND every other value, the strict equality check
-#     is the only meaningful gate).
+#     catches a predicate relaxed to admit every non-negative value.
 #   * neg_serialize_is_zero_uint64_max — wide miss (UINT64_MAX)
-#     catches "drop the predicate entirely" regression where
-#     Refined<is_zero, ...> degrades into a transparent wrapper and
-#     a uint64_t-encoded process-local address silently enters the
-#     on-disk bytes.
-crucible_neg_compile_test(neg_serialize_is_zero_nonzero_construct
-  "contract|Refined|is_zero|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_serialize_is_zero_uint64_max
-  "contract|Refined|is_zero|not a constant|non-constant|constexpr")
+#     catches a refinement that no longer runs its predicate, so that
+#     a uint64_t-encoded process-local address could reach the on-disk
+#     bytes.
+crucible_neg_compile_multi_test(neg_serialize_is_zero_nonzero_construct
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsZero\\(\\), long unsigned int>\\(1\\)")
+crucible_neg_compile_multi_test(neg_serialize_is_zero_uint64_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsZero\\(\\), long unsigned int>\\(18446744073709551615\\)")
 
 # WRAP-TensorMeta-1 (#1034) — TensorMeta sizes/strides lanes now
 # write through TensorDim = Refined<bounded_above<INT64_MAX / 16>,

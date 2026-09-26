@@ -147,8 +147,9 @@ inline void run_region(std::span<const std::uint8_t> bytes) {
 
     Arena arena;
     const auto alloc = test_alloc();
-    RegionNode* region = deserialize_region(alloc, bytes, arena).value();
-    if (region == nullptr) return;
+    const auto loaded = deserialize_region(alloc, bytes, arena);
+    if (!loaded) return;
+    RegionNode* region = loaded->value();
     claim_region_trusted("region", *region);
 
     // The loaded region writes back to an image that loads to the same
@@ -156,8 +157,9 @@ inline void run_region(std::span<const std::uint8_t> bytes) {
     std::vector<std::uint8_t> image(bytes.size() + 4096);
     const std::size_t written = serialize_region(region, nullptr, std::span<std::uint8_t>{image});
     CRUCIBLE_FUZZ_CLAIM("region", written > 0);
-    RegionNode* again = deserialize_region(alloc, std::span<const std::uint8_t>{image.data(), written}, arena).value();
-    CRUCIBLE_FUZZ_CLAIM("region", again != nullptr);
+    const auto reloaded = deserialize_region(alloc, std::span<const std::uint8_t>{image.data(), written}, arena);
+    CRUCIBLE_FUZZ_CLAIM("region", reloaded.has_value());
+    RegionNode* again = reloaded->value();
     CRUCIBLE_FUZZ_CLAIM("region", again->num_ops == region->num_ops);
     CRUCIBLE_FUZZ_CLAIM("region", again->content_hash == region->content_hash);
     CRUCIBLE_FUZZ_CLAIM("region", again->merkle_hash == region->merkle_hash);

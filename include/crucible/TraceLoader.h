@@ -41,8 +41,8 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/fixy/Handle.h>
+#include <fixy/OwnedFile.h>
+#include <fixy/Refined.h>
 
 namespace crucible {
 
@@ -54,25 +54,12 @@ namespace crucible {
 inline constexpr uint32_t MAX_OPS = 1u << 22;
 inline constexpr uint32_t MAX_METAS = 1u << 24;
 
-// Zero is admitted: an empty trace is well-formed.
-using ValidTraceNumOps = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<MAX_OPS>, uint32_t>;
-
-using ValidTraceNumMetas = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<MAX_METAS>, uint32_t>;
-
-using ValidTraceNumNames =
-    ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<SCHEMA_TABLE_CAP>, uint32_t>;
-
-[[nodiscard, gnu::const]] inline constexpr uint32_t make_trace_num_ops(ValidTraceNumOps raw) noexcept {
-    return raw.value();
-}
-
-[[nodiscard, gnu::const]] inline constexpr uint32_t make_trace_num_metas(ValidTraceNumMetas raw) noexcept {
-    return raw.value();
-}
-
-[[nodiscard, gnu::const]] inline constexpr uint32_t make_trace_num_names(ValidTraceNumNames raw) noexcept {
-    return raw.value();
-}
+// The typed gates of the three header counts.  The loader takes each count
+// from its header field only through the mint of its gate.  Zero is admitted:
+// an empty trace is well-formed.
+inline constexpr auto kTraceNumOpsBound = ::fixy::bounded_above<MAX_OPS>;
+inline constexpr auto kTraceNumMetasBound = ::fixy::bounded_above<MAX_METAS>;
+inline constexpr auto kTraceNumNamesBound = ::fixy::bounded_above<SCHEMA_TABLE_CAP>;
 
 // A name length is stored on disk as a 16-bit value, so any of them can
 // arrive. The lower bound is one, because a zero-length name names nothing.
@@ -80,14 +67,7 @@ using ValidTraceNumNames =
 // for the terminator it writes.
 inline constexpr uint16_t SCHEMA_NAME_LEN_MIN = 1;
 inline constexpr uint16_t SCHEMA_NAME_LEN_MAX = 256;
-
-using ValidSchemaNameLen =
-    ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::in_range<SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX>,
-                                    uint16_t>;
-
-[[nodiscard, gnu::const]] inline constexpr uint16_t make_schema_name_len(ValidSchemaNameLen raw) noexcept {
-    return raw.value();
-}
+inline constexpr auto kSchemaNameLenRange = ::fixy::in_range<SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX>;
 
 struct TraceOpRecord {
     SchemaHash schema_hash;
@@ -218,11 +198,12 @@ template <class Field>
 [[nodiscard]] inline std::unique_ptr<LoadedTrace>
 load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
             bool should_register_names) {
-    ::crucible::fixy::handle::OwnedFile trace_file{std::fopen(path, "rb")};
-    if (!trace_file.is_open()) {
-        std::fprintf(stderr, "load_trace: cannot open %s\n", path);
+    auto opened = ::fixy::OwnedFile::open_path(path, "rb");
+    if (!opened) {
+        std::fprintf(stderr, "load_trace: cannot open %s: %s\n", path, std::strerror(opened.error()));
         return nullptr;
     }
+    const ::fixy::OwnedFile trace_file = *std::move(opened);
 
     // The size of the file bounds every count in it, so it is read first.
     if (std::fseek(trace_file.get(), 0, SEEK_END) != 0) {
@@ -237,9 +218,10 @@ load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& sch
     const auto file_size = static_cast<uint64_t>(file_end);
 
     char magic[4]{};
-    uint32_t version = 0, num_ops = 0, num_metas = 0;
+    uint32_t version = 0, raw_num_ops = 0, raw_num_metas = 0;
     if (std::fread(magic, 1, 4, trace_file.get()) != 4 || std::fread(&version, 4, 1, trace_file.get()) != 1
-        || std::fread(&num_ops, 4, 1, trace_file.get()) != 1 || std::fread(&num_metas, 4, 1, trace_file.get()) != 1) {
+        || std::fread(&raw_num_ops, 4, 1, trace_file.get()) != 1
+        || std::fread(&raw_num_metas, 4, 1, trace_file.get()) != 1) {
         std::fprintf(stderr, "load_trace: truncated header in %s\n", path);
         return nullptr;
     }
@@ -253,19 +235,18 @@ load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& sch
         return nullptr;
     }
 
-    if (num_ops > MAX_OPS || num_metas > MAX_METAS) {
+    if (!kTraceNumOpsBound(raw_num_ops) || !kTraceNumMetasBound(raw_num_metas)) {
         std::fprintf(stderr,
                      "load_trace: header counts exceed cap in %s "
                      "(num_ops=%u num_metas=%u)\n",
-                     path, num_ops, num_metas);
+                     path, raw_num_ops, raw_num_metas);
         return nullptr;
     }
-    // The check above is what rejects an out-of-range value in every build.
-    // Passing each count through its type here, and again for the name count
-    // below, adds nothing at run time but carries the bound as a witness that
-    // downstream code inherits instead of re-deriving.
-    num_ops = make_trace_num_ops(ValidTraceNumOps{num_ops});
-    num_metas = make_trace_num_metas(ValidTraceNumMetas{num_metas});
+    // The check above refuses an out-of-range count with a message.  The
+    // loader then takes each count only through the mint of its gate, so no
+    // later read of a count skips the bound.
+    const uint32_t num_ops = ::fixy::mint_refined<kTraceNumOpsBound>(raw_num_ops).value();
+    const uint32_t num_metas = ::fixy::mint_refined<kTraceNumMetasBound>(raw_num_metas).value();
 
     // A count is refused when its records cannot fit in the bytes that
     // remain.  The check comes before any vector is sized from a count, so a
@@ -319,9 +300,10 @@ load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& sch
     }
 
     // The name table is optional and sits after the metadata.
-    uint32_t num_names = 0;
-    if (std::fread(&num_names, 4, 1, trace_file.get()) == 1 && num_names > 0 && num_names <= SCHEMA_TABLE_CAP) {
-        num_names = make_trace_num_names(ValidTraceNumNames{num_names});
+    uint32_t raw_num_names = 0;
+    if (std::fread(&raw_num_names, 4, 1, trace_file.get()) == 1 && raw_num_names > 0
+        && kTraceNumNamesBound(raw_num_names)) {
+        uint32_t num_names = ::fixy::mint_refined<kTraceNumNamesBound>(raw_num_names).value();
         // Once the table is sealed the background thread reads it with no
         // lock, so a trace loaded after the seal keeps its names out of the
         // table.  The trace itself still loads.
@@ -340,8 +322,8 @@ load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& sch
             // A length outside the bound ends the table here. Whatever names
             // were read stay registered, which is this function's policy for a
             // malformed tail.
-            if (raw_name_len < SCHEMA_NAME_LEN_MIN || raw_name_len > SCHEMA_NAME_LEN_MAX) break;
-            const uint16_t name_len = make_schema_name_len(ValidSchemaNameLen{raw_name_len});
+            if (!kSchemaNameLenRange(raw_name_len)) break;
+            const uint16_t name_len = ::fixy::mint_refined<kSchemaNameLenRange>(raw_name_len).value();
             char name_buf[257]{};
             if (std::fread(name_buf, 1, name_len, trace_file.get()) != name_len) break;
             name_buf[name_len] = '\0';

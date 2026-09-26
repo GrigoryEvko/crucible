@@ -13,9 +13,9 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/PoolAllocator.h>
-#include <crucible/fixy/_Source.h>
-#include <crucible/fixy/Wrap.h>
 #include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>
 
@@ -26,6 +26,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -38,9 +39,13 @@ namespace crucible {
 // 47 41 44 43, which prints as "GADC". Both spellings have been written down
 // wrongly before; the value is what the reader compares, not the spelling.
 static constexpr uint32_t CDAG_MAGIC = 0x43444147u;
-using CdagFormatVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::FormatVersion>;
-using ExternalCdagVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::External>;
-using LoadedRegionNode = fixy::wrap::Tagged<RegionNode*, fixy::tags::source::Loaded>;
+using CdagFormatVersion = ::fixy::Tagged<uint32_t, ::fixy::tags::source::FormatVersion>;
+using ExternalCdagVersion = ::fixy::Tagged<uint32_t, ::fixy::tags::source::External>;
+// Loaded is an earned tag.  deserialize_region builds the node from Cipher
+// bytes, so the node is Replayed first.  It becomes Loaded only after the
+// fold of its operations matches the content hash that the image records,
+// which is the discharge of the Replayed to Loaded edge.
+using LoadedRegionNode = ::fixy::Tagged<RegionNode*, ::fixy::tags::source::Loaded>;
 static_assert(sizeof(LoadedRegionNode) == sizeof(RegionNode*));
 static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
 // 10 (2026-09-15): the content-hash fold changed mixer.  Every region on
@@ -48,7 +53,8 @@ static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
 // version-9 file would deserialize into regions whose hashes disagree with
 // their own contents and whose KernelCache entries key on nothing.  The
 // bump makes cdag_version_matches reject those files outright.
-static constexpr CdagFormatVersion CDAG_VERSION{10u};
+static constexpr CdagFormatVersion CDAG_VERSION =
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{10});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
@@ -216,14 +222,14 @@ struct Reader {
 
 // Two fields are process-local and must never reach persisted bytes: the data
 // pointer is a runtime address, and the gradient-function hash is an identity
-// only this process holds. Both are written as zero, and the zero is routed
-// through a type that rejects anything else, so a later edit that feeds the
-// live field in fails at the write instead of quietly producing an image whose
-// bytes differ between runs. Pad bytes are zero for the same reason.
+// only this process holds. Both are written as zero, and each zero is a
+// constant refined to be zero, so a later edit that feeds the live field in
+// does not compile, where it would otherwise produce an image whose bytes
+// differ between runs. Pad bytes are zero for the same reason.
 inline void write_meta(Writer& w, const TensorMeta& m) {
     w.write_bytes(m.sizes.raw_data(), sizeof(m.sizes));
     w.write_bytes(m.strides.raw_data(), sizeof(m.strides));
-    const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_ptr{std::uint64_t{0}};
+    constexpr auto zero_ptr = ::fixy::mint_refined<::fixy::is_zero>(std::uint64_t{0});
     w.w(zero_ptr.value());
     w.w(m.ndim);
     w.w(m.dtype);
@@ -236,7 +242,7 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.w(m.storage_offset);
     w.w(m.version);
     w.w(m.storage_nbytes);
-    const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_grad_fn_hash{std::uint64_t{0}};
+    constexpr auto zero_grad_fn_hash = ::fixy::mint_refined<::fixy::is_zero>(std::uint64_t{0});
     w.w(zero_grad_fn_hash.value());
 }
 
@@ -357,7 +363,7 @@ inline void write_header(Writer& w, TraceNodeKind kind, MerkleHash merkle_hash, 
 
 struct Header {
     uint32_t magic = 0;
-    ExternalCdagVersion version{0};
+    ExternalCdagVersion version{};
     TraceNodeKind kind{};
     MerkleHash merkle_hash;
     ContentHash content_hash;
@@ -366,9 +372,9 @@ struct Header {
 inline Header read_header(Reader& r) {
     Header h{};
     h.magic = r.r<uint32_t>();
-    h.version = ExternalCdagVersion{r.r<uint32_t>()};
-    h.kind = make_trace_node_kind(::fixy::mint_refined<kValidTraceNodeKindBound>(
-        r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>)));
+    h.version = ::fixy::mint_tagged<::fixy::tags::source::External>(r.r<uint32_t>());
+    h.kind = make_trace_node_kind(
+        ::fixy::mint_refined<kValidTraceNodeKindBound>(r.read_gated<uint8_t>(kValidTraceNodeKindBound)));
     uint8_t pad7[7]{};
     r.read_zero_pad(pad7);
     h.merkle_hash = MerkleHash{r.r<uint64_t>()};
@@ -460,19 +466,21 @@ inline Header read_header(Reader& r) {
     return w.ok ? w.pos : 0;
 }
 
-// Returns a tagged null pointer on a parse error or a version mismatch. Every
-// structure it builds lives in the arena.
-[[nodiscard]] inline LoadedRegionNode deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf, Arena& arena) {
+// Returns no region on a parse error, a version mismatch or a content hash
+// that the operations do not fold to. Every structure it builds lives in the
+// arena.
+[[nodiscard]] inline std::optional<LoadedRegionNode> deserialize_region(::foundation::effects::Alloc a,
+                                                                        std::span<const uint8_t> buf, Arena& arena) {
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
 
     const Header hdr = read_header(r);
     if (!r.ok || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version) || hdr.kind != TraceNodeKind::REGION) {
-        return LoadedRegionNode{nullptr};
+        return std::nullopt;
     }
 
     const uint32_t num_ops = r.r<uint32_t>();
-    if (num_ops > CDAG_MAX_OPS) return LoadedRegionNode{nullptr};
+    if (num_ops > CDAG_MAX_OPS) return std::nullopt;
     const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
     // RegionNode::set_measured_ms keeps the time finite and not negative.
     // The comparison also refuses a NaN.
@@ -493,14 +501,14 @@ inline Header read_header(Reader& r) {
         // allocator can serve. The pool size bound is inclusive, so only a
         // strictly larger value is refused.
         if (plan->pool_bytes > ::crucible::PoolAllocator::kMaxPoolBytes) [[unlikely]] {
-            return LoadedRegionNode{nullptr};
+            return std::nullopt;
         }
         plan->num_slots = r.r<uint32_t>();
-        if (plan->num_slots > CDAG_MAX_SLOTS) return LoadedRegionNode{nullptr};
+        if (plan->num_slots > CDAG_MAX_SLOTS) return std::nullopt;
         plan->num_external = r.r<uint32_t>();
         // The external slots are a subset of the slots, so their count cannot
         // exceed the total.
-        if (plan->num_external > plan->num_slots) return LoadedRegionNode{nullptr};
+        if (plan->num_external > plan->num_slots) return std::nullopt;
         // An unrecognised device type would reach pool selection unchecked.
         plan->device_type =
             make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
@@ -511,7 +519,7 @@ inline Header read_header(Reader& r) {
         plan->world_size = r.r<int32_t>();
         if (plan->num_slots > 0) {
             if (!r.has_remaining<std::array<uint8_t, kTensorSlotWireBytes>>(plan->num_slots)) {
-                return LoadedRegionNode{nullptr};
+                return std::nullopt;
             }
             plan->slots = arena.alloc_array<TensorSlot>(a, plan->num_slots);
             for (uint32_t s = 0; s < plan->num_slots; s++) {
@@ -519,7 +527,7 @@ inline Header read_header(Reader& r) {
                 // The pool allocator aborts on a slot it cannot serve, so a
                 // loaded plan holds only slots that it can serve.
                 if (!::crucible::PoolAllocator::can_serve_slot(plan->slots[s], plan->pool_bytes)) [[unlikely]] {
-                    return LoadedRegionNode{nullptr};
+                    return std::nullopt;
                 }
             }
         } else {
@@ -532,7 +540,7 @@ inline Header read_header(Reader& r) {
     // count that the remaining bytes cannot possibly hold.
     constexpr size_t kTraceEntryMinWireBytes = 40;
     if (num_ops > 0 && r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes) {
-        return LoadedRegionNode{nullptr};
+        return std::nullopt;
     }
     TraceEntry* ops = (num_ops > 0) ? arena.alloc_array<TraceEntry>(a, num_ops) : nullptr;
 
@@ -545,9 +553,9 @@ inline Header read_header(Reader& r) {
         te.num_inputs = r.r<uint16_t>();
         te.num_outputs = r.r<uint16_t>();
         te.num_scalar_args = r.r<uint16_t>();
-        if (te.num_inputs > CDAG_MAX_INPUTS) return LoadedRegionNode{nullptr};
-        if (te.num_outputs > CDAG_MAX_OUTPUTS) return LoadedRegionNode{nullptr};
-        if (te.num_scalar_args > CDAG_MAX_SCALAR_ARGS) return LoadedRegionNode{nullptr};
+        if (te.num_inputs > CDAG_MAX_INPUTS) return std::nullopt;
+        if (te.num_outputs > CDAG_MAX_OUTPUTS) return std::nullopt;
+        if (te.num_scalar_args > CDAG_MAX_SCALAR_ARGS) return std::nullopt;
         te.grad_enabled = r.read_bool();
         {
             // The writer sets only these bits, so a byte with another bit
@@ -566,7 +574,7 @@ inline Header read_header(Reader& r) {
         {
             const uint8_t raw_kernel_id = r.r<uint8_t>();
             if (raw_kernel_id >= static_cast<uint8_t>(CKernelId::NUM_KERNELS)) [[unlikely]] {
-                return LoadedRegionNode{nullptr};
+                return std::nullopt;
             }
             te.kernel_id = make_ckernel_id(::fixy::mint_refined<kValidCKernelIdBound>(raw_kernel_id));
         }
@@ -603,7 +611,7 @@ inline Header read_header(Reader& r) {
             // binds to no table and cannot execute until one is supplied
             // elsewhere, so there is no bound to enforce for it.
             if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots) [[unlikely]] {
-                return LoadedRegionNode{nullptr};
+                return std::nullopt;
             }
             te.input_slot_ids[j] = sid;
         }
@@ -613,13 +621,13 @@ inline Header read_header(Reader& r) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // The same bound as for the input slot ids above.
             if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots) [[unlikely]] {
-                return LoadedRegionNode{nullptr};
+                return std::nullopt;
             }
             te.output_slot_ids[j] = sid;
         }
     }
 
-    if (!r.ok) return LoadedRegionNode{nullptr};
+    if (!r.ok) return std::nullopt;
 
     // The content hash is the region's identity and the key of its kernels
     // in the cache.  The header states it, and the header comes from outside,
@@ -632,12 +640,12 @@ inline Header read_header(Reader& r) {
     // recipe and the loader cannot fold it.
     const std::span<const TraceEntry> loaded_ops{ops, num_ops};
     if (compute_content_hash(loaded_ops) != hdr.content_hash) [[unlikely]] {
-        return LoadedRegionNode{nullptr};
+        return std::nullopt;
     }
     // make_region sets the first schema from the operations, so the field is
     // not free to disagree with them.
     if (first_op_schema != (num_ops > 0 ? ops[0].schema_hash : SchemaHash{})) [[unlikely]] {
-        return LoadedRegionNode{nullptr};
+        return std::nullopt;
     }
 
     // Placement new rather than a plain cast: the node holds an atomic field.
@@ -655,7 +663,9 @@ inline Header read_header(Reader& r) {
     // written, and advancing to zero is exactly what the counter forbids.
     std::construct_at(&node->variant_id, ::fixy::mint_monotonic<uint32_t>(variant_id));
     node->plan = plan;
-    return LoadedRegionNode{node};
+    // The node is rebuilt from Cipher bytes, and the fold above matched the
+    // content hash that the image records, so it crosses the edge to Loaded.
+    return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(node).retag<::fixy::tags::source::Loaded>();
 }
 
 // Returns the byte count written, or zero if the buffer was too small.

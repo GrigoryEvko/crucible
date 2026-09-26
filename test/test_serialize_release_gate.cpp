@@ -81,11 +81,10 @@ constexpr size_t kMetaDtype = kMetaNdim + 1;  // dtype byte
 constexpr size_t kMetaDevice = kMetaDtype + 1;  // device_type byte
 constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
 
-// Rejection is a null region pointer coming back out of the boundary.
+// Rejection is no region coming back out of the boundary.
 [[nodiscard]] bool is_rejected(crucible::effects::Test bg, std::span<const uint8_t> bytes) {
     crucible::Arena arena(1 << 16);
-    auto loaded = crucible::deserialize_region(bg.alloc, bytes, arena);
-    return loaded.value() == nullptr;
+    return !crucible::deserialize_region(bg.alloc, bytes, arena).has_value();
 }
 
 }  // namespace

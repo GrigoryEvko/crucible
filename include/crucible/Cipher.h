@@ -361,10 +361,9 @@ public:
 
         const std::span<const uint8_t> cached = cached_bytes(content_hash);
         if (!cached.empty()) {
-            const LoadedRegionNode loaded_region = deserialize_region(a, cached, arena);
-            RegionNode* region = loaded_region.value();
-            if (region && region->content_hash == content_hash) {
-                return LoadedContentAddressedRegionPayload{region, true};
+            const std::optional<LoadedRegionNode> loaded_region = deserialize_region(a, cached, arena);
+            if (loaded_region && loaded_region->value()->content_hash == content_hash) {
+                return LoadedContentAddressedRegionPayload{loaded_region->value(), true};
             }
         }
 
@@ -390,15 +389,15 @@ public:
         f.read(static_cast<char*>(static_cast<void*>(buf.data())), static_cast<std::streamsize>(validated_len.value()));
         if (!f) return nullptr;
 
-        const LoadedRegionNode loaded_region = deserialize_region(a, std::span<const uint8_t>{buf}, arena);
-        RegionNode* region = loaded_region.value();
+        const std::optional<LoadedRegionNode> loaded_region =
+            deserialize_region(a, std::span<const uint8_t>{buf}, arena);
         // The file name is the key, and anyone who writes the store can put
         // any region under any name.  A region whose own hash is not the key
         // is refused, the same as on the cache path above, so a lookup never
         // returns another region.
-        if (!region || region->content_hash != content_hash) return nullptr;
+        if (!loaded_region || loaded_region->value()->content_hash != content_hash) return nullptr;
         remember_cached_bytes(content_hash, std::span<const uint8_t>{buf});
-        return LoadedContentAddressedRegionPayload{region, false};
+        return LoadedContentAddressedRegionPayload{loaded_region->value(), false};
     }
 
     // content_hash must be non-zero.  Zero is the sentinel for "no content",

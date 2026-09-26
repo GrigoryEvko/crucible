@@ -114,7 +114,7 @@ int main() {
             Arena read_arena{1 << 20};
             const auto loaded_region =
                 deserialize_region(A, std::span<const uint8_t>{buf.data(), serial_len}, read_arena);
-            auto* r = loaded_region.value();
+            RegionNode* r = loaded_region ? loaded_region->value() : nullptr;
             bench::do_not_optimize(r);
         }));
 

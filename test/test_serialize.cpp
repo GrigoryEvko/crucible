@@ -103,8 +103,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
     crucible::Arena arena2(1 << 16);
     auto loaded_region = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, n}, arena2);
-    crucible::RegionNode* loaded = loaded_region.value();
-    assert(loaded != nullptr && "deserialize_region returned nullptr");
+    assert(loaded_region.has_value() && "deserialize_region returned no region");
+    crucible::RegionNode* loaded = loaded_region->value();
 
     assert(loaded->content_hash == original_content_hash);
     assert(loaded->merkle_hash == original_merkle_hash);
@@ -219,8 +219,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
     crucible::Arena arena3(1 << 16);
     auto bad_region = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, 10}, arena3);
-    crucible::RegionNode* bad = bad_region.value();
-    assert(bad == nullptr && "deserialize_region must return nullptr on truncated input");
+    assert(!bad_region.has_value() && "deserialize_region must refuse a truncated input");
 
     // A header claiming 0xFFFFFFFF ops would otherwise drive an
     // allocation of four billion entries before anything failed.
@@ -241,8 +240,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         crucible::Arena arena4(1 << 16);
         auto adversarial_region =
             crucible::deserialize_region(test.alloc, std::span<const uint8_t>{adv.data(), adv.size()}, arena4);
-        crucible::RegionNode* r = adversarial_region.value();
-        assert(r == nullptr && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
+        assert(!adversarial_region.has_value() && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
     }
 
     // A loaded slot_id indexes a slot table sized to the plan's
@@ -263,7 +261,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         assert(pn > 0 && "plan-bearing serialize failed");
         crucible::Arena parena(1 << 16);
         auto ok_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{pbuf, pn}, parena);
-        assert(ok_loaded.value() != nullptr && "plan-bearing region with in-range slot_ids must load");
+        assert(ok_loaded.has_value() && "plan-bearing region with in-range slot_ids must load");
 
         crucible::MemoryPlan bad_plan{};
         bad_plan.num_slots = 3;
@@ -276,7 +274,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         assert(nn > 0 && "plan-bearing (oob) serialize failed");
         crucible::Arena narena(1 << 16);
         auto bad_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{nbuf, nn}, narena);
-        assert(bad_loaded.value() == nullptr && "deserialize_region must reject slot_id >= plan->num_slots");
+        assert(!bad_loaded.has_value() && "deserialize_region must reject slot_id >= plan->num_slots");
 
         region->plan = nullptr;  // nothing later depends on this.
     }
@@ -299,7 +297,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         assert(on > 0 && "over-pool_bytes serialize failed");
         crucible::Arena oarena(1 << 16);
         auto over_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{obuf, on}, oarena);
-        assert(over_loaded.value() == nullptr && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
+        assert(!over_loaded.has_value() && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
 
         crucible::MemoryPlan at_plan{};
         at_plan.num_slots = 21;
@@ -313,7 +311,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         assert(an > 0 && "at-cap pool_bytes serialize failed");
         crucible::Arena aarena(1 << 16);
         auto at_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{abuf, an}, aarena);
-        assert(at_loaded.value() != nullptr && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
+        assert(at_loaded.has_value() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
 
         region->plan = nullptr;  // restore.
     }
@@ -352,14 +350,14 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
         crucible::Arena clean_arena(1 << 16);
         auto clean = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{image}, clean_arena);
-        assert(clean.value() != nullptr && "the unmodified pad-probe image must load");
+        assert(clean.has_value() && "the unmodified pad-probe image must load");
 
         const auto refuses_with_byte_set_at = [&](size_t at) {
             std::vector<uint8_t> corrupt = image;
             corrupt[at] = 1;
             crucible::Arena corrupt_arena(1 << 16);
-            return crucible::deserialize_region(test.alloc, std::span<const uint8_t>{corrupt}, corrupt_arena).value()
-                   == nullptr;
+            return !crucible::deserialize_region(test.alloc, std::span<const uint8_t>{corrupt}, corrupt_arena)
+                        .has_value();
         };
         for (size_t byte = 0; byte < 4; ++byte) {
             assert(refuses_with_byte_set_at(pad2_at + byte) && "a non-zero byte in pad2 must refuse the image");
