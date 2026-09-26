@@ -1079,10 +1079,10 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         const crucible::VigilFgCtx fg = vigil.mint_producer_context();
         if (const auto view = crucible::global_schema_table().mint_mutable_view(fg)) {
             // PyTorch's operator names are compiled into the generated headers
-            // this table was built from, so the name is trusted by source.
+            // this table was built from, so crucible produced the name.
             const QualifiedOpName name{aten_op_table[TableIndex]};
-            [[maybe_unused]] const bool was_registered =
-                crucible::register_schema_name(*view, kSchemaHash, crucible::SchemaTable::SanitizedName{name.c_str()});
+            [[maybe_unused]] const bool was_registered = crucible::register_schema_name(
+                *view, kSchemaHash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_str()));
             CRUCIBLE_DEBUG_ASSERT(was_registered || crucible::global_schema_table().is_sealed());
         }
         schema_name_registered.store(true, std::memory_order_relaxed);

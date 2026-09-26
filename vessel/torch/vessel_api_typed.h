@@ -216,13 +216,13 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 // ── Schema-name typed lookup ───────────────────────────────────────
 //
 // `crucible::schema_name(SchemaHash)` returns a typed borrow from the
-// global SchemaTable's interned-name storage.  Names are
-// SanitizedName-validated at registration (length-bounded, NUL-walked,
-// stripped of "aten::" prefix as appropriate), so the returned
-// borrow's provenance is `source::Sanitized` — distinct from the raw
-// FFI input (`source::External`) that crucible_register_schema_name
-// receives.  The Borrowed<..., SchemaTable> payload also keeps the
-// owner lifetime visible to downstream consumers.
+// interned-name storage of the global SchemaTable.  The table admits a
+// name only when it is Sanitized (a boundary checked it) or
+// FromInternal (it crossed no boundary).  The table owns the bytes that
+// it returns, so the borrow is tagged `source::Interned`.  That tag is
+// different from the raw C ABI input (`source::ABIBoundary`) that
+// crucible_register_schema_name receives.  The Borrowed<..., SchemaTable>
+// payload also shows the lifetime of the owner to the reader.
 //
 // Returns an empty typed borrow when the hash is unknown — callers
 // branch on `.value().data() == nullptr`.  Lifetime: borrowed from the

@@ -349,9 +349,9 @@ load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& sch
             // from untrusted file content into the table.  A seal that lands
             // during the load ends the table here too: the table refuses
             // every later write.
-            if (!register_schema_name(*schema_table_view, SchemaHash{schema_hash_raw},
-                                      SchemaTable::SanitizedName{static_cast<const char*>(name_buf)}))
-                break;
+            auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const char*>(name_buf))
+                            .retag<::fixy::tags::source::Sanitized>();
+            if (!register_schema_name(*schema_table_view, SchemaHash{schema_hash_raw}, name)) break;
         }
     }
 

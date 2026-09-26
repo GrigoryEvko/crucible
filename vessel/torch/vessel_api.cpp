@@ -304,7 +304,10 @@ void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const
     // Then the registration goes to the late table instead. It is never
     // dropped: returning here is what made a whole run export zero names
     // with nothing to show for it.
-    crucible::SchemaTable::SanitizedName const name_tag{name};
+    // The checks above are the boundary's sanitizer, and the retag records
+    // that they ran.
+    const auto name_tag =
+        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name).retag<::fixy::tags::source::Sanitized>();
     const crucible::SchemaHash hash{schema_hash};
     auto& global_table = crucible::global_schema_table();
     if (const auto global_view = global_table.mint_mutable_view(fg)) {

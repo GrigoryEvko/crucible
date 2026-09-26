@@ -6000,40 +6000,46 @@ crucible_neg_compile_multi_test(neg_ckernel_singleton_cross_tag
   "could not convert .external. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
   "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Singleton>.")
 
-# WRAP-SchemaTab-1 (#1003) — SchemaTable::SizeCounter =
-# BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP=512>; constructing it
-# with an out-of-range initial value fires the BoundedMonotonic ctor's
-# pre-clause `!(T(Max) < initial)` in constant evaluation.  Pins the
-# size counter as monotonic-and-capped at the type level — register_name's
-# silent-truncation runtime check `if (size >= CAP) return;` becomes
-# defense-in-depth (and #1009 WRAP-SchemaTab-7 will upgrade it to abort
-# parity with CKernelTable).
-# Two fixtures per HS14:
-#   * _above_cap     — boundary edge (= CAP + 1 = 513, off-by-two).
-#     Catches drift where the bound widens from
-#     `BoundedMonotonic<..., SCHEMA_TABLE_CAP>` to
-#     `BoundedMonotonic<..., SCHEMA_TABLE_CAP + N>` for any N >= 1.
-#   * _uint32_max    — wide miss (= UINT32_MAX).  Catches "drop the
-#     bound entirely" regression where SizeCounter degenerates from
-#     BoundedMonotonic into plain Monotonic<uint32_t>; under that drift
-#     register_name's runtime silent-truncate is the only defense and
-#     the compile-time witness disappears.
-crucible_neg_compile_test(neg_schema_table_size_above_cap
-  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_schema_table_size_uint32_max
-  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+# SchemaTable::SizeCounter is BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP>,
+# and the door mint_bounded_monotonic refuses a value past the bound in
+# constant evaluation.  The check in register_name is a second defence.
+#   * _above_cap: the edge of the bound (CAP + 1).  It fails when the bound
+#     widens past SCHEMA_TABLE_CAP.
+#   * _uint32_max: the wide miss (UINT32_MAX).  It fails when the counter
+#     becomes a plain Monotonic<uint32_t>.
+crucible_neg_compile_multi_test(neg_schema_table_size_above_cap
+  "contract predicate is false in constant expression"
+  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+crucible_neg_compile_multi_test(neg_schema_table_size_uint32_max
+  "contract predicate is false in constant expression"
+  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
 
-# WRAP-SchemaTab-5 (#1007) — SchemaTable::lookup() returns
-# LookupName = Tagged<Borrowed<const char, SchemaTable>, source::Sanitized>.
-# Two HS14 fixtures cover the lookup boundary's two soundness directions:
-#   * neg_schema_table_lookup_raw_const_char — typed borrow cannot
-#     decay to raw const char* without explicit .value().data().
-#   * neg_schema_table_lookup_cross_tag — sanitized provenance cannot
-#     pass as source::External.
-crucible_neg_compile_test(neg_schema_table_lookup_raw_const_char
-  "no match for|cannot convert|no viable|could not convert|Tagged|const char")
-crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
-  "no match for|cannot convert|no viable|could not convert|Tagged|External|Sanitized")
+# SchemaTable::lookup() returns
+# LookupName = Tagged<Borrowed<const char, SchemaTable>, source::Interned>.
+#   * neg_schema_table_lookup_raw_const_char: the typed borrow does not
+#     convert to a raw const char* without .value().data().
+#   * neg_schema_table_lookup_cross_tag: interned table output does not pass
+#     as source::External.
+crucible_neg_compile_multi_test(neg_schema_table_lookup_raw_const_char
+  "cannot convert .crucible::SchemaTable::LookupName. \\{aka .fixy::Tagged<fixy::Borrowed<const char, crucible::SchemaTable>, fixy::tags::source::Interned>.\\} to .const char\\*. in initialization"
+  "neg_schema_table_lookup_raw_const_char.cpp:18")
+crucible_neg_compile_multi_test(neg_schema_table_lookup_cross_tag
+  "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested"
+  "neg_schema_table_lookup_cross_tag.cpp:23")
+
+# The schema table admits a name only when its tag satisfies
+# SchemaNameSource: Sanitized (a boundary check retagged it) or
+# FromInternal (it crossed no boundary).
+#   * neg_schema_register_external_name: a trace-file name that the loader
+#     did not retag is refused at register_name.
+#   * neg_schema_register_abi_boundary_name: a C ABI name that the entry did
+#     not retag is refused at register_schema_name.
+crucible_neg_compile_multi_test(neg_schema_register_external_name
+  "neg_schema_register_external_name.cpp:24:31: error: no matching function for call to .crucible::SchemaTable::register_name"
+  "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::External\\]")
+crucible_neg_compile_multi_test(neg_schema_register_abi_boundary_name
+  "neg_schema_register_abi_boundary_name.cpp:22:42: error: no matching function for call to .register_schema_name"
+  "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::ABIBoundary\\]")
 
 # WRAP-SymTab-4 (#1032) — SymbolTable::add() returns
 # InternalSymbolId = Tagged<SymbolId, source::FromInternal>.  Two HS14
@@ -10560,8 +10566,9 @@ crucible_neg_compile_test(neg_heap_allocate
 # [GCC-WRAPPER-TEXT] Production-side typed-view rejection.  The direct
 # signature requires MutableView; SealedView reaches GCC's conversion
 # diagnostic before any runtime path can exist.
-crucible_neg_compile_test(neg_schema_register_with_sealed_view
-  "cannot convert.*Sealed.*MutableView")
+crucible_neg_compile_multi_test(neg_schema_register_with_sealed_view
+  "cannot convert .sv. \\(type .fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Sealed>.\\) to type .const crucible::SchemaTable::MutableView&."
+  "neg_schema_register_with_sealed_view.cpp:14")
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
   "cannot convert.*Sealed.*MutableView")
 
@@ -10584,26 +10591,23 @@ crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingContainer>\\(\\). evaluates to false")
 
-# FIXY-U-136 — HS14 spirit gap closure for SchemaTable::mint_mutable_view.
-# U-135's CKernelTable fixtures bumped SchemaTable::mint_mutable_view's
-# scanner-count from 0 → 2 via shared-name name-coincidence (the HS14
-# scanner counts the bare token `mint_mutable_view` and conflates both
-# carriers).  The SCANNER says satisfied; the SPIRIT is unsatisfied —
-# a regression in SchemaTable's per-state discipline would slip past
-# U-135's CKernelTable-only fixtures because the ScopedView<C, Tag>
-# types are distinct per-carrier (different `view_ok` ADL overloads,
-# different `no_scoped_view_field_check` instantiations).  U-136
-# ships the missing carrier-specific pair so a future edit affecting
-# SchemaTable's gate is caught independently.
-crucible_neg_compile_test(neg_schema_mint_mutable_view_to_sealed_overload
-  "invalid initialization of reference.*SealedView.*Mutable|cannot convert.*Mutable.*Sealed")
-crucible_neg_compile_test(neg_schema_mint_mutable_view_in_field
-  "Type contains a safety::ScopedView<> in some field")
+# The HS14 scanner counts the bare token `mint_mutable_view`, so the kernel
+# table fixtures also count for SchemaTable::mint_mutable_view.  But each
+# carrier has its own ScopedView type, its own view_ok overload and its own
+# no_scoped_view_field_check instance, so the kernel table fixtures do not
+# see a defect in the schema table gate.  This pair is the schema table's
+# own witness.
+crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_to_sealed_overload
+  "invalid initialization of reference of type .const crucible::SchemaTable::SealedView&."
+  "from expression of type .const fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable>.")
+crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_in_field
+  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
+  "! fixy::contains_scoped_view<OffendingSchemaContainer>\\(\\). evaluates to false")
 
 # A sealed table mints no mutable view.  The view comes back optional, so
 # a registration that forgets the seal does not compile.
 crucible_neg_compile_multi_test(neg_schema_mutable_view_unchecked
-  "cannot convert .std::optional<crucible::safety::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable> >."
+  "\\(type .std::optional<fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable> >.\\) to type .const crucible::SchemaTable::MutableView&."
   "neg_schema_mutable_view_unchecked.cpp:12")
 crucible_neg_compile_multi_test(neg_ckernel_mutable_view_unchecked
   "cannot convert .std::optional<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
@@ -12389,8 +12393,9 @@ crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
 # direction can silently launder.
 crucible_neg_compile_test(neg_data_ptr_typed_wrong_tag
     "conversion from|cannot convert|could not convert|no match for|no matching function")
-crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
-    "conversion from|cannot convert|could not convert|no match for|no matching function")
+crucible_neg_compile_multi_test(neg_schema_name_typed_wrong_tag
+    "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested"
+    "neg_schema_name_typed_wrong_tag.cpp:25")
 
 # ─── FOUND-C Phase 7 — PermissionedSessionHandle neg-compile harness
 #

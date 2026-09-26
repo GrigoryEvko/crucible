@@ -108,8 +108,8 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
             writers[writer] = std::jthread{[&, writer] {
                 run_writer(round, writer, start,
                            [&](crucible::SchemaHash hash) {
-                               return table.register_name(*view, hash,
-                                                          crucible::SchemaTable::SanitizedName{"aten::race"});
+                               return table.register_name(
+                                   *view, hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::race"));
                            },
                            registered[writer]);
             }};

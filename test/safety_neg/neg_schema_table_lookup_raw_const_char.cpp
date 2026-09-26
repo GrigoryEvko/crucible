@@ -1,28 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for #1007 WRAP-SchemaTab-5
-// (SchemaTable::lookup() raw const char* return ->
-// Tagged<Borrowed<const char, SchemaTable>, source::Sanitized>).
+// lookup() borrows from the interned storage that the schema table owns.
+// It returns SchemaTable::LookupName, which is
+// Tagged<Borrowed<const char, SchemaTable>, source::Interned>.  The value
+// carries the lifetime of its owner and the provenance of the table.  A
+// caller gets a raw const char* only through .value().data().
 //
-// Premise: lookup() borrows from SchemaTable-owned interned storage.
-// A caller must not receive a naked const char* without explicitly
-// crossing the typed-borrow boundary via .value().data().  The
-// returned value carries both owner lifetime (Borrowed<..., SchemaTable>)
-// and post-registration provenance (source::Sanitized).
-//
-// Distinct mismatch class from neg_schema_table_lookup_cross_tag.cpp:
-//   * This fixture: raw const char* assignment rejected because Tagged
-//     has no implicit conversion to the payload pointer.
-//   * Companion: cross-tag assignment rejected because Sanitized
-//     provenance is not External provenance.
+// This fixture refuses a raw const char* because Tagged has no implicit
+// conversion to its payload pointer.  The companion fixture
+// neg_schema_table_lookup_cross_tag refuses a different provenance tag.
 
 #include <crucible/SchemaTable.h>
 
 int main() {
     crucible::SchemaTable table;
 
-    // MUST fail: lookup() returns SchemaTable::LookupName, not raw
-    // const char*.
     const char* raw = table.lookup(crucible::SchemaHash{0xA11CE});
     return raw == nullptr ? 0 : 1;
 }

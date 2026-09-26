@@ -1,37 +1,27 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: assigning the result of `schema_name_typed(...)`, which
-// is `Tagged<Borrowed<const char, SchemaTable>, source::Sanitized>`,
-// into a slot expecting the same borrow with source::External.
+// schema_name_typed(...) returns
+// Tagged<Borrowed<const char, SchemaTable>, source::Interned>.  This
+// fixture puts that value in a slot that expects the same borrow with
+// source::External.
 //
-// The Sanitized tag witnesses that the SchemaTable's interned name
-// has been validated at registration (length-bounded, NUL-walked,
-// prefix-stripped).  Confusing a Sanitized name with raw External
-// FFI input would let visualization / diagnostic / exporter code
-// treat unsanitized bytes as if they had passed the gate.  This
-// fixture pins the type system rejecting the confusion.
+// The Interned tag says that the schema table owns the bytes, and that the
+// table admitted them only as Sanitized or FromInternal names.  If an
+// interned name could pass as raw External input, a lane that reads only
+// sanitizer output could not tell the two apart.  The type system refuses
+// the conversion.
 //
-// Pairs with neg_data_ptr_typed_wrong_tag.cpp — together the two
-// witness both directions of the GAPS-096 typed-accessor surface
-// (the typed-handle direction is covered by the GAPS-094 fixture).
-//
-// [GCC-WRAPPER-TEXT] — function-argument type-mismatch rejection.
+// The fixture neg_data_ptr_typed_wrong_tag refuses the other direction of
+// the typed accessors.
 
 #include "../../vessel/torch/vessel_api_typed.h"
 
 #include <crucible/Types.h>
-#include <crucible/safety/_Tagged.h>
-
-using crucible::safety::Tagged;
-using crucible::safety::source::External;
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 int main() {
-    // schema_name_typed returns Tagged<Borrowed<const char, SchemaTable>,
-    // source::Sanitized>. Should FAIL: the conversion target with
-    // source::External is a DIFFERENT class instantiation; no implicit
-    // retag from Sanitized → External exists (and the converse direction
-    // is also rejected — see GAPS-094 fixture).
-    Tagged<crucible::SchemaTable::BorrowedName, External> wrong =
+    ::fixy::Tagged<crucible::SchemaTable::BorrowedName, ::fixy::tags::source::External> wrong =
         crucible::vessel::schema_name_typed(crucible::SchemaHash{0});
     return wrong.value().data() == nullptr ? 0 : 1;
 }

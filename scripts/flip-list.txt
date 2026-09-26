@@ -59,7 +59,6 @@ include/crucible/CrucibleContext.h
 include/crucible/PoolAllocator.h
 include/crucible/RegionCache.h
 include/crucible/ReplayEngine.h
-include/crucible/SchemaTable.h
 include/crucible/Serialize.h
 include/crucible/SwissTable.h
 include/crucible/TraceLoader.h

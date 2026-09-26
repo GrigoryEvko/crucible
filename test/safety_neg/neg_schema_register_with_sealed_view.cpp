@@ -1,10 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: passing a SchemaTable::SealedView to register_name.
-// The typed overload only accepts MutableView — the Sealed tag cannot
-// convert to the Mutable tag, and there is no Sealed overload.  This
-// is the core state-discipline guarantee: once the table is sealed,
-// no call site can reach register_name via the typed path.
+// register_name takes a SchemaTable::MutableView.  A SealedView does not
+// convert to a MutableView, and no overload takes a SealedView.  When the
+// table is sealed, no call reaches register_name.
 
 #include <crucible/SchemaTable.h>
 
@@ -13,8 +11,7 @@ int main() {
     t.seal();
     auto sv = t.mint_sealed_view();
 
-    // No register_name(SealedView, ...) overload exists.  The typed
-    // overload takes MutableView, and Sealed cannot convert to Mutable.
-    t.register_name(sv, crucible::SchemaHash{0x42}, crucible::SchemaTable::SanitizedName{"aten::mm"});
+    t.register_name(sv, crucible::SchemaHash{0x42},
+                    ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(static_cast<const char*>("aten::mm")));
     return 0;
 }

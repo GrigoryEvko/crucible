@@ -45,13 +45,13 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | · | HS14: 10 |
+| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | · | HS14: 12 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | · | HS14: 3 |
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | · | HS14: 10 |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
-| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | · | HS14: 10 |
+| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | · | HS14: 12 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 3 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | · | HS14: 2 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 8 |

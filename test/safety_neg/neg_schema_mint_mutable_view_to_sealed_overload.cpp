@@ -1,40 +1,31 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: passing the result of SchemaTable::mint_mutable_view() to
-// a helper that expects a SchemaTable::SealedView.  The two views share
-// the same Carrier (SchemaTable) but differ in their Tag
-// (schema_state::Mutable vs schema_state::Sealed) — and ScopedView<C,
-// A> is NOT implicitly convertible to ScopedView<C, B> when A != B.
+// The result of SchemaTable::mint_mutable_view() goes to a helper that takes
+// a SchemaTable::SealedView.  The two views have the same carrier
+// (SchemaTable) and different tags (schema_state::Mutable and
+// schema_state::Sealed).  ScopedView<C, A> does not convert to
+// ScopedView<C, B> when A and B are different, so the call does not compile.
 //
-// Sibling fixture to neg_ckernel_mint_mutable_view_to_sealed_overload
-// (shipped by FIXY-U-135): same shape, different carrier.  Even though
-// the HS14 scanner counts `mint_mutable_view` as a shared name across
-// both carriers, the underlying ScopedView types are distinct, the
-// view_ok ADL overloads are distinct, and a regression in EITHER
-// carrier's per-state discipline needs an independent witness.  FIXY-
-// U-136 closes the "spirit gap" surfaced by U-135's audit: a future
-// edit that breaks SchemaTable's mint_mutable_view discipline but not
-// CKernelTable's would not be caught by U-135's fixtures alone.
+// The kernel table has the same fixture.  Each carrier has its own view type
+// and its own view_ok overload, so a defect in the schema table gate needs
+// a witness of its own.
 //
-// HS14 — paired with neg_schema_mint_mutable_view_in_field for distinct
-// mismatch classes (value-level call-time vs structural field-storage).
+// The companion fixture neg_schema_mint_mutable_view_in_field catches a view
+// that a field keeps.  This fixture catches a view with the wrong tag at a
+// call.
 
 #include <crucible/SchemaTable.h>
 
-// A fixture-local helper that consumes a SealedView.  No production
-// API has this exact shape; the helper exists so the type system can
-// be asked to convert MutableView → SealedView, which it must refuse.
+// No production function has this shape.  The helper asks the type system
+// to convert a MutableView to a SealedView, which it must refuse.
 static void requires_sealed_view(crucible::SchemaTable::SealedView const&) noexcept {}
 
 int main() {
     crucible::SchemaTable t;
-    // t is in Mutable state (default-constructed, sealed_ = false), so
-    // mint_mutable_view returns a view.
+    // A default-constructed table is not sealed, so mint_mutable_view
+    // returns a view.
     const auto mv = t.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
 
-    // requires_sealed_view takes ScopedView<SchemaTable, Sealed>.  *mv
-    // is ScopedView<SchemaTable, Mutable>.  Distinct template
-    // instantiations: GCC rejects the call at overload resolution.
     requires_sealed_view(*mv);
     return 0;
 }
