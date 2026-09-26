@@ -58,12 +58,6 @@ HS14_FLOOR = 2
 # declares itself has no re-export to look for.
 OLD_FIXY = "include/crucible/fixy"
 
-# Mints whose `requires` clause names only the already-deduced parameter type,
-# so it can never reject.  Their real gates are in-body static_asserts.  The
-# inventory marks the clause as decorative so an auditor does not read it as a
-# fit check.
-TAUTOLOGICAL_REQUIRES = frozenset({"mint_recording_session", "mint_crash_watched_session"})
-
 # Written in a cell whose axis does not apply to the row, as opposed to `-`,
 # which is a shortfall.
 NOT_APPLICABLE = "·"
@@ -204,7 +198,7 @@ def cells(row: Row) -> list[str]:
     if not mintmodel.requires_applies(mint):
         rq = NOT_APPLICABLE
     elif mintmodel.has_fit_constraint(mint):
-        rq = "Y (taut)" if mint.name in TAUTOLOGICAL_REQUIRES else "Y"
+        rq = "Y"
     elif mint.carve_out_rq:
         rq = "- (pre)"
     else:
@@ -260,7 +254,7 @@ and a header that overloads a mint names each overload by its parameter types.
 | `nd` | `[[nodiscard]]` on the declaration or the definition. |
 | `cx` | `constexpr` or `consteval`.  `- (alloc)` is the documented carve-out for a mint that allocates or calls the kernel (marker `// §XXI carve-out: cx=alloc` above the signature).  `{NOT_APPLICABLE}` marks a borrow projection, which returns a view over its own object and can never be constant-evaluated. |
 | `ne` | `noexcept`. |
-| `rq` | A type-level constraint: a `requires` clause or a concept on a template parameter.  `Y (taut)` marks a clause that names only the deduced parameter type and cannot reject.  `- (pre)` is the documented carve-out for a value-dependent gate written as a `pre(...)` clause (marker `// §XXI carve-out: rq=pre`).  `{NOT_APPLICABLE}` marks a mint that is not a template, which cannot carry a constraint. |
+| `rq` | A type-level constraint: a `requires` clause or a concept on a template parameter.  `- (pre)` is the documented carve-out for a value-dependent gate written as a `pre(...)` clause (marker `// §XXI carve-out: rq=pre`).  `{NOT_APPLICABLE}` marks a mint that is not a template, which cannot carry a constraint. |
 | `cb` | The authorization shape: `ctx` (the first parameter is `Ctx const&`), `token` (authority from the arguments), or `member` (a non-static method, whose authority is its object).  A static member takes its shape from its parameters. |
 | `fit` | For a `ctx` row: a constraint names the context, so the mint refuses a context that does not fit.  `-` means the mint accepts every context. |
 | `fixy` | Old tree only: the `using` in `include/crucible/fixy/` that re-exports the mint, or `[✗ NO-FIXY]`. |
@@ -408,14 +402,18 @@ def self_test() -> int:
         0 when every case holds, 2 otherwise
     """
     failures: list[str] = []
+    counts = {"cases": 0, "negatives": 0}
 
-    def check(name: str, ok: bool) -> None:
+    def check(name: str, ok: bool, negative: bool = False) -> None:
         """Record one case result and print it.
 
         Args:
             name: What the case asserts
             ok: Whether it held
+            negative: Whether the case plants something the generator must refuse
         """
+        counts["cases"] += 1
+        counts["negatives"] += negative
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
         if not ok:
             failures.append(name)
@@ -489,11 +487,12 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
                 "mint_planted_origin", "mint_planted_source", "mint_planted_token",
             ],
         )
-        check("the superseded header is out of scope", "mint_superseded" not in by_name)
+        check("the superseded header is out of scope", "mint_superseded" not in by_name, True)
         token = by_name.get("mint_planted_token")
         check(
             "the deleted overload and the friend add no row",
             len([r for r in rows if r.mint.name == "mint_planted_token"]) == 1,
+            True,
         )
         check(
             "the re-export cell names the using-declaration",
@@ -502,6 +501,7 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
         check(
             "HS14 counts one fixture: a comment and a new-tree fixture do not count",
             token is not None and token.hs14 == 1,
+            True,
         )
         member = by_name.get("Holder::mint_planted_member")
         check(
@@ -535,24 +535,25 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
             "| `mint_planted_token` | `include/crucible/sample/Mint.h` |" in text and "HS14: 1 ⚠" in text,
         )
         # Negative control: a line number would make every edit above a mint drift.
-        check("the render holds no line number", "Mint.h:" not in text and "Lattice.h:" not in text)
+        check("the render holds no line number", "Mint.h:" not in text and "Lattice.h:" not in text, True)
 
         # The floor gate, three arms.
         allow = root / "allow.txt"
         allow.write_text("", encoding="utf-8")
-        check("an unlisted row under the floor is a live violation", check_floor(rows, allow) == 1)
+        check("an unlisted row under the floor is a live violation", check_floor(rows, allow) == 1, True)
         listed = "\n".join(r.floor_key for r in rows if r.hs14 < HS14_FLOOR) + "\n"
         allow.write_text(listed, encoding="utf-8")
         check("listing every row under the floor passes", check_floor(rows, allow) == 0)
         allow.write_text(listed + "mint_gone|include/crucible/sample/Gone.h\n", encoding="utf-8")
-        check("an entry that no row uses is stale", check_floor(rows, allow) == 2)
+        check("an entry that no row uses is stale", check_floor(rows, allow) == 2, True)
         allow.write_text("mint_no_bar\n", encoding="utf-8")
-        check("a malformed entry fails", check_floor(rows, allow) == 2)
+        check("a malformed entry fails", check_floor(rows, allow) == 2, True)
 
     if failures:
         print(f"gen-mint-inventory --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("gen-mint-inventory --self-test: 19 cases pass, 8 of them negative controls.")
+    print(f"gen-mint-inventory --self-test: {counts['cases']} cases pass, "
+          f"{counts['negatives']} of them negative controls.")
     return 0
 
 

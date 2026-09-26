@@ -98,8 +98,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402  (the path insert above has to come first)
-import mintmodel  # noqa: E402
+import mintmodel  # noqa: E402  (the path insert above has to come first)
 import tsast  # noqa: E402
 
 ALLOWLIST = tsast.REPO_ROOT / "scripts" / "mint-pattern-allowlist.txt"
@@ -314,20 +313,16 @@ def find_markers(tree: tsast.Tree, sites: list[mintmodel.Mint]) -> list[Marker]:
     Returns:
         The dangling markers, in source order
     """
-    text = tree.source.decode("utf-8", "replace")
     named = {site.line for site in sites}
     above = {number for site in sites for number in site.carve_lines}
     dangling: list[Marker] = []
-    for offset, comment in cxx_lex.comments(text):
-        for kind, (needle, _axis) in MARKERS.items():
-            at = comment.find(needle)
-            if at < 0:
-                continue
-            line = text.count("\n", 0, offset + at) + 1
+    for kind, (needle, _axis) in MARKERS.items():
+        for row in sorted(mintmodel.marker_rows(tree, needle)):
+            line = row + 1
             attached = line in named if kind == "inline" else line in above
             if not attached:
                 dangling.append(Marker(str(tree.path), line, kind))
-    return dangling
+    return sorted(dangling, key=lambda marker: (marker.line, marker.kind))
 
 
 def violation_text(mint: mintmodel.Mint, axis: str) -> str:
@@ -468,11 +463,11 @@ def run(files: list[Path], allowlist: Path, frozen: tuple[str, ...]) -> int:
         print(finding.text, file=sys.stderr)
     failing = sum(finding.kind in FAILING_KINDS for finding in findings)
     if findings:
-        print(f"\ncheck-mint-pattern: {len(findings)} finding(s) across {len(mints)} mint sites: {failing} "
+        print(f"\ncheck-mint-pattern: {len(findings)} finding(s) across {len(mints)} mints: {failing} "
               f"violation(s) or parse failure(s), {len(findings) - failing} dead or malformed exemption(s).",
               file=sys.stderr)
         return 1 if failing else 2
-    print(f"check-mint-pattern: clean — {len(mints)} mint sites meet the {len(AXES)} §XXI axes or carry one "
+    print(f"check-mint-pattern: clean — {len(mints)} mints meet the {len(AXES)} §XXI axes or carry one "
           f"stated exemption, and every exemption exempts something.", file=sys.stderr)
     return 0
 
@@ -622,6 +617,10 @@ def self_test() -> int:
             'inline const char* text = "// MINT-PATTERN-OK: inside a string";\n'
             "// §XXI carve-out: cx=alloc — two markers for one axis.\n"
             "[[nodiscard]] inline int* mint_two_markers() noexcept { return new int{0}; }  // MINT-PATTERN-OK: x\n"
+            "[[nodiscard]] inline int mint_string_marker() noexcept { return sizeof(\"MINT-PATTERN-OK: text\"); }\n"
+            "inline constexpr char note[] = R\"(\n"
+            "// §XXI carve-out: rq=pre )\";\n"
+            "template <typename T> [[nodiscard]] constexpr int mint_raw_trap(T) noexcept { return 1; }\n"
             "}\n",
             encoding="utf-8",
         )
@@ -680,6 +679,12 @@ def self_test() -> int:
         check("a marker on no signature is dangling", mentions("dangling-marker", f"{live}:18"), True)
         check("a carve-out in a block comment is dangling", mentions("dangling-marker", f"{live}:19"), True)
         check("a marker inside a string literal is no marker", not mentions("dangling-marker", f"{live}:21"))
+        check("a marker text in a string literal on the signature line exempts nothing",
+              mentions("violation", "mint_string_marker is missing constexpr"), True)
+        check("a raw string line that starts with // is no rq carve-out",
+              mentions("violation", "mint_raw_trap is missing requires"), True)
+        check("a raw string line that starts with // is no dangling marker",
+              not mentions("dangling-marker", f"{live}:26"))
         check("a dead marker in a frozen file is not reported", not has("dead-marker", "mint_frozen_dead"))
         check("a dangling marker in a frozen file is not reported", not mentions("dangling-marker", str(old)))
         check("a redundant row that names a frozen file still fails", has("redundant-row", "mint_frozen_twice"), True)

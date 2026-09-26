@@ -32,7 +32,7 @@ and a header that overloads a mint names each overload by its parameter types.
 | `nd` | `[[nodiscard]]` on the declaration or the definition. |
 | `cx` | `constexpr` or `consteval`.  `- (alloc)` is the documented carve-out for a mint that allocates or calls the kernel (marker `// §XXI carve-out: cx=alloc` above the signature).  `·` marks a borrow projection, which returns a view over its own object and can never be constant-evaluated. |
 | `ne` | `noexcept`. |
-| `rq` | A type-level constraint: a `requires` clause or a concept on a template parameter.  `Y (taut)` marks a clause that names only the deduced parameter type and cannot reject.  `- (pre)` is the documented carve-out for a value-dependent gate written as a `pre(...)` clause (marker `// §XXI carve-out: rq=pre`).  `·` marks a mint that is not a template, which cannot carry a constraint. |
+| `rq` | A type-level constraint: a `requires` clause or a concept on a template parameter.  `- (pre)` is the documented carve-out for a value-dependent gate written as a `pre(...)` clause (marker `// §XXI carve-out: rq=pre`).  `·` marks a mint that is not a template, which cannot carry a constraint. |
 | `cb` | The authorization shape: `ctx` (the first parameter is `Ctx const&`), `token` (authority from the arguments), or `member` (a non-static method, whose authority is its object).  A static member takes its shape from its parameters. |
 | `fit` | For a `ctx` row: a constraint names the context, so the mint refuses a context that does not fit.  `-` means the mint accepts every context. |
 | `fixy` | Old tree only: the `using` in `include/crucible/fixy/` that re-exports the mint, or `[✗ NO-FIXY]`. |

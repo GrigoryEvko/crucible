@@ -305,16 +305,26 @@ def surface_files() -> list[Path]:
 
 
 def _has_attribute(site: tsast.Node, word: str) -> bool:
-    """Report whether an attribute on this site names a word.
+    """Report whether an attribute on this site is the standard attribute of that name.
+
+    The test reads the `name` field of each `attribute` node and requires the
+    attribute to carry no namespace prefix.  So `[[deprecated("use the
+    nodiscard overload")]]` names `deprecated`, not `nodiscard`, and
+    `[[gnu::nodiscard]]` is not the standard attribute.
 
     Args:
         site: The declaration or definition node
         word: The attribute to look for, for example `nodiscard`
 
     Returns:
-        True when an `attribute_declaration` child mentions the word
+        True when an attribute of an `attribute_declaration` child has that name
     """
-    return any(word in child.text for child in site.children_of_type("attribute_declaration"))
+    for declaration in site.children_of_type("attribute_declaration"):
+        for attribute in declaration.children_of_type("attribute"):
+            named = attribute.child_by_field("name")
+            if named is not None and named.text == word and attribute.child_by_field("prefix") is None:
+                return True
+    return False
 
 
 def _has_qualifier(site: tsast.Node, *words: str) -> bool:
@@ -787,7 +797,58 @@ def declaration_start(site: tsast.Node) -> int:
     return outer.line
 
 
-def carve_out_block(lines: list[str], first: int, line: int) -> list[int]:
+def line_comment_rows(tree: tsast.Tree) -> dict[int, str]:
+    """Return each row that holds a `//` comment node and nothing before it.
+
+    The rows come from the comment nodes of the parse, so a line of a raw
+    string or a string literal that starts with `//` is no comment row.  A
+    comment row is one whose comment node is the first token of the row: only
+    white space stands before the node on that row.
+
+    Complexity: linear in the number of comment nodes.
+
+    Args:
+        tree: The parsed file
+
+    Returns:
+        The zero-based row of each such comment, mapped to the comment text
+    """
+    rows: dict[int, str] = {}
+    for comment in tree.find("comment"):
+        text = comment.text
+        row, column = comment.start
+        if text.startswith("//") and not tree.slice((row, 0), (row, column)).strip():
+            rows[row] = text
+    return rows
+
+
+def marker_rows(tree: tsast.Tree, needle: str) -> set[int]:
+    """Return the zero-based rows at which a comment node holds a marker text.
+
+    The row is the row of the marker text itself, so a marker on the third row
+    of a block comment counts at that row.  A string literal holds no marker,
+    because only comment nodes are read.
+
+    Complexity: linear in the total length of the comment nodes.
+
+    Args:
+        tree: The parsed file
+        needle: The marker text, for example `MINT-PATTERN-OK`
+
+    Returns:
+        The rows of each occurrence
+    """
+    rows: set[int] = set()
+    for comment in tree.find("comment"):
+        text = comment.text
+        at = text.find(needle)
+        while at >= 0:
+            rows.add(comment.start[0] + text.count("\n", 0, at))
+            at = text.find(needle, at + len(needle))
+    return rows
+
+
+def carve_out_block(comment_rows: dict[int, str], first: int, line: int) -> list[int]:
     """Return the comment lines that belong to one mint declaration.
 
     A marker belongs to its own declaration, in one of two places: a comment
@@ -803,19 +864,22 @@ def carve_out_block(lines: list[str], first: int, line: int) -> list[int]:
     one-line definition above the signature starts with its attribute, so the
     walk went on through it into the comments of that other mint.
 
+    A comment line is a row of `line_comment_rows`, so a raw string whose line
+    starts with `//` stops the run instead of joining it.
+
     Complexity: linear in the length of the declaration and of the run.
 
     Args:
-        lines: The lines of the file
+        comment_rows: The comment rows of the file, from `line_comment_rows`
         first: The one-based first line of the declaration
         line: The one-based line of the mint identifier
 
     Returns:
         The one-based numbers of the comment lines, from the nearest upwards
     """
-    block = [number for number in range(line - 1, first - 1, -1) if lines[number - 1].strip().startswith("//")]
+    block = [number for number in range(line - 1, first - 1, -1) if number - 1 in comment_rows]
     index = first - 2  # zero-based, the line directly above the declaration
-    while index >= 0 and lines[index].strip().startswith("//"):
+    while index >= 0 and index in comment_rows:
         block.append(index + 1)
         index -= 1
     return block
@@ -833,6 +897,8 @@ def extract(tree: tsast.Tree) -> list[Mint]:
         The mints, in source order
     """
     mints: list[Mint] = []
+    comment_rows = line_comment_rows(tree)
+    inline_rows = marker_rows(tree, INLINE_OK)
     for node in tree.find("identifier", "field_identifier"):
         if node.field != "declarator":
             continue
@@ -857,9 +923,8 @@ def extract(tree: tsast.Tree) -> list[Mint]:
         owner = _owner_of(site)
         static_member = owner is not None and _has_qualifier(site, "static")
 
-        lines = tree.source.decode("utf-8", "replace").splitlines()
-        carve_lines = tuple(carve_out_block(lines, declaration_start(site), node.line))
-        carve_text = "\n".join(lines[number - 1] for number in carve_lines)
+        carve_lines = tuple(carve_out_block(comment_rows, declaration_start(site), node.line))
+        carve_text = "\n".join(comment_rows[number - 1] for number in carve_lines)
         shape = _shape(site, declarator, owner, static_member)
         token = _ctx_token(declarator) if shape == "ctx" else None
         mints.append(
@@ -869,7 +934,7 @@ def extract(tree: tsast.Tree) -> list[Mint]:
                 line=node.line,
                 owner=owner,
                 namespace=_namespace_of(node),
-                inline_ok=INLINE_OK in tree.source.decode("utf-8", "replace").splitlines()[node.line - 1],
+                inline_ok=node.start[0] in inline_rows,
                 borrow_projection=_is_borrow_projection(site),
                 nodiscard=_has_attribute(site, "nodiscard"),
                 constexpr=_has_qualifier(site, "constexpr", "consteval"),
@@ -994,14 +1059,18 @@ def _self_test() -> int:
     import tempfile
 
     failures: list[str] = []
+    counts = {"cases": 0, "negatives": 0}
 
-    def check(name: str, ok: bool) -> None:
+    def check(name: str, ok: bool, negative: bool = False) -> None:
         """Record one case result and print it.
 
         Args:
             name: What the case asserts
             ok: Whether it held
+            negative: Whether the case plants something the model must refuse
         """
+        counts["cases"] += 1
+        counts["negatives"] += negative
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
         if not ok:
             failures.append(name)
@@ -1122,6 +1191,21 @@ template <IsExecCtx C>
              && Scalar<C>
 [[nodiscard]] Thing mint_long_clause(C const&) noexcept { return {}; }
 
+// A raw string whose line starts with // is no comment, so it carries no carve-out.
+inline constexpr char note[] = R"(
+// §XXI carve-out: rq=pre )";
+template <typename T>
+[[nodiscard]] constexpr Thing mint_raw_string_trap(T) noexcept { return {}; }
+
+// A marker text inside a string literal on the signature line is no marker.
+[[nodiscard]] inline const char* mint_string_marker() noexcept { return "MINT-PATTERN-OK: in a string"; }
+
+// A marker in a trailing comment on the signature line is a marker.
+[[nodiscard]] inline Thing mint_trailing_marker(Thing) noexcept { return {}; }  // MINT-PATTERN-OK: runtime
+
+// An attribute whose argument mentions nodiscard is not nodiscard.
+[[deprecated("use the nodiscard overload")]] constexpr Thing mint_deprecated_only(Thing) noexcept { return {}; }
+
 }  // namespace probe
 """
     with tempfile.TemporaryDirectory() as work:
@@ -1132,15 +1216,39 @@ template <IsExecCtx C>
 
         # Positive control: every live mint is found, and only those.
         check(
-            "finds exactly the twenty live mint names",
+            "finds exactly the live mint names",
             sorted(by_name) == [
                 "mint_allocating", "mint_bare", "mint_below_one_line", "mint_compliant",
                 "mint_ctx_in_clause", "mint_ctx_in_parameter", "mint_declared_first",
-                "mint_from_image", "mint_long_clause", "mint_member", "mint_one_line",
-                "mint_param_constrained", "mint_plain_ctx", "mint_pointer", "mint_reference",
-                "mint_shape_only", "mint_sized", "mint_surface_only", "mint_templated_member",
-                "mint_token",
+                "mint_deprecated_only", "mint_from_image", "mint_long_clause", "mint_member",
+                "mint_one_line", "mint_param_constrained", "mint_plain_ctx", "mint_pointer",
+                "mint_raw_string_trap", "mint_reference", "mint_shape_only", "mint_sized",
+                "mint_string_marker", "mint_surface_only", "mint_templated_member", "mint_token",
+                "mint_trailing_marker",
             ],
+        )
+        trap = by_name.get("mint_raw_string_trap")
+        check(
+            "a raw string line that starts with // carries no carve-out",
+            trap is not None and not trap.carve_out_rq and not trap.carve_lines,
+            True,
+        )
+        in_string = by_name.get("mint_string_marker")
+        check(
+            "a marker text inside a string literal is no inline marker",
+            in_string is not None and not in_string.inline_ok,
+            True,
+        )
+        trailing = by_name.get("mint_trailing_marker")
+        check(
+            "a marker in a trailing comment on the signature line is an inline marker",
+            trailing is not None and trailing.inline_ok,
+        )
+        deprecated = by_name.get("mint_deprecated_only")
+        check(
+            "an attribute whose argument mentions nodiscard is not nodiscard",
+            deprecated is not None and not deprecated.nodiscard,
+            True,
         )
         check(
             "models a mint that returns a pointer or a reference, with its flags",
@@ -1159,6 +1267,7 @@ template <IsExecCtx C>
             by_name.get("mint_one_line") is not None and by_name["mint_one_line"].carve_out_cx
             and by_name.get("mint_below_one_line") is not None
             and not by_name["mint_below_one_line"].carve_out_cx,
+            True,
         )
         image = by_name.get("mint_from_image")
         check(
@@ -1187,14 +1296,16 @@ template <IsExecCtx C>
         check(
             "the extraction alone reports three sites for the two functions",
             len(unmerged) == 3,
+            True,
         )
         # Negative controls: each exclusion rule fires.
-        check("excludes a deleted overload", "mint_removed" not in by_name)
-        check("excludes a constructor of a class named mint_*", "mint_not_a_factory" not in by_name)
-        check("excludes a trailing-underscore helper", "mint_internal_" not in by_name)
+        check("excludes a deleted overload", "mint_removed" not in by_name, True)
+        check("excludes a constructor of a class named mint_*", "mint_not_a_factory" not in by_name, True)
+        check("excludes a trailing-underscore helper", "mint_internal_" not in by_name, True)
         check(
             "counts the friend re-declaration as one site, not two",
             len([m for m in mints if m.name == "mint_compliant"]) == 1,
+            True,
         )
 
         good = by_name.get("mint_compliant")
@@ -1234,6 +1345,7 @@ template <IsExecCtx C>
         check(
             "does not claim a carve-out where no marker sits",
             good is not None and not good.carve_out_cx and not good.carve_out_rq,
+            True,
         )
 
         # The presence axis reads a constraint in either position.
@@ -1250,6 +1362,7 @@ template <IsExecCtx C>
             "does NOT read a non-type parameter as a constraint",
             sized is not None and not sized.constraint_concepts
             and not has_fit_constraint(sized),
+            True,
         )
         check(
             "reads a clause as a constraint with no parameter concept",
@@ -1269,6 +1382,7 @@ template <IsExecCtx C>
             "does NOT read a clause on another parameter as a context gate",
             surface is not None and surface.shape == "ctx"
             and surface.requires_ and not surface.ctx_gated,
+            True,
         )
         # Negative control: IsExecCtx is the shape, never the fit.
         shape_only = by_name.get("mint_shape_only")
@@ -1276,6 +1390,7 @@ template <IsExecCtx C>
             "does NOT read IsExecCtx alone as a context gate",
             shape_only is not None and shape_only.shape == "ctx"
             and has_fit_constraint(shape_only) and not shape_only.ctx_gated,
+            True,
         )
         in_param = by_name.get("mint_ctx_in_parameter")
         check(
@@ -1286,12 +1401,13 @@ template <IsExecCtx C>
         check(
             "does not ask a token mint to gate a context",
             token is not None and not ctxfit_applies(token),
+            True,
         )
 
     if failures:
         print(f"mintmodel --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("mintmodel --self-test: 29 cases pass, 11 of them negative controls.")
+    print(f"mintmodel --self-test: {counts['cases']} cases pass, {counts['negatives']} of them negative controls.")
     return 0
 
 
