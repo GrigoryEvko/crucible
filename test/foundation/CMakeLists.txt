@@ -104,6 +104,27 @@ foundation_neg_compile_test(neg_constraint_failure_names_the_concept
   "constraints not satisfied"
   "satisfaction of .HalvesEvenly<T>.")
 
+# Two lattices that pass every law comparing elements through leq alone.
+# The first has a leq that runs against its join, the second has bottom()
+# above top().  The laws that tie the order to join, meet and the bounds
+# refuse both, at a verify helper and at Graded.  The second regex of each
+# names the law function and the refused lattice.
+foundation_neg_compile_test(neg_lattice_order_against_join
+  "no matching function for call to .verify_lattice_axioms_at<Inverted>"
+  "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::lattice_self_test::InvertedOrder\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_lattice_bottom_above_top
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +GradableLattice<L> class foundation::algebra::Graded."
+  "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::lattice_self_test::ExchangedBounds\\]. evaluated to .false.")
+# Two operation pairs with the signature of a semiring and not its laws:
+# subtraction for add, and the maximum for both add and mul.  The laws at
+# zero() and one() refuse both at the verify helper.
+foundation_neg_compile_test(neg_semiring_subtraction_for_add
+  "no matching function for call to .verify_semiring_axioms_at<Subtraction>"
+  "the expression .\\(semiring_laws_hold<S>\\)\\(\\) \\[with S = foundation::algebra::detail::lattice_self_test::SubtractionSemiring\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_semiring_zero_does_not_annihilate
+  "no matching function for call to .verify_semiring_axioms_at<\\{anonymous\\}::MaxMax>"
+  "the expression .\\(semiring_laws_hold<S>\\)\\(\\) \\[with S = <unnamed>::MaxMax\\]. evaluated to .false.")
+
 # A stored grade outside the lattice's order is rejected by the primary
 # Graded constructor's contract_assert.  The location regex proves the
 # rejection came from inside Graded.h and not from the fixture's own line.
