@@ -108,9 +108,6 @@ include/crucible/concurrent/_AdaptiveScheduler.h:workers_.reserve(worker_count_)
 #
 # Drain the section as sites convert.  The stale-entry gate (exit 2)
 # forces the entries out as soon as their call text changes.
-bench/bench_auto_router.cpp:reports.reserve(136);
-bench/bench_auto_split.cpp:reports.reserve(32);
-bench/bench_auto_split_compare.cpp:reports.reserve(scenarios.size() * 3 * 4);
 bench/bench_expr_pool.cpp:pool.reserve(n_inserts);
 bench/bench_mpsc_contention.cpp:producers.reserve(producer_count);
 bench/bench_mpsc_contention.cpp:reports.reserve(12);

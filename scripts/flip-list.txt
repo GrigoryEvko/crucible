@@ -41,9 +41,6 @@
 #   - vis holds no consumer, and examples holds none outside the frozen
 #     examples/fn.
 
-bench/bench_auto_router.cpp
-bench/bench_auto_split.cpp
-bench/bench_auto_split_compare.cpp
 bench/bench_chainedge_session.cpp
 bench/bench_chaselev_session.cpp
 bench/bench_cipher.cpp
