@@ -6526,16 +6526,16 @@ crucible_neg_compile_test(neg_hdr_histogram_record_raw_uint64
 crucible_neg_compile_test(neg_hdr_histogram_merge_cross_config
   "cannot convert|no matching function|could not convert|HdrHistogram")
 
-# GAPS-141 — observe/SyntheticProbe.h keeps synthetic-probe publication
-# on the background row and transport registration typed:
+# observe/SyntheticProbe.h keeps synthetic-probe publication on the
+# background row and transport registration typed:
 #   * neg_synthetic_probe_record_fg_ctx — HotFgCtx cannot record probe
 #     outcomes because it does not admit Row<Bg>.
 #   * neg_synthetic_probe_raw_kind_mask — raw integer masks cannot
-#     substitute for Bits<TransportProbeKind>.
+#     substitute for fixy::Bits<TransportProbeKind>.
 crucible_neg_compile_test(neg_synthetic_probe_record_fg_ctx
-  "constraint|constraints not satisfied|CtxFitsSyntheticProbeRecord|record_gate|GAPS-141")
+  "constraint|constraints not satisfied|CtxFitsSyntheticProbeRecord|record_gate")
 crucible_neg_compile_test(neg_synthetic_probe_raw_kind_mask
-  "cannot convert|no matching function|could not convert|Bits|TransportProbeKind|GAPS-141")
+  "cannot convert|no matching function|could not convert|Bits|TransportProbeKind")
 
 # GAPS-180 — observe/SdcDetect.h keeps redundant-compute evidence typed:
 #   * neg_sdc_detect_mint_bg_ctx — only Init-row contexts mint detectors.

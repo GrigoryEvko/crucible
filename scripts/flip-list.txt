@@ -131,7 +131,6 @@ include/crucible/mimic/CogMimic.h
 include/crucible/mimic/Semaphore.h
 include/crucible/mimic/_wip/network/Backend.h
 include/crucible/observe/SdcDetect.h
-include/crucible/observe/SyntheticProbe.h
 include/crucible/perf/ProcGauges.h
 include/crucible/perf/SenseHubV2.h
 include/crucible/perf/WorkloadProfiler.h
@@ -151,7 +150,6 @@ src/cntp/RoceConfig.cpp
 src/cog/NicOffloadAudit.cpp
 src/cog/NumaNic.cpp
 src/observe/SdcDetect.cpp
-src/observe/SyntheticProbe.cpp
 src/perf/ProcGauges.cpp
 src/perf/SenseHubV2.cpp
 src/topology/Ptp.cpp

@@ -1,14 +1,14 @@
 #pragma once
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/Observation.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Bits.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <foundation/Pinned.h>
+#include <foundation/diag/Catalog.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
 #include <atomic>
@@ -20,8 +20,8 @@
 
 namespace crucible::observe {
 
-using PositiveProbeCount = safety::Positive<std::uint16_t>;
-using PositiveProbePeriodNs = safety::Positive<std::uint64_t>;
+using PositiveProbeCount = ::fixy::Positive<std::uint16_t>;
+using PositiveProbePeriodNs = ::fixy::Positive<std::uint64_t>;
 
 enum class TransportProbeKind : std::uint32_t {
     RdmaWrite = 1u << 0,
@@ -114,7 +114,7 @@ enum class SyntheticProbeFailureClass : std::uint8_t {
     }
 }
 
-struct SyntheticProbeFailure : safety::diag::tag_base {
+struct SyntheticProbeFailure : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "SyntheticProbeFailure";
     static constexpr std::string_view description = "A synthetic transport probe failed for a peer/protocol pair.";
     static constexpr std::string_view remediation = "Route the failure class into Health/Quarantine policy and "
@@ -122,8 +122,8 @@ struct SyntheticProbeFailure : safety::diag::tag_base {
 };
 
 struct ProbeConfig {
-    PositiveProbePeriodNs period_per_kind_ns{std::uint64_t{60000000000ull}};
-    PositiveProbeCount max_peer_count{std::uint16_t{1}};
+    PositiveProbePeriodNs period_per_kind_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{60000000000ull});
+    PositiveProbeCount max_peer_count = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
     std::uint32_t metric_id_base = 0;
 };
 
@@ -150,11 +150,13 @@ struct ProbeStats {
 
 template <class Ctx>
 concept CtxFitsSyntheticProbeMint =
-    effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 template <class Ctx>
 concept CtxFitsSyntheticProbeRecord =
-    effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
 namespace detail {
 
@@ -207,7 +209,7 @@ static_assert(std::atomic<std::uint8_t>::is_always_lock_free, "std::atomic<uint8
 }  // namespace detail
 
 template <std::size_t MaxPeers>
-class SyntheticProbeRunner : public safety::Pinned<SyntheticProbeRunner<MaxPeers>> {
+class SyntheticProbeRunner : public ::foundation::Pinned<SyntheticProbeRunner<MaxPeers>> {
     static_assert(MaxPeers > 0, "SyntheticProbeRunner<MaxPeers> requires MaxPeers > 0.");
 
 public:
@@ -216,7 +218,7 @@ public:
 
     struct PeerSlot {
         cog::CogIdentity peer{};
-        safety::Bits<TransportProbeKind> enabled_kinds{};
+        ::fixy::Bits<TransportProbeKind> enabled_kinds{};
         bool active = false;
     };
 
@@ -243,7 +245,7 @@ public:
         return std::span<const PeerSlot, MaxPeers>{peers_};
     }
 
-    [[nodiscard]] bool register_peer(cog::CogIdentity peer, safety::Bits<TransportProbeKind> kinds) noexcept {
+    [[nodiscard]] bool register_peer(cog::CogIdentity peer, ::fixy::Bits<TransportProbeKind> kinds) noexcept {
         if (peer.uuid.is_zero() || kinds.none()) {
             return false;
         }
@@ -271,7 +273,7 @@ public:
     // outcome is what makes scheduled minus succeeded minus failed a real
     // loss rate. One shared counter would hide a probe that never reports
     // back.
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsSyntheticProbeRecord<Ctx>
     [[nodiscard]] bool schedule_probe(Ctx const&, cog::CogIdentity const& peer, TransportProbeKind kind) noexcept {
         auto const peer_index = find_peer(peer);
@@ -283,7 +285,7 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsSyntheticProbeRecord<Ctx>
     [[nodiscard]] bool record_outcome(Ctx const&, cog::CogIdentity const& peer, ProbeOutcome outcome,
                                       observe::ObservationSnapshot* observations = nullptr) noexcept {
@@ -343,16 +345,16 @@ public:
     }
 };
 
-template <effects::IsExecCtx Ctx, std::size_t MaxPeers>
+template <::foundation::effects::IsExecCtx Ctx, std::size_t MaxPeers>
     requires CtxFitsSyntheticProbeMint<Ctx>
 [[nodiscard]] SyntheticProbeRunner<MaxPeers> mint_synthetic_probes(Ctx const&, ProbeConfig config = {}) noexcept {
     return SyntheticProbeRunner<MaxPeers>{config};
 }
 
-static_assert(std::is_base_of_v<safety::Pinned<SyntheticProbeRunner<1>>, SyntheticProbeRunner<1>>);
-static_assert(!CtxFitsSyntheticProbeMint<effects::BgDrainCtx>);
-static_assert(CtxFitsSyntheticProbeMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsSyntheticProbeRecord<effects::HotFgCtx>);
-static_assert(CtxFitsSyntheticProbeRecord<effects::BgDrainCtx>);
+static_assert(std::is_base_of_v<::foundation::Pinned<SyntheticProbeRunner<1>>, SyntheticProbeRunner<1>>);
+static_assert(!CtxFitsSyntheticProbeMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsSyntheticProbeMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsSyntheticProbeRecord<::fixy::HotFgCtx>);
+static_assert(CtxFitsSyntheticProbeRecord<::fixy::BgDrainCtx>);
 
 }  // namespace crucible::observe
