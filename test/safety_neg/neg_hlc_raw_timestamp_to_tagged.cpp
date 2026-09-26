@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-138 HLC provenance fixture #1: raw HlcTimestamp values cannot
-// enter an API that requires source::Hlc provenance.
+// A raw HlcTimestamp carries no source.  It does not convert to a
+// timestamp of this clock, so it cannot enter an API that demands one.
 
 #include <crucible/canopy/Hlc.h>
 

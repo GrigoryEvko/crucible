@@ -1,13 +1,10 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/_PermissionedSpscChannel.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_ClockSource.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Stale.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <atomic>
@@ -15,12 +12,12 @@
 #include <cstdint>
 #include <ctime>
 #include <limits>
-#include <optional>
 #include <type_traits>
-#include <utility>
 
 namespace crucible::canopy {
 
+// The counter is not a positive refinement.  The HLC algorithm sets it to
+// zero after each advance of the physical time.
 struct HlcTimestamp {
     std::uint64_t physical_ns = 0;
     std::uint32_t counter = 0;
@@ -28,14 +25,8 @@ struct HlcTimestamp {
     [[nodiscard]] friend constexpr auto operator<=>(HlcTimestamp const&, HlcTimestamp const&) = default;
 };
 
-using HlcClockTimestamp = safety::Tagged<HlcTimestamp, safety::source::Hlc>;
-using ExternalHlcTimestamp = safety::Tagged<HlcTimestamp, safety::source::External>;
-
-// Positive deltas are the true refinement boundary.  The stored HLC
-// counter itself may be zero after any physical-time advance, per the
-// HLC algorithm, so wrapping the field in Refined<positive> would be
-// unsound.
-using HlcCounterDelta = safety::Refined<safety::positive, std::uint32_t>;
+using HlcClockTimestamp = ::fixy::Tagged<HlcTimestamp, ::fixy::tags::source::Hlc>;
+using ExternalHlcTimestamp = ::fixy::Tagged<HlcTimestamp, ::fixy::tags::source::External>;
 
 static_assert(sizeof(HlcTimestamp) == 16);
 static_assert(std::is_trivially_copyable_v<HlcTimestamp>);
@@ -43,7 +34,6 @@ static_assert(std::is_trivially_destructible_v<HlcTimestamp>);
 static_assert(sizeof(HlcClockTimestamp) == sizeof(HlcTimestamp));
 static_assert(std::is_trivially_copyable_v<HlcClockTimestamp>);
 static_assert(std::is_trivially_destructible_v<HlcClockTimestamp>);
-static_assert(sizeof(HlcCounterDelta) == sizeof(std::uint32_t));
 
 namespace detail {
 
@@ -171,30 +161,30 @@ static_assert(alignof(AtomicPackedHlcState) >= 16);
 
 }  // namespace detail
 
-class alignas(64) Hlc : public safety::Pinned<Hlc> {
+class Hlc;
+
+[[nodiscard]] constexpr Hlc mint_hlc(::foundation::effects::Init) noexcept;
+
+// A hybrid logical clock.  The constructor is private and mint_hlc is its
+// only friend, so each clock comes from a context that owns Init.  That
+// context also owns the capability to read the wall clock, which now() and
+// on_recv() do.
+class alignas(64) Hlc : public ::foundation::Pinned<Hlc> {
 public:
     using timestamp_type = HlcTimestamp;
     using tagged_timestamp_type = HlcClockTimestamp;
 
-    Hlc() noexcept = default;
-
-    [[nodiscard]] HlcTimestamp now() noexcept {
-        auto stale_rt = read_realtime_ns_();
-        return update_local_(std::move(stale_rt).consume().consume());
-    }
+    [[nodiscard]] HlcTimestamp now() noexcept { return update_local_(read_realtime_ns_()); }
 
     [[nodiscard]] HlcTimestamp on_send() noexcept { return now(); }
 
-    void on_recv(HlcTimestamp peer_ts) noexcept {
-        auto stale_rt = read_realtime_ns_();
-        (void)update_recv_(std::move(stale_rt).consume().consume(), peer_ts);
-    }
+    void on_recv(HlcTimestamp peer_ts) noexcept { (void)update_recv_(read_realtime_ns_(), peer_ts); }
 
     void on_recv(HlcClockTimestamp peer_ts) noexcept { on_recv(peer_ts.value()); }
 
-    [[nodiscard]] HlcClockTimestamp tagged_now() noexcept { return HlcClockTimestamp{now()}; }
-
-    [[nodiscard]] HlcClockTimestamp tagged_on_send() noexcept { return HlcClockTimestamp{on_send()}; }
+    [[nodiscard]] HlcClockTimestamp tagged_on_send() noexcept {
+        return ::fixy::mint_tagged<::fixy::tags::source::Hlc>(on_send());
+    }
 
     [[nodiscard]] HlcTimestamp peek() const noexcept { return detail::unpack_hlc_timestamp(state_.load()); }
 
@@ -222,6 +212,10 @@ public:
     }
 
 private:
+    constexpr Hlc() noexcept = default;
+
+    friend constexpr Hlc mint_hlc(::foundation::effects::Init) noexcept;
+
     [[nodiscard]] static constexpr HlcTimestamp bumped_(std::uint64_t physical_ns, std::uint32_t counter) noexcept {
         if (counter != std::numeric_limits<std::uint32_t>::max()) {
             return HlcTimestamp{
@@ -235,35 +229,31 @@ private:
         return HlcTimestamp{.physical_ns = physical_ns, .counter = counter};
     }
 
-    // The clock-source grade pins this read to the wall clock, which can jump
-    // backwards under a time adjustment or a slew.  Staleness starts at zero
-    // because the read is the freshest measurement available at the instant it
-    // happens.  It grows as the value travels onward.
-    [[nodiscard]] static safety::Stale<safety::RealtimeClockBytes<std::uint64_t>> read_realtime_ns_() noexcept {
-        const std::uint64_t bits = read_realtime_ns_raw_();
-        return safety::Stale<safety::RealtimeClockBytes<std::uint64_t>>::fresh(
-            safety::mint_clock_source<safety::ClockSource_v::Realtime, std::uint64_t>(bits));
-    }
-
-    [[nodiscard]] static std::uint64_t read_realtime_ns_raw_() noexcept {
-        ::timespec ts{};
-        if (::clock_gettime(CLOCK_REALTIME, &ts) != 0)
-            [[unlikely]] {  // SYSCALL-CAP-OK: the background drain path that reaches now() carries the capability
+    // The wall clock can jump backwards under a time adjustment or a slew.
+    // The HLC update takes the maximum of this value and the stored time, so
+    // a step back advances the counter and does not move the clock back.  A
+    // failed read, or a time before 1970, gives a value below one second, so
+    // it cannot move a clock that holds a real time.  A time too large for 64
+    // bits of nanoseconds gives the maximum.
+    [[nodiscard]] static std::uint64_t read_realtime_ns_() noexcept {
+        ::timespec reading{};
+        const int status = ::clock_gettime(CLOCK_REALTIME, &reading);  // SYSCALL-CAP-OK: Hlc::read_realtime_ns_, sole builder mint_hlc takes the init context
+        if (status != 0) [[unlikely]] {
             return std::uint64_t{1};
         }
 
-        const std::uint64_t nsec = ts.tv_nsec > 0 ? static_cast<std::uint64_t>(ts.tv_nsec) : std::uint64_t{0};
-        if (ts.tv_sec <= 0) {
-            return nsec == 0 ? std::uint64_t{1} : nsec;
+        const std::uint64_t nanos = reading.tv_nsec > 0 ? static_cast<std::uint64_t>(reading.tv_nsec) : std::uint64_t{0};
+        if (reading.tv_sec <= 0) {
+            return nanos == 0 ? std::uint64_t{1} : nanos;
         }
 
-        constexpr std::uint64_t kNanosPerSecond = 1000000000ULL;
-        const std::uint64_t sec = static_cast<std::uint64_t>(ts.tv_sec);
-        if (sec > (std::numeric_limits<std::uint64_t>::max() - nsec) / kNanosPerSecond) [[unlikely]] {
+        constexpr std::uint64_t nanos_per_second = 1000000000ULL;
+        const std::uint64_t seconds = static_cast<std::uint64_t>(reading.tv_sec);
+        if (seconds > (std::numeric_limits<std::uint64_t>::max() - nanos) / nanos_per_second) [[unlikely]] {
             return std::numeric_limits<std::uint64_t>::max();
         }
-        const std::uint64_t out = sec * kNanosPerSecond + nsec;
-        return out == 0 ? std::uint64_t{1} : out;
+        const std::uint64_t total_ns = seconds * nanos_per_second + nanos;
+        return total_ns == 0 ? std::uint64_t{1} : total_ns;
     }
 
     [[nodiscard]] HlcTimestamp update_local_(std::uint64_t physical_now) noexcept {
@@ -299,49 +289,10 @@ private:
 
 static_assert(alignof(Hlc) == 64);
 static_assert(sizeof(Hlc) == 64);
+static_assert(!std::is_default_constructible_v<Hlc>);
 static_assert(!std::is_copy_constructible_v<Hlc>);
 static_assert(!std::is_move_constructible_v<Hlc>);
 
-namespace detail::hlc_clock_source_sentinels {
-
-// These asserts cannot name the private read helper, so they restate the type
-// it returns and check that type instead.
-using ExpectedRealtimeBytes = safety::Stale<safety::RealtimeClockBytes<std::uint64_t>>;
-
-static_assert(sizeof(ExpectedRealtimeBytes) == sizeof(std::uint64_t) + sizeof(std::uint64_t),
-              "Stale<RealtimeClockBytes<u64>> must carry a value plus a grade, "
-              "which is 16 bytes on a 64-bit target.");
-
-static_assert(std::is_same_v<ExpectedRealtimeBytes::value_type, safety::RealtimeClockBytes<std::uint64_t>>,
-              "The outer wrapper must be Stale and the inner one must be "
-              "RealtimeClockBytes<u64>.");
-
-static_assert(safety::RealtimeClockBytes<std::uint64_t>::source == safety::ClockSource_v::Realtime,
-              "The clock reads CLOCK_REALTIME.  Drift to Monotonic, Boot, or any "
-              "other ClockSource_v value is a category error.");
-
-}  // namespace detail::hlc_clock_source_sentinels
-
-[[nodiscard]] inline Hlc mint_hlc(effects::Init) noexcept { return Hlc{}; }
-
-template <std::size_t Capacity, typename UserTag>
-using HlcTimestampChannel = concurrent::PermissionedSpscChannel<HlcTimestamp, Capacity, UserTag>;
-
-template <typename ProducerHandle>
-[[nodiscard]] bool
-try_push_hlc_timestamp(ProducerHandle& producer,
-                       HlcClockTimestamp timestamp) noexcept(noexcept(producer.try_push(timestamp.value()))) {
-    return producer.try_push(timestamp.value());
-}
-
-template <typename ConsumerHandle>
-[[nodiscard]] std::optional<HlcClockTimestamp>
-try_pop_hlc_timestamp(ConsumerHandle& consumer) noexcept(noexcept(consumer.try_pop())) {
-    auto ts = consumer.try_pop();
-    if (!ts) {
-        return std::nullopt;
-    }
-    return HlcClockTimestamp{*ts};
-}
+[[nodiscard]] constexpr Hlc mint_hlc(::foundation::effects::Init) noexcept { return Hlc{}; }
 
 }  // namespace crucible::canopy

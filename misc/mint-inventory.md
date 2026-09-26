@@ -63,7 +63,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_hlc` | `include/crucible/canopy/Hlc.h` | Y | - | Y | · | token | · | [✗ NO-FIXY] | HS14: 3 |
+| `mint_hlc` | `include/crucible/canopy/Hlc.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 3 |
 | `mint_hyparview` | `include/crucible/canopy/HyParView.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 5 |
 | `mint_lifeguard_swim` | `include/crucible/canopy/Lifeguard.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_plumtree` | `include/crucible/canopy/Plumtree.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |

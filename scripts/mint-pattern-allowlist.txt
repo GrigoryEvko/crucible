@@ -138,7 +138,6 @@ include/crucible/CKernel.h:mint_mutable_view:constexpr-ok
 include/crucible/SchemaTable.h:mint_mutable_view:constexpr-ok
 
 # ── canopy/ gossip-state mints ───────────────────────────────────────
-include/crucible/canopy/Hlc.h:mint_hlc:constexpr-ok
 include/crucible/canopy/HyParView.h:mint_hyparview:constexpr-ok
 include/crucible/canopy/Lifeguard.h:mint_lifeguard_swim:constexpr-ok
 include/crucible/canopy/Plumtree.h:mint_plumtree:constexpr-ok

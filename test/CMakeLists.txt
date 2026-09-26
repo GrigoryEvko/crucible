@@ -6507,20 +6507,28 @@ crucible_neg_compile_test(neg_sdc_detect_cross_tag_result
 crucible_neg_compile_test(neg_sdc_detect_sampling_rate_above_max
   "contract|violation|in_range|Refined|SdcSamplingRatePpm")
 
-# GAPS-138 — canopy/Hlc.h Hybrid Logical Clock primitive.
-#   * neg_hlc_raw_timestamp_to_tagged: raw HlcTimestamp cannot enter
-#     APIs requiring source::Hlc provenance.
-#   * neg_hlc_cross_source_timestamp: source::External timestamps do
-#     not implicitly convert to source::Hlc.
-#   * neg_hlc_mint_test_context: Init-only mint factory rejects Test.
-#   * neg_hlc_mint_background_context: the mint rejects a background
-#     capability.
+# canopy/Hlc.h, the hybrid logical clock.
+#   * neg_hlc_raw_timestamp_to_tagged: a raw HlcTimestamp does not
+#     convert to a timestamp of the clock.
+#   * neg_hlc_cross_source_timestamp: an External timestamp does not
+#     convert to a timestamp of the clock.
+#   * neg_hlc_direct_ctor: the constructor is private, and the mint is
+#     its only friend.
+#   * neg_hlc_mint_test_context: the mint takes the init context and
+#     refuses a test context.
+#   * neg_hlc_mint_background_context: the mint refuses a background
+#     context.
 #   * neg_hlc_mint_without_capability: the mint has no overload without
-#     the startup capability.
-crucible_neg_compile_test(neg_hlc_raw_timestamp_to_tagged
-  "cannot convert|no matching function|could not convert|Tagged|HlcTimestamp")
-crucible_neg_compile_test(neg_hlc_cross_source_timestamp
-  "cannot convert|no matching function|could not convert|Tagged|External|Hlc")
+#     a context.
+crucible_neg_compile_multi_test(neg_hlc_raw_timestamp_to_tagged
+  "could not convert|cannot convert|no matching function"
+  "HlcClockTimestamp")
+crucible_neg_compile_multi_test(neg_hlc_cross_source_timestamp
+  "could not convert|cannot convert|no matching function"
+  "source::External")
+crucible_neg_compile_multi_test(neg_hlc_direct_ctor
+  "Hlc::Hlc\\(\\). is private within this context"
+  "declared private here")
 crucible_neg_compile_effects_test(neg_hlc_mint_test_context
   "could not convert|no matching function|cannot convert"
     "effects::Test|effects::Init")
