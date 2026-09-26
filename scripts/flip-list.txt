@@ -48,7 +48,6 @@ bench/bench_merkle_dag.cpp
 bench/bench_perf_loader.cpp
 bench/bench_permissioned_session_handle.cpp
 bench/bench_phases.cpp
-bench/bench_pipeline_dispatch.cpp
 bench/bench_pool_allocator.cpp
 bench/bench_record_leaf.cpp
 bench/bench_region_cache.cpp
