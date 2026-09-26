@@ -7,6 +7,8 @@
 // only at consteval time.
 
 #include <crucible/mimic/CogMimic.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 
@@ -16,8 +18,30 @@
 
 namespace cog = crucible::cog;
 namespace mimic = crucible::mimic;
-namespace effects = crucible::effects;
-namespace safety = crucible::safety;
+
+namespace {
+
+// The contexts a mint accepts, built through the test doors.
+::fixy::ColdInitCtx init_context() {
+    return ::fixy::ColdInitCtx{::foundation::effects::testing::init()};
+}
+
+::fixy::BgDrainCtx background_context() {
+    return ::fixy::BgDrainCtx{::foundation::effects::testing::bg()};
+}
+
+::fixy::Tagged<cog::GpuTargetCaps, ::fixy::tags::source::Calibrated> calibrated(cog::GpuTargetCaps caps) {
+    return ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(caps);
+}
+
+cog::GpuTargetCaps gpu_caps(std::uint16_t sm_version, std::uint16_t sm_count) {
+    cog::GpuTargetCaps caps{};
+    caps.sm_version = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(sm_version);
+    caps.sm_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(sm_count);
+    return caps;
+}
+
+}  // namespace
 
 static void test_default_state_runtime() {
     mimic::CogMimic<cog::CogKind::Gpu> gpu_mimic{};
@@ -72,16 +96,10 @@ static void test_target_caps_class_hash_determinism() {
 
 static void test_target_caps_class_hash_sm_version_discrimination() {
     mimic::CogMimic<cog::CogKind::Gpu> hopper{};
-    hopper.calibrated_caps.value_mut().sm_version =
-        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(90);
-    hopper.calibrated_caps.value_mut().sm_count =
-        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(132);
+    hopper.calibrated_caps = calibrated(gpu_caps(90, 132));
 
     mimic::CogMimic<cog::CogKind::Gpu> blackwell{};
-    blackwell.calibrated_caps.value_mut().sm_version =
-        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(100);
-    blackwell.calibrated_caps.value_mut().sm_count =
-        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(208);
+    blackwell.calibrated_caps = calibrated(gpu_caps(100, 208));
 
     volatile std::uint64_t hopper_hash = hopper.target_caps_class_hash();
     volatile std::uint64_t blackwell_hash = blackwell.target_caps_class_hash();
@@ -108,17 +126,15 @@ static void test_cog_kernel_cache_key_firmware_rotation() {
     cog::CogIdentity id_v2 = id_v1;
     id_v2.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(2);
 
-    cog::GpuTargetCaps caps{};
-    caps.sm_version = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(90);
-    caps.sm_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(132);
+    cog::GpuTargetCaps const caps = gpu_caps(90, 132);
 
     mimic::CogMimic<cog::CogKind::Gpu> mimic_v1{};
     mimic_v1.identity = &id_v1;
-    mimic_v1.calibrated_caps = safety::Tagged<cog::GpuTargetCaps, safety::source::Calibrated>{caps};
+    mimic_v1.calibrated_caps = calibrated(caps);
 
     mimic::CogMimic<cog::CogKind::Gpu> mimic_v2{};
     mimic_v2.identity = &id_v2;
-    mimic_v2.calibrated_caps = safety::Tagged<cog::GpuTargetCaps, safety::source::Calibrated>{caps};
+    mimic_v2.calibrated_caps = calibrated(caps);
 
     volatile std::uint64_t fed_v1 = mimic_v1.target_caps_class_hash();
     volatile std::uint64_t fed_v2 = mimic_v2.target_caps_class_hash();
@@ -151,18 +167,11 @@ static void test_mint_cog_mimic_round_trip() {
     id.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0xABCDULL);
     id.bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0x1234ULL);
 
-    cog::GpuTargetCaps caps{};
-    caps.sm_version = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(90);
-    caps.sm_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(132);
+    cog::GpuTargetCaps const caps = gpu_caps(90, 132);
 
     cog::OpcodeLatencyTable<cog::CogKind::Gpu> tbl{};
 
-    using InitCtx = effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound,
-                                     effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
-                                     effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
-
-    InitCtx ctx{::crucible::effects::testing::init()};
-    auto m = mimic::mint_cog_mimic<cog::CogKind::Gpu>(ctx, id, caps, tbl);
+    auto m = mimic::mint_cog_mimic<cog::CogKind::Gpu>(init_context(), id, caps, tbl);
 
     assert(m.identity == &id);
     assert(m.identity->kind == cog::CogKind::Gpu);
@@ -187,13 +196,7 @@ static void test_mint_cog_mimic_round_trip() {
     assert(per_cog_key != 0);
     assert(federation != 0);
 
-    using BgCtx =
-        effects::ExecCtx<effects::Bg, effects::ctx_numa::Any, effects::ctx_alloc::Arena, effects::ctx_heat::Warm,
-                         effects::ctx_resid::L3, effects::Row<effects::Effect::Bg, effects::Effect::Alloc>,
-                         effects::ctx_workload::Unspecified>;
-
-    BgCtx bg_ctx{::crucible::effects::testing::bg()};
-    auto m_bg = mimic::mint_cog_mimic<cog::CogKind::Gpu>(bg_ctx, id, caps, tbl);
+    auto m_bg = mimic::mint_cog_mimic<cog::CogKind::Gpu>(background_context(), id, caps, tbl);
     assert(m_bg.identity == &id);
     volatile std::uint64_t bg_per_cog_key = m_bg.cog_kernel_cache_key();
     assert(bg_per_cog_key == per_cog_key);  // same identity → same key
@@ -215,10 +218,7 @@ static void test_mint_cpu_paths() {
     cpu_caps.base_clock_mhz = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(2500U);
     cpu_caps.l2_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(1U * 1024 * 1024);
 
-    using InitCtx = effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound,
-                                     effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
-                                     effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
-    InitCtx ctx{::crucible::effects::testing::init()};
+    auto const ctx = init_context();
 
     auto cpu_core_mimic = mimic::mint_cog_mimic<cog::CogKind::CpuCore>(
         ctx, cpu_id, cpu_caps, cog::OpcodeLatencyTable<cog::CogKind::CpuCore>{});
@@ -250,13 +250,8 @@ static void test_mint_cpu_paths() {
 // out of agreement with how the concept actually instantiates.
 
 static void test_ctx_fits_cog_mimic_concept_gate_runtime() {
-    using InitCtx = effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound,
-                                     effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
-                                     effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
-
-    using TestCtx = effects::ExecCtx<effects::Test, effects::ctx_numa::Any, effects::ctx_alloc::Stack,
-                                     effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
-                                     effects::Row<effects::Effect::Test>, effects::ctx_workload::Unspecified>;
+    using InitCtx = ::fixy::ColdInitCtx;
+    using TestCtx = ::fixy::TestRunnerCtx;
 
     volatile bool init_admits_gpu = mimic::CtxFitsCogMimic<InitCtx, cog::CogKind::Gpu>;
     volatile bool init_admits_cpu_core = mimic::CtxFitsCogMimic<InitCtx, cog::CogKind::CpuCore>;

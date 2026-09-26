@@ -40,6 +40,7 @@
 #include <crucible/mimic/CogMimic.h>
 #include <crucible/safety/_Bits.h>
 #include <crucible/safety/_Tagged.h>
+#include <foundation/reflect/Hash.h>
 
 #if defined(__aarch64__)
 #include <sys/auxv.h>
@@ -149,11 +150,10 @@ using SmallFileBuffer = std::array<char, kSmallFileBytes>;
     return accumulator;
 }
 
-// The same finalizer CogMimic's caps fold uses. Sharing it keeps the two
-// halves of the stable digest mixing consistently with the projection
-// they are folded alongside.
+// The one fmix64 finalizer of the tree, which CogMimic's caps fold also
+// uses, so the two halves of the stable digest mix the same way.
 [[nodiscard]] constexpr std::uint64_t mix(std::uint64_t accumulator, std::uint64_t contribution) noexcept {
-    return mimic::detail::cog_mimic_fmix64(accumulator ^ contribution);
+    return ::foundation::reflect::fmix64(accumulator ^ contribution);
 }
 
 // Pulls one `key<sep>value` field out of a colon-delimited procfs block.

@@ -4874,10 +4874,10 @@ crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
 #     teardown.
 crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
     "constraint|constraints.*not satisfied"
-    "CogMimic|IsMimicSubstrate|CtxFitsCogMimic|PsuRail|GAPS-188")
+    "IsMimicSubstrate|CtxFitsCogMimic|PsuRail")
 crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
     "constraint|constraints.*not satisfied"
-    "CogMimic|CtxFitsCogMimic|row_subset|GAPS-188")
+    "CtxFitsCogMimic|row_subset|TestRunnerCtx")
 
 # ─── HS14 fixtures #1 + #2 for topology::TopologyGraph (GAPS-110 #1209) ──
 #
