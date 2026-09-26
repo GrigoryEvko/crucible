@@ -147,6 +147,7 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_cog_mimic` | `include/crucible/mimic/CogMimic.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
+| `mint_device_semaphore` | `include/crucible/mimic/Semaphore.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 
 ## include/crucible/observe/
 
@@ -362,5 +363,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
+| old (`include/crucible/`) | 100 | 54 | 37 | 9 | 0 | 91 | 10 |
 | new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |

@@ -48,5 +48,4 @@ bench/bench_record_leaf.cpp
 include/crucible/BackgroundThread.h
 include/crucible/Vigil.h
 include/crucible/_Saturate.h
-include/crucible/mimic/Semaphore.h
 include/crucible/warden/DeadlineWatchdog.h
