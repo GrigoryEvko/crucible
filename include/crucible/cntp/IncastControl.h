@@ -95,14 +95,33 @@ template <LinkClass Link>
     });
 }
 
-[[nodiscard]] std::expected<void, IncastError> set_socket_rto_min_usec(SocketFd fd,
-                                                                       PositiveRtoMinUsec rto_min) noexcept;
+namespace detail {
 
-// A config that enables DCTCP first asks the kernel whether it has DCTCP,
-// and that question is a read under /proc, so the context must carry what
-// the fs door demands for it.
+// The TCP_RTO_MIN_US body.  It takes the key, so only the gated form below
+// reaches setsockopt.
+[[nodiscard]] std::expected<void, IncastError> set_socket_rto_min_usec_keyed(SocketOptionKey const&, SocketFd fd,
+                                                                             PositiveRtoMinUsec rto_min) noexcept;
+
+}  // namespace detail
+
+// The minimum retransmit timeout is a socket option, so the call takes a
+// context that admits the socket option row.
 template <::foundation::effects::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
+    requires CtxFitsSocketOption<Ctx>
+[[nodiscard]] std::expected<void, IncastError> set_socket_rto_min_usec(Ctx const& ctx, SocketFd fd,
+                                                                       PositiveRtoMinUsec rto_min) noexcept {
+    return detail::set_socket_rto_min_usec_keyed(detail::socket_option_key_(ctx), fd, rto_min);
+}
+
+// A config that enables DCTCP first asks the kernel whether it has DCTCP.
+// That question is a read under /proc, so the context must carry what the
+// fs door demands for it.  The config then sets socket options, so the
+// context must also admit the socket option row.
+template <class Ctx>
+concept CtxFitsIncastApply = ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode> && CtxFitsSocketOption<Ctx>;
+
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsIncastApply<Ctx>
 [[nodiscard]] std::expected<void, IncastError> apply_incast_config(Ctx const& ctx, SocketFd fd,
                                                                    DeclaredIncastConfig config) noexcept {
     auto const& raw = config.value();
@@ -117,7 +136,7 @@ template <::foundation::effects::IsExecCtx Ctx>
         }
     }
 
-    auto rto = set_socket_rto_min_usec(fd, raw.rto_min_usec);
+    auto rto = set_socket_rto_min_usec(ctx, fd, raw.rto_min_usec);
     if (!rto.has_value()) {
         return std::unexpected(rto.error());
     }
@@ -132,5 +151,8 @@ static_assert(sizeof(DeclaredIncastConfig) == sizeof(IncastConfig));
 // byte copy builds one past the predicates.  The copy and the destructor
 // stay trivial, so the config still passes as a plain value.
 static_assert(std::is_trivially_copy_constructible_v<IncastConfig> && std::is_trivially_destructible_v<IncastConfig>);
+static_assert(CtxFitsIncastApply<detail::socket_option_invariants::IoBlockCtx>);
+static_assert(!CtxFitsIncastApply<detail::socket_option_invariants::IoOnlyCtx>,
+              "a context without Block can neither read the algorithm list nor set a socket option.");
 
 }  // namespace crucible::cntp

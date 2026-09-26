@@ -89,7 +89,7 @@ apply to the row.
 | `mint_af_xdp_socket` | `include/crucible/cntp/AfXdp.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_bbr_qdisc_config` | `include/crucible/cntp/Pacing.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_bpf_map_spec` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
+| `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 4 |
 | `mint_connection` | `include/crucible/cntp/ConnectionPool.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_connection_pool` | `include/crucible/cntp/ConnectionPoolRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_credit_flow_control` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
@@ -178,7 +178,7 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_asymmetric_failure_detector` | `include/crucible/topology/AsymmetricFailure.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_congestion_telemetry_worker` | `include/crucible/topology/CongestionTelemetryWorker.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
+| `mint_congestion_telemetry_worker` | `include/crucible/topology/CongestionTelemetryWorker.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |

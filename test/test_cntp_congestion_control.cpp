@@ -151,82 +151,59 @@ void test_live_socket_roundtrip_if_available() {
         return;
     }
 
-    auto set = cntp::set_cc_for_socket(*fd, *choice);
+    auto set = cntp::set_cc_for_socket(load, *fd, *choice);
     assert(set.has_value());
 
-    auto queried = cntp::query_cc_for_socket(*fd);
+    auto queried = cntp::query_cc_for_socket(load, *fd);
     assert(queried.has_value());
     // The kernel echoes back the name it was given, and the reverse
     // mapping is one-to-one per BBR version, so the query returns the
     // algorithm that was set and not a neighbouring one.
     assert(*queried == choice->value().algorithm);
 
-    auto selection = cntp::query_cc_selection_for_socket(*fd);
+    auto selection = cntp::query_cc_selection_for_socket(load, *fd);
     assert(selection.has_value());
     assert(!selection->kernel_name.view().empty());
 
     std::printf("  test_live_socket_roundtrip_if_available: PASSED\n");
 }
 
-// Each context-gated overload must be selectable, callable, and
-// answer exactly as its ungated form does.  Making the socket calls
-// succeed would need a real connected socket, so the claim under test
-// is the agreement between the two forms, not the success of either.
-void test_io_gated_overload_dispatches() {
-    // Admission only requires a non-negative descriptor, so this value
-    // passes it and the socket calls then fail further down.  That is
-    // enough to compare the two forms along the same path.
+// Each gated form reaches the kernel and reports the failure of its own
+// call.  Admission requires only a non-negative descriptor, so this value
+// passes it, and the kernel then refuses the descriptor.
+void test_gated_forms_report_kernel_refusal() {
     auto fd = cntp::admit_socket_fd(/*invalid*/ 0xFFFE);
     assert(fd.has_value());
 
     auto choice = cntp::mint_cc_choice<cntp::CcAlgorithm::Cubic, cntp::LinkClass::CrossDatacenter>();
 
-    // This context carries the input and output effect, so every socket
-    // gate below admits it.  The contexts that do not are rejected during
-    // substitution, and the assertions at file scope witness that.
-    ::fixy::ColdInitCtx init{fe::testing::init()};
+    // The load context carries IO and Block, so every socket gate below
+    // admits it.  The assertions at file scope show which contexts the
+    // gate refuses.
+    ::fixy::InitLoadCtx load{fe::testing::init()};
 
-    {
-        auto gated = cntp::set_cc_for_socket(init, *fd, choice);
-        auto bare = cntp::set_cc_for_socket(*fd, choice);
-        assert(gated.has_value() == bare.has_value());
-        if (!gated.has_value()) {
-            assert(gated.error() == bare.error());
-        }
+    auto set = cntp::set_cc_for_socket(load, *fd, choice);
+    assert(!set.has_value());
+    assert(set.error() == cntp::CcError::SetSockOptFailed);
+
+    auto queried = cntp::query_cc_for_socket(load, *fd);
+    assert(!queried.has_value());
+    assert(queried.error() == cntp::CcError::GetSockOptFailed);
+
+    auto selection = cntp::query_cc_selection_for_socket(load, *fd);
+    assert(!selection.has_value());
+    assert(selection.error() == cntp::CcError::GetSockOptFailed);
+
+    // The list changes nothing and depends only on the running kernel, so
+    // kernel_supports must answer from the same list for every algorithm.
+    auto listed = cntp::read_available_congestion_control(load);
+    for (auto algo :
+         {cntp::CcAlgorithm::Cubic, cntp::CcAlgorithm::Reno, cntp::CcAlgorithm::Bbr1, cntp::CcAlgorithm::Bbr2,
+          cntp::CcAlgorithm::Bbr3, cntp::CcAlgorithm::Dctcp, cntp::CcAlgorithm::Vegas}) {
+        assert(cntp::kernel_supports(load, algo) == (listed.has_value() && listed->contains(algo)));
     }
 
-    {
-        auto gated = cntp::query_cc_for_socket(init, *fd);
-        auto bare = cntp::query_cc_for_socket(*fd);
-        assert(gated.has_value() == bare.has_value());
-        if (!gated.has_value()) {
-            assert(gated.error() == bare.error());
-        }
-    }
-
-    {
-        auto gated = cntp::query_cc_selection_for_socket(init, *fd);
-        auto bare = cntp::query_cc_selection_for_socket(*fd);
-        assert(gated.has_value() == bare.has_value());
-        if (!gated.has_value()) {
-            assert(gated.error() == bare.error());
-        }
-    }
-
-    // Reading the available algorithms goes through the fs door, which
-    // needs Block as well, so it takes the load context.  The list changes
-    // nothing and depends only on the running kernel, so kernel_supports
-    // must answer from the same list for every algorithm.
-    {
-        ::fixy::InitLoadCtx load{fe::testing::init()};
-        auto listed = cntp::read_available_congestion_control(load);
-        for (auto algo : {cntp::CcAlgorithm::Cubic, cntp::CcAlgorithm::Reno, cntp::CcAlgorithm::Bbr1, cntp::CcAlgorithm::Bbr2,
-                          cntp::CcAlgorithm::Bbr3, cntp::CcAlgorithm::Dctcp, cntp::CcAlgorithm::Vegas}) {
-            assert(cntp::kernel_supports(load, algo) == (listed.has_value() && listed->contains(algo)));
-        }
-    }
-
-    std::printf("  test_io_gated_overload_dispatches:  PASSED\n");
+    std::printf("  test_gated_forms_report_kernel_refusal: PASSED\n");
 }
 
 }  // namespace
@@ -235,18 +212,18 @@ void test_io_gated_overload_dispatches() {
 // the call.  A requires-expression naming the call inside a static
 // assertion is a hard error under this compiler instead of a
 // substitution failure, so it cannot serve as a negative witness.
-static_assert(fe::CtxOwnsCapability<::fixy::ColdInitCtx, fe::Effect::IO>,
-              "A cold-init context must carry the input and output effect.");
-static_assert(fe::CtxOwnsCapability<::fixy::BgCompileCtx, fe::Effect::IO>,
-              "A background-compile context must carry the input and output "
-              "effect.");
-static_assert(!fe::CtxOwnsCapability<::fixy::HotFgCtx, fe::Effect::IO>,
-              "A hot foreground context must not carry the input and output "
-              "effect.  Keeping hot-path code away from the socket call is what "
-              "the gate is for.");
-static_assert(!fe::CtxOwnsCapability<::fixy::BgDrainCtx, fe::Effect::IO>,
-              "A background-drain context must not carry the input and output "
-              "effect without being promoted first.");
+static_assert(cntp::CtxFitsSocketOption<::fixy::InitLoadCtx>,
+              "The startup load context carries IO and Block, so it may set a socket option.");
+static_assert(cntp::CtxFitsSocketOption<::fixy::BgLoadCtx>,
+              "The background load context carries IO and Block, so it may set a socket option.");
+static_assert(cntp::CtxFitsSocketOption<::fixy::TestRunnerCtx>);
+static_assert(!cntp::CtxFitsSocketOption<::fixy::ColdInitCtx>,
+              "A cold-init context lacks Block, and a socket option call takes the socket lock.");
+static_assert(!cntp::CtxFitsSocketOption<::fixy::BgCompileCtx>,
+              "A background-compile context lacks Block, and a socket option call takes the socket lock.");
+static_assert(!cntp::CtxFitsSocketOption<::fixy::HotFgCtx>,
+              "A hot foreground context must not reach a socket option call.  That is what the gate is for.");
+static_assert(!cntp::CtxFitsSocketOption<::fixy::BgDrainCtx>, "A background-drain context carries no IO.");
 static_assert(::fixy::fs::CtxFitsFileMint<::fixy::InitLoadCtx, cntp::ProcFileReadMode>,
               "The startup load context carries IO and Block, so it may read the algorithm list.");
 static_assert(!::fixy::fs::CtxFitsFileMint<::fixy::ColdInitCtx, cntp::ProcFileReadMode>,
@@ -269,7 +246,7 @@ int main() {
     test_name_admission();
     test_availability_parse_and_recommendation();
     test_mint_surfaces();
-    test_io_gated_overload_dispatches();
+    test_gated_forms_report_kernel_refusal();
     test_live_socket_roundtrip_if_available();
     std::printf("test_cntp_congestion_control: all PASSED\n");
     return 0;

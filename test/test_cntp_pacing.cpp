@@ -160,7 +160,10 @@ void test_live_socket_pacing_if_available() {
     auto rate = cntp::admit_pacing_rate(1000000);
     assert(rate.has_value());
 
-    auto set = cntp::set_socket_pacing_rate(*fd, *rate);
+    // The rate is a socket option, and the test runner context carries the
+    // IO and Block that the socket option gate asks for.
+    ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
+    auto set = cntp::set_socket_pacing_rate(test_ctx, *fd, *rate);
     assert(set.has_value());
 
     std::printf("  test_live_socket_pacing_if_available: PASSED\n");
@@ -205,6 +208,8 @@ int main() {
                   && std::is_trivially_destructible_v<cntp::QdiscConfig>);
     static_assert(!::fixy::net::CtxFitsSocketMint<::fixy::ColdInitCtx, ::fixy::net::socket_kind::NetlinkRoute>,
                   "a context without Block must not open the netlink socket the qdisc query needs");
+    static_assert(!cntp::CtxFitsSocketOption<::fixy::ColdInitCtx>,
+                  "a context without Block must not set the pacing rate: the call takes the socket lock");
 
     // The length and the bytes are unreachable from outside, the type is
     // not an aggregate, and there is no constructor that takes a length,

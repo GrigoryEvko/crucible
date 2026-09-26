@@ -168,7 +168,10 @@ void test_live_rto_if_available() {
     assert(fd.has_value());
     assert(rto.has_value());
 
-    auto set = cntp::set_socket_rto_min_usec(*fd, *rto);
+    // The timeout is a socket option, and the test runner context carries
+    // the IO and Block that the socket option gate asks for.
+    ::fixy::TestRunnerCtx test_ctx{fe::testing::test()};
+    auto set = cntp::set_socket_rto_min_usec(test_ctx, *fd, *rto);
     if (!set.has_value()) {
         assert(set.error() == cntp::IncastError::SetRtoMinFailed
                || set.error() == cntp::IncastError::UnsupportedRtoMinSockOpt);
@@ -195,6 +198,9 @@ int main() {
     static_assert(!cntp::CtxFitsIncastConfigure<::fixy::HotFgCtx>);
     static_assert(cntp::CtxFitsIncastCredit<::fixy::BgDrainCtx>);
     static_assert(!cntp::CtxFitsIncastCredit<::fixy::HotFgCtx>);
+    static_assert(cntp::CtxFitsIncastApply<::fixy::InitLoadCtx>);
+    static_assert(!cntp::CtxFitsIncastApply<::fixy::ColdInitCtx>,
+                  "a context without Block can neither read the algorithm list nor set a socket option");
 
     std::printf("test_cntp_incast_control:\n");
     test_admission_and_names();

@@ -6811,14 +6811,26 @@ crucible_neg_compile_test(neg_json_buffer_size_write
 #     provide a constexpr kernel congestion-control name.
 #   * neg_congestion_control_custom_invalid_name: that name must also be
 #     a valid kernel name, which has no uppercase letter.
-crucible_neg_compile_test(neg_congestion_control_raw_algorithm_apply
-  "could not convert|no matching function|DeclaredCcChoice|Tagged")
+crucible_neg_compile_multi_test(neg_congestion_control_raw_algorithm_apply
+  "no matching function for call to .set_cc_for_socket\\(fixy::InitLoadCtx&, fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>&, crucible::cntp::CcAlgorithm\\)."
+  "cannot convert .crucible::cntp::CcAlgorithm::Cubic. \\(type .crucible::cntp::CcAlgorithm.\\) to type .crucible::cntp::DeclaredCcChoice.")
 crucible_neg_compile_test(neg_congestion_control_dctcp_cross_dc
   "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
 crucible_neg_compile_test(neg_congestion_control_custom_missing_name
   "constraints not satisfied|CustomCcModule|congestion_control_name")
 crucible_neg_compile_test(neg_congestion_control_custom_invalid_name
   "constraints not satisfied|CustomCcModule|has_value")
+
+# The socket option gate of cntp/CongestionControl.h.  A socket option
+# call takes the socket lock, so the gate asks for IO and Block.
+#   * neg_socket_option_cold_init_ctx: a context with IO and no Block.
+#   * neg_socket_option_bg_drain_ctx: a context with neither.
+crucible_neg_compile_effects_test(neg_socket_option_cold_init_ctx
+  "no matching function for call to .set_cc_for_socket\\(fixy::ColdInitCtx&, "
+  "required for the satisfaction of .CtxFitsSocketOption<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
+crucible_neg_compile_effects_test(neg_socket_option_bg_drain_ctx
+  "no matching function for call to .set_socket_pacing_rate\\(fixy::BgDrainCtx&, "
+  "required for the satisfaction of .CtxFitsSocketOption<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
 
 # cog/Calibrate.h, the per-Cog calibration schema.
 #   * neg_calibrate_psu_rail: only a kind with caps and an opcode table
@@ -6885,8 +6897,9 @@ crucible_neg_compile_effects_test(neg_sriov_mint_bg_ctx
 #   * neg_pacing_raw_config_ensure: fq verification requires tagged qdisc config.
 crucible_neg_compile_test(neg_pacing_bbr_pfifo_config
   "constraints not satisfied|BbrCompatibleQdisc|Qdisc::Pfifo")
-crucible_neg_compile_test(neg_pacing_raw_rate
-  "could not convert|no matching function|PositivePacingRate|Refined")
+crucible_neg_compile_multi_test(neg_pacing_raw_rate
+  "no matching function for call to .set_socket_pacing_rate\\(fixy::TestRunnerCtx&, fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>&, long long unsigned int\\)."
+  "cannot convert .1000000. \\(type .long long unsigned int.\\) to type .crucible::cntp::PositivePacingRate.")
 crucible_neg_compile_test(neg_pacing_raw_config_ensure
   "could not convert|no matching function|DeclaredQdiscConfig|Tagged")
 
@@ -6911,6 +6924,10 @@ crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
 #     samples tagged as coming from TCP_INFO, not raw CongestionSample.
 #   * neg_congestion_telemetry_worker_fg_record — recording is background
 #     work, so the foreground hot-path context is refused.
+#   * neg_congestion_telemetry_worker_poll_bg_drain_ctx — a poll reads
+#     sockets, so a drain context with no IO fails the socket option half.
+#   * neg_congestion_telemetry_worker_poll_init_load_ctx — a poll is
+#     background work, so a startup context fails the background half.
 #   * neg_congestion_telemetry_worker_mint_bg_ctx — only an Init-row
 #     context mints the worker.
 #   * neg_congestion_telemetry_worker_mint_non_ctx — an int in the context
@@ -6918,14 +6935,22 @@ crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
 #   * neg_congestion_telemetry_worker_direct_construct — the worker's
 #     constructor is private, so the mint is the only door.
 crucible_neg_compile_multi_test(neg_congestion_telemetry_raw_fd_harvest
-  "could not convert .3. from .int. to .crucible::cntp::SocketFd."
-  "fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>")
+  "no matching function for call to .harvest_socket\\(fixy::TestRunnerCtx&, int\\)."
+  "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd. \\{aka .fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>.\\}")
 crucible_neg_compile_multi_test(neg_congestion_telemetry_raw_state_aggregate
   "could not convert .std::span<crucible::topology::CongestionSample, 1>\\(samples\\)."
   "to .span<const fixy::Tagged<crucible::topology::CongestionSample, fixy::tags::source::TcpInfo>,")
 crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_fg_record
   "no matching function for call to .crucible::topology::CongestionTelemetryWorker<1, 1>::record_link\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
   "required for the satisfaction of .CtxFitsCongestionTelemetryHarvest<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_poll_bg_drain_ctx
+  "no matching function for call to .crucible::topology::CongestionTelemetryWorker<1, 1>::poll_link\\(fixy::BgDrainCtx&, "
+  "required for the satisfaction of .CtxFitsSocketOption<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]"
+  "required for the satisfaction of .CtxFitsCongestionTelemetryPoll<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, ")
+crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_poll_init_load_ctx
+  "no matching function for call to .crucible::topology::CongestionTelemetryWorker<1, 1>::poll_link\\(fixy::InitLoadCtx&, "
+  "required for the satisfaction of .CtxFitsCongestionTelemetryHarvest<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, "
+  "required for the satisfaction of .CtxFitsCongestionTelemetryPoll<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
 crucible_neg_compile_topology_test(neg_congestion_telemetry_worker_mint_bg_ctx
   "no matching function for call to .mint_congestion_telemetry_worker<1, 1>\\(fixy::BgDrainCtx&\\)"
   "required for the satisfaction of .CtxFitsCongestionTelemetryStart<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")

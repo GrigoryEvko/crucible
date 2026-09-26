@@ -183,7 +183,8 @@ void finalize_aggregate(CongestionAggregate& aggregate, RttHistogram& rtt_hist, 
 
 }  // namespace
 
-std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd) noexcept {
+std::expected<TcpInfoSnapshot, TelemetryError> detail::harvest_socket_keyed(cntp::detail::SocketOptionKey const& key,
+                                                                            cntp::SocketFd fd) noexcept {
     tcp_info info{};
     socklen_t info_len = sizeof(info);
     const int tcp_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_INFO, &info, &info_len);
@@ -200,8 +201,8 @@ std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd)
     }
 
     cntp::CcAlgorithm algorithm = cntp::CcAlgorithm::Custom;
-    if (auto selected = cntp::query_cc_for_socket(fd); selected.has_value()) {
-        algorithm = *selected;
+    if (auto selected = cntp::detail::query_cc_selection_for_socket_keyed(key, fd); selected.has_value()) {
+        algorithm = selected->algorithm;
     }
     CongestionSample state = decode_tcp_info(info, algorithm);
 
@@ -241,7 +242,8 @@ CongestionAggregate aggregate_congestion(cog::CogIdentity const& nic,
 }
 
 std::expected<CongestionAggregate, TelemetryError>
-harvest_per_link(cog::CogIdentity const& nic, std::span<const cntp::SocketFd> active_fds) noexcept {
+detail::harvest_per_link_keyed(cntp::detail::SocketOptionKey const& key, cog::CogIdentity const& nic,
+                               std::span<const cntp::SocketFd> active_fds) noexcept {
     if (!is_nic_cog(nic)) {
         return std::unexpected(TelemetryError::InvalidNicCog);
     }
@@ -255,7 +257,7 @@ harvest_per_link(cog::CogIdentity const& nic, std::span<const cntp::SocketFd> ac
     RttHistogram rtt_hist{};
     BandwidthHistogram bw_hist{};
     for (auto fd : active_fds) {
-        auto sample = harvest_socket(fd);
+        auto sample = harvest_socket_keyed(key, fd);
         if (!sample.has_value()) {
             return std::unexpected(sample.error());
         }

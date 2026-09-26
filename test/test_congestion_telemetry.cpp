@@ -174,7 +174,10 @@ void test_live_tcp_info_if_available() {
     auto fd = cntp::admit_socket_fd(socket.raw());
     assert(fd.has_value());
 
-    auto harvested = topology::harvest_socket(*fd);
+    // A harvest reads socket options, and the test runner context carries
+    // the IO and Block that the socket option gate asks for.
+    eff::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
+    auto harvested = topology::harvest_socket(test_ctx, *fd);
     if (!harvested.has_value()) {
         std::printf("  test_live_tcp_info_if_available: SKIPPED\n");
         return;
@@ -183,11 +186,11 @@ void test_live_tcp_info_if_available() {
     assert(harvested->value().cwnd_bytes.value() > 0);
 
     std::array fds{*fd};
-    auto aggregate = topology::harvest_per_link(nic(77), std::span{fds});
+    auto aggregate = topology::harvest_per_link(test_ctx, nic(77), std::span{fds});
     assert(aggregate.has_value());
     assert(aggregate->sample_count == 1);
 
-    auto wrong_cog = topology::harvest_per_link(gpu(88), std::span{fds});
+    auto wrong_cog = topology::harvest_per_link(test_ctx, gpu(88), std::span{fds});
     assert(!wrong_cog.has_value());
     assert(wrong_cog.error() == topology::TelemetryError::InvalidNicCog);
     std::printf("  test_live_tcp_info_if_available: PASSED\n");
@@ -227,6 +230,9 @@ int main() {
     static_assert(!topology::CtxFitsCongestionTelemetryStart<eff::BgDrainCtx>);
     static_assert(topology::CtxFitsCongestionTelemetryHarvest<eff::BgDrainCtx>);
     static_assert(!topology::CtxFitsCongestionTelemetryHarvest<eff::HotFgCtx>);
+    static_assert(topology::CtxFitsCongestionTelemetryPoll<eff::BgLoadCtx>);
+    static_assert(!topology::CtxFitsCongestionTelemetryPoll<eff::BgDrainCtx>,
+                  "a poll reads sockets through getsockopt, and a drain context carries no IO");
     static_assert(std::same_as<topology::TcpInfoSnapshot::tag_type, ::fixy::tags::source::TcpInfo>);
     static_assert(std::is_trivially_copy_constructible_v<topology::CongestionSample>
                   && std::is_trivially_destructible_v<topology::CongestionSample>);

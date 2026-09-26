@@ -39,7 +39,8 @@ std::string_view incast_error_name(IncastError error) noexcept {
     }
 }
 
-std::expected<void, IncastError> set_socket_rto_min_usec(SocketFd fd, PositiveRtoMinUsec rto_min) noexcept {
+std::expected<void, IncastError> detail::set_socket_rto_min_usec_keyed(SocketOptionKey const&, SocketFd fd,
+                                                                       PositiveRtoMinUsec rto_min) noexcept {
 #ifdef TCP_RTO_MIN_US
     const std::uint32_t value = rto_min.value();
     const int rc = ::setsockopt(fd.value(), IPPROTO_TCP, TCP_RTO_MIN_US, &value, static_cast<socklen_t>(sizeof(value)));

@@ -192,7 +192,22 @@ template <::foundation::effects::IsExecCtx Ctx>
     return std::unexpected(PacingError::FqRequired);
 }
 
-[[nodiscard]] std::expected<void, PacingError> set_socket_pacing_rate(SocketFd fd,
-                                                                      PositivePacingRate bytes_per_second) noexcept;
+namespace detail {
+
+// The SO_MAX_PACING_RATE body.  It takes the key, so only the gated form
+// below reaches setsockopt.
+[[nodiscard]] std::expected<void, PacingError>
+set_socket_pacing_rate_keyed(SocketOptionKey const&, SocketFd fd, PositivePacingRate bytes_per_second) noexcept;
+
+}  // namespace detail
+
+// The rate is a socket option, so the call takes a context that admits
+// the socket option row.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsSocketOption<Ctx>
+[[nodiscard]] std::expected<void, PacingError> set_socket_pacing_rate(Ctx const& ctx, SocketFd fd,
+                                                                      PositivePacingRate bytes_per_second) noexcept {
+    return detail::set_socket_pacing_rate_keyed(detail::socket_option_key_(ctx), fd, bytes_per_second);
+}
 
 }  // namespace crucible::cntp

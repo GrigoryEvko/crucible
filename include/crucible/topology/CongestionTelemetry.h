@@ -6,6 +6,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/effects/Ctx.h>
 
 #include <algorithm>
 #include <array>
@@ -133,13 +134,37 @@ admit_sample_period_ns(std::uint64_t ns) noexcept {
     return identity.kind == cog::CogKind::NicPort || identity.kind == cog::CogKind::NicCard;
 }
 
-[[nodiscard, gnu::hot]] std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd) noexcept;
-
 [[nodiscard]] CongestionAggregate aggregate_congestion(cog::CogIdentity const& nic,
                                                        std::span<const TcpInfoSnapshot> samples) noexcept;
 
+namespace detail {
+
+// The two harvest bodies.  Each takes the socket option key, so only a
+// gated form below reaches getsockopt.
+[[nodiscard, gnu::hot]] std::expected<TcpInfoSnapshot, TelemetryError>
+harvest_socket_keyed(cntp::detail::SocketOptionKey const& key, cntp::SocketFd fd) noexcept;
+
 [[nodiscard]] std::expected<CongestionAggregate, TelemetryError>
-harvest_per_link(cog::CogIdentity const& nic, std::span<const cntp::SocketFd> active_fds) noexcept;
+harvest_per_link_keyed(cntp::detail::SocketOptionKey const& key, cog::CogIdentity const& nic,
+                       std::span<const cntp::SocketFd> active_fds) noexcept;
+
+}  // namespace detail
+
+// A harvest reads TCP_INFO, TCP_CC_INFO and TCP_CONGESTION through
+// getsockopt, so it takes a context that admits the socket option row.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires cntp::CtxFitsSocketOption<Ctx>
+[[nodiscard]] std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(Ctx const& ctx,
+                                                                            cntp::SocketFd fd) noexcept {
+    return detail::harvest_socket_keyed(cntp::detail::socket_option_key_(ctx), fd);
+}
+
+template <::foundation::effects::IsExecCtx Ctx>
+    requires cntp::CtxFitsSocketOption<Ctx>
+[[nodiscard]] std::expected<CongestionAggregate, TelemetryError>
+harvest_per_link(Ctx const& ctx, cog::CogIdentity const& nic, std::span<const cntp::SocketFd> active_fds) noexcept {
+    return detail::harvest_per_link_keyed(cntp::detail::socket_option_key_(ctx), nic, active_fds);
+}
 
 [[nodiscard]] constexpr CongestionDrift detect_congestion_drift(CongestionAggregate const& observed,
                                                                 PositiveBandwidthBps baseline_bps,

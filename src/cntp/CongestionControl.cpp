@@ -6,7 +6,6 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
-#include <unistd.h>
 
 namespace crucible::cntp {
 
@@ -136,16 +135,8 @@ std::expected<CcAvailability, CcError> parse_available_congestion_control(std::s
     return availability;
 }
 
-std::expected<CcAvailability, CcError> detail::read_available_congestion_control_from(::fixy::fs::OwnedFd const& fd) noexcept {
-    std::array<char, 512> buffer{};
-    const auto nread = ::read(fd.get(), buffer.data(), buffer.size() - 1);
-    if (nread <= 0) {
-        return std::unexpected(CcError::SysctlUnavailable);
-    }
-    return parse_available_congestion_control(std::string_view{buffer.data(), static_cast<std::size_t>(nread)});
-}
-
-std::expected<void, CcError> set_cc_for_socket(SocketFd fd, DeclaredCcChoice choice) noexcept {
+std::expected<void, CcError> detail::set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
+                                                             DeclaredCcChoice choice) noexcept {
     auto const& selection = choice.value();
     auto const name = selection.kernel_name.view();
     std::array<char, KernelCcName::max_bytes> optname{};
@@ -160,15 +151,8 @@ std::expected<void, CcError> set_cc_for_socket(SocketFd fd, DeclaredCcChoice cho
     return {};
 }
 
-std::expected<CcAlgorithm, CcError> query_cc_for_socket(SocketFd fd) noexcept {
-    auto selection = query_cc_selection_for_socket(fd);
-    if (!selection.has_value()) {
-        return std::unexpected(selection.error());
-    }
-    return selection->algorithm;
-}
-
-std::expected<CcSelection, CcError> query_cc_selection_for_socket(SocketFd fd) noexcept {
+std::expected<CcSelection, CcError> detail::query_cc_selection_for_socket_keyed(SocketOptionKey const&,
+                                                                                SocketFd fd) noexcept {
     std::array<char, KernelCcName::max_bytes> optname{};
     socklen_t len = static_cast<socklen_t>(optname.size());
     const int rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), &len);

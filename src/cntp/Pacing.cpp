@@ -227,7 +227,8 @@ std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::Ow
     }
 }
 
-std::expected<void, PacingError> set_socket_pacing_rate(SocketFd fd, PositivePacingRate bytes_per_second) noexcept {
+std::expected<void, PacingError> detail::set_socket_pacing_rate_keyed(SocketOptionKey const&, SocketFd fd,
+                                                                      PositivePacingRate bytes_per_second) noexcept {
     const std::uint64_t value = bytes_per_second.value();
     const int rc =
         ::setsockopt(fd.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &value, static_cast<socklen_t>(sizeof(value)));

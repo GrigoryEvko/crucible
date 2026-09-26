@@ -48,6 +48,12 @@ concept CtxFitsCongestionTelemetryHarvest =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
+// A poll is background work that reads each socket through getsockopt, so
+// its context admits the background row and the socket option row.  A
+// drain context carries no IO and records only.
+template <class Ctx>
+concept CtxFitsCongestionTelemetryPoll = CtxFitsCongestionTelemetryHarvest<Ctx> && cntp::CtxFitsSocketOption<Ctx>;
+
 [[nodiscard]] constexpr std::uint32_t congestion_metric_id(std::uint16_t link_slot,
                                                            CongestionMetricSlot slot) noexcept {
     return kCongestionMetricBase | (static_cast<std::uint32_t>(link_slot) << 8u) | static_cast<std::uint32_t>(slot);
@@ -185,15 +191,15 @@ public:
     }
 
     template <class Ctx>
-        requires CtxFitsCongestionTelemetryHarvest<Ctx>
+        requires CtxFitsCongestionTelemetryPoll<Ctx>
     [[nodiscard]] std::expected<topology::CongestionAggregate, topology::TelemetryError>
-    poll_link(Ctx const&, cog::CogIdentity const& nic, std::span<const cntp::SocketFd> active_fds,
+    poll_link(Ctx const& ctx, cog::CogIdentity const& nic, std::span<const cntp::SocketFd> active_fds,
               std::uint64_t sequence) noexcept {
         Slot* slot = find(nic);
         if (slot == nullptr) {
             return std::unexpected(topology::TelemetryError::LinkNotStarted);
         }
-        auto aggregate = topology::harvest_per_link(nic, active_fds);
+        auto aggregate = topology::harvest_per_link(ctx, nic, active_fds);
         if (!aggregate.has_value()) {
             return std::unexpected(aggregate.error());
         }
@@ -241,5 +247,9 @@ static_assert(CtxFitsCongestionTelemetryStart<::fixy::ColdInitCtx>);
 static_assert(!CtxFitsCongestionTelemetryStart<::fixy::BgDrainCtx>);
 static_assert(CtxFitsCongestionTelemetryHarvest<::fixy::BgDrainCtx>);
 static_assert(!CtxFitsCongestionTelemetryHarvest<::fixy::HotFgCtx>);
+static_assert(CtxFitsCongestionTelemetryPoll<::fixy::BgLoadCtx>);
+static_assert(!CtxFitsCongestionTelemetryPoll<::fixy::BgDrainCtx>, "a drain context carries no IO for getsockopt.");
+static_assert(!CtxFitsCongestionTelemetryPoll<::fixy::BgCompileCtx>, "getsockopt takes the socket lock, so Block too.");
+static_assert(!CtxFitsCongestionTelemetryPoll<::fixy::InitLoadCtx>, "a poll is background work.");
 
 }  // namespace crucible::topology

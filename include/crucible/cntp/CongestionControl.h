@@ -6,9 +6,12 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/atoms/Os.h>
+#include <fixy/atoms/Syscall.h>
 #include <fixy/os/Fs.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/effects/Lift.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
 #include <concepts>
@@ -16,6 +19,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -193,14 +197,15 @@ namespace detail {
 
 inline constexpr std::string_view available_cc_path = "/proc/sys/net/ipv4/tcp_available_congestion_control";
 
-// Reads and parses the list through a descriptor the door opened.
-[[nodiscard]] std::expected<CcAvailability, CcError>
-read_available_congestion_control_from(::fixy::fs::OwnedFd const& fd) noexcept;
+// The list is one short line.  A longer file is read up to this bound, and
+// the parse then refuses the cut name.
+inline constexpr std::size_t available_cc_capacity = 512;
 
 }  // namespace detail
 
 // The path is a literal, and it still takes the traversal check, because
-// that check is the one way to a path the door accepts.
+// that check is the one way to a path the door accepts.  The read goes
+// through the same door, under the same context.
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
 [[nodiscard]] std::expected<CcAvailability, CcError> read_available_congestion_control(Ctx const& ctx) noexcept {
@@ -214,7 +219,12 @@ template <::foundation::effects::IsExecCtx Ctx>
         return std::unexpected(CcError::SysctlUnavailable);
     }
     const ::fixy::fs::OwnedFd fd = std::move(*opened).consume();
-    return detail::read_available_congestion_control_from(fd);
+    std::array<char, detail::available_cc_capacity> text{};
+    auto bytes_read = ::fixy::fs::read_full(ctx, fd, std::as_writable_bytes(std::span{text}));
+    if (!bytes_read.has_value() || *bytes_read == 0) {
+        return std::unexpected(CcError::SysctlUnavailable);
+    }
+    return parse_available_congestion_control(std::string_view{text.data(), *bytes_read});
 }
 
 template <::foundation::effects::IsExecCtx Ctx>
@@ -253,33 +263,115 @@ template <LinkClass Link>
     return std::unexpected(CcError::AlgorithmUnavailable);
 }
 
-[[nodiscard]] std::expected<void, CcError> set_cc_for_socket(SocketFd fd, DeclaredCcChoice choice) noexcept;
+// A socket option call enters the kernel in the network family of the
+// syscall catalog, and that family lifts to IO and Block.  setsockopt can
+// load a congestion control module, and each call takes the socket lock,
+// so each call can park the caller.
+using socket_option_row_t =
+    ::foundation::effects::lift_row_t<::fixy::atom::syscall::family<::fixy::atom::syscall::SyscallFamily::NetworkIo>>;
 
-[[nodiscard]] std::expected<CcAlgorithm, CcError> query_cc_for_socket(SocketFd fd) noexcept;
+template <class Ctx>
+concept CtxFitsSocketOption =
+    ::foundation::effects::IsExecCtx<Ctx> && ::foundation::effects::CtxAdmits<Ctx, socket_option_row_t>;
 
-[[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(SocketFd fd) noexcept;
+namespace detail {
 
-// The three operations below cross the kernel boundary through setsockopt or
-// getsockopt, so each needs a context carrying Effect::IO.  The
-// unparameterized forms above stay for callers that thread no context,
-// which means the gate can still be bypassed by calling those.
+class SocketOptionKey;
+
+// The one door to a key.  It takes a context that admits the socket
+// option row, so a body that takes a key runs only under such a context.
 template <::foundation::effects::IsExecCtx Ctx>
-    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
-[[nodiscard]] std::expected<void, CcError> set_cc_for_socket(Ctx const&, SocketFd fd,
+    requires ::crucible::cntp::CtxFitsSocketOption<Ctx>
+[[nodiscard]] constexpr auto socket_option_key_(Ctx const&) noexcept -> SocketOptionKey;
+
+// The proof that a context admitted the socket option row.  The
+// constructor is private and socket_option_key_ is its one friend.  The
+// copy and the move are deleted, so a key stays in the scope that made it,
+// and the out-of-line socket option bodies below take it by reference.
+class SocketOptionKey {
+    constexpr SocketOptionKey() noexcept = default;
+
+    // Trailing return type on purpose: the parser takes `>::` after a
+    // leading return type as a nested-name-specifier.
+    template <::foundation::effects::IsExecCtx FriendCtx>
+        requires ::crucible::cntp::CtxFitsSocketOption<FriendCtx>
+    friend constexpr auto socket_option_key_(FriendCtx const&) noexcept -> SocketOptionKey;
+
+public:
+    SocketOptionKey(SocketOptionKey const&) = delete("a key proves one gated scope, and a copy would carry it out");
+    SocketOptionKey&
+    operator=(SocketOptionKey const&) = delete("a key proves one gated scope, and a copy would carry it out");
+    SocketOptionKey(SocketOptionKey&&) = delete("a key proves one gated scope, and a move would carry it out");
+    SocketOptionKey&
+    operator=(SocketOptionKey&&) = delete("a key proves one gated scope, and a move would carry it out");
+    ~SocketOptionKey() = default;
+};
+
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::crucible::cntp::CtxFitsSocketOption<Ctx>
+[[nodiscard]] constexpr auto socket_option_key_(Ctx const&) noexcept -> SocketOptionKey {
+    return SocketOptionKey{};
+}
+
+// The two TCP_CONGESTION bodies.  Each takes the key, so only a gated
+// form below reaches setsockopt or getsockopt.
+[[nodiscard]] std::expected<void, CcError> set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
+                                                                   DeclaredCcChoice choice) noexcept;
+
+[[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket_keyed(SocketOptionKey const&,
+                                                                                      SocketFd fd) noexcept;
+
+}  // namespace detail
+
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsSocketOption<Ctx>
+[[nodiscard]] std::expected<void, CcError> set_cc_for_socket(Ctx const& ctx, SocketFd fd,
                                                              DeclaredCcChoice choice) noexcept {
-    return set_cc_for_socket(fd, choice);
+    return detail::set_cc_for_socket_keyed(detail::socket_option_key_(ctx), fd, choice);
 }
 
 template <::foundation::effects::IsExecCtx Ctx>
-    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
-[[nodiscard]] std::expected<CcAlgorithm, CcError> query_cc_for_socket(Ctx const&, SocketFd fd) noexcept {
-    return query_cc_for_socket(fd);
+    requires CtxFitsSocketOption<Ctx>
+[[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(Ctx const& ctx, SocketFd fd) noexcept {
+    return detail::query_cc_selection_for_socket_keyed(detail::socket_option_key_(ctx), fd);
 }
 
 template <::foundation::effects::IsExecCtx Ctx>
-    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
-[[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(Ctx const&, SocketFd fd) noexcept {
-    return query_cc_selection_for_socket(fd);
+    requires CtxFitsSocketOption<Ctx>
+[[nodiscard]] std::expected<CcAlgorithm, CcError> query_cc_for_socket(Ctx const& ctx, SocketFd fd) noexcept {
+    auto selection = query_cc_selection_for_socket(ctx, fd);
+    if (!selection.has_value()) {
+        return std::unexpected(selection.error());
+    }
+    return selection->algorithm;
 }
+
+namespace detail::socket_option_invariants {
+
+using ::fixy::atom::syscall::SyscallId;
+namespace fe = ::foundation::effects;
+
+// The row that the catalog gives to the network family, stated here as
+// a pin.  mint_socket reads the same row for ::socket.
+static_assert(std::is_same_v<socket_option_row_t, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<socket_option_row_t, fe::lift_row_t<::fixy::atom::syscall::per<SyscallId::socket>>>);
+
+using IoBlockCtx = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO, fe::Effect::Block>>;
+using IoOnlyCtx = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::IO>>;
+using BgOnlyCtx = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Alloc>>;
+
+static_assert(CtxFitsSocketOption<IoBlockCtx>);
+static_assert(!CtxFitsSocketOption<IoOnlyCtx>, "a context without Block must not take the socket lock.");
+static_assert(!CtxFitsSocketOption<BgOnlyCtx>, "a context without IO must not enter the kernel.");
+static_assert(!CtxFitsSocketOption<int>);
+
+// The key has no public constructor, no copy and no move, so a body that
+// takes it is reachable only through a gated form.
+static_assert(!std::is_default_constructible_v<SocketOptionKey>);
+static_assert(!std::is_copy_constructible_v<SocketOptionKey>);
+static_assert(!std::is_move_constructible_v<SocketOptionKey>);
+static_assert(!std::is_aggregate_v<SocketOptionKey>);
+
+}  // namespace detail::socket_option_invariants
 
 }  // namespace crucible::cntp
