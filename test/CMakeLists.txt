@@ -1447,6 +1447,46 @@ crucible_test(test_is_session_handle)
 crucible_test(test_is_swmr_handle)
 crucible_test(test_row_mismatch_compile)
 crucible_test(test_insights_compile)
+
+# ── Both substrate trees in one translation unit ──────────────
+#
+# test_two_tree_coexistence.cpp includes every header of both trees, so a
+# macro or a declaration of one tree that collides with the other stops
+# its build.  The frozen half comes from scripts/frozen-paths.txt and the
+# new half is the glob of include/foundation and include/fixy, so a header
+# added to either tree joins at the next configure.  Two frozen headers
+# take a note.  crucible/bridges/_SessionPersistence.h uses the whole
+# Cipher class in inline bodies and does not include crucible/Cipher.h,
+# so the generated header includes Cipher.h first.
+# crucible/fixy/spawn/_Spawn.h stops on -Werror=redundant-tags in its own
+# self-test, and only negative fixtures include it, so it is left out.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/scripts/frozen-paths.txt)
+file(STRINGS ${CMAKE_SOURCE_DIR}/scripts/frozen-paths.txt _two_tree_frozen_lines)
+set(_two_tree_globs
+  ${CMAKE_SOURCE_DIR}/include/foundation/*.h
+  ${CMAKE_SOURCE_DIR}/include/fixy/*.h)
+foreach(_two_tree_line IN LISTS _two_tree_frozen_lines)
+  string(STRIP "${_two_tree_line}" _two_tree_line)
+  if(_two_tree_line MATCHES "^include/.*/$")
+    list(APPEND _two_tree_globs ${CMAKE_SOURCE_DIR}/${_two_tree_line}*.h)
+  elseif(_two_tree_line MATCHES "^include/.*\\.h$")
+    list(APPEND _two_tree_globs ${CMAKE_SOURCE_DIR}/${_two_tree_line})
+  endif()
+endforeach()
+file(GLOB_RECURSE _two_tree_headers CONFIGURE_DEPENDS
+  RELATIVE ${CMAKE_SOURCE_DIR}/include
+  ${_two_tree_globs})
+list(REMOVE_ITEM _two_tree_headers crucible/fixy/spawn/_Spawn.h)
+list(SORT _two_tree_headers)
+set(_two_tree_include_lines "#include <crucible/Cipher.h>\n")
+foreach(_two_tree_header IN LISTS _two_tree_headers)
+  string(APPEND _two_tree_include_lines "#include <${_two_tree_header}>\n")
+endforeach()
+file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/two_tree/every_substrate_header.h
+  CONTENT "#pragma once\n${_two_tree_include_lines}")
+crucible_test(test_two_tree_coexistence)
+target_include_directories(test_two_tree_coexistence PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/two_tree)
+
 crucible_test(test_diag_runtime)
 crucible_test(test_diag_json_emitter)
 crucible_test(test_vessel_api_typed)

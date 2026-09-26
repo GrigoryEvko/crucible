@@ -748,9 +748,9 @@ template <::foundation::effects::IsExecCtx Ctx, class... Stages>
     // backstop for the case where that conjunct is dropped: measured by
     // deleting it, the assertion catches the same call and names the offending
     // atoms.  `mint_pipeline_dag` below keeps the pair for the same reason.
-    CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
-                                 &::fixy::concurrent::detail::pipeline_row_admission_anchor_, ctx_row, required_row,
-                                 offending_row);
+    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                      &::fixy::concurrent::detail::pipeline_row_admission_anchor_, ctx_row,
+                                      required_row, offending_row);
 
     return Pipeline<std::remove_cvref_t<Stages>...>{std::forward<Stages>(stages)...};
 }
@@ -762,9 +762,9 @@ template <::foundation::effects::IsExecCtx Ctx, class Graph, class... Stages>
     using required_row = stage_graph_row_union_t<Graph>;
     using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
 
-    CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
-                                 &::fixy::concurrent::detail::pipeline_dag_row_admission_anchor_, ctx_row,
-                                 required_row, offending_row);
+    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                      &::fixy::concurrent::detail::pipeline_dag_row_admission_anchor_, ctx_row,
+                                      required_row, offending_row);
 
     using graph_type = std::remove_cvref_t<Graph>;
     return PipelineDag<graph_type>{std::forward<Stages>(stages)...};

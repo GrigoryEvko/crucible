@@ -282,7 +282,7 @@ struct row_message_check<Tag, FnPtr, CallerRow, CalleeRow, OffendingDiff, true> 
 template <typename Tag, auto FnPtr, typename CallerRow, typename CalleeRow, typename OffendingDiff>
 struct row_message_check<Tag, FnPtr, CallerRow, CalleeRow, OffendingDiff, false> {
     static_assert(is_diagnostic_class_v<Tag>, "foundation::diag [RowMismatchTag_NonTag]: "
-                                              "row_mismatch_message_v / CRUCIBLE_ROW_MISMATCH_ASSERT requires "
+                                              "row_mismatch_message_v / CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT requires "
                                               "Tag to be derived from foundation::diag::tag_base.  See "
                                               "foundation/diag/Catalog.h's catalog for the shipped tag classes; "
                                               "user extensions inherit tag_base + provide constexpr "
@@ -419,7 +419,7 @@ template <typename Tag, auto FnPtr, typename CallerRow, typename CalleeRow, type
 struct deep_message_check<Tag, FnPtr, CallerRow, CalleeRow, OffendingDiff, false> {
     static_assert(is_diagnostic_class_v<Tag>, "foundation::diag [DeepMismatchTag_NonTag]: "
                                               "row_mismatch_deep_message_v / "
-                                              "CRUCIBLE_INSIGHTFUL_ROW_MISMATCH_ASSERT requires Tag to be "
+                                              "CRUCIBLE_DIAG_INSIGHTFUL_ROW_MISMATCH_ASSERT requires Tag to be "
                                               "derived from foundation::diag::tag_base.");
     static constexpr char_buffer<1> value{};
 };
@@ -434,8 +434,13 @@ inline constexpr auto& row_mismatch_deep_message_v =
 
 // Parenthesise a condition containing a comma. The preprocessor splits
 // the argument at a template-argument list otherwise.
+//
+// The frozen tree defines CRUCIBLE_ROW_MISMATCH_ASSERT and
+// CRUCIBLE_INSIGHTFUL_ROW_MISMATCH_ASSERT over its own catalog.  These
+// macros carry a different name, so one translation unit can include
+// both trees.
 
-#define CRUCIBLE_INSIGHTFUL_ROW_MISMATCH_ASSERT(cond, tag, fn, caller, callee, offending) \
+#define CRUCIBLE_DIAG_INSIGHTFUL_ROW_MISMATCH_ASSERT(cond, tag, fn, caller, callee, offending) \
     static_assert((cond),                                                                  \
         ::foundation::diag::row_mismatch_deep_message_v<                                   \
             ::foundation::diag::tag, fn, caller, callee, offending>                        \
@@ -443,9 +448,9 @@ inline constexpr auto& row_mismatch_deep_message_v =
 
 // The same rule about parenthesising the condition applies here.
 
-#define CRUCIBLE_ROW_MISMATCH_ASSERT(cond, tag, fn, caller, callee, offending) \
-    static_assert(                                                             \
-        (cond),                                                                \
+#define CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT(cond, tag, fn, caller, callee, offending) \
+    static_assert(                                                                  \
+        (cond),                                                                     \
         ::foundation::diag::row_mismatch_message_v<::foundation::diag::tag, fn, caller, callee, offending>.view())
 
 namespace foundation::diag {

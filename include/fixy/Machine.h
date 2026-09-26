@@ -247,9 +247,13 @@ static_assert(walks_the_relation());
 // edges under the same counter value do not collide.  The relation is read the
 // first time a pair is checked against it, so every edge comes before
 // the first transition in the translation unit.
+//
+// The frozen tree defines CRUCIBLE_ALLOW_MACHINE_TRANSITION over its own
+// trait.  This macro carries a different name, so one translation unit
+// can include both trees.
 #define CRUCIBLE_MACHINE_EDGE_CAT2_(a, b) a##b
 #define CRUCIBLE_MACHINE_EDGE_CAT_(a, b) CRUCIBLE_MACHINE_EDGE_CAT2_(a, b)
-#define CRUCIBLE_ALLOW_MACHINE_TRANSITION(From, To)                                                               \
+#define CRUCIBLE_ADMIT_MACHINE_TRANSITION(From, To)                                                               \
     namespace fixy::machine::admitted_transitions {                                                               \
     constexpr ::foundation::fail_closed::edge<From, To> CRUCIBLE_MACHINE_EDGE_CAT_(machine_edge_, __COUNTER__){}; \
     }

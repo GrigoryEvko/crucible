@@ -193,9 +193,10 @@ void test_row_mismatch_message_v_caching() {
 void test_macro_happy_path() {
     // A true condition must compile silently, so the absence of a
     // diagnostic is the whole claim here.
-    CRUCIBLE_ROW_MISMATCH_ASSERT(true, EffectRowMismatch, &::sample_dispatch, int, float, double);
+    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT(true, EffectRowMismatch, &::sample_dispatch, int, float, double);
 
-    CRUCIBLE_ROW_MISMATCH_ASSERT((std::is_same_v<int, int>), HotPathViolation, &::sample_compute, long, short, char);
+    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((std::is_same_v<int, int>), HotPathViolation, &::sample_compute, long, short,
+                                      char);
 }
 
 }  // namespace

@@ -427,11 +427,11 @@ mint_stage(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::param_
     // a mismatch never reaches this body.  They stay because the concept
     // reports only that the constraint failed, while these name the offending
     // row.
-    CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<input_row, ctx_row>()), EffectRowMismatch, FnPtr,
-                                 ctx_row, input_row, input_offending_row);
+    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<input_row, ctx_row>()), EffectRowMismatch,
+                                      FnPtr, ctx_row, input_row, input_offending_row);
 
-    CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<output_row, ctx_row>()), EffectRowMismatch, FnPtr,
-                                 ctx_row, output_row, output_offending_row);
+    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<output_row, ctx_row>()), EffectRowMismatch,
+                                      FnPtr, ctx_row, output_row, output_offending_row);
 
     return Stage<FnPtr, Ctx>{ctx, std::move(in), std::move(out)};
 }

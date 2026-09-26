@@ -84,7 +84,7 @@ FOUNDATION_DIAG_INSIGHT_READER(violating_example)
 // emitting empty sections.
 //
 // An explicit specialization still beats this primary, which is what
-// CRUCIBLE_DEFINE_INSIGHTS below writes.  A tag whose prose cannot sit
+// CRUCIBLE_DIAG_INSIGHTS below writes.  A tag whose prose cannot sit
 // on the tag itself, because the tag belongs to someone else, keeps
 // that route.
 template <typename Tag>
@@ -106,7 +106,11 @@ struct insight_provider {
 // A second invocation for one tag is a redefinition. Changing a
 // severity means removing the first invocation, which puts the change in
 // front of a reviewer.
-#define CRUCIBLE_DEFINE_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating) \
+//
+// The frozen tree defines CRUCIBLE_DEFINE_INSIGHTS, which registers into
+// its own catalog with its own severity type.  These macros carry a
+// different name, so one translation unit can include both trees.
+#define CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating) \
     namespace foundation::diag {                                                 \
     template <>                                                                  \
     struct insight_provider<TagType> {                                           \
@@ -123,16 +127,16 @@ struct insight_provider {
 // registered tag with nothing to say, which the predicates below still
 // report as uninsighted.  It is the full registration with every prose
 // field empty.
-#define CRUCIBLE_DEFINE_INSIGHTS_SEVERITY(TagType, Sev)                                                      \
-    CRUCIBLE_DEFINE_INSIGHTS(TagType, Sev, ::std::string_view{}, ::std::string_view{}, ::std::string_view{}, \
+#define CRUCIBLE_DIAG_INSIGHTS_SEVERITY(TagType, Sev)                                                      \
+    CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, ::std::string_view{}, ::std::string_view{}, ::std::string_view{}, \
                              ::std::string_view{})
 
 // The same registration with a floor under each field, so a placeholder
 // left in one of them fails the build instead of reaching a reader.
 // The floors are the ones has_substantive_insights_v reads, stated one
 // field at a time so the failing field is named.
-#define CRUCIBLE_DEFINE_INSIGHTS_QV(TagType, Sev, Why, Symptom, Correct, Violating)                     \
-    CRUCIBLE_DEFINE_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating);                           \
+#define CRUCIBLE_DIAG_INSIGHTS_QV(TagType, Sev, Why, Symptom, Correct, Violating)                     \
+    CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating);                           \
     static_assert(::foundation::diag::insight_provider<TagType>::why_this_matters.size()                \
                       >= ::foundation::diag::insights_quality_thresholds<TagType>::min_why_chars,       \
                   "Insight 'why_this_matters' is too short — be substantive. "                          \
@@ -296,14 +300,14 @@ namespace foundation::diag::detail::insights_macro_test {
 struct macro_target_tag : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "MacroTargetTag";
     static constexpr std::string_view description = "test fixture for "
-                                                    "CRUCIBLE_DEFINE_INSIGHTS expansion";
+                                                    "CRUCIBLE_DIAG_INSIGHTS expansion";
     static constexpr std::string_view remediation = "n/a — fixture";
 };
 
 }  // namespace foundation::diag::detail::insights_macro_test
 
 // Invoking the macro at namespace scope is the shape a consumer uses.
-CRUCIBLE_DEFINE_INSIGHTS(::foundation::diag::detail::insights_macro_test::macro_target_tag,
+CRUCIBLE_DIAG_INSIGHTS(::foundation::diag::detail::insights_macro_test::macro_target_tag,
                          ::foundation::diag::Severity::Warning, "WHY-MACRO-TEST", "SYMPTOM-MACRO-TEST",
                          "CORRECT-MACRO-TEST", "VIOLATING-MACRO-TEST");
 
@@ -312,7 +316,7 @@ namespace foundation::diag::detail::insights_macro_test {
 using P = ::foundation::diag::insight_provider<macro_target_tag>;
 
 static_assert(P::severity == ::foundation::diag::Severity::Warning,
-              "CRUCIBLE_DEFINE_INSIGHTS failed to set severity correctly.");
+              "CRUCIBLE_DIAG_INSIGHTS failed to set severity correctly.");
 static_assert(P::why_this_matters == std::string_view{"WHY-MACRO-TEST"});
 static_assert(P::symptom_pattern == std::string_view{"SYMPTOM-MACRO-TEST"});
 static_assert(P::correct_example == std::string_view{"CORRECT-MACRO-TEST"});
@@ -322,23 +326,23 @@ static_assert(::foundation::diag::has_insights_v<macro_target_tag>,
 
 struct severity_only_tag : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "SeverityOnlyTag";
-    static constexpr std::string_view description = "test fixture for CRUCIBLE_DEFINE_INSIGHTS_SEVERITY expansion";
+    static constexpr std::string_view description = "test fixture for CRUCIBLE_DIAG_INSIGHTS_SEVERITY expansion";
     static constexpr std::string_view remediation = "n/a — fixture";
 };
 
 struct qv_target_tag : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "QvTargetTag";
-    static constexpr std::string_view description = "test fixture for CRUCIBLE_DEFINE_INSIGHTS_QV expansion";
+    static constexpr std::string_view description = "test fixture for CRUCIBLE_DIAG_INSIGHTS_QV expansion";
     static constexpr std::string_view remediation = "n/a — fixture";
 };
 
 }  // namespace foundation::diag::detail::insights_macro_test
 
-CRUCIBLE_DEFINE_INSIGHTS_SEVERITY(::foundation::diag::detail::insights_macro_test::severity_only_tag,
+CRUCIBLE_DIAG_INSIGHTS_SEVERITY(::foundation::diag::detail::insights_macro_test::severity_only_tag,
                                   ::foundation::diag::Severity::Fatal);
 
 // Each field here clears its default threshold.
-CRUCIBLE_DEFINE_INSIGHTS_QV(::foundation::diag::detail::insights_macro_test::qv_target_tag,
+CRUCIBLE_DIAG_INSIGHTS_QV(::foundation::diag::detail::insights_macro_test::qv_target_tag,
                             ::foundation::diag::Severity::Error,
                             "QV why field — substantive prose clearing the 30-char min.",
                             "QV symptom — clears 20-char min.",
@@ -349,7 +353,7 @@ namespace foundation::diag::detail::insights_macro_test {
 
 using PSev = ::foundation::diag::insight_provider<severity_only_tag>;
 static_assert(PSev::severity == ::foundation::diag::Severity::Fatal,
-              "CRUCIBLE_DEFINE_INSIGHTS_SEVERITY must set severity.");
+              "CRUCIBLE_DIAG_INSIGHTS_SEVERITY must set severity.");
 static_assert(PSev::why_this_matters.empty(), "Severity-only macro should leave why_this_matters empty.");
 static_assert(PSev::symptom_pattern.empty(), "Severity-only macro should leave symptom_pattern empty.");
 // Registering a severity alone leaves every prose field empty, and the

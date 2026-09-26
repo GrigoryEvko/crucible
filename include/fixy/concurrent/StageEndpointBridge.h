@@ -255,8 +255,8 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
     // This repeats the subset check that the requires-clause already makes.
     // It stays because the concept reports only that the constraint failed,
     // while this names the offending row.
-    CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch, FnPtr,
-                                 ctx_row, required_row, offending_row);
+    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                      FnPtr, ctx_row, required_row, offending_row);
 
     std::tuple<std::remove_cvref_t<Endpoints>...> endpoint_tuple{std::move(endpoints)...};
     return ::fixy::session::detail::late_door_t<StageEndpointDoor, Ctx>::template make_mpmc_<FnPtr>(ctx,
@@ -270,8 +270,8 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, cl
     using required_row = swmr_stage_row_union_t<FnPtr>;
     using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
 
-    CRUCIBLE_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch, FnPtr,
-                                 ctx_row, required_row, offending_row);
+    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                      FnPtr, ctx_row, required_row, offending_row);
 
     return ::fixy::session::detail::late_door_t<StageEndpointDoor, Ctx>::template make_swmr_<FnPtr>(
         ctx, std::move(in_ep).into_handle(), std::move(writer));

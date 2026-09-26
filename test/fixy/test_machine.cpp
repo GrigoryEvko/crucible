@@ -6,7 +6,7 @@
 //
 // Ported from test/test_fixy_mach_transitions.cpp and the Machine cells
 // of test/test_fixy_mach_safety.cpp.  The two edges the old test opted
-// in through CRUCIBLE_ALLOW_MACHINE_TRANSITION are declared once each
+// in through CRUCIBLE_ADMIT_MACHINE_TRANSITION are declared once each
 // way: in a per-machine namespace, and in the shared relation through
 // the macro, so both spellings are exercised.
 
@@ -48,8 +48,8 @@ using ConnMachine = Machine<Disconnected, ^^connection_edges>;
 
 // The shared relation, through the macro: the same two edges, for a
 // machine that names no relation of its own.
-CRUCIBLE_ALLOW_MACHINE_TRANSITION(Disconnected, Connecting)
-CRUCIBLE_ALLOW_MACHINE_TRANSITION(Connecting, Connected)
+CRUCIBLE_ADMIT_MACHINE_TRANSITION(Disconnected, Connecting)
+CRUCIBLE_ADMIT_MACHINE_TRANSITION(Connecting, Connected)
 
 // The relation is what the machine names, and nothing else.
 static_assert(MachineTransition<Disconnected, Connecting, ^^connection_edges>);
