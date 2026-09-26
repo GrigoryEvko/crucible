@@ -5006,28 +5006,38 @@ crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
     "static assertion failed: AsymmetricFailureDetector requires a non-empty probe window"
     "non-empty probe window")
 
-# ─── HS14 fixtures for topology::Pingmesh (GAPS-134 #1237) ──────────
+# ─── topology::Pingmesh ───────────────────────────────────────────────
 #
-#   * neg_pingmesh_mint_bg_ctx — only Init-row contexts mint the bounded
+#   * neg_pingmesh_mint_bg_ctx — only an Init-row context mints the
 #     all-pairs carrier.
-#   * neg_pingmesh_record_fg_ctx — HotFgCtx cannot mutate latency
-#     histograms; probe workers publish on the Bg row.
-#   * neg_pingmesh_raw_measurement — raw probe outcomes cannot bypass
-#     source::Pingmesh provenance.
-#   * neg_pingmesh_zero_peer_capacity — all-pairs storage must have at
-#     least two peers.
+#   * neg_pingmesh_direct_construct — the constructor is private, so the
+#     mint is the only door.
+#   * neg_pingmesh_enable_pair_bg_ctx — enabling a pair writes the mask
+#     that recording reads, so it takes an Init-row context.
+#   * neg_pingmesh_record_fg_ctx — the foreground context cannot change
+#     the latency histograms.
+#   * neg_pingmesh_raw_measurement — a raw probe outcome has no Pingmesh
+#     source tag, so it cannot be recorded.
+#   * neg_pingmesh_zero_peer_capacity — all-pairs storage needs at least
+#     two peers.
 crucible_neg_compile_topology_test(neg_pingmesh_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPingmeshMint")
+    "no matching function for call to .mint_pingmesh<fixy::BgDrainCtx, 2>\\(fixy::BgDrainCtx\\)"
+    "CtxFitsPingmeshMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
+crucible_neg_compile_topology_test(neg_pingmesh_direct_construct
+    "is private within this context"
+    "Pingmesh<MaxPeers, Significant, MaxLatencyNs>::Pingmesh\\(crucible::topology::PingmeshConfig\\)")
+crucible_neg_compile_topology_test(neg_pingmesh_enable_pair_bg_ctx
+    "no matching function for call to .crucible::topology::Pingmesh<2>::enable_pair\\(fixy::BgDrainCtx, crucible::cog::Uuid, crucible::cog::Uuid\\)"
+    "CtxFitsPingmeshMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
 crucible_neg_compile_topology_test(neg_pingmesh_record_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPingmeshRecord")
+    "no matching function for call to .crucible::topology::Pingmesh<2>::record_measurement\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+    "CtxFitsPingmeshRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_topology_test(neg_pingmesh_raw_measurement
-    "cannot convert|no matching function|could not convert"
-    "PingmeshMeasurement|Pingmesh")
+    "no matching function for call to .crucible::topology::Pingmesh<2>::record_measurement\\(fixy::BgDrainCtx, crucible::topology::PingmeshMeasurement&\\)"
+    "cannot convert .raw. \\(type .crucible::topology::PingmeshMeasurement.\\) to type .const crucible::topology::DeclaredPingmeshMeasurement&.")
 crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
-    "static assertion failed"
-    "requires at least two peers")
+    "static assertion failed: Pingmesh<MaxPeers> requires at least two peers"
+    "In instantiation of .class crucible::topology::Pingmesh<1, 2, 60000000000>.")
 
 # ─── topology::Ptp ────────────────────────────────────────────────────
 #

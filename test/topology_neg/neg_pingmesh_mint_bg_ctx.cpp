@@ -1,13 +1,13 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-134. Pingmesh carriers are minted only by Init
-// contexts; background workers may publish measurements but not create
-// the all-pairs substrate.
+// Only an Init-row context mints a pingmesh.  A background worker records
+// measurements into a pingmesh, but it cannot create one.
 
 #include <crucible/topology/Pingmesh.h>
 
 int main() {
-    auto mesh = crucible::topology::mint_pingmesh<crucible::effects::BgDrainCtx, 2>(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()});
+    auto mesh = crucible::topology::mint_pingmesh<::fixy::BgDrainCtx, 2>(
+        ::fixy::BgDrainCtx{::foundation::effects::testing::bg()});
     (void)mesh;
     return 0;
 }

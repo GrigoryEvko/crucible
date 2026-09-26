@@ -1,14 +1,14 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-134. Raw probe outcomes cannot update the
-// topology latency matrix; callers must pass source::Pingmesh-tagged
-// measurements admitted by the probe boundary.
+// record_measurement takes only a measurement tagged with the Pingmesh
+// source.  A raw probe outcome cannot update the latency matrix.
 
 #include <crucible/topology/Pingmesh.h>
 
 int main() {
-    auto mesh = crucible::topology::mint_pingmesh<crucible::effects::ColdInitCtx, 2>(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
+    auto mesh = crucible::topology::mint_pingmesh<::fixy::ColdInitCtx, 2>(
+        ::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     crucible::topology::PingmeshMeasurement raw{};
-    (void)mesh.record_measurement(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, raw);
+    (void)mesh.record_measurement(::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, raw);
     return 0;
 }

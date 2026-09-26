@@ -1,13 +1,19 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-134. Foreground hot-path contexts cannot mutate
-// pingmesh histograms; admitted measurements are recorded on the Bg row.
+// The foreground hot-path context cannot change the pingmesh histograms.
+// A foreground context is built only from the producer claim, so the
+// refused call names it in a decltype operand.
 
 #include <crucible/topology/Pingmesh.h>
 
+#include <utility>
+
 int main() {
-    auto mesh = crucible::topology::mint_pingmesh<crucible::effects::ColdInitCtx, 2>(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
-    crucible::topology::DeclaredPingmeshMeasurement m{crucible::topology::PingmeshMeasurement{}};
-    (void)mesh.record_measurement(crucible::effects::HotFgCtx{}, m);
-    return 0;
+    auto mesh = crucible::topology::mint_pingmesh<::fixy::ColdInitCtx, 2>(
+        ::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    auto const measurement =
+        ::fixy::mint_tagged<::fixy::tags::source::Pingmesh>(crucible::topology::PingmeshMeasurement{});
+
+    using refused = decltype(mesh.record_measurement(std::declval<::fixy::HotFgCtx const&>(), measurement));
+    return sizeof(refused) == 0 ? 1 : 0;
 }

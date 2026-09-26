@@ -182,7 +182,7 @@ apply to the row.
 | `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
+| `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_ptp_handle` | `include/crucible/topology/Ptp.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_topology_graph` | `include/crucible/topology/TopologyGraph.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_topology_health` | `include/crucible/topology/Health.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |

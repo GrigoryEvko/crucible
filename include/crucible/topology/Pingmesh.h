@@ -1,13 +1,14 @@
 #pragma once
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/HdrHistogram.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
 #include <atomic>
@@ -15,35 +16,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::topology {
 
-using PositivePingmeshPeerCount = safety::Positive<std::uint16_t>;
-using PositivePingmeshPeriodNs = safety::Positive<std::uint64_t>;
-using PositivePingmeshProbeBytes = safety::Positive<std::uint16_t>;
-using PositivePingmeshLatencyNs = safety::Positive<std::uint64_t>;
-using PositivePingmeshZScoreMilli = safety::Positive<std::uint32_t>;
+using PositivePingmeshPeerCount = ::fixy::Positive<std::uint16_t>;
+using PositivePingmeshPeriodNs = ::fixy::Positive<std::uint64_t>;
+using PositivePingmeshProbeBytes = ::fixy::Positive<std::uint16_t>;
+using PositivePingmeshLatencyNs = ::fixy::Positive<std::uint64_t>;
+using PositivePingmeshZScoreMilli = ::fixy::Positive<std::uint32_t>;
 
+// foundation::reflect::enum_name gives the log spelling of both enums.
 enum class PingmeshProbeStatus : std::uint8_t {
     Delivered = 0,
     Lost = 1,
     Rejected = 2,
 };
-
-[[nodiscard]] constexpr std::string_view pingmesh_probe_status_name(PingmeshProbeStatus status) noexcept {
-    switch (status) {
-        case PingmeshProbeStatus::Delivered:
-            return "Delivered";
-        case PingmeshProbeStatus::Lost:
-            return "Lost";
-        case PingmeshProbeStatus::Rejected:
-            return "Rejected";
-        default:
-            return "<unknown PingmeshProbeStatus>";
-    }
-}
 
 enum class PingmeshError : std::uint8_t {
     None = 0,
@@ -57,50 +45,27 @@ enum class PingmeshError : std::uint8_t {
     InsufficientPeers = 8,
 };
 
-[[nodiscard]] constexpr std::string_view pingmesh_error_name(PingmeshError error) noexcept {
-    switch (error) {
-        case PingmeshError::None:
-            return "None";
-        case PingmeshError::ZeroPeer:
-            return "ZeroPeer";
-        case PingmeshError::DuplicatePeer:
-            return "DuplicatePeer";
-        case PingmeshError::Full:
-            return "Full";
-        case PingmeshError::UnknownPeer:
-            return "UnknownPeer";
-        case PingmeshError::SelfPair:
-            return "SelfPair";
-        case PingmeshError::DisabledPair:
-            return "DisabledPair";
-        case PingmeshError::LatencyOutOfRange:
-            return "LatencyOutOfRange";
-        case PingmeshError::InsufficientPeers:
-            return "InsufficientPeers";
-        default:
-            return "<unknown PingmeshError>";
-    }
-}
-
 struct PingmeshConfig {
-    PositivePingmeshPeerCount max_peer_count{std::uint16_t{256}};
-    PositivePingmeshPeriodNs period_ns{std::uint64_t{5000000000ull}};
-    PositivePingmeshProbeBytes probe_size_bytes{std::uint16_t{64}};
-    PositivePingmeshZScoreMilli anomaly_zscore_milli{std::uint32_t{3000}};
+    PositivePingmeshPeerCount max_peer_count = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{256});
+    PositivePingmeshPeriodNs period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{5000000000ull});
+    PositivePingmeshProbeBytes probe_size_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{64});
+    PositivePingmeshZScoreMilli anomaly_zscore_milli = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{3000});
     bool prefer_hardware_timestamp = true;
 };
 
 struct PingmeshMeasurement {
     cog::Uuid src{};
     cog::Uuid dst{};
-    PositivePingmeshLatencyNs latency_ns{std::uint64_t{1}};
+    PositivePingmeshLatencyNs latency_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
     std::uint64_t sequence = 0;
     PingmeshProbeStatus status = PingmeshProbeStatus::Delivered;
 
     [[nodiscard]] constexpr bool delivered() const noexcept { return status == PingmeshProbeStatus::Delivered; }
 };
 
-using DeclaredPingmeshMeasurement = safety::Tagged<PingmeshMeasurement, safety::source::Pingmesh>;
+// A measurement that a probe worker reported.  The worker names the
+// source with mint_tagged, and record_measurement takes only this type.
+using DeclaredPingmeshMeasurement = ::fixy::Tagged<PingmeshMeasurement, ::fixy::tags::source::Pingmesh>;
 
 struct PingmeshPairStats {
     cog::Uuid src{};
@@ -129,10 +94,14 @@ struct PingmeshAnomalyReport {
 };
 
 template <class Ctx>
-concept CtxFitsPingmeshMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsPingmeshMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 template <class Ctx>
-concept CtxFitsPingmeshRecord = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
+concept CtxFitsPingmeshRecord =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
 namespace detail {
 
@@ -182,7 +151,18 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 }  // namespace detail
 
 template <std::size_t MaxPeers, std::uint8_t Significant = 2, std::uint64_t MaxLatencyNs = 60000000000ull>
-class Pingmesh : public safety::Pinned<Pingmesh<MaxPeers, Significant, MaxLatencyNs>> {
+class Pingmesh;
+
+// The only door into a pingmesh.  An Init-row context mints it and starts
+// probing; a background probe worker then records measurements into it.
+template <::foundation::effects::IsExecCtx Ctx, std::size_t MaxPeers, std::uint8_t Significant = 2,
+          std::uint64_t MaxLatencyNs = 60000000000ull>
+    requires CtxFitsPingmeshMint<Ctx>
+[[nodiscard]] Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&,
+                                                                          PingmeshConfig config = {}) noexcept;
+
+template <std::size_t MaxPeers, std::uint8_t Significant, std::uint64_t MaxLatencyNs>
+class Pingmesh : public ::foundation::Pinned<Pingmesh<MaxPeers, Significant, MaxLatencyNs>> {
     static_assert(MaxPeers > 1, "Pingmesh<MaxPeers> requires at least two peers.");
     static_assert(MaxPeers <= 256, "Pingmesh keeps a fixed all-pairs matrix; shard fleets above 256 peers.");
 
@@ -230,16 +210,48 @@ private:
         return PingmeshError::None;
     }
 
-public:
-    explicit Pingmesh(PingmeshConfig config = {}) noexcept : config_{config} {}
+    template <::foundation::effects::IsExecCtx Ctx, std::size_t Peers, std::uint8_t Sig, std::uint64_t MaxNs>
+        requires CtxFitsPingmeshMint<Ctx>
+    friend Pingmesh<Peers, Sig, MaxNs> mint_pingmesh(Ctx const&, PingmeshConfig config) noexcept;
 
+    explicit Pingmesh(PingmeshConfig config) noexcept : config_{config} {}
+
+    // The two steps of start_probing.  They write the peer table and the
+    // pair mask that record_measurement reads, so only start_probing, under
+    // an Init-row context, reaches them.
+    [[nodiscard]] PingmeshError register_peer(cog::CogIdentity peer) noexcept {
+        if (peer.uuid.is_zero()) {
+            return PingmeshError::ZeroPeer;
+        }
+        if (find_peer(peer.uuid) != MaxPeers) {
+            return PingmeshError::DuplicatePeer;
+        }
+        for (auto& slot : peers_) {
+            if (!slot.active) {
+                slot.peer = peer;
+                slot.active = true;
+                return PingmeshError::None;
+            }
+        }
+        return PingmeshError::Full;
+    }
+
+    void enable_all_registered_pairs() noexcept {
+        for (std::size_t src = 0; src < MaxPeers; ++src) {
+            for (std::size_t dst = 0; dst < MaxPeers; ++dst) {
+                enabled_pairs_[pair_index(src, dst)] = src != dst && peers_[src].active && peers_[dst].active;
+            }
+        }
+    }
+
+public:
     [[nodiscard]] PingmeshConfig config() const noexcept { return config_; }
 
     [[nodiscard]] std::span<const PeerSlot, MaxPeers> peers() const noexcept {
         return std::span<const PeerSlot, MaxPeers>{peers_};
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsPingmeshMint<Ctx>
     [[nodiscard]] PingmeshError start_probing(Ctx const&, std::span<const cog::CogIdentity> peers) noexcept {
         if (peers.size() < 2) {
@@ -273,32 +285,12 @@ public:
         return PingmeshError::None;
     }
 
-    [[nodiscard]] PingmeshError register_peer(cog::CogIdentity peer) noexcept {
-        if (peer.uuid.is_zero()) {
-            return PingmeshError::ZeroPeer;
-        }
-        if (find_peer(peer.uuid) != MaxPeers) {
-            return PingmeshError::DuplicatePeer;
-        }
-        for (auto& slot : peers_) {
-            if (!slot.active) {
-                slot.peer = peer;
-                slot.active = true;
-                return PingmeshError::None;
-            }
-        }
-        return PingmeshError::Full;
-    }
-
-    void enable_all_registered_pairs() noexcept {
-        for (std::size_t src = 0; src < MaxPeers; ++src) {
-            for (std::size_t dst = 0; dst < MaxPeers; ++dst) {
-                enabled_pairs_[pair_index(src, dst)] = src != dst && peers_[src].active && peers_[dst].active;
-            }
-        }
-    }
-
-    [[nodiscard]] PingmeshError enable_pair(cog::Uuid src, cog::Uuid dst) noexcept {
+    // Turns on one directed pair between two registered peers.  It writes
+    // the pair mask that record_measurement reads, so it takes the same
+    // Init-row context as start_probing.
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsPingmeshMint<Ctx>
+    [[nodiscard]] PingmeshError enable_pair(Ctx const&, cog::Uuid src, cog::Uuid dst) noexcept {
         auto const src_i = find_peer(src);
         auto const dst_i = find_peer(dst);
         auto const err = validate_pair(src_i, dst_i);
@@ -309,9 +301,9 @@ public:
         return err;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsPingmeshRecord<Ctx>
-    [[nodiscard]] PingmeshError record_measurement(Ctx const&, DeclaredPingmeshMeasurement measurement) noexcept {
+    [[nodiscard]] PingmeshError record_measurement(Ctx const&, DeclaredPingmeshMeasurement const& measurement) noexcept {
         auto const& value = measurement.value();
         auto const src = find_peer(value.src);
         auto const dst = find_peer(value.dst);
@@ -406,18 +398,18 @@ public:
     }
 };
 
-template <effects::IsExecCtx Ctx, std::size_t MaxPeers, std::uint8_t Significant = 2,
-          std::uint64_t MaxLatencyNs = 60000000000ull>
+template <::foundation::effects::IsExecCtx Ctx, std::size_t MaxPeers, std::uint8_t Significant,
+          std::uint64_t MaxLatencyNs>
     requires CtxFitsPingmeshMint<Ctx>
-[[nodiscard]] Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&,
-                                                                          PingmeshConfig config = {}) noexcept {
+[[nodiscard]] Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&, PingmeshConfig config) noexcept {
     return Pingmesh<MaxPeers, Significant, MaxLatencyNs>{config};
 }
 
-static_assert(!CtxFitsPingmeshMint<effects::BgDrainCtx>);
-static_assert(CtxFitsPingmeshMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsPingmeshRecord<effects::HotFgCtx>);
-static_assert(CtxFitsPingmeshRecord<effects::BgDrainCtx>);
-static_assert(std::is_base_of_v<safety::Pinned<Pingmesh<2>>, Pingmesh<2>>);
+static_assert(!CtxFitsPingmeshMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsPingmeshMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsPingmeshRecord<::fixy::HotFgCtx>);
+static_assert(CtxFitsPingmeshRecord<::fixy::BgDrainCtx>);
+static_assert(std::is_base_of_v<::foundation::Pinned<Pingmesh<2>>, Pingmesh<2>>);
+static_assert(!std::is_constructible_v<Pingmesh<2>, PingmeshConfig>, "a pingmesh is reached only through mint_pingmesh");
 
 }  // namespace crucible::topology
