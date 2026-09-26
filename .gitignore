@@ -2,7 +2,6 @@ build/
 build-*/
 pgo/
 CMakeUserPresets.json
-.prof/
 Testing/
 
 # Editor files
