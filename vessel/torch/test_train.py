@@ -11,6 +11,8 @@ training iteration — not just forward inference, but the full cycle:
 
 Usage:
     python test_train.py [--verbose]
+
+Exit 0 when the Vigil replays the training iteration, 1 when it does not.
 """
 
 import sys
@@ -143,7 +145,8 @@ def main():
         else:
             print("  ✗ Loss did not decrease (may happen with fixed data)")
 
-        if mode.is_compiled():
+        compiled = mode.is_compiled()
+        if compiled:
             print("  ✓ Crucible compiled the full training iteration!")
         else:
             print("  ✗ Did not reach COMPILED mode")
@@ -152,7 +155,8 @@ def main():
     print("=" * 60)
     print("Test complete.")
     print("=" * 60)
+    return 0 if compiled else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -14,6 +14,8 @@ spectrum of training ops:
 
 Usage:
     python test_train_transformer.py [--verbose]
+
+Exit 0 when the Vigil replays at least one iteration, 1 when it does not.
 """
 
 import sys
@@ -229,7 +231,8 @@ def main():
     print("=" * 60)
     print("Test complete.")
     print("=" * 60)
+    return 0 if compiled_iters > 0 else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

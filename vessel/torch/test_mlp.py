@@ -7,6 +7,8 @@ thread should detect the iteration boundary and transition to COMPILED.
 
 Usage:
     python test_mlp.py [--verbose]
+
+Exit 0 when the Vigil replays the forward pass, 1 when it does not.
 """
 
 import sys
@@ -100,18 +102,18 @@ def main():
         print(f"  total ops:   {mode._op_count}")
 
         # Verify we reached COMPILED mode
-        if mode.is_compiled():
+        compiled = mode.is_compiled()
+        if compiled:
             print("\n  ✓ Crucible detected iteration boundary and compiled!")
         else:
             print("\n  ✗ Did not reach COMPILED mode")
-            print("    (This may happen if the ATen op sequence varies "
-                  "between iterations)")
 
     print()
     print("=" * 60)
     print("Test complete.")
     print("=" * 60)
+    return 0 if compiled else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
