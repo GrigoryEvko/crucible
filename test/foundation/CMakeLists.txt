@@ -314,6 +314,18 @@ foundation_neg_compile_test(neg_exec_ctx_with_cap_needs_the_capability
   "no matching function for call to"
   "with_cap<")
 
+# Route three: an explicit specialization replaces the whole class, so a
+# name match would admit a forged scope.  IsExecCtx reads the structure of
+# the class by reflection.  The first specialization holds no source, and
+# the second holds a source that does not permit its row.  The second
+# regex of each names the specialization that the concept refused.
+foundation_neg_compile_test(neg_exec_ctx_specialization_without_source
+  "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]"
+  "the expression .is_exec_ctx_v<T> \\[with T = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_exec_ctx_specialization_outside_permitted_row
+  "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::Init> >\\]"
+  "the expression .is_exec_ctx_v<T> \\[with T = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::Init> >\\]. evaluated to .false.")
+
 # A foreground context states that its holder runs on the thread that won
 # the producer claim, so each route that builds one without the claim's
 # key is refused: braces, the key itself, a byte, and a lifetime started

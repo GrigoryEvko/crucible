@@ -36,6 +36,8 @@
 #include <atomic>
 #include <concepts>
 #include <cstddef>
+#include <iterator>
+#include <meta>
 #include <string_view>
 #include <thread>
 #include <type_traits>
@@ -520,15 +522,69 @@ template <class Brand = void>
 
 }  // namespace testing
 
-// Top-level cv and reference are stripped before matching, so that a
-// concept fed a forwarding-reference deduction still recognizes the
-// context.
+// A type is an execution context when it is a specialization of ExecCtx
+// with the structure that the primary template gives it:
+//
+//   - a capability source and a row that WellFormedExecCtx admits
+//   - cap_type and row_type naming exactly those two arguments
+//   - exactly two data members, both private: the source, then the row.
+//
+// The check reads that structure by reflection.  A name match alone
+// admits an explicit specialization of an unused row spelling, which
+// replaces the whole class: it can have a public default constructor and
+// no source at all, and every ctx-bound gate then admits the forged
+// scope.  A specialization that passes the check holds a real capability
+// source, and no route builds a source without its key.  Complexity: one
+// walk over two data members for each context type.
+//
+// The walk reads every member with unchecked access, because the members
+// it asks about are private.  It reads the type and the access of each
+// member, and no splice follows, so no private state is written.
+//
+// Top-level cv and reference are stripped before the check, so a concept
+// fed a forwarding-reference deduction still recognizes the context.
+namespace detail {
+
+template <class Cap, class R>
+[[nodiscard]] consteval bool has_exec_ctx_structure_() noexcept {
+    using Ctx = ExecCtx<Cap, R>;
+    if constexpr (!WellFormedExecCtx<Cap, R>) {
+        return false;
+    } else if constexpr (!requires {
+                             typename Ctx::cap_type;
+                             typename Ctx::row_type;
+                         }) {
+        return false;
+    } else if constexpr (!std::is_same_v<typename Ctx::cap_type, Cap> || !std::is_same_v<typename Ctx::row_type, R>) {
+        return false;
+    } else {
+        static constexpr auto members =
+            std::define_static_array(std::meta::nonstatic_data_members_of(^^Ctx, std::meta::access_context::unchecked()));
+        constexpr std::meta::info expected_types[] = {std::meta::dealias(^^Cap), std::meta::dealias(^^R)};
+        if (members.size() != std::size(expected_types)) return false;
+        for (std::size_t index = 0; index < members.size(); ++index) {
+            if (!std::meta::is_private(members[index])) return false;
+            if (std::meta::dealias(std::meta::type_of(members[index])) != expected_types[index]) return false;
+        }
+        return true;
+    }
+}
+
 template <class T>
-struct is_exec_ctx : std::false_type {};
-template <class Cap, class Row>
-struct is_exec_ctx<ExecCtx<Cap, Row>> : std::true_type {};
+[[nodiscard]] consteval bool is_exec_ctx_() noexcept {
+    constexpr std::meta::info type = std::meta::dealias(^^T);
+    if constexpr (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != ^^ExecCtx) {
+        return false;
+    } else {
+        static constexpr auto arguments = std::define_static_array(std::meta::template_arguments_of(type));
+        return has_exec_ctx_structure_<typename[:arguments[0]:], typename[:arguments[1]:]>();
+    }
+}
+
+}  // namespace detail
+
 template <class T>
-inline constexpr bool is_exec_ctx_v = is_exec_ctx<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_exec_ctx_v = detail::is_exec_ctx_<std::remove_cvref_t<T>>();
 template <class T>
 concept IsExecCtx = is_exec_ctx_v<T>;
 

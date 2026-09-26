@@ -1033,7 +1033,6 @@ inline constexpr StatedZero kZeros[] = {
     {^^fe::EffectRowLattice, "the lattice over effect rows: a grade, where the row it grades is what folds"},
     {^^fe::is_cap_type, kMetafunction},
     {^^fe::cap_permitted_row, kMetafunction},
-    {^^fe::is_exec_ctx, kMetafunction},
     {^^fe::cap_mint_key, kPasskey},
     {^^fe::ResourceTagDescriptor, kPayload},
     {^^fe::concurrent_row_value, kMetafunction},

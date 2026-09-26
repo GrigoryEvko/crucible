@@ -38,6 +38,7 @@ include/fixy/concurrent/PayloadRow.h — walks every member of a payload to fold
 include/fixy/session/Payload.h — walks every member of a session payload to find a delegated handle or a permission
 include/foundation/Lifetime.h — walks every base and member to prove that a type is an implicit-lifetime type
 include/foundation/effects/Computation.h — walks every member of a carried value to fold its effect row
+include/foundation/effects/Ctx.h — reads the type and access of each member of an ExecCtx specialization to refuse a forged one
 include/foundation/permissions/ReadView.h — walks every member of a borrowed value to find a nested permission
 include/foundation/reflect/Hash.h — walks every member of a type to fold its stable hash
 include/foundation/reflect/TypeComponents.h — walks every base and member to list the component types of a type

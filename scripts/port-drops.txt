@@ -128,6 +128,7 @@ crucible/effects/_ExecCtx.h:IsArenaCtx  — One of the six policy axes (allocato
 crucible/effects/_ExecCtx.h:IsBgCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
 crucible/effects/_ExecCtx.h:IsBoundedCtx  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:IsColdCtx  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:is_exec_ctx  — The trait struct is gone, because any translation unit could specialise it and make any class a context.  IsExecCtx and is_exec_ctx_v in foundation/effects/Ctx.h read the structure of an ExecCtx specialization by reflection instead.
 crucible/effects/_ExecCtx.h:IsFgCtx  — Dropped at 8fd50215; CtxOwnsCapability<Ctx, E> in foundation/effects/Ctx.h answers by effect rather than by a per-context predicate.
 crucible/effects/_ExecCtx.h:IsHeapCtx  — One of the six policy axes (allocator) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:is_heat_tier  — One of the six policy axes (heat) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
@@ -2036,6 +2037,7 @@ crucible/sessions/_SessionMint.h:CtxFitsChannel  → include/fixy/session/Handle
 crucible/sessions/_SessionMint.h:CtxFitsPermissionedProtocol  → include/fixy/session/Handle.h  — Replaced by CtxFitsSessionFrom and CtxFitsPermissionedSession, which also require that the context admits each permission of the set.
 crucible/sessions/_SessionMint.h:CtxFitsProtocol  → include/fixy/session/Handle.h  — Replaced by CtxAdmitsProtocolRow, which also admits the permission row of each region that the protocol delivers.
 crucible/sessions/_SessionMint.h:EpochExecCtx  — Dropped with the epoched delegation heads, which have no carrier. No other reader asks a context for an epoch.
+crucible/sessions/_SessionMint.h:is_exec_ctx  — A specialisation of the old recogniser for EpochExecCtx, which is dropped.  The new tree has no recogniser to specialise: IsExecCtx reads the structure of an ExecCtx specialization by reflection.
 crucible/sessions/_SessionMint.h:ProtocolEpochAdmittedByLoopCtx  — Dropped with the epoched delegation heads, whose thresholds it compared with the epoch of the context.
 crucible/sessions/_SessionMint.h:ProtocolPermissionedRunnable  → include/fixy/session/Handle.h  — Replaced by WellFormedRunnableProtocol, which the channel gate reads for the protocol and for its dual.
 crucible/sessions/_SessionMint.h:ProtocolVendorAdmittedByLoopCtx  — Dropped. In the new tree the vendor pin is a declaration for the layer above, and the handle steps the protocol that it pins.

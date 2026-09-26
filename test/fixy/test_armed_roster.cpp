@@ -230,12 +230,6 @@ struct foundation::contracts::armed_cell<fe::is_cap_type> {
 };
 
 template <>
-struct foundation::contracts::armed_cell<fe::is_exec_ctx> {
-    using accepts = witnesses<w::BgCtx, fe::ExecCtx<>>;
-    using refuses = witnesses<int, fe::Bg>;
-};
-
-template <>
 struct foundation::contracts::armed_cell<fp::detail::is_permission_impl> {
     using accepts = witnesses<fp::Permission<w::RegionTag>>;
     using refuses = witnesses<int, fp::SharedPermission<w::RegionTag>>;

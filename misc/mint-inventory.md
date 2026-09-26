@@ -339,7 +339,7 @@ apply to the row.
 | `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
-| `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
+| `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 
 ## include/foundation/permissions/
 
@@ -361,4 +361,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 100 | 50 | 41 | 9 | 0 | 91 | 32 |
-| new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 22 |
+| new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 21 |

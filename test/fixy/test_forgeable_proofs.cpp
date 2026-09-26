@@ -209,7 +209,6 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fe::detail::row_union_recursive,
     ^^fe::is_cap_type,
     ^^fe::is_effect_row,
-    ^^fe::is_exec_ctx,
     ^^fe::is_subrow,
     ^^fe::Row,
     ^^fe::ConcurrentRow,
