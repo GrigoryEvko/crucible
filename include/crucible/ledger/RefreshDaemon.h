@@ -73,11 +73,16 @@ namespace crucible::ledger {
 // visible — it claims IO and Block and so satisfies CtxFitsLedgerStore,
 // and it deliberately claims neither Bg nor Init, so it can read and
 // write a ledger and cannot start the thread that refreshes one.
+//
+// The daemon keeps the background source and builds the ledger context
+// from it on its own thread, and that context claims Alloc too.  A context
+// lends its source only when it claims every atom of it, so the daemon
+// asks for all four.
 
 template <class Ctx>
 concept CtxFitsRefreshDaemon =
-    ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block,
-                                        ::foundation::effects::Effect::Bg>;
+    ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::Alloc, ::foundation::effects::Effect::IO,
+                                        ::foundation::effects::Effect::Block, ::foundation::effects::Effect::Bg>;
 
 static_assert(CtxFitsRefreshDaemon<LedgerIoCtx>);
 static_assert(!CtxFitsRefreshDaemon<::fixy::HotFgCtx>, "a foreground context claims nothing and cannot refresh");

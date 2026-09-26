@@ -111,6 +111,7 @@ crucible/effects/_ExecCtx.h:alloc_class_of_t  — One of the six policy axes (al
 crucible/effects/_ExecCtx.h:ByteBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:ChannelBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:ConsumerOnlyChannel  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:CtxCanMint  → include/foundation/effects/Ctx.h  — Replaced by CtxOwnsCapability, which asks the context's row and not everything its source permits, so a context narrowed by in_row cannot mint a capability that the row dropped.
 crucible/effects/_ExecCtx.h:DRAM  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:HasCap  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
 crucible/effects/_ExecCtx.h:HasNumaPolicy  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.

@@ -10,7 +10,7 @@
 // of the budgets of a program:
 //
 //   - A BudgetAuthority is minted only with a context that owns Init, the
-//     capability of process startup, so a producer running on a
+//     capability of process startup, and IO, so a producer running on a
 //     background or foreground thread cannot make one.
 //   - Only its owner grants, because grant() needs a mutable authority.
 //     A grant is an allowance, and the stamp that records it is a proof
@@ -123,14 +123,20 @@ private:
     PeakBytes peak_;
 };
 
+// The context that mints an authority owns Init, the capability of process
+// startup, and IO, because turning an allowance into a count is a read of
+// a count image.  The authority keeps that context narrowed to the two.
 template <typename Ctx>
-    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+concept CtxFitsBudgetAuthority = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+                              && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>;
+
+template <typename Ctx>
+    requires CtxFitsBudgetAuthority<Ctx>
 [[nodiscard]] constexpr BudgetAuthority mint_budget_authority(Ctx const& ctx) noexcept;
 
 // The owner of the budgets.  Its address is its identity, so it neither
-// copies nor moves.  It holds the Init capability it was minted with,
-// because turning an allowance into a count is a read of a count image,
-// which needs a context that owns IO.
+// copies nor moves.  It holds the context it was minted with, narrowed to
+// Init and IO, for the count image that each grant reads.
 class [[nodiscard]] BudgetAuthority {
 public:
     BudgetAuthority(BudgetAuthority const&) = delete("the authority is the one owner of its budgets; a copy would "
@@ -143,18 +149,19 @@ public:
     // An allowance of at most `bits` bits transferred and `peak` bytes held.
     // Only the owner, which holds the authority mutably, grants.
     [[nodiscard]] constexpr BudgetStamp grant(BitsBudgetBound bits, PeakBytesBound peak) noexcept {
-        ::foundation::effects::ExecCtx<::foundation::effects::Init,
-                                       ::foundation::effects::Row<::foundation::effects::Effect::Init,
-                                                                  ::foundation::effects::Effect::IO>> const ctx{cap_};
-        return BudgetStamp{count_of_<BitsBudgetLattice>(ctx, bits.raw()), count_of_<PeakBytesLattice>(ctx, peak.raw())};
+        return BudgetStamp{count_of_<BitsBudgetLattice>(ctx_, bits.raw()), count_of_<PeakBytesLattice>(ctx_, peak.raw())};
     }
 
 private:
+    using AuthorityCtx = ::foundation::effects::ExecCtx<
+        ::foundation::effects::Init,
+        ::foundation::effects::Row<::foundation::effects::Effect::Init, ::foundation::effects::Effect::IO>>;
+
     template <typename Ctx>
-        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+        requires CtxFitsBudgetAuthority<Ctx>
     friend constexpr BudgetAuthority mint_budget_authority(Ctx const& ctx) noexcept;
 
-    constexpr explicit BudgetAuthority(::foundation::effects::Init const& cap) noexcept : cap_{cap} {}
+    constexpr explicit BudgetAuthority(AuthorityCtx const& ctx) noexcept : ctx_{ctx} {}
 
     // The count through the one door that states a count from a number.
     // The image names the axis it is read as, so the read cannot fail.
@@ -166,17 +173,18 @@ private:
         return *L::mint_from_image(ctx, image);
     }
 
-    ::foundation::effects::Init cap_;
+    AuthorityCtx ctx_;
 };
 
 // An authority for the budgets of a program.  The context must own Init,
-// which only process startup and the test witness hold.
+// which only process startup and the test witness hold, and IO.
 template <typename Ctx>
-    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+    requires CtxFitsBudgetAuthority<Ctx>
 [[nodiscard]] constexpr BudgetAuthority mint_budget_authority(Ctx const& ctx) noexcept {
     static_assert(std::is_same_v<::foundation::effects::cap_type_of_t<Ctx>, ::foundation::effects::Init>,
                   "only the Init capability permits the Init atom, so a context that owns Init holds it");
-    return BudgetAuthority{ctx.cap()};
+    return BudgetAuthority{
+        ctx.template in_row<::foundation::effects::Row<::foundation::effects::Effect::Init, ::foundation::effects::Effect::IO>>()};
 }
 
 template <SelfContained T>

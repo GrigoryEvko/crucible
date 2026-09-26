@@ -298,6 +298,32 @@ foundation_neg_compile_test(neg_mint_cap_outside_permitted_row
   "constraints not satisfied"
   "CanMintCap")
 
+# The row of a context is the bound of mint_from_ctx, not what its source
+# permits, and a source is not a context.  The second regex of each names
+# the conjunct of the gate and the type that it refused.
+foundation_neg_compile_test(neg_mint_from_ctx_atom_outside_the_row
+  "no matching function for call to .mint_from_ctx<foundation::effects::Effect::IO>\\(const foundation::effects::detail::ctx_witnesses::BgWitness&\\)."
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, E>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >; E = foundation::effects::Effect::IO\\]")
+foundation_neg_compile_test(neg_mint_from_ctx_source_is_not_a_context
+  "no matching function for call to .mint_from_ctx<foundation::effects::Effect::Alloc>\\(const foundation::effects::Bg&\\)."
+  "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::Bg\\]")
+
+# A context lends its source only when its row covers the source, and it
+# narrows its row but never widens it.  The second regex of each names the
+# row check and the two rows it compared.
+foundation_neg_compile_test(neg_exec_ctx_cap_from_a_narrower_row
+  "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::cap\\(\\) const."
+  "the expression .is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>; R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_exec_ctx_cap_from_init_without_block
+  "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >::cap\\(\\) const."
+  "the expression .is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>; R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_exec_ctx_in_row_widens_the_drain_row
+  "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::in_row<foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\(\\) const."
+  "required for the satisfaction of .Subrow<NewRow, Row>. \\[with NewRow = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>; Row = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>\\]")
+foundation_neg_compile_test(neg_exec_ctx_in_row_widens_the_init_row
+  "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >::in_row<foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\(\\) const."
+  "required for the satisfaction of .Subrow<NewRow, Row>. \\[with NewRow = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>; Row = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>\\]")
+
 # The passkey constructor is the only one Permission declares, so a
 # translation unit that cannot make a key cannot make a token.  The
 # second regex proves the rejection is on Permission's own constructor

@@ -36,11 +36,12 @@ template <Effect Cap, class Source>
 class Capability;
 
 // The friendship that gates construction lives on this key rather than
-// inside Capability.  A later edit to the requires-clause of mint_cap
-// must be mirrored in the friend declaration, or the friendship
-// resolves to a different overload and every minting site fails with a
-// private-member error far from the cause.  Keeping the declaration in
-// a one-purpose class puts it in front of whoever makes that edit.
+// inside Capability.  The key has two friends, mint_cap and mint_from_ctx.
+// A later edit to the template head or the requires-clause of either
+// must be mirrored in its friend declaration, or the friendship resolves
+// to a different overload and every minting site fails with a
+// private-member error far from the cause.  Keeping the declarations in
+// a one-purpose class puts them in front of whoever makes that edit.
 //
 // The key must not move into a nested namespace.  A templated friend
 // declaration introduces a new declaration into the innermost enclosing
@@ -60,6 +61,10 @@ class cap_mint_key {
     template <Effect E, class S>
         requires CanMintCap<E, S>
     friend constexpr Capability<E, S> mint_cap(S const&) noexcept;
+
+    template <Effect E, IsExecCtx Ctx>
+        requires CtxOwnsCapability<Ctx, E>
+    friend constexpr Capability<E, cap_type_of_t<Ctx>> mint_from_ctx(Ctx const&) noexcept;
 
 public:
     constexpr cap_mint_key(const cap_mint_key&) noexcept {}
@@ -167,14 +172,16 @@ inline constexpr bool cap_matches_v = detail::cap_matches_<T, E>();
 template <class T, Effect E, class S>
 concept HasCapAndSource = std::is_same_v<T, Capability<E, S>>;
 
+// The row of the context is the bound, not what its source permits.  A
+// function handed a drain context, which claims Bg and Alloc, mints an
+// Alloc capability and no IO capability, although the background source
+// permits IO.  A context claims no more than its source permits, so the
+// token names the source of the context and needs no second check.  The
+// mint builds the token from the key, and never reads the source itself.
 template <Effect E, IsExecCtx Ctx>
-    requires CtxCanMint<Ctx, E>
-[[nodiscard]] constexpr Capability<E, cap_type_of_t<Ctx>> mint_from_ctx(Ctx const& ctx) noexcept {
-    // The context's own capability member is the proof of authority,
-    // and it is passed along rather than default-constructed here: the
-    // source types have private default constructors, so a fresh one
-    // could not be made at this scope anyway.
-    return mint_cap<E>(ctx.cap());
+    requires CtxOwnsCapability<Ctx, E>
+[[nodiscard]] constexpr Capability<E, cap_type_of_t<Ctx>> mint_from_ctx(Ctx const&) noexcept {
+    return Capability<E, cap_type_of_t<Ctx>>{cap_mint_key{}};
 }
 
 // The capability may have been minted in another scope.  This says the
@@ -290,6 +297,9 @@ static_assert(noexcept(mint_cap<Effect::Alloc>(std::declval<Bg const&>())),
               "not, the cap_mint_key friend declaration has drifted from the factory signature.");
 static_assert(noexcept(mint_cap<Effect::IO>(std::declval<Init const&>())));
 static_assert(noexcept(mint_cap<Effect::Block>(std::declval<Test const&>())));
+static_assert(noexcept(mint_from_ctx<Effect::Alloc>(std::declval<detail::ctx_witnesses::BgWitness const&>())),
+              "mint_from_ctx for an atom the context claims must resolve and be noexcept.  If it does not, the "
+              "cap_mint_key friend declaration has drifted from the factory signature.");
 
 static_assert(std::is_empty_v<cap_mint_key>);
 

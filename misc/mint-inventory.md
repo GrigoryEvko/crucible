@@ -339,10 +339,10 @@ apply to the row.
 | `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
 | `InitOwner::mint_init_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | · | HS14: 3 |
 | `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | · | member | · | · | HS14: 2 |
-| `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
+| `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
-| `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 
 ## include/foundation/permissions/
 

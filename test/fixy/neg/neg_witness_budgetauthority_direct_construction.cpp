@@ -25,6 +25,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::BudgetAuthority{forge::lvalue<const foundation::effects::Init>()};
+    [[maybe_unused]] auto forged = fixy::BudgetAuthority{forge::lvalue<const foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::IO>>>()};
     return 0;
 }

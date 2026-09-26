@@ -460,7 +460,7 @@ template <typename Ctx, TscMode Mode, typename PinT>
 concept CtxFitsTscReaderMint = eff::IsExecCtx<Ctx> && (Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>;
 
 template <typename Ctx, std::uint64_t MaxNanos>
-concept CtxFitsBoundedSleepMint = eff::CtxCanMint<Ctx, eff::Effect::Block> && (MaxNanos > 0);
+concept CtxFitsBoundedSleepMint = eff::CtxOwnsCapability<Ctx, eff::Effect::Block> && (MaxNanos > 0);
 
 template <ClockSource_v Source, eff::IsExecCtx Ctx>
     requires CtxFitsClockReaderMint<Ctx, Source>

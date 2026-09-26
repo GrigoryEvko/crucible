@@ -133,10 +133,9 @@ static_assert(!fe::CtxAdmits<ColdInitCtx, fe::Row<fe::Effect::Block>>);
 static_assert(fe::CtxAdmits<InitLoadCtx, fe::Row<fe::Effect::Block>>);
 static_assert(!fe::CtxAdmits<HotFgCtx, fe::Row<fe::Effect::Block>>, "The hot path never admits Block.");
 
-// What each context owns, and what its source could still authorize.
-// The drain context claims two effects but its source permits four,
-// so the two groups differ.  The cold init context claims three and its
-// source permits four in the same way.
+// What each context owns.  The drain context claims two effects and its
+// source permits four, and it mints and lends only the two it claims.
+// The cold init context claims three of the four in the same way.
 static_assert(fe::CtxOwnsCapability<BgDrainCtx, fe::Effect::Bg>);
 static_assert(fe::CtxOwnsCapability<BgDrainCtx, fe::Effect::Alloc>);
 static_assert(!fe::CtxOwnsCapability<BgDrainCtx, fe::Effect::IO>);
@@ -144,21 +143,6 @@ static_assert(fe::CtxOwnsCapability<BgCompileCtx, fe::Effect::IO>);
 static_assert(!fe::CtxOwnsCapability<HotFgCtx, fe::Effect::Bg>);
 static_assert(!fe::CtxOwnsCapability<ColdInitCtx, fe::Effect::Block>);
 static_assert(fe::CtxOwnsCapability<InitLoadCtx, fe::Effect::Block>);
-
-static_assert(fe::CtxCanMint<BgDrainCtx, fe::Effect::Alloc>);
-static_assert(fe::CtxCanMint<BgDrainCtx, fe::Effect::IO>);
-static_assert(fe::CtxCanMint<BgDrainCtx, fe::Effect::Block>);
-static_assert(fe::CtxCanMint<BgDrainCtx, fe::Effect::Bg>);
-static_assert(!fe::CtxCanMint<BgDrainCtx, fe::Effect::Init>);
-static_assert(fe::CtxCanMint<BgCompileCtx, fe::Effect::Block>);
-static_assert(fe::CtxCanMint<ColdInitCtx, fe::Effect::Alloc>);
-static_assert(fe::CtxCanMint<ColdInitCtx, fe::Effect::IO>);
-static_assert(fe::CtxCanMint<ColdInitCtx, fe::Effect::Block>);
-static_assert(!fe::CtxCanMint<ColdInitCtx, fe::Effect::Bg>);
-static_assert(!fe::CtxCanMint<HotFgCtx, fe::Effect::Alloc>);
-static_assert(!fe::CtxCanMint<HotFgCtx, fe::Effect::Bg>);
-static_assert(!fe::CtxCanMint<HotFgCtx, fe::Effect::Block>);
-static_assert(fe::CtxCanMint<TestRunnerCtx, fe::Effect::Block>);
 
 // No context builds from nothing.
 static_assert(!std::is_default_constructible_v<HotFgCtx>);

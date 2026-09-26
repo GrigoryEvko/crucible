@@ -5,7 +5,7 @@
 // run time from the capability it claims.
 //
 // The header self-test pins the shapes.  What this file adds is the
-// scenarios: a gated call, a row widened from one production context
+// scenarios: a gated call, a row narrowed from one production context
 // into another, and the runtime construction, which needs a real
 // capability that a test takes from foundation's testing witness.
 
@@ -24,6 +24,7 @@ using fe::Effect;
 using fe::Row;
 using ::fixy::BgCompileCtx;
 using ::fixy::BgDrainCtx;
+using ::fixy::BgLoadCtx;
 using ::fixy::ColdInitCtx;
 using ::fixy::HotFgCtx;
 using ::fixy::InitLoadCtx;
@@ -96,32 +97,37 @@ static_assert(CanDoNothing<HotFgCtx> && CanDoNothing<BgDrainCtx> && CanDoNothing
               && CanDoNothing<ColdInitCtx> && CanDoNothing<TestRunnerCtx>);
 
 // ---------------------------------------------------------------------
-// Widening the drain row by IO is the compile context: the two
-// production names are one promotion apart, not two spellings.
+// Narrowing the compile row by IO is the drain context: the two
+// production names are one narrowing apart, not two spellings.
 
-static_assert(std::is_same_v<decltype(std::declval<BgDrainCtx const&>().in_row<Row<Effect::Bg, Effect::Alloc, Effect::IO>>()),
-                             BgCompileCtx>);
+static_assert(std::is_same_v<decltype(std::declval<BgCompileCtx const&>().in_row<Row<Effect::Bg, Effect::Alloc>>()),
+                             BgDrainCtx>);
 
-// A row only grows, and only within what the source permits.  The
-// drain context widens by Block, which its source permits; the
-// foreground context cannot claim Bg at all, because its source
-// permits the empty row only.
+// A row only narrows.  The drain context does not widen by Block,
+// although its source permits Block: the atom needs the source as
+// evidence, and the drain context does not lend its source.  The
+// foreground context cannot claim Bg at all.
 template <class Ctx>
 concept CanWidenByBlock = requires(Ctx const& ctx) {
     ctx.template in_row<Row<Effect::Bg, Effect::Alloc, Effect::Block>>();
 };
 template <class Ctx>
 concept CanClaimBg = requires(Ctx const& ctx) { ctx.template in_row<Row<Effect::Bg>>(); };
-static_assert(CanWidenByBlock<BgDrainCtx>);
+template <class Ctx>
+concept LendsItsSource = requires(Ctx const& ctx) { ctx.cap(); };
+static_assert(!CanWidenByBlock<BgDrainCtx>);
+static_assert(CanWidenByBlock<BgLoadCtx>, "the load row covers the narrower row");
 static_assert(!CanClaimBg<HotFgCtx>);
 static_assert(!CanWidenByBlock<ColdInitCtx>, "the init row is not a subrow of the drain row, and an init source permits no Bg");
+static_assert(!LendsItsSource<BgDrainCtx> && !LendsItsSource<BgCompileCtx> && !LendsItsSource<ColdInitCtx>);
+static_assert(LendsItsSource<BgLoadCtx> && LendsItsSource<InitLoadCtx> && LendsItsSource<TestRunnerCtx>);
 
-// The cold init context widens by Block into the startup load context,
-// because its source permits Block.  The two production names are one
-// promotion apart, as the drain and the compile contexts are.
-static_assert(std::is_same_v<decltype(std::declval<ColdInitCtx const&>()
-                                          .in_row<Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>()),
-                             InitLoadCtx>);
+// The startup load context narrowed by Block is the cold init context.
+// The two production names are one narrowing apart, as the compile and
+// the drain contexts are.
+static_assert(std::is_same_v<decltype(std::declval<InitLoadCtx const&>()
+                                          .in_row<Row<Effect::Init, Effect::Alloc, Effect::IO>>()),
+                             ColdInitCtx>);
 
 // ---------------------------------------------------------------------
 // A static_assert proves the constant-evaluated path only.  These run.
@@ -142,23 +148,26 @@ static_assert(std::is_same_v<decltype(std::declval<ColdInitCtx const&>()
     if (needs_io(cold) != 7) return 5;
     if (needs_io(test_ctx) != 7) return 6;
 
-    // The capability member is reachable through the borrowing accessor
-    // and nowhere else.
-    fe::Bg const& held = drain.cap();
+    // The capability member is reachable through the borrowing accessor,
+    // from a context that claims every atom of it, and nowhere else.
+    BgLoadCtx bg_load{fe::testing::bg()};
+    fe::Bg const& held = bg_load.cap();
     [[maybe_unused]] fe::cap::Alloc alloc_tag = held.alloc;
-    fe::Init const& held_init = cold.cap();
+    InitLoadCtx load{fe::testing::init()};
+    fe::Init const& held_init = load.cap();
     [[maybe_unused]] fe::cap::IO io_tag = held_init.io;
-
-    // The drain context widened by IO is the compile context, and it
-    // carries the capability it was built with.
-    BgCompileCtx widened = drain.in_row<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
-    if (needs_io(widened) != 7) return 7;
-
-    // The cold init context widened by Block is the startup load context,
-    // and it carries the init capability, which holds a block.
-    InitLoadCtx load = cold.in_row<Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>();
     [[maybe_unused]] fe::cap::Block block_tag = load.cap().block;
-    if (needs_io(load) != 7) return 9;
+
+    // The compile context narrowed by IO is the drain context, and it
+    // carries the capability it was built with.
+    BgDrainCtx narrowed = compile.in_row<Row<Effect::Bg, Effect::Alloc>>();
+    if (needs_drain(narrowed) != 99) return 7;
+
+    // The startup load context narrowed by Block is the cold init
+    // context, and it carries the init capability.
+    ColdInitCtx narrowed_init = load.in_row<Row<Effect::Init, Effect::Alloc, Effect::IO>>();
+    if (needs_io(narrowed_init) != 7) return 9;
+    if (needs_io(load) != 7) return 10;
 
     if (sizeof(fg) != 1 || sizeof(drain) != 1 || sizeof(compile) != 1 || sizeof(cold) != 1 || sizeof(load) != 1
         || sizeof(test_ctx) != 1) {

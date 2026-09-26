@@ -271,9 +271,16 @@ private:
 public:
 
     // The only way to reach the capability, and it borrows rather than
-    // copies.  Code that wants a copy has to write one, which a grep
-    // for this accessor finds.
-    [[nodiscard]] constexpr Cap const& cap() const noexcept { return cap_; }
+    // copies.  The source authorizes every atom it permits, and a holder
+    // of it mints any of them and builds a context of any row it permits.
+    // So a context lends its source only when its row already claims all
+    // of them.  A narrower context keeps its source, and nothing reached
+    // from it claims an atom that its row does not.
+    [[nodiscard]] constexpr Cap const& cap() const noexcept
+        requires Subrow<cap_permitted_row_t<Cap>, Row>
+    {
+        return cap_;
+    }
 
     using cap_type = Cap;
     using row_type = Row;
@@ -292,13 +299,14 @@ public:
         return ExecCtx<NewCap, Row>{cap};
     }
 
-    // Widening the row carries the capability already held rather than
-    // minting one, which is why it needs no evidence beyond the context
-    // it is called on.  The row may not grow past what the capability
-    // source permits, so a foreground context — whose source permits
-    // nothing — cannot widen at all.
+    // A context narrows its row with no evidence, because the narrower row
+    // claims less.  It never widens.  A wider row claims an atom that this
+    // context does not, and the evidence for that atom is the source
+    // itself, held by value: ExecCtx<Cap, Wider>{source}.  cap() lends the
+    // source only from a context that already claims every atom of it, so
+    // that evidence never comes out of a narrower context.
     template <class NewRow>
-        requires IsEffectRow<NewRow> && Subrow<Row, NewRow> && Subrow<NewRow, cap_permitted_row_t<Cap>>
+        requires IsEffectRow<NewRow> && Subrow<NewRow, Row>
     [[nodiscard]] constexpr auto in_row() const noexcept -> ExecCtx<Cap, NewRow> {
         return ExecCtx<Cap, NewRow>{cap_};
     }
@@ -610,13 +618,6 @@ concept CtxOwnsAnyOf = IsExecCtx<Ctx> && (row_contains_v<row_type_of_t<Ctx>, Es>
 template <class Ctx, Effect... Es>
 concept CtxOwnsAllOf = IsExecCtx<Ctx> && (row_contains_v<row_type_of_t<Ctx>, Es> && ...);
 
-// This asks what the capability source could authorize, not what the
-// context currently claims.  The two differ: a background context may
-// claim only two effects while its source permits four, and the
-// context can widen into them.
-template <class Ctx, Effect E>
-concept CtxCanMint = IsExecCtx<Ctx> && row_contains_v<cap_permitted_row_t<cap_type_of_t<Ctx>>, E>;
-
 namespace detail::ctx_witnesses {
 
 // Witnesses in the shape of the named contexts the layer above defines
@@ -882,23 +883,22 @@ static_assert(!CtxOwnsAllOf<FgWitness, Effect::Bg>,
 static_assert(CtxOwnsAnyOf<BgWitness, Effect::Bg> == CtxOwnsCapability<BgWitness, Effect::Bg>);
 static_assert(CtxOwnsAllOf<BgWitness, Effect::Bg> == CtxOwnsCapability<BgWitness, Effect::Bg>);
 
-// The background witness claims two effects but its source permits
-// four, so the next assertions differ from the ownership ones above.
-// The init witness claims three and its source permits four in the same
-// way.
-static_assert(CtxCanMint<BgWitness, Effect::Alloc>);
-static_assert(CtxCanMint<BgWitness, Effect::IO>);
-static_assert(CtxCanMint<BgWitness, Effect::Block>);
-static_assert(CtxCanMint<BgWitness, Effect::Bg>);
-static_assert(!CtxCanMint<BgWitness, Effect::Init>);
-static_assert(CtxCanMint<BgCompileCtx, Effect::Block>);
-static_assert(CtxCanMint<InitWitness, Effect::Alloc>);
-static_assert(CtxCanMint<InitWitness, Effect::IO>);
-static_assert(CtxCanMint<InitWitness, Effect::Block>);
-static_assert(!CtxCanMint<InitWitness, Effect::Bg>);
-static_assert(!CtxCanMint<FgWitness, Effect::Alloc>);
-static_assert(!CtxCanMint<FgWitness, Effect::Bg>);
-static_assert(CtxCanMint<TestWitnessCtx, Effect::Block>);
+// The background witness claims two atoms and its source permits four.
+// The row is the bound: the witness keeps its source, and it narrows its
+// row but does not widen it.  A context whose row covers its source lends
+// the source.
+template <class Ctx>
+concept LendsItsSource = requires(Ctx const& ctx) { ctx.cap(); };
+template <class Ctx, class Row>
+concept NarrowsTo = requires(Ctx const& ctx) { ctx.template in_row<Row>(); };
+
+static_assert(!LendsItsSource<BgWitness> && !LendsItsSource<BgCompileCtx> && !LendsItsSource<InitWitness>);
+static_assert(LendsItsSource<BgLoadCtx> && LendsItsSource<InitLoadCtx> && LendsItsSource<TestWitnessCtx>
+              && LendsItsSource<FgWitness>);
+static_assert(NarrowsTo<BgCompileCtx, Row<Effect::Bg, Effect::Alloc>> && NarrowsTo<BgWitness, Row<>>);
+static_assert(!NarrowsTo<BgWitness, Row<Effect::Bg, Effect::Alloc, Effect::IO>>,
+              "A context does not widen its row.  The atom it would add needs the source as evidence.");
+static_assert(!NarrowsTo<InitWitness, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>);
 
 }  // namespace detail::ctx_witnesses
 
