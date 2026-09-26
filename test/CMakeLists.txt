@@ -878,20 +878,19 @@ add_test(NAME fixy_clean_headers
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.sh)
 set_tests_properties(fixy_clean_headers fixy_clean_headers_self_test PROPERTIES
     LABELS "ci_guard")
-# FIXY-V-006 axis-numbering CI guard.  FX dim numbering (FX dim 1..22)
-# diverges from substrate DimensionAxis ordinal (0..23) because FX dim
-# 12 Clock Domain and FX dim 17 FP Order were dropped per fixy.md
-# §24.1.  V-006 migrated every doc-block under include/crucible/fixy/
-# to the substrate form "DimensionAxis::<Name> = <ordinal>".  This
-# guard rejects regression back to the FX-only "Dim <N>" / "(dim <N>)"
-# spellings.  See Default.h's preamble for the convention statement.
+# The fixy doc-blocks name an axis by the enum spelling
+# "DimensionAxis::<Name> = <ordinal>", because the retired FX numbering no
+# longer matches the enum ordinals.  scripts/check-fixy-dim-prose.py reads the
+# comments and string literals of include/fixy and include/crucible/fixy from
+# the parse tree and refuses the FX spellings "Dim <N>" and "(dim <N>)".  Code
+# is not prose.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME fixy_dim_prose_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.sh
-          --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.py --self-test)
 add_test(NAME fixy_dim_prose
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.py)
 set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # Each direct Linux syscall call in include/, src/ and vessel/ carries a
 # `// SYSCALL-CAP-OK: <reason>` comment in its statement or an entry in
 # scripts/syscall-capability-allowlist.txt with its effects::* capability
