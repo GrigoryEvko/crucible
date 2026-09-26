@@ -5025,43 +5025,55 @@ crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
     "static assertion failed"
     "requires at least two peers")
 
-# ─── HS14 fixtures for topology::Ptp (GAPS-129 #1221) ───────────────
+# ─── topology::Ptp ────────────────────────────────────────────────────
 #
-#   * neg_ptp_mint_bg_ctx — only Init-row contexts mint PTP handles.
-#   * neg_ptp_record_fg_ctx — HotFgCtx cannot publish PTP samples.
-#   * neg_ptp_raw_fd — raw int fds cannot mint PTP handles.
-#   * neg_ptp_raw_timestamp — raw nanoseconds cannot substitute for
-#     source::Ptp timestamps.
-#   * neg_ptp_open_raw_device_index — raw integers cannot name /dev/ptpN.
-#   * neg_ptp_enable_raw_socket — raw socket fds cannot program timestamping.
-#   * neg_ptp_raw_daemon_report_status — daemon status conversion requires
-#     source::Ptp provenance at the external-state boundary.
-#   * neg_ptp_daemon_report_fg_ctx — foreground contexts cannot admit
-#     external daemon reports.
+#   * neg_ptp_mint_bg_ctx — only an Init-row context mints a PTP handle.
+#   * neg_ptp_handle_direct_construct — the handle's constructor is
+#     private, so the mint is the only door.
+#   * neg_ptp_record_fg_ctx — the foreground context cannot record into a
+#     handle.
+#   * neg_ptp_raw_fd — a raw int does not name the clock of a handle.
+#   * neg_ptp_raw_timestamp — a raw nanosecond count is not a PTP
+#     timestamp.
+#   * neg_ptp_open_raw_device_index — a raw int does not name /dev/ptpN.
+#   * neg_ptp_open_ctx_lacks_block — opening /dev/ptpN needs a context
+#     that admits IO and Block.
+#   * neg_ptp_enable_raw_socket — a raw socket fd cannot program
+#     timestamping.
+#   * neg_ptp_raw_daemon_report_status — a status comes only from an
+#     admitted daemon report.
+#   * neg_ptp_daemon_report_fg_ctx — the foreground context cannot admit a
+#     daemon report.
 crucible_neg_compile_topology_test(neg_ptp_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPtpMint")
+    "no matching function for call to .mint_ptp_handle\\(fixy::BgDrainCtx&,"
+    "required for the satisfaction of .CtxFitsPtpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_topology_test(neg_ptp_handle_direct_construct
+    "is private within this context"
+    "crucible::topology::PtpHandle::PtpHandle\\(crucible::cog::CogIdentity, crucible::topology::PtpClockFd, const crucible::topology::PtpStatus&\\)")
 crucible_neg_compile_topology_test(neg_ptp_record_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPtpRecord")
+    "no matching function for call to .crucible::topology::PtpHandle::record_timestamp\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
+    "required for the satisfaction of .CtxFitsPtpRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_topology_test(neg_ptp_raw_fd
-    "cannot convert|no matching function|could not convert"
-    "PtpClockFd")
+    "no matching function for call to .mint_ptp_handle\\(fixy::ColdInitCtx&, crucible::cog::CogIdentity&, int\\)"
+    "cannot convert .3. \\(type .int.\\) to type .crucible::topology::PtpClockFd.")
 crucible_neg_compile_topology_test(neg_ptp_raw_timestamp
-    "cannot convert|no matching function|could not convert"
-    "PtpTimestampNs")
+    "could not convert .42. from .unsigned int. to .crucible::topology::PtpTimestampNs."
+    "fixy::Tagged<long unsigned int, fixy::tags::source::Ptp>")
 crucible_neg_compile_topology_test(neg_ptp_open_raw_device_index
-    "cannot convert|no matching function|could not convert"
-    "PtpDeviceIndex")
+    "no matching function for call to .open_ptp_clock\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >&, int\\)"
+    "cannot convert .0. \\(type .int.\\) to type .crucible::topology::PtpDeviceIndex.")
+crucible_neg_compile_topology_test(neg_ptp_open_ctx_lacks_block
+    "no matching function for call to .open_ptp_clock\\(fixy::BgDrainCtx&,"
+    "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
 crucible_neg_compile_topology_test(neg_ptp_enable_raw_socket
-    "cannot convert|no matching function|could not convert"
-    "SocketFd")
+    "could not convert .3. from .int. to .crucible::cntp::SocketFd."
+    "fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>")
 crucible_neg_compile_topology_test(neg_ptp_raw_daemon_report_status
-    "cannot convert|no matching function|could not convert"
-    "DeclaredPtpDaemonReport")
+    "invalid initialization of reference of type .const crucible::topology::DeclaredPtpDaemonReport&. .aka .const fixy::Tagged<crucible::topology::PtpDaemonReport, fixy::tags::source::Ptp>&.. from expression of type .crucible::topology::PtpDaemonReport."
+    "in passing argument 1 of .constexpr crucible::topology::DeclaredPtpStatus crucible::topology::ptp_status_from_daemon_report")
 crucible_neg_compile_topology_test(neg_ptp_daemon_report_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsPtpRecord")
+    "no matching function for call to .admit_ptp_daemon_report\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
+    "required for the satisfaction of .CtxFitsPtpRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #

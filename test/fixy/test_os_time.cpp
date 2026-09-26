@@ -230,6 +230,11 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
             std::fprintf(stderr, "the PTP clock returned a negative or out-of-range timespec\n");
             return 1;
         }
+        const auto caps = reader->caps();
+        if (!caps && caps.error().value() == 0) {
+            std::fprintf(stderr, "the PTP capability query failed with no errno\n");
+            return 1;
+        }
     } else if (reader.error() != std::errc::no_such_file_or_directory && reader.error() != std::errc::permission_denied) {
         std::fprintf(stderr, "the PTP mint failed with an unexpected error: %s\n", reader.error().message().c_str());
         return 1;
@@ -246,20 +251,20 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
 
     long seconds = 2;
     long nanos = 5;
-    const auto good = fixy::time::detail::ptp_nanos_from_timespec(std::timespec{seconds, nanos});
+    const auto good = fixy::time::ptp_nanos_from_timespec(std::timespec{seconds, nanos});
     if (!good || *good != 2000000005ULL) {
         std::fprintf(stderr, "the PTP conversion changed a valid reading\n");
         return 1;
     }
     for (std::timespec refused : {std::timespec{-seconds, 0}, std::timespec{0, -nanos},
                                   std::timespec{0, 1000000000L}}) {
-        const auto result = fixy::time::detail::ptp_nanos_from_timespec(refused);
+        const auto result = fixy::time::ptp_nanos_from_timespec(refused);
         if (result || result.error() != std::errc::result_out_of_range) {
             std::fprintf(stderr, "the PTP conversion accepted a negative or out-of-range timespec\n");
             return 1;
         }
     }
-    const auto overflow = fixy::time::detail::ptp_nanos_from_timespec(
+    const auto overflow = fixy::time::ptp_nanos_from_timespec(
         std::timespec{std::numeric_limits<std::time_t>::max(), 999999999L});
     if (overflow || overflow.error() != std::errc::value_too_large) {
         std::fprintf(stderr, "the PTP conversion did not refuse a count past 64 bits\n");

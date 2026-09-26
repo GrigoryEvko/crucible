@@ -44,6 +44,9 @@
 #include <type_traits>
 #include <utility>
 
+#include <linux/ptp_clock.h>
+#include <sys/ioctl.h>
+
 #if defined(__x86_64__)
 #include <x86intrin.h>
 #endif
@@ -149,13 +152,17 @@ inline constexpr unsigned int ptp_clockfd_tag = 3u;
     return static_cast<::clockid_t>((complemented << 3u) | ptp_clockfd_tag);
 }
 
+}  // namespace detail
+
 // The nanosecond count of one PTP reading, or the reason there is none.
 // The function refuses a negative second or nanosecond field, and a
 // nanosecond field of a full second or more.  It clamps no value into
 // range, because a stamp must hold what the clock returned.  It refuses a
 // count that does not fit in 64 bits as an overflow.  It is a pure
 // function of the timespec, and a test can give it the values that no
-// working clock returns.
+// working clock returns.  The PHC reader converts each read with it, and
+// so does a caller that reads a hardware timestamp from a socket control
+// message.
 [[nodiscard]] constexpr std::expected<std::uint64_t, std::error_code> ptp_nanos_from_timespec(
     std::timespec const& reading) noexcept {
     constexpr std::uint64_t nanos_per_second = 1000000000ULL;
@@ -170,8 +177,6 @@ inline constexpr unsigned int ptp_clockfd_tag = 3u;
     }
     return seconds * nanos_per_second + nanos;
 }
-
-}  // namespace detail
 
 // A multi-core mask still lets the thread migrate, and the counter is
 // per-core, so only a single-core pin makes two reads comparable.
@@ -408,11 +413,22 @@ struct PtpClockReader final {
         if (::clock_gettime(detail::ptp_clockid_from_fd(fd_.get()), &now) != 0) {  // SYSCALL-CAP-OK: PtpClockReader::read, sole builder mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
             return std::unexpected{std::error_code{errno, std::system_category()}};
         }
-        auto nanos = detail::ptp_nanos_from_timespec(now);
+        auto nanos = ptp_nanos_from_timespec(now);
         if (!nanos) {
             return std::unexpected{nanos.error()};
         }
         return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(*nanos);
+    }
+
+    // The capabilities of the clock, as PTP_CLOCK_GETCAPS2 reports them, or
+    // the errno of a failed query.  The reader owns the descriptor, so the
+    // query names a device that is still open.
+    [[nodiscard]] std::expected<::ptp_clock_caps, std::error_code> caps() const noexcept {
+        ::ptp_clock_caps kernel_caps{};
+        if (::ioctl(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps) != 0) {  // SYSCALL-CAP-OK: PtpClockReader::caps, sole builder mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
+            return std::unexpected{std::error_code{errno, std::system_category()}};
+        }
+        return kernel_caps;
     }
 
 private:

@@ -145,11 +145,11 @@ int main(int argc, char** argv) {
                 .grandmaster_present = s.grandmaster != 0u,
                 .servo = servo_of(s.servo),
                 .offset_from_master_ns = s.offset,
-                .mean_path_delay_ns = ct::PositivePtpPathDelayNs{std::uint64_t{1}},
+                .mean_path_delay_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1}),
                 .frequency_adjustment_ppb = 0,
-                .skew_bound_ns = ct::PositivePtpSkewBoundNs{s.skew_bound},
-                .max_accepted_skew_ns = ct::PositivePtpSkewBoundNs{s.max_skew},
-                .max_accepted_offset_ns = ct::PositivePtpOffsetBoundNs{s.max_offset},
+                .skew_bound_ns = ::fixy::mint_refined<::fixy::positive>(s.skew_bound),
+                .max_accepted_skew_ns = ::fixy::mint_refined<::fixy::positive>(s.max_skew),
+                .max_accepted_offset_ns = ::fixy::mint_refined<::fixy::positive>(s.max_offset),
                 .sequence = 0,
             };
             return ct::ptp_degradation_reason(report) == oracle(s);

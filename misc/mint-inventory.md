@@ -360,5 +360,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 100 | 50 | 41 | 9 | 0 | 91 | 34 |
+| old (`include/crucible/`) | 100 | 50 | 41 | 9 | 0 | 91 | 32 |
 | new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 22 |

@@ -1,4 +1,5 @@
 #include <crucible/topology/Ptp.h>
+#include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
 
@@ -13,8 +14,23 @@
 #include <unistd.h>
 
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
+namespace eff = ::fixy;
 namespace topology = crucible::topology;
+
+// A background context that may block on the file system, which is what
+// opening /dev/ptpN needs.
+using BgFsCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Bg,
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::IO,
+                               ::foundation::effects::Effect::Block>>;
+
+static topology::PositivePtpPathDelayNs path_delay(std::uint64_t ns) {
+    return ::fixy::mint_refined<::fixy::positive>(ns);
+}
+
+static topology::PositivePtpSkewBoundNs skew_bound(std::uint64_t ns) {
+    return ::fixy::mint_refined<::fixy::positive>(ns);
+}
 
 namespace {
 
@@ -58,9 +74,14 @@ static cog::CogIdentity nic(std::uint64_t lo) {
     return id;
 }
 
+// The log spelling of the three enums comes from reflection.
 static void test_name_accessors() {
-    assert(topology::ptp_error_name(topology::PtpError::InvalidClockFd) == std::string_view{"InvalidClockFd"});
-    assert(topology::ptp_servo_state_name(topology::PtpServoState::Slave) == std::string_view{"Slave"});
+    using ::foundation::reflect::enum_name;
+    static_assert(enum_name(topology::PtpError::InvalidClockFd) == "InvalidClockFd");
+    static_assert(enum_name(topology::PtpServoState::Slave) == "Slave");
+    static_assert(enum_name(topology::PtpDegradationReason::ExcessiveSkew) == "ExcessiveSkew");
+    volatile auto error = topology::PtpError::TimestampOverflow;
+    assert(enum_name(static_cast<topology::PtpError>(error)) == std::string_view{"TimestampOverflow"});
     std::printf("  test_name_accessors:        PASSED\n");
 }
 
@@ -80,8 +101,10 @@ static void test_fd_and_nic_admission() {
 
     auto index = topology::admit_ptp_device_index(12);
     assert(index.has_value());
-    auto path = topology::ptp_device_path(*index);
-    assert(path.view() == std::string_view{"/dev/ptp12"});
+    assert(index->value() == 12);
+    auto too_high = topology::admit_ptp_device_index(256);
+    assert(!too_high.has_value());
+    assert(too_high.error() == topology::PtpError::InvalidDeviceIndex);
     std::printf("  test_fd_and_nic_admission:  PASSED\n");
 }
 
@@ -91,30 +114,31 @@ static void test_handle_status_and_timestamp() {
     topology::PtpStatus status{
         .servo = topology::PtpServoState::Slave,
         .offset_from_master_ns = 12,
-        .mean_path_delay_ns = topology::PositivePtpPathDelayNs{800},
+        .mean_path_delay_ns = path_delay(800),
         .frequency_adjustment_ppb = -3,
-        .skew_bound_ns = topology::PositivePtpSkewBoundNs{90},
+        .skew_bound_ns = skew_bound(90),
         .sequence = 4,
     };
-    auto handle = topology::mint_ptp_handle(effects::ColdInitCtx{::crucible::effects::testing::init()}, nic(3), *fd, status);
+    auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(3), *fd, status);
     assert(handle.status().synchronized());
     assert(handle.latest_timestamp().error() == topology::PtpError::NoTimestamp);
 
-    handle.record_timestamp(effects::BgDrainCtx{::crucible::effects::testing::bg()}, topology::PtpTimestampNs{123456}, 5);
+    handle.record_timestamp(eff::BgDrainCtx{::foundation::effects::testing::bg()},
+                            ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::uint64_t{123456}), 5);
     auto latest = handle.latest_timestamp();
     assert(latest.has_value());
     assert(latest->value() == 123456);
     assert(handle.latest_timestamp_sequence() == 5);
 
-    topology::DeclaredPtpStatus degraded{topology::PtpStatus{
+    auto const degraded = ::fixy::mint_tagged<::fixy::tags::source::Ptp>(topology::PtpStatus{
         .servo = topology::PtpServoState::Degraded,
         .offset_from_master_ns = 1200,
-        .mean_path_delay_ns = topology::PositivePtpPathDelayNs{900},
+        .mean_path_delay_ns = path_delay(900),
         .frequency_adjustment_ppb = 7,
-        .skew_bound_ns = topology::PositivePtpSkewBoundNs{1500},
+        .skew_bound_ns = skew_bound(1500),
         .sequence = 6,
-    }};
-    handle.record_status(effects::BgDrainCtx{::crucible::effects::testing::bg()}, degraded);
+    });
+    handle.record_status(eff::BgDrainCtx{::foundation::effects::testing::bg()}, degraded);
     assert(handle.status().servo == topology::PtpServoState::Degraded);
     assert(handle.status().sequence == 6);
     std::printf("  test_handle_status_and_timestamp: PASSED\n");
@@ -131,9 +155,9 @@ static topology::PtpStatus status_at_tick(std::uint64_t tick) noexcept {
     return topology::PtpStatus{
         .servo = (tick & 1u) != 0u ? topology::PtpServoState::Slave : topology::PtpServoState::Master,
         .offset_from_master_ns = static_cast<std::int64_t>(tick),
-        .mean_path_delay_ns = topology::PositivePtpPathDelayNs{tick + 1u},
+        .mean_path_delay_ns = path_delay(tick + 1u),
         .frequency_adjustment_ppb = -static_cast<std::int64_t>(tick),
-        .skew_bound_ns = topology::PositivePtpSkewBoundNs{(tick * 2u) + 1u},
+        .skew_bound_ns = skew_bound((tick * 2u) + 1u),
         .sequence = tick,
     };
 }
@@ -149,7 +173,8 @@ static bool status_is_self_consistent(topology::PtpStatus const& observed) noexc
 static void test_status_seqlock_never_tears() {
     auto fd = topology::admit_ptp_clock_fd(11);
     assert(fd.has_value());
-    auto handle = topology::mint_ptp_handle(effects::ColdInitCtx{::crucible::effects::testing::init()}, nic(4), *fd, status_at_tick(0));
+    auto handle =
+        topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(4), *fd, status_at_tick(0));
 
     constexpr std::uint64_t ticks = 200000;
     std::atomic<bool> writer_done{false};
@@ -159,7 +184,8 @@ static void test_status_seqlock_never_tears() {
     {
         std::jthread writer{[&handle, &writer_done] {
             for (std::uint64_t tick = 1; tick <= ticks; ++tick) {
-                handle.record_status(effects::BgDrainCtx{::crucible::effects::testing::bg()}, topology::DeclaredPtpStatus{status_at_tick(tick)});
+                handle.record_status(eff::BgDrainCtx{::foundation::effects::testing::bg()},
+                                     ::fixy::mint_tagged<::fixy::tags::source::Ptp>(status_at_tick(tick)));
             }
             writer_done.store(true, std::memory_order_release);
         }};
@@ -192,14 +218,15 @@ static void test_daemon_report_boundary() {
         .grandmaster_present = true,
         .servo = topology::PtpServoState::Slave,
         .offset_from_master_ns = -80,
-        .mean_path_delay_ns = topology::PositivePtpPathDelayNs{700},
+        .mean_path_delay_ns = path_delay(700),
         .frequency_adjustment_ppb = 2,
-        .skew_bound_ns = topology::PositivePtpSkewBoundNs{90},
-        .max_accepted_skew_ns = topology::PositivePtpSkewBoundNs{100},
-        .max_accepted_offset_ns = topology::PositivePtpOffsetBoundNs{100},
+        .skew_bound_ns = skew_bound(90),
+        .max_accepted_skew_ns = skew_bound(100),
+        .max_accepted_offset_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{100}),
         .sequence = 7,
     };
-    auto declared = topology::admit_ptp_daemon_report(effects::BgDrainCtx{::crucible::effects::testing::bg()}, report);
+    eff::BgDrainCtx const bg{::foundation::effects::testing::bg()};
+    auto declared = topology::admit_ptp_daemon_report(bg, report);
     auto status = topology::ptp_status_from_daemon_report(declared);
     assert(status.value().synchronized());
     assert(status.value().offset_from_master_ns == -80);
@@ -208,25 +235,22 @@ static void test_daemon_report_boundary() {
     auto diagnostic = topology::ptp_diagnostic_from_daemon_report(declared);
     assert(!diagnostic.value().degraded());
     assert(diagnostic.value().reason == topology::PtpDegradationReason::None);
-    assert(topology::ptp_degradation_reason_name(diagnostic.value().reason) == std::string_view{"None"});
+    assert(::foundation::reflect::enum_name(diagnostic.value().reason) == std::string_view{"None"});
 
     report.grandmaster_present = false;
-    auto no_grandmaster =
-        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{::crucible::effects::testing::bg()}, report));
+    auto no_grandmaster = topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(bg, report));
     assert(no_grandmaster.value().degraded());
     assert(no_grandmaster.value().reason == topology::PtpDegradationReason::GrandmasterMissing);
     assert(no_grandmaster.value().status.servo == topology::PtpServoState::Degraded);
 
     report.grandmaster_present = true;
     report.offset_from_master_ns = -101;
-    auto excessive_offset =
-        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{::crucible::effects::testing::bg()}, report));
+    auto excessive_offset = topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(bg, report));
     assert(excessive_offset.value().reason == topology::PtpDegradationReason::ExcessiveOffset);
 
     report.offset_from_master_ns = 0;
-    report.skew_bound_ns = topology::PositivePtpSkewBoundNs{101};
-    auto excessive_skew =
-        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{::crucible::effects::testing::bg()}, report));
+    report.skew_bound_ns = skew_bound(101);
+    auto excessive_skew = topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(bg, report));
     assert(excessive_skew.value().reason == topology::PtpDegradationReason::ExcessiveSkew);
 
     std::printf("  test_daemon_report_boundary: PASSED\n");
@@ -234,36 +258,43 @@ static void test_daemon_report_boundary() {
 
 static void test_timestamped_packet_view() {
     std::array<std::byte, 4> payload{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
-    auto packet = topology::timestamp_packet_view(std::span<const std::byte>{payload}, topology::PtpTimestampNs{55}, 8);
+    auto const stamp = ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::uint64_t{55});
+    auto packet = topology::timestamp_packet_view(std::span<const std::byte>{payload}, stamp, 8);
     assert(packet.has_value());
     assert(packet->payload.size() == payload.size());
     assert(packet->timestamp_ns.value() == 55);
     assert(packet->sequence == 8);
 
-    auto empty = topology::timestamp_packet_view(std::span<const std::byte>{}, topology::PtpTimestampNs{55}, 9);
+    auto empty = topology::timestamp_packet_view(std::span<const std::byte>{}, stamp, 9);
     assert(!empty.has_value());
     assert(empty.error() == topology::PtpError::Degraded);
     std::printf("  test_timestamped_packet_view: PASSED\n");
 }
 
+// A build host usually has no /dev/ptpN, so the open takes the missing
+// device path and names it OpenClockFailed.  Where a device exists, a read
+// gives a stamp or a read failure and a capability query gives the caps or
+// the query failure.
 static void test_linux_boundaries_if_available() {
-    auto fd = topology::admit_ptp_clock_fd(999999);
-    assert(fd.has_value());
-    auto now = topology::ptp_now(*fd);
-    assert(!now.has_value());
-    assert(now.error() == topology::PtpError::ClockReadFailed);
-
-    auto caps = topology::query_ptp_clock_caps(*fd);
-    assert(!caps.has_value());
-    assert(caps.error() == topology::PtpError::ClockCapsUnavailable);
+    BgFsCtx const bg_fs{::foundation::effects::testing::bg()};
+    auto absent = topology::admit_ptp_device_index(254);
+    assert(absent.has_value());
+    auto missing = topology::open_ptp_clock(bg_fs, *absent);
+    if (!missing.has_value()) {
+        assert(missing.error() == topology::PtpError::OpenClockFailed);
+    }
 
     auto index0 = topology::admit_ptp_device_index(0);
     assert(index0.has_value());
-    auto clock = topology::open_ptp_clock(*index0);
+    auto clock = topology::open_ptp_clock(bg_fs, *index0);
     if (clock.has_value()) {
-        assert(clock->peek().valid());
-        auto stamp = topology::ptp_now(clock->peek().fd());
-        assert(stamp.has_value() || stamp.error() == topology::PtpError::ClockReadFailed);
+        auto stamp = topology::ptp_now(*clock);
+        assert(stamp.has_value() || stamp.error() == topology::PtpError::ClockReadFailed
+               || stamp.error() == topology::PtpError::TimestampOverflow);
+        auto caps = topology::query_ptp_clock_caps(*clock);
+        assert(caps.has_value() || caps.error() == topology::PtpError::ClockCapsUnavailable);
+    } else {
+        assert(clock.error() == topology::PtpError::OpenClockFailed);
     }
 
     TestSocket socket{::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)};
@@ -290,10 +321,13 @@ static void test_linux_boundaries_if_available() {
 }
 
 int main() {
-    static_assert(topology::CtxFitsPtpMint<effects::ColdInitCtx>);
-    static_assert(!topology::CtxFitsPtpMint<effects::BgDrainCtx>);
-    static_assert(topology::CtxFitsPtpRecord<effects::BgDrainCtx>);
-    static_assert(!topology::CtxFitsPtpRecord<effects::HotFgCtx>);
+    static_assert(topology::CtxFitsPtpMint<eff::ColdInitCtx>);
+    static_assert(!topology::CtxFitsPtpMint<eff::BgDrainCtx>);
+    static_assert(topology::CtxFitsPtpRecord<eff::BgDrainCtx>);
+    static_assert(!topology::CtxFitsPtpRecord<eff::HotFgCtx>);
+    static_assert(::fixy::time::CtxFitsPtpClockReaderMint<BgFsCtx>);
+    static_assert(!::fixy::time::CtxFitsPtpClockReaderMint<eff::BgDrainCtx>,
+                  "opening /dev/ptpN blocks on the file system, so a context without Block is refused");
 
     std::printf("test_topology_ptp: 7 groups\n");
     test_name_accessors();

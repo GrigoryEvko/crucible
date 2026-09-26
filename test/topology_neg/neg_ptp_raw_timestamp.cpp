@@ -1,9 +1,12 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-129. Raw nanosecond values cannot pass through
-// APIs that require source::Ptp timestamp provenance.
+// A packet view takes a timestamp tagged as coming from PTP.  A raw
+// nanosecond count does not convert to it.
 
 #include <crucible/topology/Ptp.h>
+
+#include <cstddef>
+#include <span>
 
 int main() {
     std::byte b{0};

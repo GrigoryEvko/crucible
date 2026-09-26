@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-129. Raw integer fds cannot mint a PTP handle;
-// fd admission must go through PtpClockFd.
+// A PTP handle takes an admitted PtpClockFd.  A raw int does not convert
+// to it, so an unchecked descriptor cannot name the clock of a handle.
 
 #include <crucible/topology/Ptp.h>
 
@@ -9,7 +9,8 @@ int main() {
     crucible::cog::CogIdentity nic{};
     nic.uuid = crucible::cog::Uuid{0x129, 3};
     nic.kind = crucible::cog::CogKind::NicPort;
-    auto handle = crucible::topology::mint_ptp_handle(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()}, nic, 3);
+    ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
+    auto handle = crucible::topology::mint_ptp_handle(init, nic, 3);
     (void)handle;
     return 0;
 }

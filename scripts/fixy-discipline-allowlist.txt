@@ -62,7 +62,6 @@ include/crucible/cog/SrIov.h
 
 # ── topology/ ──────────────────────────────────────────────────
 include/crucible/topology/Pingmesh.h
-include/crucible/topology/Ptp.h
 include/crucible/topology/Telemetry.h
 
 # ── warden/ (1 file) ────────────────────────────────────────────

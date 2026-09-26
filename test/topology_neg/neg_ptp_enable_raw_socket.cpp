@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-129 boundary fixture. Socket timestamping setup requires an
-// admitted cntp::SocketFd; raw integers cannot reach setsockopt.
+// Socket timestamping takes an admitted SocketFd.  A raw int does not
+// convert to it, so an unchecked descriptor cannot reach setsockopt.
 
 #include <crucible/topology/Ptp.h>
 

@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-129. PTP handles are minted only by Init
-// contexts; background workers may publish admitted clock samples only.
+// Only an Init-row context mints a PTP handle.  A background context may
+// record status and timestamps into a handle but may not create one.
 
 #include <crucible/topology/Ptp.h>
 
@@ -10,7 +10,8 @@ int main() {
     nic.uuid = crucible::cog::Uuid{0x129, 1};
     nic.kind = crucible::cog::CogKind::NicPort;
     auto fd = crucible::topology::admit_ptp_clock_fd(4).value();
-    auto handle = crucible::topology::mint_ptp_handle(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, nic, fd);
+    ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
+    auto handle = crucible::topology::mint_ptp_handle(bg, nic, fd);
     (void)handle;
     return 0;
 }
