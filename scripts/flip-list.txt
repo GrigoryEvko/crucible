@@ -164,7 +164,6 @@ include/crucible/ledger/Competence.h
 include/crucible/ledger/HostFingerprint.h
 include/crucible/ledger/Ledger.h
 include/crucible/ledger/LedgerStore.h
-include/crucible/ledger/ProbeSupport.h
 include/crucible/ledger/RefreshDaemon.h
 include/crucible/ledger/Verdict.h
 include/crucible/ledger/probes/CacheTier.h

@@ -48,7 +48,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/ledger/Ledger.h>
-#include <crucible/safety/_OwnedMmap.h>
+#include <fixy/OwnedMmap.h>
 
 #include <bench_harness.h>
 
@@ -374,7 +374,7 @@ struct ProbeRegionTag {};
 struct ProbeRegionProt {};
 struct ProbeRegionShare {};
 
-using ProbeMapping = safety::OwnedMmap<ProbeRegionTag, ProbeRegionProt, ProbeRegionShare>;
+using ProbeMapping = ::fixy::OwnedMmap<ProbeRegionTag, ProbeRegionProt, ProbeRegionShare>;
 
 }  // namespace probe_detail
 
@@ -408,19 +408,21 @@ public:
 
         // The capability proof: every caller is a ProbeFunction reached
         // from run_refresh, which the daemon and the tool both invoke
-        // under a context satisfying CtxFitsLedgerStore — effects::IO
-        // plus effects::Block, checked at the type level in LedgerStore.h
-        // and witnessed by the neg-compile fixtures in test/ledger_neg/.
-        void* raw = ::mmap(nullptr, mapped_bytes, PROT_READ | PROT_WRITE,  // SYSCALL-CAP-OK: see the proof above
-                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (raw == MAP_FAILED) {
+        // under a context satisfying CtxFitsLedgerStore, the IO and Block
+        // effects, checked at the type level in LedgerStore.h and
+        // witnessed by the neg-compile fixtures in test/ledger_neg/.  The
+        // mapping door does the mmap itself, so the region owns only an
+        // address the kernel returned.
+        auto mapped = probe_detail::ProbeMapping::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1,
+                                                             mapped_bytes, 0);
+        if (!mapped.has_value()) {
             return std::unexpected(LedgerError::StorePathUnavailable);
         }
 
         ProbeRegion region{};
-        region.mapping_ = probe_detail::ProbeMapping{raw, mapped_bytes};
+        region.mapping_ = std::move(*mapped);
 
-        const auto address = align_up_to_huge_page(raw);
+        const auto address = align_up_to_huge_page(region.mapping_.data());
         region.usable_ = address;
         region.usable_bytes_ = bytes;
 
