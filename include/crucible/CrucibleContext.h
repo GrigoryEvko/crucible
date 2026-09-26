@@ -4,25 +4,19 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/ReplayEngine.h>
 #include <crucible/Types.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_ScopedView.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/ScopedView.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 
-#include <cassert>
 #include <cstdint>
 #include <cstring>
-#include <optional>
 #include <type_traits>
-
-namespace crucible::fixy::wrap {
-using ::crucible::safety::Monotonic;
-using ::crucible::safety::NonNull;
-using ::crucible::safety::no_scoped_view_field_check;
-using ::crucible::safety::mint_view;
-using ::crucible::safety::ScopedView;
-}  // namespace crucible::fixy::wrap
+#include <utility>
 
 namespace crucible {
 
@@ -92,7 +86,7 @@ struct CrucibleContext {
 
         pool_.init(region->plan);
         engine_.init(region, ReplayEngine::PoolBorrow{pool_});
-        active_region_ = ActiveRegionPtr{region};
+        active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(region);
         mode_ = ContextMode::COMPILED;
 
         // The mode and the active region move together. Every compiled-mode
@@ -106,7 +100,7 @@ struct CrucibleContext {
     void deactivate() {
         mode_ = ContextMode::RECORD;
         pool_.destroy();
-        active_region_ = ActiveRegionPtr{nullptr};
+        active_region_ = ActiveRegionPtr{};
 
         // The dual of the pair above: clearing the mode while leaving the
         // region pointer behind would let the next region switch replay a
@@ -117,25 +111,7 @@ struct CrucibleContext {
 
     [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        // A switch rather than a chain of tests, so that a status added later
-        // has to be given a meaning here instead of silently counting as a
-        // divergence.
-        switch (engine_.advance(schema_hash, shape_hash)) {
-            case ReplayStatus::MATCH:
-                return ReplayStatus::MATCH;
-            case ReplayStatus::COMPLETE: {
-                compiled_iterations_.bump();
-                // The reset keeps the current operation, so the output and
-                // input pointers stay valid until the next advance.
-                engine_.reset();
-                return ReplayStatus::COMPLETE;
-            }
-            case ReplayStatus::DIVERGED:
-                diverged_count_.bump();
-                return ReplayStatus::DIVERGED;
-            default:
-                std::unreachable();
-        }
+        return advance_(schema_hash, shape_hash);
     }
 
     // Binds one of the operation's tensors to its slot in the memory plan.
@@ -158,7 +134,7 @@ struct CrucibleContext {
 
         if (div_pos == 0) return activate(alt);
 
-        const auto* old_region = active_region_.value();
+        const RegionNode* const old_region = active_region_.value();
         // Armed in a release build, unlike the two beliefs further down this
         // file. A null plan here does not fault: migrate_prefix_slots_ reads
         // old_plan->slots[sid] at whatever address a null base plus a slot
@@ -175,7 +151,7 @@ struct CrucibleContext {
         migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
 
         engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
-        active_region_ = ActiveRegionPtr{alt};
+        active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(alt);
 
         // Replay the prefix the two regions share, so the new region resumes
         // where the old one diverged.
@@ -203,7 +179,7 @@ struct CrucibleContext {
     [[nodiscard]] bool is_compiled() const { return mode_ == ContextMode::COMPILED; }
     [[nodiscard]] bool is_recording() const { return mode_ == ContextMode::RECORD; }
 
-    using CompiledView = crucible::fixy::wrap::ScopedView<CrucibleContext, ctx_mode::Compiled>;
+    using CompiledView = ::fixy::ScopedView<CrucibleContext, ctx_mode::Compiled>;
 
     [[nodiscard]] friend constexpr bool view_ok(CrucibleContext const& c,
                                                 std::type_identity<ctx_mode::Compiled>) noexcept {
@@ -214,30 +190,17 @@ struct CrucibleContext {
     // minted only on the thread that holds the producer claim of its Vigil.
     [[nodiscard]] CRUCIBLE_INLINE constexpr CompiledView mint_compiled_view(VigilFgCtx const&) const noexcept {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        return crucible::fixy::wrap::mint_view<ctx_mode::Compiled>(*this);
+        return ::fixy::mint_view<ctx_mode::Compiled>(*this);
     }
 
-    // These overloads thread the proof all the way down. A proof that the
-    // context is compiled implies both the engine and the pool are live,
+    // These overloads take the proof in place of the mode check. A proof that
+    // the context is compiled implies both the engine and the pool are live,
     // because activation initialises the two together, so the inner proofs
-    // can be minted from the outer one and the whole chain is checked.
+    // can be minted from the outer one.
 
     [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash,
                                                                   CompiledView const&) {
-        auto av = engine_.active_view_();
-        switch (engine_.advance(schema_hash, shape_hash, av)) {
-            case ReplayStatus::MATCH:
-                return ReplayStatus::MATCH;
-            case ReplayStatus::COMPLETE:
-                compiled_iterations_.bump();
-                engine_.reset(av);
-                return ReplayStatus::COMPLETE;
-            case ReplayStatus::DIVERGED:
-                diverged_count_.bump();
-                return ReplayStatus::DIVERGED;
-            default:
-                std::unreachable();
-        }
+        return advance_(schema_hash, shape_hash);
     }
 
     [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const CRUCIBLE_LIFETIMEBOUND {
@@ -250,7 +213,7 @@ struct CrucibleContext {
         return engine_.input_ptr(j, av);
     }
 
-    CRUCIBLE_INLINE void register_external(SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr, CompiledView const&) {
+    CRUCIBLE_INLINE void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, CompiledView const&) {
         auto pv = pool_.initialized_view_();
         pool_.register_external(sid, ptr, pv);
     }
@@ -269,12 +232,33 @@ private:
     // why the migration checks it separately.
     static constexpr uint32_t MIGRATION_MAX_SLOTS = 1024;
 
+    // The one body of both advance overloads.  A switch rather than a chain
+    // of tests, so that a status added later has to be given a meaning here
+    // instead of silently counting as a divergence.
+    [[gnu::always_inline]] ReplayStatus advance_(SchemaHash schema_hash, ShapeHash shape_hash) {
+        switch (engine_.advance(schema_hash, shape_hash)) {
+            case ReplayStatus::MATCH:
+                return ReplayStatus::MATCH;
+            case ReplayStatus::COMPLETE:
+                compiled_iterations_.bump();
+                // The reset keeps the current operation, so the output and
+                // input pointers stay valid until the next advance.
+                engine_.reset();
+                return ReplayStatus::COMPLETE;
+            case ReplayStatus::DIVERGED:
+                diverged_count_.bump();
+                return ReplayStatus::DIVERGED;
+            default:
+                std::unreachable();
+        }
+    }
+
     void migrate_prefix_slots_(const RegionNode* old_region, const RegionNode* alt, const void* old_pool_base,
                                uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY pre(old_region != nullptr)
         pre(alt != nullptr) pre(old_region->plan != nullptr) pre(alt->plan != nullptr)
         // Checked before any slot is copied, so a plan the bitset cannot track
         // is refused rather than half-migrated.
-        pre(::crucible::decide::in_range<uint32_t>(alt->plan->num_slots, 0u, MIGRATION_MAX_SLOTS)) {
+        pre(::foundation::decide::in_range<uint32_t>(alt->plan->num_slots, 0u, MIGRATION_MAX_SLOTS)) {
         const auto* old_plan = old_region->plan;
         const auto* new_plan = alt->plan;
         [[assume(new_plan->num_slots <= MIGRATION_MAX_SLOTS)]];
@@ -343,30 +327,28 @@ private:
     // Both counters only ever go up: one counts completed iterations, the
     // other divergences, and neither is reset. The type enforces that, and
     // catches the one way it could be broken, which is overflow.
-    crucible::fixy::wrap::Monotonic<uint32_t> compiled_iterations_{0};  // offset 68
-    crucible::fixy::wrap::Monotonic<uint32_t> diverged_count_{0};  // offset 72
+    ::fixy::Monotonic<uint32_t> compiled_iterations_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 68
+    ::fixy::Monotonic<uint32_t> diverged_count_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 72
     [[maybe_unused]] uint8_t pad2_[4]{};
     // The tag records that this pointer was published by the owning
     // foreground's background worker. A region allocated somewhere else has a
     // different lifetime regime, and without the tag the two would be
-    // interchangeable here.
-    using ActiveRegionPtr = ::crucible::safety::Tagged<const RegionNode*, ::crucible::safety::source::Vigil>;
-    ActiveRegionPtr active_region_{nullptr};  // offset 80
+    // interchangeable here.  The default is the empty slot: a null pointer
+    // under the tag, which every reader tests before it dereferences.
+    using ActiveRegionPtr = ::fixy::Tagged<const RegionNode*, ::fixy::tags::source::Vigil>;
+    // The tag must not add storage, or every offset in this class shifts.
+    static_assert(sizeof(ActiveRegionPtr) == sizeof(const RegionNode*),
+                  "a tagged region pointer must be the size of the pointer it wraps");
+    static_assert(alignof(ActiveRegionPtr) == alignof(const RegionNode*),
+                  "a tagged region pointer must be aligned as the pointer it wraps");
+    ActiveRegionPtr active_region_{};  // offset 80
     PoolAllocator pool_;  // 32 bytes, offset 88
 };
-
-// The tag must not add storage, or every offset above shifts.
-static_assert(sizeof(::crucible::safety::Tagged<const RegionNode*, ::crucible::safety::source::Vigil>)
-                  == sizeof(const RegionNode*),
-              "a tagged region pointer must be the size of the pointer it wraps");
-static_assert(alignof(::crucible::safety::Tagged<const RegionNode*, ::crucible::safety::source::Vigil>)
-                  == alignof(const RegionNode*),
-              "a tagged region pointer must be aligned as the pointer it wraps");
 
 static_assert(sizeof(CrucibleContext) == 120, "CrucibleContext: 64 engine + 24 cold + 32 pool = 120");
 
 // A view must not outlive the frame that minted it, so storing one in a field
 // would let it escape.
-static_assert(crucible::fixy::wrap::no_scoped_view_field_check<CrucibleContext>());
+static_assert(::fixy::no_scoped_view_field_check<CrucibleContext>());
 
 }  // namespace crucible

@@ -320,21 +320,23 @@ int main() {
     assert(ctx.activate(&region));
     assert(ctx.is_compiled());
 
-    using crucible::safety::NonNull;
     auto cv = ctx.mint_compiled_view(kVigilForeground);
+    const auto bind = [&](uint32_t slot, void* ptr) {
+        ctx.register_external(SlotId{slot}, ::fixy::mint_refined<::fixy::non_null>(ptr), cv);
+    };
 
-    ctx.register_external(SlotId{SL_X}, NonNull<void*>{X}, cv);
-    ctx.register_external(SlotId{SL_G1}, NonNull<void*>{gamma1}, cv);
-    ctx.register_external(SlotId{SL_B1}, NonNull<void*>{beta1}, cv);
-    ctx.register_external(SlotId{SL_WQ}, NonNull<void*>{W_q}, cv);
-    ctx.register_external(SlotId{SL_WK}, NonNull<void*>{W_k}, cv);
-    ctx.register_external(SlotId{SL_WV}, NonNull<void*>{W_v}, cv);
-    ctx.register_external(SlotId{SL_WOUT}, NonNull<void*>{W_out}, cv);
-    ctx.register_external(SlotId{SL_G2}, NonNull<void*>{gamma2}, cv);
-    ctx.register_external(SlotId{SL_B2}, NonNull<void*>{beta2}, cv);
-    ctx.register_external(SlotId{SL_WFF1}, NonNull<void*>{W_ff1}, cv);
-    ctx.register_external(SlotId{SL_WFF2}, NonNull<void*>{W_ff2}, cv);
-    ctx.register_external(SlotId{SL_WHEAD}, NonNull<void*>{W_head}, cv);
+    bind(SL_X, X);
+    bind(SL_G1, gamma1);
+    bind(SL_B1, beta1);
+    bind(SL_WQ, W_q);
+    bind(SL_WK, W_k);
+    bind(SL_WV, W_v);
+    bind(SL_WOUT, W_out);
+    bind(SL_G2, gamma2);
+    bind(SL_B2, beta2);
+    bind(SL_WFF1, W_ff1);
+    bind(SL_WFF2, W_ff2);
+    bind(SL_WHEAD, W_head);
 
     for (int iter = 0; iter < 50; iter++) {
         ReplayStatus s;

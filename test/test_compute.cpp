@@ -232,9 +232,9 @@ int main() {
     // is only reachable in compiled mode.
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
-    ctx.register_external(SlotId{SL_X}, crucible::safety::NonNull<void*>{X}, cv);
-    ctx.register_external(SlotId{SL_W1}, crucible::safety::NonNull<void*>{W1}, cv);
-    ctx.register_external(SlotId{SL_W2}, crucible::safety::NonNull<void*>{W2}, cv);
+    ctx.register_external(SlotId{SL_X}, ::fixy::mint_refined<::fixy::non_null, void*>(X), cv);
+    ctx.register_external(SlotId{SL_W1}, ::fixy::mint_refined<::fixy::non_null, void*>(W1), cv);
+    ctx.register_external(SlotId{SL_W2}, ::fixy::mint_refined<::fixy::non_null, void*>(W2), cv);
 
     // A read-only view, so that even these checks reach the pool the
     // way the hot path does.

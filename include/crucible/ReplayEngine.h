@@ -12,12 +12,13 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Pre.h>
+#include <fixy/Borrowed.h>
+#include <fixy/ScopedView.h>
+#include <fixy/Tagged.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 
-#include <cassert>
 #include <cstdint>
 #include <type_traits>
 
@@ -48,9 +49,9 @@ struct Diverged {};
 }  // namespace op_role
 
 struct ReplayEngine {
-    using PoolBorrow = crucible::fixy::wrap::BorrowedRef<const PoolAllocator>;
+    using PoolBorrow = ::fixy::BorrowedRef<const PoolAllocator>;
 
-    static_assert(crucible::fixy::wrap::IsBorrowedRef<PoolBorrow>);
+    static_assert(::fixy::IsBorrowedRef<PoolBorrow>);
 
     ReplayEngine() = default;
 
@@ -61,7 +62,7 @@ struct ReplayEngine {
 
     // An empty region is legitimate, but a non-empty one must have operations.
     void init(const RegionNode* region, PoolBorrow pool) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr)
-        pre(pool->is_initialized()) pre(::crucible::decide::valid_span(region->num_ops, region->ops)) {
+        pre(pool->is_initialized()) pre(::foundation::decide::valid_span(region->num_ops, region->ops)) {
         ops_ = region->ops;
         end_ = region->ops + region->num_ops;
         cursor_ = ops_;
@@ -93,7 +94,7 @@ struct ReplayEngine {
     // Rewinds to the first operation for the next iteration. The last matched
     // entry is deliberately kept, so the pointers into it stay valid after the
     // caller is told the region is complete and resets on its way out.
-    void reset() {
+    CRUCIBLE_INLINE void reset() {
         cursor_ = ops_;
         if (ops_ != end_) [[likely]] {
             expected_schema_ = ops_[0].schema_hash;
@@ -148,7 +149,7 @@ struct ReplayEngine {
         // exists, so this catches a later change that opens the path.
         CRUCIBLE_PRE(current_->num_outputs > 0u);
         CRUCIBLE_PRE(
-            ::crucible::decide::in_range<std::uint16_t>(j, 0u, static_cast<std::uint16_t>(current_->num_outputs - 1u)));
+            ::foundation::decide::in_range<std::uint16_t>(j, 0u, static_cast<std::uint16_t>(current_->num_outputs - 1u)));
         SlotId const sid = current_->output_slot_ids[j];
         void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
         // Dropping the validity test would index the table with the sentinel
@@ -162,7 +163,7 @@ struct ReplayEngine {
         pre(current_->input_slot_ids != nullptr) {
         CRUCIBLE_PRE(current_->num_inputs > 0u);
         CRUCIBLE_PRE(
-            ::crucible::decide::in_range<std::uint16_t>(j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));
+            ::foundation::decide::in_range<std::uint16_t>(j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));
         SlotId const sid = current_->input_slot_ids[j];
         void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
         CRUCIBLE_POST(result, result == nullptr || sid.is_valid());
@@ -183,30 +184,20 @@ struct ReplayEngine {
         return *matched;
     }
 
-    [[nodiscard]] crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched> matched_op_index() const {
-        // Debug-only, and weaker than the one above: a null current_ makes
-        // the subtraction produce a garbage index rather than fault. Nothing
-        // in the recording chain calls this — only the replay-engine tests
-        // do — so the silent path is not reachable from production. The
-        // local is for the same folding reason as in current_entry.
+    [[nodiscard]] ::fixy::Tagged<OpIndex, op_role::Matched> matched_op_index() const {
+        // Armed in every build.  A null current_ would make the subtraction
+        // produce a garbage index rather than fault, and the index then
+        // reaches a caller that indexes with it.  The local is for the same
+        // folding reason as in current_entry.
         const TraceEntry* const matched = current_;
-        CRUCIBLE_DEBUG_ASSERT(matched != nullptr);
-        return crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched>{OpIndex{static_cast<uint32_t>(matched - ops_)}};
+        CRUCIBLE_PRE(matched != nullptr);
+        return ::fixy::mint_tagged<op_role::Matched>(OpIndex{static_cast<uint32_t>(matched - ops_)});
     }
 
-    // Carries the region's operation ceiling in the return type, so a caller
-    // that indexes with the result has the bound without re-deriving it.
-    [[nodiscard]] crucible::fixy::wrap::Refined<
-        crucible::fixy::wrap::bounded_above<uint32_t{1u << 22}>,  // mirrors the loader's own ceiling
-        uint32_t> diverged_op_index_refined() const {
-        return crucible::fixy::wrap::Refined<crucible::fixy::wrap::bounded_above<uint32_t{1u << 22}>, uint32_t>{
-            static_cast<uint32_t>(cursor_ - ops_)};
-    }
-
-    // Preferred wherever the value reaches something that could just as well
-    // have been handed the matched index.
-    [[nodiscard]] crucible::fixy::wrap::Tagged<OpIndex, op_role::Diverged> diverged_op_index_tagged() const {
-        return crucible::fixy::wrap::Tagged<OpIndex, op_role::Diverged>{OpIndex{static_cast<uint32_t>(cursor_ - ops_)}};
+    // Distinct in type from the matched index, so a caller that could just as
+    // well have been handed the matched index cannot be given this one.
+    [[nodiscard]] ::fixy::Tagged<OpIndex, op_role::Diverged> diverged_op_index_tagged() const {
+        return ::fixy::mint_tagged<op_role::Diverged>(OpIndex{static_cast<uint32_t>(cursor_ - ops_)});
     }
 
     [[nodiscard]] uint32_t ops_matched() const { return static_cast<uint32_t>(cursor_ - ops_); }
@@ -216,7 +207,7 @@ struct ReplayEngine {
     [[nodiscard]] bool is_complete() const { return cursor_ == end_; }
     [[nodiscard]] constexpr bool is_initialized() const { return ops_ != nullptr; }
 
-    using ActiveView = crucible::fixy::wrap::ScopedView<ReplayEngine, engine_state::Active>;
+    using ActiveView = ::fixy::ScopedView<ReplayEngine, engine_state::Active>;
 
     // Found by argument-dependent lookup from the view factory.
     [[nodiscard]] friend constexpr bool view_ok(ReplayEngine const& e,
@@ -227,8 +218,8 @@ struct ReplayEngine {
     // The cursor is foreground state, so the proof that the engine is live
     // is minted only on the thread that holds the producer claim of its
     // Vigil.
-    [[nodiscard]] CRUCIBLE_INLINE constexpr ActiveView mint_active_view(VigilFgCtx const&) const noexcept
-        pre(is_initialized()) {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr ActiveView mint_active_view(VigilFgCtx const&) const noexcept {
+        CRUCIBLE_PRE(is_initialized());
         return active_view_();
     }
 
@@ -251,21 +242,19 @@ struct ReplayEngine {
         return input_ptr(j);
     }
 
-    CRUCIBLE_INLINE void reset(ActiveView const&) {
-        cursor_ = ops_;
-        if (ops_ != end_) [[likely]] {
-            expected_schema_ = ops_[0].schema_hash;
-            expected_shape_ = ops_[0].shape_hash;
-        }
-    }
+    CRUCIBLE_INLINE void reset(ActiveView const&) { reset(); }
 
 private:
     // The context mints the view on paths that the gate of its Vigil
     // already passed, so it reaches the view without a context.
     friend struct CrucibleContext;
 
-    [[nodiscard]] CRUCIBLE_INLINE constexpr ActiveView active_view_() const noexcept pre(is_initialized()) {
-        return crucible::fixy::wrap::mint_view<engine_state::Active>(*this);
+    // The precondition runs in the body, so it also fires when the compiler
+    // folds a call at compile time, which a clause reading a member through
+    // `this` would skip.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr ActiveView active_view_() const noexcept {
+        CRUCIBLE_PRE(is_initialized());
+        return ::fixy::mint_view<engine_state::Active>(*this);
     }
 
     // Ordered so that an advance reads and writes them front to back, and
@@ -285,6 +274,6 @@ static_assert(sizeof(ReplayEngine) == 64, "ReplayEngine: 8 × 8B = 64 bytes (one
 
 // A view must not outlive the frame that minted it, so storing one in a field
 // would let it escape.
-static_assert(crucible::fixy::wrap::no_scoped_view_field_check<ReplayEngine>());
+static_assert(::fixy::no_scoped_view_field_check<ReplayEngine>());
 
 }  // namespace crucible

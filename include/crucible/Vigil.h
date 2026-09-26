@@ -495,7 +495,7 @@ public:
         return ctx_.input_ptr(j, compiled_view);
     }
 
-    void register_external(VigilFgCtx const& fg, SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr) {
+    void register_external(VigilFgCtx const& fg, SlotId sid, ::fixy::NonNull<void*> ptr) {
         auto compiled_view = ctx_.mint_compiled_view(fg);
         ctx_.register_external(sid, ptr, compiled_view);
     }
@@ -833,7 +833,7 @@ private:
                 // Every call site activates the context immediately before
                 // calling here, so it is compiled.
                 auto compiled_view = ctx_.mint_compiled_view(fg);
-                ctx_.register_external(target, crucible::fixy::wrap::NonNull<void*>{ptr}, compiled_view);
+                ctx_.register_external(target, ::fixy::mint_refined<::fixy::non_null>(ptr), compiled_view);
             }
         }
     }

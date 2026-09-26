@@ -1,31 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-CCtx-2 #904 (Tagged half), mismatch class #1 of 2:
-// RAW `const RegionNode*` CANNOT BE ASSIGNED DIRECTLY TO A
-// `Tagged<const RegionNode*, source::Vigil>` FIELD.
+// Mismatch class 1 of 2 for the active region pointer of
+// CrucibleContext: a raw `const RegionNode*` cannot become a
+// `fixy::Tagged<const RegionNode*, tags::source::Vigil>`.
 //
-// `Tagged<T, S>` requires explicit construction via `Tagged<T, S>{value}`
-// — the `explicit` ctor refuses implicit conversion from the raw `T`
-// pointer.  This catches the production-side defect mode where a
-// caller does `active_region_ = some_region` (raw assignment) when
-// the migration intent was `active_region_ = ActiveRegionPtr{some_region}`
-// (typed construction).  Without this gate, a fresh-heap-allocated or
-// arena-allocated RegionNode* (NOT published by Vigil's bg worker via
-// active_region store(release)) could leak into CrucibleContext's
-// active_region_ field, breaking the Vigil-published-ordering invariant
-// (active_region store(release) happens-before dispatch_op data reads).
+// The only doors into a Tagged are mint_tagged, which names the source
+// at the call site, and retag along an admitted edge.  A raw pointer
+// assigned straight into the field would carry the Vigil provenance
+// without anyone having written it, so a region that Vigil's background
+// worker never published could reach the context's active region.
 //
 // Companion fixture: neg_active_region_ptr_cross_source_assignment.cpp
-//   * That one catches cross-source mixing (Tagged<...,source::Arena>
-//     → Tagged<...,source::Vigil>) — provenance LAUNDERING.
-//   * This one catches raw-pointer admission — provenance BYPASS.
-//
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
-// demonstrating a distinct mismatch class.  Mirror of the
-// WRAP-Transaction-6 #1065 raw-assignment fixture (same Tagged shape,
-// different source tag / pointee type).
+//   * That one refuses a pointer tagged with another source (laundering).
+//   * This one refuses a pointer with no tag at all (bypass).
 
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 namespace crucible {
 struct FakeRegionNode {
@@ -34,16 +24,13 @@ struct FakeRegionNode {
 }  // namespace crucible
 
 int main() {
-    using ActiveRegionPtr =
-        ::crucible::safety::Tagged<const crucible::FakeRegionNode*, ::crucible::safety::source::Vigil>;
+    using ActiveRegionPtr = ::fixy::Tagged<const crucible::FakeRegionNode*, ::fixy::tags::source::Vigil>;
 
     crucible::FakeRegionNode region{};
     const crucible::FakeRegionNode* raw_ptr = &region;
 
-    // Should FAIL: implicit conversion from raw const RegionNode* to
-    // Tagged<const RegionNode*, source::Vigil> is rejected by the
-    // explicit ctor.  Migration intent is `ActiveRegionPtr{raw_ptr}`
-    // — never `= raw_ptr`.
+    // Should FAIL: no conversion from a raw pointer to the tagged
+    // pointer; the provenance is written only through mint_tagged.
     ActiveRegionPtr field = raw_ptr;
     (void)field;
     return 0;

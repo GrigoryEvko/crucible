@@ -301,7 +301,8 @@ int main() {
 
         auto r = bench::run("register_external(20 slots)", [&] {
             for (uint32_t i = 0; i < N_EXT; i++) {
-                pool.register_external(SlotId{N_INT + i}, crucible::safety::NonNull<void*>{ext_bufs[i]}, pv);
+                pool.register_external(SlotId{N_INT + i}, ::fixy::mint_refined<::fixy::non_null, void*>(ext_bufs[i]),
+                                       pv);
             }
         });
         pool.destroy();

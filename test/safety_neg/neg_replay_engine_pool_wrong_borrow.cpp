@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-RE-3 (#995): ReplayEngine::init requires a borrow of the
-// PoolAllocator.  A BorrowedRef over another owner type cannot
+// ReplayEngine::init requires a borrow of the PoolAllocator.  A
+// fixy::BorrowedRef over another owner type cannot
 // substitute, even though all BorrowedRef instantiations are
 // pointer-sized.
 //
@@ -12,6 +12,6 @@
 int main() {
     crucible::ReplayEngine engine{};
     crucible::RegionNode region{};
-    engine.init(&region, crucible::safety::BorrowedRef<crucible::RegionNode>{region});
+    engine.init(&region, ::fixy::BorrowedRef<crucible::RegionNode>{region});
     return 0;
 }

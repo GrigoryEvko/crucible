@@ -6,14 +6,14 @@
 // type tree and rejects any ScopedView found.
 //
 // CrucibleContext::CompiledView is the carrier-locked type alias for
-// `crucible::fixy::wrap::ScopedView<CrucibleContext, ctx_mode::Compiled>`.
+// `fixy::ScopedView<CrucibleContext, ctx_mode::Compiled>`.
 // Reflection sees through the alias and triggers the same audit that
 // fires for the explicit ScopedView spelling — proof that the
 // discipline is alias-stable across the CrucibleContext carrier.
 //
 // CrucibleContext itself opts in to this audit at CrucibleContext.h:497
 // with
-//     static_assert(crucible::fixy::wrap::no_scoped_view_field_check<CrucibleContext>());
+//     static_assert(::fixy::no_scoped_view_field_check<CrucibleContext>());
 // — that asserts CrucibleContext itself does NOT store a view.  This
 // fixture asserts the AUDIT is also live for INDEPENDENT carrier
 // types that try to embed a CrucibleContext::CompiledView.
@@ -53,7 +53,7 @@ struct OffendingCtxContainer {
 // Trigger the audit at compile time.  GCC's diagnostic names
 // OffendingCtxContainer as the violator and ScopedView as the
 // offending wrapper.
-static_assert(::crucible::fixy::wrap::no_scoped_view_field_check<OffendingCtxContainer>(),
+static_assert(::fixy::no_scoped_view_field_check<OffendingCtxContainer>(),
               "the audit must reject containers that store a CrucibleContext::"
               "CompiledView as a field; this fixture exists so a future "
               "regression in contains_scoped_view's recursive walk for the "

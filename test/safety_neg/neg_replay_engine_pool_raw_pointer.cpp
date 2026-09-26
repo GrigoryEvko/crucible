@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-RE-3 (#995): ReplayEngine::init admits the pool dependency as
-// ReplayEngine::PoolBorrow = safety::BorrowedRef<const PoolAllocator>.
+// ReplayEngine::init admits the pool dependency as
+// ReplayEngine::PoolBorrow = fixy::BorrowedRef<const PoolAllocator>.
 // A raw PoolAllocator* must not cross the init boundary.
 //
 // Expected diagnostic: no init overload accepting PoolAllocator*.

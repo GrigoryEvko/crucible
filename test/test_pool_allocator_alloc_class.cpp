@@ -5,9 +5,8 @@
 // is that the wrapper changes the type and nothing else.
 
 #include <crucible/PoolAllocator.h>
-#include <crucible/safety/_AllocClass.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/warden/Registry.h>
+#include <fixy/Bands.h>
 #include "test_assert.h"
 
 #include <bit>
@@ -24,8 +23,10 @@ using crucible::OpIndex;
 using crucible::ScalarType;
 using crucible::DeviceType;
 using crucible::Layout;
-using crucible::safety::AllocClass;
-using crucible::safety::AllocClassTag_v;
+using ::fixy::AllocClass;
+using ::fixy::AllocClassTag_v;
+using ::fixy::band_tier_v;
+using ::fixy::satisfies_v;
 
 // The pool is minted live on the thread that holds a Vigil's producer
 // claim.  These tests run the pool without a Vigil, so they take that
@@ -93,21 +94,22 @@ static void test_slot_ptr_pinned_type_identity() {
     using Got = decltype(pool.slot_ptr_pinned(SlotId{0}, pv));
     using Want = AllocClass<AllocClassTag_v::Pool, void*>;
     static_assert(std::is_same_v<Got, Want>, "slot_ptr_pinned must return AllocClass<Pool, void*>");
-    static_assert(Got::tag == AllocClassTag_v::Pool);
+    static_assert(band_tier_v<Got> == AllocClassTag_v::Pool);
 
     pool.destroy();
 }
 
-// The two fences below match a tag exactly rather than comparing
+// The two fences below match a tier exactly rather than comparing
 // along the lattice, which is what a consumer does when it wants one
 // allocation class and no substitute.
 template <typename W>
-concept admissible_at_pool_fence =
-    W::tag == AllocClassTag_v::Pool || W::tag == AllocClassTag_v::Arena || W::tag == AllocClassTag_v::Heap
-    || W::tag == AllocClassTag_v::Mmap || W::tag == AllocClassTag_v::HugePage;
+concept admissible_at_pool_fence = band_tier_v<W> == AllocClassTag_v::Pool || band_tier_v<W> == AllocClassTag_v::Arena
+                                   || band_tier_v<W> == AllocClassTag_v::Heap
+                                   || band_tier_v<W> == AllocClassTag_v::Mmap
+                                   || band_tier_v<W> == AllocClassTag_v::HugePage;
 
 template <typename W>
-concept admissible_at_huge_fence = W::tag == AllocClassTag_v::HugePage;
+concept admissible_at_huge_fence = band_tier_v<W> == AllocClassTag_v::HugePage;
 
 static void test_pool_fence_simulation() {
     using Slot = AllocClass<AllocClassTag_v::Pool, void*>;
@@ -121,41 +123,33 @@ static void test_pool_fence_simulation() {
 static void test_negative_tier_witnesses() {
     using PoolSlot = AllocClass<AllocClassTag_v::Pool, void*>;
     using StackSlot = AllocClass<AllocClassTag_v::Stack, void*>;
-    using ArenaSlot = AllocClass<AllocClassTag_v::Arena, void*>;
-    using HeapSlot = AllocClass<AllocClassTag_v::Heap, void*>;
-    using MmapSlot = AllocClass<AllocClassTag_v::Mmap, void*>;
     using HugeSlot = AllocClass<AllocClassTag_v::HugePage, void*>;
 
     // A value satisfies a requirement when its own class is at least as
     // strong as the one asked for.  From weakest to strongest the
     // classes run: huge page, memory mapping, heap, arena, pool, stack.
-    static_assert(PoolSlot::satisfies<AllocClassTag_v::Pool>);
-    static_assert(PoolSlot::satisfies<AllocClassTag_v::Arena>);
-    static_assert(PoolSlot::satisfies<AllocClassTag_v::Heap>);
-    static_assert(PoolSlot::satisfies<AllocClassTag_v::Mmap>);
-    static_assert(PoolSlot::satisfies<AllocClassTag_v::HugePage>);
-    static_assert(!PoolSlot::satisfies<AllocClassTag_v::Stack>);
+    static_assert(satisfies_v<PoolSlot, AllocClassTag_v::Pool>);
+    static_assert(satisfies_v<PoolSlot, AllocClassTag_v::Arena>);
+    static_assert(satisfies_v<PoolSlot, AllocClassTag_v::Heap>);
+    static_assert(satisfies_v<PoolSlot, AllocClassTag_v::Mmap>);
+    static_assert(satisfies_v<PoolSlot, AllocClassTag_v::HugePage>);
+    static_assert(!satisfies_v<PoolSlot, AllocClassTag_v::Stack>);
 
     // The weakest class satisfies nothing but itself.
-    static_assert(HugeSlot::satisfies<AllocClassTag_v::HugePage>);
-    static_assert(!HugeSlot::satisfies<AllocClassTag_v::Mmap>);
-    static_assert(!HugeSlot::satisfies<AllocClassTag_v::Heap>);
-    static_assert(!HugeSlot::satisfies<AllocClassTag_v::Arena>);
-    static_assert(!HugeSlot::satisfies<AllocClassTag_v::Pool>);
-    static_assert(!HugeSlot::satisfies<AllocClassTag_v::Stack>);
+    static_assert(satisfies_v<HugeSlot, AllocClassTag_v::HugePage>);
+    static_assert(!satisfies_v<HugeSlot, AllocClassTag_v::Mmap>);
+    static_assert(!satisfies_v<HugeSlot, AllocClassTag_v::Heap>);
+    static_assert(!satisfies_v<HugeSlot, AllocClassTag_v::Arena>);
+    static_assert(!satisfies_v<HugeSlot, AllocClassTag_v::Pool>);
+    static_assert(!satisfies_v<HugeSlot, AllocClassTag_v::Stack>);
 
     // The strongest satisfies every one of them.
-    static_assert(StackSlot::satisfies<AllocClassTag_v::Stack>);
-    static_assert(StackSlot::satisfies<AllocClassTag_v::Pool>);
-    static_assert(StackSlot::satisfies<AllocClassTag_v::Arena>);
-    static_assert(StackSlot::satisfies<AllocClassTag_v::Heap>);
-    static_assert(StackSlot::satisfies<AllocClassTag_v::Mmap>);
-    static_assert(StackSlot::satisfies<AllocClassTag_v::HugePage>);
-
-    // Named above only to spell the lattice out in full.
-    (void)sizeof(ArenaSlot);
-    (void)sizeof(HeapSlot);
-    (void)sizeof(MmapSlot);
+    static_assert(satisfies_v<StackSlot, AllocClassTag_v::Stack>);
+    static_assert(satisfies_v<StackSlot, AllocClassTag_v::Pool>);
+    static_assert(satisfies_v<StackSlot, AllocClassTag_v::Arena>);
+    static_assert(satisfies_v<StackSlot, AllocClassTag_v::Heap>);
+    static_assert(satisfies_v<StackSlot, AllocClassTag_v::Mmap>);
+    static_assert(satisfies_v<StackSlot, AllocClassTag_v::HugePage>);
 }
 
 static void test_layout_invariant() {
@@ -223,7 +217,7 @@ static void test_pool_relax_to_weaker() {
     // Relaxing toward a weaker class is allowed.  Tightening toward a
     // stronger one is refused, which a negative-compile fixture proves
     // separately.
-    auto relaxed = std::move(pinned).relax<AllocClassTag_v::Heap>();
+    auto relaxed = ::fixy::relax<AllocClassTag_v::Heap>(std::move(pinned));
     static_assert(std::is_same_v<decltype(relaxed), AllocClass<AllocClassTag_v::Heap, void*>>);
 
     pool.destroy();
@@ -233,21 +227,21 @@ static void test_pool_relax_to_weaker() {
 // that asks for any class below pool without an intermediate step.
 static void test_chain_composition() {
     using P = AllocClass<AllocClassTag_v::Pool, void*>;
-    static_assert(P::satisfies<AllocClassTag_v::Pool>);
-    static_assert(P::satisfies<AllocClassTag_v::Arena>);
-    static_assert(P::satisfies<AllocClassTag_v::Heap>);
-    static_assert(P::satisfies<AllocClassTag_v::Mmap>);
-    static_assert(P::satisfies<AllocClassTag_v::HugePage>);
+    static_assert(satisfies_v<P, AllocClassTag_v::Pool>);
+    static_assert(satisfies_v<P, AllocClassTag_v::Arena>);
+    static_assert(satisfies_v<P, AllocClassTag_v::Heap>);
+    static_assert(satisfies_v<P, AllocClassTag_v::Mmap>);
+    static_assert(satisfies_v<P, AllocClassTag_v::HugePage>);
 
     using H = AllocClass<AllocClassTag_v::HugePage, void*>;
-    static_assert(H::satisfies<AllocClassTag_v::HugePage>);
-    static_assert(!H::satisfies<AllocClassTag_v::Mmap>);
+    static_assert(satisfies_v<H, AllocClassTag_v::HugePage>);
+    static_assert(!satisfies_v<H, AllocClassTag_v::Mmap>);
 }
 
 // A consumer shaped like a production call site, admitting a pool
 // pointer or anything stronger.
 template <typename Slot>
-    requires(Slot::template satisfies<AllocClassTag_v::Pool>)
+    requires(satisfies_v<Slot, AllocClassTag_v::Pool>)
 static uintptr_t pool_consumer(Slot slot) {
     void* p = std::move(slot).consume();
     return std::bit_cast<uintptr_t>(p);

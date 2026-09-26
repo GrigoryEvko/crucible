@@ -16,13 +16,14 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/warden/Registry.h>
-#include <crucible/fixy/Struct.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Pre.h>
+#include <fixy/Bands.h>
+#include <fixy/Refined.h>
+#include <fixy/ScopedView.h>
+#include <foundation/Saturate.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 
-#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -91,8 +92,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // Externally owned slots start null and are registered before replay.
     [[gnu::cold, gnu::noinline]]
     void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY pre(plan != nullptr) pre(ptr_table_ == nullptr)
-        pre(pool_ == nullptr) pre(::crucible::decide::in_range<uint32_t>(plan->num_slots, 0u, kMaxNumSlots))
-            pre(::crucible::decide::in_range<uint64_t>(plan->pool_bytes, 0u, kMaxPoolBytes))
+        pre(pool_ == nullptr) pre(::foundation::decide::in_range<uint32_t>(plan->num_slots, 0u, kMaxNumSlots))
+            pre(::foundation::decide::in_range<uint64_t>(plan->pool_bytes, 0u, kMaxPoolBytes))
                 pre(plan->num_external <= plan->num_slots) {
         num_slots_ = plan->num_slots;
         num_external_ = plan->num_external;
@@ -107,7 +108,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // the sum could wrap, so the saturating form never saturates here.
             // It is there so that raising either ceiling later cannot turn a
             // rounding-up into a wrap.
-            const uint64_t padded = ::crucible::fixy::struct_::saturating_add<uint64_t>(pool_bytes_, page_align - 1);
+            const uint64_t padded = ::foundation::sat::add_sat<uint64_t>(pool_bytes_, page_align - 1);
             const uint64_t alloc_size = padded & ~(page_align - 1);
             pool_ = std::aligned_alloc(page_align, alloc_size);
             if (!pool_) [[unlikely]]
@@ -160,8 +161,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
         // check in this file runs from the body rather than a clause.
         CRUCIBLE_POST(0, num_slots_ == plan->num_slots);
         CRUCIBLE_POST(0, pool_bytes_ == plan->pool_bytes);
-        CRUCIBLE_POST(0, ::crucible::decide::implies(pool_bytes_ > 0u, pool_ != nullptr));
-        CRUCIBLE_POST(0, ::crucible::decide::implies(num_slots_ > 0u, ptr_table_ != nullptr));
+        CRUCIBLE_POST(0, ::foundation::decide::implies(pool_bytes_ > 0u, pool_ != nullptr));
+        CRUCIBLE_POST(0, ::foundation::decide::implies(num_slots_ > 0u, ptr_table_ != nullptr));
     }
 
     [[gnu::cold]]
@@ -186,12 +187,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // A caller takes one of these once per initialise-and-destroy cycle and
     // threads it through. Minting it is where the liveness check happens, so
     // the methods that require it are unreachable on a dead pool.
-    using InitializedView = crucible::fixy::wrap::ScopedView<PoolAllocator, pool_state::Initialized>;
+    using InitializedView = ::fixy::ScopedView<PoolAllocator, pool_state::Initialized>;
 
     // The pool is foreground state, so the proof that it is live is minted
     // only on the thread that holds the producer claim of its Vigil.
-    [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView mint_initialized_view(VigilFgCtx const&) const noexcept
-        pre(is_initialized()) {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView mint_initialized_view(VigilFgCtx const&) const noexcept {
+        CRUCIBLE_PRE(is_initialized());
         return initialized_view_();
     }
 
@@ -211,14 +212,13 @@ struct CRUCIBLE_OWNER PoolAllocator {
         // range admits everything. The view already proves the count is
         // positive, so this catches a later change that opens the path.
         CRUCIBLE_PRE(num_slots_ > 0u);
-        CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
         return ptr_table_[sid.raw()];
     }
 
-    CRUCIBLE_INLINE void register_external(SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr,
-                                           InitializedView const&) noexcept {
+    CRUCIBLE_INLINE void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, InitializedView const&) noexcept {
         CRUCIBLE_PRE(num_slots_ > 0u);
-        CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
         ptr_table_[sid.raw()] = ptr.value();
         CRUCIBLE_POST(0, ptr_table_[sid.raw()] == ptr.value());
     }
@@ -251,25 +251,23 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // the pool claim holds either way. The huge-page variant below states the
     // stronger one and fences the small case out with a precondition.
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
-    inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>
-    slot_ptr_pinned(SlotId sid, InitializedView const& view) const noexcept CRUCIBLE_LIFETIMEBOUND {
-        return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>{
-            slot_ptr(sid, view)};
+    inline ::fixy::alloc_class::Pool<void*> slot_ptr_pinned(SlotId sid, InitializedView const& view) const noexcept
+        CRUCIBLE_LIFETIMEBOUND {
+        return ::fixy::alloc_class::Pool<void*>{slot_ptr(sid, view), {}};
     }
 
     // Null when the pool has no bytes, so the caller inspects the result.
     [[nodiscard, gnu::pure]]
-    inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>
-    pool_base_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
-        return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>{pool_};
+    inline ::fixy::alloc_class::Pool<void*> pool_base_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
+        return ::fixy::alloc_class::Pool<void*>{pool_, {}};
     }
 
     // The precondition is what makes the stronger claim true: it is exactly
     // the condition under which initialisation chose the huge-page alignment.
     [[nodiscard, gnu::pure]]
-    inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::HugePage, void*>
-    pool_base_huge_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND pre(pool_bytes_ >= crucible::warden::kHugePageBytes) {
-        return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::HugePage, void*>{pool_};
+    inline ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_PRE(pool_bytes_ >= crucible::warden::kHugePageBytes);
+        return ::fixy::alloc_class::HugePage<void*>{pool_, {}};
     }
 
     // Found by argument-dependent lookup from the view factory.
@@ -279,26 +277,16 @@ struct CRUCIBLE_OWNER PoolAllocator {
     }
 
     // Hands the buffer out and empties this allocator, which lets a caller
-    // keep the old data alive while it builds the replacement.
-    [[nodiscard, gnu::cold]]
-    DetachedPool detach() noexcept pre(pool_ != nullptr) {
-        void* p = pool_;
-        uint64_t n = pool_bytes_;
-        crucible::warden::unregister_hot_region(p);
-        // Cleared before the reset so that the reset does not free a buffer
-        // whose ownership has already moved to the return value.
-        pool_ = nullptr;
-        destroy();
-        return DetachedPool{p, n};
-    }
-
-    // The view is stale once this returns, since the pool it vouched for is
-    // now empty. It cannot be refreshed by assignment either.
+    // keep the old data alive while it builds the replacement.  The view is
+    // stale once this returns, since the pool it vouched for is now empty.
+    // It cannot be refreshed by assignment either.
     [[nodiscard, gnu::cold]]
     DetachedPool detach(InitializedView const&) noexcept {
         void* p = pool_;
         uint64_t n = pool_bytes_;
         crucible::warden::unregister_hot_region(p);
+        // Cleared before the reset so that the reset does not free a buffer
+        // whose ownership has already moved to the return value.
         pool_ = nullptr;
         destroy();
         return DetachedPool{p, n};
@@ -310,8 +298,12 @@ private:
     friend struct ReplayEngine;
     friend struct CrucibleContext;
 
-    [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView initialized_view_() const noexcept pre(is_initialized()) {
-        return crucible::fixy::wrap::mint_view<pool_state::Initialized>(*this);
+    // The precondition runs in the body, so it also fires when the compiler
+    // folds a call at compile time, which a clause reading a member through
+    // `this` would skip.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView initialized_view_() const noexcept {
+        CRUCIBLE_PRE(is_initialized());
+        return ::fixy::mint_view<pool_state::Initialized>(*this);
     }
 
     [[noreturn, gnu::cold, gnu::noinline]] static void report_unservable_slot_(uint32_t slot_index, const TensorSlot& slot,
@@ -337,6 +329,6 @@ static_assert(alignof(PoolAllocator) == 8);
 
 // A view must not outlive the scope it was minted in, so storing one in a
 // field would let it escape. This walks the struct, nested members included.
-static_assert(crucible::fixy::wrap::no_scoped_view_field_check<PoolAllocator>());
+static_assert(::fixy::no_scoped_view_field_check<PoolAllocator>());
 
 }  // namespace crucible

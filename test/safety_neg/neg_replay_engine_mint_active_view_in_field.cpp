@@ -6,7 +6,7 @@
 // type tree and rejects any ScopedView found.
 //
 // ReplayEngine::ActiveView is the carrier-locked type alias for
-// `crucible::fixy::wrap::ScopedView<ReplayEngine, engine_state::Active>`.
+// `fixy::ScopedView<ReplayEngine, engine_state::Active>`.
 // Reflection sees through the alias and triggers the same audit that
 // fires for the explicit ScopedView spelling — proof that the
 // discipline is alias-stable across the ReplayEngine carrier.
@@ -46,7 +46,7 @@ struct OffendingEngineContainer {
 // Trigger the audit at compile time.  GCC's diagnostic names
 // OffendingEngineContainer as the violator and ScopedView as the
 // offending wrapper.
-static_assert(::crucible::fixy::wrap::no_scoped_view_field_check<OffendingEngineContainer>(),
+static_assert(::fixy::no_scoped_view_field_check<OffendingEngineContainer>(),
               "the audit must reject containers that store a ReplayEngine::"
               "ActiveView as a field; this fixture exists so a future "
               "regression in contains_scoped_view's recursive walk for the "

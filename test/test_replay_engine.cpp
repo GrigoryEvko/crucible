@@ -393,7 +393,7 @@ static void test_integration_with_pool() {
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
-    pool.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param}, pv);
+    pool.register_external(SlotId{2}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), pv);
 
     SlotId op0_out[1] = {SlotId{0}};
     SlotId op0_in[1] = {SlotId{2}};
@@ -451,7 +451,7 @@ static void test_integration_with_pool() {
 
 int main() {
     std::printf("test_replay_engine:\n");
-    static_assert(std::is_same_v<ReplayEngine::PoolBorrow, crucible::safety::BorrowedRef<const PoolAllocator>>);
+    static_assert(std::is_same_v<ReplayEngine::PoolBorrow, ::fixy::BorrowedRef<const PoolAllocator>>);
     static_assert(sizeof(ReplayEngine::PoolBorrow) == sizeof(const PoolAllocator*));
     test_linear_match();
     test_schema_divergence();

@@ -142,7 +142,7 @@ static void test_external_registration() {
 
     // This buffer stands in for a parameter tensor the pool does not own.
     alignas(256) char fake_param[512];
-    pool.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param}, pv);
+    pool.register_external(SlotId{1}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), pv);
 
     assert(pool.slot_ptr(SlotId{1}, pv) == fake_param);
 
@@ -259,8 +259,8 @@ static void test_all_external() {
 
     alignas(256) char buf_a[1024];
     alignas(256) char buf_b[2048];
-    pool.register_external(SlotId{0}, crucible::safety::NonNull<void*>{buf_a}, pv);
-    pool.register_external(SlotId{1}, crucible::safety::NonNull<void*>{buf_b}, pv);
+    pool.register_external(SlotId{0}, ::fixy::mint_refined<::fixy::non_null, void*>(buf_a), pv);
+    pool.register_external(SlotId{1}, ::fixy::mint_refined<::fixy::non_null, void*>(buf_b), pv);
     assert(pool.slot_ptr(SlotId{0}, pv) == buf_a);
     assert(pool.slot_ptr(SlotId{1}, pv) == buf_b);
 
@@ -409,7 +409,7 @@ static void test_integration_with_sweep_line() {
     assert(pool.slot_ptr(SlotId{3}, pv) == nullptr);
 
     alignas(256) char fake_param[512];
-    pool.register_external(SlotId{3}, crucible::safety::NonNull<void*>{fake_param}, pv);
+    pool.register_external(SlotId{3}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), pv);
     assert(pool.slot_ptr(SlotId{3}, pv) == fake_param);
 
     // Slot 0 is alive alongside slot 1 and then alongside slot 2, while

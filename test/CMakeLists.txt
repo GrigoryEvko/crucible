@@ -7319,32 +7319,20 @@ crucible_neg_compile_test(neg_active_tx_ptr_raw_assignment
 crucible_neg_compile_test(neg_active_tx_ptr_cross_source_assignment
   "no match|cannot convert|no viable|could not convert|Tagged|source")
 
-# ─── WRAP-CCtx-2 #904 (Tagged half) neg-compile tests ───────────────
-#
-# CrucibleContext::active_region_ field migrates from raw `const
-# RegionNode*` to `safety::Tagged<const RegionNode*, source::Vigil>`.
-# The Vigil source tag (Tagged.h, near source::Ring) encodes "this
-# pointer was published by Vigil's BackgroundThread via active_region
-# store(release)" — distinct from Arena (arena-owned RegionNode) and
-# from Ring (ring-slot pointer).  Two fixtures per HS14 mandate,
-# demonstrating distinct mismatch classes (mirror of the
-# WRAP-Transaction-6 #1065 active_tx_ pair):
-#   * neg_active_region_ptr_raw_assignment — provenance BYPASS.
-#     Catches `active_region_ = some_region` (implicit raw-pointer
-#     admission) without the explicit `ActiveRegionPtr{...}` ctor.
-#   * neg_active_region_ptr_cross_source_assignment — provenance
-#     LAUNDERING.  Catches `Tagged<T, source::Arena> → Tagged<T,
-#     source::Vigil>` swap; both wrap `const RegionNode*` but the
-#     Tag distinguishes them as nominally distinct types.
-#
-# The ScopedView<ctx_state::Active> half of WRAP-CCtx-2 #904 is split
-# as a deferred follow-up (typestate design pass needed).  The Tagged
-# half is the load-bearing half — without it, cross-Vigil and
-# cross-lifetime-regime mixing would type-check.
-crucible_neg_compile_test(neg_active_region_ptr_raw_assignment
-  "no match|cannot convert|no viable|could not convert|explicit|constructor")
-crucible_neg_compile_test(neg_active_region_ptr_cross_source_assignment
-  "no match|cannot convert|no viable|could not convert|Tagged|source")
+# CrucibleContext's active region is a
+# `fixy::Tagged<const RegionNode*, tags::source::Vigil>`: a pointer that
+# Vigil's background worker published.  One fixture per mismatch class:
+#   * neg_active_region_ptr_raw_assignment: a raw pointer cannot take the
+#     tag, because only mint_tagged writes a provenance (bypass).
+#   * neg_active_region_ptr_cross_source_assignment: a pointer tagged
+#     Arena cannot become one tagged Vigil, because no retag edge joins
+#     the two sources (laundering).
+crucible_neg_compile_multi_test(neg_active_region_ptr_raw_assignment
+  "conversion from .const crucible::FakeRegionNode\\*. to non-scalar type .ActiveRegionPtr."
+  "fixy::Tagged<const crucible::FakeRegionNode\\*, fixy::tags::source::Vigil>")
+crucible_neg_compile_multi_test(neg_active_region_ptr_cross_source_assignment
+  "conversion from .Tagged<\\[...\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::Vigil>. requested"
+  "neg_active_region_ptr_cross_source_assignment.cpp:35")
 
 # ─── WRAP-BgThread-4 #875 (Tagged half) neg-compile tests ───────────
 #
@@ -9130,13 +9118,15 @@ crucible_neg_compile_test(neg_mimic_network_backend_cross_vendor
 crucible_neg_compile_test(neg_mimic_network_backend_wrong_cog
   "static assertion failed|BackendAcceptsCog|Mellanox|Gpu")
 
-# WRAP-RE-3 (#995) — ReplayEngine::init consumes
-# BorrowedRef<const PoolAllocator>. Raw PoolAllocator* and wrong-owner
-# borrowed references must fail at the init boundary.
-crucible_neg_compile_test(neg_replay_engine_pool_raw_pointer
-  "no matching function|no known conversion|cannot convert")
-crucible_neg_compile_test(neg_replay_engine_pool_wrong_borrow
-  "no matching function|no known conversion|cannot convert")
+# ReplayEngine::init takes the pool as fixy::BorrowedRef<const
+# PoolAllocator>.  A raw pointer and a borrow of another owner type are
+# both refused at the init boundary.
+crucible_neg_compile_multi_test(neg_replay_engine_pool_raw_pointer
+  "cannot convert .const crucible::PoolAllocator\\*. to .crucible::ReplayEngine::PoolBorrow."
+  "neg_replay_engine_pool_raw_pointer.cpp:15")
+crucible_neg_compile_multi_test(neg_replay_engine_pool_wrong_borrow
+  "cannot convert .BorrowedRef<crucible::RegionNode>. to .BorrowedRef<const crucible::PoolAllocator>."
+  "neg_replay_engine_pool_wrong_borrow.cpp:15")
 
 # safety::Saturated<T> structural-wrapper — HS14 fixtures (#1084 piece):
 #   * neg_saturated_non_arithmetic   Saturated<MyStruct> must fail
@@ -9240,15 +9230,14 @@ crucible_neg_compile_test(neg_crash_watched_ps_mismatch
 crucible_neg_compile_test(neg_crash_return_resource_mismatch
   "wrap_crash_return recovered resource type must match inner resource_type")
 
-# FOUND-G42 — production-call-site fence: a hot-path consumer
-# requiring AllocClass<Pool> rejects an AllocClass<Heap> source.
-# This is the load-bearing rejection for the no-malloc-on-hot-path
-# discipline at the production call boundary (slot_ptr_pinned ⇄
-# consumer template).  Without this fence, jemalloc allocations
-# (50-200 ns setup) could silently flow into TraceRing/MetaLog/
-# Vigil hot-path sites budgeted at 2-3 ns per call.
-crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
-  "constraints not satisfied|no matching function|associated constraints")
+# Production-call-site fence: a hot-path consumer that requires the
+# Pool allocation class refuses a Heap band.  This is the rejection that
+# carries the no-malloc-on-hot-path rule at the slot_ptr_pinned to
+# consumer boundary.  Without it, jemalloc allocations (50-200 ns
+# setup) could flow into hot-path sites budgeted at a few ns per call.
+crucible_neg_compile_multi_test(neg_alloc_class_heap_at_pool_fence
+  "no matching function for call to .hot_path_slot_consumer"
+  "the expression .satisfies_v<Slot, foundation::algebra::lattices::AllocClassTag::Pool> \\[with Slot = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::AllocClassLattice::At<foundation::algebra::lattices::AllocClassTag::Heap>, int\\*>\\]. evaluated to .false.")
 
 # FOUND-G62 — production-call-site fence: a NoThrow steady-state
 # consumer rejects a Throw-classified value.  Models the
@@ -10651,43 +10640,34 @@ crucible_neg_compile_multi_test(neg_trace_loader_names_other_brand
   "no matching function for call to .load_trace.foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >"
   "neg_trace_loader_names_other_brand.cpp:14")
 
-# FIXY-U-137 — HS14 floor for CrucibleContext::mint_compiled_view.
-# CrucibleContext has only one typed view (CompiledView; no companion
-# RecordingView), so the intra-carrier per-state mismatch pattern used
-# by CKernelTable/SchemaTable doesn't apply.  The cross-carrier pair:
-#   * _cross_carrier — feed CompiledView to a CKernelTable::MutableView
-#     parameter; type system rejects the ScopedView<C,T> instantiation
-#     mismatch.  Demonstrates the carrier-level lock independently of
-#     state-level locks tested by U-135/U-136.  [GCC-WRAPPER-TEXT]
-#   * _in_field — same structural Tier-2 field-storage audit as the
-#     other carriers; proves the audit reaches CrucibleContext via its
-#     CompiledView typedef.
-crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_cross_carrier
-  "invalid initialization of reference.*MutableView.*Compiled|cannot convert.*Compiled.*Mutable")
-crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_in_field
-  "Type contains a safety::ScopedView<> in some field")
+# The view mints of CrucibleContext, PoolAllocator and ReplayEngine.  Each
+# carrier has one typed view, so the per-state mismatch used for
+# CKernelTable and SchemaTable does not apply.  Two fixtures per mint:
+#   * _cross_carrier: the view is offered where a CKernelTable view is
+#     required, and the two fixy::ScopedView instantiations do not
+#     convert, so the carrier is locked into the type.
+#   * _in_field: a class that stores the view fails the field audit
+#     no_scoped_view_field_check, which sees through the view alias.
+crucible_neg_compile_multi_test(neg_crucible_context_mint_compiled_view_cross_carrier
+  "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
+  "from expression of type .fixy::ScopedView<crucible::CrucibleContext, crucible::ctx_mode::Compiled>.")
+crucible_neg_compile_multi_test(neg_crucible_context_mint_compiled_view_in_field
+  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
+  "! fixy::contains_scoped_view<OffendingCtxContainer>\\(\\). evaluates to false")
 
-# [FIXY-U-138] HS14 floor for PoolAllocator::mint_initialized_view.  Same
-# carrier-singleton shape as CrucibleContext::mint_compiled_view above —
-# PoolAllocator has only one typed view (InitializedView; no companion
-# "DestroyedView") so the cross-carrier mismatch is the equivalent type-
-# system gate.  Together the pair pins both soundness layers (typed-
-# overload + structural field-storage).
-crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_cross_carrier
-  "invalid initialization of reference.*MutableView.*Initialized|cannot convert.*Initialized.*Mutable")
-crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_in_field
-  "Type contains a safety::ScopedView<> in some field")
+crucible_neg_compile_multi_test(neg_pool_allocator_mint_initialized_view_cross_carrier
+  "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
+  "from expression of type .fixy::ScopedView<crucible::PoolAllocator, crucible::pool_state::Initialized>.")
+crucible_neg_compile_multi_test(neg_pool_allocator_mint_initialized_view_in_field
+  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
+  "! fixy::contains_scoped_view<OffendingPoolContainer>\\(\\). evaluates to false")
 
-# [FIXY-U-139] HS14 floor for ReplayEngine::mint_active_view.  Same
-# carrier-singleton shape as U-137 + U-138 — ReplayEngine has only one
-# typed view (ActiveView; no companion "InactiveView" / "DivergedView")
-# so the cross-carrier mismatch is the equivalent type-system gate.
-# Together the pair pins both soundness layers (typed-overload +
-# structural field-storage).  Closes the last HS14: 0 mint gap.
-crucible_neg_compile_test(neg_replay_engine_mint_active_view_cross_carrier
-  "invalid initialization of reference.*MutableView.*Active|cannot convert.*Active.*Mutable")
-crucible_neg_compile_test(neg_replay_engine_mint_active_view_in_field
-  "Type contains a safety::ScopedView<> in some field")
+crucible_neg_compile_multi_test(neg_replay_engine_mint_active_view_cross_carrier
+  "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
+  "from expression of type .fixy::ScopedView<crucible::ReplayEngine, crucible::engine_state::Active>.")
+crucible_neg_compile_multi_test(neg_replay_engine_mint_active_view_in_field
+  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
+  "! fixy::contains_scoped_view<OffendingEngineContainer>\\(\\). evaluates to false")
 
 # The foreground views are read only by the thread that holds the claim
 # of the Vigil, so each gate asks for the context of the Vigil's brand.

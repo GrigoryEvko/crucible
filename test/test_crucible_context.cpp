@@ -320,7 +320,7 @@ static void test_external_slots() {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
-    ctx.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param}, cv);
+    ctx.register_external(SlotId{1}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), cv);
 
     assert(ctx.advance(SchemaHash{50}, ShapeHash{60}, cv) == ReplayStatus::COMPLETE);
     // The registration is checked through the pool, which is where an
@@ -411,7 +411,7 @@ static void test_integration_sweep_line() {
 
     alignas(256) char fake_param[128];
     std::memset(fake_param, 0xEE, 128);
-    ctx.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param}, cv);
+    ctx.register_external(SlotId{2}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), cv);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
     assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
