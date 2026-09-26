@@ -53,7 +53,7 @@
 // reopens `namespace crucible::fixy::grant` to lock the attack
 // surface into CI regression coverage.  Per the CR-05 attack
 // pattern, the script
-// `scripts/check-fixy-grant-namespace-purity.sh` excepts this file
+// `scripts/check-fixy-grant-namespace-purity.py` excepts this file
 // (matching `test/safety_attack/attack_fixy_grant_*.cpp`) ONLY when
 // the explicit acknowledgement comment is present.  Remove this
 // comment and the CI guard reds — that is the discipline.
@@ -71,7 +71,7 @@
 //      `include/crucible/fixy/Grant.h` to remove the residual-gap
 //      caveat — the namespace IS now closed-world.
 //   4. Update the discipline in
-//      `scripts/check-fixy-grant-namespace-purity.sh` — the
+//      `scripts/check-fixy-grant-namespace-purity.py` — the
 //      attack-fixture exception is no longer required.
 
 #include <crucible/fixy/_Fn.h>

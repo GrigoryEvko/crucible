@@ -1322,22 +1322,20 @@ crucible_test(attack_fixy_grant_namespace_reopen
 set_tests_properties(attack_fixy_grant_namespace_reopen PROPERTIES
     LABELS "safety_attack")
 
-# fixy-CR-09 namespace-purity CI guard — enforces that ONLY
-# include/crucible/fixy/Grant.h opens namespace crucible::fixy::grant
-# (plus excepted attack-regression and cheat-probe TUs carrying the
-# explicit "// fixy-CR-09: known residual gap" acknowledgement
-# comment).  Any other file reopening the namespace fails the build
-# with a diagnostic naming the offending location.
+# Only the grant catalogs open namespace crucible::fixy::grant.
+# scripts/check-fixy-grant-namespace-purity.py reads the parse tree of each C++
+# file and fails on a namespace definition that reaches the namespace, or a
+# declaration whose qualified name reaches into it.  An attack fixture or a
+# cheat probe that reopens it on purpose carries a comment that holds "known
+# residual gap".  Exit 3 when the kit is absent reports a skip.
 add_test(NAME fixy_grant_namespace_purity_self_test
-         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.sh
-                 --self-test
-         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.py --self-test)
 add_test(NAME fixy_grant_namespace_purity
-         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.sh
-         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.py)
 set_tests_properties(fixy_grant_namespace_purity
                      fixy_grant_namespace_purity_self_test PROPERTIES
-    LABELS "safety_attack;ci_guard")
+    LABELS "safety_attack;ci_guard;ast"
+    SKIP_RETURN_CODE 3)
 
 # A specialization of a split trait, or of one of its variables, is legal
 # only in the file that defines every tag it names, or in an authoring

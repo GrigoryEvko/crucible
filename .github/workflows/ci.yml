@@ -260,8 +260,8 @@ jobs:
 
       - name: fixy::grant namespace purity (self-test + scan)
         run: |
-          bash scripts/check-fixy-grant-namespace-purity.sh --self-test
-          bash scripts/check-fixy-grant-namespace-purity.sh
+          python3 scripts/check-fixy-grant-namespace-purity.py --self-test
+          python3 scripts/check-fixy-grant-namespace-purity.py
 
       - name: split trait orphan specializations (self-test + scan)
         run: |
