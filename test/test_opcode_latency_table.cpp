@@ -1,8 +1,9 @@
 // Including the header here puts its in-header static_asserts into the
 // build graph.  Every accessor below is driven with volatile arguments
-// so a bad switch arm fails at runtime, not only at consteval time.
+// so a bad lookup fails at runtime, not only at consteval time.
 
 #include <crucible/cog/OpcodeLatencyTable.h>
+#include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
 
@@ -14,189 +15,72 @@
 #include <type_traits>
 
 namespace cog = crucible::cog;
-namespace safety = crucible::safety;
+namespace reflect = ::foundation::reflect;
 
-static void test_size_bucket_name_coverage() {
-    constexpr cog::SizeBucket buckets[] = {
-        cog::SizeBucket::None, cog::SizeBucket::S64,   cog::SizeBucket::S128,  cog::SizeBucket::S256,
-        cog::SizeBucket::S512, cog::SizeBucket::S1024, cog::SizeBucket::S2048, cog::SizeBucket::S4096,
-    };
-    static_assert(sizeof(buckets) / sizeof(buckets[0]) == cog::size_bucket_count,
-                  "Manual buckets[] table diverged from size_bucket_count.");
-
-    for (cog::SizeBucket B : buckets) {
-        volatile auto vB = B;
-        std::string_view name = cog::size_bucket_name(static_cast<cog::SizeBucket>(vB));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown SizeBucket>"});
-
-        volatile std::uint16_t expected = static_cast<std::uint16_t>(vB);
-        std::uint16_t actual = static_cast<std::uint16_t>(B);
-        assert(actual == expected);
-    }
-    std::printf("  test_size_bucket_name_coverage:       PASSED\n");
+template <typename T>
+static constexpr cog::CalibratedValue<T> calibrated(std::type_identity_t<T> value) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::Calibrated, T>(value);
 }
 
-static void test_dtype_bucket_name_coverage() {
-    constexpr cog::DtypeBucket buckets[] = {
-        cog::DtypeBucket::None, cog::DtypeBucket::Fp64, cog::DtypeBucket::Fp32,
-        cog::DtypeBucket::Tf32, cog::DtypeBucket::Fp16, cog::DtypeBucket::Bf16,
-        cog::DtypeBucket::Fp8,  cog::DtypeBucket::Fp4,  cog::DtypeBucket::Int8,
-    };
-    static_assert(sizeof(buckets) / sizeof(buckets[0]) == cog::dtype_bucket_count);
-
-    for (cog::DtypeBucket B : buckets) {
-        volatile auto vB = B;
-        auto name = cog::dtype_bucket_name(static_cast<cog::DtypeBucket>(vB));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown DtypeBucket>"});
-    }
-    std::printf("  test_dtype_bucket_name_coverage:      PASSED\n");
+static constexpr cog::OrderedLatencyQuantiles ordered(std::uint32_t p50_ns, std::uint32_t p99_ns,
+                                                      std::uint32_t p999_ns) noexcept {
+    return ::fixy::mint_refined<cog::quantile_ordered>(cog::LatencyQuantiles{p50_ns, p99_ns, p999_ns});
 }
 
-static void test_transpose_mode_name_coverage() {
-    constexpr cog::TransposeMode modes[] = {
-        cog::TransposeMode::Nn,
-        cog::TransposeMode::Tn,
-        cog::TransposeMode::Nt,
-        cog::TransposeMode::Tt,
-    };
-    static_assert(sizeof(modes) / sizeof(modes[0]) == cog::transpose_mode_count);
-
-    for (cog::TransposeMode M : modes) {
-        volatile auto vM = M;
-        auto name = cog::transpose_mode_name(static_cast<cog::TransposeMode>(vM));
+// Every enumerator of E reads back its own name, and a value that no
+// enumerator holds reads back the sentinel.  The walk comes from the
+// enum itself, so a new atom joins the check without a new line here.
+template <reflect::ScopedEnum E>
+static void check_enum_names(std::underlying_type_t<E> unheld_value) {
+    std::size_t walked = 0;
+    reflect::for_each_enumerator<E>([&](E value, std::string_view declared) {
+        volatile auto runtime_value = value;
+        const std::string_view name = reflect::enum_name(static_cast<E>(runtime_value));
         assert(!name.empty());
-        assert(name != std::string_view{"<unknown TransposeMode>"});
-    }
-    std::printf("  test_transpose_mode_name_coverage:    PASSED\n");
+        assert(name == declared);
+        assert(name != reflect::unknown_enum_sentinel<E>);
+        ++walked;
+    });
+    assert(walked == reflect::enum_count<E>);
+
+    volatile auto runtime_unheld = unheld_value;
+    assert(reflect::enum_name(static_cast<E>(runtime_unheld)) == reflect::unknown_enum_sentinel<E>);
 }
 
-static void test_message_size_bucket_name_coverage() {
-    constexpr cog::MessageSizeBucket buckets[] = {
-        cog::MessageSizeBucket::None, cog::MessageSizeBucket::M64B,  cog::MessageSizeBucket::M1K,
-        cog::MessageSizeBucket::M16K, cog::MessageSizeBucket::M256K, cog::MessageSizeBucket::M4M,
-        cog::MessageSizeBucket::M64M,
-    };
-    static_assert(sizeof(buckets) / sizeof(buckets[0]) == cog::message_size_bucket_count);
+static void test_enum_names() {
+    check_enum_names<cog::SizeBucket>(3);
+    check_enum_names<cog::DtypeBucket>(200);
+    check_enum_names<cog::TransposeMode>(200);
+    check_enum_names<cog::MessageSizeBucket>(5);
+    check_enum_names<cog::GpuOpcode>(999);
+    check_enum_names<cog::NicOpcode>(999);
+    check_enum_names<cog::SwitchOpcode>(999);
+    check_enum_names<cog::CpuOpcode>(999);
+    check_enum_names<cog::DramOpcode>(999);
 
-    for (cog::MessageSizeBucket B : buckets) {
-        volatile auto vB = B;
-        auto name = cog::message_size_bucket_name(static_cast<cog::MessageSizeBucket>(vB));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown MessageSizeBucket>"});
-
-        volatile std::uint32_t expected = static_cast<std::uint32_t>(vB);
-        std::uint32_t actual = static_cast<std::uint32_t>(B);
-        assert(actual == expected);
-    }
-    std::printf("  test_message_size_bucket_name_coverage: PASSED\n");
-}
-
-static void test_gpu_opcode_runtime() {
-    constexpr cog::GpuOpcode ops[] = {
-        cog::GpuOpcode::GemmPlain,  cog::GpuOpcode::GemmFused,     cog::GpuOpcode::Sdpa,
-        cog::GpuOpcode::Conv2D,     cog::GpuOpcode::AllReduceRing, cog::GpuOpcode::AllReduceTree,
-        cog::GpuOpcode::AllGather,  cog::GpuOpcode::NvlinkP2pRead, cog::GpuOpcode::NvlinkP2pWrite,
-        cog::GpuOpcode::PciePeer,   cog::GpuOpcode::KernelLaunch,  cog::GpuOpcode::DoorbellRing,
-        cog::GpuOpcode::EventQuery,
-    };
-    static_assert(sizeof(ops) / sizeof(ops[0]) == cog::gpu_opcode_count);
-
-    for (cog::GpuOpcode O : ops) {
-        volatile auto vO = O;
-        auto name = cog::gpu_opcode_name(static_cast<cog::GpuOpcode>(vO));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown GpuOpcode>"});
-    }
-    std::printf("  test_gpu_opcode_runtime:              PASSED\n");
-}
-
-static void test_nic_opcode_runtime() {
-    constexpr cog::NicOpcode ops[] = {
-        cog::NicOpcode::RdmaWrite,      cog::NicOpcode::RdmaSend,       cog::NicOpcode::RdmaRead,
-        cog::NicOpcode::CompletionPoll, cog::NicOpcode::QpCreate,       cog::NicOpcode::QpDestroy,
-        cog::NicOpcode::MrRegister,     cog::NicOpcode::MrDeregister,   cog::NicOpcode::DoorbellRing,
-        cog::NicOpcode::TcpSend,        cog::NicOpcode::TcpRecv,        cog::NicOpcode::AfXdpEnqueue,
-        cog::NicOpcode::AfXdpDequeue,   cog::NicOpcode::GpuDirectWrite, cog::NicOpcode::GpuDirectRead,
-    };
-    static_assert(sizeof(ops) / sizeof(ops[0]) == cog::nic_opcode_count);
-
-    for (cog::NicOpcode O : ops) {
-        volatile auto vO = O;
-        auto name = cog::nic_opcode_name(static_cast<cog::NicOpcode>(vO));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown NicOpcode>"});
-    }
-    std::printf("  test_nic_opcode_runtime:              PASSED\n");
-}
-
-static void test_switch_opcode_runtime() {
-    constexpr cog::SwitchOpcode ops[] = {
-        cog::SwitchOpcode::PortForward,
-        cog::SwitchOpcode::AclMatch,
-        cog::SwitchOpcode::SharpReduce,
-        cog::SwitchOpcode::MulticastReplicate,
-    };
-    static_assert(sizeof(ops) / sizeof(ops[0]) == cog::switch_opcode_count);
-
-    for (cog::SwitchOpcode O : ops) {
-        volatile auto vO = O;
-        auto name = cog::switch_opcode_name(static_cast<cog::SwitchOpcode>(vO));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown SwitchOpcode>"});
-    }
-    std::printf("  test_switch_opcode_runtime:           PASSED\n");
-}
-
-static void test_cpu_opcode_runtime() {
-    constexpr cog::CpuOpcode ops[] = {
-        cog::CpuOpcode::Memcpy,    cog::CpuOpcode::Vfma,          cog::CpuOpcode::AvxLoad,
-        cog::CpuOpcode::AvxStore,  cog::CpuOpcode::ContextSwitch, cog::CpuOpcode::AtomicCas,
-        cog::CpuOpcode::MutexLock, cog::CpuOpcode::MutexUnlock,   cog::CpuOpcode::FutexWait,
-        cog::CpuOpcode::Syscall,
-    };
-    static_assert(sizeof(ops) / sizeof(ops[0]) == cog::cpu_opcode_count);
-
-    for (cog::CpuOpcode O : ops) {
-        volatile auto vO = O;
-        auto name = cog::cpu_opcode_name(static_cast<cog::CpuOpcode>(vO));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown CpuOpcode>"});
-    }
-    std::printf("  test_cpu_opcode_runtime:              PASSED\n");
-}
-
-static void test_dram_opcode_runtime() {
-    constexpr cog::DramOpcode ops[] = {
-        cog::DramOpcode::ChannelRead, cog::DramOpcode::ChannelWrite, cog::DramOpcode::RowActivate,
-        cog::DramOpcode::BankRefresh, cog::DramOpcode::Precharge,
-    };
-    static_assert(sizeof(ops) / sizeof(ops[0]) == cog::dram_opcode_count);
-
-    for (cog::DramOpcode O : ops) {
-        volatile auto vO = O;
-        auto name = cog::dram_opcode_name(static_cast<cog::DramOpcode>(vO));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown DramOpcode>"});
-    }
-    std::printf("  test_dram_opcode_runtime:             PASSED\n");
+    static_assert(reflect::enum_name(cog::GpuOpcode::Conv2D) == "Conv2D");
+    static_assert(reflect::enum_name(cog::MessageSizeBucket::M64B) == "M64B");
+    static_assert(reflect::unknown_enum_sentinel<cog::SizeBucket> == "<unknown SizeBucket>");
+    std::printf("  test_enum_names:                      PASSED\n");
 }
 
 static void test_latency_quantiles_ordered_construction() {
-    cog::LatencyQuantiles q{100u, 500u, 2000u};
-    cog::OrderedLatencyQuantiles ordered{q};
-    volatile auto p50 = ordered.value().p50_ns;
-    volatile auto p99 = ordered.value().p99_ns;
-    volatile auto p999 = ordered.value().p999_ns;
+    const cog::OrderedLatencyQuantiles quantiles = ordered(100u, 500u, 2000u);
+    volatile auto p50 = quantiles.value().p50_ns;
+    volatile auto p99 = quantiles.value().p99_ns;
+    volatile auto p999 = quantiles.value().p999_ns;
     assert(p50 == 100u);
     assert(p99 == 500u);
     assert(p999 == 2000u);
 
     // Equal quantiles are the boundary of the ordering invariant.
-    cog::LatencyQuantiles flat{42u, 42u, 42u};
-    cog::OrderedLatencyQuantiles ordered_flat{flat};
-    assert(ordered_flat.value().p50_ns == 42u);
+    const cog::OrderedLatencyQuantiles flat = ordered(42u, 42u, 42u);
+    assert(flat.value().p50_ns == 42u);
+
+    // The predicate itself, which the ledger also reads.
+    static_assert(cog::quantile_ordered(cog::LatencyQuantiles{1u, 2u, 3u}));
+    static_assert(!cog::quantile_ordered(cog::LatencyQuantiles{2u, 1u, 3u}));
+    static_assert(!cog::quantile_ordered(cog::LatencyQuantiles{1u, 3u, 2u}));
 
     static_assert(sizeof(cog::OrderedLatencyQuantiles) == sizeof(cog::LatencyQuantiles));
 
@@ -215,11 +99,9 @@ static void test_gpu_opcode_table_construction() {
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::None,
             .latency_cycles = 8500000u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{2500000u,  // p50
-                                                                          4500000u,  // p99
-                                                                          7200000u}},  // p999
+            .latency = ordered(2500000u, 4500000u, 7200000u),
             .throughput_per_sec = 989.0e12,
-            .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{1024},
+            .sample_count = calibrated<std::uint16_t>(1024),
         },
         Entry{
             .opcode = cog::GpuOpcode::GemmPlain,
@@ -228,9 +110,9 @@ static void test_gpu_opcode_table_construction() {
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::None,
             .latency_cycles = 8500000u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{2600000u, 4700000u, 7500000u}},
+            .latency = ordered(2600000u, 4700000u, 7500000u),
             .throughput_per_sec = 989.0e12,
-            .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{1024},
+            .sample_count = calibrated<std::uint16_t>(1024),
         },
         Entry{
             .opcode = cog::GpuOpcode::AllReduceRing,
@@ -239,15 +121,15 @@ static void test_gpu_opcode_table_construction() {
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::M4M,
             .latency_cycles = 1200000u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{350000u, 600000u, 1400000u}},
+            .latency = ordered(350000u, 600000u, 1400000u),
             .throughput_per_sec = 4.5e10,
-            .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{256},
+            .sample_count = calibrated<std::uint16_t>(256),
         },
     };
 
     cog::OpcodeLatencyTable<cog::CogKind::Gpu> table{
-        .entries = safety::Tagged<std::span<const Entry>, safety::source::Calibrated>{std::span<const Entry>{rows}},
-        .calibration_age_seconds = safety::Stale<double>::at(12.5, 0),
+        .entries = calibrated<std::span<const Entry>>(std::span<const Entry>{rows}),
+        .calibration_age_seconds = ::fixy::Stale<double>::at(12.5, 0),
     };
 
     volatile auto sz = table.size();
@@ -305,9 +187,9 @@ static void test_nic_opcode_table_construction() {
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::M64B,
             .latency_cycles = 4500u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{1500u, 2500u, 5500u}},
+            .latency = ordered(1500u, 2500u, 5500u),
             .throughput_per_sec = 1.5e7,
-            .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{4096},
+            .sample_count = calibrated<std::uint16_t>(4096),
         },
         Entry{
             .opcode = cog::NicOpcode::RdmaWrite,
@@ -316,15 +198,15 @@ static void test_nic_opcode_table_construction() {
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::M4M,
             .latency_cycles = 850000u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{250000u, 450000u, 920000u}},
+            .latency = ordered(250000u, 450000u, 920000u),
             .throughput_per_sec = 6.25e9,
-            .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{2048},
+            .sample_count = calibrated<std::uint16_t>(2048),
         },
     };
 
     cog::OpcodeLatencyTable<cog::CogKind::NicPort> table{
-        .entries = safety::Tagged<std::span<const Entry>, safety::source::Calibrated>{std::span<const Entry>{rows}},
-        .calibration_age_seconds = safety::Stale<double>::fresh(0.0),
+        .entries = calibrated<std::span<const Entry>>(std::span<const Entry>{rows}),
+        .calibration_age_seconds = ::fixy::Stale<double>::fresh(0.0),
     };
 
     auto small = table.latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
@@ -378,20 +260,12 @@ static void test_opcodes_for_binding() {
 }
 
 int main() {
-    std::printf("test_opcode_latency_table: 13 groups\n");
-    test_size_bucket_name_coverage();
-    test_dtype_bucket_name_coverage();
-    test_transpose_mode_name_coverage();
-    test_message_size_bucket_name_coverage();
-    test_gpu_opcode_runtime();
-    test_nic_opcode_runtime();
-    test_switch_opcode_runtime();
-    test_cpu_opcode_runtime();
-    test_dram_opcode_runtime();
+    std::printf("test_opcode_latency_table: 5 groups\n");
+    test_enum_names();
     test_latency_quantiles_ordered_construction();
     test_gpu_opcode_table_construction();
     test_nic_opcode_table_construction();
     test_opcodes_for_binding();
-    std::printf("test_opcode_latency_table: 13 groups, all passed\n");
+    std::printf("test_opcode_latency_table: 5 groups, all passed\n");
     return 0;
 }

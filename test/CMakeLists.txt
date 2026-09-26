@@ -4554,18 +4554,16 @@ crucible_neg_compile_ledger_test(neg_refresh_daemon_hot_fg_ctx
 #   * Concept gate (HasOpcodeTable<K>) — refuses non-substrate Cogs
 #     (PsuRail) at template substitution.  Mirrors the GAPS-186 Caps
 #     concept gate; double-rejection on HasCaps + opcodes_for-defined.
-#   * Data-invariant gate (OrderedLatencyQuantiles) — refuses non-
-#     monotone p50/p99/p999 triples at Refined construction.  This is
-#     THE structural soundness gate that protects every downstream
-#     consumer (Mimic MAP-Elites pruning, partition optimiser, FitsCog
-#     throughput envelope) from disk-corrupted / federation-mismatched
-#     / hostile-preset percentile measurements.
+#   * Data-invariant gate (OrderedLatencyQuantiles) — the checked mint
+#     refuses a p50/p99/p999 triple out of order.  The second pattern
+#     names the predicate type and the refused triple, so only this
+#     refusal matches.
 crucible_neg_compile_cog_test(neg_opcode_latency_rejects_psu_rail
     "constraint|constraints.*not satisfied"
     "HasOpcodeTable|lookup_opcodes|PsuRail|GAPS-187")
 crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
-    "static assertion|contract|precondition|non-constant"
-    "OrderedLatencyQuantiles|quantile_ordered")
+    "__builtin_trap\\(\\).* is not a constant expression"
+    "mint_refined<crucible::cog::AreQuantilesOrdered\\(\\), crucible::cog::LatencyQuantiles>\\(crucible::cog::LatencyQuantiles\\{99, 50, 30\\}\\)")
 
 # ─── GAPS-191 cog/FitsCog.h soundness gates (HS14) ────────────────
 #

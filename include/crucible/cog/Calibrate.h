@@ -223,9 +223,9 @@ template <CogKind K>
         .transpose_mode = sample.transpose_mode,
         .message_size_bucket = sample.message_size_bucket,
         .latency_cycles = sample.latency_cycles,
-        .latency = OrderedLatencyQuantiles{sample.latency.value(), typename OrderedLatencyQuantiles::Trusted{}},
+        .latency = ::fixy::mint_refined_trusted<quantile_ordered>(sample.latency.value()),
         .throughput_per_sec = sample.throughput_per_sec.value(),
-        .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{sample.sample_count.value()},
+        .sample_count = ::fixy::mint_tagged<::fixy::tags::source::Calibrated, std::uint16_t>(sample.sample_count.value()),
     };
 }
 
@@ -275,8 +275,9 @@ build_calibration_result(CogIdentity identity, caps_for_t<K> caps, std::span<con
         .target_caps = caps,
         .opcode_table =
             OpcodeLatencyTable<K>{
-                .entries = safety::Tagged<std::span<const OpcodeLatencyEntry<K>>, safety::source::Calibrated>{entries},
-                .calibration_age_seconds = safety::Stale<double>::fresh(0.0),
+                .entries = ::fixy::mint_tagged<::fixy::tags::source::Calibrated, std::span<const OpcodeLatencyEntry<K>>>(
+                    entries),
+                .calibration_age_seconds = ::fixy::Stale<double>::fresh(0.0),
             },
         .plan = plan,
         .entry_count =

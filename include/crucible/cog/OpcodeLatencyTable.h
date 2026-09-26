@@ -2,15 +2,15 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Stale.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Refined.h>
+#include <fixy/Stale.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
+#include <cstddef>
 #include <cstdint>
-#include <meta>
 #include <optional>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cog {
@@ -19,6 +19,10 @@ namespace crucible::cog {
 // is serialized into cached snapshots that outlive the process, so
 // renumbering an atom silently reinterprets every snapshot that carries
 // it. New atoms take the next free value.
+//
+// ::foundation::reflect::enum_name gives the name of an enumerator. It
+// reads the identifier that the enum declares, so no name table can
+// fall out of step with the enum.
 //
 // A GEMM dimension bucket, one each for M, N and K. The underlying
 // value is the bucket size in elements, so a call site can do
@@ -33,30 +37,6 @@ enum class SizeBucket : std::uint16_t {
     S2048 = 2048,
     S4096 = 4096,
 };
-inline constexpr std::size_t size_bucket_count = std::meta::enumerators_of(^^SizeBucket).size();
-
-[[nodiscard]] constexpr std::string_view size_bucket_name(SizeBucket B) noexcept {
-    switch (B) {
-        case SizeBucket::None:
-            return "None";
-        case SizeBucket::S64:
-            return "S64";
-        case SizeBucket::S128:
-            return "S128";
-        case SizeBucket::S256:
-            return "S256";
-        case SizeBucket::S512:
-            return "S512";
-        case SizeBucket::S1024:
-            return "S1024";
-        case SizeBucket::S2048:
-            return "S2048";
-        case SizeBucket::S4096:
-            return "S4096";
-        default:
-            return std::string_view{"<unknown SizeBucket>"};
-    }
-}
 
 // A plain ordinal, unlike SizeBucket. The value carries no numeric
 // meaning.
@@ -71,32 +51,6 @@ enum class DtypeBucket : std::uint8_t {
     Fp4 = 7,
     Int8 = 8,
 };
-inline constexpr std::size_t dtype_bucket_count = std::meta::enumerators_of(^^DtypeBucket).size();
-
-[[nodiscard]] constexpr std::string_view dtype_bucket_name(DtypeBucket B) noexcept {
-    switch (B) {
-        case DtypeBucket::None:
-            return "None";
-        case DtypeBucket::Fp64:
-            return "Fp64";
-        case DtypeBucket::Fp32:
-            return "Fp32";
-        case DtypeBucket::Tf32:
-            return "Tf32";
-        case DtypeBucket::Fp16:
-            return "Fp16";
-        case DtypeBucket::Bf16:
-            return "Bf16";
-        case DtypeBucket::Fp8:
-            return "Fp8";
-        case DtypeBucket::Fp4:
-            return "Fp4";
-        case DtypeBucket::Int8:
-            return "Int8";
-        default:
-            return std::string_view{"<unknown DtypeBucket>"};
-    }
-}
 
 // The BLAS naming convention that every vendor library uses. T is
 // transposed and N is not. The letter pair is ordered (A, B) for the
@@ -107,22 +61,6 @@ enum class TransposeMode : std::uint8_t {
     Nt = 2,
     Tt = 3,
 };
-inline constexpr std::size_t transpose_mode_count = std::meta::enumerators_of(^^TransposeMode).size();
-
-[[nodiscard]] constexpr std::string_view transpose_mode_name(TransposeMode M) noexcept {
-    switch (M) {
-        case TransposeMode::Nn:
-            return "Nn";
-        case TransposeMode::Tn:
-            return "Tn";
-        case TransposeMode::Nt:
-            return "Nt";
-        case TransposeMode::Tt:
-            return "Tt";
-        default:
-            return std::string_view{"<unknown TransposeMode>"};
-    }
-}
 
 // The underlying value is the bucket size in bytes, the same
 // convention SizeBucket follows.
@@ -135,28 +73,6 @@ enum class MessageSizeBucket : std::uint32_t {
     M4M = 4194304,
     M64M = 67108864,
 };
-inline constexpr std::size_t message_size_bucket_count = std::meta::enumerators_of(^^MessageSizeBucket).size();
-
-[[nodiscard]] constexpr std::string_view message_size_bucket_name(MessageSizeBucket B) noexcept {
-    switch (B) {
-        case MessageSizeBucket::None:
-            return "None";
-        case MessageSizeBucket::M64B:
-            return "M64B";
-        case MessageSizeBucket::M1K:
-            return "M1K";
-        case MessageSizeBucket::M16K:
-            return "M16K";
-        case MessageSizeBucket::M256K:
-            return "M256K";
-        case MessageSizeBucket::M4M:
-            return "M4M";
-        case MessageSizeBucket::M64M:
-            return "M64M";
-        default:
-            return std::string_view{"<unknown MessageSizeBucket>"};
-    }
-}
 
 enum class GpuOpcode : std::uint16_t {
     GemmPlain = 0,  // dense GEMM, C = A · B
@@ -173,7 +89,6 @@ enum class GpuOpcode : std::uint16_t {
     DoorbellRing = 11,
     EventQuery = 12,
 };
-inline constexpr std::size_t gpu_opcode_count = std::meta::enumerators_of(^^GpuOpcode).size();
 
 // A network opcode is measured once per message-size bucket, because
 // the latency and bandwidth of one operation vary by orders of
@@ -195,7 +110,6 @@ enum class NicOpcode : std::uint16_t {
     GpuDirectWrite = 13,
     GpuDirectRead = 14,
 };
-inline constexpr std::size_t nic_opcode_count = std::meta::enumerators_of(^^NicOpcode).size();
 
 // The catalog is short because a switch forwards traffic and does not
 // compute.
@@ -205,7 +119,6 @@ enum class SwitchOpcode : std::uint16_t {
     SharpReduce = 2,
     MulticastReplicate = 3,
 };
-inline constexpr std::size_t switch_opcode_count = std::meta::enumerators_of(^^SwitchOpcode).size();
 
 enum class CpuOpcode : std::uint16_t {
     Memcpy = 0,
@@ -219,7 +132,6 @@ enum class CpuOpcode : std::uint16_t {
     FutexWait = 8,
     Syscall = 9,
 };
-inline constexpr std::size_t cpu_opcode_count = std::meta::enumerators_of(^^CpuOpcode).size();
 
 enum class DramOpcode : std::uint16_t {
     ChannelRead = 0,
@@ -228,136 +140,6 @@ enum class DramOpcode : std::uint16_t {
     BankRefresh = 3,
     Precharge = 4,
 };
-inline constexpr std::size_t dram_opcode_count = std::meta::enumerators_of(^^DramOpcode).size();
-
-[[nodiscard]] constexpr std::string_view gpu_opcode_name(GpuOpcode O) noexcept {
-    switch (O) {
-        case GpuOpcode::GemmPlain:
-            return "GemmPlain";
-        case GpuOpcode::GemmFused:
-            return "GemmFused";
-        case GpuOpcode::Sdpa:
-            return "Sdpa";
-        case GpuOpcode::Conv2D:
-            return "Conv2D";
-        case GpuOpcode::AllReduceRing:
-            return "AllReduceRing";
-        case GpuOpcode::AllReduceTree:
-            return "AllReduceTree";
-        case GpuOpcode::AllGather:
-            return "AllGather";
-        case GpuOpcode::NvlinkP2pRead:
-            return "NvlinkP2pRead";
-        case GpuOpcode::NvlinkP2pWrite:
-            return "NvlinkP2pWrite";
-        case GpuOpcode::PciePeer:
-            return "PciePeer";
-        case GpuOpcode::KernelLaunch:
-            return "KernelLaunch";
-        case GpuOpcode::DoorbellRing:
-            return "DoorbellRing";
-        case GpuOpcode::EventQuery:
-            return "EventQuery";
-        default:
-            return std::string_view{"<unknown GpuOpcode>"};
-    }
-}
-
-[[nodiscard]] constexpr std::string_view nic_opcode_name(NicOpcode O) noexcept {
-    switch (O) {
-        case NicOpcode::RdmaWrite:
-            return "RdmaWrite";
-        case NicOpcode::RdmaSend:
-            return "RdmaSend";
-        case NicOpcode::RdmaRead:
-            return "RdmaRead";
-        case NicOpcode::CompletionPoll:
-            return "CompletionPoll";
-        case NicOpcode::QpCreate:
-            return "QpCreate";
-        case NicOpcode::QpDestroy:
-            return "QpDestroy";
-        case NicOpcode::MrRegister:
-            return "MrRegister";
-        case NicOpcode::MrDeregister:
-            return "MrDeregister";
-        case NicOpcode::DoorbellRing:
-            return "DoorbellRing";
-        case NicOpcode::TcpSend:
-            return "TcpSend";
-        case NicOpcode::TcpRecv:
-            return "TcpRecv";
-        case NicOpcode::AfXdpEnqueue:
-            return "AfXdpEnqueue";
-        case NicOpcode::AfXdpDequeue:
-            return "AfXdpDequeue";
-        case NicOpcode::GpuDirectWrite:
-            return "GpuDirectWrite";
-        case NicOpcode::GpuDirectRead:
-            return "GpuDirectRead";
-        default:
-            return std::string_view{"<unknown NicOpcode>"};
-    }
-}
-
-[[nodiscard]] constexpr std::string_view switch_opcode_name(SwitchOpcode O) noexcept {
-    switch (O) {
-        case SwitchOpcode::PortForward:
-            return "PortForward";
-        case SwitchOpcode::AclMatch:
-            return "AclMatch";
-        case SwitchOpcode::SharpReduce:
-            return "SharpReduce";
-        case SwitchOpcode::MulticastReplicate:
-            return "MulticastReplicate";
-        default:
-            return std::string_view{"<unknown SwitchOpcode>"};
-    }
-}
-
-[[nodiscard]] constexpr std::string_view cpu_opcode_name(CpuOpcode O) noexcept {
-    switch (O) {
-        case CpuOpcode::Memcpy:
-            return "Memcpy";
-        case CpuOpcode::Vfma:
-            return "Vfma";
-        case CpuOpcode::AvxLoad:
-            return "AvxLoad";
-        case CpuOpcode::AvxStore:
-            return "AvxStore";
-        case CpuOpcode::ContextSwitch:
-            return "ContextSwitch";
-        case CpuOpcode::AtomicCas:
-            return "AtomicCas";
-        case CpuOpcode::MutexLock:
-            return "MutexLock";
-        case CpuOpcode::MutexUnlock:
-            return "MutexUnlock";
-        case CpuOpcode::FutexWait:
-            return "FutexWait";
-        case CpuOpcode::Syscall:
-            return "Syscall";
-        default:
-            return std::string_view{"<unknown CpuOpcode>"};
-    }
-}
-
-[[nodiscard]] constexpr std::string_view dram_opcode_name(DramOpcode O) noexcept {
-    switch (O) {
-        case DramOpcode::ChannelRead:
-            return "ChannelRead";
-        case DramOpcode::ChannelWrite:
-            return "ChannelWrite";
-        case DramOpcode::RowActivate:
-            return "RowActivate";
-        case DramOpcode::BankRefresh:
-            return "BankRefresh";
-        case DramOpcode::Precharge:
-            return "Precharge";
-        default:
-            return std::string_view{"<unknown DramOpcode>"};
-    }
-}
 
 // Nanoseconds. The type stays a plain aggregate so it can be loaded
 // straight from disk. The ordering invariant lives one level up, in
@@ -380,11 +162,15 @@ static_assert(std::is_standard_layout_v<LatencyQuantiles>);
 // came from corrupt storage, from an import under a different
 // histogram convention, or from a calibrator that mislabelled the
 // fields, so the refinement rejects it at construction.
-inline constexpr auto quantile_ordered = [](const LatencyQuantiles& q) constexpr noexcept {
-    return q.p50_ns <= q.p99_ns && q.p99_ns <= q.p999_ns;
+struct AreQuantilesOrdered {
+    [[nodiscard]] constexpr bool operator()(const LatencyQuantiles& q) const noexcept {
+        return q.p50_ns <= q.p99_ns && q.p99_ns <= q.p999_ns;
+    }
 };
 
-using OrderedLatencyQuantiles = safety::Refined<quantile_ordered, LatencyQuantiles>;
+inline constexpr AreQuantilesOrdered quantile_ordered{};
+
+using OrderedLatencyQuantiles = ::fixy::Refined<quantile_ordered, LatencyQuantiles>;
 
 static_assert(sizeof(OrderedLatencyQuantiles) == sizeof(LatencyQuantiles),
               "The ordering refinement must add no storage to the triple it "
@@ -453,10 +239,10 @@ struct OpcodeLatencyEntry {
     MessageSizeBucket message_size_bucket = MessageSizeBucket::None;
 
     std::uint32_t latency_cycles = 0;
-    OrderedLatencyQuantiles latency{LatencyQuantiles{}};
+    OrderedLatencyQuantiles latency = ::fixy::mint_refined<quantile_ordered>(LatencyQuantiles{});
     double throughput_per_sec = 0.0;
 
-    safety::Tagged<std::uint16_t, safety::source::Calibrated> sample_count{std::uint16_t{0}};
+    CalibratedValue<std::uint16_t> sample_count{};
 };
 
 // One table holds the calibrated rows for one Cog.
@@ -486,9 +272,9 @@ struct OpcodeLatencyTable {
     using Entry = OpcodeLatencyEntry<K>;
     using OpcodeId = opcodes_for_t<K>;
 
-    safety::Tagged<std::span<const Entry>, safety::source::Calibrated> entries{std::span<const Entry>{}};
+    CalibratedValue<std::span<const Entry>> entries{};
 
-    safety::Stale<double> calibration_age_seconds = safety::Stale<double>::at_infinity(0.0);
+    ::fixy::Stale<double> calibration_age_seconds = ::fixy::Stale<double>::at_infinity(0.0);
 
     [[nodiscard]] constexpr std::optional<Entry> lookup_by_opcode(OpcodeId target) const noexcept {
         const auto& span_view = entries.value();
@@ -527,139 +313,10 @@ struct OpcodeLatencyTable {
 
 namespace detail::opcode_latency_self_test {
 
-static_assert(sizeof(OrderedLatencyQuantiles) == sizeof(LatencyQuantiles));
+static_assert(sizeof(CalibratedValue<std::uint16_t>) == sizeof(std::uint16_t));
+static_assert(sizeof(CalibratedValue<std::span<const int>>) == sizeof(std::span<const int>));
 
-static_assert(sizeof(safety::Tagged<std::uint16_t, safety::source::Calibrated>) == sizeof(std::uint16_t));
-static_assert(sizeof(safety::Tagged<std::span<const int>, safety::source::Calibrated>) == sizeof(std::span<const int>));
-
-static_assert(sizeof(safety::Stale<double>) <= 16);
-
-[[nodiscard]] consteval bool every_size_bucket_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SizeBucket));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (size_bucket_name([:en:]) == std::string_view{"<unknown SizeBucket>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_size_bucket_has_name(), "size_bucket_name() switch missing arm for at least one SizeBucket "
-                                            "atom.");
-
-[[nodiscard]] consteval bool every_dtype_bucket_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^DtypeBucket));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (dtype_bucket_name([:en:]) == std::string_view{"<unknown DtypeBucket>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_dtype_bucket_has_name());
-
-[[nodiscard]] consteval bool every_transpose_mode_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^TransposeMode));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (transpose_mode_name([:en:]) == std::string_view{"<unknown TransposeMode>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_transpose_mode_has_name());
-
-[[nodiscard]] consteval bool every_message_size_bucket_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MessageSizeBucket));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (message_size_bucket_name([:en:]) == std::string_view{"<unknown MessageSizeBucket>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_message_size_bucket_has_name());
-
-[[nodiscard]] consteval bool every_gpu_opcode_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^GpuOpcode));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (gpu_opcode_name([:en:]) == std::string_view{"<unknown GpuOpcode>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_gpu_opcode_has_name());
-
-[[nodiscard]] consteval bool every_nic_opcode_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^NicOpcode));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (nic_opcode_name([:en:]) == std::string_view{"<unknown NicOpcode>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_nic_opcode_has_name());
-
-[[nodiscard]] consteval bool every_switch_opcode_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SwitchOpcode));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (switch_opcode_name([:en:]) == std::string_view{"<unknown SwitchOpcode>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_switch_opcode_has_name());
-
-[[nodiscard]] consteval bool every_cpu_opcode_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CpuOpcode));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (cpu_opcode_name([:en:]) == std::string_view{"<unknown CpuOpcode>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_cpu_opcode_has_name());
-
-[[nodiscard]] consteval bool every_dram_opcode_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^DramOpcode));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (dram_opcode_name([:en:]) == std::string_view{"<unknown DramOpcode>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_dram_opcode_has_name());
+static_assert(sizeof(::fixy::Stale<double>) <= 16);
 
 static_assert(static_cast<std::uint16_t>(SizeBucket::None) == 0,
               "SizeBucket::None has moved off its frozen value. Every cached "
@@ -778,7 +435,6 @@ static_assert(!HasOpcodeTable<CogKind::Datacenter>);
 
 // A table is written to disk and shipped over the wire as raw bytes.
 // Standard layout is what keeps that byte image stable.
-static_assert(std::is_standard_layout_v<LatencyQuantiles>);
 static_assert(std::is_standard_layout_v<OpcodeLatencyEntry<CogKind::Gpu>>);
 static_assert(std::is_standard_layout_v<OpcodeLatencyEntry<CogKind::NicPort>>);
 
