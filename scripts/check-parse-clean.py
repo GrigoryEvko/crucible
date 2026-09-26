@@ -80,14 +80,14 @@ def verdict(
 def scan() -> int:
     """Parse every C++ file under ROOTS and report the findings.
 
+    The file list comes from tsast.cpp_files, the one suffix policy of every
+    C++ scan, with the roster files kept, because this gate proves the roster
+    exact.
+
     Returns:
         0 when the roster is exact, 2 on any finding, 3 when the kit is absent
     """
-    try:
-        files = tsast.cpp_files(*ROOTS, include_unparseable=True)
-    except tsast.KitMissing as exc:
-        print(f"check-parse-clean: {exc}", file=sys.stderr)
-        return 3
+    files = tsast.cpp_files(*ROOTS, include_unparseable=True)
     try:
         errored = {
             str(tree.path)
@@ -125,14 +125,18 @@ def self_test() -> int:
         0 when every case holds, 2 otherwise
     """
     failures: list[str] = []
+    counts = {"cases": 0, "negatives": 0}
 
-    def check(name: str, ok: bool) -> None:
+    def check(name: str, ok: bool, negative: bool = False) -> None:
         """Record one case result and print it.
 
         Args:
             name: What the case asserts
             ok: Whether it held
+            negative: Whether the case plants a finding the verdict must report
         """
+        counts["cases"] += 1
+        counts["negatives"] += negative
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
         if not ok:
             failures.append(name)
@@ -152,22 +156,25 @@ def self_test() -> int:
     check(
         "an unadmitted parse error is reported",
         len(out) == 1 and out[0].startswith("PARSE unadmitted: b.cpp"),
+        True,
     )
     # Negative control: a roster entry whose file parses clean must be reported.
     out = verdict(set(), {"c.cpp": "reason"}, {"c.cpp"})
     check(
         "a stale roster entry is reported",
         len(out) == 1 and out[0].startswith("PARSE roster stale: c.cpp"),
+        True,
     )
     # Negative control: a roster entry naming an absent file must be reported.
     out = verdict(set(), {"gone.cpp": "reason"}, set())
     check(
         "a dangling roster entry is reported",
         len(out) == 1 and out[0].startswith("PARSE roster dangling: gone.cpp"),
+        True,
     )
     # Negative control: the three directions are reported together, not one at a time.
     out = verdict({"b.cpp"}, {"c.cpp": "r", "gone.cpp": "r"}, {"b.cpp", "c.cpp"})
-    check("all three directions are reported at once", len(out) == 3)
+    check("all three directions are reported at once", len(out) == 3, True)
 
     # Positive control: the roster in the tree names a reason for every entry.
     check(
@@ -178,7 +185,8 @@ def self_test() -> int:
     if failures:
         print(f"check-parse-clean --self-test: FAILED — {len(failures)} case(s)")
         return 2
-    print("check-parse-clean --self-test: 7 cases pass, 4 of them negative controls.")
+    print(f"check-parse-clean --self-test: {counts['cases']} cases pass, "
+          f"{counts['negatives']} of them negative controls.")
     return 0
 
 

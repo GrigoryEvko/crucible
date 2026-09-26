@@ -59,19 +59,16 @@ _CONSTRUCTORS = frozenset({
 def _is_probe(node: tsast.Node) -> bool:
     """Return true when a namespace that encloses the node ends in _self_test.
 
+    The segments come from tsast.namespace_path, so a comment inside a nested
+    namespace name does not hide the segment.
+
     Args:
         node: Any node of the parsed file
 
     Returns:
         Whether the declaration sits in a header self-test namespace
     """
-    owner = node.ancestor_of_type("namespace_definition")
-    while owner is not None:
-        name = owner.child_by_field("name")
-        if name is not None and any(part.endswith(PROBE_SUFFIX) for part in name.text.split("::")):
-            return True
-        owner = owner.ancestor_of_type("namespace_definition")
-    return False
+    return any(part.endswith(PROBE_SUFFIX) for part in tsast.namespace_path(node))
 
 
 def _nearest_constructor(name: tsast.Node, stop: tsast.Node) -> str | None:
@@ -190,60 +187,81 @@ def findings(tree: tsast.Tree) -> list[tuple[int, str, str]]:
     return found
 
 
-def load_allowlist() -> dict[tuple[str, str], str]:
+def load_allowlist(path: Path = ALLOWLIST) -> tuple[dict[tuple[str, str], str], list[str]]:
     """Read the reviewed exceptions, keyed by (path, member name).
 
+    Args:
+        path: The allowlist file
+
     Returns:
-        The reason for each admitted member
+        The reason for each admitted member, and one message for each row
+        that is not `path name reason`
     """
     admitted: dict[tuple[str, str], str] = {}
-    if not ALLOWLIST.is_file():
-        return admitted
-    for raw in ALLOWLIST.read_text(encoding="utf-8").splitlines():
+    malformed: list[str] = []
+    if not path.is_file():
+        return admitted, malformed
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        path, name, reason = line.split(maxsplit=2)
-        admitted[(path, name)] = reason
-    return admitted
+        fields = line.split(maxsplit=2)
+        if len(fields) != 3:
+            malformed.append(f"{path.name}:{number}: `{line}` is not `path name reason`. "
+                             "Give the path, the member name and the reason.")
+            continue
+        member_path, name, reason = fields
+        admitted[(member_path, name)] = reason
+    return admitted, malformed
 
 
-def scan(paths: list[Path]) -> dict[tuple[str, str], list[int]]:
+def scan(paths: list[Path]) -> tuple[dict[tuple[str, str], list[int]], list[str]]:
     """Parse the files and collect each refused declaration by (path, name).
 
     Args:
         paths: The files to parse
 
     Returns:
-        The lines of each refused declaration, keyed by (path, name)
+        The lines of each refused declaration, keyed by (path, name), and one
+        message for each file that the parser cannot read
     """
     hits: dict[tuple[str, str], list[int]] = {}
-    for tree in tsast.parse(paths):
+    unread: list[str] = []
+    for tree in tsast.parse(paths, strict=False):
+        if tree.diagnostic is not None:
+            unread.append(f"{tree.path}: the parser cannot read this file, so its members are unknown.\n"
+                          f"  {tree.diagnostic}")
+            continue
         for line, name, _ in findings(tree):
             hits.setdefault((str(tree.path), name), []).append(line)
-    return hits
+    return hits, unread
 
 
 def run() -> int:
     """Run the gate over the two roots and report.
 
     Returns:
-        0 when clean, 1 on a finding, 2 on a stale allowlist entry
+        0 when clean, 1 on a finding or an unreadable file, 2 on a stale or
+        malformed allowlist entry
     """
-    hits = scan(tsast.cpp_files(*ROOTS))
-    admitted = load_allowlist()
+    hits, unread = scan(tsast.cpp_files(*ROOTS))
+    admitted, malformed = load_allowlist()
     refused = {key: lines for key, lines in hits.items() if key not in admitted}
     stale = sorted(key for key in admitted if key not in hits)
     for (path, name), lines in sorted(refused.items()):
         for line in lines:
             print(f"{path}:{line}: `{name}` is a C array member. "
                   "Use std::array or fixy::FixedArray, so each subscript is checked.")
+    for message in unread:
+        print(message)
     for path, name in stale:
         print(f"{ALLOWLIST.relative_to(tsast.REPO_ROOT)}: stale entry `{path} {name}`: "
               "no C array member has that name there now. Delete the entry.")
-    if stale:
+    for message in malformed:
+        print(message)
+    if stale or malformed:
         return 2
-    if refused:
+    if refused or unread:
         return 1
     print(f"check-no-raw-array-member: clean ({len(admitted)} reviewed exceptions)")
     return 0
@@ -278,31 +296,47 @@ namespace detail::layout_self_test {
 struct Probe { double weight[2]; };
 using ProbeRow = int[2];
 }
+namespace probe::comment_self_test /* a comment inside the name */ ::inner {
+struct CommentProbe { int cells[2]; };
+}
 }
 """
     must_refuse = {"values", "slots", "data_", "bytes", "Row", "RowOfPointers", "Name", "text"}
     must_admit = {"table", "to_array", "scalar", "param", "weight", "ProbeRow", "count", "word",
-                  "PointerToRow", "FnPointerToRow", "Plain"}
+                  "PointerToRow", "FnPointerToRow", "Plain", "cells"}
     failures: list[str] = []
+    cases: list[str] = []
+
+    def expect(name: str, ok: bool) -> None:
+        """Record one case result and print it."""
+        cases.append(name)
+        print(f"  {'ok  ' if ok else 'FAIL'} {name}")
+        if not ok:
+            failures.append(name)
+
     with tempfile.TemporaryDirectory() as work:
-        path = Path(work) / "fixture.h"
+        root = Path(work)
+        path = root / "fixture.h"
         path.write_text(fixture, encoding="utf-8")
-        refused = {name for tree in tsast.parse([path]) for _, name, _ in findings(tree)}
+        hits, unread = scan([path])
+        refused = {name for _, name in hits}
+        expect("the fixture parses", not unread)
+        broken = root / "broken.h"
+        broken.write_text("void f() { g(1) { } }\n", encoding="utf-8")
+        expect("a file the parser cannot read is reported, not raised", bool(scan([broken])[1]))
+        allow = root / "allow.txt"
+        allow.write_text("# comment\na.h values the reason\na.h values\n", encoding="utf-8")
+        admitted, malformed = load_allowlist(allow)
+        expect("a row with its reason is read", admitted == {("a.h", "values"): "the reason"})
+        expect("a row with no reason is malformed", len(malformed) == 1 and "a.h values" in malformed[0])
     for name in sorted(must_refuse):
-        ok = name in refused
-        print(f"  {'ok  ' if ok else 'FAIL'} refuses `{name}`")
-        if not ok:
-            failures.append(name)
+        expect(f"refuses `{name}`", name in refused)
     for name in sorted(must_admit):
-        ok = name not in refused
-        print(f"  {'ok  ' if ok else 'FAIL'} admits `{name}`")
-        if not ok:
-            failures.append(name)
+        expect(f"admits `{name}`", name not in refused)
     if failures:
         print(f"check-no-raw-array-member --self-test: FAILED on {', '.join(failures)}")
         return 2
-    print(f"check-no-raw-array-member --self-test: {len(must_refuse)} refusals and "
-          f"{len(must_admit)} admissions hold")
+    print(f"check-no-raw-array-member --self-test: {len(cases)} cases hold, {len(must_refuse)} of them refusals")
     return 0
 
 
