@@ -120,14 +120,9 @@ struct TelemetrySchedule {
     PositiveSamplePeriodNs idle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{10000000000});
 };
 
-// A zero period is refused by the branch below, so the checked mint that
-// follows it never fires.
 [[nodiscard]] constexpr std::expected<PositiveSamplePeriodNs, TelemetryError>
 admit_sample_period_ns(std::uint64_t ns) noexcept {
-    if (ns == 0) {
-        return std::unexpected(TelemetryError::DeadlineOverflow);
-    }
-    return ::fixy::mint_refined<::fixy::positive>(ns);
+    return ::fixy::admit_refined<::fixy::positive>(ns, TelemetryError::DeadlineOverflow);
 }
 
 [[nodiscard]] constexpr bool is_nic_cog(cog::CogIdentity const& identity) noexcept {

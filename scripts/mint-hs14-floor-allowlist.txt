@@ -51,9 +51,6 @@ mint_keeper_metrics_reader|include/crucible/observe/Metrics.h
 mint_metrics_writer|include/crucible/observe/Metrics.h
 mint_synthetic_probes|include/crucible/observe/SyntheticProbe.h
 
-# ── topology ─────────────────────────────────────────────────────────
-mint_nic_telemetry_snapshot|include/crucible/topology/Telemetry.h
-
 # ── the new tree and the top-level headers ───────────────────────────
 #
 # The inventory reached include/foundation, include/fixy and the headers

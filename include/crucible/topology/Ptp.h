@@ -156,20 +156,12 @@ concept CtxFitsPtpRecord =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
-// A negative descriptor is refused by the branch below, so the checked
-// mint that follows it never fires.
 [[nodiscard]] constexpr std::expected<PtpClockFd, PtpError> admit_ptp_clock_fd(int fd) noexcept {
-    if (fd < 0) {
-        return std::unexpected(PtpError::InvalidClockFd);
-    }
-    return ::fixy::mint_refined<::fixy::non_negative>(fd);
+    return ::fixy::admit_refined<::fixy::non_negative>(fd, PtpError::InvalidClockFd);
 }
 
 [[nodiscard]] constexpr std::expected<PtpDeviceIndex, PtpError> admit_ptp_device_index(std::uint16_t index) noexcept {
-    if (index > 255u) {
-        return std::unexpected(PtpError::InvalidDeviceIndex);
-    }
-    return ::fixy::mint_refined<::fixy::bounded_above<std::uint16_t{255}>>(index);
+    return ::fixy::admit_refined<::fixy::bounded_above<std::uint16_t{255}>>(index, PtpError::InvalidDeviceIndex);
 }
 
 [[nodiscard]] constexpr bool ptp_capable_cog(cog::CogIdentity const& nic) noexcept {

@@ -1,13 +1,17 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-112 fixture #3: telemetry history mutation is a background-row action.
-// Hot foreground contexts can read snapshots but cannot publish new samples.
+// A record writes the history, and the background owns every write.  The
+// foreground row is empty, so record refuses the dispatch thread.  The
+// foreground context and the snapshot come in as parameters, because
+// neither is built here.
 
 #include <crucible/topology/Telemetry.h>
 
-int main() {
-    auto history = crucible::topology::mint_nic_telemetry_history<2>(crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
-    crucible::topology::NicTelemetrySnapshot snapshot{};
-    (void)history.record(crucible::effects::HotFgCtx{}, snapshot);
-    return 0;
+[[maybe_unused]] static int record_from_foreground(::fixy::HotFgCtx const& fg,
+                                                   crucible::topology::NicTelemetrySnapshot const& snapshot) {
+    auto history =
+        crucible::topology::mint_nic_telemetry_history<2>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    return static_cast<int>(history.record(fg, snapshot));
 }
+
+int main() { return 0; }

@@ -120,29 +120,6 @@ namespace {
 
 }  // namespace
 
-std::string_view nic_telemetry_error_name(NicTelemetryError error) noexcept {
-    switch (error) {
-        case NicTelemetryError::None:
-            return "None";
-        case NicTelemetryError::EmptyInput:
-            return "EmptyInput";
-        case NicTelemetryError::MalformedRecord:
-            return "MalformedRecord";
-        case NicTelemetryError::MissingRequiredField:
-            return "MissingRequiredField";
-        case NicTelemetryError::InvalidNicCog:
-            return "InvalidNicCog";
-        case NicTelemetryError::EmptyHistory:
-            return "EmptyHistory";
-        case NicTelemetryError::InvalidWindow:
-            return "InvalidWindow";
-        case NicTelemetryError::NonPositiveCapacity:
-            return "NonPositiveCapacity";
-        default:
-            return "<unknown NicTelemetryError>";
-    }
-}
-
 std::expected<DeclaredNetdevCounters, NicTelemetryError> parse_netdev_counters(ExternalTelemetryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {

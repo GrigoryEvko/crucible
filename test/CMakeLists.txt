@@ -4989,26 +4989,59 @@ crucible_neg_compile_topology_test(neg_topology_health_raw_score
     "could not convert .0. from .int. to .crucible::topology::HealthScore."
     "HealthScore")
 
-# ─── HS14 fixtures for topology::Telemetry (GAPS-112 #1218) ────────
+# ─── topology::Telemetry ──────────────────────────────────────────────
 #
-#   * neg_topology_telemetry_mint_bg_ctx — history storage is Init-owned.
-#   * neg_topology_telemetry_raw_netdev_text — parser ingress consumes
-#     Tagged<source::External>, not raw strings.
-#   * neg_topology_telemetry_record_fg_ctx — sample publication is Bg-only.
-#   * neg_topology_telemetry_window_overflow — bounded history indices cannot
-#     silently wrap their uint16_t carrier.
+#   * neg_topology_telemetry_mint_bg_ctx, _mint_hot_fg_ctx: the history
+#     mint refuses a context whose row holds no Init.
+#   * neg_topology_telemetry_record_fg_ctx, _record_init_ctx: a record
+#     refuses a context whose row holds no Bg.
+#   * neg_topology_telemetry_read_fg_ctx, _read_test_ctx: a read refuses a
+#     context that owns neither Init nor Bg, because the history has no
+#     lock.
+#   * neg_topology_telemetry_window_overflow: a window that the uint16_t
+#     indices cannot hold stops at a static assertion.
+#   * neg_topology_telemetry_history_direct_construct,
+#     _snapshot_direct_construct: each is reached only through its mint.
+#   * neg_topology_telemetry_raw_netdev_text: the parser takes text under
+#     the External tag, not a raw string.
+#   * neg_topology_telemetry_snapshot_raw_netdev, _snapshot_raw_tcp: the
+#     snapshot mint takes tagged samples, not raw ones.
 crucible_neg_compile_topology_test(neg_topology_telemetry_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsNicTelemetryMint|GAPS-112")
-crucible_neg_compile_topology_test(neg_topology_telemetry_raw_netdev_text
-    "could not convert|no matching function"
-    "ExternalTelemetryText")
+    "no matching function for call to .mint_nic_telemetry_history<4>\\(fixy::BgDrainCtx\\)."
+    "required for the satisfaction of .CtxFitsNicTelemetryMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_topology_test(neg_topology_telemetry_mint_hot_fg_ctx
+    "no matching function for call to .mint_nic_telemetry_history<4>\\(const fixy::HotFgCtx&\\)."
+    "required for the satisfaction of .CtxFitsNicTelemetryMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_topology_test(neg_topology_telemetry_record_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsNicTelemetryRecord|GAPS-112")
+    "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::record\\(const fixy::HotFgCtx&, const crucible::topology::NicTelemetrySnapshot&\\)."
+    "required for the satisfaction of .CtxFitsNicTelemetryRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_topology_test(neg_topology_telemetry_record_init_ctx
+    "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::record\\(fixy::ColdInitCtx&, const crucible::topology::NicTelemetrySnapshot&\\)."
+    "required for the satisfaction of .CtxFitsNicTelemetryRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
+crucible_neg_compile_topology_test(neg_topology_telemetry_read_fg_ctx
+    "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::current_snapshot\\(const fixy::HotFgCtx&\\)."
+    "required for the satisfaction of .CtxFitsNicTelemetryRead<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_topology_test(neg_topology_telemetry_read_test_ctx
+    "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::current_snapshot\\(fixy::TestRunnerCtx&\\)."
+    "required for the satisfaction of .CtxFitsNicTelemetryRead<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
 crucible_neg_compile_topology_test(neg_topology_telemetry_window_overflow
-    "static assertion failed"
-    "uint16_t|bounded history|GAPS-112")
+    "static assertion failed: NicTelemetryHistory stores bounded history indices in uint16_t"
+    "In instantiation of .class crucible::topology::NicTelemetryHistory<65536>.")
+crucible_neg_compile_topology_test(neg_topology_telemetry_history_direct_construct
+    ".constexpr crucible::topology::NicTelemetryHistory<Window>::NicTelemetryHistory\\(\\) \\[with long unsigned int Window = 4\\]. is private within this context"
+    "topology/Telemetry.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_topology_test(neg_topology_telemetry_snapshot_direct_construct
+    ".constexpr crucible::topology::NicTelemetrySnapshot::NicTelemetrySnapshot\\(\\). is private within this context"
+    "topology/Telemetry.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_topology_test(neg_topology_telemetry_raw_netdev_text
+    "could not convert .\\(const char\\*\\).rx_bytes: 1.012.. from .const char\\*."
+    "to .crucible::topology::ExternalTelemetryText. \\{aka .fixy::Tagged<std::basic_string_view<char>, fixy::tags::source::External>.\\}")
+crucible_neg_compile_topology_test(neg_topology_telemetry_snapshot_raw_netdev
+    "could not convert .crucible::topology::NetdevCounters\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\}. from .crucible::topology::NetdevCounters."
+    "to .crucible::topology::DeclaredNetdevCounters. \\{aka .fixy::Tagged<crucible::topology::NetdevCounters, fixy::tags::source::KernelTelemetry>.\\}")
+crucible_neg_compile_topology_test(neg_topology_telemetry_snapshot_raw_tcp
+    "could not convert .raw. from .const crucible::topology::CongestionSample."
+    "to .crucible::topology::TcpInfoSnapshot. \\{aka .fixy::Tagged<crucible::topology::CongestionSample, fixy::tags::source::TcpInfo>.\\}")
 
 # ─── topology::AsymmetricFailure ──────────────────────────────────────
 #

@@ -44,6 +44,3 @@ include/crucible/cntp/_wip/KtlsOffload.h
 include/crucible/cntp/_wip/P4.h
 include/crucible/cntp/_wip/Sharp.h
 include/crucible/cntp/_wip/Wireguard.h
-
-# ── topology/ ──────────────────────────────────────────────────
-include/crucible/topology/Telemetry.h

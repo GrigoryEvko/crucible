@@ -179,8 +179,8 @@ apply to the row.
 | `mint_asymmetric_failure_detector` | `include/crucible/topology/AsymmetricFailure.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_congestion_telemetry_worker` | `include/crucible/topology/CongestionTelemetryWorker.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 7 |
+| `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_ptp_handle` | `include/crucible/topology/Ptp.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_topology_graph` | `include/crucible/topology/TopologyGraph.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
@@ -362,5 +362,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 99 | 52 | 38 | 9 | 0 | 90 | 22 |
+| old (`include/crucible/`) | 99 | 52 | 38 | 9 | 0 | 90 | 21 |
 | new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |
