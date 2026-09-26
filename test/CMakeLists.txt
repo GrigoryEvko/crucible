@@ -6817,7 +6817,7 @@ crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
 #   * neg_congestion_telemetry_raw_fd_harvest: live harvest requires
 #     an admitted SocketFd, not a raw int.
 #   * neg_congestion_telemetry_raw_state_aggregate: per-link aggregation
-#     accepts tagged TcpInfoSnapshot values, not raw CongestionState.
+#     accepts tagged TcpInfoSnapshot values, not raw CongestionSample.
 #   * neg_congestion_telemetry_worker_fg_record: rt-owned telemetry updates
 #     are Bg-row work and cannot run in the foreground hot path.
 crucible_neg_compile_test(neg_congestion_telemetry_raw_fd_harvest

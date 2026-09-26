@@ -1,4 +1,5 @@
 #include <crucible/topology/Telemetry.h>
+#include <crucible/topology/TopologyGraph.h>
 
 #include <cassert>
 #include <cmath>
@@ -27,7 +28,7 @@ static cog::CogIdentity nic() {
 }
 
 static topology::TcpInfoSnapshot tcp_sample(std::uint64_t bps, std::uint64_t rtt_us, std::uint32_t in_flight) {
-    topology::CongestionState state{
+    topology::CongestionSample state{
         .algorithm = cntp::CcAlgorithm::Bbr3,
         .btl_bw_bps = topology::PositiveBandwidthBps{bps, typename topology::PositiveBandwidthBps::Trusted{}},
         .rt_prop_us = topology::PositiveMicroseconds{rtt_us, typename topology::PositiveMicroseconds::Trusted{}},
@@ -130,6 +131,9 @@ static void test_static_gates() {
     static_assert(sizeof(topology::ExternalTelemetryText) == sizeof(std::string_view));
     static_assert(sizeof(topology::DeclaredNetdevCounters) == sizeof(topology::NetdevCounters));
     static_assert(std::is_trivially_destructible_v<topology::NicTelemetrySnapshot>);
+    // The per-socket sample and the health class of a link have two names,
+    // so the telemetry headers and the graph header build in one TU.
+    static_assert(std::is_enum_v<topology::CongestionState> && std::is_class_v<topology::CongestionSample>);
     std::printf("  test_static_gates:                     PASSED\n");
 }
 

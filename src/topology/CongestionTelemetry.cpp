@@ -118,7 +118,7 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
     };
 }
 
-[[nodiscard]] CongestionState decode_tcp_info(tcp_info const& info, cntp::CcAlgorithm algorithm) noexcept {
+[[nodiscard]] CongestionSample decode_tcp_info(tcp_info const& info, cntp::CcAlgorithm algorithm) noexcept {
     const std::uint32_t mss = positive_or_one_u32(info.tcpi_snd_mss);
     const std::uint32_t cwnd_bytes = sat_u32_mul(positive_or_one_u32(info.tcpi_snd_cwnd), mss);
     const std::uint32_t ssthresh_packets = info.tcpi_snd_ssthresh == std::numeric_limits<std::uint32_t>::max()
@@ -129,7 +129,7 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
     const std::uint64_t delivery_rate = positive_or_one_u64(info.tcpi_delivery_rate);
     const std::uint64_t rtt = positive_or_one_u64(info.tcpi_min_rtt != 0 ? info.tcpi_min_rtt : info.tcpi_rtt);
 
-    CongestionState state{
+    CongestionSample state{
         .algorithm = algorithm,
         .btl_bw_bps = PositiveBandwidthBps{delivery_rate, typename PositiveBandwidthBps::Trusted{}},
         .rt_prop_us = PositiveMicroseconds{rtt, typename PositiveMicroseconds::Trusted{}},
@@ -253,7 +253,7 @@ std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd)
     if (auto selected = cntp::query_cc_for_socket(fd); selected.has_value()) {
         algorithm = *selected;
     }
-    CongestionState state = decode_tcp_info(info, algorithm);
+    CongestionSample state = decode_tcp_info(info, algorithm);
 
     tcp_cc_info cc_info{};
     socklen_t cc_len = sizeof(cc_info);

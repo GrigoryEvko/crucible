@@ -62,7 +62,10 @@ struct DctcpFields {
     bool enabled = false;
 };
 
-struct CongestionState {
+// One per-socket sample of the congestion controller, decoded from the
+// kernel TCP information.  The health class of a link is a different
+// thing: topology::CongestionState in TopologyGraph.h.
+struct CongestionSample {
     cntp::CcAlgorithm algorithm = cntp::CcAlgorithm::Custom;
     PositiveBandwidthBps btl_bw_bps{std::uint64_t{1}};
     PositiveMicroseconds rt_prop_us{std::uint64_t{1}};
@@ -82,7 +85,7 @@ struct CongestionState {
     bool has_dctcp = false;
 };
 
-using TcpInfoSnapshot = safety::Tagged<CongestionState, safety::source::TcpInfo>;
+using TcpInfoSnapshot = safety::Tagged<CongestionSample, safety::source::TcpInfo>;
 
 struct CongestionAggregate {
     cog::Uuid nic_uuid{};
@@ -127,7 +130,7 @@ admit_sample_period_ns(std::uint64_t ns) noexcept {
 }
 
 [[nodiscard]] constexpr std::expected<TcpInfoSnapshot, TelemetryError>
-tag_tcp_info_for_test(CongestionState state) noexcept {
+tag_tcp_info_for_test(CongestionSample state) noexcept {
     return TcpInfoSnapshot{state};
 }
 
@@ -158,7 +161,7 @@ harvest_per_link(cog::CogIdentity const& nic, std::span<const cntp::SocketFd> ac
 static_assert(sizeof(PositiveBandwidthBps) == sizeof(std::uint64_t));
 static_assert(sizeof(PositiveMicroseconds) == sizeof(std::uint64_t));
 static_assert(sizeof(PositiveWindowBytes) == sizeof(std::uint32_t));
-static_assert(sizeof(TcpInfoSnapshot) == sizeof(CongestionState));
-static_assert(std::is_trivially_copyable_v<CongestionState>);
+static_assert(sizeof(TcpInfoSnapshot) == sizeof(CongestionSample));
+static_assert(std::is_trivially_copyable_v<CongestionSample>);
 
 }  // namespace crucible::topology

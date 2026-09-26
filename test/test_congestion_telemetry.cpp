@@ -64,8 +64,8 @@ cog::CogIdentity gpu(std::uint64_t lo) {
     return id;
 }
 
-topology::CongestionState state(std::uint64_t bw, std::uint64_t rtt, topology::CongestionMode mode) {
-    topology::CongestionState s{};
+topology::CongestionSample state(std::uint64_t bw, std::uint64_t rtt, topology::CongestionMode mode) {
+    topology::CongestionSample s{};
     s.algorithm = cntp::CcAlgorithm::Bbr3;
     s.btl_bw_bps = topology::PositiveBandwidthBps{bw, typename topology::PositiveBandwidthBps::Trusted{}};
     s.rt_prop_us = topology::PositiveMicroseconds{rtt, typename topology::PositiveMicroseconds::Trusted{}};
@@ -219,13 +219,13 @@ void test_aggregate_finalize_guard() {
 }  // namespace
 
 int main() {
-    static_assert(sizeof(topology::TcpInfoSnapshot) == sizeof(topology::CongestionState));
+    static_assert(sizeof(topology::TcpInfoSnapshot) == sizeof(topology::CongestionSample));
     static_assert(topology::CtxFitsCongestionTelemetryStart<effects::ColdInitCtx>);
     static_assert(!topology::CtxFitsCongestionTelemetryStart<effects::BgDrainCtx>);
     static_assert(topology::CtxFitsCongestionTelemetryHarvest<effects::BgDrainCtx>);
     static_assert(!topology::CtxFitsCongestionTelemetryHarvest<effects::HotFgCtx>);
     static_assert(std::same_as<topology::TcpInfoSnapshot::tag_type, safety::source::TcpInfo>);
-    static_assert(std::is_trivially_copyable_v<topology::CongestionState>);
+    static_assert(std::is_trivially_copyable_v<topology::CongestionSample>);
 
     std::printf("test_congestion_telemetry:\n");
     test_names_and_admission();

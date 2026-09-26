@@ -19,7 +19,7 @@ int main() {
     std::array nics{nic};
     auto started = worker.start(init, std::span{nics});
     (void)started;
-    std::array samples{topology::TcpInfoSnapshot{topology::CongestionState{}}};
+    std::array samples{topology::TcpInfoSnapshot{topology::CongestionSample{}}};
     auto recorded = worker.record_link(fg, nic, std::span{samples}, 1);
     (void)recorded;
     return 0;
