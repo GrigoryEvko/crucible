@@ -18,11 +18,11 @@
 
 namespace crucible::canopy {
 
-template <std::size_t MaxPeers, std::size_t RttWindow, std::size_t MaxEvents>
-concept LifeguardShape = MaxPeers > 0 && RttWindow > 1 && MaxEvents > 0
-                      && MaxPeers <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
-                      && RttWindow <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
-                      && MaxEvents <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
+// The peer, piggyback and event tables are slot tables, and the round-trip
+// window holds at least two samples.
+template <std::size_t MaxPeers, std::size_t MaxPiggyback, std::size_t RttWindow, std::size_t MaxEvents>
+concept LifeguardShape = SwimShape<MaxPeers, MaxPiggyback> && SlotCapacity<MaxEvents> && SlotCapacity<RttWindow>
+                      && RttWindow > 1;
 
 using LifeguardDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
 using LifeguardPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;
@@ -85,9 +85,22 @@ template <std::size_t Capacity>
     requires SlotCapacity<Capacity>
 struct LifeguardEventBatch : SlotTable<LifeguardEvent, Capacity> {};
 
+template <std::size_t MaxPeers, std::size_t MaxPiggyback, std::size_t RttWindow, std::size_t MaxEvents>
+    requires LifeguardShape<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
+class LifeguardSwim;
+
+// The one door: a Lifeguard holds the failure-detector state of a process,
+// so only a context that owns Init builds one.
 template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t RttWindow = 16,
           std::size_t MaxEvents = MaxPeers * 4>
-    requires SlotCapacity<MaxPeers> && SlotCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
+    requires LifeguardShape<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
+[[nodiscard]] constexpr LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
+mint_lifeguard_swim(::foundation::effects::Init init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
+                    LifeguardConfig lifeguard_config = {}, SwimConfig swim_config = {}) noexcept;
+
+template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t RttWindow = 16,
+          std::size_t MaxEvents = MaxPeers * 4>
+    requires LifeguardShape<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
 class alignas(64) LifeguardSwim
     : public ::foundation::Pinned<LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>> {
 public:
@@ -95,24 +108,15 @@ public:
     using witness_set_type = SwimWitnessSet<MaxPeers>;
     using event_batch_type = LifeguardEventBatch<MaxEvents>;
 
-    LifeguardSwim(SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
-                  LifeguardConfig lifeguard_config = {}, SwimConfig swim_config = {}) noexcept
-        : swim_{swim_config}, local_{local_peer.value()}, lifeguard_config_{lifeguard_config} {
-        CRUCIBLE_FATAL_INVARIANT(config_valid_());
-        for (SwimPeer const& peer : initial_peers) {
-            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
-        }
-    }
+    [[nodiscard]] constexpr LifeguardConfig lifeguard_config() const noexcept { return lifeguard_config_; }
 
-    [[nodiscard]] LifeguardConfig lifeguard_config() const noexcept { return lifeguard_config_; }
+    [[nodiscard]] constexpr SwimConfig swim_config() const noexcept { return swim_.config(); }
 
-    [[nodiscard]] SwimConfig swim_config() const noexcept { return swim_.config(); }
+    [[nodiscard]] constexpr cog::CogIdentity local_peer() const noexcept { return local_; }
 
-    [[nodiscard]] cog::CogIdentity local_peer() const noexcept { return local_; }
+    [[nodiscard]] constexpr BoundedSlotCount<MaxPeers> size() const noexcept { return swim_.size(); }
 
-    [[nodiscard]] BoundedSlotCount<MaxPeers> size() const noexcept { return swim_.size(); }
-
-    [[nodiscard]] std::expected<void, LifeguardError> add_peer(SwimPeer peer) noexcept {
+    [[nodiscard]] constexpr std::expected<void, LifeguardError> add_peer(SwimPeer peer) noexcept {
         auto added = swim_.add_peer(peer);
         if (!added) {
             return std::unexpected(map_swim_error_(added.error()));
@@ -301,6 +305,26 @@ public:
     [[nodiscard]] swim_type const& swim() const noexcept { return swim_; }
 
 private:
+    // The embedded membership comes from its own mint, under the Init
+    // context that the Lifeguard mint forwards.
+    constexpr LifeguardSwim(::foundation::effects::Init init, SwimPeer local_peer,
+                            std::span<const SwimPeer> initial_peers, LifeguardConfig lifeguard_config,
+                            SwimConfig swim_config) noexcept
+        : swim_(mint_swim_membership<MaxPeers, MaxPiggyback>(init, {}, swim_config)),
+          local_{local_peer.value()},
+          lifeguard_config_{lifeguard_config} {
+        CRUCIBLE_FATAL_INVARIANT(config_valid_());
+        for (SwimPeer const& peer : initial_peers) {
+            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
+        }
+    }
+
+    template <std::size_t P, std::size_t Q, std::size_t R, std::size_t E>
+        requires LifeguardShape<P, Q, R, E>
+    friend constexpr LifeguardSwim<P, Q, R, E> mint_lifeguard_swim(::foundation::effects::Init, SwimPeer,
+                                                                   std::span<const SwimPeer>, LifeguardConfig,
+                                                                   SwimConfig) noexcept;
+
     // Slots are dense and a peer never leaves its slot, so the live slots
     // are [0, slot_count_).
     struct alignas(64) Slot {
@@ -311,7 +335,7 @@ private:
         std::uint16_t rtt_cursor = 0;
     };
 
-    [[nodiscard]] bool config_valid_() const noexcept {
+    [[nodiscard]] constexpr bool config_valid_() const noexcept {
         return !local_.uuid.is_zero() && lifeguard_config_.min_lhm.value() <= lifeguard_config_.max_lhm.value()
             && lifeguard_config_.min_indirect_checks.value() <= lifeguard_config_.max_indirect_checks.value()
             && lifeguard_config_.max_indirect_checks.value() <= MaxPeers;
@@ -346,7 +370,7 @@ private:
     }
 
     // A Slot* from a mutable LifeguardSwim, a Slot const* from a const one.
-    [[nodiscard]] auto* find_slot_(this auto& self, cog::Uuid peer) noexcept {
+    [[nodiscard]] constexpr auto* find_slot_(this auto& self, cog::Uuid peer) noexcept {
         using slot_pointer = decltype(&self.slots_[0]);
         for (std::uint16_t i = 0; i < self.slot_count_; ++i) {
             if (self.slots_[i].peer.uuid == peer) {
@@ -356,7 +380,7 @@ private:
         return slot_pointer{nullptr};
     }
 
-    [[nodiscard]] bool ensure_slot_(cog::CogIdentity peer) noexcept {
+    [[nodiscard]] constexpr bool ensure_slot_(cog::CogIdentity peer) noexcept {
         if (peer.uuid.is_zero()) {
             return false;
         }
@@ -458,17 +482,17 @@ private:
     std::uint64_t sequence_ = 0;
 };
 
+static_assert(!std::is_constructible_v<LifeguardSwim<4, 8, 4, 8>, SwimPeer>);
 static_assert(!std::is_copy_constructible_v<LifeguardSwim<4, 8, 4, 8>>);
 static_assert(!std::is_move_constructible_v<LifeguardSwim<4, 8, 4, 8>>);
 
-template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t RttWindow = 16,
-          std::size_t MaxEvents = MaxPeers * 4>
-    requires SlotCapacity<MaxPeers> && SlotCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
-[[nodiscard]] LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
-mint_lifeguard_swim(::foundation::effects::Init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
-                    LifeguardConfig lifeguard_config = {}, SwimConfig swim_config = {}) noexcept {
-    return LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>{local_peer, initial_peers, lifeguard_config,
-                                                                       swim_config};
+template <std::size_t MaxPeers, std::size_t MaxPiggyback, std::size_t RttWindow, std::size_t MaxEvents>
+    requires LifeguardShape<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
+[[nodiscard]] constexpr LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
+mint_lifeguard_swim(::foundation::effects::Init init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers,
+                    LifeguardConfig lifeguard_config, SwimConfig swim_config) noexcept {
+    return LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>{init, local_peer, initial_peers,
+                                                                       lifeguard_config, swim_config};
 }
 
 }  // namespace crucible::canopy

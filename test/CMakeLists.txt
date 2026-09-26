@@ -6532,20 +6532,32 @@ crucible_neg_compile_multi_test(neg_observe_mint_canopy_metrics_reader_int_chann
   "no matching function|could not convert|cannot convert|invalid initialization|cannot bind"
   "RuntimeMetricsChannel|int")
 
-# GAPS-215 — canopy/VectorClock.h operational vector clock.
-#   * neg_vector_clock_zero_nodes: MaxNodes=0 is rejected at the
-#     mint concept gate.
-#   * neg_vector_clock_mint_test_context: Init-only mint factory
-#     rejects Test.
-#   * neg_vector_clock_cross_n_snapshot: snapshots with different N
-#     cannot cross a fixed-size API boundary.
-crucible_neg_compile_test(neg_vector_clock_zero_nodes
-  "constraints not satisfied|VectorClockNodeBound|no matching function|MaxNodes")
+# canopy/VectorClock.h, the operational vector clock.
+#   * neg_vector_clock_zero_nodes: a clock with no node fails the node
+#     bound of the mint.
+#   * neg_vector_clock_cross_n_snapshot: snapshots of different node
+#     counts are different types, so one does not cross an API boundary
+#     sized for the other.
+#   * neg_vector_clock_direct_ctor: the constructor is private, and
+#     mint_vector_clock is the only door.
+#   * neg_vector_clock_mint_test_context and
+#     neg_vector_clock_mint_background_context: the mint takes Init, and
+#     neither a Test nor a background context converts to it.
+crucible_neg_compile_multi_test(neg_vector_clock_zero_nodes
+  "required for the satisfaction of .VectorClockNodeBound<MaxNodes>. \\[with MaxNodes = 0\\]"
+  "the expression .MaxNodes > 0 \\[with MaxNodes = 0\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_vector_clock_cross_n_snapshot
+  "could not convert .three. from"
+  ".VectorClockSnapshot<3>. to .VectorClockSnapshot<4>.")
+crucible_neg_compile_multi_test(neg_vector_clock_direct_ctor
+  "VectorClock<MaxNodes, Tag>::VectorClock\\(node_index_type\\) \\[with long unsigned int MaxNodes = 4. Tag = void. node_index_type = fixy::Refinement<fixy::BoundedAbove<3>\\(\\), short unsigned int, false>\\]"
+  "is private within this context")
 crucible_neg_compile_effects_test(neg_vector_clock_mint_test_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Test|effects::Init")
-crucible_neg_compile_test(neg_vector_clock_cross_n_snapshot
-  "cannot convert|no matching function|could not convert|VectorClockSnapshot")
+  "no matching function for call to .mint_vector_clock<4>\\(foundation::effects::Test, int\\)."
+  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
+crucible_neg_compile_effects_test(neg_vector_clock_mint_background_context
+  "no matching function for call to .mint_vector_clock<4>\\(foundation::effects::Bg, int\\)."
+  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
 
 # canopy/Crdt.h, the state-based CRDT substrate.
 #   * neg_crdt_gset_raw_add: a local write is a LocalWrite, and a raw value
@@ -6587,26 +6599,41 @@ crucible_neg_compile_multi_test(neg_crdt_counter_update_raw_fields
   "could not convert .9. from .int. to"
   "fixy::Refinement<fixy::BoundedAbove<3>\\(\\), short unsigned int, false>")
 
-# GAPS-114 — canopy/Swim.h bounded SWIM membership substrate.
-#   * neg_swim_zero_max_peers: MaxPeers=0 is rejected structurally.
-#   * neg_swim_raw_peer_add: add_peer requires source::SwimMember.
-#   * neg_swim_external_peer_add: source::External cannot substitute
-#     for source::SwimMember.
-#   * neg_swim_mint_test_context: Init-only mint factory rejects Test.
+# canopy/Swim.h, the bounded SWIM membership.
+#   * neg_swim_zero_max_peers: a zero peer bound fails the shape of the
+#     mint.
+#   * neg_swim_raw_peer_add: add_peer takes a SWIM member, and a raw
+#     identity does not convert to one.
+#   * neg_swim_external_peer_add: an External identity is not a SWIM
+#     member.
+#   * neg_swim_direct_ctor: the constructor is private, and
+#     mint_swim_membership is the only door.
+#   * neg_swim_mint_test_context and neg_swim_mint_background_context: the
+#     mint takes Init, and neither a Test nor a background context
+#     converts to it.
 #   * neg_swim_witness_count_assign: the count of a witness set is a slot
 #     count, so it cannot be set past the capacity.
+crucible_neg_compile_multi_test(neg_swim_zero_max_peers
+  "required for the satisfaction of .SwimShape<MaxPeers, MaxPiggyback>. \\[with MaxPeers = 0. MaxPiggyback = 32\\]"
+  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_swim_raw_peer_add
+  "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::SwimMembership<4, 32>::peer_type."
+  "aka .fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::SwimMember>.")
+crucible_neg_compile_multi_test(neg_swim_external_peer_add
+  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>."
+  "to .Tagged<\\[...\\],fixy::tags::source::SwimMember>.")
+crucible_neg_compile_multi_test(neg_swim_direct_ctor
+  "SwimMembership<MaxPeers, MaxPiggyback>::SwimMembership\\(std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::SwimMember> >, crucible::canopy::SwimConfig\\)"
+  "is private within this context")
+crucible_neg_compile_effects_test(neg_swim_mint_test_context
+  "no matching function for call to .mint_swim_membership\\(foundation::effects::Test\\)."
+  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
+crucible_neg_compile_effects_test(neg_swim_mint_background_context
+  "no matching function for call to .mint_swim_membership<4>\\(foundation::effects::Bg\\)."
+  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
 crucible_neg_compile_multi_test(neg_swim_witness_count_assign
   "no match for .operator=. \\(operand types are .crucible::canopy::SlotCount<4>."
   "and .uint16_t.")
-crucible_neg_compile_test(neg_swim_zero_max_peers
-  "constraints not satisfied|SwimCapacity|MaxPeers")
-crucible_neg_compile_test(neg_swim_raw_peer_add
-  "cannot convert|no matching function|could not convert|SwimPeer|Tagged")
-crucible_neg_compile_test(neg_swim_external_peer_add
-  "cannot convert|no matching function|could not convert|External|SwimMember")
-crucible_neg_compile_effects_test(neg_swim_mint_test_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Test|effects::Init")
 
 # GAPS-211 — canopy/HyParView.h bounded active/passive overlay substrate.
 #   * neg_hyparview_zero_active: MaxActive=0 is rejected structurally.
@@ -6644,22 +6671,37 @@ crucible_neg_compile_effects_test(neg_plumtree_mint_test_context
   "could not convert|no matching function|cannot convert"
     "effects::Test|effects::Init")
 
-# GAPS-213 — canopy/Lifeguard.h SWIM false-positive reduction substrate.
-#   * neg_lifeguard_zero_peers: MaxPeers=0 is rejected structurally.
-#   * neg_lifeguard_raw_local_peer: local identity requires SwimPeer.
-#   * neg_lifeguard_mint_test_context: Init-only mint rejects Test.
+# canopy/Lifeguard.h, the SWIM false-positive reduction.
+#   * neg_lifeguard_zero_peers: a zero peer bound fails the shape of the
+#     mint.
+#   * neg_lifeguard_raw_local_peer: the local identity must be a SWIM
+#     member, and a raw identity does not convert to one.
+#   * neg_lifeguard_direct_ctor: the constructor is private, and
+#     mint_lifeguard_swim is the only door, also for a caller that holds
+#     Init.
+#   * neg_lifeguard_mint_test_context and
+#     neg_lifeguard_mint_background_context: the mint takes Init, and
+#     neither a Test nor a background context converts to it.
 #   * neg_lifeguard_event_count_advance: the count of an event batch is a
 #     slot count, so it cannot be advanced past the capacity.
+crucible_neg_compile_multi_test(neg_lifeguard_zero_peers
+  "required for the satisfaction of .LifeguardShape<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>. \\[with MaxPeers = 0. MaxPiggyback = 8. RttWindow = 4. MaxEvents = 8\\]"
+  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_lifeguard_raw_local_peer
+  "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Init, crucible::cog::CogIdentity&\\)."
+  "cannot convert .local. \\(type .crucible::cog::CogIdentity.\\) to type .crucible::canopy::SwimPeer.")
+crucible_neg_compile_multi_test(neg_lifeguard_direct_ctor
+  "LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>::LifeguardSwim\\(foundation::effects::Init, crucible::canopy::SwimPeer,"
+  "is private within this context")
+crucible_neg_compile_effects_test(neg_lifeguard_mint_test_context
+  "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Test,"
+  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
+crucible_neg_compile_effects_test(neg_lifeguard_mint_background_context
+  "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Bg, crucible::canopy::SwimPeer\\)."
+  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
 crucible_neg_compile_multi_test(neg_lifeguard_event_count_advance
   "no match for .operator\\+\\+."
   "\\(operand type is .crucible::canopy::SlotCount<4>.\\)")
-crucible_neg_compile_test(neg_lifeguard_zero_peers
-  "constraints not satisfied|LifeguardShape|SwimCapacity|MaxPeers")
-crucible_neg_compile_test(neg_lifeguard_raw_local_peer
-  "cannot convert|no matching function|could not convert|SwimPeer|Tagged")
-crucible_neg_compile_effects_test(neg_lifeguard_mint_test_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Test|effects::Init")
 
 # canopy/Scuttlebutt.h, the bounded anti-entropy substrate.
 #   * neg_scuttlebutt_zero_max_peers: a zero peer bound fails the shape.
@@ -6679,7 +6721,7 @@ crucible_neg_compile_effects_test(neg_lifeguard_mint_test_context
 #     which refuses at the capacity, so it cannot be assigned or advanced.
 crucible_neg_compile_multi_test(neg_scuttlebutt_zero_max_peers
   "template constraint failure for .template<long unsigned int MaxPeers, long unsigned int MaxKeys>"
-  "ScuttlebuttShape<MaxPeers, MaxKeys>. \\[with MaxPeers = 0; MaxKeys = 4\\]")
+  "ScuttlebuttShape<MaxPeers, MaxKeys>. \\[with MaxPeers = 0. MaxKeys = 4\\]")
 crucible_neg_compile_multi_test(neg_scuttlebutt_raw_key_register
   "no matching function for call to .crucible::canopy::ScuttlebuttSync<4, 4>::register_state\\(crucible::canopy::ScuttlebuttKey&"
   "cannot convert .key. \\(type .crucible::canopy::ScuttlebuttKey.\\) to type .crucible::canopy::LocalScuttlebuttKey.")

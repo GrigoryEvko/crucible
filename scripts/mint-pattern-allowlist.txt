@@ -139,10 +139,7 @@ include/crucible/SchemaTable.h:mint_mutable_view:constexpr-ok
 
 # ── canopy/ gossip-state mints ───────────────────────────────────────
 include/crucible/canopy/HyParView.h:mint_hyparview:constexpr-ok
-include/crucible/canopy/Lifeguard.h:mint_lifeguard_swim:constexpr-ok
 include/crucible/canopy/Plumtree.h:mint_plumtree:constexpr-ok
-include/crucible/canopy/Swim.h:mint_swim_membership:constexpr-ok
-include/crucible/canopy/VectorClock.h:mint_vector_clock:constexpr-ok
 
 # ── cntp/ transport mints ────────────────────────────────────────────
 include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok

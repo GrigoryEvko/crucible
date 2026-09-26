@@ -69,7 +69,8 @@ int main() {
     assert(c1.at(n1) == 1);
     assert(sent_from_0.happens_before(c1.snapshot()));
 
-    Clock carrier{n2};
+    auto carrier = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(::foundation::effects::testing::init(), 2);
+    assert(carrier.self_id().value() == n2.value());
     c1.on_send(carrier);
     assert(c1.snapshot() == carrier.snapshot());
 

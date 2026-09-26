@@ -1,12 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-114 fixture #1: SWIM membership storage is statically bounded
-// and the bound must be non-zero.
-
+// The peer table of a SWIM membership is a slot table, and a slot table
+// holds at least one slot.  The shape of the mint refuses a zero bound.
 #include <crucible/canopy/Swim.h>
-
 int main() {
-    crucible::canopy::SwimMembership<0> membership;
+    auto membership = crucible::canopy::mint_swim_membership<0>(::foundation::effects::testing::init());
     (void)membership;
     return 0;
 }

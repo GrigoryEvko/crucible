@@ -26,7 +26,6 @@
 
 # ── canopy ───────────────────────────────────────────────────────────
 mint_plumtree|include/crucible/canopy/Plumtree.h
-mint_swim_membership|include/crucible/canopy/Swim.h
 
 # ── cntp ─────────────────────────────────────────────────────────────
 mint_admission_decision|include/crucible/cntp/Backpressure.h

@@ -225,6 +225,18 @@ static_assert(snapshot_order_agrees_with_lattice(),
 
 }  // namespace detail::vector_clock_order_check
 
+template <std::size_t MaxNodes, typename Tag>
+    requires VectorClockNodeBound<MaxNodes>
+class VectorClock;
+
+// The one door: a clock holds the causal state of one node of a process,
+// so only a context that owns Init builds one.  The mint checks the id
+// against MaxNodes.
+template <std::size_t MaxNodes, typename Tag = void>
+    requires VectorClockNodeBound<MaxNodes>
+[[nodiscard]] constexpr VectorClock<MaxNodes, Tag> mint_vector_clock(::foundation::effects::Init,
+                                                                     std::uint16_t self_id) noexcept;
+
 template <std::size_t MaxNodes, typename Tag = void>
     requires VectorClockNodeBound<MaxNodes>
 class alignas(64) VectorClock : public ::foundation::Pinned<VectorClock<MaxNodes, Tag>> {
@@ -237,9 +249,7 @@ public:
 
     static constexpr std::size_t max_nodes = MaxNodes;
 
-    explicit VectorClock(node_index_type self_id) noexcept : self_id_{self_id} {}
-
-    [[nodiscard]] node_index_type self_id() const noexcept { return self_id_; }
+    [[nodiscard]] constexpr node_index_type self_id() const noexcept { return self_id_; }
 
     void on_local_event() noexcept { bump_slot_(entries_[self_id_.value()]); }
 
@@ -302,6 +312,12 @@ public:
     void apply_delta(delta_type const& delta) noexcept { merge_snapshot_(snapshot_type::from_sparse_delta(delta)); }
 
 private:
+    constexpr explicit VectorClock(node_index_type self_id) noexcept : self_id_{self_id} {}
+
+    template <std::size_t N, typename T>
+        requires VectorClockNodeBound<N>
+    friend constexpr VectorClock<N, T> mint_vector_clock(::foundation::effects::Init, std::uint16_t) noexcept;
+
     void merge_snapshot_(snapshot_type incoming) noexcept {
         for (std::size_t i = 0; i < MaxNodes; ++i) {
             atomic_max_(entries_[i], incoming.entries[i]);
@@ -335,6 +351,7 @@ private:
     [[no_unique_address]] node_index_type self_id_;
 };
 
+static_assert(!std::is_constructible_v<VectorClock<1>, VectorClockNodeIndex<1>>);
 static_assert(!std::is_copy_constructible_v<VectorClock<1>>);
 static_assert(!std::is_move_constructible_v<VectorClock<1>>);
 static_assert(alignof(VectorClock<1>) == 64);
@@ -350,11 +367,10 @@ static_assert(std::is_trivially_copyable_v<VectorClockSnapshot<4>>);
 static_assert(std::is_trivially_destructible_v<VectorClockSnapshot<4>>);
 static_assert(sizeof(VectorClockSnapshot<4>) == 4 * sizeof(std::uint64_t));
 
-// The id is checked against MaxNodes when the clock is built.
-template <std::size_t MaxNodes, typename Tag = void>
+template <std::size_t MaxNodes, typename Tag>
     requires VectorClockNodeBound<MaxNodes>
-[[nodiscard]] inline VectorClock<MaxNodes, Tag> mint_vector_clock(::foundation::effects::Init,
-                                                                  std::uint16_t self_id) noexcept {
+[[nodiscard]] constexpr VectorClock<MaxNodes, Tag> mint_vector_clock(::foundation::effects::Init,
+                                                                     std::uint16_t self_id) noexcept {
     return VectorClock<MaxNodes, Tag>{::fixy::mint_refined<vector_clock_node_bound<MaxNodes>>(self_id)};
 }
 

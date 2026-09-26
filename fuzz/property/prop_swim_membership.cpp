@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
             return spec;
         },
         [](const Spec& spec) noexcept -> bool {
-            cc::SwimMembership<8> membership;
+            auto membership = cc::mint_swim_membership<8>(::foundation::effects::testing::init());
             std::array<PeerRef, kPeers> refs{};
 
             for (std::uint32_t i = 0; i < spec.count; ++i) {

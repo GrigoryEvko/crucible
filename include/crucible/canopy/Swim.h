@@ -22,6 +22,10 @@
 
 namespace crucible::canopy {
 
+// The peer table and the piggyback queue are slot tables.
+template <std::size_t MaxPeers, std::size_t MaxPiggyback>
+concept SwimShape = SlotCapacity<MaxPeers> && SlotCapacity<MaxPiggyback>;
+
 using SwimDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
 using SwimPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;
 using SwimPeer = ::fixy::Tagged<cog::CogIdentity, ::fixy::tags::source::SwimMember>;
@@ -80,8 +84,20 @@ template <std::size_t MaxPiggyback>
     requires SlotCapacity<MaxPiggyback>
 struct SwimPiggybackBatch : SlotTable<SwimEvent, MaxPiggyback> {};
 
+template <std::size_t MaxPeers, std::size_t MaxPiggyback>
+    requires SwimShape<MaxPeers, MaxPiggyback>
+class SwimMembership;
+
+// The one door: a membership holds the failure-detector state of a
+// process, so only a context that owns Init builds one.
 template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32>
-    requires SlotCapacity<MaxPeers> && SlotCapacity<MaxPiggyback>
+    requires SwimShape<MaxPeers, MaxPiggyback>
+[[nodiscard]] constexpr SwimMembership<MaxPeers, MaxPiggyback>
+mint_swim_membership(::foundation::effects::Init, std::span<const SwimPeer> initial_peers = {},
+                     SwimConfig config = {}) noexcept;
+
+template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32>
+    requires SwimShape<MaxPeers, MaxPiggyback>
 class SwimMembership : public ::foundation::Pinned<SwimMembership<MaxPeers, MaxPiggyback>> {
 public:
     using peer_type = SwimPeer;
@@ -90,15 +106,7 @@ public:
     using witness_set_type = SwimWitnessSet<MaxPeers>;
     using piggyback_batch_type = SwimPiggybackBatch<MaxPiggyback>;
 
-    explicit SwimMembership(SwimConfig config = {}) noexcept : config_{config} {}
-
-    SwimMembership(SwimConfig config, std::span<const peer_type> initial_peers) noexcept : config_{config} {
-        for (peer_type const& peer : initial_peers) {
-            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
-        }
-    }
-
-    [[nodiscard]] std::expected<void, SwimError> add_peer(peer_type peer) noexcept {
+    [[nodiscard]] constexpr std::expected<void, SwimError> add_peer(peer_type peer) noexcept {
         cog::CogIdentity const& id = peer.value();
         if (id.uuid.is_zero()) {
             return std::unexpected(SwimError::ZeroUuid);
@@ -155,9 +163,9 @@ public:
         return live_view_type{live_cache_.data(), live_count_};
     }
 
-    [[nodiscard]] BoundedSlotCount<MaxPeers> size() const noexcept { return count_.bounded(); }
+    [[nodiscard]] constexpr BoundedSlotCount<MaxPeers> size() const noexcept { return count_.bounded(); }
 
-    [[nodiscard]] SwimConfig config() const noexcept { return config_; }
+    [[nodiscard]] constexpr SwimConfig config() const noexcept { return config_; }
 
     [[nodiscard]] std::optional<SwimProbe> next_probe(std::uint64_t now_ns) noexcept {
         if (count_ == 0) {
@@ -280,6 +288,17 @@ public:
     }
 
 private:
+    constexpr SwimMembership(std::span<const peer_type> initial_peers, SwimConfig config) noexcept : config_{config} {
+        for (peer_type const& peer : initial_peers) {
+            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
+        }
+    }
+
+    template <std::size_t P, std::size_t Q>
+        requires SwimShape<P, Q>
+    friend constexpr SwimMembership<P, Q> mint_swim_membership(::foundation::effects::Init, std::span<const SwimPeer>,
+                                                               SwimConfig) noexcept;
+
     // Slots are dense and a peer never leaves its slot, so the live slots
     // are [0, count_).  A removed peer stays as Dead.
     struct alignas(64) PeerSlot {
@@ -306,7 +325,7 @@ private:
         return a > max - b ? max : a + b;
     }
 
-    [[nodiscard]] std::optional<std::uint16_t> find_index_(cog::Uuid peer_id) const noexcept {
+    [[nodiscard]] constexpr std::optional<std::uint16_t> find_index_(cog::Uuid peer_id) const noexcept {
         for (std::uint16_t i = 0; i < count_; ++i) {
             if (slots_[i].identity.uuid == peer_id) {
                 return i;
@@ -322,7 +341,7 @@ private:
         return state_rank_(incoming.state) > state_rank_(slot.health.state);
     }
 
-    void append_event_(PeerSlot const& slot) noexcept {
+    constexpr void append_event_(PeerSlot const& slot) noexcept {
         SwimEvent event{
             .peer = slot.identity,
             .state = slot.health.state,
@@ -391,25 +410,25 @@ private:
     mutable std::uint16_t live_count_ = 0;
 };
 
+static_assert(!std::is_default_constructible_v<SwimMembership<8>>);
 static_assert(!std::is_copy_constructible_v<SwimMembership<8>>);
 static_assert(!std::is_move_constructible_v<SwimMembership<8>>);
 
 // The two admission doors.  Raw discovery output becomes a member
 // identity here, and a received event becomes gossip here.
-[[nodiscard]] inline SwimPeer admit_swim_peer(cog::CogIdentity peer) noexcept {
+[[nodiscard]] constexpr SwimPeer admit_swim_peer(cog::CogIdentity peer) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::SwimMember>(peer);
 }
 
-[[nodiscard]] inline GossipedSwimEvent admit_gossiped_swim_event(SwimEvent event) noexcept {
+[[nodiscard]] constexpr GossipedSwimEvent admit_gossiped_swim_event(SwimEvent event) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::Gossiped>(event);
 }
 
-template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32>
-    requires SlotCapacity<MaxPeers> && SlotCapacity<MaxPiggyback>
-[[nodiscard]] SwimMembership<MaxPeers, MaxPiggyback>
-mint_swim_membership(::foundation::effects::Init, std::span<const SwimPeer> initial_peers = {},
-                     SwimConfig config = {}) noexcept {
-    return SwimMembership<MaxPeers, MaxPiggyback>{config, initial_peers};
+template <std::size_t MaxPeers, std::size_t MaxPiggyback>
+    requires SwimShape<MaxPeers, MaxPiggyback>
+[[nodiscard]] constexpr SwimMembership<MaxPeers, MaxPiggyback>
+mint_swim_membership(::foundation::effects::Init, std::span<const SwimPeer> initial_peers, SwimConfig config) noexcept {
+    return SwimMembership<MaxPeers, MaxPiggyback>{initial_peers, config};
 }
 
 }  // namespace crucible::canopy
