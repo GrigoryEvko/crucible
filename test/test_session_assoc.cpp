@@ -4,9 +4,9 @@
 // handles whose types came out of the context by lookup.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionAssoc.h>
-#include <crucible/sessions/SessionContext.h>
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionAssoc.h>
+#include <crucible/sessions/_SessionContext.h>
+#include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/_SessionMint.h>
 
 #include <cstdio>

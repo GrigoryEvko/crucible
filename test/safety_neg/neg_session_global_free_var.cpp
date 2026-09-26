@@ -5,7 +5,7 @@
 // the is_well_formed check baked into projection.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionGlobal.h>
 
 using namespace crucible::safety::proto;
 

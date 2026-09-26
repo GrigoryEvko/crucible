@@ -5,7 +5,7 @@
 // static_assert with a clear diagnostic on empty-queue access.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionQueue.h>
+#include <crucible/sessions/_SessionQueue.h>
 
 using namespace crucible::safety::proto;
 

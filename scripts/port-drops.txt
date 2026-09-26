@@ -2017,6 +2017,93 @@ crucible/sessions/_SessionRowExtraction.h:protocol_effect_row  → include/fixy/
 crucible/sessions/_SessionRowExtraction.h:protocol_effect_row_t  → include/fixy/session/Handle.h  — Replaced by protocol_payload_row_t.
 crucible/sessions/_SessionRowExtraction.h:runtime_smoke_test_payload_row  — Dropped. The tests of fixy/concurrent/PayloadRow.h exercise the payload walk, and no header of the new tree carries a smoke test that no one calls.
 
+# ── sessions: global types, typing contexts, association and queues ────────
+crucible/sessions/_SessionAssoc.h:all_entries_refine_projection_v  → include/fixy/session/Projection.h  — Replaced by association_holds_v, which also compares the queue of each role with the queue of its projection.
+crucible/sessions/_SessionAssoc.h:assert_associated  → include/fixy/session/Projection.h  — Replaced by ensure_associated, which names the first fault of the association with a stable bracketed tag.
+crucible/sessions/_SessionAssoc.h:AssociatedWith  → include/fixy/session/Projection.h  — Replaced by association_holds_v, which a requires clause reads directly.
+crucible/sessions/_SessionAssoc.h:domain_matches_v  → include/fixy/session/Projection.h  — Replaced by association_holds_v. Its walk refuses a duplicate role and a missing role, and a role outside the global type must have finished.
+crucible/sessions/_SessionAssoc.h:domain_roles_for_session_t  → include/fixy/session/Projection.h  — Dropped with the session tag. One TypingContext describes one session, so no walk selects the entries of one session.
+crucible/sessions/_SessionAssoc.h:is_associated_v  → include/fixy/session/Projection.h  — Replaced by association_holds_v, Definition 21 of Pischke, Masters and Yoshida with the synchronous subtype relation.
+crucible/sessions/_SessionAssoc.h:role_lists_equal_as_sets_v  → include/fixy/session/Global.h  — Replaced by roles_equal_as_sets_v.
+crucible/sessions/_SessionAssoc.h:role_list_subset_v  — Dropped. The association walk of fixy/session/Projection.h checks the domain of a context with role_in_v, and no reader asks for a subset.
+crucible/sessions/_SessionContext.h:ComposeContext  — Dropped. A TypingContext of fixy/session/Projection.h describes one session, and no production reader composes two contexts.
+crucible/sessions/_SessionContext.h:compose_context_t  — Dropped with ComposeContext.
+crucible/sessions/_SessionContext.h:contains_key_v  — Dropped with the session tag. The association walk of fixy/session/Projection.h reports a missing role itself.
+crucible/sessions/_SessionContext.h:Context  → include/fixy/session/Projection.h  — Replaced by TypingContext<RoleState<Role, Queue, Local>...>. An entry holds the queue of its role beside the local type, and the association walk refuses a duplicate role.
+crucible/sessions/_SessionContext.h:context_size_v  → include/fixy/session/Projection.h  — Replaced by TypingContext::size.
+crucible/sessions/_SessionContext.h:DomainOf  — Dropped with the session tag. An entry of a TypingContext has one role and no session, so the domain of a context is its list of roles.
+crucible/sessions/_SessionContext.h:domain_of_t  — Dropped with DomainOf.
+crucible/sessions/_SessionContext.h:EmptyContext  → include/fixy/session/Projection.h  — Replaced by TypingContext<>.
+crucible/sessions/_SessionContext.h:Entry  → include/fixy/session/Projection.h  — Replaced by RoleState<Role, Queue, Local>. The session tag goes, because one TypingContext describes one session.
+crucible/sessions/_SessionContext.h:is_empty_context_v  — Dropped. TypingContext::size gives the count of entries, and no reader asks the question on its own.
+crucible/sessions/_SessionContext.h:is_permission_balanced  → include/fixy/session/Handle.h  — Replaced by PermissionFlowCloses, which walks the permission flow of one protocol from a starting set. The set comparison over a context had no production reader.
+crucible/sessions/_SessionContext.h:is_permission_balanced_v  → include/fixy/session/Handle.h  — Replaced by PermissionFlowCloses.
+crucible/sessions/_SessionContext.h:Key  — Dropped with DomainOf, the only builder of a key.
+crucible/sessions/_SessionContext.h:KeySet  — Dropped with DomainOf, the only builder of a key set.
+crucible/sessions/_SessionContext.h:LookupContext  — Dropped with the session tag. The walks of fixy/session/Semantics.h find the entry of a role in their detail namespace.
+crucible/sessions/_SessionContext.h:lookup_context_t  — Dropped with LookupContext.
+crucible/sessions/_SessionContext.h:RemoveEntry  → include/fixy/session/Semantics.h  — Replaced by config::step_t, the transition of a configuration, which rewrites the entries that one action changes. A crashed role keeps its entry with the local type Stop.
+crucible/sessions/_SessionContext.h:remove_entry_t  → include/fixy/session/Semantics.h  — Replaced by config::step_t.
+crucible/sessions/_SessionContext.h:UpdateEntry  → include/fixy/session/Semantics.h  — Replaced by config::step_t, which rewrites the entries that one action changes.
+crucible/sessions/_SessionContext.h:update_entry_t  → include/fixy/session/Semantics.h  — Replaced by config::step_t.
+crucible/sessions/_SessionGlobal.h:assert_no_empty_choice  → include/fixy/session/Global.h  — Replaced by ensure_global_well_formed, which names the first fault of a global type with a stable tag, Global_Empty_Choice for an empty choice.
+crucible/sessions/_SessionGlobal.h:assert_no_self_loop  → include/fixy/session/Global.h  — Replaced by ensure_global_well_formed, which reports a self communication with the tag Global_Self_Communication.
+crucible/sessions/_SessionGlobal.h:BranchG  → include/fixy/session/Global.h  — Replaced by global::Branch<Label, Payload, Cont>. A receiver identifies a branch by its label, not by its position.
+crucible/sessions/_SessionGlobal.h:Choice  → include/fixy/session/Global.h  — Replaced by global::Comm<From, To, Branch...>, one transmission node for a plain message and for a choice.
+crucible/sessions/_SessionGlobal.h:EmptyRoleList  → include/fixy/session/Global.h  — Replaced by global::Roles<>.
+crucible/sessions/_SessionGlobal.h:End_G  → include/fixy/session/Global.h  — Replaced by global::End.
+crucible/sessions/_SessionGlobal.h:has_empty_choice  → include/fixy/session/Global.h  — Replaced by global_fault_v, whose value GlobalFault::EmptyChoice names the fault.
+crucible/sessions/_SessionGlobal.h:has_empty_choice_v  → include/fixy/session/Global.h  — Replaced by the comparison of global_fault_v with GlobalFault::EmptyChoice.
+crucible/sessions/_SessionGlobal.h:has_interaction_between_v  — Dropped with StopG, its only reader. The crash-stop projection of fixy/session/Projection.h reads the crash branch of each transmission instead.
+crucible/sessions/_SessionGlobal.h:has_self_loop  → include/fixy/session/Global.h  — Replaced by global_fault_v, whose value GlobalFault::SelfCommunication names the fault.
+crucible/sessions/_SessionGlobal.h:has_self_loop_v  → include/fixy/session/Global.h  — Replaced by the comparison of global_fault_v with GlobalFault::SelfCommunication.
+crucible/sessions/_SessionGlobal.h:insert_unique_t  — Dropped. The walks of fixy/session/Global.h build the role sets in its detail namespace, and no reader outside that header inserts a role.
+crucible/sessions/_SessionGlobal.h:is_choice  → include/fixy/session/Global.h  — Replaced by is_global_type_v, which answers for the whole type. Each walk of that header matches each node by partial specialization.
+crucible/sessions/_SessionGlobal.h:is_choice_v  → include/fixy/session/Global.h  — Replaced by is_global_type_v.
+crucible/sessions/_SessionGlobal.h:is_end_g  → include/fixy/session/Global.h  — Replaced by is_global_type_v, which answers for the whole type.
+crucible/sessions/_SessionGlobal.h:is_end_g_v  → include/fixy/session/Global.h  — Replaced by is_global_type_v.
+crucible/sessions/_SessionGlobal.h:is_rec_g  → include/fixy/session/Global.h  — Replaced by is_global_type_v, which answers for the whole type.
+crucible/sessions/_SessionGlobal.h:is_rec_g_v  → include/fixy/session/Global.h  — Replaced by is_global_type_v.
+crucible/sessions/_SessionGlobal.h:is_stop_g  — Dropped with StopG.
+crucible/sessions/_SessionGlobal.h:is_stop_g_v  — Dropped with StopG.
+crucible/sessions/_SessionGlobal.h:is_transmission  → include/fixy/session/Global.h  — Replaced by is_global_type_v, which answers for the whole type.
+crucible/sessions/_SessionGlobal.h:is_transmission_v  → include/fixy/session/Global.h  — Replaced by is_global_type_v.
+crucible/sessions/_SessionGlobal.h:is_var_g  → include/fixy/session/Global.h  — Replaced by is_global_type_v, which answers for the whole type.
+crucible/sessions/_SessionGlobal.h:is_var_g_v  → include/fixy/session/Global.h  — Replaced by is_global_type_v.
+crucible/sessions/_SessionGlobal.h:plain_merge_t  → include/fixy/session/Projection.h  — Replaced by the full merge of rule P-merge. Two internal choices merge when they have the same labels, and two external choices merge into the union of their labels.
+crucible/sessions/_SessionGlobal.h:Project  → include/fixy/session/Projection.h  — Replaced by project_t and project_crash_t. No caller specializes a class template to project a subtree under a different root.
+crucible/sessions/_SessionGlobal.h:Rec_G  → include/fixy/session/Global.h  — Replaced by global::Rec.
+crucible/sessions/_SessionGlobal.h:RoleList  → include/fixy/session/Global.h  — Replaced by global::Roles.
+crucible/sessions/_SessionGlobal.h:RolesOf  → include/fixy/session/Global.h  — Replaced by roles_t, an alias over a walk that inserts each role one time.
+crucible/sessions/_SessionGlobal.h:roles_of_t  → include/fixy/session/Global.h  — Replaced by roles_t.
+crucible/sessions/_SessionGlobal.h:StopG  → include/fixy/session/Global.h  — Replaced by the crash branch Branch<CrashLabel, void, Cont> and the runtime annotation Crashed<Role> of Barwell, Hou, Yoshida and Zhou. The crash class has no carrier in a global type.
+crucible/sessions/_SessionGlobal.h:Transmission  → include/fixy/session/Global.h  — Replaced by global::Msg<From, To, Label, Payload, Cont>, the form of global::Comm with one branch. Each message carries a label.
+crucible/sessions/_SessionGlobal.h:union_roles_t  — Dropped. The walks of fixy/session/Global.h union the role sets in its detail namespace, and no reader outside that header asks for a union.
+crucible/sessions/_SessionGlobal.h:Var_G  → include/fixy/session/Global.h  — Replaced by global::Var.
+crucible/sessions/_SessionQueue.h:count_matching  → include/fixy/session/Global.h  — Replaced by en_route_count_v, the count of en-route messages from one role to another in a global type (Definition 16).
+crucible/sessions/_SessionQueue.h:count_matching_v  → include/fixy/session/Global.h  — Replaced by en_route_count_v.
+crucible/sessions/_SessionQueue.h:dequeue_queue_t  → include/fixy/session/Semantics.h  — Replaced by the receive transition of config::step_t, which takes the first message to the receiver from the queue of its peer.
+crucible/sessions/_SessionQueue.h:EmptyQueue  → include/fixy/session/Projection.h  — Replaced by OutQueue<>.
+crucible/sessions/_SessionQueue.h:EnqueueQueue  → include/fixy/session/Semantics.h  — Replaced by the send transition of config::step_t, which appends the message to the queue of its sender.
+crucible/sessions/_SessionQueue.h:enqueue_queue_t  → include/fixy/session/Semantics.h  — Replaced by the send transition of config::step_t.
+crucible/sessions/_SessionQueue.h:HeadQueue  → include/fixy/session/Semantics.h  — Replaced by the receive transition of config::step_t. The transition exists only when the queue of the peer holds a message to the receiver.
+crucible/sessions/_SessionQueue.h:head_queue_t  → include/fixy/session/Semantics.h  — Replaced by the receive transition of config::step_t.
+crucible/sessions/_SessionQueue.h:is_bounded_queue_v  → include/fixy/session/Global.h  — Replaced by is_balanced_plus_v, which proves that the count of en-route messages exists for each pair of roles. A bound on one queue state proved nothing about a protocol.
+crucible/sessions/_SessionQueue.h:is_queue  — Dropped. The association walk of fixy/session/Projection.h refuses a queue that is not an OutQueue of Queued elements, and no reader asks the question on its own.
+crucible/sessions/_SessionQueue.h:is_queued_msg  — Dropped with is_queue.
+crucible/sessions/_SessionQueue.h:is_queued_msg_v  — Dropped with is_queue.
+crucible/sessions/_SessionQueue.h:is_queue_empty_v  — Dropped. A reader compares a queue with OutQueue<>, as the association rule for a finished role does.
+crucible/sessions/_SessionQueue.h:is_queue_state_v  — Dropped. A queue is an OutQueue of fixy/session/Projection.h or an UnavailableQueue of fixy/session/Crash.h, and no reader asks for the union of the two.
+crucible/sessions/_SessionQueue.h:is_queue_v  — Dropped with is_queue.
+crucible/sessions/_SessionQueue.h:is_unavailable_queue_v  → include/fixy/session/Crash.h  — Replaced by is_unavailable_queue, whose value answers the same question.
+crucible/sessions/_SessionQueue.h:Queue  → include/fixy/session/Projection.h  — Replaced by OutQueue<Queued...>, the outgoing messages of one role. Two queues are equivalent when they agree for each receiver.
+crucible/sessions/_SessionQueue.h:queue_contains  — Dropped. The association walk compares two queues for each receiver, and no reader asks whether a queue holds a message for one pair of roles.
+crucible/sessions/_SessionQueue.h:queue_contains_v  — Dropped with queue_contains.
+crucible/sessions/_SessionQueue.h:QueuedMsg  → include/fixy/session/Projection.h  — Replaced by Queued<To, Label, Payload>. A queue belongs to its sender, so an element names its receiver and its label.
+crucible/sessions/_SessionQueue.h:queue_size_v  → include/fixy/session/Projection.h  — Replaced by OutQueue::size.
+crucible/sessions/_SessionQueue.h:TailQueue  → include/fixy/session/Semantics.h  — Replaced by the receive transition of config::step_t, which removes the message that the receiver takes.
+crucible/sessions/_SessionQueue.h:tail_queue_t  → include/fixy/session/Semantics.h  — Replaced by the receive transition of config::step_t.
+
 # ── safety: the stage-shape recognizers and the signature inference ─────
 # No production file and no header of the new tree classifies a function
 # by its parameter shape, infers a row or a tag set from a signature, or

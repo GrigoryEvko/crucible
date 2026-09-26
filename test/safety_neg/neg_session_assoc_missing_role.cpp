@@ -5,9 +5,9 @@
 // its classified static_assert (domain_matches_v fails condition 1).
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionAssoc.h>
-#include <crucible/sessions/SessionContext.h>
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionAssoc.h>
+#include <crucible/sessions/_SessionContext.h>
+#include <crucible/sessions/_SessionGlobal.h>
 
 using namespace crucible::safety::proto;
 

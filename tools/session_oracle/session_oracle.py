@@ -51,7 +51,7 @@ The relations under test:
   fixy acceptance  fixy's verdict on the naive reading of the global type
                    (model.local_of), against the oracle's projection.
   frozen-tree      project_t and is_global_well_formed_v of
-  projection       crucible/sessions/SessionGlobal.h, against the
+  projection       crucible/sessions/_SessionGlobal.h, against the
                    oracle's projection onto each role, and an execution
                    of our projection for every type that we accept.
   fixy subtyping   is_subtype_sync_v and is_subtype_async_v of

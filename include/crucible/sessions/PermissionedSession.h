@@ -31,7 +31,7 @@
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/_SessionPermPayloads.h>
 #include <crucible/sessions/_SessionSubtype.h>
 #include <fixy/session/NetworkModel.h>

@@ -3,7 +3,7 @@
 #include <crucible/safety/_Pinned.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/_SessionMint.h>
 
 #include <atomic>

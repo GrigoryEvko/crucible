@@ -5,10 +5,10 @@
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionAssoc.h>
-#include <crucible/sessions/SessionContext.h>
-#include <crucible/sessions/SessionGlobal.h>
-#include <crucible/sessions/SessionQueue.h>
+#include <crucible/sessions/_SessionAssoc.h>
+#include <crucible/sessions/_SessionContext.h>
+#include <crucible/sessions/_SessionGlobal.h>
+#include <crucible/sessions/_SessionQueue.h>
 
 #include <cstdio>
 

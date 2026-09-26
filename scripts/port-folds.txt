@@ -55,6 +55,7 @@ include/fixy/Mutation.h:is_writeoncenonnull  — the primary delegates to the Is
 include/fixy/ScopedView.h:is_scoped_view  — the primary delegates to the is_instance_of_v reflection query against ^^ScopedView, so the answer follows the template rather than a list.
 include/fixy/Tagged.h:retag_policy  — each specialisation became one edge in the fail-closed namespace tags::admitted_retags which the RetagAllowed concept reads, and retag consults the concept, so a specialisation of this struct now admits nothing.
 include/fixy/concurrent/PayloadRow.h:payload_row  — the specialisations for each wrapper became one reflection walk, detail::walk_payload_row, which refuses a payload that it cannot classify.  A layer above adds its own families through payload_row_under.
+include/fixy/session/Global.h:is_global_well_formed  — the seven specializations for each node became one fault walk, detail::fault_walk, and the one template asks that walk for GlobalFault::None.  The walk declares its primary and does not define it, so a node that no walk knows is a hard error.
 
 # NOT YET IN SCOPE, recorded so the next reader does not rediscover it.
 # include/fixy/session/Protocol.h:session_loop_ctx_rebind_inner would be a

@@ -37,7 +37,7 @@
 //   "static assertion failed" / "static assertion" / "static_assert".
 
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionGlobal.h>
 
 #include <type_traits>
 

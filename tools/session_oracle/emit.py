@@ -318,7 +318,7 @@ def emit_old(rows: list[Row]) -> str:
            "// Projection and well-formedness of the frozen tree against the projection\n",
            "// oracle.  A row whose projection rejects with a hard error is not asserted;\n",
            "// the golden file records it.\n\n",
-           "#include <crucible/sessions/SessionGlobal.h>\n\n#include <type_traits>\n\n",
+           "#include <crucible/sessions/_SessionGlobal.h>\n\n#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace pr = ::crucible::safety::proto;\n\n",
            "namespace session_oracle::old_projection {\n\n"]
     for case in sorted(cases, key=case_key):

@@ -3,7 +3,7 @@
 # published mechanisations.
 #
 # The relations in include/fixy/session and in the frozen
-# include/crucible/sessions/SessionGlobal.h are decision procedures.  The
+# include/crucible/sessions/_SessionGlobal.h are decision procedures.  The
 # comparison in tools/session_oracle/ gives each one a reference that
 # does not share its code:
 #

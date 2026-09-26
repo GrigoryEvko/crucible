@@ -6,7 +6,7 @@
 // oracle.  A row whose projection rejects with a hard error is not asserted;
 // the golden file records it.
 
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionGlobal.h>
 
 #include <type_traits>
 

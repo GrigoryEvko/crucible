@@ -24,8 +24,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionContext.h>
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionContext.h>
+#include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/_SessionSubtype.h>
 
 #include <cstddef>

@@ -29,7 +29,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionContext.h>
+#include <crucible/sessions/_SessionContext.h>
 #include <crucible/sessions/_SessionCrash.h>
 
 #include <algorithm>

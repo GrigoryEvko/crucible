@@ -3,7 +3,7 @@
 // The scenario below is a two-peer asynchronous channel.
 
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionQueue.h>
+#include <crucible/sessions/_SessionQueue.h>
 
 #include <cstdio>
 #include <type_traits>

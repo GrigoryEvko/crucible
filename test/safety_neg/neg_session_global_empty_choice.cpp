@@ -27,7 +27,7 @@
 //                       static assertion failed / constraints not
 //                       satisfied.
 
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionGlobal.h>
 
 namespace neg_a2_011_empty_choice {
 struct Alice {};

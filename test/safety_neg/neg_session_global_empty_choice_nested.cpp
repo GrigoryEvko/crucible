@@ -25,7 +25,7 @@
 // Expected diagnostic: [Choice_Empty_Branches] / static assertion
 //                       failed / constraints not satisfied.
 
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionGlobal.h>
 
 namespace neg_a2_011_empty_choice_nested {
 struct Alice {};

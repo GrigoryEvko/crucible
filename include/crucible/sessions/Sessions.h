@@ -1,10 +1,10 @@
 #pragma once
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionAssoc.h>
+#include <crucible/sessions/_SessionAssoc.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionContentAddressed.h>
-#include <crucible/sessions/SessionContext.h>
+#include <crucible/sessions/_SessionContext.h>
 #include <crucible/sessions/_SessionCT.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionDeclassify.h>
@@ -12,14 +12,14 @@
 #include <crucible/sessions/_SessionDiagnostic.h>
 #include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/FederationProtocol.h>
-#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/_SessionMint.h>
 #include <crucible/sessions/_SessionPatterns.h>
 #include <crucible/sessions/_SessionPayloadSubsort.h>
 #include <crucible/sessions/_SessionPermPayloads.h>
 #include <crucible/sessions/_SessionRowExtraction.h>
-#include <crucible/sessions/SessionQueue.h>
+#include <crucible/sessions/_SessionQueue.h>
 #include <crucible/sessions/_SessionGrade.h>
 #include <crucible/sessions/_SessionSubtype.h>
 #include <crucible/sessions/_SessionSubtypeReason.h>

@@ -54,7 +54,7 @@ def canonical(spelling: str) -> str:
 # Each probe starts with one of these heads.  pch_heads compiles them once
 # per run, which cuts a frozen-tree probe from about 2.7 s to 0.5 s.
 HEADS = {
-    "old": "#include <crucible/sessions/SessionGlobal.h>\n#include <type_traits>\n",
+    "old": "#include <crucible/sessions/_SessionGlobal.h>\n#include <type_traits>\n",
     "fixy": "#include <fixy/session/Protocol.h>\n#include <type_traits>\n",
     "multi": "#include <fixy/session/Liveness.h>\n#include <fixy/session/Network.h>\n"
              "#include <fixy/session/Projection.h>\n#include <type_traits>\n",

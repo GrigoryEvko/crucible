@@ -6,7 +6,7 @@
 // rejects.
 
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionContext.h>
+#include <crucible/sessions/_SessionContext.h>
 
 using namespace crucible::safety::proto;
 

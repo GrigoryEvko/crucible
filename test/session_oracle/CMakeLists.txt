@@ -60,6 +60,6 @@ session_oracle_test(test_session_oracle_fixy_enroute generated_fixy_enroute.cpp 
 session_oracle_test(test_session_oracle_fixy_wire generated_fixy_wire.cpp fixy)
 target_link_options(test_session_oracle_fixy_wire PRIVATE -pthread)
 
-# crucible/sessions/SessionGlobal.h (the frozen tree): projection and
+# crucible/sessions/_SessionGlobal.h (the frozen tree): projection and
 # well-formedness.
 session_oracle_test(test_session_oracle_old_projection generated_old_projection.cpp crucible)
