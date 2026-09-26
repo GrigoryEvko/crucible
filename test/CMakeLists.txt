@@ -9012,13 +9012,17 @@ crucible_neg_compile_test(neg_ir001_comm_send_as_collective
 crucible_neg_compile_test(neg_ir001_comm_zero_participants
   "contract|precondition|in_range|positive|bounded")
 
-# GAPS-168 WIP — forge/_wip/Phases/Comm.h vendor-neutral comm phase sketch.
+# forge/_wip/Phases/Comm.h, the vendor-neutral comm phase sketch.
 #   * neg_forge_comm_phase_raw_compute: fusion admission requires source::Ir001.
 #   * neg_forge_comm_phase_send_as_collective: ReduceOnRecv requires collective
 #     communication, not point-to-point Send.
 #   * neg_forge_comm_phase_oversubscribed: combined resource row must FitCog.
 #   * neg_forge_comm_phase_strict_compress: BITEXACT_STRICT rejects lossy
 #     compression at the compile-time recipe gate.
+#   * neg_forge_comm_phase_unknown_pattern: a pattern with no shape row has
+#     no shape, so no gate admits it.
+#   * neg_forge_comm_phase_wrong_lane: a decision of the FUSE phase does not
+#     pass where a later phase is demanded.
 crucible_neg_compile_test(neg_forge_comm_phase_raw_compute
   "could not convert|no matching function|DeclaredIr001Node|Tagged|source::Ir001")
 crucible_neg_compile_test(neg_forge_comm_phase_send_as_collective
@@ -9027,6 +9031,10 @@ crucible_neg_compile_test(neg_forge_comm_phase_oversubscribed
   "static assertion failed|constraints not satisfied|CommFusionEligible|FitsCog|999")
 crucible_neg_compile_test(neg_forge_comm_phase_strict_compress
   "constraints not satisfied|CommFusionRecipeAllowed|BITEXACT_STRICT|CompressBeforeSend")
+crucible_neg_compile_test(neg_forge_comm_phase_unknown_pattern
+  "unreachable|not a constant expression|comm_fusion_shape")
+crucible_neg_compile_test(neg_forge_comm_phase_wrong_lane
+  "could not convert|no matching function|ForgePhase")
 
 # GAPS-169 WIP — mimic/_wip/network/Backend.h per-vendor backend sketch.
 #   * neg_mimic_network_backend_raw_node: backend planning requires admitted

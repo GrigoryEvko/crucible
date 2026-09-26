@@ -1,15 +1,15 @@
 #pragma once
 
 #include <crucible/cog/FitsCog.h>
-#include <foundation/effects/Concurrent.h>
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Concurrent.h>
 #include <foundation/reflect/Hash.h>
 
 #include <cstdint>
 #include <expected>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -17,10 +17,6 @@ namespace crucible::forge::_wip::phases::comm {
 
 namespace ir = ::crucible::forge::ir001;
 namespace net = ::crucible::forge::recipes;
-
-namespace source {
-struct ForgeFused {};
-}  // namespace source
 
 namespace detail {
 // The fused key folds through the one combine_ids body of the tree.
@@ -79,72 +75,9 @@ struct FusedCommDecision {
     std::uint16_t participants = 1;
 };
 
-using DeclaredFusedCommDecision = safety::Tagged<FusedCommDecision, source::ForgeFused>;
-
-[[nodiscard]] constexpr std::string_view comm_phase_kind_name(CommPhaseKind phase) noexcept {
-    switch (phase) {
-        case CommPhaseKind::Ingest:
-            return "Ingest";
-        case CommPhaseKind::Analyze:
-            return "Analyze";
-        case CommPhaseKind::Rewrite:
-            return "Rewrite";
-        case CommPhaseKind::Fuse:
-            return "Fuse";
-        case CommPhaseKind::LowerToKernels:
-            return "LowerToKernels";
-        case CommPhaseKind::Tile:
-            return "Tile";
-        case CommPhaseKind::Memplan:
-            return "Memplan";
-        case CommPhaseKind::Compile:
-            return "Compile";
-        case CommPhaseKind::Schedule:
-            return "Schedule";
-        case CommPhaseKind::Emit:
-            return "Emit";
-        case CommPhaseKind::Distribute:
-            return "Distribute";
-        case CommPhaseKind::Validate:
-            return "Validate";
-        default:
-            return "<unknown CommPhaseKind>";
-    }
-}
-
-[[nodiscard]] constexpr std::string_view comm_fusion_pattern_name(CommFusionPattern pattern) noexcept {
-    switch (pattern) {
-        case CommFusionPattern::SendFromEpilogue:
-            return "SendFromEpilogue";
-        case CommFusionPattern::ReduceOnRecv:
-            return "ReduceOnRecv";
-        case CommFusionPattern::CompressBeforeSend:
-            return "CompressBeforeSend";
-        case CommFusionPattern::DecompressAfterRecv:
-            return "DecompressAfterRecv";
-        case CommFusionPattern::ScatterFromAttention:
-            return "ScatterFromAttention";
-        case CommFusionPattern::PrefetchReceive:
-            return "PrefetchReceive";
-        default:
-            return "<unknown CommFusionPattern>";
-    }
-}
-
-[[nodiscard]] constexpr std::string_view comm_phase_error_name(CommPhaseError error) noexcept {
-    switch (error) {
-        case CommPhaseError::None:
-            return "None";
-        case CommPhaseError::PatternDisabled:
-            return "PatternDisabled";
-        case CommPhaseError::RecipeForbidsPattern:
-            return "RecipeForbidsPattern";
-        case CommPhaseError::RecipeForbidsAlgorithm:
-            return "RecipeForbidsAlgorithm";
-        default:
-            return "<unknown CommPhaseError>";
-    }
-}
+// A fusion decision is the output of the FUSE phase, so it carries that
+// phase's lane: a consumer that demands a later phase refuses it.
+using DeclaredFusedCommDecision = ::fixy::Tagged<FusedCommDecision, ::fixy::tags::source::ForgePhase<'D'>>;
 
 [[nodiscard]] constexpr bool pattern_enabled(CommPhasePolicy policy, CommFusionPattern pattern) noexcept {
     switch (pattern) {
@@ -165,87 +98,54 @@ using DeclaredFusedCommDecision = safety::Tagged<FusedCommDecision, source::Forg
     }
 }
 
-template <CommFusionPattern Pattern>
-struct PatternTraits;
-
-template <>
-struct PatternTraits<CommFusionPattern::SendFromEpilogue> {
-    static constexpr bool requires_compute_producer = true;
-    static constexpr bool requires_collective_comm = false;
-    static constexpr bool requires_point_to_point_comm = true;
-    static constexpr bool lossy = false;
-    static constexpr bool order_relaxing = false;
+// What a fusion pattern needs of its two nodes, and what it does to the
+// numbers it moves.
+struct CommFusionShape {
+    bool requires_compute_producer = false;
+    bool requires_collective_comm = false;
+    bool requires_point_to_point_comm = false;
+    bool lossy = false;
+    bool order_relaxing = false;
 };
 
-template <>
-struct PatternTraits<CommFusionPattern::ReduceOnRecv> {
-    static constexpr bool requires_compute_producer = false;
-    static constexpr bool requires_collective_comm = true;
-    static constexpr bool requires_point_to_point_comm = false;
-    static constexpr bool lossy = false;
-    static constexpr bool order_relaxing = true;
-};
-
-template <>
-struct PatternTraits<CommFusionPattern::CompressBeforeSend> {
-    static constexpr bool requires_compute_producer = true;
-    static constexpr bool requires_collective_comm = false;
-    static constexpr bool requires_point_to_point_comm = true;
-    static constexpr bool lossy = true;
-    static constexpr bool order_relaxing = false;
-};
-
-template <>
-struct PatternTraits<CommFusionPattern::DecompressAfterRecv> {
-    static constexpr bool requires_compute_producer = true;
-    static constexpr bool requires_collective_comm = false;
-    static constexpr bool requires_point_to_point_comm = true;
-    static constexpr bool lossy = false;
-    static constexpr bool order_relaxing = false;
-};
-
-template <>
-struct PatternTraits<CommFusionPattern::ScatterFromAttention> {
-    static constexpr bool requires_compute_producer = true;
-    static constexpr bool requires_collective_comm = true;
-    static constexpr bool requires_point_to_point_comm = false;
-    static constexpr bool lossy = false;
-    static constexpr bool order_relaxing = false;
-};
-
-template <>
-struct PatternTraits<CommFusionPattern::PrefetchReceive> {
-    static constexpr bool requires_compute_producer = false;
-    static constexpr bool requires_collective_comm = false;
-    static constexpr bool requires_point_to_point_comm = true;
-    static constexpr bool lossy = false;
-    static constexpr bool order_relaxing = false;
-};
-
-template <ir::Ir001OpKind Kind>
-inline constexpr bool ir001_compute_kind_v = ir::ir001_op_category(Kind) == ir::Ir001OpCategory::Compute;
+// The function is consteval and its default arm is unreachable, so a
+// pattern with no row here is no constant expression and every gate that
+// asks for its shape fails to compile.
+[[nodiscard]] consteval CommFusionShape comm_fusion_shape(CommFusionPattern pattern) {
+    switch (pattern) {
+        case CommFusionPattern::SendFromEpilogue:
+            return {.requires_compute_producer = true, .requires_point_to_point_comm = true};
+        case CommFusionPattern::ReduceOnRecv:
+            return {.requires_collective_comm = true, .order_relaxing = true};
+        case CommFusionPattern::CompressBeforeSend:
+            return {.requires_compute_producer = true, .requires_point_to_point_comm = true, .lossy = true};
+        case CommFusionPattern::DecompressAfterRecv:
+            return {.requires_compute_producer = true, .requires_point_to_point_comm = true};
+        case CommFusionPattern::ScatterFromAttention:
+            return {.requires_compute_producer = true, .requires_collective_comm = true};
+        case CommFusionPattern::PrefetchReceive:
+            return {.requires_point_to_point_comm = true};
+        default:
+            std::unreachable();
+    }
+}
 
 template <CommFusionPattern Pattern, ir::Ir001OpKind ComputeKind, ir::Ir001OpKind CommKind>
 [[nodiscard]] consteval bool pattern_accepts_kind_pair() noexcept {
-    using traits = PatternTraits<Pattern>;
-    if constexpr (traits::requires_compute_producer && !ir001_compute_kind_v<ComputeKind>) {
-        return false;
-    }
-    if constexpr (traits::requires_collective_comm && !ir::Ir001CollectiveKind<CommKind>) {
-        return false;
-    }
-    if constexpr (traits::requires_point_to_point_comm && !ir::Ir001PointToPointKind<CommKind>) {
-        return false;
-    }
-    return true;
+    constexpr CommFusionShape shape = comm_fusion_shape(Pattern);
+    constexpr bool producer_ok =
+        !shape.requires_compute_producer || ir::ir001_op_category(ComputeKind) == ir::Ir001OpCategory::Compute;
+    constexpr bool collective_ok = !shape.requires_collective_comm || ir::Ir001CollectiveKind<CommKind>;
+    constexpr bool point_to_point_ok = !shape.requires_point_to_point_comm || ir::Ir001PointToPointKind<CommKind>;
+    return producer_ok && collective_ok && point_to_point_ok;
 }
 
 template <class Recipe, CommFusionPattern Pattern>
 concept CommFusionRecipeAllowed =
     net::DeclaresNetworkRecipe<Recipe>
-    && !(PatternTraits<Pattern>::lossy && Recipe::determinism != ReductionDeterminism::UNORDERED
+    && !(comm_fusion_shape(Pattern).lossy && Recipe::determinism != ReductionDeterminism::UNORDERED
          && Recipe::determinism != ReductionDeterminism::ORDERED)
-    && !(PatternTraits<Pattern>::order_relaxing && Recipe::determinism == ReductionDeterminism::BITEXACT_STRICT);
+    && !(comm_fusion_shape(Pattern).order_relaxing && Recipe::determinism == ReductionDeterminism::BITEXACT_STRICT);
 
 template <class ComputeNode, class CommNode, CommFusionPattern Pattern, cog::CogKind Cog>
 concept CommFusionEligible =
@@ -281,47 +181,40 @@ admit_comm_fusion(ir::DeclaredIr001Node<ComputeNode> producer, ir::DeclaredIr001
         return std::unexpected(CommPhaseError::RecipeForbidsPattern);
     }
 
+    // A point-to-point node has one peer and no algorithm of its own.
     auto const& comm_node = comm.value();
-    auto const participants = []<class Node>(Node const& node) constexpr {
-        if constexpr (std::same_as<typename Node::attrs_type, ir::CollectiveAttrs>) {
-            return node.attrs.participants.count.value();
-        } else {
-            return std::uint16_t{1};
-        }
-    }(comm_node);
+    std::uint16_t participants = 1;
+    auto algorithm = net::NetworkCollectiveAlgorithm::Ring;
+    if constexpr (std::same_as<typename CommNode::attrs_type, ir::CollectiveAttrs>) {
+        participants = comm_node.attrs.participants.count.value();
+        algorithm = comm_node.attrs.algorithm;
+    }
     auto const count = net::admit_network_participant_count(participants);
     if (!count.has_value()) {
         return std::unexpected(CommPhaseError::RecipeForbidsAlgorithm);
     }
     if constexpr (std::same_as<typename CommNode::attrs_type, ir::CollectiveAttrs>) {
-        if (auto ok = net::algorithm_eligible(constraints, comm_node.attrs.algorithm, *count); !ok.has_value()) {
+        if (!net::algorithm_eligible(constraints, algorithm, *count).has_value()) {
             return std::unexpected(CommPhaseError::RecipeForbidsAlgorithm);
         }
     }
 
     auto const producer_hash = producer.value().content_hash;
-    auto const comm_hash = comm.value().content_hash;
+    auto const comm_hash = comm_node.content_hash;
     auto const fused_raw =
         detail::combine_ids(detail::combine_ids(producer_hash.raw(), comm_hash.raw()), std::to_underlying(Pattern));
 
-    return DeclaredFusedCommDecision{FusedCommDecision{
+    return ::fixy::mint_tagged<::fixy::tags::source::ForgePhase<'D'>>(FusedCommDecision{
         .pattern = Pattern,
         .producer_kind = ComputeNode::kind,
         .comm_kind = CommNode::kind,
         .producer_hash = producer_hash,
         .comm_hash = comm_hash,
         .fused_hash = ContentHash::from_raw(fused_raw == 0 ? 1 : fused_raw),
-        .algorithm =
-            [&] constexpr {
-                if constexpr (std::same_as<typename CommNode::attrs_type, ir::CollectiveAttrs>) {
-                    return comm_node.attrs.algorithm;
-                } else {
-                    return net::NetworkCollectiveAlgorithm::Ring;
-                }
-            }(),
+        .algorithm = algorithm,
         .equivalence = constraints.value().equivalence,
         .participants = participants,
-    }};
+    });
 }
 
 static_assert(sizeof(DeclaredFusedCommDecision) == sizeof(FusedCommDecision));

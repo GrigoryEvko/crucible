@@ -1,6 +1,8 @@
 #include <crucible/forge/_wip/Phases/Comm.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
+#include <concepts>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -115,11 +117,17 @@ void test_names_layout_and_static_gates() {
     static_assert(sizeof(phase::DeclaredFusedCommDecision) == sizeof(phase::FusedCommDecision));
     static_assert(std::is_trivially_copyable_v<phase::FusedCommDecision>);
 
-    assert(phase::comm_phase_kind_name(phase::CommPhaseKind::Fuse) == std::string_view{"Fuse"});
-    assert(phase::comm_fusion_pattern_name(phase::CommFusionPattern::ScatterFromAttention)
-           == std::string_view{"ScatterFromAttention"});
-    assert(phase::comm_phase_error_name(phase::CommPhaseError::RecipeForbidsPattern)
-           == std::string_view{"RecipeForbidsPattern"});
+    static_assert(::foundation::reflect::enum_name(phase::CommPhaseKind::Fuse) == std::string_view{"Fuse"});
+    static_assert(::foundation::reflect::enum_name(phase::CommFusionPattern::ScatterFromAttention)
+                  == std::string_view{"ScatterFromAttention"});
+    static_assert(::foundation::reflect::enum_name(phase::CommPhaseError::RecipeForbidsPattern)
+                  == std::string_view{"RecipeForbidsPattern"});
+
+    // The shape table decides which node kinds a pattern accepts.
+    static_assert(phase::comm_fusion_shape(phase::CommFusionPattern::CompressBeforeSend).lossy);
+    static_assert(phase::comm_fusion_shape(phase::CommFusionPattern::ReduceOnRecv).order_relaxing);
+    static_assert(!phase::comm_fusion_shape(phase::CommFusionPattern::PrefetchReceive).requires_compute_producer);
+    static_assert(std::same_as<phase::DeclaredFusedCommDecision::tag_type, ::fixy::tags::source::ForgePhase<'D'>>);
 
     static_assert(phase::CommFusionEligible<ComputeNode, SendNode, phase::CommFusionPattern::SendFromEpilogue,
                                             crucible::cog::CogKind::Gpu>);

@@ -67,9 +67,6 @@ include/crucible/cog/Calibrate.h
 include/crucible/cog/NicConfig.h
 include/crucible/cog/SrIov.h
 
-# ── forge/ (2 files: 1 stable + 1 _wip) ─────────────────────────
-include/crucible/forge/_wip/Phases/Comm.h
-
 # ── mimic/ (2 files: 1 stable + 1 _wip) ─────────────────────────
 include/crucible/mimic/CogMimic.h
 include/crucible/mimic/_wip/network/Backend.h
