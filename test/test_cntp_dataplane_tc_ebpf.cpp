@@ -1,4 +1,7 @@
 #include <crucible/cntp/dataplane/TcEbpf.h>
+#include <fixy/Ctx.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Ctx.h>
 
 #include "test_assert.h"
 
@@ -8,9 +11,7 @@
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
 namespace dataplane = crucible::cntp::dataplane;
-namespace saf = crucible::safety;
 
 namespace {
 
@@ -57,13 +58,13 @@ void test_names_and_admission() {
 }
 
 void test_program_caps() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto ifindex = dataplane::admit_xdp_ifindex(11);
     assert(ifindex.has_value());
 
     auto program = dataplane::mint_tc_program(init, iface(), *ifindex, dataplane::TcAttachPoint::Egress,
                                               dataplane::TcProgramKind::EgressMark);
-    static_assert(std::same_as<decltype(program)::tag_type, saf::source::TcEbpf>);
+    static_assert(std::same_as<decltype(program)::tag_type, ::fixy::tags::source::TcEbpf>);
     assert(program.value().required_features.test(cog::NicFeature::TcEbpf));
     assert(dataplane::tc_admit_nic(nic_identity(), tc_caps(), program).has_value());
 
@@ -91,9 +92,11 @@ void test_flow_class_map() {
     assert(classid.has_value());
     assert(priority.has_value());
 
-    auto cls = dataplane::mint_tc_flow_class(*dscp, *classid, *priority, dataplane::TcAction::Ok);
-    static_assert(std::same_as<decltype(cls)::tag_type, saf::source::TcEbpf>);
+    auto cls = dataplane::mint_tc_flow_class(*dscp, *classid, *priority, dataplane::TcAction::Shot);
+    static_assert(std::same_as<decltype(cls)::tag_type, ::fixy::tags::source::TcEbpf>);
 
+    // The map stores the byte record that the kernel program reads, and a
+    // lookup rebuilds the checked class from it with every field intact.
     dataplane::TcFlowClassMap<2> map{};
     auto key = dataplane::tc_flow_key(cntp::admit_socket_fd(7).value());
     assert(map.update(key, cls).has_value());
@@ -101,6 +104,11 @@ void test_flow_class_map() {
     assert(found.has_value());
     assert(found->value().dscp.value() == 46);
     assert(found->value().classid.value() == 0x10001u);
+    assert(found->value().priority.value() == 5);
+    assert(found->value().action == dataplane::TcAction::Shot);
+
+    auto missing = map.lookup(dataplane::tc_flow_key(cntp::admit_socket_fd(8).value()));
+    assert(!missing.has_value());
 
     std::printf("  test_flow_class_map: PASSED\n");
 }
@@ -110,8 +118,9 @@ void test_flow_class_map() {
 int main() {
     static_assert(sizeof(dataplane::DeclaredTcProgram) == sizeof(dataplane::TcProgramSpec));
     static_assert(sizeof(dataplane::DeclaredTcFlowClass) == sizeof(dataplane::TcFlowClass));
-    static_assert(dataplane::CtxFitsTcMint<effects::ColdInitCtx>);
-    static_assert(!dataplane::CtxFitsTcMint<effects::BgDrainCtx>);
+    static_assert(dataplane::CtxFitsTcMint<::fixy::ColdInitCtx>);
+    static_assert(!dataplane::CtxFitsTcMint<::fixy::BgDrainCtx>);
+    static_assert(sizeof(dataplane::TcFlowClassRecord) == 8, "the record is the kernel map value");
     static_assert(!std::copy_constructible<dataplane::TcFlowClassMap<2>>);
 
     std::printf("test_cntp_dataplane_tc_ebpf:\n");

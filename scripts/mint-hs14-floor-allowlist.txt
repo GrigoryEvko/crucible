@@ -33,10 +33,6 @@ mint_resource_limit|include/crucible/cntp/Backpressure.h
 mint_resource_pressure|include/crucible/cntp/Backpressure.h
 mint_tcam_table|include/crucible/cntp/Tcam.h
 
-# ── cntp/dataplane ───────────────────────────────────────────────────
-mint_tc_flow_class|include/crucible/cntp/dataplane/TcEbpf.h
-mint_tc_program|include/crucible/cntp/dataplane/TcEbpf.h
-
 # ── cntp/_wip ────────────────────────────────────────────────────────
 mint_doca_deploy_plan|include/crucible/cntp/_wip/Doca.h
 mint_gpu_direct_mr_plan|include/crucible/cntp/_wip/GpuDirect.h

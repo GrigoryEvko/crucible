@@ -61,7 +61,6 @@ include/crucible/cntp/_wip/KtlsOffload.h
 include/crucible/cntp/_wip/P4.h
 include/crucible/cntp/_wip/Sharp.h
 include/crucible/cntp/_wip/Wireguard.h
-include/crucible/cntp/dataplane/TcEbpf.h
 include/crucible/mimic/Semaphore.h
 include/crucible/topology/Telemetry.h
 include/crucible/warden/DeadlineWatchdog.h
