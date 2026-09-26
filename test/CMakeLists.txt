@@ -1355,13 +1355,16 @@ set_tests_properties(splits_orphan splits_orphan_self_test PROPERTIES
 # FederationAdmission is the one friend of the key that builds a federation
 # peer token.  The guard refuses, outside fixy/Federation.h, a definition or
 # a specialization of it and a definition of one of its members, which would
-# get the same friendship.  Exit 3 when the kit is absent reports a skip.
+# get the same friendship.  It reads the parse tree, each macro body, and the
+# macro-expanded text of the compile database, so a macro of another file
+# cannot hide a definition.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME federation_admission_self_test
          COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-federation-admission.py --self-test)
 add_test(NAME federation_admission
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-federation-admission.py)
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-federation-admission.py
+                 --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(federation_admission federation_admission_self_test PROPERTIES
-    LABELS "safety_attack;ci_guard"
+    LABELS "safety_attack;ci_guard;ast"
     SKIP_RETURN_CODE 3)
 
 crucible_test(test_fx_aliases)

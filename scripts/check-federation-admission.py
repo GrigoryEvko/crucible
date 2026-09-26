@@ -48,32 +48,49 @@ THE RULE
 
 WHAT READS THE SITES
     The parse tree of the pinned tree-sitter kit (scripts/tsast.py), over
-    each C and C++ file that git lists and that names the class or a member
-    name.  A macro body is one preproc_arg of raw text, and a file in
-    tsast.UNPARSEABLE has no tree, so the guard reads those with patterns
-    over text with the comments and the literals blanked.  A file that the
-    parser cannot read fails.
+    each C++ file that git lists and that names the class, names a member
+    name, or holds a line splice, which can split a name.  A name is read
+    from its tokens, so a comment or a splice inside it hides nothing.  A
+    file that the parser cannot read fails.
+
+    The kit keeps a macro body as raw text, so the guard parses each body
+    on its own, through tsast.macro_bodies.  A body that does not parse, or
+    whose parse a splice inside a name has split, is read from its
+    preprocessing tokens: a class key with its attribute groups and a name
+    that ends in FederationAdmission before `<`, `{`, `:` or `final`, and a
+    `template <...>` that a qualified member name follows before `;`, `{`
+    or `}`.
+
+    With --compile-db, the guard also reads the macro-expanded text of each
+    file of the compile database, from the store of scripts/preprocessed.py.
+    The expanded text shows a definition that a macro of another file
+    spells, and a name that a macro forms by token pasting.  The guard
+    parses each expanded text that names the class or a member name, and
+    reports a site at the line of the macro use.  A unit that the
+    preprocessor rejects, and an expanded text that the parser cannot read,
+    fail, because the guard cannot prove them clean.
 
 WHAT IT CANNOT SEE
-    A name that a macro forms by token pasting, and a macro of another
-    file that spells a qualified definition.  The kit does not expand
-    macros.
+    Without --compile-db, a name that a macro forms by token pasting, and a
+    macro of another file that spells a qualified definition.  With it, a
+    header that no unit of the compile database includes, which the tree
+    pass still reads.
 
 Usage
-    check-federation-admission.py              scan the tree
-    check-federation-admission.py --self-test  plant each forgery and each legal use
+    check-federation-admission.py [--compile-db PATH]  scan the tree
+    check-federation-admission.py --self-test           plant each forgery and each legal use
 
-Exit 0 clean, 1 on a forged definition, a class the guard cannot read or a
-file the parser cannot read, 2 on a bad invocation or a failed self-test,
-3 when the kit is not installed.
+Exit 0 clean, 1 on a forged definition, a class the guard cannot read, a
+file the parser cannot read or a unit the preprocessor rejects, 2 on a bad
+invocation or a failed self-test, 3 when the kit is not installed.
 """
 
 from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -82,19 +99,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402  (the path insert above has to come first)
+import preprocessed  # noqa: E402  (the path insert above has to come first)
 import tsast  # noqa: E402
 
 CLASS = "FederationAdmission"
 AUTHORED = "include/fixy/Federation.h"
-SOURCE_SUFFIXES = frozenset({".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".inl", ".ipp", ".tpp",
-                             ".tcc", ".inc", ".ixx", ".cppm"})
 EXCLUDED_DIRS = ("build", "cmake-build-", "third_party", "external", "vendor", ".git", ".tools")
 CLASS_HEADS = ("class_specifier", "struct_specifier", "union_specifier")
+CLASS_KEYS = frozenset({"class", "struct", "union"})
 # Each declarator node that wraps the declarator id in its `declarator` field.
 WRAPPERS = frozenset({"function_declarator", "pointer_declarator", "reference_declarator", "array_declarator",
                       "init_declarator", "parenthesized_declarator", "attributed_declarator"})
 DECLARATIONS = ("function_definition", "declaration", "field_declaration")
+SPLICES = (b"\\\n", b"\\\r\n")
+# The trees whose macro bodies go to the kit together.  A chunk bounds the
+# memory that the file trees of one parse of macro bodies hold.
+MACRO_CHUNK = 256
 
 
 class Unreadable(Exception):
@@ -111,34 +131,22 @@ class Site:
     reason: str
 
 
-def final_name(node: tsast.Node) -> str:
-    """Return the last name of a declarator id or of a class head name, without template arguments."""
-    while node.type == "qualified_identifier":
-        inner = node.child_by_field("name")
-        if inner is None:
-            return ""
-        node = inner
-    if node.type in ("template_type", "template_function", "template_method"):
-        named = node.child_by_field("name")
-        return named.text if named is not None else ""
-    if node.type == "destructor_name":
-        return "~" + node.text.lstrip("~").strip()
-    return node.text.strip()
+def joined(text: str) -> str:
+    """Return a name part as its tokens alone, so a line splice inside it joins."""
+    return "".join(token.text for token in tsast.pp_tokens(text))
 
 
-def scope_names(node: tsast.Node) -> list[str]:
-    """Return the name of each scope of a qualified name, outermost first, without template arguments."""
-    names = []
-    while node.type == "qualified_identifier":
-        scope = node.child_by_field("scope")
-        if scope is not None:
-            named = scope.child_by_field("name") if scope.type == "template_type" else None
-            names.append((named.text if named is not None else scope.text).strip())
-        inner = node.child_by_field("name")
-        if inner is None:
-            break
-        node = inner
-    return names
+def name_parts(node: tsast.Node) -> tuple[str, ...]:
+    """Return the names of a declarator id or of a class head name, outermost first, without template arguments.
+
+    A name whose scope the kit cannot read, such as a decltype, gives its
+    last name alone.
+    """
+    written = tsast.qualified_parts(node)
+    if written is None:
+        leaf = tsast.leaf_name(node)
+        return (joined(leaf),) if leaf else ()
+    return tuple(joined(part) for part in written[1])
 
 
 def declarator_id(node: tsast.Node) -> tsast.Node | None:
@@ -148,6 +156,13 @@ def declarator_id(node: tsast.Node) -> tsast.Node | None:
         if inner is None:
             return None
         node = inner
+    return node
+
+
+def name_leaf(node: tsast.Node) -> tsast.Node:
+    """Return the last name node of a qualified name, where template arguments show."""
+    while node.type == "qualified_identifier" and node.child_by_field("name") is not None:
+        node = node.child_by_field("name")
     return node
 
 
@@ -161,7 +176,8 @@ def admission_body(tree: tsast.Tree) -> tsast.Node:
     for head in tree.find(*CLASS_HEADS):
         named = head.child_by_field("name")
         body = head.child_by_field("body")
-        if named is not None and body is not None and final_name(named) == CLASS and named.type != "template_type":
+        if named is not None and body is not None and name_parts(named)[-1:] == (CLASS,) \
+                and named.type != "template_type":
             bodies.append(body)
     if len(bodies) != 1:
         raise Unreadable(f"{AUTHORED} holds {len(bodies)} definitions of {CLASS}; it must hold one")
@@ -188,7 +204,7 @@ def member_names(body: tsast.Node) -> set[str]:
         if node.type in CLASS_HEADS or node.type in ("alias_declaration", "type_definition", "enum_specifier"):
             named = node.child_by_field("name")
             if named is not None:
-                names.add(final_name(named))
+                names.update(name_parts(named)[-1:])
             continue
         if node.type not in DECLARATIONS:
             raise Unreadable(f"the class body of {CLASS} holds a {node.type} at line {node.line}, which the guard "
@@ -208,82 +224,200 @@ def member_names(body: tsast.Node) -> set[str]:
                                  f"out-of-class definition of it does not tell the admission apart from another "
                                  f"class, so the guard cannot refuse a forged one.  Remove the member")
             if is_function or is_static:
-                names.add(final_name(ident))
+                names.update(name_parts(ident)[-1:])
     # A constructor is named after the class, which the rules name apart.
     names.discard(CLASS)
     return names
 
 
-def class_head_sites(tree: tsast.Tree, path: str, members: set[str]) -> list[Site]:
-    """Return each class head outside the authored file that defines or specializes a part of the admission."""
+def first_line(node: tsast.Node) -> str:
+    """Return the first line of a node's text, for the report."""
+    return node.text.splitlines()[0].strip() if node.text else ""
+
+
+def class_head_sites(root: tsast.Node, path: str, members: set[str], row_of) -> list[Site]:
+    """Return each class head under a node that defines or specializes a part of the admission."""
     sites = []
-    for head in tree.find(*CLASS_HEADS):
+    for head in root.descendants(*CLASS_HEADS):
         named = head.child_by_field("name")
         if named is None:
             continue
-        last = final_name(named)
-        leaf = named
-        while leaf.type == "qualified_identifier" and leaf.child_by_field("name") is not None:
-            leaf = leaf.child_by_field("name")
-        scopes = scope_names(named)
+        parts = name_parts(named)
+        if not parts:
+            continue
+        last, scopes = parts[-1], parts[:-1]
         reason = None
         if last == CLASS and head.child_by_field("body") is not None:
             reason = f"a definition of {CLASS}"
-        elif last == CLASS and leaf.type == "template_type":
+        elif last == CLASS and name_leaf(named).type == "template_type":
             reason = f"a specialization of {CLASS}"
         elif CLASS in scopes:
             reason = f"a class inside {CLASS}"
         elif scopes and last in members:
             reason = f"a qualified class head named after the member {last} of {CLASS}"
         if reason is not None:
-            sites.append(Site(path, head.line, head.text.splitlines()[0].strip(), reason))
+            sites.append(Site(path, row_of(head) + 1, first_line(head), reason))
     return sites
 
 
-def declarator_sites(tree: tsast.Tree, path: str, members: set[str]) -> list[Site]:
-    """Return each declaration outside the authored file whose qualified declarator names a part of the admission."""
+def declarator_sites(root: tsast.Node, path: str, members: set[str], row_of) -> list[Site]:
+    """Return each declaration under a node whose qualified declarator names a part of the admission."""
     sites = []
     refused = members | {CLASS, "~" + CLASS}
-    for declaration in tree.find(*DECLARATIONS):
+    for declaration in root.descendants(*DECLARATIONS):
         for declarator in (child for child in declaration.children if child.field == "declarator"):
             ident = declarator_id(declarator)
             if ident is None or ident.type != "qualified_identifier":
                 continue
-            last = final_name(ident)
-            if CLASS in scope_names(ident):
+            parts = name_parts(ident)
+            if not parts:
+                continue
+            if CLASS in parts[:-1]:
                 reason = f"a definition of a member of {CLASS}"
-            elif last in refused:
-                reason = f"a qualified definition named after the member {last} of {CLASS}"
+            elif parts[-1] in refused:
+                reason = f"a qualified definition named after the member {parts[-1]} of {CLASS}"
             else:
                 continue
-            sites.append(Site(path, declaration.line, declaration.text.splitlines()[0].strip(), reason))
+            sites.append(Site(path, row_of(declaration) + 1, first_line(declaration), reason))
     return sites
 
 
-def text_patterns(members: set[str]) -> list[tuple[str, re.Pattern[str]]]:
-    """Return the patterns for text with no tree: a macro body or a file that the kit cannot parse."""
-    names = "|".join(sorted(re.escape(name) for name in members | {CLASS}))
-    return [
-        (f"a definition or a specialization of {CLASS}",
-         re.compile(rf"\b(?:class|struct|union)\s+(?:\[\[[^\]]*\]\]\s*)*(?:::)?(?:\w+::)*{CLASS}\s*(?:<|\{{|:(?!:)|final\b)")),
-        (f"a qualified definition of a member of {CLASS}",
-         re.compile(rf"\btemplate\s*<[^;{{}}]*>[^;{{}}]*::\s*~?(?:{names})\b")),
-    ]
+def attribute_end(tokens: list[tsast.Token], index: int) -> int:
+    """Return the index after one attribute group that starts at a token, or the same index when none starts there.
+
+    An attribute group is `[[...]]`, `alignas(...)`, `__attribute__((...))` or
+    `__declspec(...)`, with its brackets balanced.
+    """
+    if index + 1 < len(tokens) and tokens[index].text == "[" and tokens[index + 1].text == "[":
+        opening, closing = "[", "]"
+    elif index + 1 < len(tokens) and tokens[index].text in ("alignas", "__attribute__", "__declspec") \
+            and tokens[index + 1].text == "(":
+        opening, closing = "(", ")"
+        index += 1
+    else:
+        return index
+    depth = 0
+    while index < len(tokens):
+        depth += {opening: 1, closing: -1}.get(tokens[index].text, 0)
+        index += 1
+        if depth == 0:
+            return index
+    return index
 
 
-def text_sites(text: str, path: str, first_line: int, patterns: list[tuple[str, re.Pattern[str]]]) -> list[Site]:
-    """Return the sites of text that has no tree."""
-    blanked, _ = cxx_lex.blank(text, blank_literals=True)
+def qualified_name_at(tokens: list[tsast.Token], index: int) -> tuple[tuple[str, ...], int]:
+    """Return (parts, index after the name) for the qualified name that starts at a token."""
+    index += index < len(tokens) and tokens[index].text == "::"
+    parts: list[str] = []
+    while index < len(tokens) and tokens[index].kind == "identifier":
+        parts.append(tokens[index].text)
+        if index + 2 < len(tokens) and tokens[index + 1].text == "::" and tokens[index + 2].kind == "identifier":
+            index += 2
+            continue
+        index += 1
+        break
+    return tuple(parts), index
+
+
+def token_sites(tokens: list[tsast.Token], path: str, members: set[str], text: str) -> list[Site]:
+    """Return the sites that the preprocessing tokens of a macro body spell, for a body the kit cannot parse."""
     sites = []
-    for reason, pattern in patterns:
-        for match in pattern.finditer(blanked):
-            line = first_line + blanked.count("\n", 0, match.start())
-            sites.append(Site(path, line, match.group(0).split("\n")[0].strip(), reason))
+    refused = members | {CLASS}
+    for index, token in enumerate(tokens):
+        if token.text in CLASS_KEYS:
+            after = index + 1
+            while (skipped := attribute_end(tokens, after)) != after:
+                after = skipped
+            parts, after = qualified_name_at(tokens, after)
+            if parts and after < len(tokens) and (parts[-1] == CLASS and tokens[after].text in ("<", "{", ":",
+                                                                                                "final")
+                                                  or CLASS in parts[:-1]):
+                sites.append(Site(path, token.row + 1, text, f"a definition or a specialization of {CLASS}"))
+        elif token.text == "template" and index + 1 < len(tokens) and tokens[index + 1].text == "<":
+            for later in range(index + 2, len(tokens)):
+                if tokens[later].text in (";", "{", "}"):
+                    break
+                name = later + 1 + (later + 1 < len(tokens) and tokens[later + 1].text == "~")
+                if tokens[later].text == "::" and name < len(tokens) and tokens[name].text in refused:
+                    sites.append(Site(path, token.row + 1, text, f"a qualified definition of a member of {CLASS}"))
+                    break
+    return sites
+
+
+def macro_sites(root: Path, trees: list[tsast.Tree], members: set[str]) -> list[Site]:
+    """Return the sites of the macro bodies of some trees.
+
+    Complexity: one parse of every macro body of the trees, in at most three
+    kit runs, plus a token pass over each body.
+    """
+    sites: list[Site] = []
+    for body in tsast.macro_bodies(trees):
+        rel = Path(body.define.tree.path).relative_to(root).as_posix()
+        values = [child for child in body.define.children if child.field == "value"]
+        raw = tsast.pp_tokens(body.define.tree.slice(values[0].start, values[-1].end), body.first_row)
+        is_split = [token.text for token in raw] != [token.text for token in tsast.pp_tokens(body.text)]
+        if body.is_parsed and not is_split:
+            row_of = lambda node, body=body: body.origin(node)[0]  # noqa: E731
+            sites += class_head_sites(body.root, rel, members, row_of)
+            sites += declarator_sites(body.root, rel, members, row_of)
+        else:
+            sites += token_sites(raw, rel, members, first_line(body.define))
+    return sites
+
+
+def expanded_sites(root: Path, compile_db: Path, members: set[str], problems: list[str]) -> list[Site]:
+    """Return the sites of the macro-expanded text of each file of a compile database.
+
+    Each distinct expansion of a file is read one time.  A site is reported
+    at the file line that the preprocessor gives for its text, which is the
+    line of the macro use.
+
+    Complexity: one preprocessed pass over the database, which the store
+    shares with the other guards, plus one parse of each expanded text that
+    names the class or a member name.
+    """
+    store = preprocessed.Store(compile_db, root)
+    needles = tuple(sorted(members | {CLASS}))
+    pending: list[tuple[str, str, list[tuple[int, int]]]] = []
+    seen: set[tuple[str, str]] = set()
+    for unit in store.units():
+        if unit.failure is not None:
+            problems.append(f"federation_admission: {unit.file} does not preprocess, so what its macros define is "
+                            f"unknown.\n  {unit.failure}")
+            continue
+        for path, (key, chunks) in preprocessed.files_of(unit).items():
+            if path == AUTHORED or (path, key) in seen:
+                continue
+            seen.add((path, key))
+            texts = [store.text(chunk.digest) for chunk in chunks]
+            if not any(needle in text for text in texts for needle in needles):
+                continue
+            starts: list[tuple[int, int]] = []
+            row = 0
+            for chunk, text in zip(chunks, texts, strict=True):
+                starts.append((row, chunk.line))
+                row += text.count("\n") + 1
+            pending.append((path, "\n".join(texts), starts))
+    sites: list[Site] = []
+    trees = tsast.parse_texts([(path, text) for path, text, _starts in pending])
+    for (path, _text, starts), tree in zip(pending, trees, strict=True):
+        if tree.diagnostic is not None:
+            problems.append(f"federation_admission: the macro expansion of {path} does not parse, so what it "
+                            f"defines is unknown.\n  {tree.diagnostic}")
+            continue
+
+        def row_of(node: tsast.Node, starts: list[tuple[int, int]] = starts) -> int:
+            """Map a row of the expanded text to the zero-based row of the file line it came from."""
+            begin, line = max((start for start in starts if start[0] <= node.start[0]), default=(0, 1))
+            return line - 1 + node.start[0] - begin
+
+        sites += class_head_sites(tree.root, path, members, row_of)
+        sites += declarator_sites(tree.root, path, members, row_of)
     return sites
 
 
 def listed_files(root: Path, needles: tuple[bytes, ...]) -> list[str]:
-    """Return the C and C++ files under the root that hold a needle, relative to the root."""
+    """Return the C++ files under the root that hold a needle or a line splice, relative to the root."""
     try:
         out = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
                              check=True, capture_output=True).stdout.decode(errors="replace")
@@ -296,17 +430,19 @@ def listed_files(root: Path, needles: tuple[bytes, ...]) -> list[str]:
     found = []
     for path in sorted(candidates):
         full = root / path
-        if Path(path).suffix in SOURCE_SUFFIXES and full.is_file():
+        if tsast.is_in_cpp_scope(path) and full.is_file():
             data = full.read_bytes()
-            if any(needle in data for needle in needles):
+            if any(needle in data for needle in needles + SPLICES):
                 found.append(path)
     return found
 
 
-def scan(root: Path) -> tuple[list[Site], list[str]]:
+def scan(root: Path, compile_db: Path | None = None) -> tuple[list[Site], list[str]]:
     """Return each forged site, and each problem that stops the scan.
 
-    Complexity: linear in the size of the files that name the class or a member name.
+    Complexity: linear in the size of the files that name the class or a
+    member name or hold a splice, plus the preprocessed pass with a compile
+    database.
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -324,30 +460,33 @@ def scan(root: Path) -> tuple[list[Site], list[str]]:
         except Unreadable as exc:
             return [], [f"federation_admission: {exc}"]
     needles = tuple(name.encode() for name in sorted(members | {CLASS}))
-    patterns = text_patterns(members)
     sites: list[Site] = []
+    chunk: list[tsast.Tree] = []
     files = [path for path in listed_files(root, needles) if path != AUTHORED]
     for tree in tsast.parse([root / path for path in files], strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            if rel in tsast.UNPARSEABLE:
-                sites += text_sites(tree.source.decode("utf-8", "replace"), rel, 1, patterns)
-            else:
-                problems.append(f"federation_admission: {rel} does not parse, so what it defines is unknown."
-                                f"\n  {tree.diagnostic}")
+            problems.append(f"federation_admission: {rel} does not parse, so what it defines is unknown."
+                            f"\n  {tree.diagnostic}")
             continue
-        sites += class_head_sites(tree, rel, members)
-        sites += declarator_sites(tree, rel, members)
-        for body in tree.find("preproc_arg"):
-            sites += text_sites(body.text, rel, body.line, patterns)
+        sites += class_head_sites(tree.root, rel, members, lambda node: node.start[0])
+        sites += declarator_sites(tree.root, rel, members, lambda node: node.start[0])
+        if next(tree.find("preproc_def", "preproc_function_def"), None) is not None:
+            chunk.append(tree)
+        if len(chunk) >= MACRO_CHUNK:
+            sites += macro_sites(root, chunk, members)
+            chunk = []
+    sites += macro_sites(root, chunk, members)
+    if compile_db is not None:
+        sites += expanded_sites(root, compile_db, members, problems)
     unique = sorted({(site.path, site.line, site.reason): site for site in sites}.values(),
                     key=lambda site: (site.path, site.line, site.reason))
     return unique, problems
 
 
-def run(root: Path) -> int:
+def run(root: Path, compile_db: Path | None = None) -> int:
     """Scan, print each finding, and return the exit code."""
-    forged, problems = scan(root)
+    forged, problems = scan(root, compile_db)
     for site in forged:
         print(f"federation_admission: {site.reason} at {site.path}:{site.line}", file=sys.stderr)
         print(f"federation_admission: {site.text}", file=sys.stderr)
@@ -413,10 +552,19 @@ def self_test() -> int:
             "template <> template <class P, class C> D D::mint_federation_admission(C const&) noexcept"
             " { return {}; }\n"),
         "src/planted/nested.cpp": "struct E::mint_federation_admission {};\n",
+        "src/planted/splice.cpp": (
+            "template <> class foundation::permissions::Federation\\\nAdmission<Evil> {};\n"),
+        "src/planted/comment.cpp": (
+            "template <> class foundation::permissions:: /* c */ FederationAdmission<Evil> {};\n"),
         "src/planted/macro.cpp": (
             "#define FORGE template <> class foundation::permissions::FederationAdmission<Evil> {}\n"
             "#define FORGE_MEMBER template <> template <> int E::mint_federation_admittance<>(H const&)\n"
-            "#define MENTION FederationAdmission is named here, and nothing is defined\n"),
+            "#define MENTION FederationAdmission is named here, and nothing is defined\n"
+            "#define FORGE_SPLICE template <> class foundation::permissions:: \\\n"
+            "    FederationAdmission<Evil> {}\n"
+            "#define FORGE_ALIGNAS class alignas(8) foundation::permissions::FederationAdmission {}\n"
+            "#define FORGE_NAME template <> class foundation::permissions::Federation\\\nAdmission<Evil> {}\n"
+            "#define FORGE_PASTE(x) template <> class foundation::permissions::FederationAdmission<x##Evil> {}\n"),
     }
     expected = {
         ("src/planted/explicit.cpp", 1),
@@ -427,8 +575,14 @@ def self_test() -> int:
         ("src/planted/alias.cpp", 3),
         ("src/planted/decltype.cpp", 2),
         ("src/planted/nested.cpp", 1),
+        ("src/planted/splice.cpp", 1),
+        ("src/planted/comment.cpp", 1),
         ("src/planted/macro.cpp", 1),
         ("src/planted/macro.cpp", 2),
+        ("src/planted/macro.cpp", 4),
+        ("src/planted/macro.cpp", 6),
+        ("src/planted/macro.cpp", 7),
+        ("src/planted/macro.cpp", 9),
     }
     legal = {
         "src/legal/use.cpp": (
@@ -442,7 +596,9 @@ def self_test() -> int:
             "}\n"
             "// template <> class FederationAdmission<Evil> {}; is prose.\n"
             "const char* text = \"template <> class FederationAdmission<Evil> {};\";\n"
-            "R& Other::grant() { static R r; return r; }\n"),
+            "R& Other::grant() { static R r; return r; }\n"
+            "#define LEGAL_USE(x) foundation::permissions::FederationAdmission<x>::mint_federation_admission<P>(c)\n"
+            "#define LEGAL_FRIEND template <class O> friend class foundation::permissions::FederationAdmission;\n"),
     }
 
     def captured(action) -> tuple[int, str]:
@@ -472,6 +628,44 @@ def self_test() -> int:
 
         code, report = captured(lambda: run(root))
         expect("a forged tree exits 1", code == 1 and "src/planted/alias.cpp:2" in report, True)
+
+        # A macro of another file, with the class name pasted from its
+        # argument, shows only in the expanded text.
+        compiler = os.environ.get("CXX") or next(
+            (c for c in ("c++", "g++") if any(os.path.isfile(os.path.join(d, c))
+                                              for d in os.environ.get("PATH", "").split(os.pathsep))), None)
+        if compiler is None:
+            expect("a C++ compiler runs the preprocessed pass", False)
+        else:
+            (root / "src" / "expand").mkdir(parents=True)
+            (root / "src" / "expand" / "forge.h").write_text(
+                "#pragma once\n#define FORGE_FROM(N) template <> class foundation::permissions::N<Evil> {}\n",
+                encoding="utf-8")
+            (root / "src" / "expand" / "use.cpp").write_text(
+                '#include "forge.h"\nstruct Evil;\nFORGE_FROM(FederationAdmission);\n', encoding="utf-8")
+            (root / "src" / "expand" / "quiet.cpp").write_text('#include "forge.h"\nint quiet;\n',
+                                                               encoding="utf-8")
+            database = root / "build" / "compile_commands.json"
+            database.parent.mkdir()
+            database.write_text(json.dumps([{"directory": str(root), "file": name,
+                                             "command": f"{compiler} -std=c++20 -c {name} -o {name}.o"}
+                                            for name in ("src/expand/use.cpp", "src/expand/quiet.cpp")]))
+            without = {(site.path, site.line) for site in scan(root)[0]}
+            expect("the tree pass cannot see a pasted name from another file's macro",
+                   ("src/expand/use.cpp", 3) not in without)
+            forged, problems = scan(root, database)
+            found = {(site.path, site.line) for site in forged}
+            expect("the expanded text shows a pasted name at the line of the macro use",
+                   ("src/expand/use.cpp", 3) in found and not problems, True)
+            expect("a unit that expands no forgery adds nothing", not any(site.path == "src/expand/quiet.cpp"
+                                                                          for site in forged))
+            database.write_text(json.dumps([{"directory": str(root), "file": "src/expand/broken.cpp",
+                                             "command": f"{compiler} -std=c++20 -c src/expand/broken.cpp -o b.o"}]))
+            (root / "src" / "expand" / "broken.cpp").write_text('#include "missing.h"\n', encoding="utf-8")
+            code, report = captured(lambda: run(root, database))
+            expect("a unit the preprocessor rejects fails", code == 1 and "does not preprocess" in report, True)
+            for rel in ("forge.h", "use.cpp", "quiet.cpp", "broken.cpp"):
+                (root / "src" / "expand" / rel).unlink()
 
         (root / AUTHORED).write_text(authored.replace("    Key admission_key_;\n",
                                                       "    Key admission_key_;\n"
@@ -503,14 +697,20 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     """Run one mode."""
     try:
-        if argv == []:
-            return run(tsast.REPO_ROOT)
         if argv == ["--self-test"]:
             return self_test()
+        if argv == []:
+            return run(tsast.REPO_ROOT)
+        if len(argv) == 2 and argv[0] == "--compile-db":
+            database = Path(argv[1]).resolve()
+            if not database.is_file():
+                print(f"check-federation-admission: the compile database {database} does not exist", file=sys.stderr)
+                return 2
+            return run(tsast.REPO_ROOT, database)
     except tsast.KitMissing as exc:
         print(f"check-federation-admission: {exc}", file=sys.stderr)
         return 3
-    print("usage: check-federation-admission.py [--self-test]", file=sys.stderr)
+    print("usage: check-federation-admission.py [--compile-db PATH | --self-test]", file=sys.stderr)
     return 2
 
 
