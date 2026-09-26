@@ -5,9 +5,8 @@ concept, a static_assert in a template, a deleted overload, a contract, a
 seal check, or a fail-closed primary.  A mutant weakens exactly one gate.  If
 every test still passes with the mutant in place, no test witnesses the gate.
 
-The parse comes from the pinned tree-sitter kit through scripts/tsast.py, and
-the contract specifiers come from scripts/cxx_lex.py over comment-free text.
-Both modules are read, never changed.
+Every gate comes from the parse of the pinned tree-sitter kit, through
+scripts/tsast.py.  The module is read, never changed.
 
 Each mutant is a byte span of the header and the text that replaces it.  The
 span is cut from the file bytes, so a mutant can be applied to any copy of
@@ -24,8 +23,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import cxx_lex  # noqa: E402  (a sibling module of the guards)
-import tsast  # noqa: E402
+import tsast  # noqa: E402  (a sibling module of the guards)
 
 # The call-shaped gates, by the name of the callee, and the index of the
 # argument that holds the condition.
@@ -52,8 +50,6 @@ NAMED_DECLS = (
     "alias_declaration",
 )
 
-CONTRACT_SPECIFIER = re.compile(r"\b(pre|post)\s*\(")
-SPECIFIER_LEAD = re.compile(r"(\)|\bnoexcept|\bconst|\boverride|\bfinal|&)\s*$")
 IDENTIFIER_BYTE = re.compile(rb"[A-Za-z0-9_]")
 
 
@@ -178,55 +174,10 @@ def _declaration_span(clause: tsast.Node, starts: list[int]) -> tuple[int, int, 
     return start, end, decl
 
 
-def _contract_specifiers(path: Path, source: bytes, rel: str) -> list[Gate]:
-    """The pre and post specifiers of function declarations, found in comment-free text."""
-    text = source.decode("utf-8", errors="replace")
-    blanked, _ = cxx_lex.blank(text, blank_literals=True)
-    if len(blanked.encode()) != len(source):
-        # A multi-byte character shifts byte offsets.  Fall back to the
-        # text offsets, which the check below keeps honest.
-        pass
-    gates: list[Gate] = []
-    for match in CONTRACT_SPECIFIER.finditer(blanked):
-        if not SPECIFIER_LEAD.search(blanked[max(0, match.start() - 40):match.start()]):
-            continue
-        depth = 0
-        open_at = match.end() - 1
-        close_at = None
-        for index in range(open_at, len(blanked)):
-            char = blanked[index]
-            if char == "(":
-                depth += 1
-            elif char == ")":
-                depth -= 1
-                if depth == 0:
-                    close_at = index
-                    break
-        if close_at is None:
-            continue
-        inner_start = open_at + 1
-        if match.group(1) == "post":
-            colon = re.search(r"(?<!:):(?!:)", blanked[inner_start:close_at])
-            if colon is not None:
-                inner_start += colon.end()
-        start_b = len(text[:inner_start].encode())
-        end_b = len(text[:close_at].encode())
-        original = source[start_b:end_b].decode("utf-8", errors="replace")
-        if not original.strip():
-            continue
-        line = text.count("\n", 0, match.start()) + 1
-        name_match = re.search(r"([A-Za-z_][A-Za-z_0-9]*)\s*\([^()]*(?:\([^()]*\)[^()]*)*\)\s*[^;{]*$",
-                               blanked[max(0, match.start() - 400):match.start()])
-        gates.append(Gate(rel, "contract", line, start_b, end_b, " true ",
-                          name_match.group(1) if name_match else "", original.strip()))
-    return gates
-
-
 def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
     """Every gate of one header, with the mutant that weakens it.
 
-    Complexity: linear in the size of the parse tree, plus one pass of the
-    lexer over the text."""
+    Complexity: linear in the size of the parse tree."""
     rel = str(path.resolve().relative_to(repo_root.resolve())) if path.is_absolute() else str(path)
     tree = next(tsast.parse([path], strict=False))
     source = tree.source
@@ -281,6 +232,15 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
         if statement.children:
             add("contract", statement.children[0], "true")
 
+    # A pre or post specifier of a function declarator.  Its condition field
+    # holds the predicate, so the result name of post(r: ...) stays outside
+    # the span.  A macro or an attribute between the specifier and the
+    # declarator changes nothing, because the parse places the specifier.
+    for specifier in tree.find("function_contract_specifier"):
+        condition = specifier.child_by_field("condition")
+        if condition is not None:
+            add("contract", condition, "true")
+
     for base in tree.find("base_class_clause"):
         struct = base.parent
         if struct is None or struct.type not in ("struct_specifier", "class_specifier"):
@@ -291,7 +251,6 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
             if child.text.replace(" ", "") in ("std::false_type", "::std::false_type"):
                 add("primary", child, "std::true_type")
 
-    gates.extend(_contract_specifiers(path, source, rel))
     # A gate nested inside a deleted declaration or another span stays its
     # own mutant, because each mutant replaces one span of the original bytes.
     gates.sort(key=lambda gate: (gate.start, gate.kind))

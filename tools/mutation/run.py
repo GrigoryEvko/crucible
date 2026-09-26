@@ -525,15 +525,23 @@ def cmd_mutate(args: argparse.Namespace) -> int:
 
 # ── the self-test ──────────────────────────────────────────────────────
 
+# PLANTED_ANNOTATION stands between noexcept and pre, as an annotation macro
+# does in the real headers.  A text scan that reads the tokens before `pre`
+# misses that specifier, and the parse does not.  The post of positive names
+# its result, so its span must hold only the condition.
 PLANTED = """#pragma once
 #include <concepts>
 #include <type_traits>
+#define PLANTED_ANNOTATION
 namespace planted {
 template <class T> concept Small = sizeof(T) <= 4;
 template <class T> requires Small<T> constexpr int take(T) { return 1; }
 template <class T> requires std::integral<T> constexpr int count(T) { return 2; }
 template <class T> requires(std::is_integral_v<T>) constexpr int widen(T) { return 3; }
 inline int half(int n) { contract_assert(n % 2 == 0); return n / 2; }
+inline int third(int n) noexcept PLANTED_ANNOTATION pre(n % 3 == 0) { return n / 3; }
+inline auto negate(int n) -> int pre(n < 0) { return -n; }
+inline int positive(int n) post(r: r > 0) { return n < 0 ? -n : n + 1; }
 }
 """
 FIXTURE = """#include "planted.h"
@@ -555,20 +563,31 @@ RUNNER = """#include <contracts>
 void handle_contract_violation(const std::contracts::contract_violation&) noexcept { std::_Exit(0); }
 int main() { (void)planted::half(3); return 1; }
 """
+# A death test of the pre specifier of third: it passes only when that
+# specifier stops the call.
+THIRD_RUNNER = """#include <contracts>
+#include <cstdlib>
+#include "planted.h"
+void handle_contract_violation(const std::contracts::contract_violation&) noexcept { std::_Exit(0); }
+int main() { (void)planted::third(4); return 1; }
+"""
 NINJA_FILE = """rule cxx
   command = {compiler} -std=c++26 -fcontracts -Iinclude $in -o $out
 build run_half: cxx run_half.cpp | include/planted.h
+build run_third: cxx run_third.cpp | include/planted.h
 """
 
 
 def cmd_selftest(args: argparse.Namespace) -> int:
-    """Plant a header with four witnessed gates and one bare gate, and check each verdict.
+    """Plant a header with witnessed gates and bare gates, and check each verdict.
 
-    One witness is a negative fixture, one a syntax-only compile, and one a
-    test that ninja builds and the run executes, so each tier is proved.  A
-    fourth gate is written `requires(` with no space, which proves that its
-    mutant parses.  The check of the invalid outcomes is then proved on a
-    planted invalid outcome, with and without an exemption."""
+    One witness is a negative fixture, one a syntax-only compile, and two are
+    tests that ninja builds and the run executes, so each tier is proved.  A
+    gate written `requires(` with no space proves that its mutant parses.
+    Three pre and post specifiers prove that the parse finds a specifier after
+    an annotation macro and after a trailing return type, and that a post span
+    leaves its result name out.  The check of the invalid outcomes is then
+    proved on a planted invalid outcome, with and without an exemption."""
     global NINJA
     NINJA = args.ninja or NINJA
     with tempfile.TemporaryDirectory() as tmp_name:
@@ -579,6 +598,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         (tmp / "neg_widen_double.cpp").write_text(WIDEN_FIXTURE)
         (tmp / "user.cpp").write_text(USER)
         (tmp / "run_half.cpp").write_text(RUNNER)
+        (tmp / "run_third.cpp").write_text(THIRD_RUNNER)
         (tmp / "build.ninja").write_text(NINJA_FILE.format(compiler=args.compiler))
         base = [args.compiler, "-std=c++26", "-fcontracts", f"-I{tmp / 'include'}"]
         rows = [{"directory": str(tmp), "file": str(tmp / name), "arguments": base + ["-c", str(tmp / name),
@@ -600,6 +620,8 @@ def cmd_selftest(args: argparse.Namespace) -> int:
                       str(tmp), {}, str(tmp / "user.cpp"), headers),
             Candidate("run:run_half", "run", [str(tmp / "run_half")], str(tmp), {}, str(tmp / "run_half.cpp"),
                       headers, target="run_half", build_dir=str(tmp)),
+            Candidate("run:run_third", "run", [str(tmp / "run_third")], str(tmp), {}, str(tmp / "run_third.cpp"),
+                      headers, target="run_third", build_dir=str(tmp)),
         ]
         try:
             outcomes = run_header("include/planted.h", tmp, candidates, 2, 100, 100, probe_argv=base)
@@ -610,14 +632,20 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         killers = {(o.kind, o.entity): o.killer for o in outcomes}
         expected = {("concept", "Small"): "killed", ("requires", "take"): "killed",
                     ("requires", "count"): "survived", ("requires", "widen"): "killed",
-                    ("contract", "half"): "killed"}
+                    ("contract", "half"): "killed", ("contract", "third"): "killed",
+                    ("contract", "negate"): "survived", ("contract", "positive"): "survived"}
         failures = [f"{k}: expected {v}, got {verdicts.get(k)}" for k, v in expected.items() if verdicts.get(k) != v]
         if killers.get(("contract", "half")) != "run:run_half":
             failures.append(f"the contract of half must fall to the run tier, not {killers.get(('contract', 'half'))!r}")
+        if killers.get(("contract", "third")) != "run:run_third":
+            failures.append(f"the pre of third must fall to its death test, not {killers.get(('contract', 'third'))!r}")
         if killers.get(("requires", "widen")) != "neg_widen_double":
             failures.append(f"the gate of widen must fall to its fixture, not {killers.get(('requires', 'widen'))!r}")
         if len(outcomes) != len(expected):
             failures.append(f"expected {len(expected)} mutants, got {len(outcomes)}: {sorted(verdicts)}")
+        spans = {(o.kind, o.entity): o.original for o in outcomes}
+        if spans.get(("contract", "positive")) != "r > 0":
+            failures.append(f"the post of positive must span its condition only, not {spans.get(('contract', 'positive'))!r}")
         # An invalid outcome stops the run unless an exemption names its gate.
         planted_invalid = Outcome("k", "include/planted.h", "requires", 1, "fused", "(x)", "invalid")
         if unexempted_invalid([planted_invalid], set()) != [planted_invalid]:
@@ -641,7 +669,9 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         for line in failures:
             print(f"mutation selftest: FAIL {line}", file=sys.stderr)
         if not failures:
-            print("mutation selftest: one survivor and four kills, as planted, and the invalid check holds")
+            kills = sum(1 for status in expected.values() if status == "killed")
+            print(f"mutation selftest: {len(expected) - kills} survivors and {kills} kills, as planted, "
+                  "and the invalid check holds")
         return 1 if failures else 0
 
 
