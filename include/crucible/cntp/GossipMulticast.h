@@ -4,22 +4,19 @@
 // attaches a program to a NIC.  The neighbor table is a process-local map
 // image and plan_packet only describes the replication a dataplane would do.
 
-#include <crucible/Platform.h>
 #include <crucible/cntp/Integrity.h>
-#include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/cntp/dataplane/Xdp.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <crucible/cog/CogIdentity.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Pinned.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -42,11 +39,12 @@ enum class GossipMulticastError : std::uint8_t {
     IntegrityHashFailed,
 };
 
-[[nodiscard]] std::string_view gossip_multicast_error_name(GossipMulticastError error) noexcept;
+[[nodiscard]] constexpr std::string_view gossip_multicast_error_name(GossipMulticastError error) noexcept {
+    return ::foundation::reflect::enum_name(error);
+}
 
-using GossipTopicHash = safety::Refined<safety::non_zero, std::uint64_t>;
-using GossipDedupWindowNs = safety::Positive<std::uint64_t>;
-using GossipPayloadBytes = safety::Positive<std::uint32_t>;
+using GossipDedupWindowNs = ::fixy::Positive<std::uint64_t>;
+using GossipPayloadBytes = ::fixy::Positive<std::uint32_t>;
 
 struct GossipTopicKey {
     std::uint64_t hash = 1;
@@ -54,13 +52,34 @@ struct GossipTopicKey {
     [[nodiscard]] friend constexpr bool operator==(GossipTopicKey, GossipTopicKey) noexcept = default;
 };
 
-using DeclaredGossipTopic = safety::Tagged<GossipTopicKey, safety::source::GossipMulticast>;
+using DeclaredGossipTopic = ::fixy::Tagged<GossipTopicKey, ::fixy::tags::source::GossipMulticast>;
 
-struct GossipNeighborTarget {
-    cog::Uuid peer{};
-    dataplane::XdpIfIndex ifindex{std::uint32_t{1}};
-    std::array<std::byte, 6> mac{};
-    std::uint32_t ipv4_be = 0;
+// A neighbor list is a map value, and a map value is a byte record: the
+// kernel copies it and so does BpfMapImage.  A refined member would forbid
+// that copy, so the interface index is stored as its word and the
+// refinement lives at the two ends.  The constructor takes an XdpIfIndex and
+// ifindex() hands one back; the stored word is at least one on every path,
+// the default slot included, so the mint in ifindex() never fires.
+class GossipNeighborTarget {
+public:
+    constexpr GossipNeighborTarget() noexcept = default;
+
+    constexpr GossipNeighborTarget(cog::Uuid peer, dataplane::XdpIfIndex ifindex, std::array<std::byte, 6> mac,
+                                   std::uint32_t ipv4_be) noexcept
+        : peer_{peer}, ifindex_{ifindex.value()}, mac_{mac}, ipv4_be_{ipv4_be} {}
+
+    [[nodiscard]] constexpr cog::Uuid peer() const noexcept { return peer_; }
+    [[nodiscard]] constexpr dataplane::XdpIfIndex ifindex() const noexcept {
+        return ::fixy::mint_refined<::fixy::positive>(ifindex_);
+    }
+    [[nodiscard]] constexpr std::array<std::byte, 6> mac() const noexcept { return mac_; }
+    [[nodiscard]] constexpr std::uint32_t ipv4_be() const noexcept { return ipv4_be_; }
+
+private:
+    cog::Uuid peer_{};
+    std::uint32_t ifindex_ = 1;
+    std::array<std::byte, 6> mac_{};
+    std::uint32_t ipv4_be_ = 0;
 };
 
 template <std::uint16_t MaxNeighbors>
@@ -82,7 +101,7 @@ struct GossipNeighborList {
 
     [[nodiscard]] constexpr bool contains(cog::Uuid peer) const noexcept {
         for (std::uint16_t i = 0; i < count && i < MaxNeighbors; ++i) {
-            if (entries[static_cast<std::size_t>(i)].peer == peer) {
+            if (entries[static_cast<std::size_t>(i)].peer() == peer) {
                 return true;
             }
         }
@@ -90,10 +109,10 @@ struct GossipNeighborList {
     }
 
     [[nodiscard]] constexpr std::expected<void, GossipMulticastError> push(GossipNeighborTarget target) noexcept {
-        if (target.peer.is_zero()) {
+        if (target.peer().is_zero()) {
             return std::unexpected(GossipMulticastError::InvalidPeer);
         }
-        if (contains(target.peer)) {
+        if (contains(target.peer())) {
             return std::unexpected(GossipMulticastError::DuplicateNeighbor);
         }
         if (full()) {
@@ -105,24 +124,26 @@ struct GossipNeighborList {
     }
 };
 
+// The plan stores each topic's neighbor list in a BPF map, so the shape is
+// exactly what a map admits: the topic key and the list are map elements.
 template <std::uint32_t MaxTopics, std::uint16_t MaxNeighbors>
 concept GossipMulticastShape = MaxTopics > 0 && GossipNeighborShape<MaxNeighbors>
-                            && sizeof(GossipTopicKey) <= std::numeric_limits<std::uint16_t>::max()
-                            && sizeof(GossipNeighborList<MaxNeighbors>) <= std::numeric_limits<std::uint16_t>::max();
+                            && dataplane::BpfMapElement<GossipTopicKey>
+                            && dataplane::BpfMapElement<GossipNeighborList<MaxNeighbors>>;
 
 struct GossipMulticastConfig {
-    GossipDedupWindowNs dedup_window_ns{30000000000ULL};
-    GossipPayloadBytes max_payload_bytes{65507U};
+    GossipDedupWindowNs dedup_window_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30000000000ULL});
+    GossipPayloadBytes max_payload_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{65507U});
     bool use_hardware_replication = true;
 };
 
 struct GossipMulticastSpec {
-    dataplane::DeclaredXdpProgram program{dataplane::XdpProgramSpec{}};
-    dataplane::DeclaredBpfMap neighbor_map{dataplane::BpfMapSpec{}};
+    dataplane::DeclaredXdpProgram program;
+    dataplane::DeclaredBpfMap neighbor_map;
     GossipMulticastConfig config{};
 };
 
-using DeclaredGossipMulticastPlan = safety::Tagged<GossipMulticastSpec, safety::source::GossipMulticast>;
+using DeclaredGossipMulticastPlan = ::fixy::Tagged<GossipMulticastSpec, ::fixy::tags::source::GossipMulticast>;
 
 template <std::uint16_t MaxNeighbors>
     requires GossipNeighborShape<MaxNeighbors>
@@ -133,15 +154,16 @@ struct GossipReplicationPlan {
     dataplane::XdpAction terminal_action = dataplane::XdpAction::Drop;
 };
 
+// The plan mints an XDP program, so it needs what that mint needs.
 template <class Ctx>
-concept CtxFitsGossipMulticastMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsGossipMulticastMint = dataplane::CtxFitsXdpMint<Ctx>;
 
-[[nodiscard]] inline std::expected<DeclaredGossipTopic, GossipMulticastError>
+[[nodiscard]] constexpr std::expected<DeclaredGossipTopic, GossipMulticastError>
 admit_gossip_topic_hash(std::uint64_t hash) noexcept {
     if (hash == 0) {
         return std::unexpected(GossipMulticastError::InvalidTopicHash);
     }
-    return DeclaredGossipTopic{GossipTopicKey{.hash = hash}};
+    return ::fixy::mint_tagged<::fixy::tags::source::GossipMulticast>(GossipTopicKey{.hash = hash});
 }
 
 [[nodiscard]] inline std::expected<DeclaredGossipTopic, GossipMulticastError>
@@ -154,35 +176,24 @@ admit_gossip_topic(std::string_view topic) noexcept {
     if (!hash.has_value()) {
         return std::unexpected(GossipMulticastError::IntegrityHashFailed);
     }
-    return DeclaredGossipTopic{GossipTopicKey{.hash = hash->value()}};
+    return ::fixy::mint_tagged<::fixy::tags::source::GossipMulticast>(GossipTopicKey{.hash = hash->value()});
 }
 
-[[nodiscard]] inline std::expected<GossipDedupWindowNs, GossipMulticastError>
+[[nodiscard]] constexpr std::expected<GossipDedupWindowNs, GossipMulticastError>
 admit_gossip_dedup_window_ns(std::uint64_t ns) noexcept {
-    if (ns == 0) {
-        return std::unexpected(GossipMulticastError::InvalidDedupWindow);
-    }
-    return GossipDedupWindowNs{ns, typename GossipDedupWindowNs::Trusted{}};
+    return ::fixy::admit_refined<::fixy::positive>(ns, GossipMulticastError::InvalidDedupWindow);
 }
 
-[[nodiscard]] inline std::expected<GossipPayloadBytes, GossipMulticastError>
+[[nodiscard]] constexpr std::expected<GossipPayloadBytes, GossipMulticastError>
 admit_gossip_payload_bytes(std::uint32_t bytes) noexcept {
-    if (bytes == 0) {
-        return std::unexpected(GossipMulticastError::InvalidPayloadLimit);
-    }
-    return GossipPayloadBytes{bytes, typename GossipPayloadBytes::Trusted{}};
+    return ::fixy::admit_refined<::fixy::positive>(bytes, GossipMulticastError::InvalidPayloadLimit);
 }
 
 [[nodiscard]] constexpr GossipNeighborTarget gossip_neighbor_target(cog::CogIdentity const& peer,
                                                                     dataplane::XdpIfIndex ifindex,
                                                                     std::array<std::byte, 6> mac,
                                                                     std::uint32_t ipv4_be) noexcept {
-    return GossipNeighborTarget{
-        .peer = peer.uuid,
-        .ifindex = ifindex,
-        .mac = mac,
-        .ipv4_be = ipv4_be,
-    };
+    return GossipNeighborTarget{peer.uuid, ifindex, mac, ipv4_be};
 }
 
 [[nodiscard]] constexpr dataplane::DeclaredXdpProgram
@@ -192,7 +203,7 @@ gossip_multicast_xdp_program(DeclaredGossipMulticastPlan plan) noexcept {
 
 template <std::uint32_t MaxTopics, std::uint16_t MaxNeighbors>
     requires GossipMulticastShape<MaxTopics, MaxNeighbors>
-class GossipMulticastPlan : public safety::Pinned<GossipMulticastPlan<MaxTopics, MaxNeighbors>> {
+class GossipMulticastPlan : public ::foundation::Pinned<GossipMulticastPlan<MaxTopics, MaxNeighbors>> {
 public:
     using neighbor_list_type = GossipNeighborList<MaxNeighbors>;
     using neighbor_map_type =
@@ -262,24 +273,16 @@ template <std::uint32_t MaxTopics, std::uint16_t MaxNeighbors, class Ctx>
 mint_gossip_multicast_plan(Ctx const& ctx, NicInterfaceName iface, dataplane::XdpIfIndex ifindex,
                            GossipMulticastConfig config = {},
                            dataplane::XdpMode mode = dataplane::XdpMode::Native) noexcept {
-    auto xdp = dataplane::mint_xdp_program(ctx, iface, ifindex, dataplane::XdpProgramKind::GossipMulticast, mode);
-    dataplane::BpfMapSpec map{
-        .kind = dataplane::BpfMapKind::LruHash,
-        .key_bytes = dataplane::PositiveMapElementBytes{static_cast<std::uint16_t>(sizeof(GossipTopicKey)),
-                                                        typename dataplane::PositiveMapElementBytes::Trusted{}},
-        .value_bytes =
-            dataplane::PositiveMapElementBytes{static_cast<std::uint16_t>(sizeof(GossipNeighborList<MaxNeighbors>)),
-                                               typename dataplane::PositiveMapElementBytes::Trusted{}},
-        .max_entries = dataplane::PositiveMapEntries{MaxTopics, typename dataplane::PositiveMapEntries::Trusted{}},
-    };
-    return GossipMulticastPlan<MaxTopics, MaxNeighbors>{DeclaredGossipMulticastPlan{GossipMulticastSpec{
-        .program = xdp,
-        .neighbor_map = dataplane::DeclaredBpfMap{map},
-        .config = config,
-    }}};
+    return GossipMulticastPlan<MaxTopics, MaxNeighbors>{
+        ::fixy::mint_tagged<::fixy::tags::source::GossipMulticast>(GossipMulticastSpec{
+            .program =
+                dataplane::mint_xdp_program(ctx, iface, ifindex, dataplane::XdpProgramKind::GossipMulticast, mode),
+            .neighbor_map = dataplane::mint_bpf_map_spec<GossipTopicKey, GossipNeighborList<MaxNeighbors>>(
+                dataplane::BpfMapKind::LruHash, ::fixy::mint_refined<::fixy::positive>(MaxTopics)),
+            .config = config,
+        })};
 }
 
-static_assert(sizeof(GossipTopicHash) == sizeof(std::uint64_t));
 static_assert(sizeof(DeclaredGossipTopic) == sizeof(GossipTopicKey));
 static_assert(sizeof(DeclaredGossipMulticastPlan) == sizeof(GossipMulticastSpec));
 static_assert(std::has_unique_object_representations_v<GossipTopicKey>);

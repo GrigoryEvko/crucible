@@ -1,4 +1,5 @@
 #include <crucible/cntp/GossipMulticast.h>
+#include <fixy/Ctx.h>
 
 #include <array>
 #include <cassert>
@@ -9,9 +10,9 @@
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
+namespace fe = ::foundation::effects;
 namespace dataplane = crucible::cntp::dataplane;
-namespace saf = crucible::safety;
+namespace source = ::fixy::tags::source;
 
 namespace {
 
@@ -54,12 +55,20 @@ void test_admission() {
     auto explicit_hash = cntp::admit_gossip_topic_hash(0x172);
     assert(explicit_hash.has_value());
     assert(explicit_hash->value().hash == 0x172);
+    assert(cntp::admit_gossip_dedup_window_ns(0).error() == cntp::GossipMulticastError::InvalidDedupWindow);
+    assert(cntp::admit_gossip_payload_bytes(0).error() == cntp::GossipMulticastError::InvalidPayloadLimit);
+
+    auto neighbor = target(9, 21);
+    assert(neighbor.ifindex().value() == 21);
+    assert(neighbor.peer() == peer(9).uuid);
+    assert(neighbor.ipv4_be() == (0x0A000000U | 9U));
+    static_assert(cntp::GossipNeighborTarget{}.ifindex().value() == 1);
 
     std::printf("  test_admission: PASSED\n");
 }
 
 void test_plan_registration_and_publish() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
     auto bytes = cntp::admit_gossip_payload_bytes(128);
     auto window = cntp::admit_gossip_dedup_window_ns(30000000000ULL);
     assert(bytes.has_value());
@@ -73,12 +82,17 @@ void test_plan_registration_and_publish() {
                                                        });
     static_assert(!std::copy_constructible<decltype(plan)>);
     static_assert(!std::move_constructible<decltype(plan)>);
-    static_assert(std::same_as<decltype(plan.spec())::tag_type, saf::source::GossipMulticast>);
+    static_assert(std::same_as<decltype(plan.spec())::tag_type, source::GossipMulticast>);
 
     auto xdp = cntp::gossip_multicast_xdp_program(plan.spec());
     assert(xdp.value().kind == dataplane::XdpProgramKind::GossipMulticast);
     assert(xdp.value().required_features.test(cog::NicFeature::XdpNative));
-    assert(plan.spec().value().neighbor_map.value().kind == dataplane::BpfMapKind::LruHash);
+    auto const spec = plan.spec();
+    auto const& map = spec.value().neighbor_map.value();
+    assert(map.kind == dataplane::BpfMapKind::LruHash);
+    assert(map.key_bytes.value() == sizeof(cntp::GossipTopicKey));
+    assert(map.value_bytes.value() == sizeof(cntp::GossipNeighborList<2>));
+    assert(map.max_entries.value() == 2);
 
     auto topic = cntp::admit_gossip_topic("canopy.delta");
     auto other = cntp::admit_gossip_topic("federation.ack");
@@ -121,15 +135,15 @@ void test_plan_registration_and_publish() {
 }  // namespace
 
 int main() {
-    static_assert(sizeof(cntp::GossipTopicHash) == sizeof(std::uint64_t));
     static_assert(sizeof(cntp::DeclaredGossipTopic) == sizeof(cntp::GossipTopicKey));
     static_assert(dataplane::BpfKey<cntp::GossipTopicKey>);
     static_assert(dataplane::BpfScalar<cntp::GossipNeighborTarget>);
     static_assert(cntp::GossipMulticastShape<2, 2>);
     static_assert(!cntp::GossipMulticastShape<0, 2>);
     static_assert(!cntp::GossipMulticastShape<2, 0>);
-    static_assert(cntp::CtxFitsGossipMulticastMint<effects::ColdInitCtx>);
-    static_assert(!cntp::CtxFitsGossipMulticastMint<effects::BgDrainCtx>);
+    static_assert(cntp::CtxFitsGossipMulticastMint<::fixy::ColdInitCtx>);
+    static_assert(!cntp::CtxFitsGossipMulticastMint<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsGossipMulticastMint<::fixy::HotFgCtx>);
 
     std::printf("test_cntp_gossip_multicast:\n");
     test_admission();

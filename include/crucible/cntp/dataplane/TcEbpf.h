@@ -5,7 +5,12 @@
 // standing in for a kernel map.
 
 #include <crucible/cntp/dataplane/Xdp.h>
+#include <crucible/effects/_Capabilities.h>
+#include <crucible/effects/_EffectRow.h>
+#include <crucible/effects/_ExecCtx.h>
 #include <crucible/safety/_Bits.h>
+#include <crucible/safety/_Pinned.h>
+#include <crucible/safety/_Refined.h>
 #include <crucible/safety/_RefinedAlgebra.h>
 #include <crucible/safety/_Tagged.h>
 
@@ -60,7 +65,7 @@ using TcFlowPriority = safety::Bounded<std::uint8_t{0}, std::uint8_t{7}, std::ui
 
 struct TcProgramSpec {
     cntp::NicInterfaceName interface{};
-    TcIfIndex ifindex{std::uint32_t{1}};
+    TcIfIndex ifindex = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
     TcAttachPoint attach_point = TcAttachPoint::Egress;
     TcProgramKind kind = TcProgramKind::EgressMark;
     TcAction default_action = TcAction::Ok;
@@ -185,7 +190,8 @@ static_assert(sizeof(TcFlowPriority) == sizeof(std::uint8_t));
 static_assert(sizeof(DeclaredTcProgram) == sizeof(TcProgramSpec));
 static_assert(sizeof(DeclaredTcFlowClass) == sizeof(TcFlowClass));
 static_assert(sizeof(TcFlowKey) == sizeof(std::int32_t));
-static_assert(std::is_trivially_copyable_v<TcProgramSpec>);
+static_assert(std::is_trivially_copy_constructible_v<TcProgramSpec>);
+static_assert(std::is_trivially_destructible_v<TcProgramSpec>);
 static_assert(std::is_trivially_copyable_v<TcFlowClass>);
 static_assert(std::has_unique_object_representations_v<TcFlowKey>);
 static_assert(BpfKey<TcFlowKey>);

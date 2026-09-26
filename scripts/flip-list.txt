@@ -64,7 +64,6 @@ include/crucible/cipher/SessionPersistenceSurface.h
 include/crucible/cntp/ConnectionPool.h
 include/crucible/cntp/ConnectionPoolRuntime.h
 include/crucible/cntp/Fountain.h
-include/crucible/cntp/GossipMulticast.h
 include/crucible/cntp/OverlayMulticast.h
 include/crucible/cntp/PathSwap.h
 include/crucible/cntp/RoceConfig.h
@@ -77,7 +76,6 @@ include/crucible/cntp/_wip/QuicTransport.h
 include/crucible/cntp/_wip/Sharp.h
 include/crucible/cntp/_wip/Wireguard.h
 include/crucible/cntp/dataplane/TcEbpf.h
-include/crucible/cntp/dataplane/Xdp.h
 include/crucible/cog/NicConfig.h
 include/crucible/cog/SrIov.h
 include/crucible/ledger/HostFingerprint.h

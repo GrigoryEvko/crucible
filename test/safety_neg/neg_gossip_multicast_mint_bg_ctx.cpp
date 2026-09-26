@@ -1,7 +1,8 @@
 #include <crucible/cntp/GossipMulticast.h>
+#include <fixy/Ctx.h>
 
 int main() {
-    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
     auto iface = crucible::cntp::NicInterfaceName::from("eth0").value();
     auto ifindex = crucible::cntp::dataplane::admit_xdp_ifindex(7).value();
     auto plan = crucible::cntp::mint_gossip_multicast_plan<4, 4>(bg, iface, ifindex);

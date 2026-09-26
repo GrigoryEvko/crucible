@@ -4806,26 +4806,35 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_not_exec_ctx
     "no matching function for call to .mint_deadline_watchdog\\(NotAnExecCtx, std::nullptr_t, crucible::warden::Policy&\\)."
     "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = NotAnExecCtx.")
 
-# ─── GAPS-130 cntp/dataplane/Xdp.h soundness gates ────────────────
+# ─── cntp/dataplane/Xdp.h soundness gates ─────────────────────────
 #
 #   * neg_xdp_raw_program_spec — NIC admission requires source::Xdp
 #     provenance, not a raw descriptor.
 #   * neg_xdp_mint_bg_ctx — only Init-row contexts mint attach plans.
+#   * neg_xdp_mint_not_exec_ctx — a bare struct is not a context.
 #   * neg_xdp_map_non_pod_value — BPF map values must be verifier-safe POD.
+#   * neg_xdp_map_oversized_value — a map element must fit the 16-bit
+#     length field.
 #   * neg_xdp_map_key_without_equality — in-process map images require typed
 #     key equality, not bytewise accidental comparison.
 crucible_neg_compile_dataplane_test(neg_xdp_raw_program_spec
-    "cannot convert|could not convert"
-    "DeclaredXdpProgram")
+    "could not convert .raw. from .crucible::cntp::dataplane::XdpProgramSpec. to .crucible::cntp::dataplane::DeclaredXdpProgram."
+    "fixy::Tagged<crucible::cntp::dataplane::XdpProgramSpec, fixy::tags::source::Xdp>")
 crucible_neg_compile_dataplane_test(neg_xdp_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsXdpMint")
+    "no matching function for call to .mint_xdp_program\\(fixy::BgDrainCtx&"
+    "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>.")
+crucible_neg_compile_dataplane_test(neg_xdp_mint_not_exec_ctx
+    "no matching function for call to .mint_xdp_program\\(NotAnExecCtx"
+    "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = NotAnExecCtx.")
 crucible_neg_compile_dataplane_test(neg_xdp_map_non_pod_value
-    "constraint|constraints.*not satisfied"
-    "BpfScalar")
+    "no matching function for call to .mint_bpf_map_spec<Key, std::string>"
+    "required for the satisfaction of .BpfScalar<T>. .with T = std::__cxx11::basic_string<char")
+crucible_neg_compile_dataplane_test(neg_xdp_map_oversized_value
+    "no matching function for call to .mint_bpf_map_spec<Key, WideValue>"
+    "requires \\(BpfMapElement<Key>\\) && \\(BpfMapElement<Value>\\)")
 crucible_neg_compile_dataplane_test(neg_xdp_map_key_without_equality
-    "constraint|constraints.*not satisfied"
-    "BpfKey")
+    "template constraint failure for .template<class Key, class Value, unsigned int MaxEntries, crucible::cntp::dataplane::BpfMapKind Kind>"
+    "required for the satisfaction of .BpfKey<Key>. .with Key = Key.")
 
 # ─── GAPS-193 cntp/dataplane/TcEbpf.h soundness gates ─────────────
 #
@@ -7154,7 +7163,7 @@ crucible_neg_compile_test(neg_integrity_raw_hash_field
 crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
   "constraints not satisfied|ByteContiguousPayload|HasContiguousPayloadData|no matching function")
 
-# GAPS-172 — cntp/GossipMulticast.h XDP_TX multicast plan substrate.
+# cntp/GossipMulticast.h XDP_TX multicast plan substrate.
 #   * neg_gossip_multicast_mint_bg_ctx: only Init-row contexts mint plans.
 #   * neg_gossip_multicast_raw_plan: XDP program extraction requires
 #     source::GossipMulticast provenance.
@@ -7162,14 +7171,18 @@ crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
 #     neighbors; callers must pass DeclaredGossipTopic.
 #   * neg_gossip_multicast_zero_neighbors: zero-neighbor plans are rejected
 #     at the shape concept.
-crucible_neg_compile_test(neg_gossip_multicast_mint_bg_ctx
-  "constraints not satisfied|CtxFitsGossipMulticastMint|Init|Bg")
-crucible_neg_compile_test(neg_gossip_multicast_raw_plan
-  "cannot convert|could not convert|DeclaredGossipMulticastPlan|Tagged")
-crucible_neg_compile_test(neg_gossip_multicast_raw_topic
-  "cannot convert|could not convert|DeclaredGossipTopic|Tagged")
-crucible_neg_compile_test(neg_gossip_multicast_zero_neighbors
-  "constraints not satisfied|GossipMulticastShape|GossipNeighborShape|MaxNeighbors")
+crucible_neg_compile_multi_test(neg_gossip_multicast_mint_bg_ctx
+  "no matching function for call to .mint_gossip_multicast_plan<4, 4>\\(fixy::BgDrainCtx&"
+  "required for the satisfaction of .CtxFitsGossipMulticastMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+crucible_neg_compile_multi_test(neg_gossip_multicast_raw_plan
+  "could not convert .raw. from .crucible::cntp::GossipMulticastSpec. to .crucible::cntp::DeclaredGossipMulticastPlan."
+  "fixy::Tagged<crucible::cntp::GossipMulticastSpec, fixy::tags::source::GossipMulticast>")
+crucible_neg_compile_multi_test(neg_gossip_multicast_raw_topic
+  "cannot convert .crucible::cntp::GossipTopicKey. to .crucible::cntp::DeclaredGossipTopic."
+  "fixy::Tagged<crucible::cntp::GossipTopicKey, fixy::tags::source::GossipMulticast>")
+crucible_neg_compile_multi_test(neg_gossip_multicast_zero_neighbors
+  "no matching function for call to .mint_gossip_multicast_plan<4, 0>"
+  "required for the satisfaction of .GossipNeighborShape<MaxNeighbors>. .with MaxNeighbors = 0.")
 
 # GAPS-139 — cntp/OverlayMulticast.h application-layer route substrate.
 #   * neg_overlay_multicast_mint_bg_ctx: only Init-row contexts mint plans.

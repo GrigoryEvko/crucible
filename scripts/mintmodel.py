@@ -251,9 +251,9 @@ def has_fit_constraint(mint: Mint) -> bool:
     compiler: `template <typename T> requires C<T>` and `template <C T>`.  Reading
     only the first reported 49 of the tree's 332 mints as unconstrained when every
     one of them carries a concept on a template parameter.  `mint_bpf_map_spec`
-    is the plainest case — its gate is `template <BpfScalar Key, BpfScalar Value>`,
-    which says exactly what may be a BPF map key, and the old read called it
-    absent.
+    is the plainest case — its gate is `template <BpfMapElement Key, BpfMapElement
+    Value>`, which says exactly what may be a BPF map element, and the old read
+    called it absent.
 
     This axis asks only whether a constraint is PRESENT.  Whether it is the RIGHT
     constraint is a different question, and for a ctx-bound mint `ctxfit_applies`

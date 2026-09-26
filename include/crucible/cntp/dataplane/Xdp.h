@@ -7,20 +7,20 @@
 #include <crucible/cntp/Pacing.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Bits.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <expected>
 #include <limits>
 #include <optional>
@@ -78,36 +78,49 @@ enum class XdpError : std::uint8_t {
     KeyAlreadyExists,
 };
 
-[[nodiscard]] std::string_view xdp_action_name(XdpAction action) noexcept;
-[[nodiscard]] std::string_view xdp_mode_name(XdpMode mode) noexcept;
-[[nodiscard]] std::string_view xdp_program_kind_name(XdpProgramKind kind) noexcept;
-[[nodiscard]] std::string_view bpf_map_kind_name(BpfMapKind kind) noexcept;
-[[nodiscard]] std::string_view xdp_error_name(XdpError error) noexcept;
+// Each name is the enumerator's own identifier, read by reflection, so a
+// new enumerator is named the moment it is declared.
+[[nodiscard]] constexpr std::string_view xdp_action_name(XdpAction action) noexcept {
+    return ::foundation::reflect::enum_name(action);
+}
+[[nodiscard]] constexpr std::string_view xdp_mode_name(XdpMode mode) noexcept {
+    return ::foundation::reflect::enum_name(mode);
+}
+[[nodiscard]] constexpr std::string_view xdp_program_kind_name(XdpProgramKind kind) noexcept {
+    return ::foundation::reflect::enum_name(kind);
+}
+[[nodiscard]] constexpr std::string_view bpf_map_kind_name(BpfMapKind kind) noexcept {
+    return ::foundation::reflect::enum_name(kind);
+}
+[[nodiscard]] constexpr std::string_view xdp_error_name(XdpError error) noexcept {
+    return ::foundation::reflect::enum_name(error);
+}
 
-using XdpIfIndex = safety::Positive<std::uint32_t>;
-using PositiveMapEntries = safety::Positive<std::uint32_t>;
-using PositiveMapElementBytes = safety::Positive<std::uint16_t>;
+using XdpIfIndex = ::fixy::Positive<std::uint32_t>;
+using PositiveMapEntries = ::fixy::Positive<std::uint32_t>;
+using PositiveMapElementBytes = ::fixy::Positive<std::uint16_t>;
 
 struct XdpProgramSpec {
     cntp::NicInterfaceName interface{};
-    XdpIfIndex ifindex{std::uint32_t{1}};
+    XdpIfIndex ifindex = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
     XdpMode mode = XdpMode::Native;
     XdpProgramKind kind = XdpProgramKind::FlowFilter;
-    safety::Bits<cog::NicFeature> required_features{};
+    ::fixy::Bits<cog::NicFeature> required_features{};
 };
 
 struct BpfMapSpec {
     BpfMapKind kind = BpfMapKind::Hash;
-    PositiveMapElementBytes key_bytes{std::uint16_t{1}};
-    PositiveMapElementBytes value_bytes{std::uint16_t{1}};
-    PositiveMapEntries max_entries{std::uint32_t{1}};
+    PositiveMapElementBytes key_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    PositiveMapElementBytes value_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    PositiveMapEntries max_entries = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
 };
 
-using DeclaredXdpProgram = safety::Tagged<XdpProgramSpec, safety::source::Xdp>;
-using DeclaredBpfMap = safety::Tagged<BpfMapSpec, safety::source::BpfMap>;
+using DeclaredXdpProgram = ::fixy::Tagged<XdpProgramSpec, ::fixy::tags::source::Xdp>;
+using DeclaredBpfMap = ::fixy::Tagged<BpfMapSpec, ::fixy::tags::source::BpfMap>;
 
 template <class Ctx>
-concept CtxFitsXdpMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsXdpMint = ::foundation::effects::IsExecCtx<Ctx>
+                         && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
 template <class T>
 concept BpfScalar = std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T>;
@@ -117,35 +130,34 @@ concept BpfKey = BpfScalar<K> && std::has_unique_object_representations_v<K> && 
     { a == b } -> std::convertible_to<bool>;
 };
 
+// A kernel map stores each key and each value in a 16-bit length field, so a
+// wider type cannot be a map element.  The refusal is at compile time.
+template <class T>
+concept BpfMapElementWidth = sizeof(T) <= std::numeric_limits<std::uint16_t>::max();
+
+template <class T>
+concept BpfMapElement = BpfScalar<T> && BpfMapElementWidth<T>;
+
 [[nodiscard]] constexpr std::expected<XdpIfIndex, XdpError> admit_xdp_ifindex(std::uint32_t ifindex) noexcept {
-    if (ifindex == 0) {
-        return std::unexpected(XdpError::InvalidIfIndex);
-    }
-    return XdpIfIndex{ifindex, typename XdpIfIndex::Trusted{}};
+    return ::fixy::admit_refined<::fixy::positive>(ifindex, XdpError::InvalidIfIndex);
 }
 
 [[nodiscard]] constexpr std::expected<PositiveMapEntries, XdpError>
 admit_bpf_map_entries(std::uint32_t entries) noexcept {
-    if (entries == 0) {
-        return std::unexpected(XdpError::InvalidMapEntries);
-    }
-    return PositiveMapEntries{entries, typename PositiveMapEntries::Trusted{}};
+    return ::fixy::admit_refined<::fixy::positive>(entries, XdpError::InvalidMapEntries);
 }
 
 [[nodiscard]] constexpr std::expected<PositiveMapElementBytes, XdpError>
 admit_bpf_map_element_bytes(std::uint16_t bytes) noexcept {
-    if (bytes == 0) {
-        return std::unexpected(XdpError::InvalidMapElementSize);
-    }
-    return PositiveMapElementBytes{bytes, typename PositiveMapElementBytes::Trusted{}};
+    return ::fixy::admit_refined<::fixy::positive>(bytes, XdpError::InvalidMapElementSize);
 }
 
-[[nodiscard]] constexpr safety::Bits<cog::NicFeature> xdp_required_features(XdpMode mode) noexcept {
+[[nodiscard]] constexpr ::fixy::Bits<cog::NicFeature> xdp_required_features(XdpMode mode) noexcept {
     switch (mode) {
         case XdpMode::Native:
-            return safety::Bits<cog::NicFeature>{cog::NicFeature::XdpNative};
+            return ::fixy::Bits<cog::NicFeature>{cog::NicFeature::XdpNative};
         case XdpMode::Offload:
-            return safety::Bits<cog::NicFeature>{cog::NicFeature::XdpOffload};
+            return ::fixy::Bits<cog::NicFeature>{cog::NicFeature::XdpOffload};
         case XdpMode::Generic:
         default:
             return {};
@@ -157,35 +169,25 @@ template <class Ctx>
 [[nodiscard]] constexpr DeclaredXdpProgram mint_xdp_program(Ctx const&, cntp::NicInterfaceName iface,
                                                             XdpIfIndex ifindex, XdpProgramKind kind,
                                                             XdpMode mode = XdpMode::Native) noexcept {
-    return DeclaredXdpProgram{XdpProgramSpec{
+    return ::fixy::mint_tagged<::fixy::tags::source::Xdp>(XdpProgramSpec{
         .interface = iface,
         .ifindex = ifindex,
         .mode = mode,
         .kind = kind,
         .required_features = xdp_required_features(mode),
-    }};
+    });
 }
 
-template <BpfScalar Key, BpfScalar Value>
-[[nodiscard]] constexpr std::expected<DeclaredBpfMap, XdpError> mint_bpf_map_spec(BpfMapKind kind,
-                                                                                  PositiveMapEntries entries) noexcept {
-    if constexpr (sizeof(Key) > std::numeric_limits<std::uint16_t>::max()
-                  || sizeof(Value) > std::numeric_limits<std::uint16_t>::max()) {
-        return std::unexpected(XdpError::InvalidMapElementSize);
-    }
-    constexpr auto key_bytes = static_cast<std::uint16_t>(sizeof(Key));
-    constexpr auto value_bytes = static_cast<std::uint16_t>(sizeof(Value));
-    auto admitted_key = admit_bpf_map_element_bytes(key_bytes);
-    auto admitted_value = admit_bpf_map_element_bytes(value_bytes);
-    if (!admitted_key.has_value() || !admitted_value.has_value()) {
-        return std::unexpected(XdpError::InvalidMapElementSize);
-    }
-    return DeclaredBpfMap{BpfMapSpec{
+// Every size is at least one byte and BpfMapElement bounds it by the length
+// field, so both element widths are positive and in range by construction.
+template <BpfMapElement Key, BpfMapElement Value>
+[[nodiscard]] constexpr DeclaredBpfMap mint_bpf_map_spec(BpfMapKind kind, PositiveMapEntries entries) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::BpfMap>(BpfMapSpec{
         .kind = kind,
-        .key_bytes = *admitted_key,
-        .value_bytes = *admitted_value,
+        .key_bytes = ::fixy::mint_refined<::fixy::positive>(static_cast<std::uint16_t>(sizeof(Key))),
+        .value_bytes = ::fixy::mint_refined<::fixy::positive>(static_cast<std::uint16_t>(sizeof(Value))),
         .max_entries = entries,
-    }};
+    });
 }
 
 [[nodiscard]] constexpr std::expected<void, XdpError> xdp_admit_nic(cog::CogIdentity const& identity,
@@ -222,7 +224,7 @@ template <BpfScalar Key>
 
 template <BpfKey Key, BpfScalar Value, std::uint32_t MaxEntries, BpfMapKind Kind = BpfMapKind::Hash>
     requires(MaxEntries > 0)
-class BpfMapImage : public safety::Pinned<BpfMapImage<Key, Value, MaxEntries, Kind>> {
+class BpfMapImage : public ::foundation::Pinned<BpfMapImage<Key, Value, MaxEntries, Kind>> {
     struct Slot {
         Key key{};
         Value value{};
@@ -334,7 +336,11 @@ static_assert(sizeof(PositiveMapEntries) == sizeof(std::uint32_t));
 static_assert(sizeof(PositiveMapElementBytes) == sizeof(std::uint16_t));
 static_assert(sizeof(DeclaredXdpProgram) == sizeof(XdpProgramSpec));
 static_assert(sizeof(DeclaredBpfMap) == sizeof(BpfMapSpec));
-static_assert(std::is_trivially_copyable_v<XdpProgramSpec>);
-static_assert(std::is_trivially_copyable_v<BpfMapSpec>);
+// A refined member keeps a spec from being trivially copyable, by design: no
+// byte copy may build a positive value.  Copy construction stays trivial.
+static_assert(std::is_trivially_copy_constructible_v<XdpProgramSpec>);
+static_assert(std::is_trivially_destructible_v<XdpProgramSpec>);
+static_assert(std::is_trivially_copy_constructible_v<BpfMapSpec>);
+static_assert(std::is_trivially_destructible_v<BpfMapSpec>);
 
 }  // namespace crucible::cntp::dataplane

@@ -1,4 +1,5 @@
 #include <crucible/cntp/dataplane/Xdp.h>
+#include <fixy/Ctx.h>
 
 #include "test_assert.h"
 
@@ -8,9 +9,9 @@
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
+namespace fe = ::foundation::effects;
 namespace dataplane = crucible::cntp::dataplane;
-namespace saf = crucible::safety;
+namespace source = ::fixy::tags::source;
 
 namespace {
 
@@ -60,6 +61,8 @@ void test_names_and_admission() {
            == std::string_view{"AfXdpRedirect"});
     assert(dataplane::bpf_map_kind_name(dataplane::BpfMapKind::XskMap) == std::string_view{"XskMap"});
     assert(dataplane::xdp_error_name(dataplane::XdpError::MissingNativeXdp) == std::string_view{"MissingNativeXdp"});
+    static_assert(dataplane::xdp_action_name(static_cast<dataplane::XdpAction>(0xFF))
+                  == ::foundation::reflect::unknown_enum_sentinel<dataplane::XdpAction>);
 
     assert(!dataplane::admit_xdp_ifindex(0).has_value());
     assert(!dataplane::admit_bpf_map_entries(0).has_value());
@@ -70,13 +73,13 @@ void test_names_and_admission() {
 }
 
 void test_program_caps() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
     auto ifindex = dataplane::admit_xdp_ifindex(7);
     assert(ifindex.has_value());
 
     auto native = dataplane::mint_xdp_program(init, iface(), *ifindex, dataplane::XdpProgramKind::AfXdpRedirect,
                                               dataplane::XdpMode::Native);
-    static_assert(std::same_as<decltype(native)::tag_type, saf::source::Xdp>);
+    static_assert(std::same_as<decltype(native)::tag_type, source::Xdp>);
     assert(native.value().required_features.test(cog::NicFeature::XdpNative));
     assert(dataplane::xdp_admit_nic(nic_identity(), native_caps(), native).has_value());
 
@@ -96,10 +99,10 @@ void test_map_spec_and_image() {
     auto entries = dataplane::admit_bpf_map_entries(2);
     assert(entries.has_value());
     auto spec = dataplane::mint_bpf_map_spec<FlowKey, FlowDecision>(dataplane::BpfMapKind::LruHash, *entries);
-    assert(spec.has_value());
-    static_assert(std::same_as<std::remove_cvref_t<decltype(*spec)>::tag_type, saf::source::BpfMap>);
-    assert(spec->value().key_bytes.value() == sizeof(FlowKey));
-    assert(spec->value().value_bytes.value() == sizeof(FlowDecision));
+    static_assert(std::same_as<decltype(spec)::tag_type, source::BpfMap>);
+    assert(spec.value().key_bytes.value() == sizeof(FlowKey));
+    assert(spec.value().value_bytes.value() == sizeof(FlowDecision));
+    assert(spec.value().max_entries.value() == 2);
 
     dataplane::BpfMapImage<FlowKey, FlowDecision, 2, dataplane::BpfMapKind::LruHash> map{};
     assert(map.update(FlowKey{.src = 1, .dst = 2}, FlowDecision{.action = dataplane::XdpAction::Redirect, .queue = 7})
@@ -135,8 +138,12 @@ int main() {
     static_assert(dataplane::BpfKey<FlowKey>);
     static_assert(!dataplane::BpfKey<FlowDecision>);
     static_assert(dataplane::BpfScalar<FlowDecision>);
-    static_assert(dataplane::CtxFitsXdpMint<effects::ColdInitCtx>);
-    static_assert(!dataplane::CtxFitsXdpMint<effects::BgDrainCtx>);
+    static_assert(dataplane::CtxFitsXdpMint<::fixy::ColdInitCtx>);
+    static_assert(dataplane::CtxFitsXdpMint<::fixy::InitLoadCtx>);
+    static_assert(!dataplane::CtxFitsXdpMint<::fixy::BgDrainCtx>);
+    static_assert(!dataplane::CtxFitsXdpMint<::fixy::HotFgCtx>);
+    static_assert(dataplane::BpfMapElement<FlowDecision>);
+    static_assert(!dataplane::BpfMapElement<std::array<std::byte, 65536>>);
 
     std::printf("test_cntp_dataplane_xdp:\n");
     test_names_and_admission();

@@ -11,5 +11,5 @@ int main() {
     auto entries = crucible::cntp::dataplane::admit_bpf_map_entries(4).value();
     auto spec = crucible::cntp::dataplane::mint_bpf_map_spec<Key, std::string>(
         crucible::cntp::dataplane::BpfMapKind::Hash, entries);
-    return spec.has_value() ? 0 : 1;
+    return static_cast<int>(spec.value().max_entries.value());
 }

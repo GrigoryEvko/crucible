@@ -343,7 +343,6 @@ add_library(crucible STATIC
   src/cntp/ConnectionPool.cpp
   src/cntp/CongestionControl.cpp
   src/cntp/_wip/Doca.cpp
-  src/cntp/GossipMulticast.cpp
   src/cntp/_wip/GpuDirect.cpp
   src/cntp/IncastControl.cpp
   src/cntp/_wip/KtlsOffload.cpp
@@ -363,7 +362,6 @@ add_library(crucible STATIC
   src/observe/SyntheticProbe.cpp
   src/warden/Quarantine.cpp
   src/cntp/dataplane/TcEbpf.cpp
-  src/cntp/dataplane/Xdp.cpp
   src/topology/CongestionTelemetry.cpp
   src/topology/Discovery.cpp
   src/topology/Pingmesh.cpp

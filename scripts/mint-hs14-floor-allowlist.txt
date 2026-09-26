@@ -42,10 +42,8 @@ mint_resource_pressure|include/crucible/cntp/Backpressure.h
 mint_tcam_table|include/crucible/cntp/Tcam.h
 
 # ── cntp/dataplane ───────────────────────────────────────────────────
-mint_bpf_map_spec|include/crucible/cntp/dataplane/Xdp.h
 mint_tc_flow_class|include/crucible/cntp/dataplane/TcEbpf.h
 mint_tc_program|include/crucible/cntp/dataplane/TcEbpf.h
-mint_xdp_program|include/crucible/cntp/dataplane/Xdp.h
 
 # ── cntp/_wip ────────────────────────────────────────────────────────
 mint_doca_deploy_plan|include/crucible/cntp/_wip/Doca.h

@@ -48,6 +48,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <expected>
 #include <meta>
 #include <span>
 #include <string_view>
@@ -568,6 +569,32 @@ template <auto Pred, typename T>
 mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return SealedRefined<Pred, T>{typename SealedRefined<Pred, T>::trusted_door_{}, std::move(value)};
 }
+
+// The trust-boundary door.  The predicate runs as a real branch, outside
+// the contract system, and a value it refuses comes back as the caller's
+// error.  Only a value the branch admitted reaches mint_refined, so the
+// mint's precondition holds by construction and never fires.  It is the
+// door for a raw value that arrives from outside (a probe, a wire, a
+// caller) where a refusal is an expected outcome rather than a defect.
+template <auto Pred, typename T, typename Error>
+    requires PredicateInvocableOn<Pred, T> && std::is_scoped_enum_v<Error>
+[[nodiscard]] constexpr std::expected<Refined<Pred, T>, Error>
+admit_refined(T value, Error refusal) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    if (!Pred(value)) {
+        return std::unexpected(refusal);
+    }
+    return mint_refined<Pred>(std::move(value));
+}
+
+namespace detail::admit_refined_self_test {
+
+enum class Refusal : std::uint8_t { NotPositive };
+
+static_assert(admit_refined<positive>(3, Refusal::NotPositive).value().value() == 3);
+static_assert(admit_refined<positive>(0, Refusal::NotPositive).error() == Refusal::NotPositive);
+static_assert(admit_refined<positive>(-1, Refusal::NotPositive).error() == Refusal::NotPositive);
+
+}  // namespace detail::admit_refined_self_test
 
 // No byte route builds a refined value, and the constructors stay trivial
 // so that a refined value still passes in a register.
