@@ -68,18 +68,37 @@ NO ONE CHECK ADMITS A FILE
 
 WHAT THE PARSER READS
     A macro definition and an include are nodes of the pinned tree-sitter
-    kit, so a `#define` inside a comment or a raw string is not a definition,
-    and a continuation line belongs to its definition by the parse, not by a
-    count of backslashes.  A body compares as a token list: the parameter list,
-    then the replacement list, one space between tokens, with `= ` before the
-    body of an object-like macro.  A header that does not parse refuses the
-    unification, because its macros are then unknown.
+    kit, so a `#define` or an `#include` inside a comment or a raw string is
+    neither.  The guard strips the superseded marking only from the path of a
+    real include node.  An include removal needs a row that holds that one node
+    and nothing else, a comment included.  A continuation line belongs to its
+    definition by the parse, not by a count of backslashes.  A body compares as
+    a token list: the parameter list, then the replacement list, one space
+    between tokens, with `= ` before the body of an object-like macro.  The
+    tokens come from tsast.pp_tokens over the nodes of the definition.  A header
+    that does not parse refuses the unification, because its macros are then
+    unknown.  The only text this guard reads with a pattern is compiler output:
+    the `#define`, `#undef` and line-marker lines of `-E -dD`.
 
 THE COMPILE DATABASE
     --compile-db names it, and build/compile_commands.json is the default.  The
-    guard uses the entry of the first translation unit that includes the header
-    by its path, else the first entry whose flags name include/ as a directory.
-    Without a database, or when the compiler fails, a unification is refused.
+    guard uses the entry of the first translation unit whose preprocessor run
+    reads the header, else the first entry whose flags name include/ as a
+    directory.  A negative fixture comes last.  Without a database, or when the
+    compiler fails, the guard refuses the unification.
+
+    The files that each unit reads come from Unit.dependencies of the store in
+    scripts/preprocessed.py, which holds the -MD output of each unit.  The
+    include nodes of a unit give the wrong fact.  They miss a header that the
+    unit reads through another header, and they count an include in an arm
+    that the compiler skips.  The store runs only when a unification needs the
+    flags of a header.  On the tree of 2026-09-26, with 4210 units and two
+    unifications, the whole scan took 248 s on a cold store and 30 s on a warm
+    one.  With a parse of the include nodes of every unit, it took 34 s.  The
+    build legs share the cold pass with scripts/check-proof-routes.py.
+
+    The guard keeps its own `-E -dD` run of each header, because the store
+    keeps no macro definition and never sees the base text of a header.
 
 Exit 0 clean, 1 on a change under a frozen prefix or a bad ledger or table
 entry, 2 on a usage error, a missing frozen list or a failed self-test, 3 when
@@ -100,12 +119,13 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402
+import preprocessed  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
@@ -114,15 +134,11 @@ PATHS_FILE = "scripts/frozen-paths.txt"
 MIRROR_LEDGER = "scripts/frozen-soundness-mirrors.txt"
 UNIFICATION_TABLE = "scripts/frozen-macro-unifications.txt"
 DEFAULT_COMPILE_DB = "build/compile_commands.json"
-# An include of the old tree whose last path component carries the marking.
-MARKED_INCLUDE = re.compile(r"^(\s*#\s*include\s*<crucible/(?:[^>]*/)?)_([^/>]+>.*)$")
-# A line that holds one angle include and nothing else.
-INCLUDE_LINE = re.compile(r"^\s*#\s*include\s*<([^<>\s]+)>\s*$")
 DEFINITIONS = ("preproc_def", "preproc_function_def")
-DEFINE_HEAD = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)(\()?")
-UNDEF_HEAD = re.compile(r"^\s*#\s*undef\s+([A-Za-z_]\w*)")
-# Maximal munch over the punctuators that a pp-token can hold.
-PUNCTUATOR = re.compile(r">>=|<<=|<=>|->\*|\.\.\.|::|##|->|\+\+|--|<<|>>|<=|>=|==|!=|&&|\|\||[-+*/%&|^]=|\.\*|\S")
+# These three patterns read compiler output only: the lines of `-E -dD`, where
+# the compiler writes each #define, #undef and line marker in one fixed form.
+COMPILER_DEFINE = re.compile(r"^#define ([A-Za-z_]\w*)(\()?")
+COMPILER_UNDEF = re.compile(r"^#undef ([A-Za-z_]\w*)")
 LINEMARKER = re.compile(r'^# \d+ "((?:\\.|[^"\\])*)"')
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")
 HUNK_KEY = re.compile(r"^[0-9a-f]{16}$")
@@ -178,9 +194,95 @@ def lines_of(text: str) -> list[str]:
     return lines[:-1] if text.endswith("\n") else lines
 
 
+class Parses:
+    """The parse tree of each source text, keyed by its content, so each text parses one time.
+
+    A text comes from the freeze base or from the disk.  prefetch parses many
+    texts in one run of the kit, which keeps a scan over the marked headers fast.
+    The cache lives for one run of the guard.
+    """
+
+    def __init__(self) -> None:
+        """Start with no tree."""
+        self.trees: dict[str, tsast.Tree] = {}
+
+    @staticmethod
+    def key(text: str) -> str:
+        """Return the cache key of a text."""
+        return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+
+    def prefetch(self, texts: Iterable[str]) -> None:
+        """Parse, in one run of the kit, each text that has no tree yet."""
+        todo = {}
+        for text in texts:
+            key = self.key(text)
+            if key not in self.trees:
+                todo[key] = text
+        if todo:
+            for key, tree in zip(todo, tsast.parse_texts(list(todo.items()))):
+                self.trees[key] = tree
+
+    def tree(self, text: str) -> tsast.Tree:
+        """Return the parse tree of one text."""
+        self.prefetch([text])
+        return self.trees[self.key(text)]
+
+
+PARSES = Parses()
+
+
+@dataclass(frozen=True)
+class IncludeSite:
+    """One `#include <...>` node: its row, the byte span of its path, the header, and whether the row holds nothing else."""
+
+    row: int
+    start: int
+    end: int
+    header: str
+    alone: bool
+
+
+def include_sites(tree: tsast.Tree) -> list[IncludeSite]:
+    """Return each angle include of a parse, with whether its row holds that include and nothing else.
+
+    A row holds the include alone when no other node starts or ends on it: a
+    trailing comment, a second directive or a declaration on the row is a node.
+
+    Complexity: O(nodes) to index the rows, then O(includes).
+    """
+    touching: dict[int, list[int]] = {}
+    for index in range(1, len(tree)):
+        last = tree.erow[index] if tree.ecol[index] > 0 else tree.erow[index] - 1
+        for row in {tree.srow[index], last}:
+            touching.setdefault(row, []).append(index)
+    sites = []
+    for node in tree.find("preproc_include"):
+        target = node.child_by_field("path")
+        if target is None or target.type != "system_lib_string" or target.start[0] != target.end[0]:
+            continue
+        own = {node.index} | {child.index for child in node.descendants(*set(tree.types))}
+        row = node.start[0]
+        others = [i for i in touching.get(row, []) if i not in own
+                  and not (tree.srow[i] < row and (tree.erow[i] > row or (tree.erow[i] == row + 1 and tree.ecol[i] == 0)))]
+        sites.append(IncludeSite(row, target.start[1], target.end[1], target.text[1:-1], not others))
+    return sites
+
+
 def normalized(text: str) -> list[str]:
-    """Return the lines with the superseded marking stripped from each old-tree include."""
-    return [MARKED_INCLUDE.sub(r"\1\2", line) for line in lines_of(text)]
+    """Return the lines with the superseded marking stripped from the path of each old-tree include node.
+
+    Only a real include node is rewritten, so a line inside a comment or a raw
+    string keeps its text, and a change to it is a change.
+    """
+    lines = lines_of(text)
+    for site in include_sites(PARSES.tree(text)):
+        parts = site.header.split("/")
+        if parts[0] != "crucible" or not parts[-1].startswith("_") or site.row >= len(lines):
+            continue
+        raw = lines[site.row].encode("utf-8", "surrogateescape")
+        unmarked = "/".join(parts[:-1] + [parts[-1][1:]]).encode()
+        lines[site.row] = (raw[:site.start + 1] + unmarked + raw[site.end - 1:]).decode("utf-8", "surrogateescape")
+    return lines
 
 
 def twin_of(path: str) -> str | None:
@@ -189,35 +291,37 @@ def twin_of(path: str) -> str | None:
     return str(pure.with_name(pure.name[1:])) if pure.name.startswith("_") else None
 
 
-def pp_tokens(text: str) -> list[str]:
-    """Return the preprocessing tokens of a text, without its comments.
+def token_text(text: str) -> list[str]:
+    """Return the preprocessing tokens of a text, without its comments."""
+    return [token.text for token in tsast.pp_tokens(text)]
 
-    Complexity: linear in the length of the text.
+
+def canonical_node(node: tsast.Node) -> tuple[str, str] | None:
+    """Return (name, canonical body) for a `#define` node of a parse.
+
+    A function-like macro keeps its parameter list at the front of the body.  An
+    object-like body starts with '= ', so `#define X (a)` and `#define X(a)`
+    never compare equal.  A block comment splits the body into several value
+    nodes, and the tokens of each are joined.
     """
-    joined, _ = cxx_lex.splice(text)
-    found: list[str] = []
-    cursor = 0
-    for match in cxx_lex.LEXER.finditer(joined):
-        found += PUNCTUATOR.findall(joined[cursor:match.start()])
-        if match.lastgroup not in ("line_comment", "block_comment"):
-            found.append(match.group())
-        cursor = match.end()
-    found += PUNCTUATOR.findall(joined[cursor:])
-    return found
+    name = node.child_by_field("name")
+    if name is None:
+        return None
+    values = " ".join(child.text for child in node.children if child.field == "value")
+    body = token_text(values)
+    if node.type == "preproc_function_def":
+        parameters = node.child_by_field("parameters")
+        head = token_text(parameters.text) if parameters is not None else []
+        return name.text, " ".join(head + body)
+    return name.text, f"= {' '.join(body)}".rstrip()
 
 
-def canonical(definition: str) -> tuple[str, str] | None:
-    """Return (name, canonical body) for the text of one #define, or None for other text.
-
-    A function-like macro keeps its parameter list at the front of the body.
-    An object-like body starts with '= ', so `#define X (a)` and
-    `#define X(a)` never compare equal.
-    """
-    joined, _ = cxx_lex.splice(definition)
-    head = DEFINE_HEAD.match(joined)
+def canonical_line(line: str) -> tuple[str, str] | None:
+    """Return (name, canonical body) for one `#define` line of compiler output, in the same form as canonical_node."""
+    head = COMPILER_DEFINE.match(line)
     if head is None:
         return None
-    body = " ".join(pp_tokens(joined[head.end(1):]))
+    body = " ".join(token_text(line[head.end(1):]))
     return head.group(1), body if head.group(2) else f"= {body}".rstrip()
 
 
@@ -293,30 +397,22 @@ def mirror_hunks(base_text: str, new_text: str) -> list[tuple[str, tuple[str, in
 
 
 def include_rows(text: str) -> dict[int, str]:
-    """Return the row and the header of each `#include <...>` that the parser reads in a text.
+    """Return the row and the header of each `#include <...>` node that is alone on its row.
 
     A text that does not parse gives no row, so no include removal is
     admitted from it.
     """
-    with tempfile.TemporaryDirectory() as work:
-        source = Path(work) / "base.h"
-        source.write_text(text, encoding="utf-8")
-        tree = next(iter(tsast.parse([source], strict=False)))
-        if tree.diagnostic is not None:
-            return {}
-        rows = {}
-        for node in tree.find("preproc_include"):
-            target = node.child_by_field("path")
-            if target is not None and target.type == "system_lib_string":
-                rows[node.start[0]] = target.text[1:-1]
-    return rows
+    tree = PARSES.tree(text)
+    if tree.diagnostic is not None:
+        return {}
+    return {site.row: site.header for site in include_sites(tree) if site.alone}
 
 
 def removed_headers(snapshot: Snapshot, old: list[str], includes: dict[int, str],
                     opcode: tuple[str, int, int, int, int]) -> list[str]:
     """Return the headers of an include-removal hunk, or [] when the hunk is not one.
 
-    Each removed line must be one include that the parser reads, of a header
+    Each removed row must hold one include node and nothing else, of a header
     that the base holds under include/ and the disk does not.
 
     Complexity: linear in the number of removed lines.
@@ -326,9 +422,8 @@ def removed_headers(snapshot: Snapshot, old: list[str], includes: dict[int, str]
         return []
     headers = []
     for row in range(i1, i2):
-        line = INCLUDE_LINE.match(old[row])
         header = includes.get(row)
-        if line is None or header is None or line.group(1) != header:
+        if header is None:
             return []
         target = f"include/{header}"
         if target not in snapshot.base_blobs or (snapshot.root / target).exists():
@@ -430,7 +525,7 @@ def definitions(tree: tsast.Tree) -> list[tuple[str, int, int, str]]:
     """Return (macro name, first row, last row, canonical body) for each definition in a parse."""
     found = []
     for node in tree.find(*DEFINITIONS):
-        read = canonical(node.text)
+        read = canonical_node(node)
         if read is not None:
             end_row, end_col = node.end
             found.append((read[0], node.start[0], end_row - 1 if end_col == 0 else end_row, read[1]))
@@ -504,20 +599,48 @@ class Preprocessor:
     def __init__(self, root: Path, database: Path) -> None:
         """Load the compile database, or record why it cannot be used."""
         self.root = root
+        self.database = database
         self.entries: list[dict] = []
+        self.order: list[int] = []
         self.problem: str | None = None
-        self.sources: dict[str, str] = {}
+        self.readers: list[frozenset[str]] | None = None
         if not database.is_file():
             self.problem = f"there is no compile database at {database}, so the preprocessor check cannot run " \
                            f"(pass --compile-db)"
             return
         try:
+            self.entries = json.loads(database.read_text())
             # A negative fixture compiles to fail, so a plain translation unit
             # comes first when the guard picks the flags of a header.
-            self.entries = sorted(json.loads(database.read_text()),
-                                  key=lambda entry: (NEG_FIXTURE.search(entry["file"]) is not None, entry["file"]))
+            self.order = sorted(range(len(self.entries)),
+                                key=lambda index: (NEG_FIXTURE.search(self.entries[index]["file"]) is not None,
+                                                   self.entries[index]["file"]))
         except (ValueError, KeyError, TypeError) as exc:
             self.problem = f"the compile database {database} does not read: {exc}"
+
+    def read_by(self) -> list[frozenset[str]] | str:
+        """Return, for each entry in database order, the files under the root that the compiler reads for its unit.
+
+        The preprocessor store of scripts/preprocessed.py gives this list from
+        the -MD dependency file of each unit.  The store runs the first time a
+        unification needs the flags of a header.  A unit that does not
+        preprocess reads nothing here, so it cannot supply the flags.
+
+        Complexity: one manifest read for each unit on a warm store, and one
+        preprocessor run for each unit on a cold one.
+
+        Returns:
+            The lists, or the reason the store gives none
+        """
+        if self.readers is None:
+            try:
+                units = list(preprocessed.Store(self.database, self.root).units())
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                return f"the preprocessor store beside {self.database} does not open: {exc}"
+            if len(units) != len(self.entries):
+                return f"the compile database {self.database} changed while the preprocessor store read it"
+            self.readers = [unit.dependencies for unit in units]
+        return self.readers
 
     def entry_for(self, rel: str) -> tuple[Path, list[str], str] | str:
         """Pick the flags for a header: (working directory, argv without output options, label).
@@ -527,10 +650,13 @@ class Preprocessor:
         """
         if self.problem is not None:
             return self.problem
-        spelling = str(PurePosixPath(rel).relative_to("include")) if rel.startswith("include/") else rel
         include_dir = str((self.root / "include").resolve())
+        readers = self.read_by()
+        if isinstance(readers, str):
+            return readers
         direct, fallback = None, None
-        for entry in self.entries:
+        for index in self.order:
+            entry = self.entries[index]
             source = Path(entry["directory"]) / entry["file"]
             argv = entry.get("arguments") or shlex.split(entry.get("command", ""))
             if fallback is None and any(include_dir in arg or
@@ -538,10 +664,7 @@ class Preprocessor:
                                                                             .resolve()) == include_dir)
                                         for prev, arg in zip([""] + argv, argv)):
                 fallback = (entry, source, argv)
-            key = str(source)
-            if key not in self.sources:
-                self.sources[key] = source.read_text(errors="replace") if source.is_file() else ""
-            if spelling in self.sources[key]:
+            if rel in readers[index]:
                 direct = (entry, source, argv)
                 break
         choice = direct or fallback
@@ -589,10 +712,10 @@ class Preprocessor:
                 if current != stub.resolve() and not named.startswith("<"):
                     files.add(current)
                 continue
-            read = canonical(line)
+            read = canonical_line(line)
             if read is not None:
                 defined[read[0]] = (current, read[1])
-            elif (undone := UNDEF_HEAD.match(line)) is not None:
+            elif (undone := COMPILER_UNDEF.match(line)) is not None:
                 defined.pop(undone.group(1), None)
         return defined, files
 
@@ -668,17 +791,14 @@ def unification(snapshot: Snapshot, path: str, context: Context,
     if twin is None:
         return False, []
     base_text, new_text = snapshot.base_text(twin), snapshot.disk_text(path)
-    with tempfile.TemporaryDirectory() as work:
-        old_file, new_file = Path(work) / "base.h", Path(work) / "new.h"
-        old_file.write_text(base_text, encoding="utf-8")
-        new_file.write_text(new_text, encoding="utf-8")
-        old_tree, new_tree = list(tsast.parse([old_file, new_file], strict=False))
-        owner: dict[int, tuple[str, int, int, str]] = {}
-        for found in definitions(old_tree):
-            for row in range(found[1], found[2] + 1):
-                owner[row] = found
-        includes = foundation_includes(new_tree)
-        unparsed = [side for side, tree in (("base", old_tree), ("new", new_tree)) if tree.diagnostic]
+    PARSES.prefetch([base_text, new_text])
+    old_tree, new_tree = PARSES.tree(base_text), PARSES.tree(new_text)
+    owner: dict[int, tuple[str, int, int, str]] = {}
+    for found in definitions(old_tree):
+        for row in range(found[1], found[2] + 1):
+            owner[row] = found
+    includes = foundation_includes(new_tree)
+    unparsed = [side for side, tree in (("base", old_tree), ("new", new_tree)) if tree.diagnostic]
     old, new = normalized(base_text), normalized(new_text)
     reasons: list[str] = [f"the {side} text does not parse" for side in unparsed]
     removed: set[int] = set()
@@ -782,8 +902,13 @@ def scan(root: Path, base: str, database: Path) -> int:
     # hunk of the file carries is stale, so the ledger only shrinks.
     unfound: dict[int, list[str]] = {row.number: list(row.keys) for rows in rows_of.values() for row in rows}
     snapshot = Snapshot(root, base, prefixes)
-    for path in snapshot.disk:
-        if snapshot.base_blobs.get(path) == snapshot.disk_blobs[path] or snapshot.is_marking(path):
+    changed = [path for path in snapshot.disk if snapshot.base_blobs.get(path) != snapshot.disk_blobs[path]]
+    # Every text the marking test reads parses in one run of the kit.
+    PARSES.prefetch([snapshot.disk_text(path) for path in changed]
+                    + [snapshot.base_text(old) for path in changed for old in (path, twin_of(path))
+                       if old is not None and old in snapshot.base_blobs])
+    for path in changed:
+        if snapshot.is_marking(path):
             continue
         twin = snapshot.base_twin(path)
         change = "modified" if twin is not None else "added"
@@ -914,7 +1039,9 @@ def self_test() -> int:
         return block[1].split("FROZEN violation:", 1)[0] if len(block) == 2 else ""
 
     with tempfile.TemporaryDirectory() as work:
-        root = Path(work)
+        # The preprocessor store resolves the root, so the planted compile
+        # database names the resolved directory too.
+        root = Path(work).resolve()
         throwaway_repo.init(root)
         write(root, PATHS_FILE, "# planted\ninclude/crucible/safety/\ninclude/crucible/fixy/\n"
                                 "src/fixy/_Fs.cpp\nsrc/fixy/_Io.cpp\nexamples/fn/\n")
@@ -978,6 +1105,7 @@ def self_test() -> int:
             "include/crucible/Root.h": "#pragma once\n// root\n",
             "include/crucible/safety/RootIncluder.h": "#pragma once\n#include <crucible/Root.h>\n// roots\n",
             "include/crucible/safety/Hidden.h": "// hidden\n",
+            "include/crucible/safety/RawMark.h": 'const char* raw_mark = R"x(\n#include <crucible/safety/Twin.h>\n)x";\n',
         }
         for rel, text in planted.items():
             write(root, rel, text)
@@ -1005,7 +1133,11 @@ def self_test() -> int:
         sh(root, "mv", "include/crucible/Root.h", "include/crucible/_Root.h")
         write(root, "include/crucible/safety/RootIncluder.h",
               "#pragma once\n#include <crucible/_Root.h>\n// roots\n")
-        mirror_new = "#pragma once\n// mirror edited\n"
+        # The marking inside a raw string is text and not an include node, so
+        # this edit changes the content of the file.
+        write(root, "include/crucible/safety/RawMark.h",
+              'const char* raw_mark = R"x(\n#include <crucible/safety/_Twin.h>\n)x";\n')
+        mirror_new ="#pragma once\n// mirror edited\n"
         write(root, "include/crucible/safety/Mirror.h", mirror_new)
         write(root, "include/crucible/safety/MirrorCopy.h", mirror_new)
         sh(root, "mv", "include/crucible/safety/Mirror2.h", "include/crucible/safety/_Mirror2.h")
@@ -1060,7 +1192,8 @@ def self_test() -> int:
                   ("include/crucible/safety/UmbrellaE.h", "the removal of an include of a header that exists"),
                   ("include/crucible/safety/UmbrellaF.h", "the removal of an include inside a block comment"),
                   ("include/crucible/safety/UmbrellaL.h",
-                   "a reviewed hunk and an include removal plus one unadmitted hunk"))
+                   "a reviewed hunk and an include removal plus one unadmitted hunk"),
+                  ("include/crucible/safety/RawMark.h", "the marking of an include inside a raw string"))
         for path, label in caught:
             expect(f"caught: {label}", f"violation: {path}" in report, True)
         for path, label in (("include/crucible/fixy/Gone.h", "a deletion"),
@@ -1094,6 +1227,8 @@ def self_test() -> int:
                and "ADMITTED include removal: include/crucible/safety/UmbrellaE.h" not in report, True)
         expect("an include inside a block comment is not an include",
                "ADMITTED include removal: include/crucible/safety/UmbrellaF.h" not in report, True)
+        expect("the marking inside a raw string is a change of content and not a marking",
+               "FROZEN violation: include/crucible/safety/RawMark.h — modified under a frozen path" in report, True)
         expect("the one rot is the stale last key of the pinned row",
                report.count("SOUNDNESS-MIRROR-LEDGER:") == 1
                and "SOUNDNESS-MIRROR-LEDGER: line 6: include/crucible/safety/PinnedPlus.h — no hunk of the file "
@@ -1168,10 +1303,20 @@ def self_test() -> int:
               '#pragma once\nconst char* uni = R"x(\n#define UNI_ONE(c) ((void)0)\n)x";\n')
         write(root, "include/crucible/safety/UniIncludeInComment.h", "#pragma once\n/*\n*/\nint uni = 1;\n")
         write(root, "src/tu.cpp", "#include <crucible/safety/UniPlain.h>\n")
+        # A unit that sorts first names UniPlain.h in a comment and includes it
+        # in an arm that the compiler skips.  The compiler reads the header only
+        # for src/tu.cpp, so the flags come from there.
+        write(root, "src/aaa.cpp", "// crucible/safety/UniPlain.h is named here, and included in a skipped arm.\n"
+                                   "#if 0\n#include <crucible/safety/UniPlain.h>\n#endif\nint aaa = 1;\n")
+        # The last unit reaches _UniPorted.h only through a header of its own,
+        # so no include node of a unit names it, and the compiler still reads it.
+        write(root, "src/umbrella.h", "#pragma once\n#include <crucible/safety/_UniPorted.h>\n")
+        write(root, "src/zzz.cpp", '#include "umbrella.h"\n')
         cxx = os.environ.get("FROZEN_TREE_CXX", "c++")
-        write(root, DEFAULT_COMPILE_DB, json.dumps([{
-            "directory": str(root), "file": "src/tu.cpp",
-            "arguments": [cxx, "-std=c++20", "-I", "include", "-c", "src/tu.cpp", "-o", "tu.o"]}]))
+        write(root, DEFAULT_COMPILE_DB, json.dumps([
+            {"directory": str(root), "file": unit,
+             "arguments": [cxx, "-std=c++20", "-I", "include", "-c", unit, "-o", "unit.o"]}
+            for unit in ("src/aaa.cpp", "src/tu.cpp", "src/zzz.cpp")]))
         sh(root, "add", "-A")
         sh(root, "commit", "-q", "-m", "unification base")
         base3 = sh(root, "rev-parse", "HEAD")
@@ -1215,8 +1360,10 @@ def self_test() -> int:
         expect("a unification through reviewed rows is admitted",
                "ADMITTED macro unification: include/crucible/safety/UniPlain.h — removes UNI_ONE, UNI_TWO, "
                "and includes foundation/contracts/Uni.h (preprocessed on the flags of src/tu.cpp)" in report)
-        expect("a unification of a file marked in the same change is admitted",
-               "ADMITTED macro unification: include/crucible/safety/_UniPorted.h" in report)
+        expect("a unification of a file marked in the same change is admitted, on the flags of the unit that "
+               "reads it through another header",
+               "ADMITTED macro unification: include/crucible/safety/_UniPorted.h — removes UNI_ONE, UNI_TWO, "
+               "and includes foundation/contracts/Uni.h (preprocessed on the flags of src/zzz.cpp)" in report)
         expect("a unification to an equal body needs no row",
                "ADMITTED macro unification: include/crucible/safety/UniSame.h" in report)
         for name, reason, label in (
@@ -1243,7 +1390,9 @@ def self_test() -> int:
                  "a body change with no row"),
                 ("UniStaleRow", "names a new body that no header the added includes pull in defines",
                  "a row whose new body no longer matches the foundation definition"),
-                ("UniDead", "UNI_DEAD is not defined after the change, under the flags of src/tu.cpp",
+                # No unit reads UniDead.h, so the flags come from the first
+                # unit with include/ on its path, which is src/aaa.cpp.
+                ("UniDead", "UNI_DEAD is not defined after the change, under the flags of src/aaa.cpp",
                  "a foundation definition in an arm the compiler never takes"),
                 ("UniArm", "the arm `( c ) ( ( void ) 0 )` of UNI_ARM equals no removed arm",
                  "a foundation arm weaker than the removed body"),
