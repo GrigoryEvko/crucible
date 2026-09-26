@@ -11,7 +11,7 @@
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/_SessionDiagnostic.h>
 #include <crucible/sessions/_SessionEventLog.h>
-#include <crucible/sessions/FederationProtocol.h>
+#include <crucible/sessions/_FederationProtocol.h>
 #include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/_SessionMint.h>

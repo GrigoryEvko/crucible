@@ -45,13 +45,22 @@
 // supported platform, so the codec copies bytes straight in and out
 // with no swapping. A big-endian port needs explicit swaps. The
 // layout itself does not change.
+//
+// The session protocol at the end of this header fixes the legal order
+// of the messages around one entry.
 
 #include <crucible/Types.h>
 #include <crucible/effects/_OsUniverse.h>
-#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Pre.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Federation.h>
+#include <fixy/Tagged.h>
+#include <fixy/session/ContentAddressed.h>
+#include <fixy/session/Global.h>
+#include <fixy/session/Network.h>
+#include <fixy/session/Projection.h>
+#include <fixy/session/Protocol.h>
+#include <foundation/permissions/Permission.h>
 
 #include <array>
 #include <cstddef>
@@ -341,23 +350,165 @@ deserialize_untrusted_federation_entry(std::span<const std::uint8_t> in_buf,
     };
 }
 
-template <typename Org>
+// The peer token comes only from the federation door of
+// fixy/Federation.h, so a caller that holds one admitted a peer of Org.
+// The tag of the view is the tag of that token.  It records where the
+// view came from and is no check: fixy::Tagged lets any caller mint a
+// value under this tag.
+template <typename Org, typename Brand>
 [[nodiscard]] inline std::expected<
-    ::crucible::safety::Tagged<FederationEntryView, ::crucible::safety::source::FederatedPeer<Org>>, FederationError>
-deserialize_federation_entry(const ::crucible::permissions::FederatedPeerPermission<Org>& peer_permission,
-                             std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
+    ::fixy::Tagged<FederationEntryView, ::foundation::permissions::tag::FederatedPeer<Org>>, FederationError>
+deserialize_federation_entry(
+    const ::foundation::permissions::Permission<::foundation::permissions::tag::FederatedPeer<Org>, Brand>&
+        peer_permission,
+    std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
     (void)peer_permission;
 
     auto view = deserialize_untrusted_federation_entry(in_buf, receiver_cardinality);
     if (!view) {
         return std::unexpected(view.error());
     }
-    return ::crucible::safety::Tagged<FederationEntryView, ::crucible::safety::source::FederatedPeer<Org>>{*view};
+    return ::fixy::mint_tagged<::foundation::permissions::tag::FederatedPeer<Org>>(*view);
 }
 
 [[nodiscard]] inline constexpr bool federation_accepts_cardinality(std::uint16_t sender_cardinality,
                                                                    std::uint16_t receiver_cardinality) noexcept {
     return sender_cardinality <= receiver_cardinality;
 }
+
+// ── The session protocol ─────────────────────────────────────────────
+//
+// The protocol has three roles.  The sender sends the header of an
+// entry to the coordinator, and the coordinator sends an Ack back.  The
+// coordinator then sends a pull request to the receiver, and the
+// receiver sends the body.  The coordinator is a role of the global
+// type, so the protocol is one description of three parties and not two
+// binary descriptions with no relation.
+//
+// The global type is written on fixy/session/Global.h, and each local
+// type is its projection (fixy/session/Projection.h).  A carrier states
+// its network model (fixy/session/NetworkModel.h).  The protocol has no
+// choice, and the coordinator receives from two senders.  So it is
+// implementable on per-pair FIFO and on a bag, but not on a mailbox
+// (fixy/session/Network.h).  A mint that gives the handle of a role
+// must first ask ::fixy::session::CarrierImplements with the global
+// type and the carrier.
+//
+// No production file makes the handle of a role, so this header carries
+// the types and no mint.
+//
+// Old spelling: include/crucible/sessions/_FederationProtocol.h, on the
+// old session layer, with no label on a message and with a mint for
+// each role.
+
+struct SenderRole {};
+struct ReceiverRole {};
+struct CoordRole {};
+
+// The label of each message of the global type.
+struct HeaderLabel {};
+struct AckLabel {};
+struct PullLabel {};
+struct BodyLabel {};
+
+struct AnyFederationKey {};
+
+template <typename KeyTag = AnyFederationKey>
+struct Ack {
+    using key_tag = KeyTag;
+    ::crucible::KernelCacheKey key{};
+};
+
+template <typename KeyTag = AnyFederationKey>
+struct PullRequest {
+    using key_tag = KeyTag;
+    ::crucible::KernelCacheKey key{};
+};
+
+template <typename KeyTag = AnyFederationKey>
+struct FederationEntryPayload {
+    using key_tag = KeyTag;
+    std::span<const std::uint8_t> bytes{};
+};
+
+template <typename KeyTag = AnyFederationKey>
+using HeaderPayload = ::fixy::session::ContentAddressed<FederationEntryHeader>;
+
+template <typename KeyTag = AnyFederationKey>
+using BodyPayload = ::fixy::session::ContentAddressed<FederationEntryPayload<KeyTag>>;
+
+template <typename KeyTag = AnyFederationKey>
+using FederationGlobal = ::fixy::session::global::Rec<::fixy::session::global::Msg<
+    SenderRole, CoordRole, HeaderLabel, HeaderPayload<KeyTag>,
+    ::fixy::session::global::Msg<
+        CoordRole, SenderRole, AckLabel, Ack<KeyTag>,
+        ::fixy::session::global::Msg<
+            CoordRole, ReceiverRole, PullLabel, PullRequest<KeyTag>,
+            ::fixy::session::global::Msg<ReceiverRole, CoordRole, BodyLabel, BodyPayload<KeyTag>,
+                                         ::fixy::session::global::Var>>>>>;
+
+// A projection gives a queue and a local type.  At the start of the
+// protocol each queue is empty, so a role protocol is the local type.
+template <typename KeyTag = AnyFederationKey>
+using SenderProto = typename ::fixy::session::project_t<FederationGlobal<KeyTag>, SenderRole>::local;
+
+template <typename KeyTag = AnyFederationKey>
+using ReceiverProto = typename ::fixy::session::project_t<FederationGlobal<KeyTag>, ReceiverRole>::local;
+
+template <typename KeyTag = AnyFederationKey>
+using CoordProto = typename ::fixy::session::project_t<FederationGlobal<KeyTag>, CoordRole>::local;
+
+template <typename KeyTag = AnyFederationKey>
+using ExpectedSenderProto = ::fixy::session::Loop<
+    ::fixy::session::Send<::fixy::session::PeerMsg<CoordRole, HeaderLabel, HeaderPayload<KeyTag>>,
+                          ::fixy::session::Recv<::fixy::session::PeerMsg<CoordRole, AckLabel, Ack<KeyTag>>,
+                                                ::fixy::session::Continue>>>;
+
+template <typename KeyTag = AnyFederationKey>
+using ExpectedReceiverProto = ::fixy::session::Loop<
+    ::fixy::session::Recv<::fixy::session::PeerMsg<CoordRole, PullLabel, PullRequest<KeyTag>>,
+                          ::fixy::session::Send<::fixy::session::PeerMsg<CoordRole, BodyLabel, BodyPayload<KeyTag>>,
+                                                ::fixy::session::Continue>>>;
+
+template <typename KeyTag = AnyFederationKey>
+using ExpectedCoordProto = ::fixy::session::Loop<::fixy::session::Recv<
+    ::fixy::session::PeerMsg<SenderRole, HeaderLabel, HeaderPayload<KeyTag>>,
+    ::fixy::session::Send<
+        ::fixy::session::PeerMsg<SenderRole, AckLabel, Ack<KeyTag>>,
+        ::fixy::session::Send<::fixy::session::PeerMsg<ReceiverRole, PullLabel, PullRequest<KeyTag>>,
+                              ::fixy::session::Recv<::fixy::session::PeerMsg<ReceiverRole, BodyLabel, BodyPayload<KeyTag>>,
+                                                    ::fixy::session::Continue>>>>>;
+
+template <typename Role, typename Proto, typename KeyTag = AnyFederationKey>
+struct role_protocol_matches : std::false_type {};
+
+template <typename KeyTag>
+struct role_protocol_matches<SenderRole, SenderProto<KeyTag>, KeyTag> : std::true_type {};
+
+template <typename KeyTag>
+struct role_protocol_matches<ReceiverRole, ReceiverProto<KeyTag>, KeyTag> : std::true_type {};
+
+template <typename KeyTag>
+struct role_protocol_matches<CoordRole, CoordProto<KeyTag>, KeyTag> : std::true_type {};
+
+template <typename Role, typename Proto, typename KeyTag = AnyFederationKey>
+inline constexpr bool role_protocol_matches_v = role_protocol_matches<Role, Proto, KeyTag>::value;
+
+static_assert(::fixy::session::global::is_global_well_formed_v<FederationGlobal<>>);
+static_assert(::fixy::session::project_t<FederationGlobal<>, SenderRole>::queue::size == 0);
+static_assert(::fixy::session::project_t<FederationGlobal<>, ReceiverRole>::queue::size == 0);
+static_assert(::fixy::session::project_t<FederationGlobal<>, CoordRole>::queue::size == 0);
+static_assert(std::is_same_v<SenderProto<>, ExpectedSenderProto<>>);
+static_assert(std::is_same_v<ReceiverProto<>, ExpectedReceiverProto<>>);
+static_assert(std::is_same_v<CoordProto<>, ExpectedCoordProto<>>);
+static_assert(role_protocol_matches_v<SenderRole, SenderProto<>>);
+static_assert(role_protocol_matches_v<ReceiverRole, ReceiverProto<>>);
+static_assert(role_protocol_matches_v<CoordRole, CoordProto<>>);
+static_assert(!role_protocol_matches_v<CoordRole, SenderProto<>>);
+
+static_assert(::fixy::session::implementable_on_v<FederationGlobal<>, ::fixy::session::Network::PerPairFifo>);
+static_assert(::fixy::session::implementable_on_v<FederationGlobal<>, ::fixy::session::Network::Bag>);
+static_assert(::fixy::session::network_refusal_v<FederationGlobal<>, ::fixy::session::Network::Mailbox>
+              == ::fixy::session::NetworkRefusal::ReceiverHasTwoSenders);
 
 }  // namespace crucible::cipher::federation

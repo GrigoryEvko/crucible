@@ -13,7 +13,7 @@
 // because the carrier has no session_network member.
 
 #include <crucible/permissions/_FederationPermission.h>
-#include <crucible/sessions/FederationProtocol.h>
+#include <crucible/sessions/_FederationProtocol.h>
 
 #include <utility>
 

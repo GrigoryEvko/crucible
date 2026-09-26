@@ -9,7 +9,7 @@
 // "cannot convert" / "SharedPermission" / "FederatedPeer".
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/FederationProtocol.h>
+#include <crucible/sessions/_FederationProtocol.h>
 
 namespace fp = ::crucible::safety::proto::federation;
 namespace eff = ::crucible::effects;

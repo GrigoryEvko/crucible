@@ -13,7 +13,7 @@
 // for OrgA to the token for OrgB.
 
 #include <crucible/fixy/Source.h>
-#include <crucible/sessions/FederationProtocol.h>
+#include <crucible/sessions/_FederationProtocol.h>
 
 #include <utility>
 

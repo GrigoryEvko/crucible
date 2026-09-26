@@ -1,4 +1,4 @@
-#include <crucible/sessions/FederationProtocol.h>
+#include <crucible/sessions/_FederationProtocol.h>
 
 namespace fp = crucible::safety::proto::federation;
 

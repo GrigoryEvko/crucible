@@ -27,7 +27,8 @@
 #include <crucible/permissions/_FederationPermission.h>
 #include <crucible/safety/diag/_CanonicalOrder.h>
 #include <crucible/safety/diag/_RowHashFold.h>
-#include <crucible/sessions/FederationProtocol.h>
+#include <fixy/session/ContentAddressed.h>
+#include <fixy/session/Protocol.h>
 
 #include <cstdint>
 #include <expected>
@@ -44,24 +45,21 @@ struct ComputationCacheFederationKeyTag {
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-using ComputationCacheFederationSenderProto =
-    ::crucible::safety::proto::federation::SenderProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+using ComputationCacheFederationSenderProto = SenderProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-using ComputationCacheFederationReceiverProto =
-    ::crucible::safety::proto::federation::ReceiverProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+using ComputationCacheFederationReceiverProto = ReceiverProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-using ComputationCacheFederationCoordProto =
-    ::crucible::safety::proto::federation::CoordProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+using ComputationCacheFederationCoordProto = CoordProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 template <typename Payload>
 class [[nodiscard]] ContentAddressedFederationPayload {
 public:
     using value_type = Payload;
-    using payload_type = ::crucible::safety::proto::ContentAddressed<Payload>;
+    using payload_type = ::fixy::session::ContentAddressed<Payload>;
 
     constexpr ContentAddressedFederationPayload() noexcept = default;
     constexpr explicit ContentAddressedFederationPayload(std::span<const std::uint8_t> bytes) noexcept
@@ -81,8 +79,7 @@ private:
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-using ComputationCacheFederationPayload = ::crucible::safety::proto::federation::FederationEntryPayload<
-    ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+using ComputationCacheFederationPayload = FederationEntryPayload<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
@@ -186,17 +183,12 @@ static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_zero(),
 static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_sentinel(),
               "the composite federation key must not be the all-ones pair "
               "that marks an empty cache slot.");
-static_assert(
-    ::crucible::safety::proto::is_well_formed_v<ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>>);
-static_assert(
-    ::crucible::safety::proto::is_well_formed_v<ComputationCacheFederationReceiverProto<&f12_p_unary, EmptyR, int>>);
-static_assert(
-    ::crucible::safety::proto::is_well_formed_v<ComputationCacheFederationCoordProto<&f12_p_unary, EmptyR, int>>);
-static_assert(::crucible::safety::proto::federation::role_protocol_matches_v<
-              ::crucible::safety::proto::federation::SenderRole,
-              ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>,
-              ComputationCacheFederationKeyTag<&f12_p_unary, EmptyR, int>>);
-static_assert(::crucible::safety::proto::is_content_addressed_v<
+static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>>);
+static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationReceiverProto<&f12_p_unary, EmptyR, int>>);
+static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationCoordProto<&f12_p_unary, EmptyR, int>>);
+static_assert(role_protocol_matches_v<SenderRole, ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>,
+                                      ComputationCacheFederationKeyTag<&f12_p_unary, EmptyR, int>>);
+static_assert(::fixy::session::is_content_addressed_v<
               typename ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>::payload_type>);
 static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>)
               == sizeof(std::span<const std::uint8_t>));

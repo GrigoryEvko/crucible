@@ -13,6 +13,7 @@
 #include <crucible/Serialize.h>  // CDAG_MAGIC
 #include <crucible/Types.h>
 #include <crucible/effects/_OsUniverse.h>
+#include <fixy/Federation.h>
 
 #include "test_assert.h"
 
@@ -936,6 +937,62 @@ static void test_audit_i_vector_buffer_roundtrip() {
     std::printf("  [AUDIT-I] vector_buffer_roundtrip:               PASSED\n");
 }
 
+// The permissioned decode takes a peer token from the federation door of
+// fixy/Federation.h, and the tag of the view is the tag of that token.
+// The organization is a class at namespace scope with external linkage,
+// because the reflection hash that names it on the wire refuses a class
+// with internal linkage.
+
+struct FederationProtocolTestOrg {};
+
+static void test_permissioned_decode_tags_the_view() {
+    namespace fe = ::foundation::effects;
+    namespace fp = ::foundation::permissions;
+    namespace door = ::fixy::federation;
+    namespace sh = ::fixy::siphash;
+    using IoCtx = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::IO>>;
+    using Admission = fp::FederationAdmission<FederationProtocolTestOrg>;
+    using Policy = door::policy::admit_orgs<FederationProtocolTestOrg>;
+
+    const IoCtx ctx{fe::testing::bg()};
+    sh::Key shared_key{};
+    for (std::size_t i = 0; i < shared_key.size(); ++i) {
+        shared_key[i] = static_cast<std::byte>(static_cast<std::uint8_t>(i + 1));
+    }
+    Admission admission = Admission::mint_federation_admission<Policy>(ctx, ::fixy::mint_secret<sh::Key>(shared_key));
+    auto local_cipher = fp::mint_permission_root<door::LocalCipherTag>(ctx);
+    auto [peer_key [[maybe_unused]], handshake] = door::sign_handshake<FederationProtocolTestOrg>(
+        ::fixy::mint_secret<sh::Key>(shared_key), door::PeerKeyFingerprint{42}, door::Nonce{1});
+    auto [returned_cipher [[maybe_unused]], admitted] =
+        admission.mint_federation_admittance(std::move(local_cipher), handshake);
+    ASSERT_TRUE(admitted.has_value());
+
+    const KernelCacheKey key{
+        ContentHash{0x1111111111111111ULL},
+        RowHash{0x2222222222222222ULL},
+    };
+    const std::array<std::uint8_t, 4> body{1, 2, 3, 4};
+    std::array<std::uint8_t, 64> buf{};
+    auto written = fed::serialize_federation_entry(buf, key, body);
+    ASSERT_TRUE(written.has_value());
+
+    auto tagged = fed::deserialize_federation_entry(*admitted, std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+    ASSERT_TRUE(tagged.has_value());
+    using TaggedView = std::remove_cvref_t<decltype(*tagged)>;
+    static_assert(std::is_same_v<typename TaggedView::tag_type, fp::tag::FederatedPeer<FederationProtocolTestOrg>>);
+
+    const fed::FederationEntryView& view = tagged->value();
+    assert(view.header.content_hash == key.content_hash);
+    assert(view.header.row_hash == key.row_hash);
+    assert(view.payload.size() == body.size());
+    for (std::size_t i = 0; i < body.size(); ++i) {
+        assert(view.payload[i] == body[i]);
+    }
+
+    std::printf("  permissioned_decode_tags_the_view:               PASSED\n");
+}
+
 int main() {
     std::printf("test_federation_protocol — wire-format witness\n");
     test_header_layout_invariants();
@@ -962,6 +1019,7 @@ int main() {
     test_axis_swap_distinct_on_wire();
     test_receiver_cardinality_is_explicit();
     test_codec_is_noexcept();
+    test_permissioned_decode_tags_the_view();
     std::printf("--- audit groups ---\n");
     test_audit_a_cardinality_boundary_uint16_max();
     test_audit_b_buffer_exactly_fits();
@@ -972,6 +1030,6 @@ int main() {
     test_audit_g_magic_collision_with_cdag();
     test_audit_h_field_width_pins();
     test_audit_i_vector_buffer_roundtrip();
-    std::printf("test_federation_protocol: 24 + 9 audit groups, all passed\n");
+    std::printf("test_federation_protocol: 25 + 9 audit groups, all passed\n");
     return 0;
 }

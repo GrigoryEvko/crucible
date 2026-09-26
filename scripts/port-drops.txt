@@ -896,6 +896,33 @@ crucible/permissions/_FederationPermission.h:splits_into  → include/foundation
 crucible/permissions/_FederationPermission.h:splits_into_pack  → include/foundation/permissions/Permission.h  — The same for the pack manifest, which no header specializes for a peer tag under its new name can_split_into_pack.
 crucible/permissions/_FederationPermission.h:splits_into_authoring_witness  → include/foundation/permissions/Permission.h  — The same for the binary witness, which no header specializes for a peer tag under its new name has_split_authoring_witness.
 crucible/permissions/_FederationPermission.h:splits_into_pack_authoring_witness  → include/foundation/permissions/Permission.h  — The same for the pack witness, which no header specializes for a peer tag under its new name has_split_pack_authoring_witness.
+crucible/sessions/_FederationProtocol.h:AnyFederationKey  — The key tag moves to include/crucible/cipher/FederationProtocol.h, beside the wire header that the session protocol carries.
+crucible/sessions/_FederationProtocol.h:BodyPayload  — The alias moves to include/crucible/cipher/FederationProtocol.h and wraps the payload in fixy::session::ContentAddressed.
+crucible/sessions/_FederationProtocol.h:CoordProto  — The coordinator protocol moves to include/crucible/cipher/FederationProtocol.h as the local type of its projection in fixy/session/Projection.h.
+crucible/sessions/_FederationProtocol.h:CoordRole  — The role moves to include/crucible/cipher/FederationProtocol.h.
+crucible/sessions/_FederationProtocol.h:CtxFitsFederation  — The context gate of the role mints goes with them, and a mint of a role asks CtxFitsSession of fixy/session/Entry.h.
+crucible/sessions/_FederationProtocol.h:CtxFitsFederationOn  → include/fixy/session/Network.h  — The per-pair FIFO check becomes CarrierImplements, which asks if the global type is implementable on the network that the carrier states.
+crucible/sessions/_FederationProtocol.h:ExpectedCoordProto  — The pinned coordinator shape moves to include/crucible/cipher/FederationProtocol.h, and each message names its peer and its label as a fixy::session::PeerMsg.
+crucible/sessions/_FederationProtocol.h:ExpectedReceiverProto  — The same for the pinned receiver shape.
+crucible/sessions/_FederationProtocol.h:ExpectedSenderProto  — The same for the pinned sender shape.
+crucible/sessions/_FederationProtocol.h:FederationEntryPayload  — The payload moves to include/crucible/cipher/FederationProtocol.h with no change.
+crucible/sessions/_FederationProtocol.h:FederationGlobal  — The global type moves to include/crucible/cipher/FederationProtocol.h on fixy/session/Global.h, and each message carries a label.
+crucible/sessions/_FederationProtocol.h:federation_mint_boundary  — The function only gave a name to the row diagnostic of the role mints, and it goes with them.
+crucible/sessions/_FederationProtocol.h:FederationProtocol  — The alias of the global type at the default key had no reader, and FederationGlobal<> names the same type.
+crucible/sessions/_FederationProtocol.h:FederationProtocolFor  — The alias had no reader, and FederationGlobal<KeyTag> names the same type.
+crucible/sessions/_FederationProtocol.h:federation_required_row  — The row of the role mints had no other reader, and it goes with them.
+crucible/sessions/_FederationProtocol.h:HeaderPayload  — The alias moves to include/crucible/cipher/FederationProtocol.h and wraps the wire header in fixy::session::ContentAddressed.
+crucible/sessions/_FederationProtocol.h:mint_coord  — No production file calls the mint. The local type of the coordinator names two peers, and fixy::session refuses such a local type until a multiparty binding exists.
+crucible/sessions/_FederationProtocol.h:mint_federation_pool  → include/foundation/permissions/Permission.h  — The mint only wrapped the pool constructor, and SharedPermissionPool deduces the tag and the brand of the peer token.
+crucible/sessions/_FederationProtocol.h:mint_receiver  — No production file calls the mint. A mint of a role asks CarrierImplements of fixy/session/Network.h and calls mint_session of fixy/session/Entry.h.
+crucible/sessions/_FederationProtocol.h:mint_sender  — No production file calls the mint. A mint of a role asks CarrierImplements of fixy/session/Network.h and calls mint_session of fixy/session/Entry.h.
+crucible/sessions/_FederationProtocol.h:PullRequest  — The pull request moves to include/crucible/cipher/FederationProtocol.h with no change.
+crucible/sessions/_FederationProtocol.h:ReceiverProto  — The receiver protocol moves to include/crucible/cipher/FederationProtocol.h as the local type of its projection.
+crucible/sessions/_FederationProtocol.h:ReceiverRole  — The role moves to include/crucible/cipher/FederationProtocol.h.
+crucible/sessions/_FederationProtocol.h:role_protocol_matches  — The trait moves to include/crucible/cipher/FederationProtocol.h with no change.
+crucible/sessions/_FederationProtocol.h:role_protocol_matches_v  — The variable moves to include/crucible/cipher/FederationProtocol.h with no change.
+crucible/sessions/_FederationProtocol.h:SenderProto  — The sender protocol moves to include/crucible/cipher/FederationProtocol.h as the local type of its projection.
+crucible/sessions/_FederationProtocol.h:SenderRole  — The role moves to include/crucible/cipher/FederationProtocol.h.
 
 # ── effects: the universe descriptor and the context-to-wrapper lifts ───
 

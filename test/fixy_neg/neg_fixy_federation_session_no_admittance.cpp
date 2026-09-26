@@ -10,7 +10,7 @@
 // "requires 3 arguments" / "too few arguments to function".
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/FederationProtocol.h>
+#include <crucible/sessions/_FederationProtocol.h>
 
 namespace fp = crucible::safety::proto::federation;
 

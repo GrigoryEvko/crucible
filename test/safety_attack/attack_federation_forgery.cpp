@@ -45,17 +45,14 @@
 // admission must be reachable from any peer TU) and (b) does NOT
 // hold any per-peer secret key (since none exists in V1).
 //
-// The forged permission is then used to round-trip the federation
-// cache deserialize step, producing a Tagged<...,FederatedPeer<Org>>
-// view of attacker-controlled payload bytes.  This proves the entire
-// federation trust chain collapses to "knows the org_id" — i.e.,
-// knows the program at all.
+// The forged permission does not reach the federation decode.  The
+// permissioned decode of include/crucible/cipher/FederationProtocol.h
+// takes only a token of the federation door of fixy/Federation.h, and
+// that door examines a SipHash tag under a shared key.
 //
 // See: include/crucible/permissions/_FederationPermission.h §fixy-CR-02
 
-#include <crucible/cipher/ComputationCacheFederation.h>
 #include <crucible/permissions/_FederationPermission.h>
-#include <crucible/safety/_IsTagged.h>
 
 // fixy-CR-02 — mint_federation_admittance is [[deprecated]] in V1.
 // This file intentionally exercises the placeholder verifier
@@ -69,21 +66,10 @@
 
 #include "../test_assert.h"
 
-#include <array>
-#include <cstdint>
 #include <cstdio>
-#include <span>
 
-namespace fed = crucible::cipher::federation;
-namespace eff = crucible::effects;
 namespace perm = crucible::permissions;
 namespace saf = crucible::safety;
-
-// The keyed function stands outside the unnamed namespace, because a key
-// refuses a function with internal linkage.
-namespace attack_federation_forgery_functions {
-inline void f_attacker_payload(int) noexcept {}
-}  // namespace attack_federation_forgery_functions
 
 namespace {
 
@@ -96,10 +82,6 @@ struct VictimOrgSelf {};
 struct VictimOrgPeer {};
 
 using VictimAdmitPolicy = perm::policy::admit_orgs<VictimOrgSelf, VictimOrgPeer>;
-
-using attack_federation_forgery_functions::f_attacker_payload;
-
-using RowIO = eff::Row<eff::Effect::IO>;
 
 const perm::LocalCipherPermission& local_cipher_permission() {
     static const auto p = saf::mint_permission_root<perm::tag::LocalCipherTag>();
@@ -128,10 +110,6 @@ const perm::LocalCipherPermission& local_cipher_permission() {
 //          it to `mint_federation_admittance<VictimOrgPeer,
 //          VictimAdmitPolicy>`.  The verifier accepts and emits
 //          `Permission<FederatedPeer<VictimOrgPeer>>`.
-//
-// Step 5.  The attacker uses the minted permission to deserialize
-//          a federation-cache entry of attacker-controlled bytes
-//          tagged as having come from VictimOrgPeer.
 
 [[nodiscard]] perm::FederationHandshake forge_handshake_for_peer(perm::Nonce attacker_nonce,
                                                                  perm::PeerKeyFingerprint attacker_peer_key_fp) {
@@ -163,53 +141,6 @@ int test_attacker_mints_forged_peer_permission() {
     return 0;
 }
 
-int test_attacker_round_trips_federation_cache_entry() {
-    // Attacker writes a federation cache entry under whatever
-    // local-cipher authority the program holds (this is the
-    // surface that the federation-cache substrate accepts) ...
-    std::array<std::uint8_t, 64> buf{};
-    const std::array<std::uint8_t, 4> attacker_payload = {
-        0xAB,
-        0xCD,
-        0xEF,
-        0x42,
-    };
-
-    auto written = fed::serialize_computation_cache_federation_entry<&f_attacker_payload, RowIO, int>(
-        local_cipher_permission(), buf, attacker_payload);
-    assert(written.has_value());
-
-    // ... then mints a forged peer permission for VictimOrgPeer.
-    const auto forged_hs = forge_handshake_for_peer(
-        /*attacker_nonce=*/perm::Nonce{0xF00D1234u},
-        /*attacker_peer_key_fp=*/perm::PeerKeyFingerprint{0x98765432u});
-    auto forged =
-        perm::mint_federation_admittance<VictimOrgPeer, VictimAdmitPolicy>(local_cipher_permission(), forged_hs);
-    assert(forged.has_value());
-
-    // ... and round-trips the entry through deserialize using the
-    // forged permission, obtaining a Tagged<...,FederatedPeer<
-    // VictimOrgPeer>> view of attacker-controlled bytes.  At this
-    // point the runtime believes VictimOrgPeer is the source of
-    // `attacker_payload`.  This is the trust-boundary collapse
-    // fixy-CR-02 describes.
-    auto tagged_view = fed::deserialize_federation_entry(*forged, std::span<const std::uint8_t>(buf.data(), *written),
-                                                         static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
-    assert(tagged_view.has_value());
-
-    using TaggedView = std::remove_cvref_t<decltype(*tagged_view)>;
-    static_assert(saf::extract::is_tagged_v<TaggedView>);
-    static_assert(std::is_same_v<saf::extract::tagged_tag_t<TaggedView>, saf::source::FederatedPeer<VictimOrgPeer>>);
-
-    const auto& view = tagged_view->value();
-    assert(view.payload.size() == attacker_payload.size());
-    for (std::size_t i = 0; i < attacker_payload.size(); ++i) {
-        assert(view.payload[i] == attacker_payload[i]);
-    }
-
-    return 0;
-}
-
 // ─── Sanity counter-witness ────────────────────────────────────────
 //
 // The attack does NOT pierce the org-admit policy itself.  A peer
@@ -235,9 +166,6 @@ int test_admit_policy_still_filters_unlisted_orgs() {
 int main() {
     if (int rc = test_attacker_mints_forged_peer_permission(); rc != 0) {
         return rc;
-    }
-    if (int rc = test_attacker_round_trips_federation_cache_entry(); rc != 0) {
-        return 100 + rc;
     }
     if (int rc = test_admit_policy_still_filters_unlisted_orgs(); rc != 0) {
         return 200 + rc;
