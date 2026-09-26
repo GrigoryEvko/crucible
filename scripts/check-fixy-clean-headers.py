@@ -100,7 +100,7 @@ def hits_in(tree: tsast.Tree, rel: str) -> list[Hit]:
         found.setdefault((line, what), Hit(rel, line, what))
 
     for node in tree.find("namespace_identifier"):
-        if node.text == BANNED_NAMESPACE:
+        if tsast.leaf_name(node) == BANNED_NAMESPACE:
             add(node.line, "names the safety namespace")
     # The last part of an alias or using target is an identifier node, not a
     # namespace_identifier, so the targets come from the shared readers.
@@ -110,10 +110,11 @@ def hits_in(tree: tsast.Tree, rel: str) -> list[Hit]:
         if BANNED_NAMESPACE in target:
             add(holder.line, "names the safety namespace")
     for node in tsast.prose_nodes(tree):
-        offset = node.text.find(BANNED_PROSE)
+        prose = tsast.prose_text(node)
+        offset = prose.find(BANNED_PROSE)
         while offset != -1:
-            add(node.line + node.text.count("\n", 0, offset), "spells safety:: in prose")
-            offset = node.text.find(BANNED_PROSE, offset + 1)
+            add(node.line + prose.count("\n", 0, offset), "spells safety:: in prose")
+            offset = prose.find(BANNED_PROSE, offset + 1)
     return sorted(found.values(), key=lambda hit: (hit.line, hit.what))
 
 

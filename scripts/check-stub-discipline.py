@@ -61,7 +61,7 @@ def string_value(node: tsast.Node) -> str | None:
         The joined `string_content` text, or None for any other node
     """
     if node.type == "string_literal":
-        return "".join(part.text for part in node.children_of_type("string_content"))
+        return "".join(tsast.prose_text(part) for part in node.children_of_type("string_content"))
     if node.type == "concatenated_string":
         parts = [string_value(piece) for piece in node.children_of_type("string_literal")]
         return "".join(part for part in parts if part is not None)
@@ -143,9 +143,11 @@ def honesty_markers(tree: tsast.Tree) -> Iterator[tuple[str, tsast.Node]]:
             value = init.child_by_field("value")
         if name is None or value is None or value.type != "false":
             continue
-        if name.type not in ("identifier", "field_identifier") or not MARKER_NAME.fullmatch(name.text):
+        if name.type not in ("identifier", "field_identifier"):
             continue
-        yield name.text, declaration
+        marker = tsast.lexeme(name)
+        if MARKER_NAME.fullmatch(marker):
+            yield marker, declaration
 
 
 def scan(root: Path) -> tuple[int, list[str]]:

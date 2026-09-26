@@ -37,9 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
 SCAN_DIRS = ("include/fixy", "include/crucible/fixy")
-PROSE_TYPES = ("comment", "string_literal", "raw_string_literal")
 FX_ORDINAL = re.compile(r"\bDim [0-9]{1,2}\b|\(dim [0-9]{1,2}[,)]")
-SUFFIXES = (".h", ".hpp", ".cpp", ".cc")
 
 
 def scan(root: Path) -> tuple[int, list[str]]:
@@ -57,15 +55,15 @@ def scan(root: Path) -> tuple[int, list[str]]:
     if not present:
         return 2, [f"check-fixy-dim-prose: none of {', '.join(SCAN_DIRS)} exists under {root}"]
     files = sorted(
-        path for base in present for suffix in SUFFIXES for path in base.rglob(f"*{suffix}")
-        if path.relative_to(root).as_posix() not in tsast.UNPARSEABLE
+        path for base in present for suffix in tsast.CPP_SUFFIXES for path in base.rglob(f"*{suffix}")
+        if tsast.is_in_cpp_scope(path.relative_to(root))
     )
     report: list[str] = []
     try:
         for tree in tsast.parse(files):
             relative = Path(tree.path).relative_to(root).as_posix()
-            for prose in tree.find(*PROSE_TYPES):
-                for offset, text in enumerate(prose.text.split("\n")):
+            for prose in tsast.prose_nodes(tree):
+                for offset, text in enumerate(tsast.prose_text(prose).split("\n")):
                     if FX_ORDINAL.search(text):
                         report.append(f"{relative}:{prose.line + offset}: {text.strip()}")
     except tsast.ParseError as exc:

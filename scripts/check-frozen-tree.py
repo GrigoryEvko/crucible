@@ -537,7 +537,8 @@ def foundation_includes(tree: tsast.Tree) -> dict[int, str]:
     rows = {}
     for node in tree.find("preproc_include"):
         target = node.child_by_field("path")
-        header = target.text.strip("<>") if target is not None and target.type == "system_lib_string" else ""
+        header = tsast.prose_text(target).strip("<>") if target is not None and target.type == "system_lib_string" \
+            else ""
         if header.startswith("foundation/"):
             rows[node.start[0]] = header
     return rows
