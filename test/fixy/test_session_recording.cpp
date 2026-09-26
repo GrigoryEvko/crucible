@@ -70,6 +70,13 @@ static_assert(round_trips(s::SessionEvent::cipher_event(s::SessionOp::TierPromot
 
 static_assert(s::session_op_name(s::SessionOp::CheckpointRoll) == "CheckpointRoll");
 
+// The public step key reads the step of an event and orders two steps.
+static_assert(s::StepIdKeyFn{}(s::SessionEvent::cipher_event(s::SessionOp::StoreCommitted, s::StepId{9}, {1}, 0)).value
+              == 9);
+static_assert(s::StepIdLess{}(s::StepId{1}, s::StepId{2}));
+static_assert(!s::StepIdLess{}(s::StepId{2}, s::StepId{2}));
+static_assert(!s::StepIdLess{}(s::StepId{3}, s::StepId{2}));
+
 // ── Corrupt bytes are refused, each for its own reason ──────────────
 
 // Byte offsets of the control bytes in the 72-byte record.

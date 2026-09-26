@@ -1258,6 +1258,10 @@ inline constexpr StatedZero kZeros[] = {
      "one record of a session event log: it holds the fields of one step, and it makes no claim about a value"},
     {^^::fixy::session::SessionEventLog, kDescriptor},
     {^^::fixy::session::EventLogDecodeFailure, kPayload},
+    {^^::fixy::session::StepIdKeyFn,
+     "the stateless key that orders an event log: it reads the step of an event and holds nothing"},
+    {^^::fixy::session::StepIdLess,
+     "the stateless order of two steps of an event log: it compares two steps and holds nothing"},
 
     {^^::fixy::session::RecordingDoor, kDoor},
 
