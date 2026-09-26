@@ -417,6 +417,18 @@ crucible_test(test_permissioned_moved_from_handles)
 crucible_test(test_transaction_owner)
 crucible_test(test_vigil)
 crucible_test(test_ckernel)
+# Each process-wide object, written in one shared library and read in
+# another.  The test loads the two libraries with dlopen and RTLD_LOCAL, as
+# crucible_native.py loads the two vessel libraries.
+foreach(_process_wide_library process_wide_writer process_wide_reader)
+  add_library(test_${_process_wide_library} SHARED ${_process_wide_library}.cpp process_wide_objects.cpp)
+  target_link_libraries(test_${_process_wide_library} PRIVATE crucible)
+endforeach()
+crucible_test(test_process_wide_across_libraries)
+add_dependencies(test_process_wide_across_libraries test_process_wide_writer test_process_wide_reader)
+target_compile_definitions(test_process_wide_across_libraries PRIVATE
+  PROCESS_WIDE_WRITER_PATH="$<TARGET_FILE:test_process_wide_writer>"
+  PROCESS_WIDE_READER_PATH="$<TARGET_FILE:test_process_wide_reader>")
 crucible_test(test_graph)
 crucible_test(test_lower)
 crucible_test(test_reflect)
@@ -643,6 +655,19 @@ add_test(NAME permission_storage_self_test
 add_test(NAME permission_storage
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.py)
 set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
+# Each object with static storage duration is one per process, through
+# CRUCIBLE_PROCESS_WIDE, or scripts/process-wide-roster.txt says why one copy
+# in each shared library is correct.  The build hides symbols, so an inline
+# object that two shared libraries compile has two copies without the marker.
+# scripts/check-process-wide-state.py reads each object from the parse tree.
+# Exit 3 when the kit is absent reports a skip.
+add_test(NAME process_wide_state_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-process-wide-state.py --self-test)
+add_test(NAME process_wide_state
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-process-wide-state.py)
+set_tests_properties(process_wide_state process_wide_state_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 # The reinterpret_cast ban (CLAUDE.md §III), the std::vector::reserve ban
@@ -15401,7 +15426,7 @@ if(NOT TARGET crucible_dispatch)
     "the build has no crucible_dispatch target, because TORCH_DIR names no PyTorch tree with torch/include")
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" AND (CRUCIBLE_SANITIZE OR CRUCIBLE_TSAN))
   set(_vessel_gate_blocker
-    "the vessel libraries of this build carry a sanitizer runtime, and Python loads only a library without one")
+    "the vessel libraries of this build carry a sanitizer runtime, and the gate runs Python with no sanitizer runtime preloaded")
 elseif(NOT CRUCIBLE_WERROR)
   set(_vessel_gate_blocker "the build sets CRUCIBLE_WERROR to OFF, and the gate accepts only a -Werror build")
 endif()

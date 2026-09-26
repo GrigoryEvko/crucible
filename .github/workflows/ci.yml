@@ -260,6 +260,11 @@ jobs:
           python3 scripts/check-lock-free-asserts.py --self-test
           python3 scripts/check-lock-free-asserts.py
 
+      - name: each static object is one per process or rostered (self-test + scan)
+        run: |
+          python3 scripts/check-process-wide-state.py --self-test
+          python3 scripts/check-process-wide-state.py
+
       - name: mint inventory (self-test + drift check + HS14 floor)
         run: |
           python3 scripts/gen-mint-inventory.py --self-test

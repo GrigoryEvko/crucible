@@ -45,7 +45,7 @@ import logging
 import os
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import torch
 
@@ -102,15 +102,28 @@ def _fnv1a(data: bytes) -> int:
 
 # Python loads the libraries of the release preset.  The sanitizer presets
 # put ASan or ThreadSanitizer on every target, and a library built under one
-# of them loads only when its runtime is first in the load order.
+# of them loads only when its runtime is already in the process: preloaded,
+# and so first in the load order.
 RELEASE_BUILD = "  cmake --preset release && cmake --build --preset release"
 
-# The runtime-start symbol that an instrumented library imports, with the
-# sanitizer name and the runtime library that must be preloaded.
-_SANITIZER_START = {
-    b"__asan_init": ("AddressSanitizer", "libasan.so"),
-    b"__tsan_init": ("ThreadSanitizer", "libtsan.so"),
-}
+class SanitizerRuntime(NamedTuple):
+    """The runtime that an instrumented library needs in the process."""
+
+    start: str  # the runtime-start symbol that the library imports
+    sanitizer: str
+    library: str  # the runtime library to preload
+    option: str  # the runtime option that a run inside Python needs
+
+
+# LeakSanitizer reports the objects that CPython and PyTorch keep until exit,
+# and then ends the process with status 1, so an AddressSanitizer run turns
+# leak detection off.  PyTorch carries no ThreadSanitizer instrumentation, and
+# the runtime asks to ignore such modules.
+_SANITIZER_RUNTIMES = (
+    SanitizerRuntime("__asan_init", "AddressSanitizer", "libasan.so", "ASAN_OPTIONS=detect_leaks=0"),
+    SanitizerRuntime("__tsan_init", "ThreadSanitizer", "libtsan.so", "TSAN_OPTIONS=ignore_noninstrumented_modules=1"),
+)
+_SANITIZER_START = {runtime.start.encode(): runtime for runtime in _SANITIZER_RUNTIMES}
 
 _SHT_DYNSYM = 11
 _ELF64_SECTION_HEADER = 64
@@ -138,11 +151,11 @@ def _find_lib(name: str) -> str | None:
     return None
 
 
-def sanitizer_runtime(path: str) -> tuple[str, str] | None:
+def sanitizer_runtime(path: str) -> SanitizerRuntime | None:
     """Name the sanitizer runtime that the ELF library at PATH imports.
 
-    Returns (sanitizer, runtime library) for a library built under ASan or
-    ThreadSanitizer, and None for a library that needs neither. The read
+    Returns the runtime for a library built under ASan or ThreadSanitizer,
+    and None for a library that needs neither. The read
     walks the dynamic symbol table once, O(number of dynamic symbols).
     A file that is not a 64-bit little-endian ELF object raises, because
     the check cannot be made on it.
@@ -178,23 +191,33 @@ def checked_lib_path(name: str, lib_path: str | None, missing: str) -> str:
     """Find one Crucible library and return its path once it is safe to load.
 
     MISSING is the build command to name when no library is found. A
-    library built under ASan or ThreadSanitizer is refused before it is
-    loaded, because dlopen of such a library ends the process.
+    library built under ASan or ThreadSanitizer loads only when its runtime
+    is already in the process, which a preload does.  Without the runtime,
+    dlopen of such a library ends the process, so the library is refused
+    before it is loaded.
     """
     path = lib_path or _find_lib(name)
     if path is None:
         raise RuntimeError(f"Cannot find {name}. Build it with:\n{missing}")
-    instrumented = sanitizer_runtime(path)
-    if instrumented is not None:
-        sanitizer, runtime = instrumented
+    runtime = sanitizer_runtime(path)
+    if runtime is not None and not _is_runtime_loaded(runtime):
         raise RuntimeError(
-            f"{path} is built with {sanitizer}, and its runtime must load "
-            f"before the process starts.\n"
+            f"{path} is built with {runtime.sanitizer}, and the "
+            f"{runtime.sanitizer} runtime is not in this process.\n"
             f"Build the libraries that Python loads with the release preset:\n"
             f"{RELEASE_BUILD}\n"
             f"or preload the runtime of the same compiler:\n"
-            f"  LD_PRELOAD=$(g++-16p -print-file-name={runtime}) python ...")
+            f"  {runtime.option} LD_PRELOAD=$(g++-16p -print-file-name={runtime.library}) python ...")
     return path
+
+
+def _is_runtime_loaded(runtime: SanitizerRuntime) -> bool:
+    """Say whether a sanitizer runtime is already in the process.
+
+    A preloaded runtime is in the global scope, so its start symbol resolves
+    from the handle of the process itself.
+    """
+    return hasattr(ctypes.CDLL(None), runtime.start)
 
 
 # =====================================================================
@@ -263,10 +286,6 @@ class _VesselLib:
         L.crucible_active_num_ops.restype = ctypes.c_uint32
         L.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
 
-        # Schema name registration (bridge from dispatch lib)
-        L.crucible_register_schema_name.restype = None
-        L.crucible_register_schema_name.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
-
     def create(self) -> int:
         """Create a Vigil and return its opaque handle."""
         return self._lib.crucible_create()
@@ -310,15 +329,6 @@ class _VesselLib:
     def active_num_ops(self, h: int) -> int:
         """The number of operations in the active region."""
         return self._lib.crucible_active_num_ops(h)
-
-    def register_schema_name(self, h: int, schema_hash: int, name: str) -> None:
-        """Put one operator name into this library's copy of the SchemaTable.
-
-        The call must run on the thread that holds the producer claim of the
-        Vigil h.  A call from any other thread ends the process.
-        """
-        self._lib.crucible_register_schema_name(
-            h, ctypes.c_uint64(schema_hash), name.encode("utf-8"))
 
 
 # =====================================================================
@@ -370,7 +380,7 @@ class _DispatchLib:
         L.crucible_dispatch_backward_depth.restype = ctypes.c_uint32
         L.crucible_dispatch_backward_depth.argtypes = []
 
-        # Schema table accessors (for bridging to vessel lib before export)
+        # Schema table accessors, which list the recorded operator names
         L.crucible_dispatch_schema_count.restype = ctypes.c_uint32
         L.crucible_dispatch_schema_count.argtypes = []
         L.crucible_dispatch_schema_entry.restype = ctypes.c_int
@@ -413,11 +423,14 @@ class _DispatchLib:
         return self._lib.crucible_dispatch_get_tls_scope()
 
     def schema_count(self) -> int:
-        """The number of operators this library has recorded a name for."""
+        """The number of entries in the two schema tables of the process.
+
+        A hash registered before the seal and again after it counts two times.
+        """
         return self._lib.crucible_dispatch_schema_count()
 
     def schema_entries(self) -> list[tuple[int, str]]:
-        """Return all (schema_hash, name) pairs from dispatch lib's table."""
+        """Return all (schema_hash, name) pairs from the two schema tables of the process."""
         n = self.schema_count()
         result = []
         for i in range(n):
@@ -922,13 +935,9 @@ class CrucibleNative:
                 log.info("[crucible] need 2+ complete iterations for detection")
             return False
 
-        # Bridge schema names from dispatch lib to vessel lib.
-        # Each .so has its own copy of global_schema_table() (inline static
-        # local).  crucible_fallback.cpp registers names into the dispatch
-        # lib's copy, but crucible_export_crtrace reads from the vessel
-        # lib's copy.  Copy all entries before export.
-        self._bridge_schema_names()
-
+        # The schema tables are one pair for the process, so the names that
+        # the dispatch library registered while it recorded are already in
+        # the tables that the export reads.
         ok = self._vessel.export_crtrace(self._handle, path)
         if self._verbose:
             if ok:
@@ -936,23 +945,6 @@ class CrucibleNative:
             else:
                 log.error("[crucible] export failed: %s", path)
         return ok
-
-    def _bridge_schema_names(self) -> None:
-        """Copy schema names from dispatch lib's table to vessel lib's table.
-
-        Both libraries have independent copies of global_schema_table()
-        because it uses an inline function with a static local variable.
-        The dispatch lib populates its copy during op recording; the vessel
-        lib reads its copy during .crtrace export.  This method bridges them.
-        """
-        if not self._dispatch or not self._vessel or not self._handle:
-            return
-        entries = self._dispatch.schema_entries()
-        for schema_hash, name in entries:
-            self._vessel.register_schema_name(self._handle, schema_hash, name)
-        if self._verbose and entries:
-            log.info("[crucible] bridged %d schema names from dispatch lib "
-                     "to vessel lib", len(entries))
 
     # ── Queries ──────────────────────────────────────────────────────
 

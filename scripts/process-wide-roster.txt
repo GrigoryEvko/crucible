@@ -1,0 +1,39 @@
+# The objects with static storage duration that are correct with one copy in
+# each shared library.  scripts/check-process-wide-state.py reads this file.
+#
+# One row:  path | qualified name | reason
+#
+# A process-wide object carries CRUCIBLE_PROCESS_WIDE (foundation/Platform.h)
+# and has no row.  A row gives the reason why a copy in each library that
+# compiles the object is correct: only one library reaches it, each copy holds
+# the same value, or the object is a cache or scratch that a second copy only
+# fills again.
+
+include/crucible/BackgroundThread.h | crucible::BackgroundThread::stage_held_by_this_thread_ | only libcrucible_vessel.so reaches it: the background thread and the jobs that it runs are compiled there, and libcrucible_dispatch.so names neither
+include/crucible/BackgroundThread.h | crucible::BackgroundThread::mailbox_closed_ | only libcrucible_vessel.so reaches it: the background thread and the jobs that it runs are compiled there, and libcrucible_dispatch.so names neither
+include/crucible/BackgroundThread.h | crucible::BackgroundThread::mailbox_inline_ | only libcrucible_vessel.so reaches it: the background thread and the jobs that it runs are compiled there, and libcrucible_dispatch.so names neither
+
+include/crucible/cipher/ComputationCache.h | crucible::cipher::detail::compiled_body_slot | a template variable, so the marker cannot reach it. A lookup in a second library misses, and that library fills its own slot of the cache
+include/crucible/cipher/ComputationCache.h | crucible::cipher::detail::computation_cache_self_test::s_data_global | a fixture of the self-test: only its address is used, as a template argument that the cache refuses
+include/crucible/cipher/ComputationCache.h | crucible::cipher::computation_cache_smoke_test()::call_counter | the smoke test runs at most one time in each library, and each run reads the slots of its own library
+
+include/crucible/ledger/probes/CacheTier.h | crucible::ledger::probes::cache_tier_detail::g_sweep_memo | a cache of one measurement: a second library measures again and stores its own result
+include/crucible/ledger/probes/CacheTier.h | crucible::ledger::probes::cache_tier_detail::g_numa_memo | a cache of one measurement: a second library measures again and stores its own result
+include/crucible/ledger/probes/HugePage.h | crucible::ledger::probes::huge_page_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
+include/crucible/ledger/probes/VectorWidth.h | crucible::ledger::probes::vector_width_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
+
+include/crucible/safety/_ThreadLocalRef.h | crucible::safety::ThreadLocalRef::storage_()::storage | a marked old-tree header, which is frozen. Its twin include/foundation/ThreadLocalRef.h has a row
+include/crucible/sessions/_SessionMint.h | crucible::safety::proto::detail::session_epoch::live_source | a marked old-tree header, which is frozen. Neither vessel library includes it
+
+include/foundation/ThreadLocalRef.h | foundation::ThreadLocalRef::storage_()::storage | a template, so the marker cannot reach it. Its one user, observe/HdrHistogram.h, keeps a shard choice for each thread, and a second library can only pick a second shard for the thread, which changes how the writes spread and nothing else
+include/foundation/reflect/Hash.h | foundation::reflect::detail::stable_name_self_test::identity_test::internal_variable | a fixture of the stable-identity self-test: only its address is used, in a static_assert
+include/foundation/reflect/Hash.h | foundation::reflect::detail::stable_name_self_test::identity_test::external_variable | a fixture of the stable-identity self-test: only its address is used, in a static_assert
+
+src/foundation/DiagRuntime.cpp | foundation::diag::(anonymous namespace)::g_default_sink_format | a cache of CRUCIBLE_DIAG_FORMAT: each library reads the same environment and caches the same answer
+src/foundation/DiagRuntime.cpp | foundation::diag::(anonymous namespace)::tls_loc_buf | scratch for one formatted location on one thread: nothing reads it after the call that fills it returns
+
+vessel/torch/crucible_fallback.cpp | (anonymous namespace)::schema_cache | a cache for each thread of the schema hash of each operator. Only libcrucible_dispatch.so compiles this file
+vessel/torch/crucible_fallback.cpp | (anonymous namespace)::schema_is_mutable | a cache for each thread beside the schema cache. Only libcrucible_dispatch.so compiles this file
+vessel/torch/crucible_fallback.cpp | (anonymous namespace)::schema_is_foreach | a cache for each thread beside the schema cache. Only libcrucible_dispatch.so compiles this file
+vessel/torch/record_kernel.h | crucible::vessel::backward_depth | only libcrucible_dispatch.so compiles this header, through register.cpp and crucible_fallback.cpp
+vessel/torch/record_kernel.h | crucible::vessel::RecordKernel::schema_name_registered | only libcrucible_dispatch.so compiles this header, through register.cpp and crucible_fallback.cpp

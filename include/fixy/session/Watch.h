@@ -226,7 +226,10 @@ struct registry {
     std::atomic<std::uint32_t> has_reported_live{0};
 };
 
-inline constinit registry g_registry{};
+// The registry, the signal chain and the per-thread state below are one per
+// process, whatever shared library steps a session.  A thread with two slots,
+// one in each library, would look like two threads to the detector.
+CRUCIBLE_PROCESS_WIDE inline constinit registry g_registry{};
 
 // The signals that end a process with no exit hook, and the action that
 // each had before the watch installed its handler.
@@ -236,16 +239,16 @@ struct signal_chain {
     std::array<struct sigaction, std::size(fatal_signals)> previous{};
 };
 
-inline constinit signal_chain g_signal_chain{};
+CRUCIBLE_PROCESS_WIDE inline constinit signal_chain g_signal_chain{};
 
 // The owner token of this thread, or zero before its first use.
-inline constinit thread_local std::uint64_t tls_owner_token = 0;
+CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_owner_token = 0;
 
 // The holder stamp of this thread: its one-based slot index, with the
 // low bits of the slot generation above it.  Zero until the thread
 // claims a slot, and for a thread that found no free slot.
 inline constexpr unsigned stamp_index_bits = 11;
-inline constinit thread_local std::uint16_t tls_holder_stamp = 0;
+CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint16_t tls_holder_stamp = 0;
 
 static_assert(thread_capacity < (1u << stamp_index_bits),
               "the one-based slot index must fit the low bits of a holder stamp");
@@ -257,8 +260,8 @@ static_assert(thread_capacity < (1u << stamp_index_bits),
 // list.  When every entry is taken by a record this thread still holds,
 // the check reads the whole table instead.
 inline constexpr std::size_t held_capacity = 16;
-inline constinit thread_local std::uint64_t tls_held[held_capacity]{};
-inline constinit thread_local bool tls_held_overflowed = false;
+CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_held[held_capacity]{};
+CRUCIBLE_PROCESS_WIDE inline constinit thread_local bool tls_held_overflowed = false;
 
 [[nodiscard]] constexpr std::uint16_t holder_stamp_of(std::uint32_t slot, std::uint32_t generation) noexcept {
     return static_cast<std::uint16_t>(slot | (generation << stamp_index_bits));
@@ -297,7 +300,7 @@ struct slot_releaser {
 /// Claims a thread slot for the calling thread and returns its owner
 /// token.  A full table gives the untracked token, and the thread keeps
 /// it.  Complexity: linear in thread_capacity, once for each thread.
-[[gnu::cold, gnu::noinline]] inline std::uint64_t claim_thread_slot() noexcept {
+CRUCIBLE_PROCESS_WIDE [[gnu::cold, gnu::noinline]] inline std::uint64_t claim_thread_slot() noexcept {
     for (std::uint32_t slot = 1; slot <= thread_capacity; ++slot) {
         thread_record& candidate = thread_at_(slot);
         std::uint32_t expected = 0;

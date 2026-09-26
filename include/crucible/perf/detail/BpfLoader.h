@@ -2,6 +2,7 @@
 
 #include <fixy/Tagged.h>
 #include <fixy/handle/Once.h>
+#include <foundation/Platform.h>
 
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
@@ -77,7 +78,9 @@ static_assert(sizeof(Fd) == sizeof(int));
     return std::vfprintf(stderr, fmt, args);
 }
 
-inline void install_libbpf_log_cb_once() noexcept {
+// libbpf holds one print callback for the process, so the install is one per
+// process too, whatever shared library asks for it.
+CRUCIBLE_PROCESS_WIDE inline void install_libbpf_log_cb_once() noexcept {
     static ::fixy::handle::Once once;
     once.call([] { libbpf_set_print(libbpf_log_cb); });
 }

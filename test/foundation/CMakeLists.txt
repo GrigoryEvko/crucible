@@ -1350,12 +1350,20 @@ foundation_neg_compile_test(neg_producer_claim_outside_brand
   "is private within this context"
   "ProducerClaim<Brand>::ProducerClaim\\(\\) .with Brand = .anonymous.::Brand"
   "neg_producer_claim_outside_brand.cpp:10")
+# A claim keys its brand in the process-wide registry by the stable id of
+# the brand, so a brand with no stable identity is refused where it mints.
+foundation_neg_compile_test(neg_producer_claim_brand_internal_linkage
+  "a stable id refuses the type .anonymous.::Hidden, because its part .anonymous.::Hidden has internal linkage"
+  "ProducerClaim<Brand>::brand_key_\\(\\) .with Brand = .anonymous.::Hidden")
+foundation_neg_compile_test(neg_producer_claim_brand_in_closure
+  "because its part main\\(\\)::<lambda\\(\\)> has no declared name"
+  "ProducerClaim<Brand>::brand_key_\\(\\) .with Brand = main\\(\\)::<lambda\\(\\)>::InClosure")
 foundation_neg_compile_test(neg_branded_ctx_other_brand
   "invalid initialization of reference"
-  "ctx_cap::BrandedFg<.anonymous.::Stranger>")
+  "ctx_cap::BrandedFg<other_brand_probe::Stranger>")
 foundation_neg_compile_test(neg_branded_ctx_to_unbranded_gate
   "invalid initialization of reference"
-  "ctx_cap::BrandedFg<.anonymous.::SelfDeclared>")
+  "ctx_cap::BrandedFg<unbranded_gate_probe::SelfDeclared>")
 foundation_neg_compile_test(neg_branded_foreground_ctx_bit_cast
   "no matching function for call to .bit_cast<foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<"
   "is_trivially_copyable_v<_To> .with _To = foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<")

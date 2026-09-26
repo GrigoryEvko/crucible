@@ -40,20 +40,20 @@ void default_violation_sink(Category cat, std::string_view fn, std::string_view 
     (void)emit_legacy_text_violation(stderr, cat, fn, detail);
 }
 
-namespace {
-
-std::atomic<violation_sink_t> g_sink{&default_violation_sink};
-
-}  // namespace
+// One sink for the process.  A program installs its sink one time, and a
+// violation in any shared library that links this file reaches it.  The
+// object is inline, so that it has the vague linkage that the marker needs.
+// No header declares it, so only this file names it.
+CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<violation_sink_t> violation_sink_slot{&default_violation_sink};
 
 violation_sink_t set_violation_sink(violation_sink_t sink) noexcept {
-    return g_sink.exchange(sink, std::memory_order_acq_rel);
+    return violation_sink_slot.exchange(sink, std::memory_order_acq_rel);
 }
 
-violation_sink_t current_violation_sink() noexcept { return g_sink.load(std::memory_order_acquire); }
+violation_sink_t current_violation_sink() noexcept { return violation_sink_slot.load(std::memory_order_acquire); }
 
 void report_violation(Category cat, std::string_view fn, std::string_view detail) noexcept {
-    const auto sink = g_sink.load(std::memory_order_acquire);
+    const auto sink = violation_sink_slot.load(std::memory_order_acquire);
     if (sink) [[likely]] {
         sink(cat, fn, detail);
     }

@@ -1066,25 +1066,20 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // set of operators the run actually used, which is what it meant before.
     //
     // Only the producer thread reaches here, so the flag has one writer and
-    // relaxed ordering is enough. The flag is set even when the table is
-    // sealed, so a sealed table costs one branch per operator rather than one
-    // per operation.
+    // relaxed ordering is enough.  A registration costs one branch per
+    // operator after the first, not one per operation.
     static inline std::atomic<bool> schema_name_registered{false};
 
     [[gnu::cold, gnu::noinline]] static void register_schema_name_once(crucible::Vigil& vigil) {
-        // The table takes names only from a thread that holds a Vigil's
-        // producer claim, which this thread does.  A sealed table mints no
-        // view, or refuses the write when the seal lands after the view, and
-        // the name then stays out of it.
-        const crucible::VigilFgCtx fg = vigil.mint_producer_context();
-        if (const auto view = crucible::global_schema_table().mint_mutable_view(fg)) {
-            // PyTorch's operator names are compiled into the generated headers
-            // this table was built from, so crucible produced the name.
-            const QualifiedOpName name{aten_op_table[TableIndex]};
-            [[maybe_unused]] const bool was_registered = crucible::register_schema_name(
-                *view, kSchemaHash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_str()));
-            CRUCIBLE_DEBUG_ASSERT(was_registered || crucible::global_schema_table().is_sealed());
-        }
+        // The tables take names only from a thread that holds a Vigil's
+        // producer claim, which this thread does.  The global table is
+        // sealed by now, so the name goes to the late table, which the vessel
+        // library reads.  PyTorch's operator names are compiled into the
+        // generated headers this table was built from, so crucible produced
+        // the name.
+        const QualifiedOpName name{aten_op_table[TableIndex]};
+        crucible::register_schema_name(vigil.mint_producer_context(), kSchemaHash,
+                                       ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_str()));
         schema_name_registered.store(true, std::memory_order_relaxed);
     }
 

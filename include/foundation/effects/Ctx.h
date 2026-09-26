@@ -32,10 +32,14 @@
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Hash.h>
 
+#include <array>
 #include <atomic>
+#include <bit>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <meta>
 #include <string_view>
@@ -323,15 +327,42 @@ public:
 
 namespace detail::producer_claim {
 
-// The fields of the record of one brand (host::ProducerClaim below).  The
-// type holds no key and builds no context.  Only a private function of the
-// claim holds an object of it, and a claim that entered a record keeps its
-// address.
+// The record of one brand (host::ProducerClaim below): the thread that holds
+// the live claims of the brand, and how many it holds.  The record names the
+// brand by its stable id, and zero names no brand.  A record takes its brand
+// under the lock of the registry, and it keeps the brand for the life of the
+// process.  The type holds no key and builds no context.
 struct BrandRecord {
-    std::atomic_flag lock{};
-    std::atomic<const void*> holder{nullptr};
+    std::atomic<std::uint64_t> brand{0};
+    std::atomic<std::uintptr_t> holder{0};
     std::size_t claims = 0;
 };
+
+// The number of brands that one process can claim.  The claim of one more
+// brand ends the process.
+inline constexpr std::size_t brand_capacity = 64;
+
+// The records of every brand.  The claims fill them in order, and a record
+// never becomes free, so a scan can stop at the first record with no brand.
+struct BrandRegistry {
+    std::atomic_flag lock{};
+    std::array<BrandRecord, brand_capacity> records{};
+};
+
+// One registry for the process.  A claim won in one shared library and the
+// brand check in another read the same record.  A static of the claim
+// template cannot do this: the instantiation for a brand takes the visibility
+// of the brand, which is hidden, so each shared library would hold a copy.
+CRUCIBLE_PROCESS_WIDE inline constinit BrandRegistry brand_registry{};
+
+// The identity of the calling thread, the same in every shared library.  Zero
+// names no thread.  Like a std::thread::id, a value can name a new thread
+// after the thread that owned it ends.
+[[nodiscard]] inline std::uintptr_t calling_thread_identity() noexcept {
+    static_assert(sizeof(std::thread::id) == sizeof(std::uintptr_t) && std::is_trivially_copyable_v<std::thread::id>,
+                  "the identity of a thread is the bits of its std::thread::id");
+    return std::bit_cast<std::uintptr_t>(std::this_thread::get_id());
+}
 
 }  // namespace detail::producer_claim
 
@@ -367,8 +398,7 @@ public:
     // implicit-lifetime type.  GCC counts a class whose copies are all
     // deleted as trivially copyable, and std::start_lifetime_as would
     // then build a claim over bytes that a thread already holds.  A claim
-    // that a thread won also removes itself from the record that the win
-    // entered, which can be the record of a different shared object.
+    // that a thread won also removes itself from the record of its brand.
     ~ProducerClaim() noexcept {
         if (entered_record_ != nullptr) leave_brand_(*entered_record_);
     }
@@ -396,8 +426,10 @@ public:
     // holds the live claims.  A cold gate of the brand asks this through
     // require_brand_thread below.
     [[nodiscard]] static bool can_caller_use_brand() noexcept {
-        const void* const holder = brand_record_().holder.load(std::memory_order_acquire);
-        return holder == nullptr || holder == calling_thread_identity_();
+        const BrandRecord* const record = find_brand_record_();
+        if (record == nullptr) return true;
+        const std::uintptr_t holder = record->holder.load(std::memory_order_acquire);
+        return holder == 0 || holder == detail::producer_claim::calling_thread_identity();
     }
 
 private:
@@ -406,6 +438,17 @@ private:
     friend Brand;
 
     using BrandRecord = detail::producer_claim::BrandRecord;
+    using BrandRegistry = detail::producer_claim::BrandRegistry;
+
+    // The key of the brand in the process-wide registry.  A brand needs a
+    // stable identity, because the key must be the same in every shared
+    // library: stable_type_id refuses a brand with internal linkage or with
+    // no declared name, and it names the reason.
+    [[nodiscard]] static consteval std::uint64_t brand_key_() noexcept {
+        constexpr std::uint64_t key = ::foundation::reflect::stable_type_id<Brand>;
+        static_assert(key != 0, "zero names no brand in the registry of producer claims");
+        return key;
+    }
 
     [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::thread::id current_tid) noexcept {
         auto holder = holder_.load(std::memory_order_relaxed);
@@ -414,17 +457,16 @@ private:
             // records which thread arrived first.  A failed exchange leaves
             // the winner's id in `holder`, which the check below reports.
             if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_relaxed)) {
-                BrandRecord& record = brand_record_();
-                const bool is_only_brand_thread = enter_brand_(record, calling_thread_identity_());
-                if (is_only_brand_thread) {
-                    entered_record_ = &record;
+                BrandRecord* const record = enter_brand_(detail::producer_claim::calling_thread_identity());
+                if (record != nullptr) {
+                    entered_record_ = record;
                     return;
                 }
                 // Another thread holds a live claim of this brand.  The claim
                 // is undone first, so that its destructor removes no entry
                 // that it did not make.
                 holder_.store(std::thread::id{}, std::memory_order_relaxed);
-                CRUCIBLE_FATAL_INVARIANT(is_only_brand_thread);
+                CRUCIBLE_FATAL_INVARIANT(record != nullptr);
             }
         }
         // Not a contract clause.  The predicate is about a thread identity
@@ -437,56 +479,63 @@ private:
     // claims, and counts them.  A second thread that wins a claim of the
     // brand while the first holds one is refused, because the record then
     // cannot tell the two threads apart.  Only a won claim and its
-    // destructor write the record, so the flag that guards the count is
-    // never on the path that runs for each op.
-    [[gnu::cold, gnu::noinline]] static bool enter_brand_(BrandRecord& record, const void* thread_identity) noexcept {
-        lock_brand_(record);
-        const bool is_only_brand_thread =
-            record.claims == 0 || record.holder.load(std::memory_order_relaxed) == thread_identity;
-        if (is_only_brand_thread) {
-            record.holder.store(thread_identity, std::memory_order_release);
-            ++record.claims;
+    // destructor write a record, so the lock of the registry is never on the
+    // path that runs for each op.  Null when another thread holds a live
+    // claim of the brand.  Complexity: linear in brand_capacity.
+    [[gnu::cold, gnu::noinline]] static BrandRecord* enter_brand_(std::uintptr_t thread_identity) noexcept {
+        BrandRegistry& registry = detail::producer_claim::brand_registry;
+        lock_registry_(registry);
+        BrandRecord* record = nullptr;
+        for (BrandRecord& candidate : registry.records) {
+            const std::uint64_t brand = candidate.brand.load(std::memory_order_relaxed);
+            if (brand == brand_key_() || brand == 0) {
+                record = &candidate;
+                break;
+            }
         }
-        unlock_brand_(record);
-        return is_only_brand_thread;
+        if (record == nullptr) [[unlikely]] {
+            unlock_registry_(registry);
+            // More brands than brand_capacity hold producer claims.
+            CRUCIBLE_FATAL_INVARIANT(record != nullptr);
+            return nullptr;
+        }
+        record->brand.store(brand_key_(), std::memory_order_release);
+        const bool is_only_brand_thread =
+            record->claims == 0 || record->holder.load(std::memory_order_relaxed) == thread_identity;
+        if (is_only_brand_thread) {
+            record->holder.store(thread_identity, std::memory_order_release);
+            ++record->claims;
+        }
+        unlock_registry_(registry);
+        return is_only_brand_thread ? record : nullptr;
     }
 
     [[gnu::cold, gnu::noinline]] static void leave_brand_(BrandRecord& record) noexcept {
-        lock_brand_(record);
+        BrandRegistry& registry = detail::producer_claim::brand_registry;
+        lock_registry_(registry);
         const bool has_entry = record.claims != 0;
-        if (has_entry && --record.claims == 0) record.holder.store(nullptr, std::memory_order_release);
-        unlock_brand_(record);
+        if (has_entry && --record.claims == 0) record.holder.store(0, std::memory_order_release);
+        unlock_registry_(registry);
         CRUCIBLE_FATAL_INVARIANT(has_entry);
     }
 
-    // The record names a thread by the address of a byte that each thread
-    // owns, not by std::thread::id.  The default constructor of
-    // std::thread::id is not constexpr, so an atomic of it cannot be
-    // constinit, and the record needs constinit: it belongs to a template,
-    // and the dynamic initialization of a templated static is unordered.  A
-    // null address names no thread.  Like a std::thread::id, an address can
-    // name a new thread after the thread that owned it ends.
-    [[nodiscard]] static const void* calling_thread_identity_() noexcept {
-        static thread_local const unsigned char identity_byte = 0;
-        return &identity_byte;
+    // The record of the brand, or null when no claim of the brand was ever
+    // won.  It reads with no lock: a record takes its brand once, with a
+    // release store, and keeps it.  Complexity: linear in brand_capacity.
+    [[nodiscard]] static const BrandRecord* find_brand_record_() noexcept {
+        for (const BrandRecord& candidate : detail::producer_claim::brand_registry.records) {
+            const std::uint64_t brand = candidate.brand.load(std::memory_order_acquire);
+            if (brand == brand_key_()) return &candidate;
+            if (brand == 0) return nullptr;
+        }
+        return nullptr;
     }
 
-    // The record exists because the global schema and kernel tables have one
-    // writer.  Under -fvisibility=hidden each shared object that instantiates
-    // the claim has its own copy of this static, so a claim keeps the address
-    // of the record that its win entered.  It is a function-local static and
-    // not a static data member, because a splice of a static data member has
-    // no access check, and a splice cannot reach a local.
-    [[nodiscard]] static BrandRecord& brand_record_() noexcept {
-        static constinit BrandRecord record{};
-        return record;
+    static void lock_registry_(BrandRegistry& registry) noexcept {
+        while (registry.lock.test_and_set(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
     }
 
-    static void lock_brand_(BrandRecord& record) noexcept {
-        while (record.lock.test_and_set(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
-    }
-
-    static void unlock_brand_(BrandRecord& record) noexcept { record.lock.clear(std::memory_order_release); }
+    static void unlock_registry_(BrandRegistry& registry) noexcept { registry.lock.clear(std::memory_order_release); }
 
     // A thread id is not a lock-free atomic on every target, and a hidden
     // mutex on this check would put a lock on the dispatch path.
@@ -495,14 +544,11 @@ private:
     std::atomic<std::thread::id> holder_{};
 
     // The record that the win of this claim entered, or null before a win.
-    // Under -fvisibility=hidden each shared object that instantiates the
-    // claim has a record of its own, so the destructor cannot find the entry
-    // through brand_record_() when it runs in a different shared object from
-    // the win.  test/foundation/test_producer_claim_across_libraries.cpp holds
-    // that case.  Only the winning thread writes the pointer, one time, after
-    // its entry.
-    // The shared object of that record must stay loaded until the claim is
-    // destroyed.
+    // The destructor leaves that record without a second scan of the
+    // registry.  Only the winning thread writes the pointer, one time, after
+    // its entry.  test/foundation/test_producer_claim_across_libraries.cpp and
+    // test/test_process_wide_across_libraries.cpp win a claim in one shared
+    // library and read or destroy it in another.
     BrandRecord* entered_record_ = nullptr;
 };
 

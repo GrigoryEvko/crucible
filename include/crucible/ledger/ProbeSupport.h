@@ -150,7 +150,9 @@ struct ProbeSettings {
 
 static_assert(std::is_trivially_copyable_v<ProbeSettings>);
 
-inline constinit ProbeSettings g_probe_settings{};
+// A program sets the probe settings one time, and every probe reads them, in
+// whatever shared library it runs.  So the settings are one per process.
+CRUCIBLE_PROCESS_WIDE inline constinit ProbeSettings g_probe_settings{};
 
 [[nodiscard]] inline ProbeSettings probe_settings() noexcept { return g_probe_settings; }
 

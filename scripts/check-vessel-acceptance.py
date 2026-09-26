@@ -185,7 +185,8 @@ def check_uninstrumented(build_dir: Path, python: str, root: Path) -> list[str]:
              f"sys.path.insert(0, {str(root / VESSEL_DIR)!r})\n"
              "import crucible_native\n"
              "for path in sys.argv[1:]:\n"
-             "    print(crucible_native.sanitizer_runtime(path))\n")
+             "    runtime = crucible_native.sanitizer_runtime(path)\n"
+             "    print(None if runtime is None else runtime.sanitizer)\n")
     paths = [str(build_dir / "lib" / library) for library in LIBRARIES]
     try:
         done = subprocess.run([python, "-c", probe, *paths], capture_output=True, text=True, timeout=300)
@@ -196,8 +197,9 @@ def check_uninstrumented(build_dir: Path, python: str, root: Path) -> list[str]:
     problems: list[str] = []
     for path, verdict in zip(paths, done.stdout.strip().splitlines()):
         if verdict != "None":
-            problems.append(f"{path} carries the runtime {verdict}.  Python loads only a library without a "
-                            f"sanitizer runtime.  Use a build of the release or bench preset.")
+            problems.append(f"{path} carries the runtime {verdict}.  The gate runs Python with no sanitizer "
+                            f"runtime preloaded, so Python cannot load it.  Use a build of the release or bench "
+                            f"preset.")
     return problems
 
 

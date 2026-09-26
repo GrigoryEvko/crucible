@@ -272,7 +272,22 @@ static_assert(::fixy::no_scoped_view_field_check<SchemaTable>());
 // The global is sealed before any second thread starts, so a registration
 // must mint its mutable view before that point.  A view minted after it is
 // empty.
-[[nodiscard]] inline SchemaTable& global_schema_table() {
+//
+// One table for the process.  A name registered in one shared library is
+// read in another, and the seal that one library puts on the table holds in
+// every library.
+CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline SchemaTable& global_schema_table() {
+    static SchemaTable table;
+    return table;
+}
+
+// The names that arrive after the global table is sealed.  An adapter learns
+// the name of an operator when the operator first runs, and the background
+// thread of the first Vigil seals the global table before that.  Nothing
+// seals this table, and it takes writes only from the thread that holds the
+// producer claim of a Vigil.  So only that thread reads its entries while
+// the Vigil records.  One table for the process, as for the global table.
+CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline SchemaTable& late_schema_table() {
     static SchemaTable table;
     return table;
 }
@@ -285,10 +300,36 @@ template <SchemaNameSource Tag>
     return global_schema_table().register_name(view, hash, name);
 }
 
-[[nodiscard]] inline SchemaTable::LookupName schema_name(SchemaHash hash) { return global_schema_table().lookup(hash); }
+// Registers the name of one schema from the thread that holds the producer
+// claim of a Vigil.  The name goes to the global table while that table takes
+// writes, and to the late table after the seal, so it is never dropped.
+template <SchemaNameSource Tag>
+inline void register_schema_name(VigilFgCtx const& fg, SchemaHash hash, SchemaTable::Name<Tag> const& name) {
+    SchemaTable& global_table = global_schema_table();
+    if (const auto global_view = global_table.mint_mutable_view(fg)) {
+        if (global_table.register_name(*global_view, hash, name)) return;
+    }
+    // Nothing seals the late table, so its view exists and its write lands.
+    SchemaTable& late_table = late_schema_table();
+    const auto late_view = late_table.mint_mutable_view(fg);
+    CRUCIBLE_FATAL_INVARIANT(late_view.has_value());
+    const bool was_registered_late = late_table.register_name(*late_view, hash, name);
+    CRUCIBLE_FATAL_INVARIANT(was_registered_late);
+}
+
+// The two lookups read the global table first and the late table second.
+// While a Vigil records, call them only from the thread that holds its
+// producer claim, because the late table is never sealed.
+[[nodiscard]] inline SchemaTable::LookupName schema_name(SchemaHash hash) {
+    const SchemaTable::LookupName global_name = global_schema_table().lookup(hash);
+    if (global_name.value().data() != nullptr) return global_name;
+    return late_schema_table().lookup(hash);
+}
 
 [[nodiscard]] inline SchemaTable::LookupName schema_short_name(SchemaHash hash) {
-    return global_schema_table().short_name(hash);
+    const SchemaTable::LookupName global_name = global_schema_table().short_name(hash);
+    if (global_name.value().data() != nullptr) return global_name;
+    return late_schema_table().short_name(hash);
 }
 
 }  // namespace crucible

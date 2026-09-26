@@ -386,7 +386,9 @@ static_assert(::fixy::no_scoped_view_field_check<CKernelTable>());
 using CKernelTableSingleton = ::fixy::Tagged<CKernelTable*, ::fixy::tags::source::Singleton>;
 static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
 
-[[nodiscard]] inline CKernelTableSingleton global_ckernel_table() {
+// One table for the process.  A registration in one shared library and a
+// classification in another reach the same table.
+CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline CKernelTableSingleton global_ckernel_table() {
     static CKernelTable table;
     return ::fixy::mint_tagged<::fixy::tags::source::Singleton>(&table);
 }
@@ -431,13 +433,19 @@ struct StaticCKernelTable {
 namespace detail {
 // Constant-initialized, so it has no dynamic initializer to order against
 // the adapter that publishes into it and no guard variable to race on.
-inline constinit std::atomic<const StaticCKernelTable*> static_ckernel_table_{nullptr};
+//
+// One pointer for the process.  The PyTorch adapter publishes from
+// libcrucible_dispatch.so, and the background thread that classifies runs
+// in libcrucible_vessel.so.
+CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<const StaticCKernelTable*> static_ckernel_table_{nullptr};
 }  // namespace detail
 
 // Publishing is a release store, and classify_static reads with acquire, so a
 // reader that observes the pointer also observes every entry the adapter
-// wrote before it. The adapter publishes from its load-time initializer,
-// before the background thread starts draining.
+// wrote before it. The adapter publishes from its load-time initializer, so
+// the table is in place before the adapter records its first operation, and
+// so before the background thread classifies one.  The background thread can
+// start first: Python creates the Vigil before it loads the adapter.
 //
 // The array must outlive the process's classifying readers. A `constexpr`
 // array with static storage duration satisfies that; a local does not.

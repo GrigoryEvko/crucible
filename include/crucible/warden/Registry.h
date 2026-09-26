@@ -13,6 +13,7 @@
 
 #include <fixy/Ctx.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -52,7 +53,8 @@ class HotRegionRegistry {
 public:
     static constexpr size_t max_regions = 256;
 
-    [[nodiscard]] static HotRegionRegistry& instance() noexcept {
+    // One registry for the process.  The two vessel libraries both reach it.
+    CRUCIBLE_PROCESS_WIDE [[nodiscard]] static HotRegionRegistry& instance() noexcept {
         static HotRegionRegistry r;
         return r;
     }

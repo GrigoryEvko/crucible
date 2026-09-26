@@ -210,16 +210,11 @@ struct SchemaInfo {
     }
     // PyTorch's operator schema is compiled into the libtorch binary this
     // process links, so the name is internal: it crossed no trust boundary.
-    // The table takes names only from a thread that holds a Vigil's producer
-    // claim, which the caller checked.  A sealed table mints no view, or
-    // refuses the write when the seal lands after the view, and the name
-    // then stays out of it.
-    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
-    if (const auto schema_table_view = crucible::global_schema_table().mint_mutable_view(fg)) {
-        [[maybe_unused]] const bool was_registered = crucible::register_schema_name(
-            *schema_table_view, schema_hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name.c_str()));
-        CRUCIBLE_DEBUG_ASSERT(was_registered || crucible::global_schema_table().is_sealed());
-    }
+    // The tables take names only from a thread that holds a Vigil's producer
+    // claim, which the caller checked.  The global table is sealed by now,
+    // so the name goes to the late table, which the vessel library reads.
+    crucible::register_schema_name(vigil.mint_producer_context(), schema_hash,
+                                   ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name.c_str()));
 
     // Authoritative mutability from schema alias annotations.
     // Catches both in-place ops (add_.Tensor: self(a!)) and out= variants
@@ -714,23 +709,30 @@ CRUCIBLE_API uint32_t crucible_dispatch_backward_depth() { return backward_depth
 
 // ── Schema table accessors ──────────────────────────────────────────
 //
-// libcrucible_dispatch.so has its own copy of global_schema_table()
-// (inline static local, one per .so).  The vessel lib (vessel_api.cpp)
-// has a DIFFERENT copy.  To export correct .crtrace files, Python must
-// copy schema names from this table to the vessel lib's table before
-// calling crucible_export_crtrace().
-//
-// These accessors expose the dispatch lib's schema table for that copy.
+// The names of the operators this process recorded, for a caller that
+// lists them.  The two schema tables are one pair for the process
+// (crucible/SchemaTable.h), shared with libcrucible_vessel.so.  The entries
+// of the global table come first, then the entries of the late table.  A
+// hash registered before the seal and again after it is listed two times.
+// Call these on the thread that records, or after it stops.
 
-CRUCIBLE_API uint32_t crucible_dispatch_schema_count() { return crucible::global_schema_table().count(); }
+CRUCIBLE_API uint32_t crucible_dispatch_schema_count() {
+    return crucible::global_schema_table().count() + crucible::late_schema_table().count();
+}
 
 // Get the schema hash and name for the i-th entry.
 // Returns 0 if i >= count.  Writes hash and name pointer.
 CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name) {
-    const auto entries = crucible::global_schema_table().entries();
-    if (i >= entries.size()) return 0;
-    if (out_hash) *out_hash = entries[i].hash.raw();
-    if (out_name) *out_name = entries[i].name;
+    const auto global_entries = crucible::global_schema_table().entries();
+    const auto late_entries = crucible::late_schema_table().entries();
+    const crucible::SchemaEntry* entry = nullptr;
+    if (i < global_entries.size())
+        entry = &global_entries[i];
+    else if (i - global_entries.size() < late_entries.size())
+        entry = &late_entries[i - global_entries.size()];
+    if (entry == nullptr) return 0;
+    if (out_hash) *out_hash = entry->hash.raw();
+    if (out_name) *out_name = entry->name;
     return 1;
 }
 

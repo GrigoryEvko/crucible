@@ -49,6 +49,24 @@ static_assert(__GNUC__ >= 16, "foundation requires GCC 16 for -fcontracts and -f
 
 #define CRUCIBLE_API __attribute__((visibility("default")))
 
+// One object for the whole process, whatever shared library reads it.  The
+// build hides symbols by default, so each shared library that compiles a
+// header holds its own copy of each inline variable and of each static of an
+// inline function in that header.  With default visibility, GCC emits such an
+// object, and the guard of a static local, as a unique global symbol.  The
+// dynamic linker binds every copy of a unique symbol to the first copy that
+// it loads, also across RTLD_LOCAL, which is how Python loads the vessel.
+//
+// Put the marker on an inline variable, or on the inline function that holds
+// the object as a static local.  On a thread_local object, each thread then
+// has one object for the process.  The marker has no effect in a template: an
+// instantiation takes the smallest visibility of the template and of its
+// arguments, and each type of this tree is hidden.  A templated object that
+// must be one per process goes through a non-template object with a key.
+// scripts/check-process-wide-state.py reads every object with static storage
+// duration, and holds each one to this marker or to its roster.
+#define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default")]]
+
 // The pause hint tells the core that the loop it is in is a spin. It changes
 // power draw and the pipeline-flush penalty on loop exit, not the wait itself,
 // so an architecture with no such hint spins correctly without one.
