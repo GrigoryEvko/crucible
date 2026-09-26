@@ -31,8 +31,19 @@ WHAT IS CHECKED
         namespace, so `ledger::Verdict` inside namespace crucible counts;
       * a namespace definition, which is how a forward declaration dodges
         the include;
-      * a using-directive and a namespace alias;
+      * a using-directive or a using-declaration, qualified or not, and a
+        namespace alias;
       * the words `root::ledger` or `ledger::` in a macro body.
+    Every name comes from the nodes of the parse tree, so a comment inside a
+    qualified name does not hide it.  A relative name can reach the ledger in
+    three ways, and the guard asks each one, which can only find more:
+      * from an enclosing namespace;
+      * through a namespace alias, `namespace cr = crucible;` then
+        `cr::ledger`;
+      * through a using-directive, `using namespace crucible;` then
+        `ledger::Verdict`.
+    The aliases and the directives come from every file of every closure, and
+    the guard ignores their scope.  That also can only find more.
     A comment and a string literal name nothing, so a hashing-path header
     may say in prose why it stays clear of the ledger.
 
@@ -106,7 +117,7 @@ def is_ledger_file(rel: str) -> bool:
     return parts[0] == "include" and FORBIDDEN_NAMESPACE in parts[1:-1]
 
 
-def is_ledger_namespace(path: list[str], roots: frozenset[str]) -> bool:
+def is_ledger_namespace(path: tuple[str, ...], roots: frozenset[str]) -> bool:
     """Return True when a namespace path starts with a project root and then ledger."""
     return len(path) >= 2 and path[0] in roots and path[1] == FORBIDDEN_NAMESPACE
 
@@ -131,82 +142,172 @@ def resolve_include(root: Path, rel: str, spelled: str) -> str | None:
     return None
 
 
-def namespace_path(node: tsast.Node) -> list[str]:
+# A namespace path, outermost name first.
+NsPath = tuple[str, ...]
+# A name as written: whether it starts at `::`, and its parts, outermost first.
+Written = tuple[bool, NsPath]
+
+# Leaves whose own text is one name.  Reading the text of a leaf that the
+# parser has already classified reads a token, not structure.
+NAME_LEAVES = frozenset({"identifier", "namespace_identifier", "type_identifier", "field_identifier"})
+
+
+def named_children(node: tsast.Node) -> list[tsast.Node]:
+    """Return the children of a node that are not comments."""
+    return [child for child in node.children if child.type != "comment"]
+
+
+def written_name(node: tsast.Node) -> Written:
+    """Return the full name that one name node spells, comments skipped.
+
+    Handles a leaf name, a nested_namespace_specifier (the target of an alias
+    and the name of a namespace definition), a qualified_identifier, and a
+    template_type or template_function through its name field.  A part the
+    guard cannot name comes back as "?", which matches no namespace.
+
+    A nested_namespace_specifier starts at `::` when its node starts before
+    its first child, because the only token that can stand there is `::`.
+    """
+    if node.type in NAME_LEAVES:
+        return False, (node.text,)
+    if node.type == "nested_namespace_specifier":
+        children = named_children(node)
+        is_global = bool(children) and children[0].start != node.start
+        parts: list[str] = []
+        for child in children:
+            parts.extend(written_name(child)[1])
+        return is_global, tuple(parts)
+    if node.type == "qualified_identifier":
+        scope, name = node.child_by_field("scope"), node.child_by_field("name")
+        scope_parts = written_name(scope)[1] if scope is not None else ()
+        name_parts = written_name(name)[1] if name is not None else ("?",)
+        return scope is None, scope_parts + name_parts
+    if node.type in ("template_type", "template_function"):
+        name = node.child_by_field("name")
+        return (False, written_name(name)[1]) if name is not None else (False, ("?",))
+    return False, ("?",)
+
+
+def namespace_path(node: tsast.Node) -> NsPath:
     """Return the names of the namespaces that enclose a node, outermost first."""
     parts: list[str] = []
     owner = node.parent
     while owner is not None:
         if owner.type == "namespace_definition":
             named = owner.child_by_field("name")
-            parts[:0] = segments(named.text) if named is not None else ["(anonymous)"]
+            parts[:0] = written_name(named)[1] if named is not None else ("(anonymous)",)
         owner = owner.parent
-    return parts
+    return tuple(parts)
 
 
-def segments(text: str) -> list[str]:
-    """Split a namespace path written as text into its names, without a leading `::`."""
-    return [part for part in text.replace(" ", "").removeprefix("::").split("::") if part]
+def outermost_qualified(tree: tsast.Tree) -> Iterator[tsast.Node]:
+    """Yield each qualified_identifier that no other qualified_identifier holds as its name."""
+    for node in tree.find("qualified_identifier"):
+        parent = node.parent
+        if not (parent is not None and parent.type == "qualified_identifier" and node.field == "name"):
+            yield node
 
 
-def chain_segments(node: tsast.Node) -> tuple[bool, list[str]]:
-    """Return whether a qualified name starts at `::`, and its scope names, outermost first.
+def alias_target(node: tsast.Node) -> tsast.Node | None:
+    """Return the node that a namespace_alias_definition names as its target."""
+    return next((child for child in named_children(node) if child.field != "name"), None)
 
-    Args:
-        node: A qualified_identifier that no other qualified_identifier holds as its name
+
+def using_target(node: tsast.Node) -> tsast.Node | None:
+    """Return the name that a using-directive or a using-declaration nominates."""
+    return next(iter(named_children(node)), None)
+
+
+class NameTables:
+    """The namespace aliases and the using-directive targets of the files that a scan reads.
+
+    Each alias maps to every absolute path that it can stand for, and each
+    directive target is every absolute path that it can nominate.  The tables
+    ignore scope, so a lookup can only find more paths than the compiler does.
     """
-    is_global = False
-    scopes: list[str] = []
-    current: tsast.Node | None = node
-    while current is not None and current.type == "qualified_identifier":
-        scope = current.child_by_field("scope")
-        if scope is None:
-            is_global = True
-        else:
-            named = scope.child_by_field("name") if scope.type == "template_type" else scope
-            scopes.append(named.text if named is not None else "?")
-        current = current.child_by_field("name")
-    return is_global, scopes
+
+    def __init__(self) -> None:
+        self.written_aliases: dict[str, list[tuple[Written, NsPath]]] = {}
+        self.written_directives: list[tuple[Written, NsPath]] = []
+        self.aliases: dict[str, frozenset[NsPath]] = {}
+        self.directives: frozenset[NsPath] = frozenset()
+
+    def add(self, tree: tsast.Tree) -> None:
+        """Record the aliases and the using-directive targets of one parsed file."""
+        for node in tree.find("namespace_alias_definition"):
+            name, target = node.child_by_field("name"), alias_target(node)
+            if name is not None and target is not None:
+                self.written_aliases.setdefault(name.text, []).append((written_name(target), namespace_path(node)))
+        for node in tree.find("using_declaration"):
+            target = using_target(node)
+            if target is not None:
+                self.written_directives.append((written_name(target), namespace_path(node)))
+
+    def seal(self) -> None:
+        """Resolve every alias to a fixpoint, then every directive target."""
+        for alias in self.written_aliases:
+            self.aliases[alias] = self.alias_paths(alias, frozenset())
+        self.directives = frozenset(path for written, enclosing in self.written_directives
+                                    for path in self.expand(written, enclosing, use_directives=False))
+
+    def alias_paths(self, alias: str, visiting: frozenset[str]) -> frozenset[NsPath]:
+        """Return every absolute path that one alias can stand for; a cycle stops the walk."""
+        if alias in visiting:
+            return frozenset()
+        paths: set[NsPath] = set()
+        for written, enclosing in self.written_aliases[alias]:
+            paths.update(self.expand(written, enclosing, use_directives=False, visiting=visiting | {alias}))
+        return frozenset(paths)
+
+    def expand(self, written: Written, enclosing: NsPath, *, use_directives: bool = True,
+               visiting: frozenset[str] = frozenset()) -> set[NsPath]:
+        """Return every absolute path that a written name can mean at a point with this enclosing path.
+
+        Complexity: linear in the enclosing depth plus the number of alias and directive paths.
+        """
+        is_global, parts = written
+        paths: set[NsPath] = {parts} if is_global else {enclosing[:depth] + parts
+                                                        for depth in range(len(enclosing) + 1)}
+        if parts and parts[0] in self.written_aliases:
+            known = self.aliases.get(parts[0])
+            for base in known if known is not None else self.alias_paths(parts[0], visiting):
+                paths.add(base + parts[1:])
+        if use_directives and not is_global:
+            paths.update(target + parts for target in self.directives)
+        return paths
 
 
-def reaches_ledger(is_global: bool, scopes: list[str], enclosing: list[str], roots: frozenset[str]) -> bool:
-    """Decide whether a qualifier can name a ledger namespace.
-
-    A qualifier from `::` names exactly its path.  A relative qualifier can
-    name a path from each enclosing namespace outward, so the guard asks
-    each one, which can only find more.
-    """
-    if is_global:
-        return is_ledger_namespace(scopes, roots)
-    return any(is_ledger_namespace(enclosing[:depth] + scopes, roots) for depth in range(len(enclosing) + 1))
+def reaches_ledger(written: Written, enclosing: NsPath, tables: NameTables, roots: frozenset[str]) -> bool:
+    """Decide whether a written namespace path can name a ledger namespace."""
+    return any(is_ledger_namespace(path, roots) for path in tables.expand(written, enclosing))
 
 
-def ledger_names(tree: tsast.Tree, roots: frozenset[str]) -> Iterator[tuple[int, str]]:
+def ledger_names(tree: tsast.Tree, tables: NameTables, roots: frozenset[str]) -> Iterator[tuple[int, str]]:
     """Yield each name of a ledger namespace in a parsed file, as (row, form).
+
+    A qualified name counts by its scopes, because `crucible::ledger::f`
+    names something inside the ledger.  A using-directive, a
+    using-declaration and an alias count by their whole target, because
+    `using namespace crucible::ledger;` nominates the ledger itself.
 
     Complexity: linear in the number of nodes times the namespace depth.
     """
-    for node in tree.find("qualified_identifier"):
-        parent = node.parent
-        if parent is not None and parent.type == "qualified_identifier" and node.field == "name":
-            continue
-        is_global, scopes = chain_segments(node)
-        if scopes and reaches_ledger(is_global, scopes, namespace_path(node), roots):
+    for node in outermost_qualified(tree):
+        is_global, parts = written_name(node)
+        if len(parts) > 1 and reaches_ledger((is_global, parts[:-1]), namespace_path(node), tables, roots):
             yield node.start[0], "a qualified name"
     for node in tree.find("namespace_definition"):
         named = node.child_by_field("name")
-        if named is not None and is_ledger_namespace(namespace_path(node) + segments(named.text), roots):
+        if named is not None and is_ledger_namespace(namespace_path(node) + written_name(named)[1], roots):
             yield node.start[0], "a namespace definition"
     for node in tree.find("using_declaration"):
-        for child in node.children:
-            if child.type in ("identifier", "namespace_identifier") \
-                    and reaches_ledger(False, [child.text], namespace_path(node), roots):
-                yield node.start[0], "a using-directive"
+        target = using_target(node)
+        if target is not None and reaches_ledger(written_name(target), namespace_path(node), tables, roots):
+            yield node.start[0], "a using-directive or a using-declaration"
     for node in tree.find("namespace_alias_definition"):
-        for child in node.children:
-            if child.field != "name" and child.type != "comment" \
-                    and reaches_ledger(child.text.strip().startswith("::"), segments(child.text),
-                                       namespace_path(node), roots):
-                yield node.start[0], "a namespace alias"
+        target = alias_target(node)
+        if target is not None and reaches_ledger(written_name(target), namespace_path(node), tables, roots):
+            yield node.start[0], "a namespace alias"
 
 
 def lexical_ledger(text: str, roots: frozenset[str]) -> Iterator[int]:
@@ -236,19 +337,71 @@ def includes_of(root: Path, rel: str, tree: tsast.Tree) -> Iterator[tuple[str | 
         yield resolve_include(root, rel, spelled), node.start[0], spelled
 
 
-def file_facts(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str]
-               ) -> tuple[list[tuple[int, str]], list[tuple[str | None, int, str]]]:
-    """Return what one file adds to a walk: each ledger name as (row, form), and each include.
-
-    The facts do not depend on the root of the walk, so each file is read once.
-    """
+def file_names(tree: tsast.Tree, tables: NameTables, roots: frozenset[str]) -> list[tuple[int, str]]:
+    """Return each ledger name of one file as (row, form), sorted and without duplicates."""
     if tree.diagnostic is not None:
         source = tree.source.decode("utf-8", "replace")
-        return [(row, "a word in a file the parser cannot read") for row in lexical_ledger(source, roots)], []
-    rows = list(ledger_names(tree, roots))
+        return [(row, "a word in a file the parser cannot read") for row in lexical_ledger(source, roots)]
+    rows = list(ledger_names(tree, tables, roots))
     for body in tree.find("preproc_arg"):
         rows.extend((body.start[0] + row, "a word in a macro body") for row in lexical_ledger(body.text, roots))
-    return sorted(set(rows)), list(includes_of(root, rel, tree))
+    return sorted(set(rows))
+
+
+class Closure:
+    """The include closure of one hashing-path root: each file in walk order and the edge that reached it."""
+
+    def __init__(self, origin: str) -> None:
+        self.origin = origin
+        self.parent: dict[str, str | None] = {origin: None}
+        self.order: list[str] = []
+
+    def chain(self, node: str) -> str:
+        """Return the include chain from the root to a file."""
+        hops = [node]
+        while self.parent.get(hops[0]) is not None:
+            hops.insert(0, self.parent[hops[0]])
+        return " -> ".join(hops)
+
+
+def walk(root: Path, origin: str, trees: dict[str, tsast.Tree], violations: list[str]) -> Closure:
+    """Walk the include closure of one root and record each way the walk itself reaches the ledger.
+
+    A ledger file, a file the parser cannot read and a computed include that
+    the file cannot resolve are violations of the walk.  The names come later,
+    once every closure is known.
+
+    Complexity: linear in the total size of the files in the closure.
+    """
+    closure = Closure(origin)
+    queue = deque([origin])
+    while queue:
+        current = queue.popleft()
+        if is_ledger_file(current):
+            violations.append(f"{origin} reaches the hardware ledger. Include chain: {closure.chain(current)}")
+            continue
+        if current not in trees:
+            # One parser run reads the whole frontier, not one file.
+            pending = [current] + [path for path in queue if path not in trees and not is_ledger_file(path)]
+            for parsed in tsast.parse([root / path for path in pending], strict=False):
+                trees[Path(parsed.path).resolve().relative_to(root.resolve()).as_posix()] = parsed
+        tree = trees[current]
+        if tree.diagnostic is not None and current not in tsast.UNPARSEABLE:
+            violations.append(f"{current}: the parser cannot read this file, so the guard cannot follow it. "
+                              f"Include chain: {closure.chain(current)}")
+            continue
+        closure.order.append(current)
+        if tree.diagnostic is not None:
+            continue
+        for child, row, spelled in includes_of(root, current, tree):
+            if child is None and spelled.startswith("#include"):
+                violations.append(f"{current}:{row + 1} has a computed include that no object-like macro of the "
+                                  f"file resolves, so the guard cannot follow it. Include chain: "
+                                  f"{closure.chain(current)}")
+            elif child is not None and child not in closure.parent:
+                closure.parent[child] = current
+                queue.append(child)
+    return closure
 
 
 def scan(root: Path, roots_list: tuple[str, ...] = ROOTS) -> tuple[list[str], list[str]]:
@@ -268,48 +421,20 @@ def scan(root: Path, roots_list: tuple[str, ...] = ROOTS) -> tuple[list[str], li
         return [], missing
     roots = project_roots(root)
     trees: dict[str, tsast.Tree] = {}
-    facts: dict[str, tuple[list[tuple[int, str]], list[tuple[str | None, int, str]]]] = {}
     violations: list[str] = []
-    for origin in roots_list:
-        parent: dict[str, str | None] = {origin: None}
-        queue = deque([origin])
-
-        def chain(node: str) -> str:
-            """Return the include chain from the root to a file."""
-            hops = [node]
-            while parent.get(hops[0]) is not None:
-                hops.insert(0, parent[hops[0]])
-            return " -> ".join(hops)
-
-        while queue:
-            current = queue.popleft()
-            if is_ledger_file(current):
-                violations.append(f"{origin} reaches the hardware ledger. Include chain: {chain(current)}")
-                continue
-            if current not in trees:
-                # One parser run reads the whole frontier, not one file.
-                pending = [current] + [path for path in queue if path not in trees and not is_ledger_file(path)]
-                for parsed in tsast.parse([root / path for path in pending], strict=False):
-                    trees[Path(parsed.path).resolve().relative_to(root.resolve()).as_posix()] = parsed
-            tree = trees[current]
-            if tree.diagnostic is not None and current not in tsast.UNPARSEABLE:
-                violations.append(f"{current}: the parser cannot read this file, so the guard cannot follow it. "
-                                  f"Include chain: {chain(current)}")
-                continue
-            if current not in facts:
-                facts[current] = file_facts(root, current, tree, roots)
-            rows, children = facts[current]
-            for row, form in rows:
-                violations.append(f"{current}:{row + 1} names a ledger namespace through {form}. "
-                                  f"Include chain: {chain(current)}")
-            for child, row, spelled in children:
-                if child is None and spelled.startswith("#include"):
-                    violations.append(f"{current}:{row + 1} has a computed include that no object-like macro of "
-                                      f"the file resolves, so the guard cannot follow it. Include chain: "
-                                      f"{chain(current)}")
-                elif child is not None and child not in parent:
-                    parent[child] = current
-                    queue.append(child)
+    closures = [walk(root, origin, trees, violations) for origin in roots_list]
+    tables = NameTables()
+    for rel in dict.fromkeys(rel for closure in closures for rel in closure.order):
+        if trees[rel].diagnostic is None:
+            tables.add(trees[rel])
+    tables.seal()
+    names: dict[str, list[tuple[int, str]]] = {}
+    for closure in closures:
+        for rel in closure.order:
+            if rel not in names:
+                names[rel] = file_names(trees[rel], tables, roots)
+            violations.extend(f"{rel}:{row + 1} names a ledger namespace through {form}. "
+                              f"Include chain: {closure.chain(rel)}" for row, form in names[rel])
     return violations, []
 
 
@@ -381,6 +506,24 @@ def self_test() -> int:
         "include/crucible/planted/Global.h": "#pragma once\nint g(::crucible::ledger::Verdict*);\n",
         "include/crucible/planted/Directive.h": "#pragma once\nnamespace crucible { using namespace ledger; }\n",
         "include/crucible/planted/Alias.h": "#pragma once\nnamespace l = ::crucible::ledger;\n",
+        "include/crucible/planted/DirectiveQualified.h": "#pragma once\nusing namespace crucible::ledger;\n",
+        "include/crucible/planted/DirectiveGlobal.h": "#pragma once\nusing namespace ::crucible::ledger;\n",
+        "include/crucible/planted/DirectiveCommented.h": "#pragma once\nusing namespace crucible :: /* c */ ledger;\n",
+        "include/crucible/planted/Declaration.h": "#pragma once\nusing ::crucible::ledger::Verdict;\n",
+        "include/crucible/planted/AliasComment.h": "#pragma once\nnamespace l = crucible:: /*x*/ ledger;\n",
+        "include/crucible/planted/DefinitionComment.h": "#pragma once\nnamespace crucible:: /*c*/ ledger { struct V; }\n",
+        "include/crucible/planted/AliasUse.h": "#pragma once\nnamespace cr = crucible;\nint f(cr::ledger::Verdict*);\n",
+        "include/crucible/planted/AliasDirective.h": "#pragma once\nnamespace cr = ::crucible;\n"
+                                                     "using namespace cr::ledger;\n",
+        "include/crucible/planted/AliasChain.h": "#pragma once\nnamespace cr = crucible;\nnamespace cl = cr::ledger;\n",
+        "include/crucible/planted/ImportedRoot.h": "#pragma once\nusing namespace crucible;\nint f(ledger::Verdict*);\n",
+        "include/crucible/planted/AliasHeader.h": "#pragma once\nnamespace cr = crucible;\n",
+        "include/crucible/planted/AliasCrossUse.h": "#pragma once\n#include <crucible/planted/AliasHeader.h>\n"
+                                                    "int f(cr::ledger::Verdict*);\n",
+        "include/crucible/planted/OtherAlias.h": "#pragma once\nnamespace ol = other::ledger;\n",
+        "include/crucible/planted/OtherImport.h": "#pragma once\nnamespace other { namespace ledger { struct T {}; } }\n"
+                                                  "using namespace other;\nint f(ledger::T*);\n",
+        "include/crucible/planted/RootImport.h": "#pragma once\nusing namespace crucible;\nint f(planted::T*);\n",
         "include/crucible/planted/Macro.h": "#pragma once\n#define VERDICT crucible :: ledger :: Verdict\n",
         "include/fixy/ledger/New.h": "#pragma once\n",
         "include/crucible/planted/NewTree.h": "#pragma once\n#include <fixy/ledger/New.h>\n",
@@ -401,6 +544,10 @@ def self_test() -> int:
                not verdict("Clean"), True)
         expect("a namespace ledger outside a project root is not the ledger", not verdict("Unrelated"), True)
         expect("a missing quoted include is not followed and not reported", not verdict("Missing"), True)
+        expect("an alias to a ledger outside a project root is not the ledger", not verdict("OtherAlias"), True)
+        expect("a directive to a namespace outside a project root does not reach the ledger",
+               not verdict("OtherImport"), True)
+        expect("a directive to a root reaches only the names written after it", not verdict("RootImport"), True)
         transitive = verdict("Transitive")
         expect("caught: a transitive include, with its chain",
                bool(transitive) and "Middle.h -> include/crucible/ledger/Verdict.h" in transitive[0])
@@ -411,6 +558,17 @@ def self_test() -> int:
                             ("Nested", "a nested ledger namespace definition"),
                             ("Relative", "a relative qualified name inside namespace crucible"),
                             ("Global", "a qualified name from ::"), ("Directive", "a using-directive"),
+                            ("DirectiveQualified", "a qualified using-directive"),
+                            ("DirectiveGlobal", "a using-directive from ::"),
+                            ("DirectiveCommented", "a using-directive with a comment inside its name"),
+                            ("Declaration", "a using-declaration"),
+                            ("AliasComment", "an alias with a comment inside its target"),
+                            ("DefinitionComment", "a namespace definition with a comment inside its name"),
+                            ("AliasUse", "a qualified name through an alias of a root"),
+                            ("AliasDirective", "a using-directive through an alias of a root"),
+                            ("AliasChain", "an alias of an alias"),
+                            ("ImportedRoot", "a relative name after a using-directive to a root"),
+                            ("AliasCrossUse", "an alias that another file of the closure defines"),
                             ("Alias", "a namespace alias"), ("Macro", "a macro body"),
                             ("NewTree", "a ledger directory of another project root"),
                             ("Reaches", "a closure file that the parser cannot read")):
