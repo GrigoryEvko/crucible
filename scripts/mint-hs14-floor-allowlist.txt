@@ -31,7 +31,6 @@ mint_dctcp_incast_config|include/crucible/cntp/IncastControl.h
 mint_incast_config|include/crucible/cntp/IncastControl.h
 mint_resource_limit|include/crucible/cntp/Backpressure.h
 mint_resource_pressure|include/crucible/cntp/Backpressure.h
-mint_tcam_table|include/crucible/cntp/Tcam.h
 
 # ── observe ──────────────────────────────────────────────────────────
 mint_canopy_metrics_reader|include/crucible/observe/Metrics.h

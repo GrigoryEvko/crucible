@@ -17,6 +17,10 @@
 #include <crucible/cog/NicConfig.h>
 #include <crucible/cog/SrIov.h>
 #include <crucible/perf/SenseHubV2.h>
+#include <fixy/Ctx.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Ctx.h>
 
 #include "test_assert.h"
 
@@ -117,23 +121,28 @@ void test_roce_dcqcn_state_unavailable() {
 }
 
 void test_tcam_force_returns_vendor_unavailable() {
+    namespace cog = crucible::cog;
     namespace tcam = crucible::cntp::tcam;
 
-    tcam::TcamTablePlan plan{};
-    plan.target.uuid = crucible::cog::Uuid{0x148u, 0x9u};
-    plan.target.kind = crucible::cog::CogKind::NicPort;
-    plan.capacity = tcam::TcamEntryCount{std::uint32_t{4}, typename tcam::TcamEntryCount::Trusted{}};
-    plan.backend_ready = false;
+    cog::CogIdentity nic{};
+    nic.uuid = cog::Uuid{0x148u, 0x9u};
+    nic.kind = cog::CogKind::NicPort;
+    cog::NicPortTargetCaps caps{};
+    caps.features.set(cog::NicFeature::Tcam);
+    caps.tcam_entries = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(4);
 
-    auto declared_plan = tcam::DeclaredTcamTable{plan};
+    ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
+    auto declared_plan = tcam::mint_tcam_table(init, nic, caps, tcam::admit_tcam_entries(4).value());
+    assert(declared_plan.has_value());
+    assert(!declared_plan->value().backend_ready());
 
     tcam::TcamFlowRule rule{};
-    rule.rule_id = tcam::TcamRuleId{std::uint64_t{1}, typename tcam::TcamRuleId::Trusted{}};
+    rule.rule_id = tcam::admit_tcam_rule_id(1).value();
     rule.action.kind = tcam::FlowAction::Drop;
     auto declared_rule = tcam::declare_tcam_rule(rule);
     assert(declared_rule.has_value());
 
-    auto force = tcam::force_tcam_backend_boundary(declared_plan, *declared_rule);
+    auto force = tcam::force_tcam_backend_boundary(*declared_plan, *declared_rule);
     assert(!force.has_value());
     assert(force.error() == tcam::TcamError::VendorBackendUnavailable);
     std::printf("  test_tcam_force_returns_vendor_unavailable: PASSED\n");

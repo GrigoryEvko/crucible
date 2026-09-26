@@ -1,4 +1,9 @@
 #include <crucible/cntp/Tcam.h>
+#include <fixy/Ctx.h>
+#include <fixy/Qtt.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Ctx.h>
 
 #include <cassert>
 #include <concepts>
@@ -6,6 +11,7 @@
 #include <limits>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 // The backend-boundary entry point carries a CRUCIBLE_STUB deprecation
 // so that production callers see at compile time that no vendor install
@@ -15,11 +21,11 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace cog = crucible::cog;
-namespace eff = crucible::effects;
-namespace saf = crucible::safety;
 namespace tcam = crucible::cntp::tcam;
 
 namespace {
+
+::fixy::ColdInitCtx init_ctx() { return ::fixy::ColdInitCtx{::foundation::effects::testing::init()}; }
 
 cog::CogIdentity nic_identity(cog::CogKind kind = cog::CogKind::NicPort) {
     cog::CogIdentity id{};
@@ -81,14 +87,19 @@ void test_admission_and_names() {
     assert(tcam::tcam_error_name(tcam::TcamError::CapacityExceeded) == std::string_view{"CapacityExceeded"});
     assert(tcam::flow_action_name(tcam::FlowAction::Mirror) == std::string_view{"Mirror"});
     assert(tcam::tcam_target_kind_name(tcam::TcamTargetKind::Switch) == std::string_view{"Switch"});
+    assert(tcam::tcam_error_name(static_cast<tcam::TcamError>(200)) == std::string_view{"<unknown TcamError>"});
 
     assert(tcam::admit_tcam_rule_id(1).has_value());
     assert(!tcam::admit_tcam_rule_id(0).has_value());
+    assert(tcam::admit_tcam_rule_id(0).error() == tcam::TcamError::InvalidRuleId);
     assert(tcam::admit_tcam_entries(1).has_value());
     assert(!tcam::admit_tcam_entries(0).has_value());
     assert(!tcam::admit_tcam_entries(tcam::kMaxStaticTcamRules + 1).has_value());
+    assert(tcam::admit_tcam_entries(0).error() == tcam::TcamError::InvalidEntryCount);
     assert(tcam::admit_tcam_dscp(63).has_value());
     assert(!tcam::admit_tcam_dscp(64).has_value());
+    assert(tcam::admit_tcam_dscp(64).error() == tcam::TcamError::InvalidActionParameter);
+    assert(tcam::admit_tcam_priority(std::numeric_limits<std::uint16_t>::max()).has_value());
 
     auto bad_redirect = tcam::declare_tcam_rule(flow_rule(tcam::FlowAction::Redirect));
     assert(!bad_redirect.has_value());
@@ -104,36 +115,43 @@ void test_admission_and_names() {
 }
 
 void test_table_minting() {
-    auto table = tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(64));
+    auto table = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(64));
     assert(table.has_value());
-    assert(table->value().target_kind == tcam::TcamTargetKind::NicPort);
+    assert(table->value().target_kind() == tcam::TcamTargetKind::NicPort);
+    assert(table->value().capacity().value() == 64);
+    assert(table->value().target().uuid == nic_identity().uuid);
+    assert(!table->value().backend_ready());
 
-    auto sw =
-        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(), *tcam::admit_tcam_entries(128));
+    auto sw = tcam::mint_tcam_table(init_ctx(), switch_identity(), switch_caps(), *tcam::admit_tcam_entries(128));
     assert(sw.has_value());
-    assert(sw->value().target_kind == tcam::TcamTargetKind::Switch);
+    assert(sw->value().target_kind() == tcam::TcamTargetKind::Switch);
 
     auto no_cap = nic_caps();
     no_cap.features.unset(cog::NicFeature::Tcam);
-    auto missing = tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), no_cap, *tcam::admit_tcam_entries(64));
+    auto missing = tcam::mint_tcam_table(init_ctx(), nic_identity(), no_cap, *tcam::admit_tcam_entries(64));
     assert(!missing.has_value());
     assert(missing.error() == tcam::TcamError::MissingTcamCapability);
 
-    auto over = tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(4), *tcam::admit_tcam_entries(8));
+    auto over = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(4), *tcam::admit_tcam_entries(8));
     assert(!over.has_value());
     assert(over.error() == tcam::TcamError::CapacityExceeded);
 
-    auto wrong = tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(cog::CogKind::Gpu), nic_caps(),
+    auto wrong = tcam::mint_tcam_table(init_ctx(), nic_identity(cog::CogKind::Gpu), nic_caps(),
                                        *tcam::admit_tcam_entries(64));
     assert(!wrong.has_value());
     assert(wrong.error() == tcam::TcamError::WrongTargetKind);
+
+    auto zero_target = nic_identity();
+    zero_target.uuid = cog::Uuid{};
+    auto zero = tcam::mint_tcam_table(init_ctx(), zero_target, nic_caps(), *tcam::admit_tcam_entries(64));
+    assert(!zero.has_value());
+    assert(zero.error() == tcam::TcamError::ZeroTargetCog);
 
     std::printf("  test_table_minting: PASSED\n");
 }
 
 void test_rule_table_lifecycle() {
-    auto table_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(1));
+    auto table_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(1));
     assert(table_plan.has_value());
 
     tcam::TcamRules<4> table{*table_plan};
@@ -142,6 +160,8 @@ void test_rule_table_lifecycle() {
 
     auto handle = table.add_rule(*declared);
     assert(handle.has_value());
+    assert(handle->peek().rule_id().value() == 0x148);
+    assert(handle->peek().target_uuid() == nic_identity().uuid);
     assert(table.installed_rules() == 1);
     assert(table.available_rules_remaining() == 0);
 
@@ -154,13 +174,76 @@ void test_rule_table_lifecycle() {
     assert(count.has_value());
     assert(*count == 7);
     auto const overflow_delta = std::numeric_limits<std::uint64_t>::max() - *count + 1u;
-    assert(!table.note_match(*handle, overflow_delta).has_value());
+    auto overflow = table.note_match(*handle, overflow_delta);
+    assert(!overflow.has_value());
+    assert(overflow.error() == tcam::TcamError::CounterOverflow);
 
     auto removed = table.remove_rule(std::move(*handle));
     assert(removed.has_value());
     assert(table.installed_rules() == 0);
 
     std::printf("  test_rule_table_lifecycle: PASSED\n");
+}
+
+// A table that owns fewer slots than its plan asks for reports only the
+// rules that it can hold.
+void test_slot_bound_caps_available_rules() {
+    auto table_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(64));
+    assert(table_plan.has_value());
+
+    tcam::TcamRules<2> table{*table_plan};
+    assert(table.available_rules_remaining() == 2);
+
+    auto declared = tcam::declare_tcam_rule(flow_rule());
+    assert(declared.has_value());
+    auto first = table.add_rule(*declared);
+    auto second = table.add_rule(*declared);
+    assert(first.has_value() && second.has_value());
+    assert(table.available_rules_remaining() == 0);
+    auto third = table.add_rule(*declared);
+    assert(!third.has_value());
+    assert(third.error() == tcam::TcamError::TableFull);
+
+    assert(table.remove_rule(std::move(*first)).has_value());
+    assert(table.remove_rule(std::move(*second)).has_value());
+    std::printf("  test_slot_bound_caps_available_rules: PASSED\n");
+}
+
+// Two tables put the same rule in the same slot at the same generation.
+// The target of the plan is the one difference, and it keeps the handle of
+// one table out of the other.  A slot that a removal freed takes the next
+// generation.
+void test_foreign_handle_and_generation() {
+    auto nic_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4));
+    auto sw_plan = tcam::mint_tcam_table(init_ctx(), switch_identity(), switch_caps(), *tcam::admit_tcam_entries(4));
+    assert(nic_plan.has_value() && sw_plan.has_value());
+
+    tcam::TcamRules<4> nic_table{*nic_plan};
+    tcam::TcamRules<4> sw_table{*sw_plan};
+    auto declared = tcam::declare_tcam_rule(flow_rule());
+    assert(declared.has_value());
+
+    auto nic_handle = nic_table.add_rule(*declared);
+    auto sw_handle = sw_table.add_rule(*declared);
+    assert(nic_handle.has_value() && sw_handle.has_value());
+    assert(nic_handle->peek().slot() == sw_handle->peek().slot());
+    assert(nic_handle->peek().generation() == sw_handle->peek().generation());
+
+    auto foreign = nic_table.query_counter(*sw_handle);
+    assert(!foreign.has_value());
+    assert(foreign.error() == tcam::TcamError::InvalidRuleHandle);
+
+    tcam::TcamRuleHandle raw = std::move(*nic_handle).consume();
+    auto rewrapped = ::fixy::mint_linear<tcam::TcamRuleHandle>(std::move(raw));
+    assert(nic_table.remove_rule(std::move(rewrapped)).has_value());
+
+    auto again = nic_table.add_rule(*declared);
+    assert(again.has_value());
+    assert(again->peek().generation() == 2);
+
+    assert(sw_table.remove_rule(std::move(*sw_handle)).has_value());
+    assert(nic_table.remove_rule(std::move(*again)).has_value());
+    std::printf("  test_foreign_handle_and_generation: PASSED\n");
 }
 
 // The ready and the not-ready plan must produce different outcomes.
@@ -172,13 +255,13 @@ void test_backend_boundary() {
     assert(declared.has_value());
 
     auto ready_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
+        tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
     assert(ready_plan.has_value());
     auto ready = tcam::force_tcam_backend_boundary(*ready_plan, *declared);
     assert(ready.has_value());
 
     auto pending_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
+        tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
     assert(pending_plan.has_value());
     auto pending = tcam::force_tcam_backend_boundary(*pending_plan, *declared);
     assert(!pending.has_value());
@@ -217,7 +300,7 @@ void test_apply_paths_are_stubbed() {
     // Success here is a transition inside this process and nothing
     // more.
     auto ready_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
+        tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
     assert(ready_plan.has_value());
     auto ready_boundary = tcam::force_tcam_backend_boundary(*ready_plan, *declared);
     assert(ready_boundary.has_value());
@@ -248,7 +331,7 @@ void test_apply_paths_are_stubbed() {
     // The unavailable error must stay reachable, or the ready path
     // would be the only outcome the code can produce.
     auto pending_plan =
-        tcam::mint_tcam_table(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
+        tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
     assert(pending_plan.has_value());
     auto pending_boundary = tcam::force_tcam_backend_boundary(*pending_plan, *declared);
     assert(!pending_boundary.has_value());
@@ -270,14 +353,19 @@ int main() {
     static_assert(sizeof(tcam::TcamPriority) == sizeof(std::uint16_t));
     static_assert(sizeof(tcam::TcamDscp) == sizeof(std::uint8_t));
     static_assert(sizeof(tcam::DeclaredTcamFlowRule) == sizeof(tcam::TcamFlowRule));
-    static_assert(sizeof(tcam::OwnedTcamRule) == sizeof(tcam::TcamRuleHandle));
-    static_assert(std::same_as<tcam::DeclaredTcamFlowRule::tag_type, saf::source::TcamFlowRule>);
+    static_assert(::fixy::qtt_consume_tracked || sizeof(tcam::OwnedTcamRule) == sizeof(tcam::TcamRuleHandle));
+    static_assert(std::same_as<tcam::DeclaredTcamFlowRule::tag_type, ::fixy::tags::source::TcamFlowRule>);
+    static_assert(std::same_as<tcam::DeclaredTcamTable::tag_type, ::fixy::tags::source::TcamTable>);
     static_assert(tcam::TcamTableShape<1>);
     static_assert(!tcam::TcamTableShape<0>);
-    static_assert(tcam::CtxFitsTcamMint<eff::ColdInitCtx>);
-    static_assert(!tcam::CtxFitsTcamMint<eff::BgDrainCtx>);
+    static_assert(tcam::CtxFitsTcamMint<::fixy::ColdInitCtx, cog::NicPortTargetCaps>);
+    static_assert(!tcam::CtxFitsTcamMint<::fixy::BgDrainCtx, cog::NicPortTargetCaps>);
+    static_assert(!tcam::CtxFitsTcamMint<::fixy::ColdInitCtx, cog::GpuTargetCaps>);
+    static_assert(!std::is_default_constructible_v<tcam::DeclaredTcamTable>);
+    static_assert(!std::is_default_constructible_v<tcam::TcamRuleHandle>);
+    static_assert(!std::is_copy_constructible_v<tcam::OwnedTcamRule>);
     static_assert(std::is_trivially_copyable_v<tcam::FiveTuple>);
-    static_assert(std::is_trivially_copyable_v<tcam::TcamFlowRule>);
+    static_assert(!std::is_trivially_copyable_v<tcam::TcamFlowRule>);
 
     static_assert(!tcam::vendor_backend_attached, "The TCAM substrate is a documented stub. The backend boundary "
                                                   "reports success only when the table plan says installing is "
@@ -289,6 +377,8 @@ int main() {
     test_admission_and_names();
     test_table_minting();
     test_rule_table_lifecycle();
+    test_slot_bound_caps_available_rules();
+    test_foreign_handle_and_generation();
     test_backend_boundary();
     test_apply_paths_are_stubbed();
     std::printf("test_cntp_tcam: all PASSED\n");

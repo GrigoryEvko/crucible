@@ -1,7 +1,8 @@
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// The in-process rule table holds at least one slot, so the table shape
+// refuses a table of zero rules.
+
 #include <crucible/cntp/Tcam.h>
 
-namespace tcam = crucible::cntp::tcam;
-
-tcam::TcamRules<0> bad_table{tcam::DeclaredTcamTable{tcam::TcamTablePlan{}}};
-
-int main() { return static_cast<int>(bad_table.installed_rules()); }
+int main() { return static_cast<int>(sizeof(crucible::cntp::tcam::TcamRules<0>)); }

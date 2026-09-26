@@ -7317,23 +7317,47 @@ crucible_neg_compile_effects_test(neg_p4_mint_hot_ctx
   "no matching function for call to .mint_p4_program\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::p4::P4ProgramSpec&\\)."
   "required for the satisfaction of .CtxFitsP4Mint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# GAPS-148 — cntp/Tcam.h hardware ACL / flow-rule substrate.
-#   * neg_tcam_zero_entry_count: TCAM table capacities are positive.
-#   * neg_tcam_static_table_zero: in-process table image has nonzero capacity.
-#   * neg_tcam_raw_rule_add: add_rule requires source::TcamFlowRule provenance.
-#   * neg_tcam_rule_handle_copy: installed rule handles are linear.
-#   * neg_tcam_mint_bg_ctx: table minting is Init-row work.
-crucible_neg_compile_test(neg_tcam_zero_entry_count
-  "contract|precondition|positive|predicate|static assertion")
-crucible_neg_compile_test(neg_tcam_static_table_zero
-  "constraints not satisfied|TcamTableShape")
-crucible_neg_compile_test(neg_tcam_raw_rule_add
-  "could not convert|no matching function|DeclaredTcamFlowRule|Tagged")
-crucible_neg_compile_test(neg_tcam_rule_handle_copy
-  "Linear<T> is move-only|use of deleted|deleted function")
+# cntp/Tcam.h, the hardware ACL and flow-rule substrate.
+#   * neg_tcam_zero_entry_count: a table capacity is at least one entry.
+#   * neg_tcam_static_table_zero: the in-process table holds a slot.
+#   * neg_tcam_table_plan_default: a table plan comes only from its mint.
+#   * neg_tcam_raw_rule_add: add_rule takes a declared rule.
+#   * neg_tcam_rule_handle_copy: an installed rule handle is linear.
+#   * neg_tcam_rule_handle_forge / neg_tcam_rule_handle_mint_linear: only
+#     the rule table builds a rule handle.
+#   * neg_tcam_mint_bg_ctx / neg_tcam_mint_gpu_caps: the mint gate asks for
+#     the initialization row and for a target that carries a TCAM.
+crucible_neg_compile_multi_test(neg_tcam_zero_entry_count
+  "in .constexpr. expansion of .fixy::mint_refined<InRange<1, 65536>\\(\\), unsigned int>\\(0\\)."
+  ".__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_tcam_static_table_zero
+  "template constraint failure for .template<unsigned int MaxRules>  requires  TcamTableShape<MaxRules> class crucible::cntp::tcam::TcamRules."
+  "required for the satisfaction of .TcamTableShape<MaxRules>. .with MaxRules = 0.")
+crucible_neg_compile_multi_test(neg_tcam_table_plan_default
+  "no matching function for call to .fixy::Tagged<crucible::cntp::tcam::TcamTablePlan, fixy::tags::source::TcamTable>::Tagged\\(<brace-enclosed initializer list>\\)."
+  "required for the satisfaction of .default_initializable<T>. .with T = crucible::cntp::tcam::TcamTablePlan."
+  "no matching function for call to .crucible::cntp::tcam::TcamTablePlan::TcamTablePlan\\(\\).")
+crucible_neg_compile_multi_test(neg_tcam_raw_rule_add
+  "cannot convert .crucible::cntp::tcam::TcamFlowRule. to .crucible::cntp::tcam::DeclaredTcamFlowRule."
+  "initializing argument 1 of .constexpr std::expected<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, crucible::cntp::tcam::TcamRuleHandle>, crucible::cntp::tcam::TcamError> crucible::cntp::tcam::TcamRules<MaxRules>::add_rule\\(")
+crucible_neg_compile_multi_test(neg_tcam_rule_handle_copy
+  "use of deleted function .fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\) .with auto Grade = foundation::algebra::lattices::QttGrade::One. T = crucible::cntp::tcam::TcamRuleHandle.."
+  "Linear<T> and Affine<T> are move-only. use std::move or drop\\(\\)")
+crucible_neg_compile_multi_test(neg_tcam_rule_handle_forge
+  "error: .constexpr crucible::cntp::tcam::TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint32_t, uint32_t\\). is private within this context"
+  "include/crucible/cntp/Tcam.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_multi_test(neg_tcam_rule_handle_mint_linear
+  "no matching function for call to .mint_linear<crucible::cntp::tcam::TcamRuleHandle>\\(crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, uint32_t, uint32_t\\)."
+  ".crucible::cntp::tcam::TcamRuleHandle. is not constructible from .crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, unsigned int, unsigned int., because"
+  "TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint32_t, uint32_t\\). is private within this context")
 crucible_neg_compile_effects_test(neg_tcam_mint_bg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsTcamMint|Init")
+  "no matching function for call to .mint_tcam_table\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NicPortTargetCaps&, "
+  "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Init> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, "
+  "required for the satisfaction of .CtxFitsTcamMint<Ctx, Caps>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, ")
+crucible_neg_compile_effects_test(neg_tcam_mint_gpu_caps
+  "no matching function for call to .mint_tcam_table\\(fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps, "
+  "required for the satisfaction of .TcamTargetCaps<Caps>. .with Caps = crucible::cog::GpuTargetCaps."
+  "required for the satisfaction of .CtxFitsTcamMint<Ctx, Caps>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
 
 # cntp/_wip/Wireguard.h: the WireGuard tunnel scaffold with no kernel backend.
 #   * neg_wireguard_zero_allowed_ips: a peer owns at least one allowed CIDR.

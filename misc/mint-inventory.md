@@ -121,7 +121,7 @@ apply to the row.
 | `mint_sharp_fabric_plan` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
 | `mint_tc_flow_class` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_tc_program` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_wireguard_config` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_wireguard_config_with_psk` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_wireguard_tunnel` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
@@ -362,5 +362,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 11 |
+| old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
 | new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |
