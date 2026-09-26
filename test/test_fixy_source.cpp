@@ -2,7 +2,7 @@
 // look-alike declared in the re-exporting namespace.  Two distinct empty
 // classes would satisfy every use below except these assertions.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/safety/_Tagged.h>
 
 #include <type_traits>

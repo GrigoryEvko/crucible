@@ -47,7 +47,7 @@
 // 'Permission<FederatedPeer<OrgA>>'" or equivalent overload-resolution
 // failure.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 
 namespace ff = crucible::fixy::source::federation;
 namespace cs = crucible::safety;

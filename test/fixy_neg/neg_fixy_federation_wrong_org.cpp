@@ -24,7 +24,7 @@
 // (or an equivalent overload-resolution failure naming the substrate
 // function signature).
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 
 // fixy-CR-02 — mint_federation_admittance is [[deprecated]]; suppress
 // the diagnostic so it does not interleave with the expected

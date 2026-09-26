@@ -923,6 +923,13 @@ crucible/sessions/_FederationProtocol.h:role_protocol_matches  — The trait mov
 crucible/sessions/_FederationProtocol.h:role_protocol_matches_v  — The variable moves to include/crucible/cipher/FederationProtocol.h with no change.
 crucible/sessions/_FederationProtocol.h:SenderProto  — The sender protocol moves to include/crucible/cipher/FederationProtocol.h as the local type of its projection.
 crucible/sessions/_FederationProtocol.h:SenderRole  — The role moves to include/crucible/cipher/FederationProtocol.h.
+crucible/fixy/_Source.h:default_peer_key_fingerprint  → include/fixy/Federation.h  — The re-export named a default made from public values, and fixy/Federation.h has no default, so each caller gives the fingerprint of its peer key.
+crucible/fixy/_Source.h:FederatedPeerPermission  → include/fixy/Federation.h  — The re-export named the alias of the erased brand, which is not carried, and each admittance gives a peer token with a fresh brand.
+crucible/fixy/_Source.h:federation_signature_fingerprint  → include/fixy/Federation.h  — The re-export named a mix of public values with no key, and a SipHash-2-4 tag over handshake_message replaces it.
+crucible/fixy/_Source.h:LocalCipherPermission  → include/fixy/Federation.h  — The re-export named the alias of the erased brand, which is not carried, and each admittance takes the token of the local cipher with its own brand.
+crucible/fixy/_Source.h:make_self_signed_handshake  → include/fixy/Federation.h  — The re-export named a handshake that used no key, and sign_handshake tags the handshake under the key that the peer shares with the local organization.
+crucible/fixy/_Source.h:mint_self_signed_handshake  → include/fixy/Federation.h  — The same as make_self_signed_handshake, and sign_handshake keeps its concept gate as FederationOrgTag.
+crucible/fixy/_Source.h:SignatureFingerprint  → include/fixy/Federation.h  — The re-export named the word that held the mix with no key, and HandshakeMac holds the SipHash tag in its place.
 
 # ── effects: the universe descriptor and the context-to-wrapper lifts ───
 

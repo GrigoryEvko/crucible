@@ -26,7 +26,7 @@
 #include <crucible/effects/_FxAliases.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/fixy/Handle.h>
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/TraceGraph.h>
 #include <foundation/AlignedBuffer.h>

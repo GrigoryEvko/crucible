@@ -11,7 +11,7 @@
 // Expected diagnostic: GCC's static_assert pointing at the
 // "is_same_v<source::FromUser, trust::Verified>" claim.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 
 #include <type_traits>
 

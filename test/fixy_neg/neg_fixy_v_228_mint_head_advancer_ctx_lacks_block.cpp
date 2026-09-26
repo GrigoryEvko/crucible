@@ -24,7 +24,7 @@
 //   "Block".
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/fixy/Wrap.h>
 
 int main() {

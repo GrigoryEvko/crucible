@@ -28,4 +28,4 @@
 
 #include <crucible/fixy/Diag.h>
 #include <crucible/fixy/_Insights.h>
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>

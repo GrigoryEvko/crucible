@@ -20,7 +20,7 @@
 // mismatch class (cross-axis catalog miss vs sentinel pair) per HS14
 // "two-distinct-mismatch-classes" discipline.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/safety/_Tagged.h>
 
 namespace ft = crucible::fixy::tags;

@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // FIXY-U-074n fixture #2 for fixy::source::federation::mint_self_signed_handshake
-// (FederationPermission.h:631).  The mint carries
+// (include/crucible/permissions/_FederationPermission.h).  The mint carries
 // `requires FederationOrgTag<Org>` = `std::is_class_v<Org> &&
 // std::is_empty_v<Org>`.  A class type that carries a data member is a
 // class but NOT empty, so it fails the `std::is_empty_v<Org>` half of the
@@ -20,7 +20,7 @@
 // Expected diagnostic: constraints not satisfied / FederationOrgTag /
 // no matching function / is_empty.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 
 namespace fsrc = crucible::fixy::source::federation;
 

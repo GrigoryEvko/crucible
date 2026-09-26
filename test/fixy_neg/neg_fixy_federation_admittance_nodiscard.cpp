@@ -23,7 +23,7 @@
 // fixture compiles.
 #pragma GCC diagnostic error "-Wunused-result"
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/permissions/_Permission.h>
 
 // `mint_federation_admittance` is [[deprecated]] in V1 (fixy-CR-02

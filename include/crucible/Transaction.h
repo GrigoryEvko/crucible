@@ -11,7 +11,7 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/_ClockSource.h>
 #include <crucible/safety/_Decide.h>

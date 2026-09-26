@@ -23,7 +23,7 @@
 #include <crucible/fixy/Is.h>
 #include <crucible/fixy/SessContentAddr.h>
 #include <crucible/fixy/SessEventLog.h>
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/fixy/_Time.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/source/_Path.h>

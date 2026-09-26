@@ -12,7 +12,7 @@
 // Expected diagnostic: GCC finds no conversion for argument 3 from the token
 // for OrgA to the token for OrgB.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/sessions/_FederationProtocol.h>
 
 #include <utility>

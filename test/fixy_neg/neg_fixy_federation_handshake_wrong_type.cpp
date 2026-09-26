@@ -36,7 +36,7 @@
 // "no matching function" overload-resolution failure at the handshake
 // parameter.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 
 // fixy-CR-02 — mint_federation_admittance is [[deprecated]]; suppress
 // the diagnostic so it does not interleave with the expected

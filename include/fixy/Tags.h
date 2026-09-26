@@ -15,7 +15,7 @@
 // and _Arch.h (the path and architecture members of source),
 // include/crucible/safety/_Secret.h (secret_policy) and
 // include/crucible/Types.h (hash_family), reached from the old
-// fixy tree through the aliases of include/crucible/fixy/Source.h.
+// fixy tree through the aliases of include/crucible/fixy/_Source.h.
 
 namespace fixy::tags {
 

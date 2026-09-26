@@ -2,7 +2,7 @@
 // look-alike declared in the re-exporting namespace.  The admittance flow
 // is then run for real to check the token it yields.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/permissions/_Permission.h>
 
 // The admittance mint is deprecated while its verifier is a placeholder.

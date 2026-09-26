@@ -23,7 +23,7 @@
 // `fixy::tags::retag_policy_test::` to stay decoupled from V-023's
 // catalog as it grows.
 
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 
 namespace ft = crucible::fixy::tags;
 

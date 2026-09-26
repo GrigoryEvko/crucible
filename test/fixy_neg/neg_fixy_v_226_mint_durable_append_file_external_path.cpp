@@ -17,7 +17,7 @@
 //   "conversion from".
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Source.h>  // fixy::tags::source::*
+#include <crucible/fixy/_Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {

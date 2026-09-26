@@ -13,7 +13,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/PoolAllocator.h>
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Effect.h>

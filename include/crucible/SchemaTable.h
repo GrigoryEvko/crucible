@@ -4,7 +4,7 @@
 #include <crucible/Platform.h>
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/fixy/Wrap.h>
 #include <crucible/safety/_Post.h>
 

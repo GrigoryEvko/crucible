@@ -26,7 +26,7 @@
 // source tags need their own header.  Without it `fixy::tags` is
 // undeclared and this fixture rejects on a name error instead of on
 // sanitize_path's admission domain.
-#include <crucible/fixy/Source.h>
+#include <crucible/fixy/_Source.h>
 #include <crucible/fixy/Wrap.h>
 
 int main() {
