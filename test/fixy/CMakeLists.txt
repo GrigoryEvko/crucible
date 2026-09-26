@@ -899,6 +899,29 @@ fixy_neg_compile_test(neg_refined_mixed_sign_floor
   "constraints not satisfied"
   "the expression .implies_v<P, Q> \\[with P = fixy::BoundedBelow<-1>\\{\\}; Q = fixy::BoundedBelow<9>\\{\\}\\]. evaluated to .false.")
 
+# A bounded predicate compares a value with its bound by value, and it is
+# defined only on a value type that holds the bound.  The checked mint
+# refuses a bound that the value type would change on conversion.
+fixy_neg_compile_test(neg_refined_bound_outside_value_type
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = fixy::BoundedBelow<256>\\{\\}; T = unsigned char\\]"
+  "the required expression .Pred\\(v\\). is invalid")
+fixy_neg_compile_test(neg_refined_negative_bound_on_unsigned
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = fixy::BoundedAbove<-1>\\{\\}; T = unsigned int\\]"
+  "the required expression .Pred\\(v\\). is invalid")
+fixy_neg_compile_test(neg_refined_divisor_outside_value_type
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = fixy::DivisibleBy<256>\\{\\}; T = unsigned char\\]"
+  "the required expression .Pred\\(v\\). is invalid")
+
+# The session payload order weakens a refinement only where the value
+# type evaluates both predicates, so a trusted refinement whose bound the
+# value type does not hold weakens to nothing.
+fixy_neg_compile_test(neg_refined_weaken_bound_outside_value_type
+  "the expression .is_payload_subsort_v<Sub, Super> \\[with Sub = fixy::Refinement<fixy::BoundedBelow<256>\\{\\}, unsigned char, false>; Super = fixy::Refinement<fixy::IsPositive\\{\\}, unsigned char, false>\\]. evaluated to .false."
+  "no matching function for call to .accept_subsort<fixy::Refined<fixy::BoundedBelow<256>\\(\\), unsigned char>, fixy::Positive<unsigned char> >\\(\\).")
+fixy_neg_compile_test(neg_refined_weaken_negative_bound_on_unsigned
+  "the expression .is_payload_subsort_v<Sub, Super> \\[with Sub = fixy::Refinement<fixy::BoundedAbove<-1>\\{\\}, unsigned int, false>; Super = fixy::Refinement<fixy::BoundedAbove<0>\\{\\}, unsigned int, false>\\]. evaluated to .false."
+  "no matching function for call to .accept_subsort<fixy::Refined<fixy::BoundedAbove<-1>\\(\\), unsigned int>, fixy::Refined<fixy::BoundedAbove<0>\\(\\), unsigned int> >\\(\\).")
+
 # ── Fixy/Tagged.h and fixy/Secret.h ───────────────────────────────────
 
 fixy_test(test_tagged)

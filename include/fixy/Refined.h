@@ -43,12 +43,14 @@
 
 #include <array>
 #include <bit>
+#include <cmath>
 #include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <expected>
+#include <limits>
 #include <meta>
 #include <span>
 #include <string_view>
@@ -170,6 +172,76 @@ inline constexpr IsNonEmpty non_empty{};
 // the type that the implication rules deduce against, and the variable
 // template is the value that call sites pass.
 
+namespace refined {
+
+// An integer type that std::cmp_less and std::in_range accept.  The
+// standard excludes bool and the character types from both.
+template <class T>
+concept ExactInteger =
+    std::integral<T> && !std::same_as<T, bool> && !std::same_as<T, char> && !std::same_as<T, wchar_t>
+    && !std::same_as<T, char8_t> && !std::same_as<T, char16_t> && !std::same_as<T, char32_t>;
+
+// True when the value type V holds the bound exactly.  A bound compared
+// after a conversion to the value type changes: 256 as a std::uint8_t is
+// 0, and -1 as an unsigned is its largest value.  An integer value type
+// holds an integer bound in its range.  A floating-point value type holds
+// an integer bound that its significand spans, and a finite
+// floating-point bound of a type that is no wider than itself.  Every
+// other pair is refused: a floating-point bound on an integer value, a
+// NaN or an infinity, and a bound that a narrower floating-point type
+// would round.
+template <class V, auto Bound>
+[[nodiscard]] consteval bool bound_fits() noexcept {
+    using B = decltype(Bound);
+    if constexpr (ExactInteger<V> && ExactInteger<B>) {
+        return std::in_range<V>(Bound);
+    } else if constexpr (std::floating_point<V> && ExactInteger<B>) {
+        constexpr int digits = std::numeric_limits<V>::digits;
+        if constexpr (digits >= std::numeric_limits<std::uintmax_t>::digits) {
+            return true;
+        } else {
+            constexpr std::uintmax_t span = std::uintmax_t{1} << digits;
+            return std::cmp_less_equal(Bound, span) && std::cmp_greater_equal(Bound, -static_cast<std::intmax_t>(span));
+        }
+    } else if constexpr (std::floating_point<V> && std::floating_point<B>) {
+        constexpr bool no_wider = std::numeric_limits<B>::digits <= std::numeric_limits<V>::digits
+                                  && std::numeric_limits<B>::max_exponent <= std::numeric_limits<V>::max_exponent
+                                  && std::numeric_limits<B>::min_exponent >= std::numeric_limits<V>::min_exponent;
+        return no_wider && std::isfinite(Bound);
+    } else {
+        return false;
+    }
+}
+
+// A bound of a predicate is one that the value type holds exactly.  A
+// predicate whose bound the value type cannot hold is not defined on that
+// type, and the checked mint refuses it at the call.
+template <class V, auto Bound>
+concept BoundFits = bound_fits<V, Bound>();
+
+// The comparisons of a value with a bound that BoundFits admits.  Two
+// integers compare through std::cmp_*, and a floating-point value
+// compares with the conversion of the bound, which BoundFits makes exact.
+template <auto Bound, class V>
+[[nodiscard]] constexpr bool at_most(V x) noexcept {
+    if constexpr (ExactInteger<V>) {
+        return std::cmp_less_equal(x, Bound);
+    } else {
+        return x <= static_cast<V>(Bound);
+    }
+}
+
+template <auto Bound, class V>
+[[nodiscard]] constexpr bool at_least(V x) noexcept {
+    if constexpr (ExactInteger<V>) {
+        return std::cmp_greater_equal(x, Bound);
+    } else {
+        return x >= static_cast<V>(Bound);
+    }
+}
+
+}  // namespace refined
+
 template <std::size_t Alignment>
 struct Aligned {
     constexpr bool operator()(auto* p) const noexcept {
@@ -180,9 +252,16 @@ struct Aligned {
 template <std::size_t Alignment>
 inline constexpr Aligned<Alignment> aligned{};
 
+// The four bounded predicates below compare the value with each bound by
+// value, and each is defined only on a value type that holds its bounds
+// (refined::BoundFits).
 template <auto Lo, auto Hi>
 struct InRange {
-    constexpr bool operator()(auto x) const noexcept { return x >= decltype(x)(Lo) && x <= decltype(x)(Hi); }
+    template <class V>
+        requires refined::BoundFits<V, Lo> && refined::BoundFits<V, Hi>
+    constexpr bool operator()(V x) const noexcept {
+        return refined::at_least<Lo>(x) && refined::at_most<Hi>(x);
+    }
 };
 
 template <auto Lo, auto Hi>
@@ -190,7 +269,11 @@ inline constexpr InRange<Lo, Hi> in_range{};
 
 template <auto Max>
 struct BoundedAbove {
-    constexpr bool operator()(auto x) const noexcept { return x <= decltype(x)(Max); }
+    template <class V>
+        requires refined::BoundFits<V, Max>
+    constexpr bool operator()(V x) const noexcept {
+        return refined::at_most<Max>(x);
+    }
 };
 
 template <auto Max>
@@ -214,19 +297,29 @@ inline constexpr ExactSize<N> exact_size{};
 
 template <auto Min>
 struct BoundedBelow {
-    constexpr bool operator()(auto x) const noexcept { return x >= decltype(x)(Min); }
+    template <class V>
+        requires refined::BoundFits<V, Min>
+    constexpr bool operator()(V x) const noexcept {
+        return refined::at_least<Min>(x);
+    }
 };
 
 template <auto Min>
 inline constexpr BoundedBelow<Min> bounded_below{};
 
 // This is divisibility of a count, distinct from the byte-alignment of
-// an address that `aligned` tests.
+// an address that `aligned` tests.  The divisor must be positive as well
+// as held by the value type: a divisor that the value type turns into
+// zero is a modulo by zero, and INT_MIN % -1 overflows.
 template <auto Divisor>
 struct DivisibleBy {
     static_assert(Divisor != decltype(Divisor){0}, "DivisibleBy<0> is undefined (modulo by zero).  Pick a non-"
                                                    "zero divisor or omit the predicate.");
-    constexpr bool operator()(auto x) const noexcept { return (x % decltype(x)(Divisor)) == decltype(x){0}; }
+    template <class V>
+        requires refined::ExactInteger<V> && refined::BoundFits<V, Divisor> && (std::cmp_greater(Divisor, 0))
+    constexpr bool operator()(V x) const noexcept {
+        return x % static_cast<V>(Divisor) == 0;
+    }
 };
 
 template <auto Divisor>
@@ -240,13 +333,30 @@ inline constexpr DivisibleBy<Divisor> divisible_by{};
 // combinator is one predicate type instead, which composes with any
 // other and still collapses inside the wrapper.
 //
-// Each combinator is itself a predicate, so they nest freely.
+// Each combinator is itself a predicate, so they nest freely.  A
+// combinator is defined on a value type only where each predicate it
+// names is, so a conjunct that cannot evaluate the value refuses the
+// combinator at the mint, as the conjunct alone would.
+
+// This gates the mints, never the class template itself.  The subsort
+// machinery reasons over a Refined type without ever constructing one,
+// so a requires-clause on the class template would make those types
+// unnameable and break that discipline.  The checked mint is also the
+// only place the predicate is actually evaluated, and gating it turns
+// what would be a SFINAE cascade inside the contract clause into one
+// concept-violation message at the call site.
+template <auto Pred, typename T>
+concept PredicateInvocableOn = requires(T const& v) {
+    { Pred(v) } -> std::convertible_to<bool>;
+};
 
 namespace refined_algebra {
 
 template <auto... Preds>
 struct AllOf {
-    constexpr bool operator()(auto const& v) const noexcept {
+    template <class V>
+        requires(PredicateInvocableOn<Preds, V> && ...)
+    constexpr bool operator()(V const& v) const noexcept {
         if constexpr (sizeof...(Preds) == 0)
             return true;
         else
@@ -259,7 +369,9 @@ inline constexpr AllOf<Preds...> all_of{};
 
 template <auto... Preds>
 struct AnyOf {
-    constexpr bool operator()(auto const& v) const noexcept {
+    template <class V>
+        requires(PredicateInvocableOn<Preds, V> && ...)
+    constexpr bool operator()(V const& v) const noexcept {
         if constexpr (sizeof...(Preds) == 0)
             return false;
         else
@@ -272,7 +384,11 @@ inline constexpr AnyOf<Preds...> any_of{};
 
 template <auto Pred>
 struct Negate {
-    constexpr bool operator()(auto const& v) const noexcept { return !Pred(v); }
+    template <class V>
+        requires PredicateInvocableOn<Pred, V>
+    constexpr bool operator()(V const& v) const noexcept {
+        return !Pred(v);
+    }
 };
 
 template <auto Pred>
@@ -280,7 +396,11 @@ inline constexpr Negate<Pred> negate{};
 
 template <auto Pre, auto Post>
 struct Implies {
-    constexpr bool operator()(auto const& v) const noexcept { return !Pre(v) || Post(v); }
+    template <class V>
+        requires PredicateInvocableOn<Pre, V> && PredicateInvocableOn<Post, V>
+    constexpr bool operator()(V const& v) const noexcept {
+        return !Pre(v) || Post(v);
+    }
 };
 
 template <auto Pre, auto Post>
@@ -332,18 +452,6 @@ struct sealed_row_discipline<true> {
 }  // namespace detail
 
 }  // namespace refined
-
-// This gates the mints, never the class template itself.  The subsort
-// machinery reasons over a Refined type without ever constructing one,
-// so a requires-clause on the class template would make those types
-// unnameable and break that discipline.  The checked mint is also the
-// only place the predicate is actually evaluated, and gating it turns
-// what would be a SFINAE cascade inside the contract clause into one
-// concept-violation message at the call site.
-template <auto Pred, typename T>
-concept PredicateInvocableOn = requires(T const& v) {
-    { Pred(v) } -> std::convertible_to<bool>;
-};
 
 // One template carries both refinements.  They differed in exactly one
 // place — the sealed one has no extractor — and everything else was the
@@ -760,7 +868,10 @@ inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
 // not exist for the closure either.
 //
 // Each step must be sound on every value type on which its two
-// predicates are defined. A chain of such steps is sound on a value
+// predicates are defined. A bounded predicate compares a value with its
+// bound by value and is defined only where the value type holds the
+// bound, so a step that compares two bounds as integers holds on each
+// such type. A chain of such steps is sound on a value
 // type only when each inner predicate of the chain is defined there
 // too. Most steps keep or widen the domain, and they can stand
 // anywhere in a chain. A narrowing edge is a step whose conclusion is
@@ -855,19 +966,18 @@ template <class From, class To>
 struct narrowing_edge {};
 
 // A ≤ B for two template parameters of a predicate.  The function
-// compares two integers by value through std::cmp_less_equal.  An
+// compares two integers by value through std::cmp_less_equal, which is
+// how each bounded predicate compares a value with its bound.  An
 // unsigned bound and a negative bound then never meet through a
 // conversion that changes a sign: 9u ≤ -1 is false, as it is for the
-// values.
+// values.  A bound that is not an exact integer defines its predicate on
+// no value type, and every step over it is refused.
 template <auto A, auto B>
 [[nodiscard]] consteval bool bound_less_equal() noexcept {
-    using AType = decltype(A);
-    using BType = decltype(B);
-    if constexpr (std::is_integral_v<AType> && std::is_integral_v<BType> && !std::is_same_v<AType, bool>
-                  && !std::is_same_v<BType, bool>) {
+    if constexpr (ExactInteger<decltype(A)> && ExactInteger<decltype(B)>) {
         return std::cmp_less_equal(A, B);
     } else {
-        return A <= B;
+        return false;
     }
 }
 
@@ -1696,6 +1806,26 @@ static_assert(divisible_by<4>(0));
 static_assert(divisible_by<4>(16));
 static_assert(!divisible_by<4>(13));
 static_assert(divisible_by<8>(2097152));
+
+// A bound compares by value, and a bound that the value type does not
+// hold leaves the predicate undefined there.
+static_assert(!bounded_above<-1>(0) && bounded_above<-1>(-1) && !in_range<0u, 10u>(-1) && in_range<-5, 5u>(5));
+static_assert(PredicateInvocableOn<bounded_below<255>, std::uint8_t> && PredicateInvocableOn<in_range<0u, 9u>, int>);
+static_assert(!PredicateInvocableOn<bounded_below<256>, std::uint8_t>
+              && !PredicateInvocableOn<in_range<256, 511>, std::uint8_t>
+              && !PredicateInvocableOn<bounded_above<-1>, unsigned>
+              && !PredicateInvocableOn<divisible_by<256>, std::uint8_t> && !PredicateInvocableOn<divisible_by<-4>, int>
+              && !PredicateInvocableOn<bounded_above<8>, bool> && !PredicateInvocableOn<bounded_above<8>, char>);
+static_assert(PredicateInvocableOn<bounded_above<8>, double> && PredicateInvocableOn<bounded_above<1.0e30>, double>
+              && PredicateInvocableOn<in_range<0.0f, 1.0f>, double> && in_range<0.0f, 1.0f>(0.5f)
+              && !in_range<0.0f, 1.0f>(-0.5f) && !bounded_above<1.0e30>(2.0e30) && bounded_below<-3>(-2.5));
+static_assert(!PredicateInvocableOn<bounded_above<1.0e30>, float> && !PredicateInvocableOn<bounded_above<8.5>, int>
+              && !PredicateInvocableOn<divisible_by<4>, double>
+              && !PredicateInvocableOn<bounded_above<std::numeric_limits<double>::infinity()>, double>
+              && !PredicateInvocableOn<bounded_above<(std::int64_t{1} << 60)>, double>);
+static_assert(!PredicateInvocableOn<all_of<positive, bounded_below<256>>, std::uint8_t>
+              && !PredicateInvocableOn<negate<bounded_above<-1>>, unsigned>
+              && !PredicateInvocableOn<implies<positive, in_range<256, 511>>, std::uint8_t>);
 
 // Minting through the trusted door keeps this a test of whether the
 // composed-predicate type is constructible, without also depending on

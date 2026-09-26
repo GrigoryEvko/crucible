@@ -139,7 +139,9 @@
 //
 //   Refined<P, T>              ⩽  T
 //   Refinement<P, T, S>        ⩽  Refinement<Q, T, S>   when P implies Q
-//   Tagged<T, V>               ⩽  T                     for a tag V in
+//                                                        and P and Q are
+//                                                        defined on T
+//   Tagged<T, V>              ⩽  T                     for a tag V in
 //                                                        droppable_tags
 //   NumericalTier<Tight, T>    ⩽  NumericalTier<Loose, T>
 //   PeerMsg<R, L, T>           ⩽  PeerMsg<R, L, U>      when T ⩽ U
@@ -291,11 +293,16 @@ template <typename T, typename U>
 inline constexpr bool refinement_weakens_v = false;
 // The relation of fixy/Refined.h reads its admitted steps where that
 // header defines them, so an edge that a later header adds does not
-// change this order.
+// change this order.  A step of that relation holds on a value type only
+// where its two predicates are defined, so each predicate must evaluate
+// the value type here: a trusted refinement whose predicate the value
+// type cannot evaluate, such as bounded_below<256> over a std::uint8_t,
+// weakens to nothing.
 template <auto P, auto Q, typename X, bool Sealed>
 inline constexpr bool refinement_weakens_v<::fixy::Refinement<P, X, Sealed>, ::fixy::Refinement<Q, X, Sealed>> =
     std::is_same_v<::fixy::refined::predicate_t<P>, ::fixy::refined::predicate_t<Q>>
-    || ::fixy::refined::implies_types<::fixy::refined::predicate_t<P>, ::fixy::refined::predicate_t<Q>>();
+    || (::fixy::PredicateInvocableOn<P, X> && ::fixy::PredicateInvocableOn<Q, X>
+        && ::fixy::refined::implies_types<::fixy::refined::predicate_t<P>, ::fixy::refined::predicate_t<Q>>());
 
 template <typename T>
 inline constexpr bool tagged_drops_v =
