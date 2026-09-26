@@ -557,30 +557,16 @@ add_executable(crucible_diag_lsp
 )
 target_link_libraries(crucible_diag_lsp PRIVATE crucible)
 
-# The cross-build row_hash determinism witness.
-# Emits every row_hash_contribution<W>::value as labeled hex lines to
-# stdout; CI diffs against tools/row_hash_golden.txt to catch silent
-# TU-context-fragility regressions in display_string_of (the upstream
-# of stable_type_id).  The dump tool's TU-internal static_assert
-# cross-links the fold anchor to test/test_row_hash_distinctness.cpp's
-# kFoldAnchor, so partial migrations (test updated but tool not, or
-# vice versa) fail to compile.
-add_executable(dump_row_hashes
-  tools/dump_row_hashes.cpp
-)
-target_link_libraries(dump_row_hashes PRIVATE crucible)
-
-# The same witness for the foundation fold, which replaced the fifty-two
-# per-wrapper salts with one fold over the graded shape.  Every graded
-# wrapper now folds a reflected lattice name where a handful used to, so
-# the exposure this guards is wider than the tool above guards.
+# The cross-build row_hash determinism witness for the foundation fold,
+# which replaced the fifty-two per-wrapper salts with one fold over the
+# graded shape.  It prints each row hash as a labeled hex line, and a test
+# diffs the output against tools/row_hash_foundation_golden.txt, so a
+# TU-context-fragility regression in display_string_of (the upstream of
+# stable_type_id) cannot move a hash unseen.  Every graded wrapper folds a
+# reflected lattice name, so every wrapper is exposed.
 #
-# It links fixy rather than crucible, and that is the reason it is a
-# second binary instead of more entries in the first.  Each tree ships its
-# own Platform.h and its own CRUCIBLE_PRE family, so one translation unit
-# naming both redefines five macros and resolves them by include order.  A
-# witness against TU-context fragility must not carry a TU context that no
-# production build runs.
+# It links fixy rather than crucible.  A witness against TU-context
+# fragility must not carry a TU context that no production build runs.
 add_executable(dump_row_hashes_foundation
   tools/dump_row_hashes_foundation.cpp
 )

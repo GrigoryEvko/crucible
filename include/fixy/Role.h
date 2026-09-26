@@ -23,9 +23,8 @@
 // UnclassifiedScratch|AsyncEndpoint)'` over include/crucible/*.h, src
 // and vessel finds nothing; widened to every tree, the hits are the old
 // sentinel test/test_fixy_fn.cpp, fifteen fixtures under
-// test/fixy_neg/, tools/dump_row_hashes.cpp and
-// test/test_row_hash_distinctness.cpp, each of which includes the old
-// Fn.h and goes with it.  Every one of the six was one or two atoms
+// test/fixy_neg/ and test/test_row_hash_distinctness.cpp, each of which
+// includes the old Fn.h and goes with it.  Every one of the six was one or two atoms
 // over a pack a caller can write; InternalApi and UnclassifiedScratch
 // existed only so that every security level was reachable through
 // some stance, and as_internal and as_unclassified are atoms.

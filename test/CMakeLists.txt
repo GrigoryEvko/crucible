@@ -1147,53 +1147,23 @@ add_test(NAME ci_guard_labels
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.sh)
 set_tests_properties(ci_guard_labels ci_guard_labels_self_test PROPERTIES
     LABELS "ci_guard")
-# FIXY-FOUND-052 — Cross-build row_hash determinism witness.
-# Runs the dump_row_hashes executable and diffs stdout against the
-# committed golden file.  A mismatch indicates either (a) a
-# row_hash_contribution specialization changed (intentional wire-format
-# break — recapture the golden in the same PR + document the ceremony
-# in the commit message), or (b) a TU-context-fragility regression in
-# display_string_of silently moved stable_type_id<T> for some wrapper
-# (latent federation-cache bug).
+# The cross-build row_hash determinism witness.  The test runs
+# dump_row_hashes_foundation and diffs its output against the committed
+# golden.  A mismatch says either that the fold changed on purpose, and
+# the golden moves in the same commit, or that a TU-context-fragility
+# regression in display_string_of moved stable_type_id<T> for some
+# wrapper, which is a latent federation-cache bug.
 #
-# One-shot shell test: bash invokes the binary, redirects to a temp
-# file under ${CMAKE_BINARY_DIR}, then diffs vs the golden.  Linux is
-# the only supported deployment platform (CLAUDE.md §XIV), so bash
-# availability is guaranteed.
-# The golden was captured on the x86_64 ABI. row_hash folds a
-# stable_type_id contribution through display_string_of (CLAUDE.md
-# "Federation cache-key portability bound"), so the absolute 44-entry
-# matrix is bit-stable ONLY within one (arch, compiler, stdlib) tuple —
-# aarch64 legitimately produces different values, which would red this
-# diff for a non-bug.  Register the absolute-golden diff only on x86_64;
-# the arch-INDEPENDENT row_hash invariants that actually catch
-# specialization regressions (cross-wrapper distinctness + nesting-order
-# sensitivity, e.g. Stale<Tagged<T>> != Tagged<Stale<T>>) are exercised on
-# every arch by test_migration_verification (GAPS-029 / FIXY-FOUND-047).
-# A future per-arch golden would restore absolute coverage on aarch64.
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
-  add_test(NAME row_hash_golden_diff
-    COMMAND bash -c
-      "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-  set_tests_properties(row_hash_golden_diff PROPERTIES
-      LABELS "ci_guard")
-endif()
-
-# The same witness for the foundation fold, which the entry above does not
-# cover: that binary includes crucible/safety and names no foundation
-# header, so it witnesses the superseded per-wrapper fold alone.
+# The fold replaced fifty-two per-wrapper salts with one fold over the
+# graded shape, and the lattice identity is one of its three inputs, so
+# every graded wrapper folds a reflected name. The multi-axis binding in
+# fixy/Fn.h folds such an identity for every axis but two.
 #
-# The foundation fold carries the wider exposure of the two. It replaced
-# fifty-two per-wrapper salts with one fold over the graded shape, and the
-# lattice identity is one of that fold's three inputs, so every graded
-# wrapper folds a reflected name where a handful used to. The multi-axis
-# binding in fixy/Fn.h folds such an identity for every axis but two.
-#
-# Gated on x86_64 for the reason the entry above is gated: the payload
-# lines fold display_string_of, so the absolute matrix is bit-stable only
-# within one (arch, compiler, stdlib) tuple. The golden's own header
-# prints the toolchain tag, so a diff says which of the two it was.
+# Gated on x86_64: the payload lines fold display_string_of, so the
+# absolute matrix is bit-stable only within one (arch, compiler, stdlib)
+# tuple. The golden's own header prints the toolchain tag, so a diff says
+# which of the two it was. The arch-independent invariants (distinctness
+# and nesting-order sensitivity) run on every arch in their own tests.
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
   add_test(NAME row_hash_foundation_golden_diff
     COMMAND bash -c

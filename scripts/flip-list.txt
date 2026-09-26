@@ -143,4 +143,3 @@ src/cog/NicOffloadAudit.cpp
 src/cog/NumaNic.cpp
 src/observe/SdcDetect.cpp
 src/topology/Ptp.cpp
-tools/dump_row_hashes.cpp
