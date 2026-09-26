@@ -89,12 +89,16 @@ SCAN_ROOT="${SCAN_ROOT:-$REPO_ROOT}"
 # plus one that puts a name in front of it:
 #   mint_name|path                 (mint-hs14-floor)
 #
-# So: drop a leading `name|`, then cut at the first colon or run of
-# whitespace.  A key that carries a Windows-style drive letter or any
+# So: drop a leading `name|` when the part before the bar is one name,
+# then cut at the first colon or run of whitespace.  A bar later on the
+# line belongs to the code text beside the path (`a || b`), so it must not
+# cut the key.  A key that carries a Windows-style drive letter or any
 # other colon inside the path itself is not a shape this tree uses.
 extract_path_() {
     local line=$1
-    line=${line#*|}
+    if [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*\| ]]; then
+        line=${line#*|}
+    fi
     line=${line%%:*}
     line=${line%%[[:space:]]*}
     printf '%s' "$line"
@@ -124,8 +128,11 @@ moved_candidates_() {
         [ "$hit" = "$dead" ] && continue
         [ "$hit" = "$dir/_$base" ] && continue
         found+=("$hit")
+    # A hidden directory at the root holds no tracked source: .git, the
+    # agent work trees in .worktrees and the pinned tools in .tools.  A file
+    # there must not be named as the place a key moved to.
     done < <(find "$SCAN_ROOT" \
-                  -path "$SCAN_ROOT/.git" -prune -o \
+                  -path "$SCAN_ROOT/.*" -prune -o \
                   -path "$SCAN_ROOT/build*" -prune -o \
                   -type f \( -name "$base" -o -name "_$base" \) -print 2>/dev/null)
 
@@ -154,8 +161,14 @@ prose_files_() {
 readonly PROSE_EXT='h|hpp|cpp|cc|sh|txt|py|json'
 
 extract_prose_paths_() {
+    # The match ends in the terminator character, which can be a `.` that
+    # ends the sentence.  The path is the longest prefix that ends in an
+    # extension, so the terminator never becomes part of it.
+    local match
     grep -oE "($PATH_ROOTS)/[A-Za-z0-9_/.-]+\.($PROSE_EXT)(\$|[^A-Za-z0-9_-])" "$1" 2>/dev/null \
-        | sed 's/[^A-Za-z0-9_/.-]*$//' \
+        | while IFS= read -r match; do
+              [[ $match =~ ^(.*\.($PROSE_EXT)) ]] && printf '%s\n' "${BASH_REMATCH[1]}"
+          done \
         | sort -u
 }
 
@@ -185,7 +198,9 @@ scan_prose_() {
             fi
         done < <(extract_prose_paths_ "$doc")
     done < <(prose_files_)
-    return "$violations"
+    # The status is a verdict, not the count: an exit status wraps at 256,
+    # so 256 dead paths would read as clean.
+    [ "$violations" -eq 0 ]
 }
 
 # ── The scan ─────────────────────────────────────────────────────────
@@ -229,7 +244,7 @@ scan_() {
             fi
         done < "$allowlist"
     done
-    return "$violations"
+    [ "$violations" -eq 0 ]
 }
 
 # ── The self-test ────────────────────────────────────────────────────
@@ -253,27 +268,37 @@ self_test_() {
     trap 'rm -rf "$SELF_TEST_TMP"' EXIT
     local tmp=$SELF_TEST_TMP
 
-    mkdir -p "$tmp/tree/include/planted" "$tmp/lists"
+    mkdir -p "$tmp/tree/include/planted" "$tmp/lists" "$tmp/tree/.worktrees/copy/include/planted"
     : > "$tmp/tree/include/planted/_Moved.h"
     : > "$tmp/tree/include/planted/Live.h"
+    # A copy in an agent work tree is not a place the file moved to.
+    : > "$tmp/tree/.worktrees/copy/include/planted/Vanished.h"
 
+    # The Barred.h row carries a `|` in its code text.  Only a name before
+    # the first bar is a prefix, so the key is still the path.
     cat > "$tmp/lists/planted-allowlist.txt" <<'PLANTED'
 # Synthetic fixture for check-allowlist-keys.sh --self-test.
 include/planted/Moved.h:82 — underscored in place by a port
 include/planted/Vanished.h:if (::read(fd, buf, n) < 0) {  — gone entirely
+include/planted/Barred.h:if (::read(fd, buf, n) < 0 || n == 0) {  — gone, with a bar in the code
 include/planted/Live.h:12 — still there, must stay clean
 mint_planted|include/planted/Live.h
 PLANTED
 
-    local out rc
+    local out rc dead
     out=$(ALLOWLIST_DIR="$tmp/lists" SCAN_ROOT="$tmp/tree" scan_ 2>&1)
     rc=$?
+    dead=$(printf '%s\n' "$out" | grep -c 'ALLOWLIST-KEY dead path')
 
     local failures=0
-    if [ "$rc" -ne 2 ]; then
-        printf 'check-allowlist-keys self-test: expected 2 dead keys, got %d.\n' "$rc" >&2
+    if [ "$rc" -ne 1 ] || [ "$dead" -ne 3 ]; then
+        printf 'check-allowlist-keys self-test: expected exit 1 and 3 dead keys, got exit %d and %d.\n' "$rc" "$dead" >&2
         failures=1
     fi
+    printf '%s' "$out" | grep -q 'include/planted/Barred.h' || {
+        printf 'check-allowlist-keys self-test: a key whose code text holds a bar was skipped.\n' >&2
+        failures=1
+    }
     printf '%s' "$out" | grep -q 'include/planted/Moved.h' || {
         printf 'check-allowlist-keys self-test: the underscored-in-place key was not caught.\n' >&2
         failures=1
@@ -288,6 +313,10 @@ PLANTED
     }
     printf '%s' "$out" | grep -q 'no file of that name survives' || {
         printf 'check-allowlist-keys self-test: the vanished key took the wrong branch.\n' >&2
+        failures=1
+    }
+    printf '%s' "$out" | grep -q '\.worktrees' && {
+        printf 'check-allowlist-keys self-test: a copy in a hidden work tree was named as the move.\n' >&2
         failures=1
     }
     printf '%s' "$out" | grep -q 'include/planted/Live.h' && {
@@ -331,8 +360,10 @@ PROSE
 
     out=$(SCAN_ROOT="$tmp/tree" PROSE_ROOT="$tmp/tree" scan_prose_ 2>&1)
     rc=$?
-    if [ "$rc" -ne 1 ]; then
-        printf 'check-allowlist-keys self-test: expected 1 dead prose path, got %d.\n' "$rc" >&2
+    dead=$(printf '%s\n' "$out" | grep -c 'PROSE dead path')
+    if [ "$rc" -ne 1 ] || [ "$dead" -ne 1 ]; then
+        printf 'check-allowlist-keys self-test: expected exit 1 and 1 dead prose path, got exit %d and %d.\n' \
+               "$rc" "$dead" >&2
         failures=1
     fi
     printf '%s' "$out" | grep -q 'include/planted/Moved.h' || {
@@ -356,10 +387,11 @@ PROSE
         failures=1
     }
 
-    # The clean control for the prose half.
+    # The clean control for the prose half.  The last path ends its
+    # sentence, so a `.` follows the extension.
     cat > "$tmp/tree/Guidance.md" <<'PROSECLEAN'
 The live header is `include/planted/Live.h` and the dashboard is
-`bench/serve.html`.
+`bench/serve.html`.  The same header again is include/planted/Live.h.
 PROSECLEAN
     out=$(SCAN_ROOT="$tmp/tree" PROSE_ROOT="$tmp/tree" scan_prose_ 2>&1)
     rc=$?
@@ -371,7 +403,7 @@ PROSECLEAN
     if [ "$failures" -ne 0 ]; then
         return 1
     fi
-    printf 'check-allowlist-keys: self-test passed — an underscored-in-place key and a vanished key are both caught and the move is named, a live key and a non-path key stay clean, a dead prose path is caught, and a live path, a prefix filename and a placeholder all stay clean.\n' >&2
+    printf 'check-allowlist-keys: self-test passed — an underscored-in-place key, a vanished key and a key with a bar in its code text are caught, the move is named and a hidden work tree is not, a live key and a non-path key stay clean, a dead prose path is caught, and a live path, a path that ends a sentence, a prefix filename and a placeholder all stay clean.\n' >&2
     return 0
 }
 
@@ -389,11 +421,11 @@ case "${1-}" in
 esac
 
 scan_
-key_violations=$?
+key_status=$?
 scan_prose_
-prose_violations=$?
+prose_status=$?
 
-if [ "$key_violations" -ne 0 ] || [ "$prose_violations" -ne 0 ]; then
+if [ "$key_status" -ne 0 ] || [ "$prose_status" -ne 0 ]; then
     cat >&2 <<'TAIL'
 
 check-allowlist-keys found a path that no longer exists.
