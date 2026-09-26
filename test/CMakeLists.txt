@@ -266,14 +266,6 @@ crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/Simd
 crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h — 10 grant::hw::* families (cache/barrier/tsc/rng/cpuid/msr/port_io/asm_/simd_width/vendor_intrinsic) + 5 §XXI mints
 crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/_Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
 crucible_test(test_hardware_axis_pins)  # the hot headers pin their compile-time hardware constructs as fixy atoms
-# test_fec_hardware_axis_pin / test_cntp_fec instantiate cntp/Fec.h's `#if __AVX2__` kernels, which
-# call std::start_lifetime_as<const __m256i> — rejected by libstdc++ 16's writable-asm
-# barrier under -march=native (release/bench). CRUCIBLE_FEC_CONST_SIMD_OK (probed in the
-# top-level CMakeLists) is TRUE on default/tsan/analyzer (AVX2 arm #if'd out → scalar
-# path tested) and FALSE under release/bench until cntp/Fec.h adopts a const-safe load.
-if(CRUCIBLE_FEC_CONST_SIMD_OK)
-crucible_test(test_fec_hardware_axis_pin)  # cntp/Fec.h pins its kernel arm as fixy atoms, with the stride one register wide
-endif()
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
@@ -373,10 +365,14 @@ crucible_test(test_cntp_quic_transport)
 crucible_test(test_cntp_roce_config)
 crucible_test(test_cntp_wireguard)
 crucible_test(test_cntp_integrity)
-if(CRUCIBLE_FEC_CONST_SIMD_OK)  # see test_fec_hardware_axis_pin note: AVX2 Fec kernels need a const-safe start_lifetime_as
+# test_cntp_fec and test_cntp_fountain instantiate the `#if __AVX2__` kernels of
+# cntp/Fec.h, which call std::start_lifetime_as<const __m256i>.  The writable-asm
+# barrier of libstdc++ 16 rejects that call under -march=native (release/bench).
+# CRUCIBLE_FEC_CONST_SIMD_OK, probed in the top-level CMakeLists, is TRUE on
+# default/tsan/analyzer, where the AVX2 arm is compiled out and the scalar path runs.
+# It is FALSE under release/bench until cntp/Fec.h adopts a const-safe load.
+if(CRUCIBLE_FEC_CONST_SIMD_OK)
 crucible_test(test_cntp_fec)
-endif()
-if(CRUCIBLE_FEC_CONST_SIMD_OK)  # Fountain.h pulls cntp/Fec.h AVX2 kernels; see test_fec_hardware_axis_pin note
 crucible_test(test_cntp_fountain)
 endif()
 crucible_test(test_cntp_overlay_multicast)
@@ -679,8 +675,8 @@ set_tests_properties(banned_calls banned_calls_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # The hardware-axis presence gate.  scripts/check-fixy-hw-discipline.py
-# reads the parse tree of the four sites (SwissTable swiss_hw, Fec fec_hw,
-# TraceRing tracering_hw, ChaseLevDeque chaselev_hw).  Each site keeps its
+# reads the parse tree of the three sites (SwissTable swiss_hw, TraceRing
+# tracering_hw, ChaseLevDeque chaselev_hw).  Each site keeps its
 # block, and the block pins the atom of each axis that its row lists.  The
 # C++ build proves each pin correct.  Every `*_hw` namespace under include/
 # and src/ needs a row.  The self-test plants each evasion that the text

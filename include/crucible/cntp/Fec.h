@@ -5,15 +5,11 @@
 // decoder must assume the same ordering.
 
 #include <crucible/Platform.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_Concurrent.h>
-#include <crucible/safety/_Linear.h>
-#include <crucible/safety/_Refined.h>
-#include <fixy/Atom.h>
-#include <fixy/Axis.h>
-#include <fixy/atoms/Hw.h>
-#include <fixy/atoms/Simd.h>
+#include <fixy/Qtt.h>
 #include <foundation/Lifetime.h>
+#include <foundation/effects/Concurrent.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Resources.h>
 
 #include <algorithm>
 #include <array>
@@ -49,10 +45,8 @@ enum class FecError : std::uint8_t {
     SingularMatrix,
 };
 
-using FecShardBytes = safety::Refined<safety::positive, std::size_t>;
-
 template <typename Buffer>
-using LinearShardBuffer = safety::Linear<Buffer>;
+using LinearShardBuffer = ::fixy::Linear<Buffer>;
 
 template <typename T>
 concept ByteElement =
@@ -209,52 +203,15 @@ struct alignas(32) NibbleTables {
 }
 #endif
 
-// These aliases have no runtime use.  They restate the preprocessor arm
-// selected below as fixy atoms: the ISA the kernels were emitted for, and
-// the instruction class they issue.
-namespace fec_hw {
-
-namespace fas = ::fixy::atom::simd;
-namespace fah = ::fixy::atom::hw;
-
-#if defined(__AVX2__)
-using ActiveSimdIsa = fas::avx2;
-#elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-using ActiveSimdIsa = fas::neon;
-#else
-using ActiveSimdIsa = fas::scalar;
-#endif
-
-// A vector kernel steps one register of the active ISA per iteration, and
-// the scalar kernel steps one byte.  The register width is in bits.
-inline constexpr std::size_t kKernelStrideBytes =
-    fas::register_bits_v<ActiveSimdIsa::isa> == 0 ? 1U : fas::register_bits_v<ActiveSimdIsa::isa> / 8U;
-
-// The two vector arms issue SIMD intrinsics.  The portable arm is scalar.
-using InstructionTier = std::conditional_t<fas::is_trunk_pinned(ActiveSimdIsa::isa), fah::vectorizable, fah::scalar>;
-
-static_assert(::fixy::atom::IsAtom<ActiveSimdIsa> && ActiveSimdIsa::axis == ::fixy::Axis::SimdIsa,
-              "the kernels' ISA is a shipped atom of the SimdIsa axis");
-static_assert(::fixy::atom::IsAtom<InstructionTier> && InstructionTier::axis == ::fixy::Axis::HwInstruction,
-              "the kernels' instruction class is a shipped atom of the HwInstruction axis");
-
-// The stride comes from the atom table, and the loads use the intrinsic
-// register type.  These assertions hold the two widths equal.
-#if defined(__AVX2__)
-static_assert(kKernelStrideBytes == sizeof(__m256i), "an AVX2 kernel must stride one __m256i per iteration");
-#elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-static_assert(kKernelStrideBytes == sizeof(uint8x16_t), "a NEON kernel must stride one uint8x16_t per iteration");
-#endif
-
-}  // namespace fec_hw
-
+// A vector kernel steps one register per iteration, so its stride is the
+// size of the register type that its loads use.
 #if defined(__AVX2__)
 // std::simd loses here on two counts: it is gated on __SSE2__ and so
 // compiles to nothing on ARM, and it exposes no byte-shuffle, which the
 // GF(2^8) nibble-table lookup needs.
 CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     namespace lifetime = ::foundation::lifetime;
-    constexpr std::size_t stride_bytes = fec_hw::kKernelStrideBytes;
+    constexpr std::size_t stride_bytes = sizeof(__m256i);
     std::size_t i = 0;
     for (; i + stride_bytes <= len; i += stride_bytes) {
         auto const a = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(dst + i, 1).data());
@@ -281,7 +238,7 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
     const auto hi_table = _mm256_load_si256(lifetime::start_as_array<const __m256i>(tables.hi.data(), 1).data());
     const auto mask = _mm256_set1_epi8(0x0f);
 
-    constexpr std::size_t stride_bytes = fec_hw::kKernelStrideBytes;
+    constexpr std::size_t stride_bytes = sizeof(__m256i);
     std::size_t i = 0;
     for (; i + stride_bytes <= len; i += stride_bytes) {
         const auto bytes = _mm256_loadu_si256(lifetime::start_as_array<const __m256i>(src + i, 1).data());
@@ -298,7 +255,7 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
 CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     namespace lifetime = ::foundation::lifetime;
-    constexpr std::size_t stride_bytes = fec_hw::kKernelStrideBytes;
+    constexpr std::size_t stride_bytes = sizeof(uint8x16_t);
     std::size_t i = 0;
     for (; i + stride_bytes <= len; i += stride_bytes) {
         auto const a = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, stride_bytes).data());
@@ -325,7 +282,7 @@ CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_
     const auto hi_table = vld1q_u8(tables.hi.data());
     const auto mask = vdupq_n_u8(0x0f);
 
-    constexpr std::size_t stride_bytes = fec_hw::kKernelStrideBytes;
+    constexpr std::size_t stride_bytes = sizeof(uint8x16_t);
     std::size_t i = 0;
     for (; i + stride_bytes <= len; i += stride_bytes) {
         const auto bytes = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, stride_bytes).data());
@@ -386,7 +343,7 @@ public:
     static constexpr std::uint8_t parity_shards = M;
     static constexpr std::uint16_t total_shards = static_cast<std::uint16_t>(K) + static_cast<std::uint16_t>(M);
     static constexpr std::size_t alignment = 32;
-    using concurrent_budget = effects::ConcurrentRow<effects::SmBudget<1>>;
+    using concurrent_budget = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>;
 
     [[nodiscard]] static constexpr std::size_t shard_bytes_for(std::size_t input_size) noexcept {
         const auto q = input_size / K;
@@ -506,7 +463,7 @@ private:
 
 template <std::uint8_t K, std::uint8_t M>
     requires ReedSolomonShape<K, M>
-[[nodiscard]] constexpr ReedSolomon<K, M> mint_reed_solomon(effects::Init) noexcept {
+[[nodiscard]] constexpr ReedSolomon<K, M> mint_reed_solomon(::foundation::effects::Init) noexcept {
     return ReedSolomon<K, M>{};
 }
 

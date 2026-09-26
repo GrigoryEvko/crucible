@@ -107,8 +107,6 @@ class Site:
 MANIFEST = (
     Site("include/crucible/SwissTable.h", "crucible::detail::swiss_hw", ("SimdIsa", "HwInstruction"),
          "the control-byte probe is emitted for the ISA that the preprocessor selects"),
-    Site("include/crucible/cntp/Fec.h", "crucible::cntp::detail::fec_hw", ("SimdIsa", "HwInstruction"),
-         "the GF(2^8) kernels are emitted for the ISA that the preprocessor selects"),
     Site("include/crucible/TraceRing.h", "crucible::tracering_hw", ("HwInstruction",),
          "the append issues a prefetch, and the hot path bounds its instruction class"),
     Site("include/fixy/concurrent/ChaseLevDeque.h", "fixy::concurrent::chaselev_hw", ("BarrierStrength",),

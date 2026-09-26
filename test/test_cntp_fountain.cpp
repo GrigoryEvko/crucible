@@ -58,8 +58,8 @@ int main() {
     static_assert(Encoder::source_symbols == 8);
     static_assert(Encoder::symbol_bytes == 4);
     static_assert(Encoder::max_source_bytes == 32);
-    static_assert(
-        std::is_same_v<Encoder::concurrent_budget, crucible::effects::ConcurrentRow<crucible::effects::SmBudget<1>>>);
+    static_assert(std::is_same_v<Encoder::concurrent_budget,
+                                 ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>>);
     static_assert(sizeof(ci::LinearFountainBuffer<std::array<std::byte, 16>>) == sizeof(std::array<std::byte, 16>));
 
     auto key = crucible::Philox::op_key_det(0x12345678ULL, 19U, crucible::ContentHash{0xCAFEBEEFULL});

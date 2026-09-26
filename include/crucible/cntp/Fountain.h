@@ -6,6 +6,8 @@
 #include <crucible/safety/_DetSafe.h>
 #include <crucible/safety/_Linear.h>
 #include <crucible/safety/_Refined.h>
+#include <foundation/effects/Concurrent.h>
+#include <foundation/effects/Resources.h>
 
 #include <algorithm>
 #include <array>
@@ -184,7 +186,7 @@ class FountainEncoder {
 public:
     using packet_type = FountainPacket<SourceSymbols, SymbolBytes>;
     using source_byte_count = typename packet_type::source_byte_count;
-    using concurrent_budget = effects::ConcurrentRow<effects::SmBudget<1>>;
+    using concurrent_budget = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>;
 
     static constexpr std::size_t source_symbols = SourceSymbols;
     static constexpr std::size_t symbol_bytes = SymbolBytes;
