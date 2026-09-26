@@ -190,7 +190,7 @@ struct CRUCIBLE_OWNER MetaLog {
         }
 
         // This release publishes the copy above to the consumer.
-        head.advance(h + n);
+        head.advance_sole_writer(h + n);
         const MetaIndex result{h};
         // The index returned is the one from before the advance. Returning the
         // one after it would name the slot past the block just written, and
@@ -250,7 +250,8 @@ struct CRUCIBLE_OWNER MetaLog {
         return result;
     }
 
-    void advance_tail(uint32_t new_tail) CRUCIBLE_NO_THREAD_SAFETY { tail.advance(new_tail); }
+    // The consumer is the one writer of tail.
+    void advance_tail(uint32_t new_tail) CRUCIBLE_NO_THREAD_SAFETY { tail.advance_sole_writer(new_tail); }
 
     // The two counters are read at different instants while both threads run,
     // so the difference is a snapshot of a value that was never simultaneously

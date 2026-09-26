@@ -90,9 +90,22 @@ template <typename T, typename Cmp>
 concept MonotoneCarrier =
     std::move_constructible<T> && std::default_initializable<Cmp> && std::strict_weak_order<Cmp, T const&, T const&>;
 
-// The bound converts to the carrier, and the carrier orders against it.
+// The integer types that std::cmp_less and std::in_range accept: every
+// integral type except bool and the character types.
+template <typename T>
+concept ComparableInteger =
+    std::integral<T> && !std::same_as<std::remove_cv_t<T>, bool> && !std::same_as<std::remove_cv_t<T>, char>
+    && !std::same_as<std::remove_cv_t<T>, wchar_t> && !std::same_as<std::remove_cv_t<T>, char8_t>
+    && !std::same_as<std::remove_cv_t<T>, char16_t> && !std::same_as<std::remove_cv_t<T>, char32_t>;
+
+// The carrier and the bound are integers, and the carrier holds the
+// bound exactly.  A conversion to a carrier that cannot hold the bound
+// changes it: 300 becomes 44 in a uint8_t, and -1 becomes the maximum
+// of a uint32_t.  Every comparison against the bound is a std::cmp_*
+// call, so a signed bound and an unsigned carrier compare by value.
 template <typename T, auto Max, typename Cmp>
-concept BoundedMonotoneCarrier = MonotoneCarrier<T, Cmp> && std::totally_ordered<T> && requires { T(Max); };
+concept BoundedMonotoneCarrier =
+    MonotoneCarrier<T, Cmp> && ComparableInteger<T> && ComparableInteger<decltype(Max)> && (std::in_range<T>(Max));
 
 // The nullptr sentinel exists only for a pointer.
 template <typename Ptr>
@@ -153,6 +166,14 @@ private:
     friend constexpr AppendOnly<U, S> mint_append_only() noexcept(std::is_nothrow_default_constructible_v<S<U>>);
 
 public:
+    // An assignment would drop every element the log holds.
+    AppendOnly(AppendOnly const&) = default;
+    AppendOnly(AppendOnly&&) = default;
+    AppendOnly& operator=(AppendOnly const&) =
+        delete("AppendOnly never removes an element. An assignment would drop every element it holds.");
+    AppendOnly& operator=(AppendOnly&&) =
+        delete("AppendOnly never removes an element. An assignment would drop every element it holds.");
+
     // The lattice grade is derived from the container size, so growing
     // the tail updates it with no separate field to maintain.
     template <typename... Args>
@@ -261,6 +282,13 @@ public:
     using storage_type = Storage<T>;
     using const_iterator = typename AppendOnly<T, Storage>::const_iterator;
 
+    OrderedAppendOnly(OrderedAppendOnly const&) = default;
+    OrderedAppendOnly(OrderedAppendOnly&&) = default;
+    OrderedAppendOnly& operator=(OrderedAppendOnly const&) =
+        delete("OrderedAppendOnly never removes an element. An assignment would drop every element it holds.");
+    OrderedAppendOnly& operator=(OrderedAppendOnly&&) =
+        delete("OrderedAppendOnly never removes an element. An assignment would drop every element it holds.");
+
     void append(T item) {
         CRUCIBLE_PRE(inner_.empty() || !cmp_(key_(item), key_(inner_.back())));
         inner_.append(std::move(item));
@@ -334,6 +362,18 @@ private:
     friend constexpr Monotonic<U, C> mint_monotonic(U initial) noexcept(std::is_nothrow_move_constructible_v<U>);
 
 public:
+    // An assignment writes any value over the current one, so it would
+    // move the counter backward.  reset_under_quiescence is the one
+    // backward step, and it says so at the call site.
+    constexpr Monotonic(Monotonic const&) = default;
+    constexpr Monotonic(Monotonic&&) = default;
+    Monotonic& operator=(Monotonic const&) = delete(
+        "Monotonic only advances. An assignment would move it backward. Use advance, or use reset_under_quiescence to "
+        "go back.");
+    Monotonic& operator=(Monotonic&&) = delete(
+        "Monotonic only advances. An assignment would move it backward. Use advance, or use reset_under_quiescence to "
+        "go back.");
+
     [[nodiscard]] constexpr const T& get() const noexcept { return impl_.peek(); }
     [[nodiscard]] constexpr const T& current() const noexcept { return impl_.peek(); }
 
@@ -401,10 +441,11 @@ template <typename T, auto Max, typename Cmp>
 class [[nodiscard]] BoundedMonotonic {
     Monotonic<T, Cmp> inner_;
 
-    static constexpr T kMax = T(Max);
+    // Exact: the door's concept proved that T holds the bound.
+    static constexpr T kMax = static_cast<T>(Max);
 
     constexpr explicit BoundedMonotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre(!(T(Max) < initial))
+        pre(std::cmp_less_equal(initial, Max))
         : inner_{mint_monotonic<T, Cmp>(std::move(initial))} {}
 
     template <typename U, auto M, typename C>
@@ -419,22 +460,28 @@ public:
     using row_payload = Monotonic<T, Cmp>;
     static constexpr T max() noexcept { return kMax; }
 
+    constexpr BoundedMonotonic(BoundedMonotonic const&) = default;
+    constexpr BoundedMonotonic(BoundedMonotonic&&) = default;
+    BoundedMonotonic& operator=(BoundedMonotonic const&) =
+        delete("BoundedMonotonic only advances. An assignment would move it backward.");
+    BoundedMonotonic& operator=(BoundedMonotonic&&) =
+        delete("BoundedMonotonic only advances. An assignment would move it backward.");
+
     [[nodiscard]] constexpr const T& get() const noexcept { return inner_.get(); }
     [[nodiscard]] constexpr const T& current() const noexcept { return inner_.current(); }
 
-    constexpr void advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>) pre(!(T(Max) < new_value)) {
+    constexpr void advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>)
+        pre(std::cmp_less_equal(new_value, Max)) {
         inner_.advance(std::move(new_value));
     }
 
     constexpr bool try_advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>) {
-        if (T(Max) < new_value) return false;
+        if (std::cmp_greater(new_value, Max)) return false;
         return inner_.try_advance(std::move(new_value));
     }
 
-    constexpr void bump() noexcept
-        requires std::integral<T>
-    {
-        CRUCIBLE_PRE(inner_.get() < T(Max));
+    constexpr void bump() noexcept {
+        CRUCIBLE_PRE(std::cmp_less(inner_.get(), Max));
         inner_.advance(static_cast<T>(inner_.get() + T{1}));
     }
 };
@@ -468,6 +515,15 @@ public:
     using row_discipline = ::fixy::row_discipline::write_once;
     using row_payload = T;
 
+    // An assignment would empty a set slot, and set would then succeed a
+    // second time.
+    constexpr WriteOnce(WriteOnce const&) = default;
+    constexpr WriteOnce(WriteOnce&&) = default;
+    WriteOnce& operator=(WriteOnce const&) =
+        delete("WriteOnce is set at most once. An assignment would empty or overwrite a set slot.");
+    WriteOnce& operator=(WriteOnce&&) =
+        delete("WriteOnce is set at most once. An assignment would empty or overwrite a set slot.");
+
     constexpr void set(T v) noexcept(std::is_nothrow_move_constructible_v<T>) {
         CRUCIBLE_PRE(!value_.has_value());
         value_.emplace(std::move(v));
@@ -490,8 +546,10 @@ public:
         return *value_;
     }
 
+    // Checked in a debug build, and an assumption for the optimizer in a
+    // release build.
     [[nodiscard]] constexpr const T& get_assuming_set() const noexcept {
-        [[assume(value_.has_value())]];
+        CRUCIBLE_INVARIANT(value_.has_value());
         return *value_;
     }
 
@@ -537,6 +595,13 @@ public:
     using pointee_type = T;
     using row_discipline = ::fixy::row_discipline::write_once_non_null;
     using row_payload = T*;
+
+    constexpr WriteOnceNonNull(WriteOnceNonNull const&) noexcept = default;
+    constexpr WriteOnceNonNull(WriteOnceNonNull&&) noexcept = default;
+    WriteOnceNonNull& operator=(WriteOnceNonNull const&) =
+        delete("WriteOnceNonNull is set at most once. An assignment would empty or overwrite a set slot.");
+    WriteOnceNonNull& operator=(WriteOnceNonNull&&) =
+        delete("WriteOnceNonNull is set at most once. An assignment would empty or overwrite a set slot.");
 
     constexpr void set(T* p) noexcept {
         CRUCIBLE_PRE(p != nullptr);
@@ -666,23 +731,61 @@ public:
         }
     }
 
+    // Safe with many writers.  The value it replaces is read in the same
+    // atomic step as the replacement, and the precondition holds on that
+    // value, so a writer that another writer overtook fails the check.
+    // fetch_max and fetch_min never store a value behind the current one,
+    // and the compare-exchange loop checks before it stores.
     void advance(T new_value) noexcept {
-        CRUCIBLE_PRE(Cmp{}(value_.load(std::memory_order_acquire), new_value));
+        if constexpr (kFastPathEligible && kIsLess) {
+            const T replaced = value_.fetch_max(new_value, std::memory_order_acq_rel);
+            CRUCIBLE_PRE(replaced < new_value);
+        } else if constexpr (kFastPathEligible && kIsGreater) {
+            const T replaced = value_.fetch_min(new_value, std::memory_order_acq_rel);
+            CRUCIBLE_PRE(replaced > new_value);
+        } else {
+            Cmp cmp;
+            T observed = value_.load(std::memory_order_acquire);
+            do {
+                CRUCIBLE_PRE(cmp(observed, new_value));
+            } while (!value_.compare_exchange_weak(observed, new_value, std::memory_order_acq_rel,
+                                                   std::memory_order_acquire));
+        }
+    }
+
+    // For the one thread that writes this counter, such as the producer
+    // of a single-producer ring.  The check reads that thread's own last
+    // store, and the store is a plain release with no locked instruction.
+    // Two writers use advance instead: between the check and the store
+    // here, another writer can pass the new value.
+    void advance_sole_writer(T new_value) noexcept {
+        CRUCIBLE_PRE(Cmp{}(value_.load(std::memory_order_relaxed), new_value));
         value_.store(new_value, std::memory_order_release);
     }
 
     // delta is a magnitude, not a signed step. Cmp fixes the direction:
     // std::less adds and std::greater subtracts. A negative delta would
     // step the counter against Cmp and break monotonicity, which is
-    // what the precondition rules out. The check is vacuous for
-    // unsigned T.
+    // what the first precondition rules out. The check is vacuous for
+    // unsigned T.  A step past the end of T would wrap the counter to
+    // the other end, which is the other way to go backward.  The second
+    // precondition holds on the value the step replaces, which the same
+    // compare-exchange that stores the step reads, and it is checked
+    // before the store.
     [[nodiscard]] T bump_by(T delta) noexcept
         requires std::integral<T> && (kIsLess || kIsGreater)
     pre(::foundation::decide::non_negative(delta)) {
-        if constexpr (kIsLess) {
-            return value_.fetch_add(delta, std::memory_order_acq_rel);
-        } else {
-            return value_.fetch_sub(delta, std::memory_order_acq_rel);
+        T observed = value_.load(std::memory_order_relaxed);
+        for (;;) {
+            if constexpr (kIsLess) {
+                CRUCIBLE_PRE(::foundation::decide::no_overflow_sum(observed, delta));
+            } else {
+                CRUCIBLE_PRE(observed >= static_cast<T>(std::numeric_limits<T>::min() + delta));
+            }
+            const T stepped = kIsLess ? static_cast<T>(observed + delta) : static_cast<T>(observed - delta);
+            if (value_.compare_exchange_weak(observed, stepped, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                return observed;
+            }
         }
     }
 
@@ -700,11 +803,6 @@ public:
 
     [[nodiscard]] T load(std::memory_order order = std::memory_order_acquire) const noexcept {
         return value_.load(order);
-    }
-
-    void store(T new_value, std::memory_order order = std::memory_order_release) noexcept {
-        CRUCIBLE_PRE(Cmp{}(value_.load(std::memory_order_acquire), new_value));
-        value_.store(new_value, order);
     }
 
     // failure_order must not be release or acq_rel. The standard

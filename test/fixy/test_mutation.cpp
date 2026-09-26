@@ -102,6 +102,15 @@ static_assert(::fixy::MonotoneCarrier<std::uint32_t, std::less<std::uint32_t>>);
 static_assert(::fixy::MonotoneCarrier<double, std::greater<double>>);
 static_assert(!::fixy::MonotoneCarrier<std::uint32_t, int>);
 static_assert(::fixy::BoundedMonotoneCarrier<std::uint32_t, 8U, std::less<std::uint32_t>>);
+static_assert(::fixy::BoundedMonotoneCarrier<std::uint8_t, 255, std::less<std::uint8_t>>);
+static_assert(::fixy::BoundedMonotoneCarrier<std::int32_t, 10U, std::less<std::int32_t>>,
+              "an unsigned bound that a signed carrier holds is admitted");
+static_assert(!::fixy::BoundedMonotoneCarrier<std::uint8_t, 256, std::less<std::uint8_t>>,
+              "a bound the carrier cannot hold would be truncated");
+static_assert(!::fixy::BoundedMonotoneCarrier<std::uint32_t, -1, std::less<std::uint32_t>>,
+              "a negative bound would become the maximum of an unsigned carrier");
+static_assert(!::fixy::BoundedMonotoneCarrier<double, 5, std::less<double>>, "the bound is compared as an integer");
+static_assert(!::fixy::BoundedMonotoneCarrier<bool, true, std::less<bool>>);
 static_assert(::fixy::SlotPointer<int*>);
 static_assert(::fixy::SlotPointer<void*>);
 static_assert(!::fixy::SlotPointer<int>);
@@ -113,6 +122,19 @@ static_assert(std::is_copy_constructible_v<Monotonic<std::uint32_t>>);
 static_assert(std::is_copy_constructible_v<BoundedMonotonic<std::uint32_t, 8U>>);
 static_assert(std::is_copy_constructible_v<WriteOnce<int>>);
 static_assert(std::is_copy_constructible_v<WriteOnceNonNull<int*>>);
+
+// No wrapper is assignable.  An assignment moves a counter backward,
+// empties a set slot, or drops every element of a log, and the move
+// constructor, which starts a new object, stays.
+template <typename W>
+inline constexpr bool is_movable_never_assignable =
+    std::is_move_constructible_v<W> && !std::is_copy_assignable_v<W> && !std::is_move_assignable_v<W>;
+static_assert(is_movable_never_assignable<AppendOnly<int>>);
+static_assert(is_movable_never_assignable<OrderedAppendOnly<int>>);
+static_assert(is_movable_never_assignable<Monotonic<std::uint32_t>>);
+static_assert(is_movable_never_assignable<BoundedMonotonic<std::uint32_t, 8U>>);
+static_assert(is_movable_never_assignable<WriteOnce<int>>);
+static_assert(is_movable_never_assignable<WriteOnceNonNull<int*>>);
 
 // AtomicMonotonic is Pinned.
 static_assert(!std::is_copy_constructible_v<AtomicMonotonic<std::uint64_t>>);
@@ -434,9 +456,9 @@ int check_atomic_monotonic() {
         if (ring_head.get() != 42ULL) return 131;
     }
 
-    // The default orderings are acquire on load and release on store. The
-    // explicit-order overloads exist for callers that need seq_cst, and they
-    // keep the monotonicity contract on the store side.
+    // The default ordering of a load is acquire, and the explicit-order
+    // overload exists for callers that need another.  The one writer of a
+    // counter publishes with a release store and no locked instruction.
     {
         AtomicMonotonic<std::uint64_t> counter = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 
@@ -445,10 +467,10 @@ int check_atomic_monotonic() {
         if (counter.load(std::memory_order_seq_cst) != 0ULL) return 133;
         if (counter.load(std::memory_order_relaxed) != 0ULL) return 134;
 
-        counter.store(7ULL);
+        counter.advance_sole_writer(7ULL);
         if (counter.get() != 7ULL) return 135;
 
-        counter.store(42ULL, std::memory_order_seq_cst);
+        counter.advance_sole_writer(42ULL);
         if (counter.get() != 42ULL) return 136;
     }
 
@@ -505,7 +527,7 @@ int check_atomic_monotonic() {
         AtomicMonotonic<std::uint64_t> top = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 
         // One thread only. No race is exercised here, just the API shape.
-        bottom.store(5ULL);
+        bottom.advance_sole_writer(5ULL);
         AtomicMonotonic<std::uint64_t>::fence_seq_cst();
         const auto t = top.load(std::memory_order_relaxed);
         if (t != 0ULL) return 147;
@@ -570,6 +592,34 @@ int check_atomic_monotonic() {
         if (advances < kPerThread) return 154;
         if (advances > kThreads * kPerThread) return 155;
     }
+
+    // Many writers bump one counter.  Every step is one compare-exchange,
+    // so no step is lost and each bump returns a slot no other bump
+    // returned.
+    {
+        constexpr int kThreads = 4;
+        constexpr std::uint64_t kPerThread = 4096;
+
+        AtomicMonotonic<std::uint64_t> shared_count = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+        std::atomic<std::uint64_t> slot_sum{0};
+        std::latch start_gate{kThreads + 1};
+        {
+            std::inplace_vector<std::jthread, kThreads> workers;
+            for (int tid = 0; tid < kThreads; ++tid) {
+                workers.emplace_back([&shared_count, &slot_sum, &start_gate] {
+                    start_gate.arrive_and_wait();
+                    std::uint64_t local_sum = 0;
+                    for (std::uint64_t i = 0; i < kPerThread; ++i) local_sum += shared_count.bump();
+                    slot_sum.fetch_add(local_sum, std::memory_order_relaxed);
+                });
+            }
+            start_gate.arrive_and_wait();
+        }
+        constexpr std::uint64_t kTotal = kThreads * kPerThread;
+        if (shared_count.get() != kTotal) return 156;
+        // The slots handed out are 0 through kTotal - 1, each one time.
+        if (slot_sum.load(std::memory_order_relaxed) != kTotal * (kTotal - 1) / 2) return 157;
+    }
     return 0;
 }
 
@@ -615,11 +665,26 @@ int check_contracts_abort() {
 
     AtomicMonotonic<std::uint64_t> atomic = ::fixy::mint_atomic_monotonic<std::uint64_t>(10);
     if (!aborts([&] { atomic.advance(9); })) return 176;
-    if (!aborts([&] { atomic.store(9); })) return 177;
+    if (!aborts([&] { atomic.advance(10); })) return 185;
+    if (!aborts([&] { atomic.advance_sole_writer(9); })) return 177;
     if (atomic.get() != 10) return 178;
 
     AtomicMonotonic<std::int64_t> signed_counter = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
     if (!aborts([&] { (void)signed_counter.bump_by(-1); })) return 179;
+
+    // A bump past the end of the carrier would wrap to the other end, so
+    // it aborts and leaves the counter where it was.  The same holds for a
+    // decreasing counter at its floor.
+    AtomicMonotonic<std::uint8_t> near_top = ::fixy::mint_atomic_monotonic<std::uint8_t>(std::uint8_t{250});
+    if (!aborts([&] { (void)near_top.bump_by(std::uint8_t{6}); })) return 186;
+    if (near_top.get() != 250) return 187;
+    if (near_top.bump_by(std::uint8_t{5}) != 250 || near_top.get() != 255) return 188;
+    if (!aborts([&] { (void)near_top.bump(); })) return 189;
+    AtomicMonotonic<std::uint8_t, std::greater<std::uint8_t>> near_floor =
+        ::fixy::mint_atomic_monotonic<std::uint8_t, std::greater<std::uint8_t>>(std::uint8_t{3});
+    if (!aborts([&] { (void)near_floor.bump_by(std::uint8_t{4}); })) return 190;
+    if (near_floor.get() != 3) return 191;
+    if (near_floor.bump_by(std::uint8_t{3}) != 3 || near_floor.get() != 0) return 192;
 
     std::uint64_t expected = 10;
     if (!aborts([&] { (void)atomic.compare_exchange_advance(expected, 9); })) return 180;

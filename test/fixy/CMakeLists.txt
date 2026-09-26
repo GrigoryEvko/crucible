@@ -121,6 +121,91 @@ fixy_neg_compile_test(neg_mutation_write_once_twice
   "in .constexpr. expansion of .slot\\.fixy::WriteOnce<int>::set\\(2\\)."
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
+# No mutation wrapper is assignable.  An assignment moves a counter
+# backward, empties a set slot, or drops every element of a log, so each
+# wrapper deletes both assignments with a message that names what the
+# assignment would undo.  One fixture per wrapper and direction.
+fixy_neg_compile_test(neg_mutation_monotonic_move_assign
+  "use of deleted function .fixy::Monotonic<T, Cmp>& fixy::Monotonic<T, Cmp>::operator=\\(fixy::Monotonic<T, Cmp>&&\\)"
+  "Monotonic only advances\\. An assignment would move it backward\\.")
+fixy_neg_compile_test(neg_mutation_monotonic_copy_assign
+  "use of deleted function .fixy::Monotonic<T, Cmp>& fixy::Monotonic<T, Cmp>::operator=\\(const fixy::Monotonic<T, Cmp>&\\)"
+  "Monotonic only advances\\. An assignment would move it backward\\.")
+fixy_neg_compile_test(neg_mutation_bounded_monotonic_move_assign
+  "use of deleted function .fixy::BoundedMonotonic<T, Max, Cmp>& fixy::BoundedMonotonic<T, Max, Cmp>::operator=\\(fixy::BoundedMonotonic<T, Max, Cmp>&&\\)"
+  "BoundedMonotonic only advances\\. An assignment would move it backward\\.")
+fixy_neg_compile_test(neg_mutation_bounded_monotonic_copy_assign
+  "use of deleted function .fixy::BoundedMonotonic<T, Max, Cmp>& fixy::BoundedMonotonic<T, Max, Cmp>::operator=\\(const fixy::BoundedMonotonic<T, Max, Cmp>&\\)"
+  "BoundedMonotonic only advances\\. An assignment would move it backward\\.")
+fixy_neg_compile_test(neg_mutation_write_once_move_assign
+  "use of deleted function .fixy::WriteOnce<T>& fixy::WriteOnce<T>::operator=\\(fixy::WriteOnce<T>&&\\)"
+  "WriteOnce is set at most once\\. An assignment would empty or overwrite a set slot\\.")
+fixy_neg_compile_test(neg_mutation_write_once_copy_assign
+  "use of deleted function .fixy::WriteOnce<T>& fixy::WriteOnce<T>::operator=\\(const fixy::WriteOnce<T>&\\)"
+  "WriteOnce is set at most once\\. An assignment would empty or overwrite a set slot\\.")
+fixy_neg_compile_test(neg_mutation_write_once_non_null_move_assign
+  "use of deleted function .fixy::WriteOnceNonNull<T\\*>& fixy::WriteOnceNonNull<T\\*>::operator=\\(fixy::WriteOnceNonNull<T\\*>&&\\)"
+  "WriteOnceNonNull is set at most once\\. An assignment would empty or overwrite a set slot\\.")
+fixy_neg_compile_test(neg_mutation_write_once_non_null_copy_assign
+  "use of deleted function .fixy::WriteOnceNonNull<T\\*>& fixy::WriteOnceNonNull<T\\*>::operator=\\(const fixy::WriteOnceNonNull<T\\*>&\\)"
+  "WriteOnceNonNull is set at most once\\. An assignment would empty or overwrite a set slot\\.")
+fixy_neg_compile_test(neg_mutation_append_only_move_assign
+  "use of deleted function .fixy::AppendOnly<T, Storage>& fixy::AppendOnly<T, Storage>::operator=\\(fixy::AppendOnly<T, Storage>&&\\)"
+  "AppendOnly never removes an element\\. An assignment would drop every element it holds\\.")
+fixy_neg_compile_test(neg_mutation_append_only_copy_assign
+  "use of deleted function .fixy::AppendOnly<T, Storage>& fixy::AppendOnly<T, Storage>::operator=\\(const fixy::AppendOnly<T, Storage>&\\)"
+  "AppendOnly never removes an element\\. An assignment would drop every element it holds\\.")
+fixy_neg_compile_test(neg_mutation_ordered_append_only_move_assign
+  "use of deleted function .fixy::OrderedAppendOnly<T, KeyFn, Cmp, Storage>& fixy::OrderedAppendOnly<T, KeyFn, Cmp, Storage>::operator=\\(fixy::OrderedAppendOnly<T, KeyFn, Cmp, Storage>&&\\)"
+  "OrderedAppendOnly never removes an element\\. An assignment would drop every element it holds\\.")
+fixy_neg_compile_test(neg_mutation_ordered_append_only_copy_assign
+  "use of deleted function .fixy::OrderedAppendOnly<T, KeyFn, Cmp, Storage>& fixy::OrderedAppendOnly<T, KeyFn, Cmp, Storage>::operator=\\(const fixy::OrderedAppendOnly<T, KeyFn, Cmp, Storage>&\\)"
+  "OrderedAppendOnly never removes an element\\. An assignment would drop every element it holds\\.")
+
+# The bound of a BoundedMonotonic is an integer the carrier holds
+# exactly, so no conversion changes it.  GCC separates template
+# arguments with a semicolon, which CMake reads as a list separator, so
+# the regexes match it with a dot.
+fixy_neg_compile_test(neg_mutation_bounded_monotonic_bound_truncates
+  "required for the satisfaction of .BoundedMonotoneCarrier<T, Max, Cmp>. \\[with T = unsigned char. Max = 256. Cmp = std::less<unsigned char>\\]"
+  "the expression .\\(in_range<T>\\)\\(Max\\) \\[with T = unsigned char. Max = 256\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_mutation_bounded_monotonic_negative_bound
+  "required for the satisfaction of .BoundedMonotoneCarrier<T, Max, Cmp>. \\[with T = unsigned int. Max = -1. Cmp = std::less<unsigned int>\\]"
+  "the expression .\\(in_range<T>\\)\\(Max\\) \\[with T = unsigned int. Max = -1\\]. evaluated to .false.")
+
+# The door of each mutation wrapper refuses a type argument its concept
+# does not admit.
+fixy_neg_compile_test(neg_mutation_append_only_storage_without_index
+  "In substitution of .template<class T, template<class ...> class Storage>  requires  AppendOnlyStorage<T, Storage> constexpr fixy::AppendOnly<T, Storage> fixy::mint_append_only\\(\\) \\[with T = int. Storage = std::__cxx11::list\\]"
+  "the required expression .storage\\[index\\]. is invalid")
+fixy_neg_compile_test(neg_mutation_append_only_storage_without_append
+  "In substitution of .template<class T, template<class ...> class Storage>  requires  AppendOnlyStorage<T, Storage> constexpr fixy::AppendOnly<T, Storage> fixy::mint_append_only\\(\\) \\[with T = int. Storage = std::set\\]"
+  "the required expression .mutable_storage\\.emplace_back\\(std::move\\(item\\)\\). is invalid")
+fixy_neg_compile_test(neg_mutation_ordered_append_only_storage_without_index
+  "fixy::mint_ordered_append_only\\(\\) \\[with T = int. KeyFn = std::identity. Cmp = std::less<void>. Storage = std::__cxx11::list\\]"
+  "the required expression .storage\\[index\\]. is invalid")
+fixy_neg_compile_test(neg_mutation_ordered_append_only_storage_without_append
+  "fixy::mint_ordered_append_only\\(\\) \\[with T = int. KeyFn = std::identity. Cmp = std::less<void>. Storage = std::set\\]"
+  "the required expression .mutable_storage\\.emplace_back\\(std::move\\(item\\)\\). is invalid")
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_string
+  "fixy::mint_atomic_monotonic\\(T\\) .with T = std::__cxx11::basic_string<char>."
+  ".std::__cxx11::basic_string<char>. is not trivially copyable")
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_user_copy
+  "fixy::mint_atomic_monotonic\\(T\\) .with T = .[a-z]+.::Stamp."
+  "..[a-z]+.::Stamp. is not trivially copyable")
+fixy_neg_compile_test(neg_mutation_write_once_non_null_not_pointer
+  "required for the satisfaction of .SlotPointer<Ptr>. \\[with Ptr = int\\]"
+  "the expression .is_pointer_v<Ptr> \\[with Ptr = int\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_mutation_write_once_non_null_member_pointer
+  "required for the satisfaction of .SlotPointer<Ptr>. \\[with Ptr = int .[a-z]+.::Holder::\\*\\]"
+  "the expression .is_pointer_v<Ptr> \\[with Ptr = int .[a-z]+.::Holder::\\*\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_mutation_monotonic_comparator_not_ordering
+  "required for the satisfaction of .MonotoneCarrier<T, Cmp>. \\[with T = unsigned int. Cmp = int\\]"
+  ".int. is not invocable by .const unsigned int&, const unsigned int&.")
+fixy_neg_compile_test(neg_mutation_write_once_not_movable
+  "fixy::mint_write_once\\(\\) \\[with T = .[a-z]+.::Pinned\\]"
+  "required for the satisfaction of .move_constructible<T>. \\[with T = .[a-z]+.::Pinned\\]")
+
 # ── The atom catalog ──────────────────────────────────────────────────
 fixy_test(test_atom)
 

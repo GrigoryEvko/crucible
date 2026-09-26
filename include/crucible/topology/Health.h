@@ -293,6 +293,28 @@ template <class Counters>
     return !(is_counter_behind(sample_members, stored_members) || ...);
 }
 
+// Moves `stored` to its peer `sample`.  A monotone counter advances,
+// which a Monotonic admits only forward, and any other member is copied.
+template <class Member>
+constexpr void take_member(Member& stored, Member const& sample) noexcept {
+    if constexpr (IsMonotoneCount<Member>) {
+        stored.advance(sample.get());
+    } else {
+        stored = sample;
+    }
+}
+
+// Moves every member of `stored` to its peer in `sample`.  The caller
+// proves no_counter_behind(sample, stored) first, so each counter advance
+// holds its precondition.  The structured bindings take every member, as
+// in no_counter_behind.
+template <class Counters>
+constexpr void take_counters(Counters& stored, Counters const& sample) noexcept {
+    auto& [... stored_members] = stored;
+    auto const& [... sample_members] = sample;
+    (take_member(stored_members, sample_members), ...);
+}
+
 // Internal to the scorer: it owns the only instance, and the scorer's
 // mint is the only way to reach one.
 template <std::size_t MaxPeers, std::size_t Window>
@@ -605,8 +627,9 @@ public:
             || !slot->sequence.try_advance(sample.sequence)) {
             return false;
         }
-        slot->prior_ecc = slot->ecc;
-        slot->ecc = sample;
+        // The prior sample trails the current one, so both only advance.
+        detail::take_counters(slot->prior_ecc, slot->ecc);
+        detail::take_counters(slot->ecc, sample);
         slot->has_ecc = true;
         return true;
     }
@@ -619,8 +642,8 @@ public:
             || !slot->sequence.try_advance(sample.sequence)) {
             return false;
         }
-        slot->prior_drops = slot->drops;
-        slot->drops = sample;
+        detail::take_counters(slot->prior_drops, slot->drops);
+        detail::take_counters(slot->drops, sample);
         slot->has_drops = true;
         return true;
     }

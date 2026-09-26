@@ -203,13 +203,13 @@ apply to the row.
 | `foundation::permissions::FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `foundation::permissions::FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | · | HS14: 2 |
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
+| `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
+| `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_borrowed_ref` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
+| `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_carries_the_value` | `include/fixy/Fn.h` | Y | Y | Y | · | token | · | · | HS14: 0 ⚠ |
 | `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
@@ -217,8 +217,8 @@ apply to the row.
 | `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
-| `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
-| `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
+| `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
+| `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_owned_region(::foundation::effects::Alloc,Allocator&,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 16 |
 | `mint_owned_region(T*,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 16 |
 | `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 15 |
@@ -233,8 +233,8 @@ apply to the row.
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_witnessed_at` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_witnessed_under` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_write_once` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
-| `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
+| `mint_write_once` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
+| `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 
 ## include/fixy/concurrent/
 
@@ -361,4 +361,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 100 | 50 | 41 | 9 | 0 | 91 | 32 |
-| new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 21 |
+| new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 14 |

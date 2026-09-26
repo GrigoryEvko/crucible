@@ -83,13 +83,6 @@ mint_nic_telemetry_snapshot|include/crucible/topology/Telemetry.h
 mint_carries_the_value|include/fixy/Fn.h
 mint_fn_for|include/fixy/Fn.h
 mint_machine|include/fixy/Machine.h
-mint_append_only|include/fixy/Mutation.h
-mint_atomic_monotonic|include/fixy/Mutation.h
-mint_bounded_monotonic|include/fixy/Mutation.h
-mint_monotonic|include/fixy/Mutation.h
-mint_ordered_append_only|include/fixy/Mutation.h
-mint_write_once|include/fixy/Mutation.h
-mint_write_once_non_null|include/fixy/Mutation.h
 mint_affine|include/fixy/Qtt.h
 mint_sealed_refined_trusted|include/fixy/Refined.h
 

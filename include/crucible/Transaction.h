@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <type_traits>
 
@@ -131,7 +132,11 @@ public:
         // Claiming advances only the cursor, so the reference it hands back
         // stays valid across the reset that follows.
         Transaction* tx = &ring_.claim();
-        *tx = Transaction{};
+        // Recycling ends the life of the old transaction and starts a new
+        // one in the slot.  An assignment would write step_id backward, and
+        // its Monotonic refuses an assignment.
+        std::destroy_at(tx);
+        std::construct_at(tx);
         // Set rather than assigned, so a later edit cannot reintroduce a write
         // that goes backwards.
         tx->step_id.advance(step_id);

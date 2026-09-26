@@ -152,7 +152,7 @@ public:
         // passes the capacity gate observes the new tail and therefore
         // the cleared bit.
         ready_[word_idx].fetch_and(~mask, std::memory_order_release);
-        tail_.store(pos + 1, std::memory_order_release);
+        tail_.advance_sole_writer(pos + 1);
         return item;
     }
 
@@ -202,7 +202,7 @@ public:
             out[i] = cells_[(pos0 + i) & MASK];
         }
         clear_range_(pos0 & MASK, ((pos0 + R - 1) & MASK) + 1, R);
-        tail_.store(pos0 + R, std::memory_order_release);
+        tail_.advance_sole_writer(pos0 + R);
         return R;
     }
 
