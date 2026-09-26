@@ -1379,6 +1379,40 @@ struct BorrowedBoundsViolation : tag_base {
         "for (size_t i = 0; i <= b.size(); ++i) use(b[i]);  // off-by-one";
 };
 
+struct AllocationSizeOverflow : tag_base {
+    static constexpr std::string_view name = "AllocationSizeOverflow";
+    static constexpr std::string_view description = "The byte size of an allocation did not fit in std::size_t.  The "
+                                                    "size is the element count times the element size, plus the "
+                                                    "slack that rounds it up to the alignment.  One of these steps "
+                                                    "wrapped, or the result is more than the bound of the buffer.  "
+                                                    "foundation::AlignedBuffer and foundation::SwissTableBuffer "
+                                                    "calculate their sizes this way, and each stops the process "
+                                                    "before it asks the heap for storage.";
+    static constexpr std::string_view remediation = "Find the caller that supplied the count, and make sure that "
+                                                    "the count comes from a bounded source.  A count that comes "
+                                                    "from a file, from the network or from a subtraction that can "
+                                                    "wrap is the usual cause.  Validate the count against the "
+                                                    "capacity that the design permits before the call, and refuse "
+                                                    "a larger value with an error return.";
+
+    static constexpr Severity severity = Severity::Fatal;
+    static constexpr std::string_view why_this_matters = "A wrapped size is smaller than the storage that the count "
+                                                         "needs.  The allocation then succeeds, and each write past "
+                                                         "the small block goes into memory that another object owns.  "
+                                                         "The damage shows far from its cause, often in a different "
+                                                         "thread.  The size path stops the process before the "
+                                                         "allocation, because no caller can recover a buffer of the "
+                                                         "size that it asked for.";
+    static constexpr std::string_view symptom_pattern = "An abort at the first allocation after a count is read from "
+                                                        "untrusted bytes, such as a header field of a trace file.  Or "
+                                                        "an abort after a subtraction of two sizes wraps and gives a "
+                                                        "count near the top of std::size_t.";
+    static constexpr std::string_view correct_example =
+        "if (count > kMaxSlots) return std::unexpected(Error::TooLarge);  // bounded first";
+    static constexpr std::string_view violating_example =
+        "auto buf = AlignedBuffer<Slot>::allocate(header.count);  // count read from the file";
+};
+
 template <typename T>
 inline constexpr bool is_diagnostic_class_v = std::is_base_of_v<tag_base, T> && !std::is_same_v<T, tag_base>;
 
@@ -1484,6 +1518,7 @@ enum class Category : std::uint8_t {
     PublishOnceDoublePublish = 30,
     BitsInvariantViolation = 31,
     BorrowedBoundsViolation = 32,
+    AllocationSizeOverflow = 33,
 };
 
 namespace detail {
