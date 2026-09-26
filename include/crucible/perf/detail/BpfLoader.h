@@ -42,10 +42,10 @@ static_assert(sizeof(Fd) == sizeof(int));
 
 [[nodiscard]] inline Tid current_tid() noexcept {
     return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::syscall(
-        SYS_gettid)));  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; gettid is identity-only, no capability
+        SYS_gettid)));  // SYSCALL-CAP-OK: a load under an Init context calls it, and gettid only reads the thread id
 }
 
-[[nodiscard]] inline Fd map_fd(struct bpf_map* m) noexcept { return ::fixy::mint_tagged<source::BpfMap>(bpf_map__fd(m)); }
+[[nodiscard]] inline Fd map_fd(bpf_map* m) noexcept { return ::fixy::mint_tagged<source::BpfMap>(bpf_map__fd(m)); }
 
 // A function-local static in an inline function has one instance
 // across every translation unit that includes this header, so the
@@ -72,7 +72,7 @@ static_assert(sizeof(Fd) == sizeof(int));
 // fixy::handle::Once carries the one-shot flag rather than
 // std::call_once, whose pthread backing this path does not need.
 
-inline int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
+[[gnu::format(printf, 2, 0)]] inline int libbpf_log_cb(libbpf_print_level, const char* fmt, va_list args) noexcept {
     if (!verbose()) return 0;
     return std::vfprintf(stderr, fmt, args);
 }
@@ -85,8 +85,8 @@ inline void install_libbpf_log_cb_once() noexcept {
 // libbpf names the map "<object name>.rodata", so the match is on the
 // suffix rather than on the whole name.
 
-[[nodiscard]] inline struct bpf_map* find_rodata(struct bpf_object* obj) noexcept {
-    struct bpf_map* map = nullptr;
+[[nodiscard]] inline bpf_map* find_rodata(bpf_object* obj) noexcept {
+    bpf_map* map = nullptr;
     bpf_object__for_each_map(map, obj) {
         const char* n = bpf_map__name(map);
         if (n == nullptr) continue;
@@ -112,19 +112,19 @@ inline void install_libbpf_log_cb_once() noexcept {
     path.append(category_slash_event);
     path.append("/id");
     if (::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0)
-        return true;  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; existence-only probe, AT_EACCESS honors caps
+        return true;  // SYSCALL-CAP-OK: a load under an Init context probes that the file exists, with the effective capabilities
     path.assign("/sys/kernel/debug/tracing/events/");
     path.append(category_slash_event);
     path.append("/id");
     return ::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS)
-        == 0;  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; debugfs-fallback existence probe, AT_EACCESS honors caps
+        == 0;  // SYSCALL-CAP-OK: a load under an Init context probes the debugfs path, with the effective capabilities
 }
 
 // A load fails for the whole object when any one program names a
 // tracepoint this kernel does not carry, so the missing ones lose
 // their autoload flag before the load rather than after it.
-inline void disable_unavailable_programs(struct bpf_object* obj) noexcept {
-    struct bpf_program* prog = nullptr;
+inline void disable_unavailable_programs(bpf_object* obj) noexcept {
+    bpf_program* prog = nullptr;
     bpf_object__for_each_program(prog, obj) {
         const char* sec = bpf_program__section_name(prog);
         if (sec == nullptr) continue;

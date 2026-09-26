@@ -52,8 +52,11 @@ WHAT THE KIT CANNOT READ
         levels.  So the limit comes from the shape, not from the depth alone.
         A generator must emit an alias for each deep sub-type, so that no
         declaration nests that deep.
-      * The files in UNPARSEABLE are not C++, or they use a macro in statement
-        position with a brace body.  Each entry names its reason.
+      * A macro in statement position with a brace body, such as libbpf's
+        bpf_object__for_each_program, fails to parse when an argument holds
+        `->`.  It parses when the arguments are plain names, so a caller
+        passes a member or a local rather than a member access.
+      * The files in UNPARSEABLE are not C++.  Each entry names its reason.
 """
 
 from __future__ import annotations
@@ -90,12 +93,6 @@ UNPARSEABLE: dict[str, str] = {
     "include/crucible/perf/bpf/vmlinux.h": (
         "generated BPF C, not C++ — it declares a field named `operator`"
     ),
-    "src/perf/LockContention.cpp": "libbpf statement macro with a brace body",
-    "src/perf/SchedSwitch.cpp": "libbpf statement macro with a brace body",
-    "src/perf/SchedTpBtf.cpp": "libbpf statement macro with a brace body",
-    "src/perf/SenseHub.cpp": "libbpf statement macro with a brace body",
-    "src/perf/SyscallLatency.cpp": "libbpf statement macro with a brace body",
-    "src/perf/SyscallTpBtf.cpp": "libbpf statement macro with a brace body",
 }
 
 
@@ -639,6 +636,16 @@ def _self_test() -> int:
             len(list(macro.find("preproc_arg"))) == 1
             and not list(macro.find("call_expression", "template_function")),
         )
+        loop_body = "  bpf_object__for_each_program(prog, {}) {{\n    use(prog);\n  }}\n"
+        check(
+            "limit: a brace-body statement macro with `->` in an argument fails",
+            parse_text("arrow.cpp", "void f(S* s) {\n" + loop_body.format("s->obj") + "}\n").diagnostic
+            is not None,
+        )
+        check(
+            "the same macro with a plain-name argument parses clean",
+            parse_text("member.cpp", "void f() {\n" + loop_body.format("obj_") + "}\n").diagnostic is None,
+        )
         arms = parse_text("arms.cpp", "#if 0\nint dead_arm();\n#else\nint live_arm();\n#endif\n")
         check(
             "limit: the kit parses both arms of an #if",
@@ -671,7 +678,7 @@ def _self_test() -> int:
 
     # Negative control: a rostered file is admitted, and it really does carry an
     # error, so the roster entry is not stale.
-    rostered = Path("src/perf/LockContention.cpp")
+    rostered = Path("include/crucible/perf/bpf/vmlinux.h")
     if (REPO_ROOT / rostered).is_file():
         admitted = list(parse([rostered]))
         check(
@@ -682,7 +689,7 @@ def _self_test() -> int:
     if failures:
         print(f"tsast --self-test: FAILED — {len(failures)} of the checks did not hold")
         return 2
-    print("tsast --self-test: every check passes, 5 of them negative controls.")
+    print("tsast --self-test: every check passes, 6 of them negative controls.")
     return 0
 
 

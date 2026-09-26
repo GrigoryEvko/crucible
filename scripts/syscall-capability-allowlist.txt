@@ -81,8 +81,6 @@ src/cntp/RoceConfig.cpp:LocalFd fd{::open(path, O_RDONLY | O_CLOEXEC)};  — eff
 src/cntp/RoceConfig.cpp:const auto nread = ::read(fd.get(), bytes.data(), bytes.size() - 1u);  — effects::IO via read_counter_file (read sysfs pause-frame counter)
 src/fixy/_Fs.cpp:const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  — effects::IO via open_dirfd → do_open_dirfd_impl (O_DIRECTORY|O_NOFOLLOW dirfd open)
 src/perf/PmuSample.cpp:return ::syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags);  — effects::Init via perf_event_open_syscall (raw SYS_perf_event_open)
-src/perf/PmuSample.cpp:if (fd.value() >= 0) ::close(fd.value());  — effects::Init via PmuSample::State::~State (close perf fds on RAII drop)
-src/perf/PmuSample.cpp:::close(perf_fd.value());  — effects::Init via PmuSample::attach (close perf fd on the attach-failure and capacity-full rollbacks; two sites, one key)
 src/perf/ProcGauges.cpp:r = ::close(fd_);  — effects::Bg via ScopedFd::close_ (close on RAII drop)
 src/perf/ProcGauges.cpp:fd = ::open(path, O_RDONLY | O_CLOEXEC);  — effects::Bg via open_ro (open /proc gauge O_RDONLY|O_CLOEXEC)
 src/perf/ProcGauges.cpp:r = ::pread(fd, buf, n - 1, 0);  — effects::Bg via pread_full (pread /proc gauge, EINTR-retried)
