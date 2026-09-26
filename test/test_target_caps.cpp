@@ -18,6 +18,18 @@
 
 namespace cog = crucible::cog;
 
+// Name the stored type, so a literal of another width does not deduce a
+// claim the field refuses.
+template <typename T>
+static constexpr cog::VendorClaim<T> vendor(std::type_identity_t<T> value) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::Vendor, T>(value);
+}
+
+template <typename T>
+static constexpr cog::CalibratedValue<T> calibrated(std::type_identity_t<T> value) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::Calibrated, T>(value);
+}
+
 static void test_link_layer_name_coverage() {
     constexpr cog::LinkLayer layers[] = {
         cog::LinkLayer::Ethernet, cog::LinkLayer::Infiniband, cog::LinkLayer::Roce,
@@ -73,7 +85,7 @@ static void test_gpu_feature_runtime() {
         assert(name != std::string_view{"<unknown GpuFeature>"});
     }
 
-    crucible::safety::Bits<cog::GpuFeature> all_set{};
+    ::fixy::Bits<cog::GpuFeature> all_set{};
     for (cog::GpuFeature F : flags)
         all_set.set(F);
     assert(all_set.popcount() == static_cast<int>(sizeof(flags) / sizeof(flags[0])));
@@ -83,7 +95,7 @@ static void test_gpu_feature_runtime() {
     // A bitset over a second enum appears here to show the two
     // instantiations keep separate storage.  The type system already
     // forbids confusing them; this only confirms the counts.
-    crucible::safety::Bits<cog::NicFeature> nic_bits{};
+    ::fixy::Bits<cog::NicFeature> nic_bits{};
     nic_bits.set(cog::NicFeature::Tso);
     assert(nic_bits.popcount() == 1);
     assert(!nic_bits.test(cog::NicFeature::Roce));
@@ -161,16 +173,16 @@ static void test_dram_feature_runtime() {
 
 static void test_gpu_target_caps_construction() {
     cog::GpuTargetCaps caps{};
-    caps.sm_count = crucible::safety::Tagged<std::uint16_t, crucible::safety::source::Vendor>{132};
-    caps.warp_size = cog::PowerOfTwoLane{std::uint16_t{32}};
-    caps.warp_schedulers_per_sm = crucible::safety::Tagged<std::uint16_t, crucible::safety::source::Vendor>{4};
-    caps.max_warps_per_sm = crucible::safety::Tagged<std::uint16_t, crucible::safety::source::Vendor>{64};
-    caps.max_regs_per_thread = cog::ValidRegsPerThread{std::uint16_t{255}};
-    caps.smem_per_sm_bytes = crucible::safety::Tagged<std::uint32_t, crucible::safety::source::Vendor>{233472};
-    caps.l2_bytes = crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{50ull << 20};
-    caps.hbm_bytes = crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{80ull << 30};
-    caps.tflops_fp16 = crucible::safety::Tagged<float, crucible::safety::source::Calibrated>{989.0f};
-    caps.pcie_gen = crucible::safety::Tagged<cog::PcieGen, crucible::safety::source::Vendor>{cog::PcieGen::Gen5};
+    caps.sm_count = vendor<std::uint16_t>(132);
+    caps.warp_size = ::fixy::mint_refined<cog::power_of_two_lane>(std::uint16_t{32});
+    caps.warp_schedulers_per_sm = vendor<std::uint16_t>(4);
+    caps.max_warps_per_sm = vendor<std::uint16_t>(64);
+    caps.max_regs_per_thread = ::fixy::mint_refined<cog::valid_regs_per_thread>(std::uint16_t{255});
+    caps.smem_per_sm_bytes = vendor<std::uint32_t>(233472);
+    caps.l2_bytes = vendor<std::uint64_t>(50ull << 20);
+    caps.hbm_bytes = vendor<std::uint64_t>(80ull << 30);
+    caps.tflops_fp16 = calibrated<float>(989.0f);
+    caps.pcie_gen = vendor<cog::PcieGen>(cog::PcieGen::Gen5);
     caps.features.set(cog::GpuFeature::Tma);
     caps.features.set(cog::GpuFeature::Fp8);
     caps.features.set(cog::GpuFeature::Bf16);
@@ -191,15 +203,12 @@ static void test_gpu_target_caps_construction() {
 
 static void test_nic_port_target_caps_construction() {
     cog::NicPortTargetCaps caps{};
-    caps.link_layer = crucible::safety::Tagged<cog::LinkLayer, crucible::safety::source::Vendor>{cog::LinkLayer::Roce};
-    caps.line_rate_bytes_per_sec = crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{
-        50ull * 1000ull * 1000ull * 1000ull / 8ull};
-    caps.mtu_bytes = cog::ValidMtu{std::uint16_t{9000}};
-    caps.max_qp_count = crucible::safety::Tagged<std::uint32_t, crucible::safety::source::Vendor>{262144};
-    caps.tcam_entries = crucible::safety::Tagged<std::uint32_t, crucible::safety::source::Vendor>{65536};
-    caps.effective_bandwidth_bytes_per_sec =
-        crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Calibrated>{45ull * 1000ull * 1000ull
-                                                                                      * 1000ull / 8ull};
+    caps.link_layer = vendor<cog::LinkLayer>(cog::LinkLayer::Roce);
+    caps.line_rate_bytes_per_sec = vendor<std::uint64_t>(50ull * 1000ull * 1000ull * 1000ull / 8ull);
+    caps.mtu_bytes = ::fixy::mint_refined<cog::valid_mtu>(std::uint16_t{9000});
+    caps.max_qp_count = vendor<std::uint32_t>(262144);
+    caps.tcam_entries = vendor<std::uint32_t>(65536);
+    caps.effective_bandwidth_bytes_per_sec = calibrated<std::uint64_t>(45ull * 1000ull * 1000ull * 1000ull / 8ull);
     caps.features.set(cog::NicFeature::Roce);
     caps.features.set(cog::NicFeature::GpuDirectRdma);
     caps.features.set(cog::NicFeature::XdpNative);
@@ -217,9 +226,8 @@ static void test_nic_port_target_caps_construction() {
 
 static void test_nvswitch_target_caps_construction() {
     cog::NvSwitchTargetCaps caps{};
-    caps.port_count = crucible::safety::Tagged<std::uint16_t, crucible::safety::source::Vendor>{64};
-    caps.per_port_bandwidth_bytes_per_sec = crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{
-        900ull * 1000ull * 1000ull * 1000ull / 8ull};
+    caps.port_count = vendor<std::uint16_t>(64);
+    caps.per_port_bandwidth_bytes_per_sec = vendor<std::uint64_t>(900ull * 1000ull * 1000ull * 1000ull / 8ull);
     caps.features.set(cog::SwitchFeature::Sharp);
     caps.features.set(cog::SwitchFeature::Ecn);
 
@@ -232,20 +240,19 @@ static void test_nvswitch_target_caps_construction() {
 
 static void test_cpu_target_caps_construction() {
     cog::CpuCoreTargetCaps core{};
-    core.base_clock_mhz = crucible::safety::Tagged<std::uint32_t, crucible::safety::source::Vendor>{2400};
-    core.max_clock_mhz = crucible::safety::Tagged<std::uint32_t, crucible::safety::source::Vendor>{3800};
-    core.simd_vector_lanes = cog::PowerOfTwoLane{std::uint16_t{16}};
-    core.l2_bytes = crucible::safety::Tagged<std::uint32_t, crucible::safety::source::Vendor>{2u << 20};  // 2 MB
+    core.base_clock_mhz = vendor<std::uint32_t>(2400);
+    core.max_clock_mhz = vendor<std::uint32_t>(3800);
+    core.simd_vector_lanes = ::fixy::mint_refined<cog::power_of_two_lane>(std::uint16_t{16});
+    core.l2_bytes = vendor<std::uint32_t>(2u << 20);  // 2 MB
     core.features.set(cog::CpuFeature::Avx512);
     core.features.set(cog::CpuFeature::Amx);
     core.features.set(cog::CpuFeature::Vnni);
 
     cog::CpuSocketTargetCaps socket{};
-    socket.core_count = crucible::safety::Tagged<std::uint16_t, crucible::safety::source::Vendor>{56};
-    socket.thread_count = crucible::safety::Tagged<std::uint16_t, crucible::safety::source::Vendor>{112};
-    socket.l3_bytes =
-        crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{105ull << 20};  // 105 MB
-    socket.numa_node_count = crucible::safety::Tagged<std::uint8_t, crucible::safety::source::Vendor>{2};
+    socket.core_count = vendor<std::uint16_t>(56);
+    socket.thread_count = vendor<std::uint16_t>(112);
+    socket.l3_bytes = vendor<std::uint64_t>(105ull << 20);  // 105 MB
+    socket.numa_node_count = vendor<std::uint8_t>(2);
     socket.representative_core = core;
     socket.features = core.features;
 
@@ -258,12 +265,10 @@ static void test_cpu_target_caps_construction() {
 
 static void test_dram_target_caps_construction() {
     cog::DramChannelTargetCaps caps{};
-    caps.channel_width_bits = crucible::safety::Tagged<std::uint8_t, crucible::safety::source::Vendor>{64};
-    caps.speed_mts = crucible::safety::Tagged<std::uint16_t, crucible::safety::source::Vendor>{6400};
-    caps.bandwidth_bytes_per_sec = crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Calibrated>{
-        50ull * 1000ull * 1000ull * 1000ull};
-    caps.capacity_bytes =
-        crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{32ull << 30};  // 32 GB
+    caps.channel_width_bits = vendor<std::uint8_t>(64);
+    caps.speed_mts = vendor<std::uint16_t>(6400);
+    caps.bandwidth_bytes_per_sec = calibrated<std::uint64_t>(50ull * 1000ull * 1000ull * 1000ull);
+    caps.capacity_bytes = vendor<std::uint64_t>(32ull << 30);  // 32 GB
     caps.features.set(cog::DramFeature::Ecc);
     caps.features.set(cog::DramFeature::OnDieEcc);
 

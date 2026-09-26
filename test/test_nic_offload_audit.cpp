@@ -21,10 +21,10 @@ static cog::CogIdentity nic_identity() {
 
 static cog::NicPortTargetCaps nic_caps() {
     cog::NicPortTargetCaps caps{};
-    caps.link_layer = safety::Tagged<cog::LinkLayer, safety::source::Vendor>{cog::LinkLayer::Roce};
-    caps.line_rate_bytes_per_sec = safety::Tagged<std::uint64_t, safety::source::Vendor>{100ull << 30};
-    caps.max_tx_queues = safety::Tagged<std::uint16_t, safety::source::Vendor>{64};
-    caps.max_rx_queues = safety::Tagged<std::uint16_t, safety::source::Vendor>{64};
+    caps.link_layer = ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Roce);
+    caps.line_rate_bytes_per_sec = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(100ull << 30);
+    caps.max_tx_queues = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(64);
+    caps.max_rx_queues = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(64);
     caps.features.set(cog::NicFeature::Tso);
     caps.features.set(cog::NicFeature::Gso);
     caps.features.set(cog::NicFeature::Gro);

@@ -132,7 +132,7 @@ void test_fingerprint_reuses_the_cogmimic_projection() {
     const cog::CpuSocketTargetCaps socket = ledger::to_socket_caps(facts);
 
     cog::CpuSocketTargetCaps other = socket;
-    other.l3_bytes = safety::Tagged<std::uint64_t, safety::source::Vendor>{socket.l3_bytes.value() * 2u};
+    other.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(socket.l3_bytes.value() * 2u);
 
     const std::uint64_t left = mimic::detail::caps_class_projection<cog::CogKind::CpuSocket>::fold(socket);
     const std::uint64_t right = mimic::detail::caps_class_projection<cog::CogKind::CpuSocket>::fold(other);

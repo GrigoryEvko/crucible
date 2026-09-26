@@ -103,7 +103,7 @@ void test_latency_entry_and_result() {
     assert(valid_entry.has_value());
 
     cog::GpuTargetCaps caps{};
-    caps.tflops_fp16 = saf::Tagged<float, saf::source::Calibrated>{989.0f};
+    caps.tflops_fp16 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated, float>(989.0f);
     caps.features.set(cog::GpuFeature::Fp8);
 
     std::array<cog::OpcodeLatencyEntry<cog::CogKind::Gpu>, 1> rows{entry};
@@ -144,7 +144,8 @@ void test_nic_result() {
     std::array<cog::OpcodeLatencyEntry<cog::CogKind::NicPort>, 1> rows{entry};
 
     cog::NicPortTargetCaps caps{};
-    caps.effective_bandwidth_bytes_per_sec = saf::Tagged<std::uint64_t, saf::source::Calibrated>{6250000000ull};
+    caps.effective_bandwidth_bytes_per_sec =
+        ::fixy::mint_tagged<::fixy::tags::source::Calibrated, std::uint64_t>(6250000000ull);
     caps.features.set(cog::NicFeature::Roce);
 
     auto result = cog::build_calibration_result<cog::CogKind::NicPort>(nic_identity(), caps,

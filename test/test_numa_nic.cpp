@@ -21,9 +21,9 @@ static cog::CogIdentity nic_identity() {
 
 static cog::NicPortTargetCaps nic_caps() {
     cog::NicPortTargetCaps caps{};
-    caps.link_layer = safety::Tagged<cog::LinkLayer, safety::source::Vendor>{cog::LinkLayer::Roce};
-    caps.max_tx_queues = safety::Tagged<std::uint16_t, safety::source::Vendor>{16};
-    caps.max_rx_queues = safety::Tagged<std::uint16_t, safety::source::Vendor>{16};
+    caps.link_layer = ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Roce);
+    caps.max_tx_queues = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(16);
+    caps.max_rx_queues = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(16);
     caps.features.set(cog::NicFeature::Rss);
     caps.features.set(cog::NicFeature::GpuDirectRdma);
     return caps;

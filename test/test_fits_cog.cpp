@@ -183,21 +183,20 @@ static void test_fits_cog_boundary_saturate() {
 }
 
 static void test_fits_cog_caps_runtime_h100() {
-    namespace safety = crucible::safety;
+    using ::fixy::mint_tagged;
+    using Vendor = ::fixy::tags::source::Vendor;
     cog::GpuTargetCaps h100{};
-    // The vendor-tagged fields need explicit construction at each
+    // The vendor-tagged fields are built through the one door at each
     // assignment site.
-    h100.sm_count = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{132}};  // H100 SXM5
-    h100.warp_schedulers_per_sm = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{4}};
-    h100.smem_per_sm_bytes = safety::Tagged<std::uint32_t, safety::source::Vendor>{std::uint32_t{228 * 1024}};
-    h100.l2_bytes = safety::Tagged<std::uint64_t, safety::source::Vendor>{50ULL * 1024 * 1024};
-    h100.hbm_bytes = safety::Tagged<std::uint64_t, safety::source::Vendor>{80ULL * 1024 * 1024 * 1024};
-    h100.hbm_bandwidth_bytes_per_sec =
-        safety::Tagged<std::uint64_t, safety::source::Vendor>{3350ULL * 1024 * 1024 * 1024};
-    h100.nvlink_bandwidth_bytes_per_sec =
-        safety::Tagged<std::uint64_t, safety::source::Vendor>{900ULL * 1024 * 1024 * 1024};
-    h100.tdp_watts = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{700}};
-    h100.thermal_throttle_celsius = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{85}};
+    h100.sm_count = mint_tagged<Vendor, std::uint16_t>(132);  // H100 SXM5
+    h100.warp_schedulers_per_sm = mint_tagged<Vendor, std::uint16_t>(4);
+    h100.smem_per_sm_bytes = mint_tagged<Vendor, std::uint32_t>(228 * 1024);
+    h100.l2_bytes = mint_tagged<Vendor, std::uint64_t>(50ULL * 1024 * 1024);
+    h100.hbm_bytes = mint_tagged<Vendor, std::uint64_t>(80ULL * 1024 * 1024 * 1024);
+    h100.hbm_bandwidth_bytes_per_sec = mint_tagged<Vendor, std::uint64_t>(3350ULL * 1024 * 1024 * 1024);
+    h100.nvlink_bandwidth_bytes_per_sec = mint_tagged<Vendor, std::uint64_t>(900ULL * 1024 * 1024 * 1024);
+    h100.tdp_watts = mint_tagged<Vendor, std::uint16_t>(700);
+    h100.thermal_throttle_celsius = mint_tagged<Vendor, std::uint16_t>(85);
 
     using Fits = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<70000000000ULL>>;
     volatile bool fits = cog::fits_cog_caps_runtime<Fits, cog::CogKind::Gpu>(h100);
@@ -219,12 +218,13 @@ static void test_fits_cog_caps_runtime_h100() {
 }
 
 static void test_fits_cog_caps_runtime_nic() {
-    namespace safety = crucible::safety;
+    using ::fixy::mint_tagged;
+    using Vendor = ::fixy::tags::source::Vendor;
     cog::NicPortTargetCaps nic{};
-    nic.line_rate_bytes_per_sec = safety::Tagged<std::uint64_t, safety::source::Vendor>{50ULL * 1024 * 1024 * 1024};
-    nic.max_qp_count = safety::Tagged<std::uint32_t, safety::source::Vendor>{std::uint32_t{1024}};
-    nic.max_cq_count = safety::Tagged<std::uint32_t, safety::source::Vendor>{std::uint32_t{1024}};
-    nic.max_mr_count = safety::Tagged<std::uint32_t, safety::source::Vendor>{std::uint32_t{64}};
+    nic.line_rate_bytes_per_sec = mint_tagged<Vendor, std::uint64_t>(50ULL * 1024 * 1024 * 1024);
+    nic.max_qp_count = mint_tagged<Vendor, std::uint32_t>(1024);
+    nic.max_cq_count = mint_tagged<Vendor, std::uint32_t>(1024);
+    nic.max_mr_count = mint_tagged<Vendor, std::uint32_t>(64);
 
     using Fits = effects::ConcurrentRow<effects::NicQp<512>, effects::NicCq<512>, effects::NicMr<32>>;
     volatile bool fits = cog::fits_cog_caps_runtime<Fits, cog::CogKind::NicPort>(nic);

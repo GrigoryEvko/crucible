@@ -33,10 +33,10 @@ cog::CogIdentity nic_identity() {
 cog::NicPortTargetCaps sriov_caps() {
     cog::NicPortTargetCaps caps{};
     caps.features.set(cog::NicFeature::SrIov);
-    caps.max_tx_queues = saf::Tagged<std::uint16_t, saf::source::Vendor>{64};
-    caps.max_rx_queues = saf::Tagged<std::uint16_t, saf::source::Vendor>{64};
-    caps.max_qp_count = saf::Tagged<std::uint32_t, saf::source::Vendor>{4096};
-    caps.max_mr_count = saf::Tagged<std::uint32_t, saf::source::Vendor>{4096};
+    caps.max_tx_queues = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(64);
+    caps.max_rx_queues = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(64);
+    caps.max_qp_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(4096);
+    caps.max_mr_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(4096);
     return caps;
 }
 

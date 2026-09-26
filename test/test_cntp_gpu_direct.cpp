@@ -47,8 +47,8 @@ cog::GpuTargetCaps gpu_caps() {
 cog::NicPortTargetCaps nic_caps() {
     cog::NicPortTargetCaps caps{};
     caps.features.set(cog::NicFeature::GpuDirectRdma);
-    caps.max_mr_count = saf::Tagged<std::uint32_t, saf::source::Vendor>{4096};
-    caps.max_mr_size_bytes = saf::Tagged<std::uint64_t, saf::source::Vendor>{1ull << 40u};
+    caps.max_mr_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(4096);
+    caps.max_mr_size_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(1ull << 40u);
     return caps;
 }
 

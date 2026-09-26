@@ -4552,8 +4552,8 @@ crucible_neg_compile_cog_test(neg_target_caps_caps_for_rejects_psu_rail
     "constraint|constraints.*not satisfied"
     "HasCaps|lookup_caps|PsuRail|GAPS-186")
 crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
-    "static assertion|contract|precondition|non-constant"
-    "PowerOfTwoLane|power_of_two")
+    "__builtin_trap\\(\\).* is not a constant expression"
+    "mint_refined<(fixy::)?refined_algebra::AllOf<(fixy::)?IsPowerOfTwo\\(\\), (fixy::)?BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(33\\)")
 
 # ─── #66 ledger/Ledger.h HS14 fixtures ────────────────────────────
 #

@@ -498,22 +498,22 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
 
 [[nodiscard]] inline cog::CpuSocketTargetCaps to_socket_caps(HostFacts const& facts) noexcept {
     cog::CpuCoreTargetCaps core{};
-    core.base_clock_mhz = safety::Tagged<std::uint32_t, safety::source::Vendor>{
-        static_cast<std::uint32_t>(facts.scaling_min_freq_khz / 1000u)};
-    core.max_clock_mhz = safety::Tagged<std::uint32_t, safety::source::Vendor>{
-        static_cast<std::uint32_t>(facts.scaling_max_freq_khz / 1000u)};
-    core.l1d_bytes = safety::Tagged<std::uint32_t, safety::source::Vendor>{facts.l1d_bytes};
-    core.l1i_bytes = safety::Tagged<std::uint32_t, safety::source::Vendor>{facts.l1i_bytes};
-    core.l2_bytes = safety::Tagged<std::uint32_t, safety::source::Vendor>{facts.l2_bytes};
-    core.features = facts.isa_features;
+    core.base_clock_mhz = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(
+        static_cast<std::uint32_t>(facts.scaling_min_freq_khz / 1000u));
+    core.max_clock_mhz = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(
+        static_cast<std::uint32_t>(facts.scaling_max_freq_khz / 1000u));
+    core.l1d_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l1d_bytes);
+    core.l1i_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l1i_bytes);
+    core.l2_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l2_bytes);
+    core.features = ::fixy::Bits<cog::CpuFeature>::from_raw(facts.isa_features.raw());
 
     cog::CpuSocketTargetCaps socket{};
-    socket.core_count = safety::Tagged<std::uint16_t, safety::source::Vendor>{facts.physical_core_count};
-    socket.thread_count = safety::Tagged<std::uint16_t, safety::source::Vendor>{facts.hw_thread_count};
-    socket.l3_bytes = safety::Tagged<std::uint64_t, safety::source::Vendor>{facts.l3_total_bytes};
-    socket.numa_node_count = safety::Tagged<std::uint8_t, safety::source::Vendor>{facts.numa_node_count};
+    socket.core_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.physical_core_count);
+    socket.thread_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.hw_thread_count);
+    socket.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(facts.l3_total_bytes);
+    socket.numa_node_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint8_t>(facts.numa_node_count);
     socket.representative_core = core;
-    socket.features = facts.isa_features;
+    socket.features = ::fixy::Bits<cog::CpuFeature>::from_raw(facts.isa_features.raw());
     return socket;
 }
 

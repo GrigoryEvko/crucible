@@ -368,7 +368,7 @@ parse_lspci_vmm_tree(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snaps
 [[nodiscard]] std::expected<DiscoverySourceStatus, DiscoveryError>
 parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot, std::uint16_t node_index) noexcept;
 
-[[nodiscard]] std::expected<safety::Bits<cog::NicFeature>, DiscoveryError>
+[[nodiscard]] std::expected<::fixy::Bits<cog::NicFeature>, DiscoveryError>
 parse_ethtool_features(ExternalDiscoveryText text) noexcept;
 
 [[nodiscard]] std::expected<DiscoverySourceStatus, DiscoveryError>

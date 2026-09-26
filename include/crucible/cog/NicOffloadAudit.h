@@ -224,7 +224,8 @@ template <CogKind K>
         detail::raise(report, NicAuditIssue::WrongCogKind, NicAuditSeverity::Error);
     }
 
-    report.unsupported_required_offloads = detail::difference(policy.required_offloads, caps.features);
+    report.unsupported_required_offloads =
+        detail::difference(policy.required_offloads, safety::Bits<NicFeature>::from_raw(caps.features.raw()));
     if (report.unsupported_required_offloads.any()) {
         detail::raise(report, NicAuditIssue::UnsupportedRequiredOffload, NicAuditSeverity::Error);
     }

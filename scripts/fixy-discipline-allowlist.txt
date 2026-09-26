@@ -69,12 +69,11 @@ include/crucible/cntp/_wip/QuicTransport.h
 include/crucible/cntp/_wip/Sharp.h
 include/crucible/cntp/_wip/Wireguard.h
 
-# ── cog/ (5 files) ──────────────────────────────────────────────
+# ── cog/ (4 files) ──────────────────────────────────────────────
 include/crucible/cog/Calibrate.h
 include/crucible/cog/NicConfig.h
 include/crucible/cog/OpcodeLatencyTable.h
 include/crucible/cog/SrIov.h
-include/crucible/cog/TargetCaps.h
 
 # ── forge/ (2 files: 1 stable + 1 _wip) ─────────────────────────
 include/crucible/forge/Ir001/Comm.h

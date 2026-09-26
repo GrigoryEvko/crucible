@@ -314,11 +314,11 @@ static_assert(
     [] {
         CogMimic<cog::CogKind::Gpu> hopper{};
         hopper.calibrated_caps.value_mut().sm_version =
-            safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{90}};
+            ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(90);
 
         CogMimic<cog::CogKind::Gpu> blackwell{};
         blackwell.calibrated_caps.value_mut().sm_version =
-            safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{100}};
+            ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(100);
         return hopper.target_caps_class_hash() != blackwell.target_caps_class_hash();
     }(),
     "SM-version drift collapsed in target_caps_class_hash. The kernel "
@@ -328,11 +328,11 @@ static_assert(
     [] {
         CogMimic<cog::CogKind::NicPort> infiniband{};
         infiniband.calibrated_caps.value_mut().link_layer =
-            safety::Tagged<cog::LinkLayer, safety::source::Vendor>{cog::LinkLayer::Infiniband};
+            ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Infiniband);
 
         CogMimic<cog::CogKind::NicPort> ethernet{};
         ethernet.calibrated_caps.value_mut().link_layer =
-            safety::Tagged<cog::LinkLayer, safety::source::Vendor>{cog::LinkLayer::Ethernet};
+            ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Ethernet);
         return infiniband.target_caps_class_hash() != ethernet.target_caps_class_hash();
     }(),
     "Link-layer drift collapsed in NIC target_caps_class_hash. IB and "
@@ -405,9 +405,9 @@ static_assert(
         id.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(42);
 
         cog::NicPortTargetCaps caps{};
-        caps.link_layer = safety::Tagged<cog::LinkLayer, safety::source::Vendor>{cog::LinkLayer::Roce};
-        caps.line_rate_bytes_per_sec =
-            safety::Tagged<std::uint64_t, safety::source::Vendor>{std::uint64_t{50ULL} * 1024 * 1024 * 1024 / 8};
+        caps.link_layer = ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Roce);
+        caps.line_rate_bytes_per_sec = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(
+            std::uint64_t{50ULL} * 1024 * 1024 * 1024 / 8);
 
         cog::OpcodeLatencyTable<cog::CogKind::NicPort> tbl{};
 
@@ -428,7 +428,7 @@ static_assert(
         id.kind = cog::CogKind::Gpu;
 
         cog::GpuTargetCaps caps{};
-        caps.sm_version = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{90}};
+        caps.sm_version = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(90);
 
         cog::OpcodeLatencyTable<cog::CogKind::Gpu> tbl{};
 

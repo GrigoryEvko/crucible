@@ -40,14 +40,14 @@ cog::CogIdentity switch_identity() {
 cog::NicPortTargetCaps nic_caps(std::uint32_t entries = 1024) {
     cog::NicPortTargetCaps caps{};
     caps.features.set(cog::NicFeature::Tcam);
-    caps.tcam_entries = saf::Tagged<std::uint32_t, saf::source::Vendor>{entries};
+    caps.tcam_entries = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(entries);
     return caps;
 }
 
 cog::NvSwitchTargetCaps switch_caps(std::uint32_t entries = 4096) {
     cog::NvSwitchTargetCaps caps{};
     caps.features.set(cog::SwitchFeature::Tcam);
-    caps.tcam_entries = saf::Tagged<std::uint32_t, saf::source::Vendor>{entries};
+    caps.tcam_entries = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(entries);
     return caps;
 }
 

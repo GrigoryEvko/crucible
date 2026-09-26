@@ -73,15 +73,15 @@ static void test_target_caps_class_hash_determinism() {
 static void test_target_caps_class_hash_sm_version_discrimination() {
     mimic::CogMimic<cog::CogKind::Gpu> hopper{};
     hopper.calibrated_caps.value_mut().sm_version =
-        safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{90}};
+        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(90);
     hopper.calibrated_caps.value_mut().sm_count =
-        safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{132}};
+        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(132);
 
     mimic::CogMimic<cog::CogKind::Gpu> blackwell{};
     blackwell.calibrated_caps.value_mut().sm_version =
-        safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{100}};
+        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(100);
     blackwell.calibrated_caps.value_mut().sm_count =
-        safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{208}};
+        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(208);
 
     volatile std::uint64_t hopper_hash = hopper.target_caps_class_hash();
     volatile std::uint64_t blackwell_hash = blackwell.target_caps_class_hash();
@@ -109,8 +109,8 @@ static void test_cog_kernel_cache_key_firmware_rotation() {
     id_v2.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(2);
 
     cog::GpuTargetCaps caps{};
-    caps.sm_version = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{90}};
-    caps.sm_count = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{132}};
+    caps.sm_version = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(90);
+    caps.sm_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(132);
 
     mimic::CogMimic<cog::CogKind::Gpu> mimic_v1{};
     mimic_v1.identity = &id_v1;
@@ -152,8 +152,8 @@ static void test_mint_cog_mimic_round_trip() {
     id.bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0x1234ULL);
 
     cog::GpuTargetCaps caps{};
-    caps.sm_version = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{90}};
-    caps.sm_count = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{132}};
+    caps.sm_version = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(90);
+    caps.sm_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(132);
 
     cog::OpcodeLatencyTable<cog::CogKind::Gpu> tbl{};
 
@@ -212,8 +212,8 @@ static void test_mint_cpu_paths() {
     cpu_id.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0xC0DEULL);
 
     cog::CpuCoreTargetCaps cpu_caps{};
-    cpu_caps.base_clock_mhz = safety::Tagged<std::uint32_t, safety::source::Vendor>{2500U};
-    cpu_caps.l2_bytes = safety::Tagged<std::uint32_t, safety::source::Vendor>{1U * 1024 * 1024};
+    cpu_caps.base_clock_mhz = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(2500U);
+    cpu_caps.l2_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(1U * 1024 * 1024);
 
     using InitCtx = effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound,
                                      effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
@@ -231,8 +231,8 @@ static void test_mint_cpu_paths() {
     sock_id.kind = cog::CogKind::CpuSocket;
 
     cog::CpuSocketTargetCaps sock_caps{};
-    sock_caps.core_count = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{96}};
-    sock_caps.l3_bytes = safety::Tagged<std::uint64_t, safety::source::Vendor>{std::uint64_t{384U} * 1024 * 1024};
+    sock_caps.core_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(96);
+    sock_caps.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(std::uint64_t{384U} * 1024 * 1024);
 
     auto sock_mimic = mimic::mint_cog_mimic<cog::CogKind::CpuSocket>(
         ctx, sock_id, sock_caps, cog::OpcodeLatencyTable<cog::CogKind::CpuSocket>{});

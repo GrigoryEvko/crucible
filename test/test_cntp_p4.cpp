@@ -24,7 +24,7 @@ cog::CogIdentity switch_identity(cog::CogKind kind = cog::CogKind::NvSwitch) {
 cog::NvSwitchTargetCaps p4_caps(std::uint32_t tcam_entries = 4096) {
     cog::NvSwitchTargetCaps caps{};
     caps.features.set(cog::SwitchFeature::P4);
-    caps.tcam_entries = saf::Tagged<std::uint32_t, saf::source::Vendor>{tcam_entries};
+    caps.tcam_entries = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(tcam_entries);
     return caps;
 }
 

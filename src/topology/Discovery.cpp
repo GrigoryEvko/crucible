@@ -326,13 +326,13 @@ parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapsho
     return status;
 }
 
-std::expected<safety::Bits<cog::NicFeature>, DiscoveryError>
+std::expected<::fixy::Bits<cog::NicFeature>, DiscoveryError>
 parse_ethtool_features(ExternalDiscoveryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
         return std::unexpected(DiscoveryError::EmptyInput);
     }
-    safety::Bits<cog::NicFeature> bits{};
+    ::fixy::Bits<cog::NicFeature> bits{};
     while (!input.empty()) {
         const std::size_t nl = input.find('\n');
         std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);

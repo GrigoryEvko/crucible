@@ -1,10 +1,10 @@
 #pragma once
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Bits.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 #include <cstdint>
 #include <meta>
@@ -81,25 +81,35 @@ inline constexpr std::size_t pcie_gen_count = std::meta::enumerators_of(^^PcieGe
     }
 }
 
+// A figure measured on this host rather than read from the vendor.
+template <typename T>
+using CalibratedValue = ::fixy::Tagged<T, ::fixy::tags::source::Calibrated>;
+
+// Each refinement below names its predicate, so a site that builds one
+// writes ::fixy::mint_refined<predicate>(value) and the check runs there.
+
 // A GPU warp is 32 lanes on NVIDIA and 64 on AMD. A CPU SIMD register
 // holds 4 to 64 lanes depending on the ISA.
-using PowerOfTwoLane =
-    safety::Refined<safety::all_of<safety::power_of_two, safety::bounded_above<std::uint16_t{128}>>, std::uint16_t>;
+inline constexpr auto power_of_two_lane = ::fixy::all_of<::fixy::power_of_two, ::fixy::bounded_above<std::uint16_t{128}>>;
+using PowerOfTwoLane = ::fixy::Refined<power_of_two_lane, std::uint16_t>;
 static_assert(sizeof(PowerOfTwoLane) == sizeof(std::uint16_t),
               "PowerOfTwoLane must collapse to the size of the value it refines.");
 
 // 255 is the architectural ceiling on registers per thread on every
 // shipped GPU backend.
-using ValidRegsPerThread = safety::Refined<safety::bounded_above<std::uint16_t{255}>, std::uint16_t>;
+inline constexpr auto valid_regs_per_thread = ::fixy::bounded_above<std::uint16_t{255}>;
+using ValidRegsPerThread = ::fixy::Refined<valid_regs_per_thread, std::uint16_t>;
 static_assert(sizeof(ValidRegsPerThread) == sizeof(std::uint16_t));
 
-using ValidUtilization = safety::Refined<safety::in_range<0.0f, 1.0f>, float>;
+inline constexpr auto valid_utilization = ::fixy::in_range<0.0f, 1.0f>;
+using ValidUtilization = ::fixy::Refined<valid_utilization, float>;
 static_assert(sizeof(ValidUtilization) == sizeof(float));
 
 // The jumbo-frame ceiling is 9216 bytes, and some NICs accept 10000 or
 // 16128. The bound is 16384 rather than the uint16_t maximum so that it
 // still rejects a garbage value while leaving room for the next step up.
-using ValidMtu = safety::Refined<safety::bounded_above<std::uint16_t{16384}>, std::uint16_t>;
+inline constexpr auto valid_mtu = ::fixy::bounded_above<std::uint16_t{16384}>;
+using ValidMtu = ::fixy::Refined<valid_mtu, std::uint16_t>;
 static_assert(sizeof(ValidMtu) == sizeof(std::uint16_t));
 
 enum class GpuFeature : std::uint32_t {
@@ -322,135 +332,136 @@ enum class DramFeature : std::uint8_t {
 // discovered", so it carries no positivity refinement. Positivity is a
 // post-condition of discovery, checked where the schema is filled in.
 struct GpuTargetCaps {
-    safety::Tagged<std::uint16_t, safety::source::Vendor> sm_count{std::uint16_t{0}};
-    PowerOfTwoLane warp_size{std::uint16_t{32}};
-    safety::Tagged<std::uint16_t, safety::source::Vendor> warp_schedulers_per_sm{std::uint16_t{0}};
-    safety::Tagged<std::uint16_t, safety::source::Vendor> max_warps_per_sm{std::uint16_t{0}};
-    ValidRegsPerThread max_regs_per_thread{std::uint16_t{255}};
+    VendorClaim<std::uint16_t> sm_count{};
+    PowerOfTwoLane warp_size = ::fixy::mint_refined<power_of_two_lane>(std::uint16_t{32});
+    VendorClaim<std::uint16_t> warp_schedulers_per_sm{};
+    VendorClaim<std::uint16_t> max_warps_per_sm{};
+    ValidRegsPerThread max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(std::uint16_t{255});
 
-    safety::Tagged<std::uint32_t, safety::source::Vendor> registers_per_sm_bytes{std::uint32_t{0}};
-    safety::Tagged<std::uint32_t, safety::source::Vendor> smem_per_sm_bytes{std::uint32_t{0}};
+    VendorClaim<std::uint32_t> registers_per_sm_bytes{};
+    VendorClaim<std::uint32_t> smem_per_sm_bytes{};
     // L1 and shared memory come out of one physical array.
-    safety::Tagged<std::uint32_t, safety::source::Vendor> l1_per_sm_bytes{std::uint32_t{0}};
-    safety::Tagged<std::uint32_t, safety::source::Vendor> tmem_per_sm_bytes{std::uint32_t{0}};
+    VendorClaim<std::uint32_t> l1_per_sm_bytes{};
+    VendorClaim<std::uint32_t> tmem_per_sm_bytes{};
 
-    safety::Tagged<std::uint64_t, safety::source::Vendor> l2_bytes{std::uint64_t{0}};
-    safety::Tagged<std::uint64_t, safety::source::Vendor> hbm_bytes{std::uint64_t{0}};
-    safety::Tagged<std::uint64_t, safety::source::Vendor> hbm_bandwidth_bytes_per_sec{std::uint64_t{0}};
+    VendorClaim<std::uint64_t> l2_bytes{};
+    VendorClaim<std::uint64_t> hbm_bytes{};
+    VendorClaim<std::uint64_t> hbm_bandwidth_bytes_per_sec{};
 
-    safety::Tagged<std::uint16_t, safety::source::Vendor> nvlink_lanes{std::uint16_t{0}};
-    safety::Tagged<std::uint64_t, safety::source::Vendor> nvlink_bandwidth_bytes_per_sec{std::uint64_t{0}};
-    safety::Tagged<PcieGen, safety::source::Vendor> pcie_gen{PcieGen::None};
-    safety::Tagged<std::uint8_t, safety::source::Vendor> pcie_lanes{std::uint8_t{0}};
+    VendorClaim<std::uint16_t> nvlink_lanes{};
+    VendorClaim<std::uint64_t> nvlink_bandwidth_bytes_per_sec{};
+    VendorClaim<PcieGen> pcie_gen{};
+    VendorClaim<std::uint8_t> pcie_lanes{};
 
-    safety::Tagged<float, safety::source::Calibrated> tflops_fp64{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tflops_fp32{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tflops_tf32{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tflops_fp16{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tflops_bf16{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tflops_fp8{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tflops_fp4{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tops_int8{0.0f};
+    CalibratedValue<float> tflops_fp64{};
+    CalibratedValue<float> tflops_fp32{};
+    CalibratedValue<float> tflops_tf32{};
+    CalibratedValue<float> tflops_fp16{};
+    CalibratedValue<float> tflops_bf16{};
+    CalibratedValue<float> tflops_fp8{};
+    CalibratedValue<float> tflops_fp4{};
+    CalibratedValue<float> tops_int8{};
 
-    safety::Tagged<std::uint16_t, safety::source::Vendor> tdp_watts{std::uint16_t{0}};
-    safety::Tagged<std::uint16_t, safety::source::Vendor> thermal_throttle_celsius{std::uint16_t{0}};
+    VendorClaim<std::uint16_t> tdp_watts{};
+    VendorClaim<std::uint16_t> thermal_throttle_celsius{};
 
     // Streaming-multiprocessor version as the vendor numbers it: 90 for
     // Hopper, 100 for Blackwell.
-    safety::Tagged<std::uint16_t, safety::source::Vendor> sm_version{std::uint16_t{0}};
+    VendorClaim<std::uint16_t> sm_version{};
 
-    safety::Bits<GpuFeature> features{};
+    ::fixy::Bits<GpuFeature> features{};
 };
 
 struct NicPortTargetCaps {
-    safety::Tagged<LinkLayer, safety::source::Vendor> link_layer{LinkLayer::Ethernet};
-    safety::Tagged<std::uint64_t, safety::source::Vendor> line_rate_bytes_per_sec{std::uint64_t{0}};
-    ValidMtu mtu_bytes{std::uint16_t{1500}};
+    VendorClaim<LinkLayer> link_layer{};
+    VendorClaim<std::uint64_t> line_rate_bytes_per_sec{};
+    ValidMtu mtu_bytes = ::fixy::mint_refined<valid_mtu>(std::uint16_t{1500});
 
-    safety::Tagged<std::uint16_t, safety::source::Vendor> max_tx_queues{std::uint16_t{0}};
-    safety::Tagged<std::uint16_t, safety::source::Vendor> max_rx_queues{std::uint16_t{0}};
-    safety::Tagged<std::uint32_t, safety::source::Vendor> max_qp_count{std::uint32_t{0}};  // RDMA queue pairs
-    safety::Tagged<std::uint32_t, safety::source::Vendor> max_cq_count{std::uint32_t{0}};  // RDMA completion queues
-    safety::Tagged<std::uint32_t, safety::source::Vendor> max_mr_count{std::uint32_t{0}};  // RDMA memory regions
-    safety::Tagged<std::uint64_t, safety::source::Vendor> max_mr_size_bytes{std::uint64_t{0}};
-    safety::Tagged<std::uint32_t, safety::source::Vendor> tcam_entries{std::uint32_t{0}};
+    VendorClaim<std::uint16_t> max_tx_queues{};
+    VendorClaim<std::uint16_t> max_rx_queues{};
+    VendorClaim<std::uint32_t> max_qp_count{};  // RDMA queue pairs
+    VendorClaim<std::uint32_t> max_cq_count{};  // RDMA completion queues
+    VendorClaim<std::uint32_t> max_mr_count{};  // RDMA memory regions
+    VendorClaim<std::uint64_t> max_mr_size_bytes{};
+    VendorClaim<std::uint32_t> tcam_entries{};
 
     // Line rate that survives PCIe, driver and kernel overhead.
-    safety::Tagged<std::uint64_t, safety::source::Calibrated> effective_bandwidth_bytes_per_sec{std::uint64_t{0}};
+    CalibratedValue<std::uint64_t> effective_bandwidth_bytes_per_sec{};
     // Ceiling the socket buffer limits impose, derived from
     // net.core.rmem_max.
-    safety::Tagged<std::uint64_t, safety::source::Calibrated> sysctl_throughput_ceiling_bytes_per_sec{std::uint64_t{0}};
+    CalibratedValue<std::uint64_t> sysctl_throughput_ceiling_bytes_per_sec{};
     // Bandwidth-delay-product ceiling at the measured round-trip time.
-    safety::Tagged<std::uint64_t, safety::source::Calibrated> bdp_ceiling_bytes_per_sec{std::uint64_t{0}};
+    CalibratedValue<std::uint64_t> bdp_ceiling_bytes_per_sec{};
 
-    safety::Tagged<std::uint16_t, safety::source::Vendor> pcie_root_complex_id{std::uint16_t{0}};
-    safety::Tagged<PcieGen, safety::source::Vendor> pcie_gen{PcieGen::None};
-    safety::Tagged<std::uint8_t, safety::source::Vendor> pcie_lanes{std::uint8_t{0}};
+    VendorClaim<std::uint16_t> pcie_root_complex_id{};
+    VendorClaim<PcieGen> pcie_gen{};
+    VendorClaim<std::uint8_t> pcie_lanes{};
 
     // Peer GPUs this port can reach by direct DMA. The span points into
     // an arena this struct does not own and which must outlive it. An
     // empty span means no peers, or discovery has not run.
     std::span<const CogIdentity> gpu_direct_peers{};
 
-    safety::Bits<NicFeature> features{};
+    ::fixy::Bits<NicFeature> features{};
 };
 
 struct NvSwitchTargetCaps {
-    safety::Tagged<std::uint16_t, safety::source::Vendor> port_count{std::uint16_t{0}};
-    safety::Tagged<std::uint64_t, safety::source::Vendor> per_port_bandwidth_bytes_per_sec{std::uint64_t{0}};
-    safety::Tagged<std::uint64_t, safety::source::Vendor> aggregate_bandwidth_bytes_per_sec{std::uint64_t{0}};
+    VendorClaim<std::uint16_t> port_count{};
+    VendorClaim<std::uint64_t> per_port_bandwidth_bytes_per_sec{};
+    VendorClaim<std::uint64_t> aggregate_bandwidth_bytes_per_sec{};
 
-    safety::Tagged<std::uint64_t, safety::source::Vendor> buffer_bytes{std::uint64_t{0}};
-    safety::Tagged<std::uint32_t, safety::source::Vendor> tcam_entries{std::uint32_t{0}};
+    VendorClaim<std::uint64_t> buffer_bytes{};
+    VendorClaim<std::uint32_t> tcam_entries{};
 
-    safety::Tagged<std::uint64_t, safety::source::Calibrated> effective_aggregate_bytes_per_sec{std::uint64_t{0}};
+    CalibratedValue<std::uint64_t> effective_aggregate_bytes_per_sec{};
 
-    safety::Bits<SwitchFeature> features{};
+    ::fixy::Bits<SwitchFeature> features{};
 };
 
 struct CpuCoreTargetCaps {
-    safety::Tagged<std::uint32_t, safety::source::Vendor> base_clock_mhz{std::uint32_t{0}};
-    safety::Tagged<std::uint32_t, safety::source::Vendor> max_clock_mhz{std::uint32_t{0}};
-    PowerOfTwoLane simd_vector_lanes{std::uint16_t{8}};
+    VendorClaim<std::uint32_t> base_clock_mhz{};
+    VendorClaim<std::uint32_t> max_clock_mhz{};
+    PowerOfTwoLane simd_vector_lanes = ::fixy::mint_refined<power_of_two_lane>(std::uint16_t{8});
 
-    safety::Tagged<std::uint32_t, safety::source::Vendor> l1d_bytes{std::uint32_t{0}};
-    safety::Tagged<std::uint32_t, safety::source::Vendor> l1i_bytes{std::uint32_t{0}};
-    safety::Tagged<std::uint32_t, safety::source::Vendor> l2_bytes{std::uint32_t{0}};
+    VendorClaim<std::uint32_t> l1d_bytes{};
+    VendorClaim<std::uint32_t> l1i_bytes{};
+    VendorClaim<std::uint32_t> l2_bytes{};
 
-    safety::Tagged<float, safety::source::Calibrated> tflops_fp64{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tflops_fp32{0.0f};
-    safety::Tagged<float, safety::source::Calibrated> tflops_bf16{0.0f};
+    CalibratedValue<float> tflops_fp64{};
+    CalibratedValue<float> tflops_fp32{};
+    CalibratedValue<float> tflops_bf16{};
 
-    safety::Bits<CpuFeature> features{};
+    ::fixy::Bits<CpuFeature> features{};
 };
 
 struct CpuSocketTargetCaps {
-    safety::Tagged<std::uint16_t, safety::source::Vendor> core_count{std::uint16_t{0}};
-    safety::Tagged<std::uint16_t, safety::source::Vendor> thread_count{std::uint16_t{0}};
+    VendorClaim<std::uint16_t> core_count{};
+    VendorClaim<std::uint16_t> thread_count{};
 
-    safety::Tagged<std::uint64_t, safety::source::Vendor> l3_bytes{std::uint64_t{0}};
-    safety::Tagged<std::uint8_t, safety::source::Vendor> numa_node_count{std::uint8_t{1}};
+    VendorClaim<std::uint64_t> l3_bytes{};
+    VendorClaim<std::uint8_t> numa_node_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint8_t>(1);
 
-    safety::Tagged<float, safety::source::Calibrated> memory_bandwidth_bytes_per_sec_per_socket{0.0f};
+    CalibratedValue<float> memory_bandwidth_bytes_per_sec_per_socket{};
 
-    safety::Tagged<std::uint16_t, safety::source::Vendor> tdp_watts{std::uint16_t{0}};
-    safety::Tagged<std::uint16_t, safety::source::Vendor> thermal_throttle_celsius{std::uint16_t{0}};
+    VendorClaim<std::uint16_t> tdp_watts{};
+    VendorClaim<std::uint16_t> thermal_throttle_celsius{};
 
     // Every core in the socket shares this description.
     CpuCoreTargetCaps representative_core{};
 
-    safety::Bits<CpuFeature> features{};
+    ::fixy::Bits<CpuFeature> features{};
 };
 
 struct DramChannelTargetCaps {
-    safety::Tagged<std::uint8_t, safety::source::Vendor> channel_width_bits{std::uint8_t{64}};  // 32, 64 or 128
-    safety::Tagged<std::uint16_t, safety::source::Vendor> speed_mts{std::uint16_t{0}};  // mega-transfers per second
+    // 32, 64 or 128
+    VendorClaim<std::uint8_t> channel_width_bits = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint8_t>(64);
+    VendorClaim<std::uint16_t> speed_mts{};  // mega-transfers per second
 
-    safety::Tagged<std::uint64_t, safety::source::Calibrated> bandwidth_bytes_per_sec{std::uint64_t{0}};
+    CalibratedValue<std::uint64_t> bandwidth_bytes_per_sec{};
 
-    safety::Tagged<std::uint64_t, safety::source::Vendor> capacity_bytes{std::uint64_t{0}};
+    VendorClaim<std::uint64_t> capacity_bytes{};
 
-    safety::Bits<DramFeature> features{};
+    ::fixy::Bits<DramFeature> features{};
 };
 
 // The primary template stays undefined. A kind with no schema then
@@ -491,16 +502,24 @@ concept HasCaps = requires { typename caps_for<K>::type; };
 
 namespace detail::target_caps_self_test {
 
-static_assert(sizeof(safety::Tagged<std::uint16_t, safety::source::Vendor>) == sizeof(std::uint16_t),
+static_assert(sizeof(VendorClaim<std::uint16_t>) == sizeof(std::uint16_t),
               "A provenance tag must add no storage to the value it tags.");
-static_assert(sizeof(safety::Tagged<std::uint64_t, safety::source::Calibrated>) == sizeof(std::uint64_t));
-static_assert(sizeof(safety::Tagged<float, safety::source::Calibrated>) == sizeof(float));
+static_assert(sizeof(CalibratedValue<std::uint64_t>) == sizeof(std::uint64_t));
+static_assert(sizeof(CalibratedValue<float>) == sizeof(float));
 
-static_assert(sizeof(safety::Bits<GpuFeature>) == sizeof(std::uint32_t));
-static_assert(sizeof(safety::Bits<NicFeature>) == sizeof(std::uint32_t));
-static_assert(sizeof(safety::Bits<SwitchFeature>) == sizeof(std::uint16_t));
-static_assert(sizeof(safety::Bits<CpuFeature>) == sizeof(std::uint32_t));
-static_assert(sizeof(safety::Bits<DramFeature>) == sizeof(std::uint8_t));
+static_assert(sizeof(::fixy::Bits<GpuFeature>) == sizeof(std::uint32_t));
+static_assert(sizeof(::fixy::Bits<NicFeature>) == sizeof(std::uint32_t));
+static_assert(sizeof(::fixy::Bits<SwitchFeature>) == sizeof(std::uint16_t));
+static_assert(sizeof(::fixy::Bits<CpuFeature>) == sizeof(std::uint32_t));
+static_assert(sizeof(::fixy::Bits<DramFeature>) == sizeof(std::uint8_t));
+
+// The defaults that are not zero are built through the checked doors, so
+// a schema default that breaks its own refinement stops the build here.
+static_assert(GpuTargetCaps{}.warp_size.value() == 32 && GpuTargetCaps{}.max_regs_per_thread.value() == 255);
+static_assert(NicPortTargetCaps{}.mtu_bytes.value() == 1500);
+static_assert(CpuCoreTargetCaps{}.simd_vector_lanes.value() == 8);
+static_assert(CpuSocketTargetCaps{}.numa_node_count.value() == 1);
+static_assert(DramChannelTargetCaps{}.channel_width_bits.value() == 64);
 
 [[nodiscard]] consteval bool every_link_layer_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^LinkLayer));

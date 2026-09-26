@@ -136,7 +136,6 @@ include/crucible/cog/NicOffloadAudit.h
 include/crucible/cog/NumaNic.h
 include/crucible/cog/OpcodeLatencyTable.h
 include/crucible/cog/SrIov.h
-include/crucible/cog/TargetCaps.h
 include/crucible/forge/Ir001/Comm.h
 include/crucible/forge/_wip/Phases/Comm.h
 include/crucible/ledger/HostFingerprint.h
@@ -188,7 +187,6 @@ src/perf/SenseHub.cpp
 src/perf/SenseHubV2.cpp
 src/perf/SyscallLatency.cpp
 src/perf/SyscallTpBtf.cpp
-src/topology/Discovery.cpp
 src/topology/Ptp.cpp
 tools/dump_row_hashes.cpp
 vessel/torch/vessel_api_typed.h
