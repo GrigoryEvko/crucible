@@ -954,15 +954,15 @@ set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
 
 # The testing door of either tree mints a context with no key, and a context
 # is what every ctx-bound mint checks for.  scripts/check-ctx-testing-boundary.py
-# counts each use of the door in the code that ships, through the aliases of
-# every file of the scan, and each file with a use needs a counted entry in
-# scripts/ctx-testing-boundary-allowlist.txt.
+# counts each use of the door in the code that ships, from the parse tree and
+# through the aliases of every file of the scan, and each file with a use needs
+# a counted entry in scripts/ctx-testing-boundary-allowlist.txt.
 add_test(NAME ctx_testing_boundary_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.py --self-test)
 add_test(NAME ctx_testing_boundary
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.py)
 set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
-    PROPERTIES LABELS "ci_guard")
+    PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 
 # A comment, a script or an allowlist in the new tree states what the code
 # does, not which task, stage or tracker entry produced it.

@@ -9,23 +9,27 @@ context is what every ctx-bound mint checks for, so a use of the door in code
 that ships hands out authority that no mint gave.
 
 WHAT COUNTS AS A USE
-    The guard reads the code of each file after scripts/cxx_lex.py blanks its
-    comments and literals, so a comment or a literal that names the door is
-    not a use.  A use is:
+    The guard reads each file from the parse tree of scripts/tsast.py, so a
+    comment, a string literal and an include path are not uses, and a comment
+    inside a name does not hide one.  A use is:
       * a factory or a friend named through a namespace called testing, with
-        any qualifier before it;
-      * a friend by its own name;
-      * a using-directive and a namespace alias whose target is a namespace
-        called testing;
-      * a factory or a friend named through an alias of a testing namespace,
-        and a using-directive of such an alias.  The aliases come from every
-        file of the scan, chains of aliases included, so an alias that one
-        header defines still marks a use in another file.
+        any qualifier before it: one pair of adjacent parts of a name;
+      * a friend by its own name, when no such pair holds it;
+      * a using-directive whose path passes through a namespace called
+        testing, and a namespace alias whose target ends in one;
+      * each of these through an alias of a testing namespace.  The aliases
+        come from every file of the scan, chains of aliases included, so an
+        alias that one header defines still marks a use in another file.
+    Every declaration counts, a friend declaration and an unevaluated operand
+    of sizeof or decltype too, because each one names the door.  A macro body
+    is one text node in the parse, so the guard reads its preprocessing
+    tokens with the same rules.
 
 SCOPE
-    include/foundation, include/fixy, include/crucible, src, vessel, tools and
-    examples.  test/, bench/ and fuzz/ are not read, because taking the test
-    path is what they are for.
+    The C++ files under include/foundation, include/fixy, include/crucible,
+    src, vessel, tools and examples.  test/, bench/ and fuzz/ are not read,
+    because taking the test path is what they are for.  A file in scope that
+    the parser cannot read fails the guard, because its uses are unknown.
 
 THE ALLOWLIST
     scripts/ctx-testing-boundary-allowlist.txt admits the uses of a file:
@@ -37,8 +41,9 @@ THE ALLOWLIST
 WHAT THE GUARD CANNOT SEE
     A name of the door that a macro builds with `##`.
 
-Exit 0 clean, 1 on a use that no entry admits or a stale entry, 2 on a usage
-error or a failed self-test.
+Exit 0 clean, 1 on a use that no entry admits, a stale entry or a file the
+parser cannot read, 2 on a usage error or a failed self-test, 3 when the
+parser kit is missing.
 """
 
 from __future__ import annotations
@@ -49,39 +54,115 @@ import os
 import re
 import sys
 import tempfile
-from collections import defaultdict
+from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cxx_lex import blank, line_of, splice  # noqa: E402
+import tsast  # noqa: E402
 
 SCAN_DIRS = ("include/foundation", "include/fixy", "include/crucible", "src", "vessel", "tools", "examples")
-SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".tpp", ".c", ".cc", ".cpp", ".cxx", ".cppm"})
 ALLOWLIST = "scripts/ctx-testing-boundary-allowlist.txt"
-MEMBERS = r"(?:bg|init|test|foreground|TestWitness|ForegroundWitness)"
-ALIAS = re.compile(r"\bnamespace\s+(\w+)\s*=\s*((?:::\s*)?\w+(?:\s*::\s*\w+)*)\s*;")
+DOOR = "testing"
+MEMBERS = frozenset({"bg", "init", "test", "foreground", "TestWitness", "ForegroundWitness"})
+WITNESSES = frozenset({"TestWitness", "ForegroundWitness"})
+MACROS = ("preproc_def", "preproc_function_def")
+LEAVES = ("identifier", "type_identifier", "namespace_identifier", "field_identifier")
 ENTRY = re.compile(r"^(?P<path>\S+?)(?: x(?P<count>[1-9][0-9]*))?\s+—\s+\S")
 
 
-def code_of(path: Path) -> tuple[str, str, list[int]]:
-    """Return the joined text of a file, its code with comments and literals blanked, and its line joins."""
-    joined, joins = splice(path.read_text(errors="replace"))
-    return joined, blank(joined, blank_literals=True)[0], joins
+class Run(NamedTuple):
+    """One qualified name in the tokens of a macro body: its parts, their rows, and what surrounds it."""
+
+    parts: tuple[str, ...]
+    rows: tuple[int, ...]
+    after_using_namespace: bool
+    alias_name: str | None
 
 
-def door_names(codes: dict[str, str]) -> set[str]:
+def scope_files(root: Path) -> list[Path]:
+    """Return every C++ file under the scan directories, sorted, relative to the root."""
+    found: list[Path] = []
+    for directory in SCAN_DIRS:
+        base = root / directory
+        if base.is_dir():
+            found += [path.relative_to(root) for path in base.rglob("*")
+                      if path.is_file() and tsast.is_in_cpp_scope(path.relative_to(root))]
+    return sorted(found)
+
+
+def macro_bodies(tree: tsast.Tree) -> Iterator[list[tsast.Token]]:
+    """Yield the preprocessing tokens of each macro replacement list of a tree.
+
+    A block comment splits a replacement list into several value nodes, so
+    the tokens come from the source between the first value and the last
+    one.  The comment gives no token, and a backslash-newline inside a name
+    joins the name, as translation phase 2 does.
+    """
+    for define in tree.find(*MACROS):
+        values = [child for child in define.children if child.field == "value"]
+        if values:
+            yield tsast.pp_tokens(tree.slice(values[0].start, values[-1].end), values[0].start[0])
+
+
+def macro_runs(tokens: list[tsast.Token]) -> list[Run]:
+    """Return the qualified names in the tokens of one macro replacement list.
+
+    A run is an identifier, then any number of `::` identifier pairs, with
+    an optional leading `::`.  The run records whether `using namespace`
+    stands before it, and the alias name when `namespace NAME =` stands
+    before it and `;` follows it.
+
+    Complexity: linear in the number of tokens.
+    """
+    texts = [token.text for token in tokens]
+    runs: list[Run] = []
+    index = 0
+    while index < len(tokens):
+        start = index
+        if texts[index] == "::":
+            index += 1
+        parts: list[str] = []
+        rows: list[int] = []
+        while index < len(tokens) and tokens[index].kind == "identifier":
+            parts.append(texts[index])
+            rows.append(tokens[index].row)
+            if index + 2 < len(tokens) and texts[index + 1] == "::" and tokens[index + 2].kind == "identifier":
+                index += 2
+            else:
+                index += 1
+                break
+        if not parts:
+            index = start + 1
+            continue
+        using_namespace = start >= 2 and texts[start - 2:start] == ["using", "namespace"]
+        alias = texts[start - 2] if (start >= 3 and texts[start - 3] == "namespace" and texts[start - 1] == "="
+                                     and tokens[start - 2].kind == "identifier"
+                                     and index < len(texts) and texts[index] == ";") else None
+        runs.append(Run(tuple(parts), tuple(rows), using_namespace, alias))
+    return runs
+
+
+def alias_targets(trees: Sequence[tsast.Tree]) -> dict[str, set[tuple[str, ...]]]:
+    """Return the target of each namespace alias of the scan, by alias name, from the trees and the macro bodies."""
+    targets: dict[str, set[tuple[str, ...]]] = {}
+    for tree in trees:
+        for alias in tsast.namespace_aliases(tree):
+            targets.setdefault(alias.name, set()).add(alias.target)
+        for tokens in macro_bodies(tree):
+            for run in macro_runs(tokens):
+                if run.alias_name is not None:
+                    targets.setdefault(run.alias_name, set()).add(run.parts)
+    return targets
+
+
+def door_names(targets: dict[str, set[tuple[str, ...]]]) -> frozenset[str]:
     """Return `testing` and each alias of the scan that reaches a namespace called testing.
 
-    Complexity: linear in the size of the code, plus the aliases times the
-    length of their longest chain.
+    Complexity: the aliases times the length of their longest chain.
     """
-    targets: dict[str, set[tuple[str, ...]]] = defaultdict(set)
-    for code in codes.values():
-        for match in ALIAS.finditer(code):
-            targets[match.group(1)].add(tuple(part for part in re.sub(r"\s+", "", match.group(2)).split("::")
-                                              if part))
-    names = {"testing"}
+    names = {DOOR}
     changed = True
     while changed:
         changed = False
@@ -89,37 +170,103 @@ def door_names(codes: dict[str, str]) -> set[str]:
             if alias not in names and any(path and path[-1] in names for path in paths):
                 names.add(alias)
                 changed = True
-    return names
+    return frozenset(names)
 
 
-def door_pattern(names: set[str]) -> re.Pattern[str]:
-    """Return the pattern of one use of the door, for the names that reach a testing namespace."""
-    spelled = "|".join(sorted(names))
-    return re.compile(rf"(?<!\w)(?:{spelled})\s*::\s*{MEMBERS}\b"
-                      rf"|\b(?:Test|Foreground)Witness\b"
-                      rf"|\busing\s+namespace\s+(?:::\s*)?(?:\w+\s*::\s*)*(?:{spelled})\b"
-                      rf"|\bnamespace\s+\w+\s*=\s*(?:::\s*)?(?:\w+\s*::\s*)*(?:{spelled})\s*;")
+def pair_rows(parts: Sequence[str], rows: Sequence[int], doors: frozenset[str]) -> tuple[list[int], set[int]]:
+    """Return the row of each door-member pair in a name, and the positions of the members those pairs hold."""
+    found: list[int] = []
+    held: set[int] = set()
+    for position in range(len(parts) - 1):
+        if parts[position] in doors and parts[position + 1] in MEMBERS:
+            found.append(rows[position])
+            held.add(position + 1)
+    return found, held
 
 
-def scan(root: Path) -> dict[str, list[int]]:
-    """Return the lines of each use of the door, by file.
+def name_leaves(node: tsast.Node) -> list[tsast.Node] | None:
+    """Return the leaf of each part of a qualified name, outermost first, template arguments left out.
 
-    Complexity: linear in the total size of the files in scope.
+    The walk follows the shape that tsast.qualified_parts reads, so the
+    leaves line up with its parts.  A part that is not a name gives None.
     """
-    texts: dict[str, tuple[str, str, list[int]]] = {}
-    for directory in SCAN_DIRS:
-        base = root / directory
-        if base.is_dir():
-            for path in sorted(base.rglob("*")):
-                if path.suffix in SUFFIXES and path.is_file():
-                    texts[path.relative_to(root).as_posix()] = code_of(path)
-    pattern = door_pattern(door_names({rel: code for rel, (_, code, _) in texts.items()}))
+    if node.type in LEAVES:
+        return [node]
+    if node.type == "qualified_identifier":
+        scope, name = node.child_by_field("scope"), node.child_by_field("name")
+        head = [] if scope is None else name_leaves(scope)
+        tail = None if name is None else name_leaves(name)
+        return None if head is None or tail is None else head + tail
+    if node.type in ("template_type", "template_function", "template_method"):
+        name = node.child_by_field("name")
+        return None if name is None else name_leaves(name)
+    if node.type == "nested_namespace_specifier":
+        leaves: list[tsast.Node] = []
+        for child in node.children:
+            if child.type != "comment":
+                inner = name_leaves(child)
+                if inner is None:
+                    return None
+                leaves += inner
+        return leaves
+    return None
+
+
+def tree_uses(tree: tsast.Tree, doors: frozenset[str]) -> list[int]:
+    """Return the zero-based row of each use of the door in one parsed file.
+
+    Complexity: linear in the number of nodes, plus the length of the macro bodies.
+    """
+    rows: list[int] = []
+    held_leaves: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+    for node in tree.find("qualified_identifier"):
+        parent = node.parent
+        if parent is not None and parent.type == "qualified_identifier" and node.field == "name":
+            continue
+        leaves = name_leaves(node)
+        if leaves is None:
+            continue
+        found, held = pair_rows([leaf.text for leaf in leaves], [leaf.start[0] for leaf in leaves], doors)
+        rows += found
+        held_leaves |= {(leaves[position].start, leaves[position].end) for position in held}
+    for leaf in tree.find(*LEAVES):
+        if leaf.text in WITNESSES and (leaf.start, leaf.end) not in held_leaves:
+            rows.append(leaf.start[0])
+    for using in tsast.using_names(tree):
+        if using.is_directive and any(part in doors for part in using.target):
+            rows.append(using.node.start[0])
+    for alias in tsast.namespace_aliases(tree):
+        if alias.target and alias.target[-1] in doors:
+            rows.append(alias.node.start[0])
+    for tokens in macro_bodies(tree):
+        for run in macro_runs(tokens):
+            found, held = pair_rows(run.parts, run.rows, doors)
+            rows += found
+            rows += [run.rows[position] for position, part in enumerate(run.parts)
+                     if part in WITNESSES and position not in held]
+            if run.after_using_namespace and any(part in doors for part in run.parts):
+                rows.append(run.rows[0])
+            if run.alias_name is not None and run.parts[-1] in doors:
+                rows.append(run.rows[0])
+    return sorted(rows)
+
+
+def scan(root: Path) -> tuple[dict[str, list[int]], list[str]]:
+    """Return the lines of each use of the door by file, and a line for each file the parser cannot read.
+
+    Complexity: one parse of each file in scope.
+    """
+    trees = list(tsast.parse([root / rel for rel in scope_files(root)], strict=False))
+    problems = [f"{Path(tree.path).relative_to(root).as_posix()} does not parse, so its uses of the testing door "
+                f"are unknown: {tree.diagnostic}" for tree in trees if tree.diagnostic is not None]
+    readable = [tree for tree in trees if tree.diagnostic is None]
+    doors = door_names(alias_targets(readable))
     found: dict[str, list[int]] = {}
-    for rel, (joined, code, joins) in texts.items():
-        lines = [line_of(joined, joins, match.start()) for match in pattern.finditer(code)]
-        if lines:
-            found[rel] = lines
-    return found
+    for tree in readable:
+        rows = tree_uses(tree, doors)
+        if rows:
+            found[Path(tree.path).relative_to(root).as_posix()] = [row + 1 for row in rows]
+    return found, problems
 
 
 def read_allowlist(path: Path) -> tuple[dict[str, tuple[int, int]], list[str]]:
@@ -144,10 +291,11 @@ def check(root: Path) -> int:
     """Compare the uses of the door with the allowlist and report.
 
     Returns:
-        0 clean, 1 on a use that no entry admits, a stale entry or a malformed row
+        0 clean, 1 on a use that no entry admits, a stale entry, a malformed row or a file that does not parse
     """
-    found = scan(root)
-    entries, problems = read_allowlist(root / ALLOWLIST)
+    found, problems = scan(root)
+    entries, row_problems = read_allowlist(root / ALLOWLIST)
+    problems += row_problems
     for path, lines in sorted(found.items()):
         admitted = entries.get(path, (0, 0))[0]
         if len(lines) > admitted:
@@ -196,10 +344,24 @@ def self_test() -> int:
                          "inline int far() { return d2::bg(); }\n",
         "src/directive.cpp": "#include <crucible/effects/Door.h>\n"
                              "inline int near() { using namespace door; return 0; }\n",
+        "src/commented.cpp": "namespace t = ::crucible::effects:: /* c */ testing;\n"
+                             "inline int g() { return t::init(); }\n"
+                             "inline int h() { return ::crucible::effects:: /* c */ testing::test(); }\n",
+        "src/witness.cpp": "struct Key { friend struct ::foundation::effects::testing::TestWitness; };\n"
+                           "struct Other { friend struct ForegroundWitness; };\n",
+        "src/macro.cpp": "#define TAKE ::crucible::effects::testing::bg()\n"
+                         "#define ALIAS namespace mt = crucible::effects::testing;\n"
+                         "#define FRIEND friend struct TestWitness;\n",
+        "src/macro_alias_use.cpp": "inline int m() { return mt::test(); }\n",
+        "src/macro_split.cpp": "#define SPLIT ::crucible::effects::testing:: /* c */ bg()\n"
+                               "#define SPLICE ::crucible::effects::test\\\ning::init()\n",
         "include/crucible/effects/Clean.h":
             "#pragma once\n// effects::testing::bg() hands out a context, so this header never calls it.\n"
             "inline const char* note = \"testing::bg() and TestWitness\";\n"
-            "namespace quiet = ::crucible::effects;\ninline int unrelated() { return quiet::other(); }\n",
+            "#include <crucible/effects/TestWitness.h>\n"
+            "#define NOTE \"testing::bg()\"\n"
+            "namespace quiet = ::crucible::effects;\ninline int unrelated() { return quiet::other(); }\n"
+            "namespace other::testing { int bg_like(); }\ninline int fine() { return other::testing::bg_like(); }\n",
         "include/crucible/effects/Listed.h":
             "#pragma once\ninline void self_test() { (void)::crucible::effects::testing::bg(); "
             "(void)::crucible::effects::testing::test(); }\n",
@@ -213,7 +375,8 @@ def self_test() -> int:
         for rel, text in planted.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
-        found = scan(root)
+        found, problems = scan(root)
+        expect("every planted file parses", not problems)
         expect("caught: two uses in the new tree", len(found.get("include/foundation/effects/Planted.h", [])) == 2)
         expect("caught: three uses in the old tree, through a namespace alias and a using-directive",
                len(found.get("src/planted.cpp", [])) == 3)
@@ -221,7 +384,17 @@ def self_test() -> int:
         expect("caught: a use through an alias of another file, by a chain of aliases",
                len(found.get("src/cross.cpp", [])) == 2)
         expect("caught: a using-directive of an alias of another file", len(found.get("src/directive.cpp", [])) == 1)
-        expect("not caught: a comment, a literal and an alias of another namespace",
+        expect("caught: an alias and a name with a comment inside, each counted once",
+               len(found.get("src/commented.cpp", [])) == 3)
+        expect("caught: a friend through the door and a friend by its own name, each counted once",
+               len(found.get("src/witness.cpp", [])) == 2)
+        expect("caught: a factory, an alias and a friend in macro bodies", len(found.get("src/macro.cpp", [])) == 3)
+        expect("caught: a use through an alias that a macro body defines",
+               len(found.get("src/macro_alias_use.cpp", [])) == 1)
+        expect("caught: a macro body split by a comment, and a name split by a backslash-newline",
+               len(found.get("src/macro_split.cpp", [])) == 2)
+        expect("not caught: a comment, a literal, an include path, a macro string, an alias of another namespace "
+               "and another namespace called testing that holds no door member",
                "include/crucible/effects/Clean.h" not in found)
         expect("not caught: test and bench code", not any(rel.startswith(("test/", "bench/")) for rel in found))
 
@@ -241,7 +414,9 @@ def self_test() -> int:
         expect("unlisted uses fail, and the listed files pass",
                code == 1 and "Planted.h uses the testing door 2 time(s)" in report and "Listed.h uses" not in report)
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
-        for rel in ("include/foundation/effects/Planted.h", "src/planted.cpp", "src/cross.cpp", "src/directive.cpp"):
+        for rel in ("include/foundation/effects/Planted.h", "src/planted.cpp", "src/cross.cpp", "src/directive.cpp",
+                    "src/commented.cpp", "src/witness.cpp", "src/macro.cpp", "src/macro_alias_use.cpp",
+                    "src/macro_split.cpp"):
             (root / rel).unlink()
         with (root / "include/crucible/effects/Listed.h").open("a", encoding="utf-8") as listed:
             listed.write("inline void more() { (void)::crucible::effects::testing::init(); }\n")
@@ -263,6 +438,9 @@ def self_test() -> int:
                                       "include/crucible/effects/Door.h x1  — the planted door alias\n",
                                       encoding="utf-8")
         expect("a satisfied list passes", captured(root)[0] == 0)
+        (root / "src/broken.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
+        code, report = captured(root)
+        expect("a file the parser cannot read fails", code == 1 and "src/broken.cpp does not parse" in report)
     if failures:
         print(f"check-ctx-testing-boundary --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2
@@ -282,7 +460,11 @@ def main(argv: list[str]) -> int:
     if argv not in ([], ["--self-test"]):
         print("usage: check-ctx-testing-boundary.py [--self-test]", file=sys.stderr)
         return 2
-    return self_test() if argv else check(Path(__file__).resolve().parent.parent)
+    try:
+        return self_test() if argv else check(tsast.REPO_ROOT)
+    except tsast.KitMissing as exc:
+        print(f"check-ctx-testing-boundary: {exc}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":
