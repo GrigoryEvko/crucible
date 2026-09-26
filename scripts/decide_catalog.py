@@ -23,20 +23,6 @@ DECIDE_HEADERS = (
 _DECLARATOR_WRAPPERS = frozenset({"pointer_declarator", "reference_declarator", "function_declarator"})
 
 
-def _namespace_path(node: tsast.Node) -> tuple[str, ...]:
-    """The names of the namespaces that enclose a node, outermost first."""
-    path: list[str] = []
-    ancestor = node.parent
-    while ancestor is not None:
-        if ancestor.type == "namespace_definition":
-            name = ancestor.child_by_field("name")
-            if name is not None:
-                parts = [name] if name.type == "namespace_identifier" else list(name.descendants("namespace_identifier"))
-                path[:0] = [part.text for part in parts]
-        ancestor = ancestor.parent
-    return tuple(path)
-
-
 def _defined_name(function: tsast.Node) -> str | None:
     """The plain identifier that a function definition defines, or None for any other name shape."""
     declarator = function.child_by_field("declarator")
@@ -54,7 +40,7 @@ def procedures(tree: tsast.Tree) -> list[str]:
     Complexity: linear in the number of function definitions of the tree."""
     names: list[str] = []
     for function in tree.find("function_definition"):
-        path = _namespace_path(function)
+        path = tsast.namespace_path(function)
         name = _defined_name(function)
         if path and path[-1] == "decide" and name is not None and name not in names:
             names.append(name)

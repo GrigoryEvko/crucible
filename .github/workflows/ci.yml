@@ -156,8 +156,8 @@ jobs:
 
       - name: contract cite regression (self-test + pre-callsite count vs baseline)
         run: |
-          bash scripts/audit-pre-callsite-count.sh --self-test
-          bash scripts/audit-pre-callsite-count.sh --check scripts/contracts-baseline.json
+          python3 scripts/audit-pre-callsite-count.py --self-test
+          python3 scripts/audit-pre-callsite-count.py --check scripts/contracts-baseline.json
 
       - name: contract decide-cite ratio (self-test + scan)
         run: |

@@ -536,21 +536,21 @@ add_test(NAME escape_doors
 set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
-# CONTRACT-131: contracts-infra adoption regression guard.  --check
-# diffs the live tree against a committed baseline snapshot; counter
-# increases are silent (adoption growth is good), counter decreases
-# fail CI (regression).  Run `scripts/audit-pre-callsite-count.sh
-# --baseline scripts/contracts-baseline.json` to refresh after a
-# deliberate removal — the regression is then explained and the
-# baseline owns the new counts.
+# The contract cites of include/ and src/, counted from the parse tree.
+# --check compares the live counts with the committed baseline.  A counter
+# that rises passes, and a counter that falls fails the test.  After a
+# deliberate removal, write the baseline again with
+# `python3 scripts/audit-pre-callsite-count.py --baseline
+# scripts/contracts-baseline.json` and give the reason in the commit.
 add_test(NAME contract_cite_regression_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.py
           --self-test)
 add_test(NAME contract_cite_regression
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.py
           --check ${CMAKE_SOURCE_DIR}/scripts/contracts-baseline.json)
 set_tests_properties(contract_cite_regression contract_cite_regression_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard;ast"
+  SKIP_RETURN_CODE 3)
 # The cite-ratio policy of the decide:: catalog.  Each procedure needs at
 # least 2 production cites within 180 days of the day its definition
 # entered Decide.h.  The day comes from the parse of every committed
