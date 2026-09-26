@@ -9068,26 +9068,33 @@ crucible_neg_compile_test(neg_swiss_table_buffer_copy
 crucible_neg_compile_test(neg_swiss_table_buffer_use_after_move
   "use of deleted function|deleted function|move-only")
 
-# WRAP-SwissTab-2 (#1024) — BitMask stores a Refined group-width
-# bitset.  The mask is bounded by the numeric ceiling
-# ((1 << kGroupWidth) - 1), not by kGroupWidth itself: a valid
-# kGroupWidth=16 mask can be 0xF0F0.  The two fixtures pin the
-# boundary edge and a wide miss on the default AVX2/SSE/portable
-# widths used by the local preset.
-# Both gates name a real diagnostic on either ISA: the Refined contract on
-# widths below 64, the group-width static_assert on AVX512BW.
-crucible_neg_compile_test(neg_swiss_bitmask_one_past_group_mask
-  "contract predicate is false|requires a group width below 64")
-crucible_neg_compile_test(neg_swiss_bitmask_wide_miss
-  "contract predicate is false|requires a group width below 64")
+# BitMask stores a refined mask.  The numeric ceiling
+# ((1 << kGroupWidth) - 1) bounds the mask, not kGroupWidth itself: a
+# valid mask of width 16 can be 0xF0F0.  The two fixtures pin the edge
+# one above the ceiling and a wide miss.  The first regex says that the
+# precondition of the checked mint failed.  The second names the mint and
+# its ceiling predicate.  The third names the BitMask constructor and the
+# refused value.  On AVX512BW the width is 64 and no value is out of
+# range, so each fixture fails there on its own static_assert.
+crucible_neg_compile_multi_test(neg_swiss_bitmask_one_past_group_mask
+  "__builtin_trap.*is not a constant expression|requires a group width below 64"
+  "fixy::mint_refined<BoundedAbove<[0-9]+>\\(\\), long unsigned int>\\(raw_mask\\)|requires a group width below 64"
+  "BitMask::BitMask\\(.*kGroupMaskCeiling\\) \\+ 1\\)\\)|requires a group width below 64")
+crucible_neg_compile_multi_test(neg_swiss_bitmask_wide_miss
+  "__builtin_trap.*is not a constant expression|requires a group width below 64"
+  "fixy::mint_refined<BoundedAbove<[0-9]+>\\(\\), long unsigned int>\\(raw_mask\\)|requires a group width below 64"
+  "BitMask::BitMask\\(std::numeric_limits<long unsigned int>::max\\(\\)\\)|requires a group width below 64")
 
-# WRAP-SwissTab-6 (#1028) — kGroupWidth is a
-# safety::PowerOfTwo<size_t> rather than a raw size_t.  The fixtures
-# cover both structural mismatch classes for the predicate.
-crucible_neg_compile_test(neg_swiss_group_width_zero
-  "contract|Refined|power_of_two|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_swiss_group_width_not_power_of_two
-  "contract|Refined|power_of_two|not a constant|non-constant|constexpr")
+# kGroupWidth is a fixy::PowerOfTwo<size_t>, and the checked mint is its
+# only door.  The two fixtures give the mint zero and a value that is not
+# a power of two.  The second regex names the mint, its predicate and the
+# refused value.
+crucible_neg_compile_multi_test(neg_swiss_group_width_zero
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsPowerOfTwo\\(\\), long unsigned int>\\(0\\)")
+crucible_neg_compile_multi_test(neg_swiss_group_width_not_power_of_two
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsPowerOfTwo\\(\\), long unsigned int>\\(48\\)")
 
 # ExprPool reads int_cache_ through IntCacheLiteral, which is
 # Refined<in_range<-128, 127>, int64_t>.  Two fixtures pin the two ends

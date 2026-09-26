@@ -53,7 +53,6 @@ include/crucible/BackgroundThread.h
 include/crucible/CallSiteTable.h
 include/crucible/Cipher.h
 include/crucible/CostModel.h
-include/crucible/SwissTable.h
 include/crucible/Vigil.h
 include/crucible/_Saturate.h
 include/crucible/canopy/HyParView.h

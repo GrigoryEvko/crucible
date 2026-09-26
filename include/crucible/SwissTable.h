@@ -1,14 +1,14 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Pre.h>
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
+#include <fixy/Refined.h>
 #include <fixy/atoms/Hw.h>
 #include <fixy/atoms/Simd.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
 
 #include <bit>
 #include <cstdint>
@@ -32,25 +32,29 @@ namespace detail {
 
 static constexpr int8_t kEmpty = static_cast<int8_t>(0x80);
 
-using GroupWidth = ::crucible::fixy::wrap::PowerOfTwo<std::size_t>;
+using GroupWidth = ::fixy::PowerOfTwo<std::size_t>;
 
 #if defined(__AVX512BW__)
-static constexpr GroupWidth kGroupWidth{std::size_t{64}};
+static constexpr GroupWidth kGroupWidth = ::fixy::mint_refined<::fixy::power_of_two>(std::size_t{64});
 #elif defined(__AVX2__)
-static constexpr GroupWidth kGroupWidth{std::size_t{32}};
+static constexpr GroupWidth kGroupWidth = ::fixy::mint_refined<::fixy::power_of_two>(std::size_t{32});
 #else
-static constexpr GroupWidth kGroupWidth{std::size_t{16}};
+static constexpr GroupWidth kGroupWidth = ::fixy::mint_refined<::fixy::power_of_two>(std::size_t{16});
 #endif
 
+// The wrapper is not trivially copyable, so no byte copy builds a group
+// width that the predicate did not see.  Its copy and move constructors
+// and its destructor are trivial, so it still passes in a register.
 static_assert(sizeof(GroupWidth) == sizeof(std::size_t));
-static_assert(std::is_trivially_copyable_v<GroupWidth>);
+static_assert(std::is_trivially_copy_constructible_v<GroupWidth> && std::is_trivially_move_constructible_v<GroupWidth>
+              && std::is_trivially_destructible_v<GroupWidth>);
 static_assert(std::is_standard_layout_v<GroupWidth>);
 
 [[nodiscard]] consteval std::size_t group_width() noexcept { return kGroupWidth.value(); }
 
 // The upper bound is 64 because BitMask carries the group in a uint64_t.
 // A wider group needs a wider mask type and a re-audit of the H2 tag width.
-static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(group_width(), std::size_t{64}),
+static_assert(::foundation::decide::is_power_of_two_le<std::size_t>(group_width(), std::size_t{64}),
               "kGroupWidth must be a power of two ≤ 64 (AVX-512 width)");
 
 // The ISA the probe was emitted for and the instruction class it issues,
@@ -113,14 +117,15 @@ static_assert(h2_tag(0x8000000000000000ULL) == 64, "h2_tag with only bit 63 set 
 
 // Each set bit is a slot offset in [0, kGroupWidth).
 struct BitMask {
-    using Mask = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<kGroupMaskCeiling>, uint64_t>;
+    using Mask = ::fixy::Refined<::fixy::bounded_above<kGroupMaskCeiling>, uint64_t>;
 
     static_assert(sizeof(Mask) == sizeof(uint64_t));
-    static_assert(std::is_trivially_copyable_v<Mask>);
+    static_assert(std::is_trivially_copy_constructible_v<Mask> && std::is_trivially_move_constructible_v<Mask>
+                  && std::is_trivially_destructible_v<Mask>);
     static_assert(std::is_standard_layout_v<Mask>);
 
     constexpr BitMask() noexcept = default;
-    constexpr explicit BitMask(uint64_t raw_mask) noexcept : mask_(raw_mask) {}
+    constexpr explicit BitMask(uint64_t raw_mask) noexcept : mask_(checked_mask_(raw_mask)) {}
     constexpr explicit BitMask(Mask mask) noexcept : mask_(mask) {}
 
     [[nodiscard]] constexpr uint64_t raw() const noexcept { return mask_.value(); }
@@ -136,11 +141,17 @@ struct BitMask {
 
     CRUCIBLE_INLINE void clear_lowest() {
         const uint64_t m = raw();
-        mask_ = Mask{m & (m - uint64_t{1})};
+        mask_ = checked_mask_(m & (m - uint64_t{1}));
     }
 
 private:
-    Mask mask_{uint64_t{0}};
+    // Every raw word reaches the mask through the checked mint, so the
+    // ceiling is tested at each construction, as a constant too.
+    [[nodiscard]] static constexpr Mask checked_mask_(uint64_t raw_mask) noexcept {
+        return ::fixy::mint_refined<::fixy::bounded_above<kGroupMaskCeiling>>(raw_mask);
+    }
+
+    Mask mask_ = checked_mask_(uint64_t{0});
 };
 
 struct CtrlGroup {

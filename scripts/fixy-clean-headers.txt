@@ -55,6 +55,7 @@ include/crucible/RecipePool.h
 include/crucible/RecipeRegistry.h
 include/crucible/ReplayEngine.h
 include/crucible/Serialize.h
+include/crucible/SwissTable.h
 include/crucible/SymbolTable.h
 include/crucible/TensorMeta.h
 include/crucible/TraceLoader.h
