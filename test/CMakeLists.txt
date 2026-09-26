@@ -968,20 +968,21 @@ set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
     PROPERTIES LABELS "ci_guard")
 
 # A comment, a script or an allowlist in the new tree states what the code
-# does, not which task, stage or tracker entry produced it.  The guard
-# scans include/foundation, include/fixy, test/foundation, test/fixy,
-# scripts and vessel for a task reference, a tracker tag or a stage label,
-# and it has no allowlist.  The self-test plants one reference of each
-# family and a file of clean look-alikes (directives, collision rule codes,
-# suppression markers), and proves the first is reported and the second
-# is not.
+# does, not which task, stage or tracker entry produced it.
+# scripts/check-no-coordination-refs.py reads the prose of include/foundation,
+# include/fixy, src/foundation, src/fixy, test/foundation, test/fixy, scripts,
+# vessel, bench, the root CMakeLists.txt and ci.yml: the comments, strings and
+# directive arguments of C++ from the parse tree, the comments and strings of
+# Python from its tokens, and every line of any other file.  It has no
+# allowlist.  The self-test plants one reference of each family and a file of
+# clean look-alikes, and proves the first is reported and the second is not.
+# Exit 3 when the kit is absent reports a skip.
 add_test(NAME no_coordination_refs_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-coordination-refs.sh
-          --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-coordination-refs.py --self-test)
 add_test(NAME no_coordination_refs
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-coordination-refs.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-coordination-refs.py)
 set_tests_properties(no_coordination_refs no_coordination_refs_self_test
-    PROPERTIES LABELS "ci_guard")
+    PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
 # Differential tests of the session relations against the projection
 # oracle of Tirore, Bengtson and Carbone (ITP 2023).  The check emits the

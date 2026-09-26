@@ -292,8 +292,8 @@ jobs:
 
       - name: no task, stage or tracker references (self-test + scan)
         run: |
-          bash scripts/check-no-coordination-refs.sh --self-test
-          bash scripts/check-no-coordination-refs.sh
+          python3 scripts/check-no-coordination-refs.py --self-test
+          python3 scripts/check-no-coordination-refs.py
 
       - name: session oracle drift (check)
         run: bash scripts/session-oracle.sh --check
