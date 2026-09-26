@@ -5,9 +5,22 @@
 // reproducibility: IEEE 754 leaves the accuracy of log, sin and cos
 // unspecified, and implementations disagree in the last few units in the
 // last place, so one input pair yields different bytes on different
-// platforms. Every operation below is +, -, *, /, bit_cast or sqrt.
-// IEEE 754 requires sqrt to be correctly rounded, so it is the one
-// library call that gives the same bits everywhere.
+// platforms. Every operation below is +, -, *, a fused multiply-add,
+// sqrt, a sign copy, a comparison, a conversion or a bit_cast. IEEE 754
+// requires the fused multiply-add and sqrt to be correctly rounded, so
+// std::fma and std::sqrt are the two library calls that give the same
+// bits everywhere.
+//
+// Every product that feeds a sum is one std::fma. The compiler may fuse
+// a written a * b + c into one operation under -ffp-contract=on or
+// -ffp-contract=fast, when the target has a fused instruction, and leave
+// it as two roundings otherwise. The same source then gives different
+// bits in two builds. An explicit fma rounds once under every flag, on
+// every target, and in constant evaluation. No expression below has the
+// shape a * b + c, so no flag can change a result.
+//
+// The arithmetic assumes the IEEE default rounding mode, round to nearest
+// with ties to even. A different dynamic rounding mode changes the bits.
 //
 // Constants are hex float literals so every bit of every coefficient is
 // unambiguous.
@@ -40,60 +53,100 @@
 //  4. Every value pin compares bit patterns, never floats.  A float
 //     equality compare is a build error in this tree, and the bit pattern
 //     is the stronger claim anyway: it is what a content hash folds.
+//
+//  5. Every product that feeds a sum is an explicit std::fma, where the
+//     old header wrote a * b + c and let the contraction flag decide the
+//     rounding.  The pinned pair at the foot of this header moved with it.
 
+#include <array>
 #include <bit>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
 namespace fixy::fp {
 
-// The caller must pass x > 0.
-//
-// Splitting x into 2^e * m leaves m in [1, 2), and the second reduction
-// to [sqrt(2)/2, sqrt(2)] is what keeps the series usable. Without it u
-// approaches 1 just below a power of two, where the seven terms are far
-// from converged and the result can come out with the wrong sign. The
-// square root downstream then takes a negative argument and returns
-// NaN. Reduced, |u| stays below 0.415 and seven terms land within an
-// ulp.
-[[nodiscard]] constexpr float log_poly(float x) noexcept {
-    const std::uint32_t bits = std::bit_cast<std::uint32_t>(x);
-    const std::int32_t e_raw = static_cast<std::int32_t>((bits >> 23) & 0xFFu);
-    std::int32_t e_unbiased = e_raw - 127;
+namespace detail {
 
-    const std::uint32_t m_bits = (bits & 0x007FFFFFu) | (127u << 23);
-    float m = std::bit_cast<float>(m_bits);
+// Evaluates coefficients[0] + point * (coefficients[1] + point * (...)) in
+// Horner form, one std::fma for each step.  O(N) in the number of
+// coefficients.
+template <std::size_t N>
+[[nodiscard]] constexpr float horner(float point, const std::array<float, N>& coefficients) noexcept {
+    static_assert(N >= 2, "a Horner chain needs a constant term and at least one more coefficient");
+    float sum = coefficients[N - 1];
+    for (std::size_t k = N - 1; k-- > 0;) {
+        sum = std::fma(point, sum, coefficients[k]);
+    }
+    return sum;
+}
+
+// Each series below alternates in sign.  The table holds the magnitudes,
+// constant term first, and the caller evaluates it at the negated
+// variable, which is exact.
+
+// log(1 + u) = u * (1 - u/2 + u^2/3 - ...) through the seventh power of u.
+inline constexpr std::array<float, 7> kLogSeries{
+    1.0f,
+    0x1.0p-1f,  // 1/2
+    0x1.5555560p-2f,  // 1/3
+    0x1.0p-2f,  // 1/4
+    0x1.99999ap-3f,  // 1/5
+    0x1.5555560p-3f,  // 1/6
+    0x1.2492494p-3f,  // 1/7
+};
+
+// sin(x) = x * (1 - x^2/3! + x^4/5! - ...) through the ninth power of x.
+inline constexpr std::array<float, 5> kSinSeries{
+    1.0f,
+    0x1.555556p-3f,  // 1/6
+    0x1.111112p-7f,  // 1/120
+    0x1.A01A02p-13f,  // 1/5040
+    0x1.5D8A4Cp-19f,  // 1/362880
+};
+
+// cos(x) = 1 - x^2/2! + x^4/4! - ... through the eighth power of x.
+inline constexpr std::array<float, 5> kCosSeries{
+    1.0f,
+    0x1.0p-1f,  // 1/2
+    0x1.555556p-5f,  // 1/24
+    0x1.6C16C2p-10f,  // 1/720
+    0x1.A01A02p-16f,  // 1/40320
+};
+
+}  // namespace detail
+
+// The caller must pass a value above zero.
+//
+// Splitting the argument into 2^e * m leaves m in [1, 2), and the second
+// reduction to [sqrt(2)/2, sqrt(2)] is what keeps the series usable.
+// Without it the offset u = m - 1 approaches 1 just below a power of
+// two, where the seven terms are far from converged and the result can
+// come out with the wrong sign. The square root downstream then takes a
+// negative argument and returns NaN. Reduced, |u| stays below 0.415.
+// Measured against double precision over every positive normal float,
+// the seven terms are within 8.4e-5 of the true value.
+[[nodiscard]] constexpr float log_poly(float value) noexcept {
+    const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
+    const std::int32_t biased_exponent = static_cast<std::int32_t>((bits >> 23) & 0xFFu);
+    std::int32_t exponent = biased_exponent - 127;
+
+    const std::uint32_t mantissa_bits = (bits & 0x007FFFFFu) | (127u << 23);
+    float mantissa = std::bit_cast<float>(mantissa_bits);
 
     // Every step of this reduction is exact in IEEE 754, so the branch
     // is taken on the same inputs everywhere.
     const float sqrt2 = 0x1.6A09E6p+0f;
-    if (m > sqrt2) {
-        m *= 0.5f;
-        e_unbiased += 1;
+    if (mantissa > sqrt2) {
+        mantissa *= 0.5f;
+        exponent += 1;
     }
-    const float u = m - 1.0f;
-
-    // Taylor series for log(1 + u) through the seventh power, in Horner
-    // form.
-    const float c2 = 0x1.0p-1f;  // 1/2
-    const float c3 = 0x1.5555560p-2f;  // 1/3
-    const float c4 = 0x1.0p-2f;  // 1/4
-    const float c5 = 0x1.99999ap-3f;  // 1/5
-    const float c6 = 0x1.5555560p-3f;  // 1/6
-    const float c7 = 0x1.2492494p-3f;  // 1/7
-
-    float p = c7;
-    p = c6 - u * p;
-    p = c5 - u * p;
-    p = c4 - u * p;
-    p = c3 - u * p;
-    p = c2 - u * p;
-    p = 1.0f - u * p;
-    const float log_m = u * p;
+    const float offset = mantissa - 1.0f;
+    const float log_mantissa = offset * detail::horner(-offset, detail::kLogSeries);
 
     const float ln2 = 0x1.62E430p-1f;  // log(2)
-    return static_cast<float>(e_unbiased) * ln2 + log_m;
+    return std::fma(static_cast<float>(exponent), ln2, log_mantissa);
 }
 
 struct ReduceResult {
@@ -101,109 +154,92 @@ struct ReduceResult {
     std::int32_t quadrant = 0;
 };
 
-[[nodiscard]] constexpr ReduceResult reduce_quarter_pi(float x) noexcept {
+[[nodiscard]] constexpr ReduceResult reduce_quarter_pi(float angle) noexcept {
     const float two_over_pi = 0x1.45F306p-1f;  // 2/pi
     const float pi_over_two = 0x1.921FB6p+0f;  // pi/2
 
-    // Rounding to nearest through a bias and a conversion, rather than
-    // through nearbyint, which reads the current rounding mode. The
-    // conversion truncates toward zero by definition, so adding half a
-    // unit of the same sign first rounds halfway cases away from zero
-    // on every platform.
-    const float q_raw = x * two_over_pi;
-    const float q_biased = (q_raw >= 0.0f) ? (q_raw + 0.5f) : (q_raw - 0.5f);
-    const std::int32_t q = static_cast<std::int32_t>(q_biased);
+    // The nearest multiple of pi/2 comes from a bias and a conversion,
+    // not from nearbyint. One fma adds half a unit, with the sign of the
+    // angle, to the exact product and rounds once. The conversion then
+    // truncates toward zero in every rounding mode.
+    const float biased_multiple = std::fma(angle, two_over_pi, std::copysign(0.5f, angle));
+    const std::int32_t multiple = static_cast<std::int32_t>(biased_multiple);
 
-    const float reduced = x - static_cast<float>(q) * pi_over_two;
-    const std::int32_t quadrant = static_cast<std::int32_t>(static_cast<std::uint32_t>(q) & 0x3u);
+    const float reduced = std::fma(-static_cast<float>(multiple), pi_over_two, angle);
+    const std::int32_t quadrant = static_cast<std::int32_t>(static_cast<std::uint32_t>(multiple) & 0x3u);
 
     return ReduceResult{reduced, quadrant};
 }
 
-// The caller must pass x already reduced into [-pi/4, pi/4]. Taylor
-// series for sin through the ninth power, in Horner form.
-[[nodiscard]] constexpr float sin_in_quarter(float x) noexcept {
-    const float x2 = x * x;
-    const float a4 = 0x1.5D8A4Cp-19f;  // 1/362880
-    const float a3 = 0x1.A01A02p-13f;  // 1/5040
-    const float a2 = 0x1.111112p-7f;  // 1/120
-    const float a1 = 0x1.555556p-3f;  // 1/6
-    float p = a4;
-    p = a3 - x2 * p;
-    p = a2 - x2 * p;
-    p = a1 - x2 * p;
-    p = 1.0f - x2 * p;
-    return x * p;
+// The caller must pass an angle already reduced into [-pi/4, pi/4], up to
+// the rounding of the reduction. The Taylor series for sin through the
+// ninth power, in Horner form.
+[[nodiscard]] constexpr float sin_in_quarter(float reduced) noexcept {
+    const float reduced_squared = reduced * reduced;
+    return reduced * detail::horner(-reduced_squared, detail::kSinSeries);
 }
 
-// The caller must pass x already reduced into [-pi/4, pi/4]. Taylor
-// series for cos through the eighth power, in Horner form.
-[[nodiscard]] constexpr float cos_in_quarter(float x) noexcept {
-    const float x2 = x * x;
-    const float b4 = 0x1.A01A02p-16f;  // 1/40320
-    const float b3 = 0x1.6C16C2p-10f;  // 1/720
-    const float b2 = 0x1.555556p-5f;  // 1/24
-    const float b1 = 0x1.0p-1f;  // 1/2
-    float p = b4;
-    p = b3 - x2 * p;
-    p = b2 - x2 * p;
-    p = b1 - x2 * p;
-    return 1.0f - x2 * p;
+// The caller must pass an angle already reduced into [-pi/4, pi/4], up to
+// the rounding of the reduction. The Taylor series for cos through the
+// eighth power, in Horner form.
+[[nodiscard]] constexpr float cos_in_quarter(float reduced) noexcept {
+    const float reduced_squared = reduced * reduced;
+    return detail::horner(-reduced_squared, detail::kCosSeries);
 }
 
-[[nodiscard]] constexpr float sin_poly(float x) noexcept {
-    const ReduceResult rr = reduce_quarter_pi(x);
-    const float s = sin_in_quarter(rr.reduced);
-    const float c = cos_in_quarter(rr.reduced);
+[[nodiscard]] constexpr float sin_poly(float angle) noexcept {
+    const ReduceResult reduction = reduce_quarter_pi(angle);
+    const float sine = sin_in_quarter(reduction.reduced);
+    const float cosine = cos_in_quarter(reduction.reduced);
     // The quadrant is masked to two bits in reduce_quarter_pi, so these
     // four arms are the whole domain.
-    switch (rr.quadrant) {
+    switch (reduction.quadrant) {
         case 0:
-            return s;
+            return sine;
         case 1:
-            return c;
+            return cosine;
         case 2:
-            return -s;
+            return -sine;
         case 3:
-            return -c;
+            return -cosine;
         default:
             std::unreachable();
     }
 }
 
-[[nodiscard]] constexpr float cos_poly(float x) noexcept {
-    const ReduceResult rr = reduce_quarter_pi(x);
-    const float s = sin_in_quarter(rr.reduced);
-    const float c = cos_in_quarter(rr.reduced);
-    switch (rr.quadrant) {
+[[nodiscard]] constexpr float cos_poly(float angle) noexcept {
+    const ReduceResult reduction = reduce_quarter_pi(angle);
+    const float sine = sin_in_quarter(reduction.reduced);
+    const float cosine = cos_in_quarter(reduction.reduced);
+    switch (reduction.quadrant) {
         case 0:
-            return c;
+            return cosine;
         case 1:
-            return -s;
+            return -sine;
         case 2:
-            return -c;
+            return -cosine;
         case 3:
-            return s;
+            return sine;
         default:
             std::unreachable();
     }
 }
 
 [[nodiscard]] constexpr std::pair<float, float> box_muller_polynomial(std::uint32_t u1_raw,
-                                                                     std::uint32_t u2_raw) noexcept {
+                                                                      std::uint32_t u2_raw) noexcept {
     // The added one moves a raw word of zero off the bottom of the
     // range, which keeps the argument of the logarithm above zero.
     const float two_pow_neg32 = 0x1.0p-32f;
-    const float u1 = (static_cast<float>(u1_raw) + 1.0f) * two_pow_neg32;
-    const float u2 = (static_cast<float>(u2_raw) + 1.0f) * two_pow_neg32;
+    const float first_uniform = (static_cast<float>(u1_raw) + 1.0f) * two_pow_neg32;
+    const float second_uniform = (static_cast<float>(u2_raw) + 1.0f) * two_pow_neg32;
 
-    const float minus_two_log_u1 = -2.0f * log_poly(u1);
-    const float r = std::sqrt(minus_two_log_u1);
+    const float minus_two_log = -2.0f * log_poly(first_uniform);
+    const float radius = std::sqrt(minus_two_log);
 
     const float two_pi = 0x1.921FB6p+2f;  // 2*pi
-    const float theta = two_pi * u2;
+    const float theta = two_pi * second_uniform;
 
-    return {r * cos_poly(theta), r * sin_poly(theta)};
+    return {radius * cos_poly(theta), radius * sin_poly(theta)};
 }
 
 }  // namespace fixy::fp
@@ -212,7 +248,7 @@ namespace fixy::fp::detail::polynomial_self_test {
 
 // Bit patterns, never a float compare: a float equality compare is a
 // build error here, and the pattern is what a content hash folds anyway.
-[[nodiscard]] consteval std::uint32_t w(float value) noexcept { return std::bit_cast<std::uint32_t>(value); }
+[[nodiscard]] consteval std::uint32_t bits_of(float value) noexcept { return std::bit_cast<std::uint32_t>(value); }
 
 // ── The identities ──────────────────────────────────────────────────
 //
@@ -221,38 +257,39 @@ namespace fixy::fp::detail::polynomial_self_test {
 // coefficient or a sign error in the series rather than a last-ulp
 // difference.
 
-static_assert(w(log_poly(1.0f)) == w(0.0f), "log_poly(1) must be exactly +0.");
-static_assert(w(sin_poly(0.0f)) == w(0.0f), "sin_poly(0) must be exactly +0.");
-static_assert(w(cos_poly(0.0f)) == w(1.0f), "cos_poly(0) must be exactly 1.");
+static_assert(bits_of(log_poly(1.0f)) == bits_of(0.0f), "log_poly(1) must be exactly +0.");
+static_assert(bits_of(sin_poly(0.0f)) == bits_of(0.0f), "sin_poly(0) must be exactly +0.");
+static_assert(bits_of(sin_poly(-0.0f)) == bits_of(-0.0f), "sin_poly(-0) must keep the sign of the zero.");
+static_assert(bits_of(cos_poly(0.0f)) == bits_of(1.0f), "cos_poly(0) must be exactly 1.");
 
 // log(2) is the coefficient the reduction multiplies the exponent by, so
 // this cell binds the series to that constant.
-static_assert(w(log_poly(2.0f)) == w(0x1.62e43p-1f), "log_poly(2) must be the pinned log(2).");
+static_assert(bits_of(log_poly(2.0f)) == bits_of(0x1.62e43p-1f), "log_poly(2) must be the pinned log(2).");
 
 // The quadrant walk: sin at pi/2 and cos at pi land on the poles, which
 // is what says the four switch arms are wired to the right expressions.
-static_assert(w(sin_poly(0x1.921FB6p+0f)) == w(1.0f), "sin_poly(pi/2) must be exactly 1.");
-static_assert(w(cos_poly(0x1.921FB6p+1f)) == w(-1.0f), "cos_poly(pi) must be exactly -1.");
+static_assert(bits_of(sin_poly(0x1.921FB6p+0f)) == bits_of(1.0f), "sin_poly(pi/2) must be exactly 1.");
+static_assert(bits_of(cos_poly(0x1.921FB6p+1f)) == bits_of(-1.0f), "cos_poly(pi) must be exactly -1.");
 
 // ── The pinned pair ─────────────────────────────────────────────────
 //
-// Measured once with the old header on the development host at
-// -O0, -O1 and -O3, all three agreeing, and pinned here.  Two words of
-// Philox output in, one normal pair out.  A change to any coefficient,
-// to the reduction, or to the order of the operations moves at least one
-// of these words.
+// Computed in constant evaluation, and equal at run time on the
+// development host with -ffp-contract=off and with -ffp-contract=on and
+// FMA instructions, at -O0, -O1 and -O3.  Two words of Philox output in,
+// one normal pair out.  A change to any coefficient, to the reduction, or
+// to the order of the operations moves at least one of these words.
 
-inline constexpr std::uint32_t kBoxMullerZ1 = 0x3E102B5CU;  // 0x1.2056b8p-3f
+inline constexpr std::uint32_t kBoxMullerZ1 = 0x3E102B57U;  // 0x1.2056aep-3f
 inline constexpr std::uint32_t kBoxMullerZ2 = 0xBF024D51U;  // -0x1.049aa2p-1f
 
-static_assert(w(0x1.2056b8p-3f) == kBoxMullerZ1, "the pinned word and the hex float it documents disagree.");
-static_assert(w(-0x1.049aa2p-1f) == kBoxMullerZ2, "the pinned word and the hex float it documents disagree.");
+static_assert(bits_of(0x1.2056aep-3f) == kBoxMullerZ1, "the pinned word and the hex float it documents disagree.");
+static_assert(bits_of(-0x1.049aa2p-1f) == kBoxMullerZ2, "the pinned word and the hex float it documents disagree.");
 
-static_assert(w(box_muller_polynomial(0xDEADBEEFu, 0xCAFEBABEu).first) == kBoxMullerZ1,
+static_assert(bits_of(box_muller_polynomial(0xDEADBEEFu, 0xCAFEBABEu).first) == kBoxMullerZ1,
               "box_muller_polynomial(0xDEADBEEF, 0xCAFEBABE).first moved. The pair is pinned because a "
               "Philox-seeded normal sample reaches a content hash: if this changed on purpose, re-measure "
               "on the development host and say so in the commit.");
-static_assert(w(box_muller_polynomial(0xDEADBEEFu, 0xCAFEBABEu).second) == kBoxMullerZ2,
+static_assert(bits_of(box_muller_polynomial(0xDEADBEEFu, 0xCAFEBABEu).second) == kBoxMullerZ2,
               "box_muller_polynomial(0xDEADBEEF, 0xCAFEBABE).second moved. Same rule as .first.");
 
 // The two outputs of one call are different samples, which is the whole

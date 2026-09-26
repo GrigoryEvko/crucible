@@ -3879,6 +3879,19 @@ fixy_neg_compile_test(neg_cheat_graded_modality_injection
 # folding and the host FPU, and the claim is that they agree.
 fixy_test(test_fp_polynomial)
 
+# test_fp_polynomial_contracted is the same source compiled with
+# -ffp-contract=on and fused multiply-add instructions, where a written
+# a * b + c can fuse.  It must reach the same pinned digests, and it checks
+# that it does contract.  The source options come after the
+# -ffp-contract=off of the strict FP floor, and the compiler uses the last.
+fixy_test(test_fp_polynomial_contracted)
+set_property(SOURCE test_fp_polynomial_contracted.cpp APPEND PROPERTY COMPILE_OPTIONS -ffp-contract=on)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  set_property(SOURCE test_fp_polynomial_contracted.cpp APPEND PROPERTY COMPILE_OPTIONS -mfma)
+endif()
+set_property(SOURCE test_fp_polynomial_contracted.cpp APPEND PROPERTY
+  COMPILE_DEFINITIONS CRUCIBLE_TEST_FP_CONTRACTED=1)
+
 # test_os_spinlock acquires and releases through every door of the spin
 # gate and the blocking gate, and wakes a waiter that sleeps on the
 # blocking gate.  The cells that prove a door is CLOSED are the eight
