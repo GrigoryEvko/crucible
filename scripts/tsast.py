@@ -1852,6 +1852,232 @@ def specializations(tree: Tree) -> Iterator[TemplateDecl]:
         yield TemplateDecl(name, kind, is_specialization, is_specialization and has_params, template, scope)
 
 
+# ── In-memory parses and macro bodies ────────────────────────────────────────
+
+def parse_texts(items: Sequence[tuple[str, str]], *, strict: bool = False) -> Iterator[Tree]:
+    """Parse source texts held in memory, one CLI run for all of them.
+
+    Each text goes to a file in a private temporary directory, which the
+    generator removes when it finishes.  Each Tree keeps its text, so its
+    slices do not read a file, and its path is the label the caller gave.
+
+    Args:
+        items: (label, text) pairs.  The label becomes Tree.path.
+        strict: When true, raise ParseError for a text that parses with an
+            error.  A label is not a roster path, so no text is admitted.
+
+    Yields:
+        One Tree for each item, in input order
+
+    Raises:
+        ParseError: If strict is true and a text parses with an error
+    """
+    if not items:
+        return
+    with tempfile.TemporaryDirectory(prefix="tsast-") as scratch:
+        paths: list[Path] = []
+        for index, (_label, text) in enumerate(items):
+            path = Path(scratch) / f"{index}.cpp"
+            path.write_text(text, encoding="utf-8")
+            paths.append(path)
+        for (label, text), tree in zip(items, parse(paths, strict=False), strict=True):
+            tree.path = Path(label)
+            tree._source = text.encode("utf-8")
+            if strict and tree.diagnostic is not None:
+                raise ParseError(f"{label} parses with an error:\n  {tree.diagnostic}")
+            yield tree
+
+
+def macro_parameters(define: Node) -> tuple[str, ...]:
+    """Return the parameter names of a function-like macro, in order.
+
+    A variadic macro reports its `...` as `__VA_ARGS__`, the name its body
+    uses.  An object-like macro has no parameters.
+
+    Args:
+        define: A preproc_function_def or preproc_def node
+
+    Returns:
+        The parameter names
+    """
+    params = define.child_by_field("parameters")
+    if params is None:
+        return ()
+    names: list[str] = []
+    for text in params.tokens():
+        if text == "...":
+            names.append("__VA_ARGS__")
+        elif text not in ("(", ")", ","):
+            names.append(text)
+    return tuple(names)
+
+
+class MacroBody(NamedTuple):
+    """The replacement list of one `#define`, parsed as C++.
+
+    tree is the parse of the body inside a wrapper, and root is the node of
+    that tree whose children are the body's own nodes, so a walk from root
+    never meets the wrapper.  When no wrapper parses clean, tree.diagnostic
+    is set: the body is not C++ on its own, for example because it uses `#`
+    or `##`, and a guard fails closed on it or reads pp_tokens(text).
+    tree.path is a label, not a file: a report names define.tree.path and the
+    position that origin() gives.
+    """
+
+    define: Node
+    name: str
+    params: tuple[str, ...]
+    text: str
+    tree: Tree
+    root: Node
+    first_row: int
+    first_col: int
+    wrapper_rows: int
+
+    def origin(self, node: Node) -> tuple[int, int]:
+        """Map a node of the body's parse back to a zero-based (row, column) in the file.
+
+        Args:
+            node: A node of self.tree
+
+        Returns:
+            The position of the node start in the file of the definition
+        """
+        row, col = node.start
+        body_row = row - self.wrapper_rows
+        if body_row < 0:
+            # A node of the wrapper itself: report the start of the body.
+            return (self.first_row, self.first_col)
+        if body_row == 0:
+            return (self.first_row, self.first_col + col)
+        return (self.first_row + body_row, col)
+
+    @property
+    def is_parsed(self) -> bool:
+        """Say whether the body parsed clean inside one of the wrappers."""
+        return self.tree.diagnostic is None
+
+
+# The wrappers, in the order they are tried.  Each prefix ends in a newline,
+# so the body starts at column 0 of a known row.  The class member list comes
+# first: the kit's error recovery reads `public: static T x;` as a clean
+# translation unit and drops the access specifier, so a translation unit
+# first would lose it.  A namespace-scope body fails in the member list and
+# parses as a translation unit.  The block wrapper ends the body with `;`, so
+# an expression body becomes an expression statement.
+_WRAPPERS: tuple[tuple[str, str, str], ...] = (
+    ("field_declaration_list", "struct tsast_macro_wrapper {\n", "\n};\n"),
+    ("translation_unit", "\n", "\n"),
+    ("compound_statement", "void tsast_macro_wrapper() {\n", "\n;}\n"),
+)
+
+
+def _body_root(tree: Tree, root_type: str) -> Node:
+    """Return the node whose children are a wrapped body's own nodes."""
+    if root_type == "translation_unit":
+        return tree.root
+    found = next(tree.find(root_type), None)
+    return tree.root if found is None else found
+
+
+def macro_bodies(trees: Iterable[Tree]) -> list[MacroBody]:
+    """Parse the replacement list of every `#define` in the given trees.
+
+    The value of a definition can span several preproc_arg nodes, because a
+    block comment splits it.  The body is the text from the first value to
+    the last one, with each line splice replaced by one space, so every
+    position keeps its row and its column.  The arguments of #pragma, #error
+    and #warning are not definitions, so they never appear.
+
+    Each body is tried as a class member list, then as a translation unit,
+    then as a block.  Every body of one stage goes to the kit in one parse.
+    A body that parses clean in no wrapper keeps the diagnostic of the last
+    one.
+
+    Args:
+        trees: Parsed files
+
+    Returns:
+        One MacroBody for each definition that has a value, in source order
+    """
+    pending: list[tuple[Node, str, tuple[str, ...], str, int, int]] = []
+    for tree in trees:
+        for define in tree.find("preproc_def", "preproc_function_def"):
+            values = [child for child in define.children if child.field == "value"]
+            if not values:
+                continue
+            name = define.child_by_field("name")
+            text = tree.slice(values[0].start, values[-1].end)
+            text = _SPLICE.sub(lambda match: " " + match.group(0)[1:], text)
+            pending.append((define, "" if name is None else name.text, macro_parameters(define),
+                            text, values[0].start[0], values[0].start[1]))
+    results: dict[int, MacroBody] = {}
+    remaining = list(range(len(pending)))
+    for stage, (root_type, prefix, suffix) in enumerate(_WRAPPERS):
+        if not remaining:
+            break
+        last = stage == len(_WRAPPERS) - 1
+        items = [(f"macro-{index}", prefix + pending[index][3] + suffix) for index in remaining]
+        still: list[int] = []
+        for index, tree in zip(remaining, parse_texts(items), strict=True):
+            if tree.diagnostic is not None and not last:
+                still.append(index)
+                continue
+            define, name, params, text, row, col = pending[index]
+            # The label is not a file.  A report names define.tree.path and origin().
+            tree.path = Path(f"{define.tree.path}:{row + 1}:{name}")
+            results[index] = MacroBody(define, name, params, text, tree, _body_root(tree, root_type),
+                                       row, col, prefix.count("\n"))
+        remaining = still
+    return [results[index] for index in range(len(pending))]
+
+
+def token_qualified_names(tokens: Sequence[Token]) -> list[tuple[bool, tuple[str, ...], int]]:
+    """Return every qualified name in a token list, with the row it starts on.
+
+    A name is identifiers joined by `::`, with an optional `::` before the
+    first one.  `template` after `::` is skipped.  A template argument list
+    ends the name, because the tokens cannot tell a `<` bracket from a less
+    sign.  Use it on the tokens of a body that did not parse.
+
+    Args:
+        tokens: Tokens from pp_tokens() or Node.lexed()
+
+    Returns:
+        (is_global, parts, row) for each name, in order
+    """
+    names: list[tuple[bool, tuple[str, ...], int]] = []
+    index = 0
+    count = len(tokens)
+    while index < count:
+        token = tokens[index]
+        starts_global = (
+            token.text == "::" and index + 1 < count and tokens[index + 1].kind == "identifier"
+            and not (index > 0 and (tokens[index - 1].kind == "identifier" or tokens[index - 1].text == ">"))
+        )
+        if token.kind != "identifier" and not starts_global:
+            index += 1
+            continue
+        row = token.row
+        parts: list[str] = []
+        if starts_global:
+            index += 1
+        while index < count and tokens[index].kind == "identifier":
+            parts.append(tokens[index].text)
+            nxt = index + 1
+            if nxt < count and tokens[nxt].text == "::":
+                nxt += 1
+                if nxt < count and tokens[nxt].text == "template":
+                    nxt += 1
+                if nxt < count and tokens[nxt].kind == "identifier":
+                    index = nxt
+                    continue
+            index += 1
+            break
+        names.append((starts_global, tuple(parts), row))
+    return names
+
+
 def _self_test() -> int:
     """Run the module's own checks, positive and negative.
 
@@ -2031,6 +2257,7 @@ def _self_test() -> int:
         )
 
         _self_test_helpers(check, parse_text, Path(work))
+        _self_test_macros(check, parse_text)
 
     # Negative control: a rostered file is admitted, and it really does carry an
     # error, so the roster entry is not stale.
@@ -2420,6 +2647,100 @@ def _self_test_helpers(
         "is_in_cpp_scope refuses a C file and a rostered file",
         is_in_cpp_scope("include/x.h") and not is_in_cpp_scope("src/prog.bpf.c")
         and not is_in_cpp_scope("include/crucible/perf/bpf/vmlinux.h"),
+        negative=True,
+    )
+
+
+def _self_test_macros(check: Callable[..., None], parse_text: Callable[[str, str], Tree]) -> None:
+    """Check the in-memory parse, the macro-body parse and the token name reader.
+
+    Args:
+        check: The recorder of the enclosing self-test
+        parse_text: Parses one source text in the scratch directory
+    """
+    texts = list(parse_texts([("first.h", "int a;\n"), ("second.h", "void f() { g(1) { } }\n")]))
+    check(
+        "parse_texts labels each tree and slices its text from memory",
+        [str(tree.path) for tree in texts] == ["first.h", "second.h"]
+        and next(texts[0].find("identifier")).text == "a",
+    )
+    check("parse_texts reports a broken text as a diagnostic", texts[1].diagnostic is not None)
+    refused = ""
+    try:
+        list(parse_texts([("bad.h", "void f() { g(1) { } }\n")], strict=True))
+    except ParseError as exc:
+        refused = str(exc)
+    check("parse_texts with strict raises and names the label", "bad.h" in refused, negative=True)
+
+    macros_tree = parse_text(
+        "macros.cpp",
+        "#define WRAP(fixy) (fixy + 1) /* c */ \\\n"
+        "    - reinterpret_cast<int*>(fixy)\n"
+        "#define MEMBER(T) public: static T slot_;\n"
+        "#define DECL(T) template <> struct trait<T> : std::true_type {};\n"
+        "#define PASTE(a, b) a ## b\n"
+        "#define VARIADIC(fmt, ...) log(fmt, __VA_ARGS__)\n"
+        "#define EMPTY\n"
+        "#pragma GCC optimize(\"fast-math\")\n"
+        "#error reinterpret_cast<int*>(p)\n",
+    )
+    bodies = {body.name: body for body in macro_bodies([macros_tree])}
+    check(
+        "macro_bodies gives one body for each definition with a value, and none for a pragma or #error",
+        sorted(bodies) == ["DECL", "MEMBER", "PASTE", "VARIADIC", "WRAP"],
+    )
+    wrap = bodies["WRAP"]
+    casts = [node for node in wrap.root.descendants("template_function") if leaf_name(node) == "reinterpret_cast"]
+    check(
+        "a body split by a block comment and a splice parses as one expression",
+        wrap.is_parsed and len(casts) == 1,
+    )
+    check(
+        "origin maps a node of the body back to its row and column in the file",
+        len(casts) == 1 and wrap.origin(casts[0]) == (1, 6),
+    )
+    check(
+        "macro_parameters reads the parameters, and __VA_ARGS__ for a variadic macro",
+        wrap.params == ("fixy",) and bodies["VARIADIC"].params == ("fmt", "__VA_ARGS__"),
+    )
+    member = bodies["MEMBER"]
+    check(
+        "a member declaration body parses in the class wrapper",
+        member.is_parsed and member.root.type == "field_declaration_list"
+        and len(list(member.root.descendants("field_declaration"))) == 1,
+    )
+    decl = bodies["DECL"]
+    check(
+        "a specialization body parses, and the specialization is found",
+        decl.is_parsed and any(t.is_specialization for t in specializations(decl.tree)),
+    )
+    namespace_tree = parse_text("nsmacro.cpp", "#define OPEN_NS namespace crucible::detail { int hidden; }\n")
+    open_ns = macro_bodies([namespace_tree])
+    check(
+        "a namespace-scope body fails the member list and parses as a translation unit",
+        len(open_ns) == 1 and open_ns[0].is_parsed and open_ns[0].root.type == "translation_unit",
+    )
+    paste = bodies["PASTE"]
+    check(
+        "a body with ## parses in no wrapper, and its tokens stay readable",
+        not paste.is_parsed and "##" in [token.text for token in pp_tokens(paste.text)],
+        negative=True,
+    )
+    check(
+        "the wrapper's own names are not in the body's walk",
+        not any("tsast_macro_wrapper" in node.text
+                for body in bodies.values() for node in body.root.descendants("identifier", "type_identifier")),
+        negative=True,
+    )
+
+    names = token_qualified_names(pp_tokens("::crucible::safety::X y = a::template b<int>::c; A<T>::z", 3))
+    check(
+        "token_qualified_names reads a global name, skips `template` and stops at a template argument list",
+        (True, ("crucible", "safety", "X"), 3) in names and (False, ("a", "b"), 3) in names,
+    )
+    check(
+        "token_qualified_names does not call `::` after `>` global",
+        not any(is_global and parts == ("z",) for is_global, parts, _row in names),
         negative=True,
     )
 

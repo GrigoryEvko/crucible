@@ -78,12 +78,22 @@ class Chunk:
 
 @dataclass
 class Unit:
-    """One compile-database entry after the preprocessed pass."""
+    """One compile-database entry after the preprocessed pass.
+
+    dependencies names each file under the root that the unit read, from the
+    -MD dependency file, so a header that adds no line to the output is still
+    listed.
+    """
 
     file: str
     chunks: list[Chunk] = field(default_factory=list)
     failure: str | None = None
     from_cache: bool = False
+    dependencies: frozenset[str] = frozenset()
+
+
+class PreprocessError(RuntimeError):
+    """A unit that the preprocessor rejected, so a guard cannot read all of the tree."""
 
 
 def preprocess_argv(argv: list[str]) -> list[str]:
@@ -309,8 +319,8 @@ class Store:
                 found.add(path)
         return found
 
-    def _cached(self, manifest: Path) -> list[Chunk] | None:
-        """Return the chunks of a valid manifest, or None when it is absent or stale."""
+    def _cached(self, manifest: Path) -> tuple[list[Chunk], frozenset[str]] | None:
+        """Return the chunks and dependencies of a valid manifest, or None when it is absent or stale."""
         if not manifest.is_file():
             return None
         try:
@@ -318,10 +328,11 @@ class Store:
             if not all(self.file_hash(path) == digest for path, digest in cached["dependencies"].items()):
                 return None
             chunks = [Chunk(*item) for item in cached["chunks"]]
+            dependencies = frozenset(cached["dependencies"])
         except (OSError, ValueError, KeyError, TypeError):
             return None
         if all((self.directory / "chunks" / c.digest[:2] / c.digest).is_file() for c in chunks):
-            return chunks
+            return chunks, dependencies
         return None
 
     def _unit(self, entry: dict) -> Unit:
@@ -336,12 +347,12 @@ class Store:
         run_argv = preprocess_argv(widen_staged_roots(argv, directory, self.root))
         identity = json.dumps([STORE_VERSION, run_argv, directory, compiler_identity(argv, directory)])
         manifest = self.directory / "units" / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
-        if (chunks := self._cached(manifest)) is not None:
-            return Unit(entry["file"], chunks, None, True)
+        if (cached := self._cached(manifest)) is not None:
+            return Unit(entry["file"], cached[0], None, True, cached[1])
         with open(manifest.with_suffix(".lock"), "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            if (chunks := self._cached(manifest)) is not None:
-                return Unit(entry["file"], chunks, None, True)
+            if (cached := self._cached(manifest)) is not None:
+                return Unit(entry["file"], cached[0], None, True, cached[1])
             return self._preprocess(entry, run_argv, directory, manifest)
 
     def _preprocess(self, entry: dict, run_argv: list[str], directory: str, manifest: Path) -> Unit:
@@ -364,7 +375,7 @@ class Store:
         staging = manifest.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
         staging.write_text(json.dumps(record))
         os.replace(staging, manifest)
-        return Unit(entry["file"], chunks)
+        return Unit(entry["file"], chunks, dependencies=frozenset(dependencies))
 
     def units(self) -> Iterator[Unit]:
         """Yield each database entry after the preprocessed pass, in database order.
@@ -408,6 +419,42 @@ def joined(store: Store, chunks: list[Chunk]) -> str:
         The joined text
     """
     return "\n".join(store.text(c.digest) for c in chunks)
+
+
+def expanded_files(store: Store) -> Iterator[tuple[str, str]]:
+    """Yield the macro-expanded text of each file under the root, one time for each distinct expansion.
+
+    Two units that expand a file the same way give one text, because the key
+    of files_of() is equal.  A file that two units expand differently gives
+    two texts.  The order follows the compile database and then the output,
+    so a report is stable.
+
+    Args:
+        store: The store over one compile database
+
+    Yields:
+        (path relative to the root, joined text)
+
+    Raises:
+        PreprocessError: After the last text, if a unit failed, because a
+            guard that cannot read one unit cannot prove the tree clean
+    """
+    seen: set[tuple[str, str]] = set()
+    failures: list[str] = []
+    for unit in store.units():
+        if unit.failure is not None:
+            failures.append(unit.failure)
+            continue
+        for path, (key, chunks) in files_of(unit).items():
+            if (path, key) in seen:
+                continue
+            seen.add((path, key))
+            yield path, joined(store, chunks)
+    if failures:
+        raise PreprocessError(
+            f"{len(failures)} unit(s) failed to preprocess, so the expanded tree is incomplete:\n  "
+            + "\n  ".join(failures[:10])
+        )
 
 
 def self_test() -> int:
@@ -463,9 +510,17 @@ def self_test() -> int:
         lines = [c.line + store.text(c.digest).split("a_only")[0].count("\n")
                  for c in cold[0].chunks if c.path == "a.cpp" and "a_only" in store.text(c.digest)]
         expect("a chunk's line gives the source line of its text", lines == [3])
+        expect("a unit lists each header it read, one that adds no line too",
+               {"shared.h", "quiet.h"} <= cold[0].dependencies and "quiet.h" not in cold[1].dependencies)
+        expanded = list(expanded_files(Store(database, root)))
+        expect("expanded_files gives a file two units expand the same way one time",
+               [path for path, _text in expanded].count("shared.h") == 1
+               and {"a.cpp", "b.cpp"} <= {path for path, _text in expanded})
         warm = list(Store(database, root).units())
         expect("a warm run reads each manifest", [u.from_cache for u in warm] == [True, True])
         expect("a warm run gives the same chunks", [u.chunks for u in warm] == [u.chunks for u in cold])
+        expect("a warm run gives the same dependencies",
+               [u.dependencies for u in warm] == [u.dependencies for u in cold])
         time.sleep(0.01)
         (root / "quiet.h").write_text("#pragma once\n#define QUIET 2\n")
         changed = list(Store(database, root).units())
@@ -483,6 +538,15 @@ def self_test() -> int:
         expect("a unit the preprocessor rejects gives a failure", broken[1].failure is not None)
         again = list(Store(database, root).units())
         expect("a rejected unit is tried again", again[1].failure is not None and not again[1].from_cache)
+        partial: list[str] = []
+        refused = ""
+        try:
+            for path, _text in expanded_files(Store(database, root)):
+                partial.append(path)
+        except PreprocessError as exc:
+            refused = str(exc)
+        expect("expanded_files gives the readable units, then refuses the run on a rejected one",
+               "a.cpp" in partial and "broken.cpp" in refused)
         for layer in ("lower", "upper"):
             (root / "include" / layer).mkdir(parents=True)
             (root / "include" / layer / f"{layer}.h").write_text(f"#pragma once\nint {layer}_name;\n")
