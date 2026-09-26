@@ -5,7 +5,7 @@
 // one has nothing left to act on.  Each case below moves a handle, then uses
 // the source, and the process must end.  A child that survives the use exits
 // normally, and the case then fails, because the moved-from handle pushed,
-// popped, stole, signalled, published or read through a token it no longer
+// popped, stole, published or read through a token it no longer
 // holds.
 //
 // The positive half checks that the moved-into handle still works, so that a
@@ -14,9 +14,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/PermissionedMetaLog.h>
 #include <crucible/Types.h>
-#include <crucible/concurrent/_ChainEdge.h>
 #include <crucible/concurrent/_PermissionedCalendarGrid.h>
-#include <crucible/concurrent/_PermissionedChainEdge.h>
 #include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
@@ -53,7 +51,6 @@ struct GridTag {};
 struct CalendarTag {};
 struct ShardedCalendarTag {};
 struct DequeTag {};
-struct EdgeTag {};
 struct LogTag {};
 struct QueueSpscTag {};
 struct QueueMpscTag {};
@@ -74,7 +71,6 @@ using Grid = cc::PermissionedShardedGrid<int, 2, 2, 8, GridTag>;
 using Calendar = cc::PermissionedCalendarGrid<std::uint64_t, 2, 8, 4, IdentityKey, 1, CalendarTag>;
 using ShardedCalendar = cc::PermissionedShardedCalendarGrid<std::uint64_t, 2, 8, 4, IdentityKey, 1, ShardedCalendarTag>;
 using Deque = cc::PermissionedChaseLevDeque<int, 16, DequeTag>;
-using Edge = cc::PermissionedChainEdge<cc::VendorBackend::CPU, EdgeTag>;
 using Log = crucible::PermissionedMetaLog<LogTag>;
 using SpscQueue = cc::Queue<int, cc::kind::spsc<8>>;
 using MpscQueue = cc::Queue<int, cc::kind::mpsc<8>>;
@@ -84,7 +80,6 @@ static_assert(sizeof(Spsc::ProducerHandle) == sizeof(void*));
 static_assert(sizeof(Spsc::ConsumerHandle) == sizeof(void*));
 static_assert(sizeof(Grid::ProducerHandle<0>) == sizeof(void*));
 static_assert(sizeof(Deque::OwnerHandle) == sizeof(void*));
-static_assert(sizeof(Edge::SignalerHandle) == sizeof(void*));
 static_assert(sizeof(Log::ProducerHandle) == sizeof(void*));
 static_assert(sizeof(Snapshot::WriterHandle) == sizeof(void*));
 
@@ -114,12 +109,6 @@ static_assert(sizeof(Snapshot::WriterHandle) == sizeof(void*));
     auto perms = cs::mint_grid_permissions<ShardedCalendar::whole_tag, 2, 2>(std::move(whole));
     return std::pair{grid.template producer<0>(std::move(std::get<0>(perms.producers))),
                      grid.template consumer<0>(std::move(std::get<0>(perms.consumers)))};
-}
-
-[[nodiscard]] auto edge_handles(Edge& edge) {
-    auto whole = cs::mint_permission_root<Edge::whole_tag>();
-    auto [signaler, waiter] = cs::mint_permission_split<Edge::signaler_tag, Edge::waiter_tag>(std::move(whole));
-    return std::pair{edge.signaler(std::move(signaler)), edge.waiter(std::move(waiter))};
 }
 
 [[nodiscard]] auto log_handles(Log& log) {
@@ -304,20 +293,6 @@ void deque_thief() {
     (void)opaque_ref(*thief).try_steal();
 }
 
-void edge_signaler() {
-    Edge edge{cc::PlanId{1}, cc::PlanId{2}, cc::ChainEdgeId{3}, 1};
-    auto [signaler, waiter] = edge_handles(edge);
-    [[maybe_unused]] auto moved = std::move(signaler);
-    (void)opaque_ref(signaler).signal();
-}
-
-void edge_waiter() {
-    Edge edge{cc::PlanId{1}, cc::PlanId{2}, cc::ChainEdgeId{3}, 1};
-    auto [signaler, waiter] = edge_handles(edge);
-    [[maybe_unused]] auto moved = std::move(waiter);
-    (void)opaque_ref(waiter).try_wait(moved.expected_signal());
-}
-
 void log_producer() {
     auto raw_log = std::make_unique<crucible::MetaLog>();
     Log log{*raw_log};
@@ -374,8 +349,6 @@ constexpr Attack kAttacks[] = {
     {"sharded calendar grid consumer", &sharded_calendar_consumer},
     {"chase-lev owner", &deque_owner},
     {"chase-lev thief", &deque_thief},
-    {"chain edge signaler", &edge_signaler},
-    {"chain edge waiter", &edge_waiter},
     {"metalog producer", &log_producer},
     {"metalog consumer", &log_consumer},
     {"spsc queue producer", &queue_spsc_producer},

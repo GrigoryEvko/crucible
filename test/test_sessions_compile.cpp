@@ -30,7 +30,6 @@
 #include <crucible/sessions/_SessionGrade.h>
 #include <crucible/sessions/_SpscSession.h>
 #include <crucible/sessions/_MpmcChannelSession.h>
-#include <crucible/sessions/_ChainEdgeSession.h>
 #include <crucible/sessions/_AsyncPipelineSession.h>
 #include <crucible/sessions/_SwmrSession.h>
 #include <crucible/sessions/_SnapshotSession.h>

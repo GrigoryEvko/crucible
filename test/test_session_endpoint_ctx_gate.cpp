@@ -7,8 +7,7 @@
 // the channel payload.  The payload is a computation with a background row, so
 // a background context fits and the foreground context does not.  A plain
 // payload fits the foreground context, which shows that the gate refuses the
-// row and not the mint.  The two mints over a fixed protocol (the metadata log
-// and the chain edge) carry no row, so every context fits them.
+// row and not the mint.
 //
 // main() mints a session over a background-row channel with a background
 // context and moves one value through it.

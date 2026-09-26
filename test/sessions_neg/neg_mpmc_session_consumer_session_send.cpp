@@ -3,9 +3,8 @@
 // SEPLOG-H2 fixture #1 — ConsumerProto is Recv-only.  Calling .send()
 // on a ConsumerSession PSH (whose protocol is Loop<Recv<T, Continue>>)
 // is a compile error: PSH only exposes send() on Send-headed protocols.
-// Mirrors the chainedge_waiter_session_send fixture pattern; the
-// MpmcChannelSession version pins the same role-discrimination claim
-// for the fractional × fractional cell of the channel-permission family.
+// The fixture pins this role claim for the fractional × fractional cell
+// of the channel-permission family.
 
 #include <crucible/concurrent/_PermissionedMpmcChannel.h>
 #include <crucible/permissions/_Permission.h>

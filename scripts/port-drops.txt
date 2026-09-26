@@ -675,11 +675,6 @@ crucible/concurrent/_AutoRouter.h:RouteKind  — Dropped with the router. No pro
 crucible/concurrent/_AutoRouter.h:StaticAutoRoute  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
 crucible/concurrent/_AutoRouter.h:StaticAutoRoute_t  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
 crucible/concurrent/_AutoRouter.h:static_auto_route_v  — Dropped with the router. No production file reaches it, and the new tree has no channel family for a router to choose from.
-crucible/concurrent/_ChainEdge.h:ChainEdge  — Dropped with the header. No production file reaches it, and no header of the new tree builds the execution plan whose semaphore edges it modeled.
-crucible/concurrent/_ChainEdge.h:ChainEdgeId  — Dropped with the chain edge. No production file reaches it, and no header of the new tree builds an execution plan.
-crucible/concurrent/_ChainEdge.h:PermissionedChainEdge  → include/fixy/concurrent/SubstrateSessionBridge.h  — A forward declaration that let the access key of the edge befriend its permissioned wrapper. The wrapper drops, and the bridge records that each other channel left.
-crucible/concurrent/_ChainEdge.h:PlanId  — Dropped with the chain edge. No production file reaches it, and no header of the new tree builds an execution plan.
-crucible/concurrent/_ChainEdge.h:SemaphoreSignal  — Dropped with the chain edge. No production file reaches it, and no header of the new tree builds an execution plan.
 crucible/concurrent/_Endpoint.h:default_topology_shape  → include/fixy/concurrent/Endpoint.h  — The old gate asked that the channel topology fits the workload hint of the context, and the new context carries no such axis.
 crucible/concurrent/_Endpoint.h:endpoint_recommendation  → include/fixy/concurrent/Endpoint.h  — The old gate asked that the channel topology fits the workload hint of the context, and the new context carries no such axis.
 crucible/concurrent/_Endpoint.h:SubstrateMatchesEndpointRecommendation  → include/fixy/concurrent/Endpoint.h  — The old gate asked that the channel topology fits the workload hint of the context, and the new context carries no such axis.
@@ -689,13 +684,6 @@ crucible/concurrent/_MpmcRing.h:mpmc_test_value  — A value type that only a st
 crucible/concurrent/_MpmcRing.h:MpmcValue  — Dropped with the ring it constrained. fixy/concurrent/RingValue.h is the value predicate of the two rings that the new tree carries.
 crucible/concurrent/_PermissionedCalendarGrid.h:KeyExtractorOf  — Dropped with the calendar grid. No production file reaches it, and the new tree has no keyed channel.
 crucible/concurrent/_PermissionedCalendarGrid.h:PermissionedCalendarGrid  — Dropped with the header. No production file reaches it, and the bridge table of the new tree holds the SPSC and the MPSC channel only.
-crucible/concurrent/_PermissionedChainEdge.h:PermissionedChainEdge  — Dropped with the header. No production file reaches it, and the bridge table of the new tree holds the SPSC and the MPSC channel only.
-crucible/concurrent/_PermissionedChainEdge.h:Signaler  — A role tag of the dropped chain edge, so its tag tree drops with it.
-crucible/concurrent/_PermissionedChainEdge.h:splits_into  — The header specialized the binary manifest for the tag tree of its channel, and the tree drops with the channel.
-crucible/concurrent/_PermissionedChainEdge.h:splits_into_authoring_witness  — The same for the binary witness, which drops with the channel.
-crucible/concurrent/_PermissionedChainEdge.h:splits_into_pack  — The same for the pack manifest, which drops with the channel.
-crucible/concurrent/_PermissionedChainEdge.h:splits_into_pack_authoring_witness  — The same for the pack witness, which drops with the channel.
-crucible/concurrent/_PermissionedChainEdge.h:Waiter  — A role tag of the dropped chain edge, so its tag tree drops with it.
 crucible/concurrent/_PermissionedChaseLevDeque.h:Owner  — A role tag of the dropped wrapper, so its tag tree drops with it.
 crucible/concurrent/_PermissionedChaseLevDeque.h:PermissionedChaseLevDeque  — The deque itself is fixy/concurrent/ChaseLevDeque.h. No production file reaches this permissioned wrapper, so the wrapper drops.
 crucible/concurrent/_PermissionedChaseLevDeque.h:splits_into  — The header specialized the binary manifest for the tag tree of its wrapper, and the tree drops with the wrapper.
@@ -798,18 +786,6 @@ crucible/sessions/_CalendarGridSession.h:mint_producer_session  — Dropped with
 crucible/sessions/_CalendarGridSession.h:ProducerProto  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
 crucible/sessions/_CalendarGridSession.h:ProducerSessionHandle  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
 crucible/sessions/_CalendarGridSession.h:producer_session_try_push  — Dropped with the calendar grid. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:ChainEdgeSessionSurface  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:mint_chainedge_signaler  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:mint_chainedge_signaler_session  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:mint_chainedge_waiter  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:mint_chainedge_waiter_session  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:Signal  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:SignalerProto  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:SignalerSessionHandle  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:signal_transport  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:WaiterProto  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:WaiterSessionHandle  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
-crucible/sessions/_ChainEdgeSession.h:wait_transport  — Dropped with the chain edge. No production file reaches this session wiring, and the new tree has no such channel.
 crucible/sessions/_ChaseLevDequeSession.h:blocking_owner_pop  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
 crucible/sessions/_ChaseLevDequeSession.h:blocking_owner_push  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.
 crucible/sessions/_ChaseLevDequeSession.h:blocking_steal_borrowed  — Dropped with the permissioned deque. No production file reaches this session wiring, and fixy/concurrent/ChaseLevDeque.h carries the deque without a session.

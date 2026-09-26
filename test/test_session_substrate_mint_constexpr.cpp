@@ -15,13 +15,11 @@
 #include <crucible/MetaLogSession.h>
 #include <crucible/PermissionedMetaLog.h>
 #include <crucible/concurrent/_PermissionedCalendarGrid.h>
-#include <crucible/concurrent/_PermissionedChainEdge.h>
 #include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/_PermissionedShardedGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/sessions/_CalendarGridSession.h>
-#include <crucible/sessions/_ChainEdgeSession.h>
 #include <crucible/sessions/_ChaseLevDequeSession.h>
 #include <crucible/sessions/_ShardedCalendarGridSession.h>
 #include <crucible/sessions/_ShardedGridSession.h>
@@ -42,7 +40,6 @@ namespace concur = ::crucible::concurrent;
 struct ChaseLevTag {};
 struct MetaLogTag {};
 struct SwmrTag {};
-struct ChainEdgeTag {};
 struct CalendarTag {};
 struct ShardedGridTag {};
 struct ShardedCalendarTag {};
@@ -57,7 +54,6 @@ struct DeadlineKey {
 using Deque = concur::PermissionedChaseLevDeque<int, 64, ChaseLevTag>;
 using MetaLog = ::crucible::PermissionedMetaLog<MetaLogTag>;
 using Swmr = safety::proto::swmr_session::SwmrSession<int, WriterTag, ReaderTag>;
-using ChainEdge = concur::PermissionedChainEdge<concur::VendorBackend::CPU, ChainEdgeTag>;
 using Calendar =
     concur::PermissionedCalendarGrid<int, /*M=*/2, /*Buckets=*/8, /*BucketCap=*/4, DeadlineKey, 1ULL, CalendarTag>;
 using ShardedGrid = concur::PermissionedShardedGrid<int, 2, 2, 64, ShardedGridTag>;
@@ -67,7 +63,6 @@ using ShardedCal = concur::PermissionedShardedCalendarGrid<int, /*Shards=*/2, /*
 namespace cs = ::crucible::safety::proto::chaselev_session;
 namespace ms = ::crucible::metalog_session;
 namespace ws = ::crucible::safety::proto::swmr_session;
-namespace es = ::crucible::safety::proto::chainedge_session;
 namespace cgs = ::crucible::safety::proto::calendar_grid_session;
 namespace sgs = ::crucible::safety::proto::sharded_grid_session;
 namespace scs = ::crucible::safety::proto::sharded_calendar_grid_session;
@@ -109,20 +104,6 @@ void exercise_swmr_writer() {
     static_assert(
         noexcept(ws::mint_swmr_writer<Swmr>(std::declval<Swmr&>(), std::declval<safety::Permission<WriterTag>&&>())));
     (void)writer;
-}
-
-void exercise_chainedge_pair() {
-    ChainEdge edge{concur::PlanId{1}, concur::PlanId{2}, concur::ChainEdgeId{3}, /*signal_value=*/1};
-    auto whole = safety::mint_permission_root<ChainEdge::whole_tag>();
-    auto [sp, wp] = safety::mint_permission_split<ChainEdge::signaler_tag, ChainEdge::waiter_tag>(std::move(whole));
-    auto signaler = es::mint_chainedge_signaler<ChainEdge>(edge, std::move(sp));
-    auto waiter = es::mint_chainedge_waiter<ChainEdge>(edge, std::move(wp));
-    static_assert(noexcept(es::mint_chainedge_signaler<ChainEdge>(
-        std::declval<ChainEdge&>(), std::declval<safety::Permission<ChainEdge::signaler_tag>&&>())));
-    static_assert(noexcept(es::mint_chainedge_waiter<ChainEdge>(
-        std::declval<ChainEdge&>(), std::declval<safety::Permission<ChainEdge::waiter_tag>&&>())));
-    (void)signaler;
-    (void)waiter;
 }
 
 void exercise_calendar_pair() {
@@ -182,10 +163,9 @@ int main() {
     exercise_chaselev_owner();
     exercise_metalog_pair();
     exercise_swmr_writer();
-    exercise_chainedge_pair();
     exercise_calendar_pair();
     exercise_sharded_grid_pair();
     exercise_sharded_calendar_pair();
-    std::fprintf(stderr, "session substrate mints: 12 OK\n");
+    std::fprintf(stderr, "session substrate mints: 10 OK\n");
     return 0;
 }

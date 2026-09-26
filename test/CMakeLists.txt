@@ -1625,20 +1625,11 @@ crucible_test(test_metalog_session)
 # that refuses a cycle in their lazy-initialization graph.
 crucible_test(test_singleton_init_graph)
 
-# ChainEdgeSession.h (GAPS-062) — one-shot semaphore signal/wait facade
-# over PermissionedChainEdge.  Covers CPU oracle plus stubbed vendor
-# surfaces and the Send<SemaphoreSignal, End> / Recv<...> sessions.
-crucible_test(test_chainedge_session)
-
-# fixy-A2-017 — §XXI constexpr sentinel TU exercising the 12 linear-
-# permission-consume token mint factories across 8 session-substrate
-# headers (chaselev/metalog/swmr/chainedge/calendar/sharded_grid/
-# sharded_calendar).  Each mint is pinned noexcept via static_assert
-# and called with a freshly-minted root Permission; the constexpr
-# chain is structurally witnessed by the substrate factory chain.
-# Pool-mediated factories (thief / swmr_reader) are excluded per §XXI
-# "unless the factory genuinely allocates" — atomic refcount is the
-# same runtime-cost class.
+# The ten mints of the session substrates chaselev, metalog, swmr,
+# calendar, sharded_grid and sharded_calendar.  The test calls each mint
+# and pins its noexcept with a static_assert.  The pool mints (thief,
+# swmr_reader) are not in the test, because an atomic refcount cannot be
+# constant evaluated.
 crucible_test(test_session_substrate_mint_constexpr)
 
 # MpmcChannelSession.h (SEPLOG-H2 / #326) — typed-session facade over
@@ -3477,43 +3468,6 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_session_non_ctx
 crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_session_wrong_handle
     "no matching function|cannot convert"
     "ThiefHandle|mint_thief_session")
-
-# The ChainEdge session mints in sessions/_ChainEdgeSession.h
-# (mint_chainedge_signaler / mint_chainedge_waiter /
-# mint_chainedge_signaler_session / mint_chainedge_waiter_session).
-# Four mints × two distinct mismatch classes each = 8 fixtures.
-# The pairs split:
-#   _non_surface  / _wrong_perm    — signaler/waiter token mints
-#   _non_ctx      / _wrong_handle  — signaler/waiter ctx-bound
-#                                    session mints
-#
-# The fixtures witness the per-mint requires-clause AND the
-# per-parameter binding shape independently across all four
-# ChainEdge mints.
-crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_non_surface
-    "constraints.*not satisfied|no matching function"
-    "ChainEdgeSessionSurface|mint_chainedge_signaler")
-crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_wrong_perm
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "Permission|mint_chainedge_signaler")
-crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_non_surface
-    "constraints.*not satisfied|no matching function"
-    "ChainEdgeSessionSurface|mint_chainedge_waiter")
-crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_wrong_perm
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|wrong number of template arguments|template argument|deduced conflicting|invalid initialization|passing |no match for"
-    "Permission|mint_chainedge_waiter")
-crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_session_non_ctx
-    "constraints.*not satisfied|no matching function"
-    "IsExecCtx|mint_chainedge_signaler_session")
-crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_session_wrong_handle
-    "no matching function|cannot convert"
-    "SignalerHandle|mint_chainedge_signaler_session")
-crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_session_non_ctx
-    "constraints.*not satisfied|no matching function"
-    "IsExecCtx|mint_chainedge_waiter_session")
-crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_session_wrong_handle
-    "no matching function|cannot convert"
-    "WaiterHandle|mint_chainedge_waiter_session")
 
 # The CalendarGrid session mints in sessions/_CalendarGridSession.h
 # (mint_calendar_grid_producer / mint_calendar_grid_consumer /
@@ -12827,22 +12781,6 @@ crucible_neg_compile_multi_test(neg_singleton_init_graph_unregistered_edge
     "required for the satisfaction of .EdgesNameRegisteredSingletons<Registry, Edges>. \\[with Registry = std::tuple<fixy::atom::global::singleton<neg_singleton_init_graph_unregistered_edge_types::registered_tag> >.*\\]"
     "the expression .\\(edges_name_registered_<Registry>\\)")
 
-# ── GAPS-062 — PermissionedChainEdge role-discrimination tests ─────
-crucible_neg_compile_test(neg_chainedge_signaler_wait
-    "has no member named.*try_wait")
-
-crucible_neg_compile_test(neg_chainedge_waiter_signal
-    "has no member named.*signal")
-
-crucible_neg_compile_test(neg_chainedge_raw_signal
-    "raw ChainEdge::signal is substrate-only")
-
-crucible_neg_compile_test(neg_chainedge_raw_wait
-    "raw ChainEdge::wait is substrate-only")
-
-crucible_neg_compile_test(neg_chainedge_raw_reset
-    "raw ChainEdge::reset_under_quiescence is substrate-only")
-
 # ─── FOUND-E diagnostic infrastructure — neg-compile harness ──────
 #
 # Four fixtures probing diagnostic-misuse paths that the framework
@@ -13181,16 +13119,6 @@ crucible_neg_compile_session_test(neg_sharded_calendar_grid_substrate_producer_r
 crucible_neg_compile_session_test(neg_sharded_calendar_grid_bridge_shard_oob
     "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "ShardedCalendarGridBridge_ShardOutOfRange|shard S")
-
-# GAPS-062: ChainEdge one-shot session facade.  SignalerProto is
-# Send-only; WaiterProto is Recv-only.
-crucible_neg_compile_session_test(neg_chainedge_waiter_session_send
-    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
-    "has no member named.*send")
-
-crucible_neg_compile_session_test(neg_chainedge_signaler_session_recv
-    "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
-    "has no member named.*recv")
 
 # SEPLOG-H2: MpmcChannelSession typed-session facade for the fractional
 # × fractional cell of the channel-permission family.  Four fixtures

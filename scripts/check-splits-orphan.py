@@ -102,7 +102,6 @@ LINE_SPLICE = re.compile(rb"\\\r?\n")
 FROZEN_CHANNEL = ("a frozen channel of the old tree, which spells its tags relative to crucible::safety, "
                   "so the lookup reaches a namespace that the guard cannot close without the other headers")
 AUTHORING: dict[str, str] = {
-    "include/crucible/concurrent/_PermissionedChainEdge.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/_PermissionedChaseLevDeque.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/_PermissionedMpmcChannel.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/_PermissionedMpscChannel.h": FROZEN_CHANNEL,
