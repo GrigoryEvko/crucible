@@ -1,8 +1,6 @@
 #pragma once
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_Borrowed.h>
-#include <crucible/safety/_Linear.h>
+#include <fixy/Ctx.h>
 
 #include <array>
 #include <cstddef>
@@ -13,7 +11,9 @@
 
 namespace crucible::perf {
 
+namespace v2 {
 enum class Gauge : uint32_t;
+}  // namespace v2
 
 // A descriptor holder local to this header rather than the shared
 // linear-ownership wrapper.  The invariant here is one descriptor
@@ -62,7 +62,7 @@ public:
 
     // A file that fails to open is not fatal.  Its gauge slots read
     // UNAVAILABLE for the lifetime of the instance.
-    [[nodiscard]] static std::optional<ProcGauges> init(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<ProcGauges> init(::fixy::InitLoadCtx const&) noexcept;
 
     void populate(uint64_t* gauge_array, std::size_t gauge_count) const noexcept;
 

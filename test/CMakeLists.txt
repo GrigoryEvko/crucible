@@ -4739,11 +4739,11 @@ crucible_neg_compile_perf_test(neg_sense_hub_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSenseHubV2Mint")
+    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSenseHubV2Mint")
+    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 
 # The six other BPF hubs (LockContention, PmuSample, SchedSwitch,
 # SchedTpBtf, SyscallLatency and SyscallTpBtf) have the same gate as the
@@ -4802,7 +4802,7 @@ crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
 #     capability source.
 #
 # Each gate is its own concept over its own <hub>_required_row alias, so
-# a pair for the family as a whole would leave seven gates with no
+# a pair for the family as a whole would leave the other gates with no
 # witness.
 crucible_neg_compile_perf_test(neg_lock_contention_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
@@ -4847,11 +4847,11 @@ crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_cold_init_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSenseHubV2Mint")
+    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_compile_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsSenseHubV2Mint")
+    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 
 # 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
 # CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures

@@ -102,7 +102,7 @@ namespace {
 
 }  // anonymous namespace
 
-std::optional<ProcGauges> ProcGauges::init(::crucible::effects::Init) noexcept {
+std::optional<ProcGauges> ProcGauges::init(::fixy::InitLoadCtx const&) noexcept {
     ProcGauges p{};
 
     // The scratch buffer lives on the heap so that no poll puts a buffer of
@@ -497,6 +497,7 @@ uint64_t ProcGauges::read_pressure_avg10_x100_(int fd, const char* kind) const n
 void ProcGauges::populate(uint64_t* gauge_array, std::size_t gauge_count) const noexcept {
     if (!gauge_array || gauge_count == 0) return;
 
+    using v2::Gauge;
     auto write = [&](Gauge g, uint64_t v) noexcept {
         const auto idx = static_cast<std::size_t>(g);
         if (idx < gauge_count) gauge_array[idx] = v;

@@ -15,18 +15,20 @@ SenseHubV2::SenseHubV2(SenseHubV2&&) noexcept = default;
 SenseHubV2& SenseHubV2::operator=(SenseHubV2&&) noexcept = default;
 SenseHubV2::~SenseHubV2() noexcept = default;
 
-std::optional<SenseHubV2> SenseHubV2::load(::crucible::effects::Init) noexcept { return std::nullopt; }
+std::optional<SenseHubV2> SenseHubV2::load(::fixy::InitLoadCtx const&) noexcept { return std::nullopt; }
 
-CounterSnapshot SenseHubV2::read_counters() const noexcept { return CounterSnapshot{}; }
+v2::CounterSnapshot SenseHubV2::read_counters() const noexcept { return v2::CounterSnapshot{}; }
 
-GaugeSnapshot SenseHubV2::read_gauges() const noexcept { return GaugeSnapshot{}; }
+v2::GaugeSnapshot SenseHubV2::read_gauges() const noexcept { return v2::GaugeSnapshot{}; }
 
-safety::Borrowed<const volatile uint64_t, SenseHubV2> SenseHubV2::counters_view() const noexcept {
-    return {nullptr, 0};
+::fixy::Borrowed<const volatile uint64_t, SenseHubV2> SenseHubV2::counters_view() const noexcept {
+    return ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>{};
 }
 
-safety::Borrowed<const volatile uint64_t, SenseHubV2> SenseHubV2::gauges_view() const noexcept { return {nullptr, 0}; }
+::fixy::Borrowed<const volatile uint64_t, SenseHubV2> SenseHubV2::gauges_view() const noexcept {
+    return ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>{};
+}
 
-LoadReport SenseHubV2::coverage() const noexcept { return LoadReport{}; }
+v2::LoadReport SenseHubV2::coverage() const noexcept { return v2::LoadReport{}; }
 
 }  // namespace crucible::perf

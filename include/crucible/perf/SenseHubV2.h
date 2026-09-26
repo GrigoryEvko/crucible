@@ -1,12 +1,13 @@
 #pragma once
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Borrowed.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -14,6 +15,11 @@
 #include <string_view>
 
 namespace crucible::perf {
+
+// The wire names of this hub live in their own namespace.  SenseHub.h
+// declares NUM_COUNTERS and Idx in crucible::perf with a different
+// layout, and one translation unit can include the two headers.
+namespace v2 {
 
 // The kernel-side program carries the same four constants, and the
 // build system defines CRUCIBLE_SENSE_HUB_EXTENDED for both sides at
@@ -399,36 +405,43 @@ struct FullSnapshot {
 // came up.
 
 struct LoadReport {
-    safety::Refined<safety::bounded_above<200>, std::size_t> attached_programs{0};
-    safety::Refined<safety::bounded_above<200>, std::size_t> attach_failures{0};
+    ::fixy::Refined<::fixy::bounded_above<200>, std::size_t> attached_programs =
+        ::fixy::mint_refined<::fixy::bounded_above<200>>(std::size_t{0});
+    ::fixy::Refined<::fixy::bounded_above<200>, std::size_t> attach_failures =
+        ::fixy::mint_refined<::fixy::bounded_above<200>>(std::size_t{0});
     bool meta_verified = false;
     bool counters_mmap_succeeded = false;
     bool gauges_mmap_succeeded = false;
     bool procgauges_initialized = false;
 };
 
+}  // namespace v2
+
 class SenseHubV2 {
 public:
-    [[nodiscard]] static std::optional<SenseHubV2> load(::crucible::effects::Init) noexcept;
+    // The load takes the startup load context.  Its row carries Block,
+    // because the load waits in the kernel while the verifier examines
+    // the program.
+    [[nodiscard]] static std::optional<SenseHubV2> load(::fixy::InitLoadCtx const&) noexcept;
 
-    [[nodiscard]] CounterSnapshot read_counters() const noexcept;
+    [[nodiscard]] v2::CounterSnapshot read_counters() const noexcept;
 
     // Reading the gauges also polls the files behind the
     // userspace-sampled slots, which costs far more than reading the
     // counters.
-    [[nodiscard]] GaugeSnapshot read_gauges() const noexcept;
+    [[nodiscard]] v2::GaugeSnapshot read_gauges() const noexcept;
 
-    [[nodiscard]] FullSnapshot read() const noexcept { return {read_counters(), read_gauges()}; }
+    [[nodiscard]] v2::FullSnapshot read() const noexcept { return {read_counters(), read_gauges()}; }
 
-    [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHubV2> counters_view() const noexcept;
+    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHubV2> counters_view() const noexcept;
 
-    [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHubV2> gauges_view() const noexcept;
+    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHubV2> gauges_view() const noexcept;
 
-    [[nodiscard]] LoadReport coverage() const noexcept;
+    [[nodiscard]] v2::LoadReport coverage() const noexcept;
 
-    static constexpr std::size_t num_counters() noexcept { return NUM_COUNTERS; }
-    static constexpr std::size_t num_gauges() noexcept { return NUM_GAUGES; }
-    static constexpr std::string_view build_name() noexcept { return BUILD_NAME; }
+    static constexpr std::size_t num_counters() noexcept { return v2::NUM_COUNTERS; }
+    static constexpr std::size_t num_gauges() noexcept { return v2::NUM_GAUGES; }
+    static constexpr std::string_view build_name() noexcept { return v2::BUILD_NAME; }
 
     SenseHubV2(const SenseHubV2&) = delete("SenseHubV2 owns unique BPF object + mmap; copying would double-close");
     SenseHubV2&
@@ -457,26 +470,27 @@ static_assert(sizeof(SenseHubV2) == sizeof(std::unique_ptr<DummyStateV2>),
 // mmap traffic.  Alloc covers the state the load path takes from the
 // heap.
 //
-// An Init-capability context cannot reach this surface.  The permitted
-// row of that capability is Row<Init, Alloc, IO> and carries no Block,
-// so a startup context widens no further than IO and the gate is
-// unsatisfiable there.  A background context permits all three atoms
-// and widens to them.
+// The startup load context and the background load context each claim
+// Block on top of Alloc and IO, so each passes this gate.  The cold init
+// context and the compile context stop at IO, and the gate refuses
+// both.  The second argument is the startup load context that the load
+// takes.
 
 using sense_hub_v2_required_row =
-    ::crucible::effects::Row<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::IO,
-                             ::crucible::effects::Effect::Block>;
+    ::foundation::effects::Row<::foundation::effects::Effect::Alloc, ::foundation::effects::Effect::IO,
+                               ::foundation::effects::Effect::Block>;
 
 template <class Ctx>
-concept CtxFitsSenseHubV2Mint = ::crucible::effects::IsExecCtx<Ctx>
-                             && ::crucible::effects::Subrow<sense_hub_v2_required_row, typename Ctx::row_type>;
+concept CtxFitsSenseHubV2Mint = ::foundation::effects::IsExecCtx<Ctx>
+                             && ::foundation::effects::Subrow<sense_hub_v2_required_row, typename Ctx::row_type>;
 
-template <::crucible::effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubV2Mint<Ctx>
 // §XXI carve-out: cx=alloc — the load path maps the counter and gauge
 // arrays and heap-allocates State.  Compile-time evaluation would lie
 // about the runtime cost.
-[[nodiscard]] inline std::optional<SenseHubV2> mint_sense_hub_v2(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<SenseHubV2> mint_sense_hub_v2(Ctx const&,
+                                                                 ::fixy::InitLoadCtx const& init) noexcept {
     return SenseHubV2::load(init);
 }
 
@@ -484,21 +498,22 @@ template <::crucible::effects::IsExecCtx Ctx>
 // BgCompileCtx both carry Alloc and IO, and the gate rejects both for
 // the same missing atom.  The gate reads the wait, not the capability
 // source.
-static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>);
-static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::BgCompileCtx>);
-static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::BgDrainCtx>);
-static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::HotFgCtx>);
-static_assert(CtxFitsSenseHubV2Mint<::crucible::effects::TestRunnerCtx>);
+static_assert(!CtxFitsSenseHubV2Mint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsSenseHubV2Mint<::fixy::BgCompileCtx>);
+static_assert(!CtxFitsSenseHubV2Mint<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsSenseHubV2Mint<::fixy::HotFgCtx>);
+static_assert(CtxFitsSenseHubV2Mint<::fixy::InitLoadCtx>);
+static_assert(CtxFitsSenseHubV2Mint<::fixy::BgLoadCtx>);
+static_assert(CtxFitsSenseHubV2Mint<::fixy::TestRunnerCtx>);
 
 // The two assertions below hold for a capability source rather than for
 // one named context, so a new alias on either side cannot evade them.
-static_assert(!::crucible::effects::Subrow<sense_hub_v2_required_row,
-                                          ::crucible::effects::cap_permitted_row_t<::crucible::effects::Init>>,
-              "The initialization capability must never permit every atom this gate demands.  It omits "
-              "Block because a startup scope must not wait, and the BPF program load waits on the "
-              "kernel verifier.  No widening rescues an initialization context.");
-static_assert(::crucible::effects::Subrow<sense_hub_v2_required_row,
-                                          ::crucible::effects::cap_permitted_row_t<::crucible::effects::Bg>>,
+static_assert(::foundation::effects::Subrow<sense_hub_v2_required_row,
+                                            ::foundation::effects::cap_permitted_row_t<::foundation::effects::Init>>,
+              "The initialization capability must permit every atom this gate demands, or no startup "
+              "context could reach this mint.");
+static_assert(::foundation::effects::Subrow<sense_hub_v2_required_row,
+                                            ::foundation::effects::cap_permitted_row_t<::foundation::effects::Bg>>,
               "The background capability must permit every atom this gate demands, or no production "
               "context could reach this mint.");
 
