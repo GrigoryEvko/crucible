@@ -58,12 +58,8 @@ bench/bench_swmr_session.cpp
 fuzz/boundary/old_tree.h
 fuzz/property/prop_callsite_table_dedup.cpp
 fuzz/property/prop_expr_pool_intern.cpp
-fuzz/property/prop_factorization_eq.cpp
 fuzz/property/prop_fractional_lattice.cpp
-fuzz/property/prop_intervals_cover_unit.cpp
-fuzz/property/prop_is_power_of_two_le.cpp
 fuzz/property/prop_memory_plan_no_overlap.cpp
-fuzz/property/prop_monotonic_predicates.cpp
 fuzz/property/prop_trace_graph_csr.cpp
 include/crucible/BackgroundThread.h
 include/crucible/CallSiteTable.h

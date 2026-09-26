@@ -1,19 +1,19 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_intervals_cover_unit.cpp — differential-oracle fuzzer for
-// decide::intervals_cover_unit (safety/Decide.h).
+// decide::intervals_cover_unit (foundation/contracts/Decide.h).
 //
 // intervals_cover_unit returns true iff a family of half-open
 // intervals forms an EXACT PARTITION of [0, total): well-formed,
 // non-empty, contained, pairwise-disjoint, and width-sum == total
-// (no gaps, no overlaps).  It is the CONTRACT-119 gate (Cipher
-// cold-tier blob layout must hole-free tile the on-disk blob) and the
-// CONTRACT-110 gate (5D parallelism shards must exactly partition each
-// tensor dim).  A false-accept ships a blob layout with a hole or a
-// shard cover with a gap; a false-reject blocks a valid plan.  Its
-// O(n²)-disjoint + width-sum logic is the same shape that yielded a
-// real empty-interval bug in its sibling intervals_pairwise_disjoint
-// (fixed in ab7ce9bf), so it is worth fuzzing before its production
-// cites land.  Today it has only hand-picked static_assert coverage.
+// (no gaps, no overlaps).  It gates two layouts: a Cipher cold-tier
+// blob layout must tile the on-disk blob with no hole, and 5D
+// parallelism shards must exactly partition each tensor dim.  A
+// false-accept ships a blob layout with a hole or a shard cover with
+// a gap; a false-reject blocks a valid plan.  Its O(n²)-disjoint +
+// width-sum logic has the same shape as its sibling
+// intervals_pairwise_disjoint, which once mistook an empty interval
+// inside another for an overlap, so it is worth fuzzing.  Otherwise
+// it has only hand-picked static_assert coverage.
 //
 // The oracle is an INDEPENDENT algorithm: a coverage BITMAP.  It marks
 // every integer of [0, total) once per covering interval, rejecting on
@@ -48,7 +48,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/safety/_Decide.h>
+#include <foundation/contracts/Decide.h>
 
 #include <array>
 #include <cstdint>
@@ -63,7 +63,7 @@ namespace {
 inline constexpr uint32_t kMaxTotal = 256;
 inline constexpr uint32_t kMaxIvs = 64;
 
-using Iv = crucible::decide::Interval<uint64_t>;
+using Iv = ::foundation::decide::Interval<uint64_t>;
 
 enum class Mode : uint8_t {
     ExactPartition = 0,
@@ -132,7 +132,7 @@ using crucible::fuzz::prop::Rng;
 
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
-    using crucible::decide::intervals_cover_unit;
+    using ::foundation::decide::intervals_cover_unit;
 
     const Config cfg = parse_args(argc, argv, 2000000);  // O(total) per iter
 

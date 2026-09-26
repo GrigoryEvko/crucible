@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_factorization_eq.cpp — differential-oracle fuzzer for
-// decide::factorization_eq (safety/Decide.h).
+// decide::factorization_eq (foundation/contracts/Decide.h).
 //
 // factorization_eq returns true iff the product of a factor list
 // equals `total`, REJECTING on any intermediate multiply overflow.
-// It is the CONTRACT-110 gate: a 5D-parallelism decomposition
+// It gates the rule that a 5D-parallelism decomposition
 // (TP × DP × PP × EP × CP) must multiply to world_size, and the
 // Meridian discrete-search partition optimizer relies on it to reject
 // nonsensical factorizations.  A false-accept silently mis-shards the
@@ -47,7 +47,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/safety/_Decide.h>
+#include <foundation/contracts/Decide.h>
 
 #include <array>
 #include <cstdint>
@@ -115,7 +115,7 @@ using crucible::fuzz::prop::Rng;
 
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
-    using crucible::decide::factorization_eq;
+    using ::foundation::decide::factorization_eq;
 
     const Config cfg = parse_args(argc, argv, 2000000);
 

@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_is_power_of_two_le.cpp — differential-oracle fuzzer for
-// decide::is_power_of_two_le (safety/Decide.h).
+// decide::is_power_of_two_le (foundation/contracts/Decide.h).
 //
 // is_power_of_two_le(x, bound) returns true iff x is a power of two AND
 // 0 < x <= bound.  Unlike the other Decide predicates fuzzed so far, it
@@ -42,7 +42,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/safety/_Decide.h>
+#include <foundation/contracts/Decide.h>
 
 #include <bit>
 #include <cstdint>
@@ -82,7 +82,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] int run_pow(const crucible::fuzz::prop::Config& cfg, const char* name) {
     using crucible::fuzz::prop::run;
-    using crucible::decide::is_power_of_two_le;
+    using ::foundation::decide::is_power_of_two_le;
     using U = std::make_unsigned_t<T>;
     // For unsigned T the top bit (k == width-1) is a valid positive
     // power of two; for signed T it is the sign bit, so cap at width-2

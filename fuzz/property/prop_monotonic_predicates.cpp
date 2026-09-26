@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_monotonic_predicates.cpp — paired differential / inter-predicate
 // fuzzer for decide::strictly_increasing and decide::weakly_increasing
-// (safety/Decide.h).
+// (foundation/contracts/Decide.h).
 //
 // These two span-quantified monotonicity predicates differ only in `<`
 // vs `<=` at the consecutive-pair test, and that one-character choice
@@ -39,7 +39,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/safety/_Decide.h>
+#include <foundation/contracts/Decide.h>
 
 #include <algorithm>
 #include <array>
@@ -84,8 +84,8 @@ struct SeqSpec {
 
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
-    using crucible::decide::strictly_increasing;
-    using crucible::decide::weakly_increasing;
+    using ::foundation::decide::strictly_increasing;
+    using ::foundation::decide::weakly_increasing;
 
     const Config cfg = parse_args(argc, argv, 2000000);
 
