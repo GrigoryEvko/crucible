@@ -10,15 +10,14 @@
 #include <vector>
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/MerkleDag.h>
+#include <foundation/effects/Effect.h>
 
 #include "bench_harness.h"
 
 using namespace crucible;
 
-static const auto BG = effects::testing::bg();
-static constexpr auto A = BG.alloc;
+static constexpr auto A = ::foundation::effects::testing::bg().alloc;
 
 static std::vector<TraceEntry> make_ops(Arena& arena, uint32_t count, uint8_t ndim, uint16_t num_inputs) {
     std::vector<TraceEntry> ops(count);
