@@ -50,7 +50,6 @@ include/crucible/cntp/ConnectionPoolRuntime.h
 include/crucible/cntp/Fec.h
 include/crucible/cntp/Fountain.h
 include/crucible/cntp/GossipMulticast.h
-include/crucible/cntp/MtlsTransport.h
 include/crucible/cntp/OverlayMulticast.h
 include/crucible/cntp/PathSwap.h
 include/crucible/cntp/RoceConfig.h

@@ -18,7 +18,6 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace cntp = crucible::cntp;
-namespace saf = crucible::safety;
 
 namespace {
 
@@ -115,7 +114,7 @@ void test_policy_and_peer_admission() {
 
     auto config = cntp::mint_mtls_config(std::move(*ca), std::move(*cert), std::move(*key), policy);
     static_assert(std::same_as<std::remove_cvref_t<decltype(config)>, cntp::DeclaredMtlsConfig>);
-    static_assert(std::same_as<cntp::DeclaredMtlsConfig::tag_type, saf::source::Mtls>);
+    static_assert(std::same_as<cntp::DeclaredMtlsConfig::tag_type, ::fixy::tags::source::Mtls>);
 
     auto valid = cntp::validate_mtls_config(config);
     assert(valid.has_value());
@@ -235,7 +234,7 @@ void test_reject_insecure_policy() {
     assert(ca.has_value());
     assert(cert.has_value());
     auto empty_key_config =
-        cntp::mint_mtls_config(std::move(*ca), std::move(*cert), cntp::MtlsPrivateKey{cntp::MtlsPrivateKeyBytes{}});
+        cntp::mint_mtls_config(std::move(*ca), std::move(*cert), ::fixy::mint_secret<cntp::MtlsPrivateKeyBytes>());
     auto empty_key = cntp::validate_mtls_config(empty_key_config);
     assert(!empty_key.has_value());
     assert(empty_key.error() == cntp::MtlsError::EmptyPrivateKey);

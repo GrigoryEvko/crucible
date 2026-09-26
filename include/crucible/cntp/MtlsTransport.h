@@ -2,10 +2,10 @@
 
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cntp/Pacing.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Linear.h>
-#include <crucible/safety/_Secret.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Bits.h>
+#include <fixy/Qtt.h>
+#include <fixy/Secret.h>
+#include <fixy/Tagged.h>
 
 #include <array>
 #include <cstddef>
@@ -81,7 +81,7 @@ concept ApprovedMtlsCipherSuite =
 template <MtlsKeyAlgorithm Algorithm>
 concept ApprovedMtlsKeyAlgorithm = Algorithm == MtlsKeyAlgorithm::Ed25519 || Algorithm == MtlsKeyAlgorithm::EcdsaP256;
 
-using MtlsCipherMask = safety::Bits<MtlsCipherSuite>;
+using MtlsCipherMask = ::fixy::Bits<MtlsCipherSuite>;
 
 struct MtlsCertificateBytes {
     static constexpr std::size_t max_bytes = 4096;
@@ -196,9 +196,9 @@ struct MtlsSha256Fingerprint {
     std::array<std::byte, bytes_count> bytes{};
 };
 
-using MtlsCertificate = safety::Linear<MtlsCertificateBytes>;
-using MtlsPrivateKey = safety::Secret<MtlsPrivateKeyBytes>;
-using MtlsCertificateFingerprint = safety::Tagged<MtlsSha256Fingerprint, safety::source::Mtls>;
+using MtlsCertificate = ::fixy::Linear<MtlsCertificateBytes>;
+using MtlsPrivateKey = ::fixy::Secret<MtlsPrivateKeyBytes>;
+using MtlsCertificateFingerprint = ::fixy::Tagged<MtlsSha256Fingerprint, ::fixy::tags::source::Mtls>;
 
 struct MtlsPolicy;
 
@@ -272,15 +272,16 @@ struct MtlsConfig {
     MtlsPolicy policy{};
 };
 
-using DeclaredMtlsConfig = safety::Tagged<MtlsConfig, safety::source::Mtls>;
+using DeclaredMtlsConfig = ::fixy::Tagged<MtlsConfig, ::fixy::tags::source::Mtls>;
 
 struct MtlsPeerIdentity {
     MtlsDnsName dns_name{};
-    MtlsCertificateFingerprint certificate_sha256{MtlsSha256Fingerprint{}};
+    MtlsCertificateFingerprint certificate_sha256 =
+        ::fixy::mint_tagged<::fixy::tags::source::Mtls>(MtlsSha256Fingerprint{});
     MtlsCipherSuite cipher = MtlsCipherSuite::TlsAes256GcmSha384;
 };
 
-using AuthenticatedMtlsPeer = safety::Tagged<MtlsPeerIdentity, safety::source::Mtls>;
+using AuthenticatedMtlsPeer = ::fixy::Tagged<MtlsPeerIdentity, ::fixy::tags::source::Mtls>;
 
 class MtlsConnection {
 public:
@@ -321,7 +322,7 @@ template <MtlsKeyAlgorithm Algorithm>
     }
     out.nbytes = static_cast<std::uint16_t>(pem.size());
     out.algorithm = Algorithm;
-    return std::expected<MtlsPrivateKey, MtlsError>{std::in_place, std::move(out)};
+    return ::fixy::mint_secret<MtlsPrivateKeyBytes>(std::move(out));
 }
 
 [[nodiscard]] constexpr std::expected<MtlsCertificateFingerprint, MtlsError>
@@ -333,7 +334,7 @@ admit_certificate_fingerprint(MtlsSha256Fingerprint fingerprint) noexcept {
     if (!any) {
         return std::unexpected(MtlsError::EmptyFingerprint);
     }
-    return MtlsCertificateFingerprint{fingerprint};
+    return ::fixy::mint_tagged<::fixy::tags::source::Mtls>(fingerprint);
 }
 
 template <TlsVersion MinVersion = TlsVersion::V13, MtlsCipherSuite Primary = MtlsCipherSuite::TlsAes256GcmSha384,
@@ -345,12 +346,12 @@ template <TlsVersion MinVersion = TlsVersion::V13, MtlsCipherSuite Primary = Mtl
     policy.min_version = MinVersion;
     policy.max_version = TlsVersion::V13;
     policy.allowed_ciphers = MtlsCipherMask{Primary, Secondary};
-    return DeclaredMtlsConfig{MtlsConfig{
+    return ::fixy::mint_tagged<::fixy::tags::source::Mtls>(MtlsConfig{
         .ca_cert = std::move(ca_cert),
         .client_cert = std::move(client_cert),
         .client_key = std::move(client_key),
         .policy = policy,
-    }};
+    });
 }
 
 [[nodiscard]] constexpr bool mtls_cipher_is_approved(MtlsCipherSuite suite) noexcept {

@@ -100,7 +100,7 @@ std::expected<MtlsCertificate, MtlsError> admit_x509_certificate_pem(std::span<c
         out.bytes[i] = pem[i];
     }
     out.size = static_cast<std::uint16_t>(pem.size());
-    return std::expected<MtlsCertificate, MtlsError>{std::in_place, std::move(out)};
+    return ::fixy::mint_linear<MtlsCertificateBytes>(std::move(out));
 }
 
 namespace {
@@ -145,11 +145,11 @@ admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config, MtlsDnsName pee
                 && !same_fingerprint(policy.allowed_peer_pins[i], peer_fingerprint.value())) {
                 return std::unexpected(MtlsError::CertificatePinMismatch);
             }
-            return AuthenticatedMtlsPeer{MtlsPeerIdentity{
+            return ::fixy::mint_tagged<::fixy::tags::source::Mtls>(MtlsPeerIdentity{
                 .dns_name = peer_dns,
                 .certificate_sha256 = peer_fingerprint,
                 .cipher = chosen_cipher,
-            }};
+            });
         }
     }
     return std::unexpected(MtlsError::PeerNameNotAllowed);
