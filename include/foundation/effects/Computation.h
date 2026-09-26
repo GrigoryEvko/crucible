@@ -126,20 +126,19 @@ static_assert(std::is_same_v<typename ComputationGraded<EmptyRow, int>::lattice_
                              typename ComputationGraded<Row<>, int>::lattice_type>);
 static_assert(sizeof(ComputationGraded<EmptyRow, int>) == sizeof(ComputationGraded<Row<>, int>));
 
-// The substrate publishes at_bottom only for a lattice that is bounded
-// below.  The row lattice is, so the factory must reach every
-// instantiation.
+// The row is a claim about how the value was produced, and the substrate
+// pairs a value with a claim only through a key.  Computation below holds
+// that key, so the bare carrier builds no default value and no bottom one.
 
 namespace detail::computation_graded_caps {
 template <typename G>
-concept HasAtBottom = requires(typename G::value_type v) { G::at_bottom(v); };
+concept HasAtBottom = requires { G::at_bottom(); };
 }  // namespace detail::computation_graded_caps
 
-static_assert(detail::computation_graded_caps::HasAtBottom<ComputationGraded<Row<>, int>>);
-static_assert(detail::computation_graded_caps::HasAtBottom<ComputationGraded<Row<Effect::Bg>, int>>);
-static_assert(detail::computation_graded_caps::HasAtBottom<ComputationGraded<every_effect_row, int>>);
+static_assert(!detail::computation_graded_caps::HasAtBottom<ComputationGraded<Row<>, int>>);
+static_assert(!detail::computation_graded_caps::HasAtBottom<ComputationGraded<every_effect_row, int>>);
 
-static_assert(std::is_default_constructible_v<ComputationGraded<Row<>, int>>);
+static_assert(!std::is_default_constructible_v<ComputationGraded<Row<>, int>>);
 static_assert(std::is_copy_constructible_v<ComputationGraded<Row<>, int>>);
 static_assert(std::is_move_constructible_v<ComputationGraded<Row<Effect::Bg>, int>>);
 static_assert(std::is_copy_assignable_v<ComputationGraded<Row<>, int>>);
@@ -170,11 +169,12 @@ concept HasCompose = requires(G g, G const& o) { std::move(g).compose(o); };
 using G_pure = ComputationGraded<Row<>, int>;
 using G_bg = ComputationGraded<Row<Effect::Bg>, int>;
 
-// peek_mut and swap reach a Relative-modality carrier here because the
-// substrate gates them on an absolute modality OR an empty grade, and
-// the row grade is empty.
-static_assert(HasPeekMut<G_pure>);
-static_assert(HasPeekMut<G_bg>);
+// A write in place would keep the row over bytes that another
+// computation produced, so peek_mut needs the key.  A swap keeps each
+// value under its own row, and it reaches this Relative-modality carrier
+// because the row grade is empty.
+static_assert(!HasPeekMut<G_pure>);
+static_assert(!HasPeekMut<G_bg>);
 static_assert(HasSwap<G_pure>);
 static_assert(HasSwap<G_bg>);
 
@@ -342,13 +342,13 @@ public:
 
     [[nodiscard]] static consteval std::size_t effect_count_in_row() noexcept { return row_size_v<R>; }
 
-    // The constraint keeps the defaulted body from being defined for a
-    // payload that has no default constructor.  Without it, a reflection
-    // query over the members of such a Computation defines the body, and
-    // the definition fails inside the substrate.
-    constexpr Computation()
+    // A default value needs no effect, so it sits under every row.  The
+    // constraint keeps the body from being defined for a payload that has
+    // no default constructor.
+    constexpr Computation() noexcept(std::is_nothrow_default_constructible_v<T>
+                                     && std::is_nothrow_move_constructible_v<T>)
         requires std::is_default_constructible_v<T>
-    = default;
+        : base{::foundation::algebra::grade_key<Computation>{}, T{}, grade_type{}} {}
     constexpr Computation(const Computation&) = default;
     constexpr Computation(Computation&&) = default;
     constexpr Computation& operator=(const Computation&) = default;
@@ -358,7 +358,7 @@ public:
     // Explicit, so that no value slides into a Computation without the
     // lift being written out.
     explicit constexpr Computation(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : base{std::move(x), grade_type{}} {}
+        : base{::foundation::algebra::grade_key<Computation>{}, std::move(x), grade_type{}} {}
 
     // The lift of a pure value, named so that one grep over mint_ finds
     // every authorization point.  It derives its authority from the
@@ -502,7 +502,7 @@ public:
     [[nodiscard]] constexpr const graded_type& graded() const& noexcept { return *this; }
 
     [[nodiscard]] constexpr graded_type graded() && noexcept(std::is_nothrow_move_constructible_v<graded_type>) {
-        return static_cast<base&&>(*this);
+        return std::move(*this);
     }
 };
 

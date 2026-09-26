@@ -337,6 +337,8 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<Qtt>;
+
     [[nodiscard]] static constexpr typename lattice_type::element_type pinned_grade() noexcept {
         return typename lattice_type::element_type{};
     }
@@ -345,7 +347,7 @@ private:
         requires std::is_constructible_v<T, Args...>
     constexpr explicit Qtt(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                                                      && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), pinned_grade()} {}
+        : impl_{key_{}, T(std::forward<Args>(args)...), pinned_grade()} {}
 
     template <class U, class... Args>
         requires std::is_constructible_v<U, Args...>
@@ -382,7 +384,7 @@ public:
     // semantic rather than incidental.
     [[nodiscard]] constexpr T& peek_mut() & noexcept {
         this->require_live("written after consume", __PRETTY_FUNCTION__, __LINE__);
-        return impl_.peek_mut();
+        return impl_.peek_mut(key_{});
     }
 
     // The obligations travel with the values, so the state swaps too.

@@ -89,7 +89,7 @@ namespace crucible::detail {
 }
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE DimHashDet dim_hash_simd_det(const TensorMeta& meta) noexcept {
-    return DimHashDet{dim_hash(dim_hash_simd(meta)), {}};
+    return ::fixy::mint_band<DimHashDet>(dim_hash(dim_hash_simd(meta)));
 }
 
 // The reference. A change to the algorithm has to land here and in the
@@ -104,7 +104,7 @@ namespace crucible::detail {
 }
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE DimHashDet dim_hash_scalar_det(const TensorMeta& meta) noexcept {
-    return DimHashDet{dim_hash(dim_hash_scalar(meta)), {}};
+    return ::fixy::mint_band<DimHashDet>(dim_hash(dim_hash_scalar(meta)));
 }
 
 }  // namespace crucible::detail

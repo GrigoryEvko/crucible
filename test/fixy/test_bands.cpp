@@ -46,8 +46,9 @@ struct MoveOnlyValue {
 };
 
 // A band over every tier of a lattice costs sizeof(T), aligns as T, is
-// a Graded specialization with the substrate's diagnostic surface, and
-// answers the tier queries with the tier it was named with.
+// a Graded specialization with the substrate's diagnostic surface,
+// answers the tier queries with the tier it was named with, and takes
+// its tier at mint_band alone.
 template <typename L, template <auto, class> class Band>
 [[nodiscard]] consteval bool every_tier_is_a_band() noexcept {
     using E = typename L::element_type;
@@ -81,6 +82,9 @@ template <typename L, template <auto, class> class Band>
         if (!std::is_copy_constructible_v<BInt>) return false;
         if (std::is_copy_constructible_v<BMove>) return false;
         if (!std::is_move_constructible_v<BMove>) return false;
+        if (std::is_default_constructible_v<BInt>) return false;
+        if (std::is_constructible_v<BInt, int, typename BInt::grade_type>) return false;
+        if (fixy::mint_band<BInt>(7).peek() != 7) return false;
         // A band satisfies its own tier and the bottom, and every tier
         // above it is not satisfied.
         if (!fixy::satisfies_v<BInt, tier>) return false;
@@ -129,13 +133,11 @@ static_assert(!fixy::is_band_of_v<fixy::DetSafeLattice, fixy::hot_path::Hot<int>
 static_assert(!fixy::is_band_v<int>);
 static_assert(!fixy::is_band_v<fixy::RecipeSpec<int>>);
 
-// at_bottom on the pinned singleton is the construction door: bottom
-// and top coincide, so the value is held at the one tier the type
-// names.
-constexpr auto pure_from_bottom = fixy::det_safe::Pure<int>::at_bottom(42);
+// mint_band is the construction door: the value is held at the one tier
+// the type names.
+constexpr auto pure_from_bottom = fixy::mint_band<fixy::det_safe::Pure<int>>(42);
 static_assert(pure_from_bottom.peek() == 42);
 static_assert(fixy::tier_of(pure_from_bottom) == fixy::DetSafeTier_v::Pure);
-static_assert(fixy::det_safe::Pure<int>::at_bottom().peek() == 0);
 
 // weaken on the pinned singleton is the identity: the only grade it can
 // be asked for is the one it holds, so the tier cannot move.
@@ -147,7 +149,7 @@ static_assert(fixy::tier_of(pure_weakened) == fixy::DetSafeTier_v::Pure);
 // relax walks down the chain one class at a time and stays admissible
 // at the next consumer; it never walks up.
 [[nodiscard]] consteval bool relax_walks_down_the_tolerance_chain() noexcept {
-    fixy::NumericalTier<fixy::Tolerance::BITEXACT, int> bitexact{42, {}};
+    auto bitexact = fixy::mint_band<fixy::NumericalTier<fixy::Tolerance::BITEXACT, int>>(42);
     auto fp64 = fixy::relax<fixy::Tolerance::ULP_FP64>(std::move(bitexact));
     auto fp32 = fixy::relax<fixy::Tolerance::ULP_FP32>(std::move(fp64));
     auto fp16 = fixy::relax<fixy::Tolerance::ULP_FP16>(std::move(fp32));
@@ -194,14 +196,15 @@ static_assert(!commit_admits<fixy::det_safe::Pure<int>, fixy::Lifetime_v::PER_RE
 
 // A RecipeSpec carries both axes at run time.
 static_assert(sizeof(fixy::RecipeSpec<int>) >= sizeof(int) + 2);
-constexpr fixy::RecipeSpec<int> kahan_fp16{42, {fixy::Tolerance::ULP_FP16, fixy::RecipeFamily::Kahan}};
+constexpr fixy::RecipeSpec<int> kahan_fp16 =
+    fixy::mint_recipe_spec(42, fixy::Tolerance::ULP_FP16, fixy::RecipeFamily::Kahan);
 static_assert(kahan_fp16.peek() == 42);
 static_assert(fixy::tolerance_of(kahan_fp16) == fixy::Tolerance::ULP_FP16);
 static_assert(fixy::recipe_family_of(kahan_fp16) == fixy::RecipeFamily::Kahan);
 static_assert(fixy::admits(kahan_fp16, fixy::Tolerance::ULP_FP8, fixy::RecipeFamily::Kahan));
 static_assert(!fixy::admits(kahan_fp16, fixy::Tolerance::BITEXACT, fixy::RecipeFamily::Kahan));
 static_assert(!fixy::admits(kahan_fp16, fixy::Tolerance::ULP_FP16, fixy::RecipeFamily::Pairwise));
-static_assert(fixy::admits(fixy::RecipeSpec<int>{7, {fixy::Tolerance::BITEXACT, fixy::RecipeFamily::Any}},
+static_assert(fixy::admits(fixy::mint_recipe_spec(7, fixy::Tolerance::BITEXACT, fixy::RecipeFamily::Any),
                            fixy::Tolerance::ULP_FP32, fixy::RecipeFamily::Kahan),
               "The wildcard family at the strictest tier admits every request.");
 
@@ -214,9 +217,9 @@ int main() {
     volatile int raw = 7;
     const int seed = raw;
 
-    fixy::det_safe::Pure<int> pure{seed, {}};
+    auto pure = fixy::mint_band<fixy::det_safe::Pure<int>>(seed);
     if (pure.peek() != seed) {
-        std::fprintf(stderr, "test_bands: Pure<int>{seed} lost its value\n");
+        std::fprintf(stderr, "test_bands: mint_band<Pure<int>>(seed) lost its value\n");
         return 1;
     }
     if (fixy::tier_of(pure) != fixy::DetSafeTier_v::Pure) {
@@ -235,21 +238,21 @@ int main() {
         return 1;
     }
 
-    auto from_bottom = fixy::hot_path::Hot<TwoWords>::at_bottom(TwoWords{1, 2});
+    auto from_bottom = fixy::mint_band<fixy::hot_path::Hot<TwoWords>>(TwoWords{1, 2});
     auto weakened = from_bottom.weaken(fixy::hot_path::Hot<TwoWords>::lattice_type::top());
     if (!(weakened.peek() == TwoWords{1, 2})) {
         std::fprintf(stderr, "test_bands: weaken on the singleton changed the value\n");
         return 1;
     }
 
-    fixy::opaque_lifetime::PerFleet<MoveOnlyValue> fleet{MoveOnlyValue{seed}, {}};
+    auto fleet = fixy::mint_band<fixy::opaque_lifetime::PerFleet<MoveOnlyValue>>(MoveOnlyValue{seed});
     auto request = fixy::relax<fixy::Lifetime_v::PER_REQUEST>(std::move(fleet));
     if (std::move(request).consume().v != seed) {
         std::fprintf(stderr, "test_bands: relax of a move-only fleet value lost it\n");
         return 1;
     }
 
-    fixy::alloc_class::Arena<std::unique_ptr<int>> arena{std::make_unique<int>(seed), {}};
+    auto arena = fixy::mint_band<fixy::alloc_class::Arena<std::unique_ptr<int>>>(std::make_unique<int>(seed));
     if (*arena.peek() != seed) {
         std::fprintf(stderr, "test_bands: Arena<unique_ptr<int>> lost its value\n");
         return 1;
@@ -264,7 +267,7 @@ int main() {
     // value; the refusals across trunks are compile-time and live in
     // test/fixy/neg/neg_bands_*_cross_trunk.cpp, because an incomparable
     // move is not a runtime answer.
-    fixy::scoped_fence::Gpu<int> device_wide{seed, {}};
+    auto device_wide = fixy::mint_band<fixy::scoped_fence::Gpu<int>>(seed);
     if (fixy::tier_of(device_wide) != fixy::MemoryScope_v::Gpu) {
         std::fprintf(stderr, "test_bands: tier_of(Gpu<int>) is not Gpu\n");
         return 1;
@@ -275,7 +278,7 @@ int main() {
         return 1;
     }
     // Both trunks reach the shared bottom, and neither reaches the other.
-    fixy::scoped_fence::Outer<int> outer_shareable{seed, {}};
+    auto outer_shareable = fixy::mint_band<fixy::scoped_fence::Outer<int>>(seed);
     auto inner_shareable = fixy::relax<fixy::MemoryScope_v::Inner>(std::move(outer_shareable));
     if (std::move(inner_shareable).consume() != seed) {
         std::fprintf(stderr, "test_bands: relax<Inner>(Outer) lost the value\n");
@@ -291,7 +294,7 @@ int main() {
     // The second partial order.  A portable value relaxes to one named
     // backend and then to None.  The refusals of a move up or across are
     // compile-time and live in test/fixy/neg/neg_bands_vendor_*.cpp.
-    fixy::vendor::Portable<int> portable{seed, {}};
+    auto portable = fixy::mint_band<fixy::vendor::Portable<int>>(seed);
     auto on_cpu = fixy::relax<fixy::VendorBackend_v::CPU>(portable);
     if (on_cpu.peek() != seed || fixy::tier_of(on_cpu) != fixy::VendorBackend_v::CPU) {
         std::fprintf(stderr, "test_bands: relax<CPU>(Portable) is wrong\n");
@@ -309,7 +312,7 @@ int main() {
         return 1;
     }
 
-    fixy::residency_heat::Hot<MoveOnlyValue> hot{MoveOnlyValue{seed}, {}};
+    auto hot = fixy::mint_band<fixy::residency_heat::Hot<MoveOnlyValue>>(MoveOnlyValue{seed});
     auto cold = fixy::relax<fixy::ResidencyHeatTag_v::Cold>(std::move(hot));
     if (std::move(cold).consume().v != seed) {
         std::fprintf(stderr, "test_bands: relax<Cold>(Hot) lost a move-only value\n");
@@ -318,7 +321,7 @@ int main() {
 
     volatile int raw_tier = 3;
     const auto tol = static_cast<fixy::Tolerance>(raw_tier);
-    fixy::RecipeSpec<int> spec{seed, {tol, fixy::RecipeFamily::Kahan}};
+    fixy::RecipeSpec<int> spec = fixy::mint_recipe_spec(seed, tol, fixy::RecipeFamily::Kahan);
     if (fixy::tolerance_of(spec) != fixy::Tolerance::ULP_FP16
         || !fixy::admits(spec, fixy::Tolerance::ULP_FP8, fixy::RecipeFamily::Kahan)) {
         std::fprintf(stderr, "test_bands: RecipeSpec admission is wrong at runtime\n");
@@ -329,9 +332,9 @@ int main() {
         return 1;
     }
 
-    fixy::wait::Block<int> blocked{seed, {}};
-    fixy::cipher_tier::Warm<int> warm{seed, {}};
-    fixy::numerical_tier::Fp32<int> fp32{seed, {}};
+    auto blocked = fixy::mint_band<fixy::wait::Block<int>>(seed);
+    auto warm = fixy::mint_band<fixy::cipher_tier::Warm<int>>(seed);
+    auto fp32 = fixy::mint_band<fixy::numerical_tier::Fp32<int>>(seed);
     if (blocked.peek() + warm.peek() + fp32.peek() != 3 * seed) {
         std::fprintf(stderr, "test_bands: a band lost its value\n");
         return 1;

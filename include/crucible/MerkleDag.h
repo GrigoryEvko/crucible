@@ -147,8 +147,8 @@ template <std::size_t MaxLive>
 
 [[nodiscard]] constexpr ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>
 compute_storage_nbytes_det(ExternalTensorMeta meta) {
-    return ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>{compute_storage_nbytes(meta),
-                                                                                    {}};
+    return ::fixy::mint_band<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>>(
+        compute_storage_nbytes(meta));
 }
 
 // Every variable-length array here is arena-allocated and outlives the entry.

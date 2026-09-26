@@ -16,7 +16,7 @@ struct MoveOnlyValue {
 };
 
 int main() {
-    fixy::det_safe::Pure<MoveOnlyValue> pure{MoveOnlyValue{42}, {}};
+    auto pure = fixy::mint_band<fixy::det_safe::Pure<MoveOnlyValue>>(MoveOnlyValue{42});
     auto philox = fixy::relax<fixy::DetSafeTier_v::PhiloxRng>(pure);
     return philox.peek().v;
 }

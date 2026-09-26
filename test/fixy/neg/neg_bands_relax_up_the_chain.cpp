@@ -6,7 +6,7 @@
 #include <fixy/Bands.h>
 
 int main() {
-    fixy::det_safe::PhiloxRng<int> philox{42, {}};
+    auto philox = fixy::mint_band<fixy::det_safe::PhiloxRng<int>>(42);
     auto pure = fixy::relax<fixy::DetSafeTier_v::Pure>(philox);
     return pure.peek();
 }

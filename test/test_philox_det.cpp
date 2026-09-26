@@ -12,6 +12,7 @@ using namespace crucible;
 using ::fixy::band_tier_v;
 using ::fixy::DetSafe;
 using ::fixy::DetSafeTier_v;
+using ::fixy::mint_band;
 using ::fixy::satisfies_v;
 
 [[nodiscard]] static constexpr uint64_t reference_fnv_mix(uint64_t h, uint64_t v) noexcept {
@@ -377,14 +378,15 @@ static void test_move_semantics_through_wrapper() {
 // pass.
 
 static_assert(
-    std::is_same_v<decltype(Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::Pure, uint64_t>{0ull, {}})),
+    std::is_same_v<decltype(Philox::generate_det(uint64_t{0}, mint_band<DetSafe<DetSafeTier_v::Pure, uint64_t>>(0ull))),
                    Philox::DetSafePhiloxCtr>,
     "generate_det(uint64, DetSafe<Pure, uint64>) MUST return "
     "DetSafePhiloxCtr.  The Pure key satisfies the PhiloxRng-or-stronger "
     "requires-clause.");
 
 static_assert(
-    std::is_same_v<decltype(Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>{0ull, {}})),
+    std::is_same_v<decltype(Philox::generate_det(uint64_t{0},
+                                                 mint_band<DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>>(0ull))),
                    Philox::DetSafePhiloxCtr>,
     "generate_det(uint64, DetSafe<PhiloxRng, uint64>) MUST return "
     "DetSafePhiloxCtr.  PhiloxRng key satisfies the gate at the boundary.");
@@ -409,7 +411,7 @@ static_assert(!can_compose_chain<DetSafeTier_v::FilesystemMtime>);
 static_assert(!can_compose_chain<DetSafeTier_v::NonDeterministicSyscall>);
 
 inline constexpr auto kChainConstexpr =
-    Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::Pure, uint64_t>{42ull, {}});
+    Philox::generate_det(uint64_t{0}, mint_band<DetSafe<DetSafeTier_v::Pure, uint64_t>>(42ull));
 static_assert(band_tier_v<decltype(kChainConstexpr)> == DetSafeTier_v::PhiloxRng);
 
 // Passing the key wrapped buys compile-time checking and nothing
@@ -421,10 +423,10 @@ static void test_typed_chain_bit_equal_to_peek_chain() {
     constexpr uint64_t offset = 0x1234567890ABCDEFull;
     constexpr uint64_t key_raw = 0xDEADBEEFCAFEBABEull;
 
-    const auto key_form1 = DetSafe<DetSafeTier_v::Pure, uint64_t>{key_raw, {}};
+    const auto key_form1 = mint_band<DetSafe<DetSafeTier_v::Pure, uint64_t>>(key_raw);
     const auto rng_form1 = Philox::generate_det(offset, key_form1.peek());
-    const auto rng_form2 = Philox::generate_det(offset, DetSafe<DetSafeTier_v::Pure, uint64_t>{key_raw, {}});
-    const auto rng_form3 = Philox::generate_det(offset, DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>{key_raw, {}});
+    const auto rng_form2 = Philox::generate_det(offset, mint_band<DetSafe<DetSafeTier_v::Pure, uint64_t>>(key_raw));
+    const auto rng_form3 = Philox::generate_det(offset, mint_band<DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>>(key_raw));
 
     assert(rng_form1.peek() == rng_form2.peek());
     assert(rng_form1.peek() == rng_form3.peek());

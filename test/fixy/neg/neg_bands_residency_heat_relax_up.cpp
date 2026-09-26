@@ -7,7 +7,7 @@
 #include <fixy/Bands.h>
 
 int main() {
-    fixy::residency_heat::Warm<int> warm{42, {}};
+    auto warm = fixy::mint_band<fixy::residency_heat::Warm<int>>(42);
     auto hot = fixy::relax<fixy::ResidencyHeatTag_v::Hot>(warm);
     return hot.peek();
 }

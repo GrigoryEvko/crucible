@@ -201,7 +201,7 @@ public:
     // costs nothing beyond load itself.
 
     [[nodiscard]] ::fixy::Wait<::fixy::WaitStrategy_v::SpinPause, T> load_pinned() const noexcept {
-        return ::fixy::Wait<::fixy::WaitStrategy_v::SpinPause, T>{load(), {}};
+        return ::fixy::mint_band<::fixy::Wait<::fixy::WaitStrategy_v::SpinPause, T>>(load());
     }
 
     // Counts completed publishes, and never wraps at this width.  A

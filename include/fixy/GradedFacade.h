@@ -64,7 +64,7 @@ static_assert(std::is_empty_v<SampleFacade>);
 static_assert(std::is_trivially_default_constructible_v<SampleFacade>);
 
 struct SampleWrapper : SampleFacade {
-    graded_type impl_{};
+    graded_type impl_;
 };
 static_assert(sizeof(SampleWrapper) == sizeof(SampleFacade::graded_type),
               "graded_facade must collapse into its deriver; the grade lives in the wrapper's own member");

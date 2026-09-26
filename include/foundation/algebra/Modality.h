@@ -26,8 +26,9 @@ enum class ModalityKind : std::uint8_t {
     Comonad = 0,
     // The grade admits a unit: a bare value can go in at a chosen grade.
     RelativeMonad = 1,
-    // The grade is fixed at construction and says nothing about the
-    // value's content.
+    // The grade is fixed at construction.  Whether it claims anything
+    // about the value's content is the lattice's to state
+    // (ClaimSubject in ClaimOrientation.h).
     Absolute = 2,
     // The grade is a row that composes by union, both in sequence and
     // in parallel.

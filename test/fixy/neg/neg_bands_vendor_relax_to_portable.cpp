@@ -7,7 +7,7 @@
 #include <fixy/Bands.h>
 
 int main() {
-    fixy::vendor::Nv<int> nv{42, {}};
+    auto nv = fixy::mint_band<fixy::vendor::Nv<int>>(42);
     auto portable = fixy::relax<fixy::VendorBackend_v::Portable>(nv);
     return portable.peek();
 }

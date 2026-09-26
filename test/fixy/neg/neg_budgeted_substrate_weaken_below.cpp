@@ -10,8 +10,16 @@ namespace {
 using Grade = fixy::Budgeted<int>::graded_type;
 using Budget = fixy::BudgetLattice::element_type;
 
-constexpr Grade measured{1, Budget{fixy::BitsBudgetLattice::successor(fixy::BitsBudgetLattice::bottom()),
-                                   fixy::PeakBytesLattice::successor(fixy::PeakBytesLattice::bottom())}};
+// The fixture is the authority for the substrate it builds.
+struct Authority {
+    [[nodiscard]] static constexpr ::foundation::algebra::grade_key<Authority> key() noexcept {
+        return ::foundation::algebra::grade_key<Authority>{};
+    }
+};
+
+constexpr Grade measured{Authority::key(), 1,
+                         Budget{fixy::BitsBudgetLattice::successor(fixy::BitsBudgetLattice::bottom()),
+                                fixy::PeakBytesLattice::successor(fixy::PeakBytesLattice::bottom())}};
 static_assert(measured.weaken(Budget{fixy::BitsBudgetLattice::bottom(), fixy::PeakBytesLattice::bottom()}).peek() == 1);
 
 }  // namespace

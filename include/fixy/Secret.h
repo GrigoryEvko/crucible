@@ -137,14 +137,16 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<Secret>;
+
     constexpr explicit Secret(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(v), typename lattice_type::element_type{}} {}
+        : impl_{key_{}, std::move(v), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
     constexpr explicit Secret(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                                                         && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
+        : impl_{key_{}, T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     template <typename U, typename... Args>
         requires std::is_constructible_v<U, Args...>
@@ -273,7 +275,8 @@ public:
     // Opt-in: overwrites the storage before destruction.  Reaching the
     // mutable storage is admitted here because the substrate's
     // mutation gate also accepts an empty grade, which this
-    // confidentiality lattice has, and the access stays internal.
+    // confidentiality lattice has, and this class holds the key.  The
+    // zeroed bytes are still secret, so the grade stays true.
     void zeroize() noexcept
         requires std::is_trivially_copyable_v<T>
     {
@@ -282,7 +285,7 @@ public:
         // qualifier by implicit conversion and then narrows through a
         // volatile void pointer, which keeps the qualifier all the way
         // down without reinterpreting or casting away a qualifier.
-        volatile T* vp = std::addressof(impl_.peek_mut());
+        volatile T* vp = std::addressof(impl_.peek_mut(key_{}));
         volatile auto* p = static_cast<volatile unsigned char*>(static_cast<volatile void*>(vp));
         for (std::size_t i = 0; i < sizeof(T); ++i)
             p[i] = 0;

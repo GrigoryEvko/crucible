@@ -205,7 +205,7 @@ struct CRUCIBLE_OWNER MetaLog {
     CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>
     try_append_pinned(const TensorMeta* metas, uint32_t n)
         CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::valid_span(n, metas)) {
-        return ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>{try_append(metas, n), {}};
+        return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>>(try_append(metas, n));
     }
 
     // Preferred at new call sites: appending touches memory only, so the

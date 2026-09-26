@@ -19,6 +19,6 @@ concept covers_cta_requirement = fixy::satisfies_v<Provider, fixy::MemoryScope_v
 }
 
 int main() {
-    fixy::scoped_fence::Inner<int> inner{7, {}};
+    auto inner = fixy::mint_band<fixy::scoped_fence::Inner<int>>(7);
     return consume(inner);
 }

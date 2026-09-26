@@ -33,6 +33,14 @@ namespace fd = ::foundation::diag;
 template <typename L>
 using OnAxis = fa::Graded<fa::ModalityKind::Absolute, L, int>;
 
+// The authority for the carriers built below.  It hands its key out,
+// which an authority in production code never does.
+struct test_authority {
+    [[nodiscard]] static constexpr fa::grade_key<test_authority> key() noexcept {
+        return fa::grade_key<test_authority>{};
+    }
+};
+
 // The lattice Graded accepts for an axis: the axis itself when its up is
 // the weaker claim, and its order dual when its up is the stronger one.
 template <typename L>
@@ -145,7 +153,7 @@ void exercise_counter(char const* name) {
         fail(name);
     }
 
-    OnAxisGradedWay<L> const carried{7, high};
+    OnAxisGradedWay<L> const carried{test_authority::key(), 7, high};
     if (!(carried.grade() == high) || carried.peek() != 7) fail(name);
 }
 

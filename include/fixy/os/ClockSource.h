@@ -67,7 +67,7 @@ private:
     // fixy/os/Time.h, right after the read of this same clock.  So a
     // ClockSource<Boot, T> holds a value that CLOCK_BOOTTIME returned.
     constexpr explicit ClockSource(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), typename lattice_type::element_type{}} {}
+        : impl_{::foundation::algebra::grade_key<ClockSource>{}, std::move(value), typename lattice_type::element_type{}} {}
 
     friend struct ::fixy::time::detail::clock_stamp_access;
 

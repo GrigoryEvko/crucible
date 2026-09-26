@@ -32,7 +32,7 @@ static int bitexact_fence_consumer(W wrapped) noexcept {
 }
 
 int main() {
-    NumericalTier<Tolerance::RELAXED, int> relaxed_value{42, {}};
+    auto relaxed_value = ::fixy::mint_band<NumericalTier<Tolerance::RELAXED, int>>(42);
     int result = bitexact_fence_consumer(std::move(relaxed_value));
     return result;
 }

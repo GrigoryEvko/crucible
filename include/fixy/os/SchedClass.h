@@ -65,18 +65,20 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<SchedClass>;
+
 public:
     constexpr SchedClass() noexcept(std::is_nothrow_default_constructible_v<T>)
-        : impl_{T{}, typename lattice_type::element_type{}} {}
+        : impl_{key_{}, T{}, typename lattice_type::element_type{}} {}
 
     constexpr explicit SchedClass(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), typename lattice_type::element_type{}} {}
+        : impl_{key_{}, std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
     constexpr explicit SchedClass(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                                                             && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
+        : impl_{key_{}, T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     constexpr SchedClass(const SchedClass&) = default;
     constexpr SchedClass(SchedClass&&) = default;
@@ -97,7 +99,7 @@ public:
     [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
-    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(key_{}); }
 
     constexpr void swap(SchedClass& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
     friend constexpr void swap(SchedClass& a, SchedClass& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }

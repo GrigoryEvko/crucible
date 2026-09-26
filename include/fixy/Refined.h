@@ -552,6 +552,8 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<Refinement>;
+
     // The two doors.  Each is reachable only through the friend mints
     // that name it.
     struct checked_door_ {};
@@ -571,10 +573,10 @@ private:
 
     constexpr Refinement(checked_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires PredicateInvocableOn<Pred, T>
-        : impl_{admit_(std::move(v)), typename lattice_type::element_type{}} {}
+        : impl_{key_{}, admit_(std::move(v)), typename lattice_type::element_type{}} {}
 
     constexpr Refinement(trusted_door_, T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(v), typename lattice_type::element_type{}} {}
+        : impl_{key_{}, std::move(v), typename lattice_type::element_type{}} {}
 
     template <auto P, typename U>
         requires PredicateInvocableOn<P, U>
@@ -599,7 +601,7 @@ public:
     // and not a door of its own.
     constexpr explicit Refinement(Refinement<Pred, T, false>&& r) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires Sealed
-        : impl_{std::move(r).into(), typename lattice_type::element_type{}} {}
+        : impl_{key_{}, std::move(r).into(), typename lattice_type::element_type{}} {}
 
     // The refinement is a property of the value, so copying or moving
     // preserves it and neither needs to re-check.  What a sealed

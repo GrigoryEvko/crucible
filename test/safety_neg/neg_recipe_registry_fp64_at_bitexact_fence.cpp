@@ -24,7 +24,7 @@ static int bitexact_fence_consumer(W wrapped) noexcept {
 }
 
 int main() {
-    NumericalTier<Tolerance::ULP_FP64, int> fp64_value{42, {}};
+    auto fp64_value = ::fixy::mint_band<NumericalTier<Tolerance::ULP_FP64, int>>(42);
     int result = bitexact_fence_consumer(std::move(fp64_value));
     return result;
 }

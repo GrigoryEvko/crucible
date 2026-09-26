@@ -195,7 +195,7 @@ public:
         if (!::fixy::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
             return std::unexpected(RecipeError::ToleranceMismatch);
         }
-        return ::fixy::NumericalTier<T, const NumericalRecipe*>{recipe, {}};
+        return ::fixy::mint_band<::fixy::NumericalTier<T, const NumericalRecipe*>>(recipe);
     }
 
     template <::fixy::Tolerance T, typename CallerRow = pure_projection_row>
@@ -209,7 +209,7 @@ public:
         if (!::fixy::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
             return std::unexpected(RecipeError::ToleranceMismatch);
         }
-        return ::fixy::NumericalTier<T, const NumericalRecipe*>{recipe, {}};
+        return ::fixy::mint_band<::fixy::NumericalTier<T, const NumericalRecipe*>>(recipe);
     }
 
     // Lookups that carry both axes as runtime state instead of pinning one in
@@ -226,7 +226,7 @@ public:
         auto base = by_name<CallerRow>(name);
         if (!base) return std::unexpected(base.error());
         const NumericalRecipe* recipe = *base;
-        return ::fixy::RecipeSpec<const NumericalRecipe*>{recipe, {tolerance_of(*recipe), recipe_family_of(*recipe)}};
+        return ::fixy::mint_recipe_spec(recipe, tolerance_of(*recipe), recipe_family_of(*recipe));
     }
 
     template <typename CallerRow = pure_projection_row>
@@ -237,7 +237,7 @@ public:
         auto base = by_hash<CallerRow>(hash);
         if (!base) return std::unexpected(base.error());
         const NumericalRecipe* recipe = *base;
-        return ::fixy::RecipeSpec<const NumericalRecipe*>{recipe, {tolerance_of(*recipe), recipe_family_of(*recipe)}};
+        return ::fixy::mint_recipe_spec(recipe, tolerance_of(*recipe), recipe_family_of(*recipe));
     }
 
 private:

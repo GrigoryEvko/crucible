@@ -47,18 +47,21 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<Stale>;
+
 public:
-    constexpr Stale() noexcept(std::is_nothrow_default_constructible_v<T>) : impl_{T{}, semiring_type::bottom()} {}
+    constexpr Stale() noexcept(std::is_nothrow_default_constructible_v<T>)
+        : impl_{key_{}, T{}, semiring_type::bottom()} {}
 
     constexpr Stale(T value, staleness_t tau) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), tau} {}
+        : impl_{key_{}, std::move(value), tau} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
     constexpr Stale(std::in_place_t, staleness_t tau,
                     Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                              && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), tau} {}
+        : impl_{key_{}, T(std::forward<Args>(args)...), tau} {}
 
     [[nodiscard]] static constexpr Stale fresh(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Stale{std::move(value), semiring_type::bottom()};
@@ -111,7 +114,7 @@ public:
 
     // Mutating the payload leaves the grade valid, because the grade
     // records when the value was produced and not what it holds.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(key_{}); }
 
     [[nodiscard]] constexpr bool fresher_than(Stale const& other) const noexcept {
         return semiring_type::leq(staleness(), other.staleness()) && !(staleness() == other.staleness());
@@ -128,9 +131,7 @@ public:
     // carries this rule as a native pre() clause, which a stock GCC 16
     // skips during constant evaluation; the in-body CRUCIBLE_PRE fires
     // there too, and the negative-compile fixture for this method runs
-    // in a constant expression.  The result is built before the check
-    // because a trap-bearing branch ahead of the constructor's
-    // contract_assert leaves that assertion non-constant on GCC 16.2.1;
+    // in a constant expression.  The result is built before the check;
     // the order is immaterial, since the constructor does nothing
     // beyond its own bounds check.
     [[nodiscard]] constexpr Stale weaken(staleness_t tau) const& noexcept(std::is_nothrow_copy_constructible_v<T>)

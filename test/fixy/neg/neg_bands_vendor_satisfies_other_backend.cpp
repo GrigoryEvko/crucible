@@ -17,6 +17,6 @@ concept covers_nv_requirement = fixy::satisfies_v<Provider, fixy::VendorBackend_
 }
 
 int main() {
-    fixy::vendor::Amd<int> amd{7, {}};
+    auto amd = fixy::mint_band<fixy::vendor::Amd<int>>(7);
     return consume(amd);
 }

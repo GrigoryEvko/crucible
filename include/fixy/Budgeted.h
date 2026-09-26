@@ -190,29 +190,31 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<Budgeted>;
+
     // Drops the claim of a moved-from source to unbounded.  The payload is
     // moved out and back in, because Graded sets its grade only at
     // construction.
     constexpr void relinquish_budget_() noexcept(std::is_nothrow_move_constructible_v<T>) {
         T left_behind = std::move(impl_).consume();
         std::destroy_at(&impl_);
-        std::construct_at(&impl_, std::move(left_behind), lattice_type::top());
+        std::construct_at(&impl_, key_{}, std::move(left_behind), lattice_type::top());
     }
 
     // The compositions build their result from a grade at or above the
     // left operand's own, which is a weaker claim than one it holds.
     constexpr Budgeted(T value, budget_t budget) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), budget} {}
+        : impl_{key_{}, std::move(value), budget} {}
 
 public:
     // The weakest claim, because nothing measured this value.
     constexpr Budgeted() noexcept(std::is_nothrow_default_constructible_v<T>)
         requires std::default_initializable<T>
-        : impl_{T{}, lattice_type::top()} {}
+        : impl_{key_{}, T{}, lattice_type::top()} {}
 
     // The stamp is spent here, so one grant grades one value.
     constexpr Budgeted(T value, BudgetStamp&& stamp) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), budget_t{stamp.bits(), stamp.peak_bytes()}} {
+        : impl_{key_{}, std::move(value), budget_t{stamp.bits(), stamp.peak_bytes()}} {
         BudgetStamp const spent{std::move(stamp)};
     }
 
@@ -221,7 +223,7 @@ public:
     constexpr Budgeted(std::in_place_t, BudgetStamp&& stamp,
                        Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), budget_t{stamp.bits(), stamp.peak_bytes()}} {
+        : impl_{key_{}, T(std::forward<Args>(args)...), budget_t{stamp.bits(), stamp.peak_bytes()}} {
         BudgetStamp const spent{std::move(stamp)};
     }
 

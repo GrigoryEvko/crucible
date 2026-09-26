@@ -1054,7 +1054,7 @@ fixy_neg_compile_test(neg_tagged_mint_earned_tag
   "satisfaction of .MintableTag<Tag>.")
 
 fixy_neg_compile_test(neg_tagged_default_earned_tag
-  "no matching function for call to .fixy::Tagged<int, fixy::tags::trust::Verified>::Tagged\\(\\)."
+  "no matching function for call to .fixy::Tagged<int, fixy::tags::trust::Verified>::Tagged\\(<brace-enclosed initializer list>\\)."
   "satisfaction of .MintableTag<Tag>.")
 
 fixy_neg_compile_test(neg_tagged_bit_cast_earned_tag
@@ -1291,14 +1291,14 @@ fixy_neg_compile_test(neg_budgeted_mutable_payload
   "is_same_v<WayOut, fixy::detail::self_contained::nothing_reaches_out> .with WayOut = Scratchpad.. evaluated to .false.")
 fixy_neg_compile_test(neg_epoch_versioned_substrate_weaken_to_newer
   "non-constant condition for static assertion"
-  ".anonymous.::stale\\.foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>"
+  "::weaken<const foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>.*\\(\\{anonymous\\}::stale, "
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 fixy_neg_compile_test(neg_budgeted_reference_payload
   "template constraint failure for .template<class T>  requires  SelfContained<T> class fixy::Budgeted."
   ".int&. is not an object type")
 fixy_neg_compile_test(neg_budgeted_substrate_weaken_below
   "non-constant condition for static assertion"
-  ".anonymous.::measured\\.foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::bits_budget>"
+  "::weaken<const foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::bits_budget>.*\\(\\{anonymous\\}::measured, "
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # Two values at one version are one event only when their payloads are
@@ -1470,6 +1470,38 @@ fixy_neg_compile_test(neg_bands_residency_heat_cold_at_hot
   "no matching function for call to .consume"
   "required for the satisfaction of .covers_hot_requirement<"
   "satisfies_v<Provider, foundation::algebra::lattices::ResidencyHeatTag::Hot>.*evaluated to .false.")
+
+# A band takes its tier at mint_band and nowhere else.  Braces that pair a
+# value with the tier meet no constructor of the substrate, and the
+# keyless write in place does not exist, because the tier is a claim about
+# the bytes.  The door itself refuses a cv spelling of the band and a
+# carrier that is not a band.  The second regex of each names the refused
+# candidate or the clause that refused it.
+fixy_neg_compile_test(neg_bands_braces_without_door
+  "no matching function for call to .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>, int>::Graded\\(<brace-enclosed initializer list>\\)."
+  "candidate 1: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
+fixy_neg_compile_test(neg_bands_peek_mut_rewrites_tier
+  "no matching function for call to .foundation::algebra::Graded<.*DetSafeTier::Pure>, int>::peek_mut\\(\\)."
+  "the expression .\\(claim_subject_v<L>\\) == foundation::algebra::ClaimSubject::slot \\[with L = foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_bands_mint_band_cv_band
+  "required for the satisfaction of .ExactBand<B>. .with B = const foundation::algebra::Graded<"
+  "required for the satisfaction of .same_as<B, typename std::remove_cvref<_Tp>::type>. .with B = const foundation::algebra::Graded<")
+fixy_neg_compile_test(neg_bands_mint_band_not_a_band
+  "required for the satisfaction of .ExactBand<B>. .with B = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<"
+  "required for the satisfaction of .IsBand<B>. .with B = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<")
+
+# A RecipeSpec takes its two axes at mint_recipe_spec and nowhere else.
+# Braces meet no constructor, and the door refuses a reference payload and
+# a payload that cannot move.
+fixy_neg_compile_test(neg_recipe_spec_braces_without_door
+  "no matching function for call to .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::ToleranceLattice, foundation::algebra::lattices::RecipeFamilyLattice>, int>::Graded\\(<brace-enclosed initializer list>\\)."
+  "candidate 1: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
+fixy_neg_compile_test(neg_mint_recipe_spec_reference_payload
+  "required for the satisfaction of .RecipeSpecPayload<T>. \\[with T = int&\\]"
+  "the expression .is_object_v<T> \\[with T = int&\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_mint_recipe_spec_immovable_payload
+  "required for the satisfaction of .RecipeSpecPayload<T>. \\[with T = <unnamed>::Pinned\\]"
+  "required for the satisfaction of .move_constructible<T>. \\[with T = <unnamed>::Pinned\\]")
 
 # ── The eight value wrappers ──────────────────────────────────────────
 #

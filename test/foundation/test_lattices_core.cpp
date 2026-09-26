@@ -48,6 +48,14 @@ struct Payload {
     std::uint64_t b{0};
 };
 
+// The authority for the carriers built below.  It hands its key out,
+// which an authority in production code never does.
+struct test_authority {
+    [[nodiscard]] static constexpr fa::grade_key<test_authority> key() noexcept {
+        return fa::grade_key<test_authority>{};
+    }
+};
+
 // Regime 1: the grade is empty and collapses.
 using RefinedInt = fa::Graded<fa::ModalityKind::Absolute, fl::BoolLattice<pred_positive>, int>;
 using TaggedInt = fa::Graded<fa::ModalityKind::RelativeMonad, fl::TrustLattice<source_internal>, int>;
@@ -118,7 +126,7 @@ void bool_lattice_runs_at_run_time() {
     [[maybe_unused]] L::element_type m = L::meet(a, b);
 
     OneByteValue v{42};
-    RefinedPositive<OneByteValue> initial{v, L::bottom()};
+    RefinedPositive<OneByteValue> initial{test_authority::key(), v, L::bottom()};
     auto widened = initial.weaken(L::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(L::top());
@@ -141,13 +149,13 @@ void trust_lattice_runs_at_run_time() {
     [[maybe_unused]] L::element_type m = L::meet(a, b);
 
     OneByteValue v{42};
-    TaggedSanitized<OneByteValue> initial{v, L::bottom()};
+    TaggedSanitized<OneByteValue> initial{test_authority::key(), v, L::bottom()};
     auto widened = initial.weaken(L::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(L::top());
 
     // inject() is reachable only because the modality is RelativeMonad.
-    auto injected = TaggedSanitized<OneByteValue>::inject(OneByteValue{99}, L::bottom());
+    auto injected = TaggedSanitized<OneByteValue>::inject(test_authority::key(), OneByteValue{99}, L::bottom());
 
     [[maybe_unused]] auto g = composed.grade();
     [[maybe_unused]] auto v1 = composed.peek().c;
@@ -167,7 +175,7 @@ void conf_lattice_runs_at_run_time() {
     [[maybe_unused]] Conf top = ConfLattice::top();
 
     OneByteValue v{42};
-    SecretGraded<OneByteValue> initial{v, conf::SecretTier::bottom()};
+    SecretGraded<OneByteValue> initial{test_authority::key(), v, conf::SecretTier::bottom()};
     auto widened = initial.weaken(conf::SecretTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(conf::SecretTier::top());
@@ -198,7 +206,7 @@ void qtt_semiring_runs_at_run_time() {
     [[maybe_unused]] QttGrade on = QttSemiring::one();
 
     OneByteValue v{42};
-    LinearGraded<OneByteValue> initial{v, qtt::LinearGrade::bottom()};
+    LinearGraded<OneByteValue> initial{test_authority::key(), v, qtt::LinearGrade::bottom()};
     auto widened = initial.weaken(qtt::LinearGrade::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(qtt::LinearGrade::top());
@@ -228,7 +236,7 @@ void monotone_lattice_runs_at_run_time() {
     [[maybe_unused]] std::uint64_t gj = MonU64Greater::join(a, b);
 
     // The single-argument constructor sets value and grade together.
-    // The two-argument form asserts that its arguments are already
+    // The keyed form asserts that its arguments are already
     // lattice-equivalent, which this collapsed shape always makes true.
     MonotonicGraded<std::uint64_t> initial{a};
     auto widened = initial.weaken(a);
@@ -274,7 +282,7 @@ void seq_prefix_lattice_runs_at_run_time() {
     [[maybe_unused]] LatA::element_type top = LatA::top();
 
     OneByteValue v{42};
-    AppendOnlyGraded<OneByteValue> initial{v, LatA::bottom()};
+    AppendOnlyGraded<OneByteValue> initial{test_authority::key(), v, LatA::bottom()};
     auto widened = initial.weaken(a);
     auto widened2 = widened.weaken(b);
     auto composed = initial.compose(widened2);
@@ -307,7 +315,7 @@ void staleness_semiring_runs_at_run_time() {
     [[maybe_unused]] auto at_n = staleness::at(n_a);
 
     OneByteValue v{42};
-    StaleGraded<OneByteValue> initial{v, StalenessSemiring::bottom()};
+    StaleGraded<OneByteValue> initial{test_authority::key(), v, StalenessSemiring::bottom()};
     auto widened = initial.weaken(a);
     auto widened2 = widened.weaken(b);
     auto composed = initial.compose(widened2);
@@ -351,7 +359,7 @@ void fractional_lattice_runs_at_run_time() {
     // ascending sequence.  Requesting a smaller grade violates the
     // precondition.
     OneByteValue v{42};
-    SharedPermissionGraded<OneByteValue> initial{v, FractionalLattice::bottom()};
+    SharedPermissionGraded<OneByteValue> initial{test_authority::key(), v, FractionalLattice::bottom()};
     auto widened = initial.weaken(Rational{3, 4});
     auto widened_max = widened.weaken(FractionalLattice::top());
     auto composed = initial.compose(widened_max);
@@ -382,11 +390,12 @@ int main() {
 
     // Each regime built at runtime with non-constant operands.
     int value = 7;  // deliberately not constexpr
-    RefinedInt refined{value, fl::BoolLattice<pred_positive>::bottom()};
+    RefinedInt refined{test_authority::key(), value, fl::BoolLattice<pred_positive>::bottom()};
     MonotonicU64 monotonic{static_cast<std::uint64_t>(value)};
     AppendOnlyLog log = AppendOnlyLog::at_bottom();
-    StaleU64 stale{static_cast<std::uint64_t>(value), fl::staleness::at(static_cast<std::uint64_t>(value))};
-    SharedU64 shared{static_cast<std::uint64_t>(value), fl::Rational{1, 2}};
+    StaleU64 stale{test_authority::key(), static_cast<std::uint64_t>(value),
+                   fl::staleness::at(static_cast<std::uint64_t>(value))};
+    SharedU64 shared{test_authority::key(), static_cast<std::uint64_t>(value), fl::Rational{1, 2}};
     if (refined.peek() != value) return 1;
     if (monotonic.grade() != static_cast<std::uint64_t>(value)) return 2;
     if (log.grade().length != 0) return 3;

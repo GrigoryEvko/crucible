@@ -10,7 +10,14 @@ namespace {
 using Grade = fixy::EpochVersioned<int>::graded_type;
 using Version = fixy::EpochVersioned<int>::version_t;
 
-constexpr Grade stale{1, Version{fixy::EpochLattice::bottom(), fixy::GenerationLattice::bottom()}};
+// The fixture is the authority for the substrate it builds.
+struct Authority {
+    [[nodiscard]] static constexpr ::foundation::algebra::grade_key<Authority> key() noexcept {
+        return ::foundation::algebra::grade_key<Authority>{};
+    }
+};
+
+constexpr Grade stale{Authority::key(), 1, Version{fixy::EpochLattice::bottom(), fixy::GenerationLattice::bottom()}};
 static_assert(stale.weaken(Version{fixy::EpochLattice::successor(fixy::EpochLattice::bottom()),
                                    fixy::GenerationLattice::successor(fixy::GenerationLattice::bottom())})
                   .peek() == 1);

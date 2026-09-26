@@ -437,6 +437,14 @@ void attack_equal_versions_compare_payloads() {
 
 // ── The substrate under each wrapper ────────────────────────────────
 
+// The authority for the substrates built below.  It hands its key out,
+// which an authority in production code never does.
+struct substrate_authority {
+    [[nodiscard]] static constexpr ::foundation::algebra::grade_key<substrate_authority> key() noexcept {
+        return ::foundation::algebra::grade_key<substrate_authority>{};
+    }
+};
+
 void attack_the_substrate() {
     std::uint64_t const s = g_seed;
     using VersionGrade = EpochVersioned<int>::graded_type;
@@ -444,18 +452,19 @@ void attack_the_substrate() {
     auto const version = [](std::uint64_t epoch, std::uint64_t generation) {
         return V{count_at<EpochLattice>(epoch), count_at<GenerationLattice>(generation)};
     };
-    VersionGrade const current{1, version(s + 4, s + 4)};
+    VersionGrade const current{substrate_authority::key(), 1, version(s + 4, s + 4)};
     // Weakening a version moves it older, which is the weaker claim.
     VersionGrade const aged = current.weaken(version(s, s));
     expect(aged.grade() == version(s, s), "the version substrate weakens toward older");
     // Composing two versions reports the older of the two.
-    VersionGrade const other{2, version(s + 9, s + 1)};
+    VersionGrade const other{substrate_authority::key(), 2, version(s + 9, s + 1)};
     expect(current.compose(other).grade() == version(s + 4, s + 1),
            "the version substrate composes to the older counter on each axis");
 
     using BudgetGrade = Budgeted<int>::graded_type;
     using Budget = fixy::BudgetLattice::element_type;
-    BudgetGrade const measured{1, Budget{count_at<fixy::BitsBudgetLattice>(s), count_at<fixy::PeakBytesLattice>(s)}};
+    BudgetGrade const measured{substrate_authority::key(), 1,
+                               Budget{count_at<fixy::BitsBudgetLattice>(s), count_at<fixy::PeakBytesLattice>(s)}};
     BudgetGrade const looser =
         measured.weaken(Budget{count_at<fixy::BitsBudgetLattice>(s + 1), count_at<fixy::PeakBytesLattice>(s)});
     expect(looser.grade().first.raw() == s + 1, "the budget substrate weakens toward more use");

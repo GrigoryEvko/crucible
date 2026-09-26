@@ -21,6 +21,18 @@
 // promise less.  A lattice that states the opposite orientation is
 // refused at the template head (ClaimOrientation.h).  A version counter
 // in its numeric order is that lattice, and its dual is accepted.
+//
+// A grade is a claim about the value, and a claim needs a key.  Every
+// door that pairs a value with a grade that Graded does not derive takes
+// a grade_key<Authority>: the two-argument constructor, inject, and the
+// mutable reference from peek_mut.  Only the members of Authority can
+// build that key, so each place that asserts a grade names its
+// authority, and a search for grade_key< lists every one.  A lattice
+// whose grade says nothing about the bytes (ClaimSubject::slot in
+// ClaimOrientation.h) opens peek_mut, the default constructor and
+// at_bottom() without a key.  Where the grade is the value, or is
+// derived from it, construction from the value alone cannot pair it with
+// a false grade and takes no key.
 
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
@@ -28,7 +40,8 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/reflect/Instance.h>
 
-#include <contracts>
+#include <concepts>
+#include <cstdint>
 #include <meta>
 #include <string_view>
 #include <type_traits>
@@ -36,10 +49,90 @@
 
 namespace foundation::algebra {
 
+// The passkey that pairs a value with a grade.
+//
+// The constructor is private and Authority is the one friend, so a key
+// exists only inside a member of Authority.  Authority is the audit
+// identity: a wrapper passes grade_key<Wrapper>, a door passes the class
+// that holds the door.  The doors take the key by reference, so nothing
+// outside Authority copies one either.
+//
+// Both constructors are user-provided.  A key whose copy is trivial is
+// trivially copyable, and std::bit_cast builds one from any byte.  A key
+// with a trivial constructor is an implicit-lifetime type, and a
+// lifetime started over a buffer builds one.  Neither route names a
+// constructor, so neither sees the access check.
+template <typename Authority>
+    requires std::is_class_v<Authority>
+class [[nodiscard]] grade_key {
+    friend Authority;
+    constexpr grade_key() noexcept {}
+    constexpr grade_key(grade_key const&) noexcept {}
+
+public:
+    grade_key& operator=(grade_key const&) = delete("a grade key lives for one expression.  Build a new one in the "
+                                                   "authority.");
+};
+
+template <typename L, typename T>
+concept LatticeDerivesGrade = requires(T const& v) {
+    { L::grade_of(v) } -> std::same_as<typename L::element_type>;
+};
+
+namespace detail::graded {
+
+enum class Regime : std::uint8_t {
+    stored,
+    element,
+    derived,
+};
+
+template <typename L, typename T>
+[[nodiscard]] consteval Regime regime_of() noexcept {
+    if constexpr (std::is_same_v<LatticeElement<L>, T>) {
+        return Regime::element;
+    } else if constexpr (LatticeDerivesGrade<L, T>) {
+        return Regime::derived;
+    } else {
+        return Regime::stored;
+    }
+}
+
+// The grade member of a regime whose grade is not stored.
+struct no_stored_grade {};
+
+// A carrier can hold values that no lattice element names: an enum cast
+// from an integer, a byte above the top of a chain.  Every later leq
+// would then compare against a grade outside the order.
+template <typename L>
+[[nodiscard]] constexpr bool inside_order(LatticeElement<L> const& grade) noexcept {
+    bool inside = true;
+    if constexpr (BoundedBelowLattice<L>) inside = inside && L::leq(L::bottom(), grade);
+    if constexpr (BoundedAboveLattice<L>) inside = inside && L::leq(grade, L::top());
+    return inside;
+}
+
+// A grade handed in beside a value whose grade is the value or is
+// derived from it: it must name that grade, inside the order.
+template <typename L>
+[[nodiscard]] constexpr bool witnessed(LatticeElement<L> const& actual, LatticeElement<L> const& claimed) noexcept {
+    return inside_order<L>(actual) && equivalent<L>(actual, claimed);
+}
+
+template <typename Self, typename T>
+using forwarded_t = decltype(std::forward_like<Self>(std::declval<T&>()));
+
+}  // namespace detail::graded
+
 template <ModalityKind M, GradableLattice L, typename T>
 class [[nodiscard]] Graded {
     static_assert(IsModality<M>, "Graded<M, L, T>: M must be one of Comonad / RelativeMonad / "
                                  "Absolute / Relative / Stepping.");
+
+    static constexpr detail::graded::Regime regime_ = detail::graded::regime_of<L, T>();
+    static constexpr bool stores_grade_ = regime_ == detail::graded::Regime::stored;
+    static constexpr bool grade_is_value_ = regime_ == detail::graded::Regime::element;
+    static constexpr bool grade_is_derived_ = regime_ == detail::graded::Regime::derived;
 
 public:
     static constexpr ModalityKind modality = M;
@@ -50,8 +143,53 @@ public:
     using grade_type = LatticeElement<L>;
 
 private:
-    [[no_unique_address]] T inner_{};
-    [[no_unique_address]] grade_type grade_{};
+    using stored_grade_type = std::conditional_t<stores_grade_, grade_type, detail::graded::no_stored_grade>;
+
+    // Writing the value in place leaves the grade where it was.  That is
+    // sound for an Absolute grade and for an empty one, and only for
+    // those: a Comonad or RelativeMonad grade over a non-empty element
+    // names the specific value, and no key reopens it.
+    static constexpr bool mutation_admitted_ = AbsoluteModality<M> || std::is_empty_v<grade_type>;
+
+    // A rebuild of this value at another grade, from an object of
+    // category Self.  Where the grade is the value, the value is not read.
+    template <typename Self>
+    static constexpr bool can_regrade_ =
+        grade_is_value_ || std::is_constructible_v<T, detail::graded::forwarded_t<Self, T>>;
+    template <typename Self>
+    static constexpr bool regrade_is_nothrow_ =
+        (grade_is_value_ || std::is_nothrow_constructible_v<T, detail::graded::forwarded_t<Self, T>>)
+        && std::is_nothrow_copy_constructible_v<grade_type> && std::is_nothrow_move_constructible_v<grade_type>;
+
+    static constexpr bool grade_is_nothrow_ = [] {
+        if constexpr (stores_grade_) return std::is_nothrow_copy_constructible_v<grade_type>;
+        else if constexpr (grade_is_value_) return std::is_nothrow_copy_constructible_v<T>;
+        else return noexcept(L::grade_of(std::declval<T const&>()));
+    }();
+
+    [[no_unique_address]] T value_{};
+    [[no_unique_address]] stored_grade_type grade_{};
+
+    [[nodiscard]] static constexpr stored_grade_type stored_(grade_type& grade) noexcept(
+        std::is_nothrow_move_constructible_v<grade_type>) {
+        if constexpr (stores_grade_) {
+            return std::move(grade);
+        } else {
+            return stored_grade_type{};
+        }
+    }
+
+    // weaken and compose each rebuild the value at a higher grade.  Self
+    // can be a class derived from Graded, so the value is named through
+    // Graded, which is the one class that can reach it.
+    template <typename Self>
+    [[nodiscard]] static constexpr Graded regrade_(Self&& self, grade_type grade) noexcept(regrade_is_nothrow_<Self>) {
+        if constexpr (grade_is_value_) {
+            return Graded{std::move(grade)};
+        } else {
+            return Graded{grade_key<Graded>{}, std::forward_like<Self>(self.Graded::value_), std::move(grade)};
+        }
+    }
 
 public:
     [[nodiscard]] static consteval std::string_view modality_name() noexcept {
@@ -72,109 +210,127 @@ public:
         return std::meta::display_string_of(^^T);
     }
 
-    constexpr Graded() = default;
+    // A default value is paired with a stored grade that nothing
+    // witnesses, so the stored regime builds one only for a grade that
+    // any bytes satisfy.  The other two regimes derive the grade.
+    constexpr Graded()
+        requires(!stores_grade_ || GradeIgnoresBytes<L>)
+    = default;
     constexpr Graded(const Graded&) = default;
     constexpr Graded(Graded&&) = default;
     constexpr Graded& operator=(const Graded&) = default;
     constexpr Graded& operator=(Graded&&) = default;
     ~Graded() = default;
 
-    // The stored grade is the only regime where a caller hands in a
-    // grade that nothing else witnesses.  A carrier can hold values that
-    // no lattice element names — an enum cast from an integer, a byte
-    // above the top of a chain — and every later leq would then compare
-    // against a grade that is outside the order.  This is the one place
-    // a stored grade is checked; the other two regimes derive theirs.
-    // It is an in-body contract_assert for the reason given on the
-    // element-is-the-value specialization below.
-    constexpr Graded(T value, grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
-                                                         && std::is_nothrow_move_constructible_v<grade_type>)
-        : inner_{std::move(value)}, grade_{std::move(grade)} {
-        if constexpr (BoundedLattice<L>) {
-            contract_assert(L::leq(L::bottom(), grade_) && L::leq(grade_, L::top()));
-        } else if constexpr (BoundedBelowLattice<L>) {
-            contract_assert(L::leq(L::bottom(), grade_));
-        } else if constexpr (BoundedAboveLattice<L>) {
-            contract_assert(L::leq(grade_, L::top()));
+    // The door that pairs a value with a grade.  In the stored regime the
+    // grade is the claim, and it is checked against the order.  In the
+    // other two it is a witness: it must name the grade that the value
+    // already has.
+    //
+    // The checks are CRUCIBLE_PRE, which stops a constant evaluation
+    // under every evaluation semantic and checks at run time under
+    // enforce and observe.  A pre() clause would not do: its predicate
+    // reads a member, and GCC skips a pre() clause that reads a member
+    // during the constant evaluation of a foldable body.
+    template <typename Authority>
+    constexpr Graded(grade_key<Authority> const&, T value,
+                     grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
+                                                && std::is_nothrow_move_constructible_v<grade_type>)
+        : value_{std::move(value)}, grade_{stored_(grade)} {
+        if constexpr (stores_grade_) {
+            CRUCIBLE_PRE(detail::graded::inside_order<L>(grade_));
+        } else {
+            CRUCIBLE_PRE(detail::graded::witnessed<L>(this->grade(), grade));
         }
     }
 
-    // at_bottom() exists on all three specializations and means the
-    // same thing on each: the bottom-graded element.
-    //
-    // at_bottom(T) exists only here.  It means "hold this value, graded
-    // at bottom", which needs a grade the caller can set without
-    // touching the value — the arrangement this specialization has and
-    // the other two do not.  Where the grade is the value, or is
-    // derived from it, honouring the request would mean discarding the
-    // argument or inverting grade_of, so the overload is absent there
-    // and the two-arg constructor covers the case.  That constructor
-    // takes the grade as a witness and checks it, which is exactly
-    // "assert this value is already at bottom" when the grade passed is
-    // L::bottom().
-    //
-    // The overload used to exist on all three, forcing the grade here
-    // and asserting it there.  One call then had two behaviours chosen
-    // by a storage regime the public API hides, so a value that this
-    // specialization accepted silently made the other two abort.
-    //
-    // No contract_assert guards the result.  The grade is set to
-    // L::bottom() one line above, and leq(bottom, bottom) is already
-    // consteval-checked by the Lattice concept, so a check here would
-    // be tautological — which is what it was.
-    //
-    // A post() clause on a templated class member crashes the compiler
-    // when its predicate is template-dependent.  Every postcondition in
-    // this file is therefore an in-body contract_assert, which checks
-    // the same thing at runtime.
-    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires BoundedBelowLattice<L>
-    {
-        return Graded{std::move(value), L::bottom()};
+    // Construction from the value alone, where the grade is the value or
+    // is derived from it.  Neither pairing can be false, so no key is
+    // asked.  A value that is its own grade is still checked against the
+    // order.
+    constexpr explicit Graded(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires(!stores_grade_)
+        : value_{std::move(value)} {
+        if constexpr (grade_is_value_) {
+            CRUCIBLE_PRE(detail::graded::inside_order<L>(value_));
+        }
     }
 
-    [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_default_constructible_v<T>
-                                                               && std::is_nothrow_move_constructible_v<T>)
-        requires BoundedBelowLattice<L> && std::default_initializable<T>
+    // The bottom-graded default value.  In the derived regime the check
+    // is not tautological: grade_of reads the value, so a T whose default
+    // state grades above bottom fires it.
+    //
+    // There is no at_bottom(T).  In the stored regime it would be the
+    // strongest claim about a value the caller chose, which is the keyed
+    // constructor with L::bottom().  In the other two it could only
+    // discard the argument or invert grade_of.
+    [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_move_constructible_v<T>
+                                                               && (grade_is_value_
+                                                                   || std::is_nothrow_default_constructible_v<T>))
+        requires BoundedBelowLattice<L> && (grade_is_value_ || std::default_initializable<T>)
+              && (!stores_grade_ || GradeIgnoresBytes<L>)
     {
-        return Graded{T{}, L::bottom()};
+        if constexpr (grade_is_value_) {
+            return Graded{L::bottom()};
+        } else if constexpr (grade_is_derived_) {
+            Graded result{T{}};
+            CRUCIBLE_PRE(equivalent<L>(result.grade(), L::bottom()));
+            return result;
+        } else {
+            return Graded{grade_key<Graded>{}, T{}, L::bottom()};
+        }
     }
 
-    [[nodiscard]] constexpr T const& peek() const& noexcept { return inner_; }
+    // grade() recomputes on every call in the derived regime.  A caller
+    // that needs it more than once should hold the result, because the
+    // cost of grade_of is the lattice's to choose.
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
     [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
-        return std::move(inner_);
+        return std::move(value_);
     }
-    [[nodiscard]] constexpr grade_type grade() const noexcept(std::is_nothrow_copy_constructible_v<grade_type>) {
-        return grade_;
+    [[nodiscard]] constexpr grade_type grade() const noexcept(grade_is_nothrow_) {
+        if constexpr (stores_grade_) {
+            return grade_;
+        } else if constexpr (grade_is_value_) {
+            return value_;
+        } else {
+            return L::grade_of(value_);
+        }
     }
 
-    // Mutation is admitted exactly when it cannot invalidate the grade.
-    // An Absolute grade is a property of the slot rather than of the
-    // bytes it holds, and an empty grade carries nothing to invalidate.
-    // A Comonad or RelativeMonad grade over a non-empty element asserts
-    // something about the specific value, so raw mutation there would
-    // silently turn the grade into a lie.
-    //
-    // Graded exposes the sound operations.  A wrapper that needs a
-    // narrower discipline hides them and offers its own.
+    // A mutable reference replaces the bytes under the grade, and the
+    // grade stays.  Only a grade that any bytes satisfy survives that, so
+    // the keyless form exists for such a grade alone.  The keyed form
+    // leaves the grade's truth to the authority that holds the key, and
+    // where the grade is derived, keeping its movement inside the lattice
+    // order is the authority's obligation too.
     [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
+        requires mutation_admitted_ && GradeIgnoresBytes<L>
     {
-        return inner_;
+        return value_;
     }
 
+    template <typename Authority>
+    [[nodiscard]] constexpr T& peek_mut(grade_key<Authority> const&) & noexcept
+        requires mutation_admitted_
+    {
+        return value_;
+    }
+
+    // Each value leaves with its own grade, so a swap keeps every pairing
+    // it was given.
     constexpr void swap(Graded& other) noexcept(std::is_nothrow_swappable_v<T>
-                                                && std::is_nothrow_swappable_v<grade_type>)
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
+                                                && std::is_nothrow_swappable_v<stored_grade_type>)
+        requires mutation_admitted_
     {
         using std::swap;
-        swap(inner_, other.inner_);
+        swap(value_, other.value_);
         swap(grade_, other.grade_);
     }
 
     friend constexpr void swap(Graded& a, Graded& b) noexcept(std::is_nothrow_swappable_v<T>
-                                                              && std::is_nothrow_swappable_v<grade_type>)
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
+                                                              && std::is_nothrow_swappable_v<stored_grade_type>)
+        requires mutation_admitted_
     {
         a.swap(b);
     }
@@ -182,353 +338,48 @@ public:
     [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>)
         requires ComonadModality<M>
     {
-        return std::move(inner_);
+        return std::move(value_);
     }
 
-    [[nodiscard]] static constexpr Graded
-    inject(T value, grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
-                                               && std::is_nothrow_copy_constructible_v<grade_type>
-                                               && std::is_nothrow_move_constructible_v<grade_type>)
+    // The unit of a relative monad: a bare value in at a chosen grade.
+    // The grade is a claim, so the unit takes the key the constructor
+    // takes.
+    template <typename Authority>
+    [[nodiscard]] static constexpr Graded inject(grade_key<Authority> const& key, T value,
+                                                 grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
+                                                                            && std::is_nothrow_move_constructible_v<
+                                                                                grade_type>)
         requires RelativeMonadModality<M>
     {
-        grade_type expected = grade;
-        Graded result{std::move(value), std::move(grade)};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
+        return Graded{key, std::move(value), std::move(grade)};
     }
 
     // Weakening moves up the lattice and never down.  That is the whole
-    // of what Graded promises, so the guard below is the promise.
+    // of what Graded promises, so the guard below is the promise.  It is
+    // an in-body CRUCIBLE_PRE for the reason the keyed constructor gives.
     //
-    // It is an in-body CRUCIBLE_PRE rather than a pre() clause for the
-    // reason the constructor of the value-is-grade specialization gives
-    // at length: a foldable body makes the compiler skip a pre() clause
-    // during constant evaluation, and the predicate here reaches a
-    // member, which is one of the shapes that go unchecked.  Every use
-    // of weaken in this tree is a constant expression, so the clause
-    // checked nothing at all.
+    // Neither operation exists where the grade is derived from the value.
+    // Both produce a value at a grade the caller names, which would need
+    // an inverse of grade_of, and none exists in general.  Where one does
+    // it belongs to the wrapper, which mutates the value and lets the
+    // derived grade follow.
     //
-    // The const& overload is gated on copy_constructible<T> so that a
-    // move-only T falls through to the && overload instead of emitting
-    // a copy-deleted error cascade.
-    [[nodiscard]] constexpr Graded
-    weaken(grade_type new_grade) const& noexcept(std::is_nothrow_copy_constructible_v<T>
-                                                 && std::is_nothrow_copy_constructible_v<grade_type>)
-        requires std::copy_constructible<T>
+    // A const or lvalue object copies its value and an rvalue moves it,
+    // so a move-only T weakens only from an rvalue.
+    template <typename Self>
+    [[nodiscard]] constexpr Graded weaken(this Self&& self, grade_type new_grade) noexcept(regrade_is_nothrow_<Self>)
+        requires(!grade_is_derived_) && can_regrade_<Self>
     {
-        CRUCIBLE_PRE(L::leq(grade_, new_grade));
-        Graded result{inner_, new_grade};
-        contract_assert(L::leq(result.grade(), new_grade) && L::leq(new_grade, result.grade()));
-        return result;
+        CRUCIBLE_PRE(L::leq(self.Graded::grade(), new_grade));
+        return regrade_(std::forward<Self>(self), std::move(new_grade));
     }
 
-    [[nodiscard]] constexpr Graded
-    weaken(grade_type new_grade) && noexcept(std::is_nothrow_move_constructible_v<T>
-                                             && std::is_nothrow_copy_constructible_v<grade_type>
-                                             && std::is_nothrow_move_constructible_v<grade_type>) {
-        CRUCIBLE_PRE(L::leq(grade_, new_grade));
-        grade_type expected = new_grade;
-        Graded result{std::move(inner_), std::move(new_grade)};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
-    }
-
-    [[nodiscard]] constexpr Graded
-    compose(Graded const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>
-                                                 && std::is_nothrow_copy_constructible_v<grade_type>)
-        requires std::copy_constructible<T>
+    template <typename Self>
+    [[nodiscard]] constexpr Graded compose(this Self&& self, Graded const& other) noexcept(regrade_is_nothrow_<Self>)
+        requires(!grade_is_derived_) && can_regrade_<Self>
     {
-        grade_type expected = L::join(grade_, other.grade_);
-        Graded result{inner_, expected};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
-    }
-
-    [[nodiscard]] constexpr Graded compose(Graded const& other) && noexcept(
-        std::is_nothrow_move_constructible_v<T> && std::is_nothrow_copy_constructible_v<grade_type>) {
-        grade_type expected = L::join(grade_, other.grade_);
-        Graded result{std::move(inner_), expected};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
-    }
-};
-
-// When L::element_type is exactly T, the value and the grade are the
-// same thing.  The primary template would store them as two members,
-// paying twice sizeof(T) and letting the two copies drift apart under
-// mutation.  This specialization keeps one member, so the drift is
-// structurally impossible.
-//
-// The member set matches the primary exactly.  A caller cannot tell
-// which specialization it got.
-
-template <ModalityKind M, GradableLattice L, typename T>
-    requires std::is_same_v<typename L::element_type, T>
-class [[nodiscard]] Graded<M, L, T> {
-public:
-    static constexpr ModalityKind modality = M;
-
-    using modality_kind_type = ModalityKind;
-    using lattice_type = L;
-    using value_type = T;
-    using grade_type = LatticeElement<L>;
-
-private:
-    T value_{};
-
-public:
-    [[nodiscard]] static consteval std::string_view modality_name() noexcept {
-        return ::foundation::algebra::modality_name(M);
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return ::foundation::algebra::lattice_name<L>();
-    }
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return std::meta::display_string_of(^^T);
-    }
-
-    constexpr Graded() = default;
-    constexpr Graded(const Graded&) = default;
-    constexpr Graded(Graded&&) = default;
-    constexpr Graded& operator=(const Graded&) = default;
-    constexpr Graded& operator=(Graded&&) = default;
-    ~Graded() = default;
-
-    // The grade argument is a witness that is checked and then thrown
-    // away, so this guard is the only barrier against a forged grade
-    // constructing a value it does not describe.  It is an in-body
-    // contract_assert rather than a pre() clause because a foldable,
-    // this-free pre() is skipped during constant evaluation and
-    // vanishes entirely under the ignore evaluation semantic.  A
-    // failing contract_assert makes a constant evaluation non-constant,
-    // so it cannot be skipped either way.
-    constexpr Graded(T value, grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(value)} {
-        contract_assert(L::leq(value_, grade) && L::leq(grade, value_));
-        (void)grade;
-    }
-
-    constexpr explicit Graded(T value_or_grade) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(value_or_grade)} {}
-
-    // Here the value is the grade, so there is no at_bottom(T): a
-    // request to hold an arbitrary value at bottom could only be
-    // honoured by discarding the argument.  A caller asserting that a
-    // value is already at bottom writes Graded{value, L::bottom()},
-    // whose witness check is that assertion.
-    [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires BoundedBelowLattice<L>
-    {
-        return Graded{L::bottom()};
-    }
-
-    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
-    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
-        return std::move(value_);
-    }
-    [[nodiscard]] constexpr grade_type grade() const noexcept(std::is_nothrow_copy_constructible_v<T>) {
-        return value_;
-    }
-
-    [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
-    {
-        return value_;
-    }
-
-    constexpr void swap(Graded& other) noexcept(std::is_nothrow_swappable_v<T>)
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
-    {
-        using std::swap;
-        swap(value_, other.value_);
-    }
-
-    friend constexpr void swap(Graded& a, Graded& b) noexcept(std::is_nothrow_swappable_v<T>)
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
-    {
-        a.swap(b);
-    }
-
-    [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires ComonadModality<M>
-    {
-        return std::move(value_);
-    }
-
-    [[nodiscard]] static constexpr Graded inject(T value,
-                                                 grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
-                                                                            && std::is_nothrow_copy_constructible_v<T>)
-        requires RelativeMonadModality<M>
-    {
-        T expected = grade;
-        Graded result{std::move(value)};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
-    }
-
-    // In-body CRUCIBLE_PRE rather than a pre() clause, for the reason
-    // the constructor above gives.
-    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
-        requires std::copy_constructible<T>
-    {
-        CRUCIBLE_PRE(L::leq(value_, new_grade));
-        T expected = new_grade;
-        Graded result{std::move(new_grade)};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
-    }
-
-    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) && noexcept(
-        std::is_nothrow_move_constructible_v<T> && std::is_nothrow_copy_constructible_v<T>) {
-        CRUCIBLE_PRE(L::leq(value_, new_grade));
-        T expected = new_grade;
-        Graded result{std::move(new_grade)};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
-    }
-
-    [[nodiscard]] constexpr Graded compose(Graded const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
-        requires std::copy_constructible<T>
-    {
-        T expected = L::join(value_, other.value_);
-        Graded result{expected};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
-    }
-
-    [[nodiscard]] constexpr Graded compose(Graded const& other) && noexcept(std::is_nothrow_copy_constructible_v<T>)
-        requires std::copy_constructible<T>
-    {
-        T expected = L::join(value_, other.value_);
-        Graded result{expected};
-        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
-        return result;
-    }
-};
-
-template <typename L, typename T>
-concept LatticeDerivesGrade = requires(T const& v) {
-    { L::grade_of(v) } -> std::same_as<typename L::element_type>;
-};
-
-// The specialization below has no weaken and no compose.  Both must
-// produce a value at a grade the caller names, and the grade is a
-// function of the value, so they would need an inverse of grade_of.
-// No such inverse exists in general.  Where one does exist it belongs
-// to the wrapper, which mutates the value and lets the derived grade
-// follow.  Read-side lattice operations stay available through L.
-
-template <ModalityKind M, GradableLattice L, typename T>
-    requires LatticeDerivesGrade<L, T> && (!std::is_same_v<typename L::element_type, T>)
-class [[nodiscard]] Graded<M, L, T> {
-public:
-    static constexpr ModalityKind modality = M;
-
-    using modality_kind_type = ModalityKind;
-    using lattice_type = L;
-    using value_type = T;
-    using grade_type = LatticeElement<L>;
-
-private:
-    T value_{};
-
-public:
-    [[nodiscard]] static consteval std::string_view modality_name() noexcept {
-        return ::foundation::algebra::modality_name(M);
-    }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return ::foundation::algebra::lattice_name<L>();
-    }
-    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
-        return std::meta::display_string_of(^^T);
-    }
-
-    constexpr Graded() = default;
-    constexpr Graded(const Graded&) = default;
-    constexpr Graded(Graded&&) = default;
-    constexpr Graded& operator=(const Graded&) = default;
-    constexpr Graded& operator=(Graded&&) = default;
-    ~Graded() = default;
-
-    // The grade argument is a witness that is checked and then thrown
-    // away, so this guard is the only barrier against a forged grade
-    // constructing a value it does not describe.  It is an in-body
-    // contract_assert rather than a pre() clause for the reason given
-    // on the preceding specialization.
-    constexpr Graded(T value, grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(value)} {
-        contract_assert(L::leq(L::grade_of(value_), grade) && L::leq(grade, L::grade_of(value_)));
-        (void)grade;
-    }
-
-    constexpr explicit Graded(T value) noexcept(std::is_nothrow_move_constructible_v<T>) : value_{std::move(value)} {}
-
-    // This form relies on the default state of T deriving to bottom,
-    // which holds for a container whose grade is its size.  The check
-    // is not tautological here: grade_of reads the value, so a T whose
-    // default state grades above bottom fires it.
-    //
-    // There is no at_bottom(T).  The grade follows the value through
-    // grade_of, so holding an arbitrary value at bottom would need an
-    // inverse of grade_of, and none exists in general.  A caller
-    // asserting that a value already derives bottom writes
-    // Graded{value, L::bottom()}, whose witness check is that
-    // assertion.
-    [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_default_constructible_v<T>
-                                                               && std::is_nothrow_move_constructible_v<T>)
-        requires BoundedBelowLattice<L> && std::default_initializable<T>
-    {
-        Graded result{T{}};
-        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
-        return result;
-    }
-
-    // grade() recomputes on every call.  A caller that needs it more
-    // than once should hold the result, because the cost of grade_of
-    // is the lattice's to choose.
-    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
-    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
-        return std::move(value_);
-    }
-    [[nodiscard]] constexpr grade_type grade() const noexcept(noexcept(L::grade_of(std::declval<T const&>()))) {
-        return L::grade_of(value_);
-    }
-
-    // Mutation moves the derived grade with it.  Keeping that movement
-    // inside the lattice order is the wrapper's obligation, not this
-    // substrate's.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
-    {
-        return value_;
-    }
-
-    constexpr void swap(Graded& other) noexcept(std::is_nothrow_swappable_v<T>)
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
-    {
-        using std::swap;
-        swap(value_, other.value_);
-    }
-
-    friend constexpr void swap(Graded& a, Graded& b) noexcept(std::is_nothrow_swappable_v<T>)
-        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
-    {
-        a.swap(b);
-    }
-
-    [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires ComonadModality<M>
-    {
-        return std::move(value_);
-    }
-
-    [[nodiscard]] static constexpr Graded inject(T value,
-                                                 grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires RelativeMonadModality<M>
-    {
-        Graded result{std::move(value)};
-        contract_assert(L::leq(result.grade(), grade) && L::leq(grade, result.grade()));
-        return result;
+        grade_type joined = L::join(self.Graded::grade(), other.grade());
+        return regrade_(std::forward<Self>(self), std::move(joined));
     }
 };
 
@@ -565,6 +416,23 @@ namespace detail::graded_self_test {
 
 using ::foundation::algebra::detail::lattice_self_test::TrivialBoolLattice;
 
+// The authority for the cells below.  It hands its key out, which an
+// authority in production code never does.
+struct self_test_authority {
+    [[nodiscard]] static constexpr grade_key<self_test_authority> key() noexcept {
+        return grade_key<self_test_authority>{};
+    }
+};
+
+// A class that is not an authority for anything.
+struct stranger {};
+
+static_assert(!std::is_default_constructible_v<grade_key<stranger>>, "only the authority builds its key");
+static_assert(!std::is_copy_constructible_v<grade_key<self_test_authority>>);
+static_assert(!std::is_trivially_copyable_v<grade_key<self_test_authority>>, "std::bit_cast must not build a key");
+static_assert(!std::is_implicit_lifetime_v<grade_key<self_test_authority>>,
+              "a lifetime started over a buffer must not build a key");
+
 // A lattice declares its operations constexpr rather than consteval.
 // Graded calls leq from a contract predicate, which runs with
 // non-constant arguments under the enforce semantic.
@@ -581,10 +449,18 @@ static_assert(Lattice<TrivialEmptyLattice>);
 static_assert(BoundedLattice<TrivialEmptyLattice>);
 static_assert(std::is_empty_v<TrivialEmptyLattice::element_type>);
 
+// The same two-point order, read as a claim about the slot.  It is the
+// lattice under which Graded opens its keyless doors.
+struct TrivialSlotLattice : TrivialBoolLattice {
+    static constexpr ClaimSubject claim_subject = ClaimSubject::slot;
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialSlot"; }
+};
+static_assert(BoundedLattice<TrivialSlotLattice> && GradeIgnoresBytes<TrivialSlotLattice>);
+static_assert(!GradeIgnoresBytes<TrivialBoolLattice>);
+
 // A chain whose carrier can hold values outside the order.  The bounds
-// check in the primary's two-argument constructor exists for exactly
-// this shape: 9 is a perfectly good unsigned char and no element of
-// the chain.
+// check in the keyed constructor exists for exactly this shape: 9 is a
+// perfectly good unsigned char and no element of the chain.
 struct TrivialChainLattice {
     using element_type = unsigned char;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
@@ -609,10 +485,13 @@ using GRelMonad = Graded<ModalityKind::RelativeMonad, TrivialBoolLattice, EmptyV
 using GAbsolute = Graded<ModalityKind::Absolute, TrivialBoolLattice, EmptyValue>;
 using GRelative = Graded<ModalityKind::Relative, TrivialBoolLattice, EmptyValue>;
 
-static_assert(std::is_default_constructible_v<GComonad>);
-static_assert(std::is_default_constructible_v<GRelMonad>);
-static_assert(std::is_default_constructible_v<GAbsolute>);
-static_assert(std::is_default_constructible_v<GRelative>);
+// A stored grade over bytes is a claim, and a default value would make
+// it with no key.
+static_assert(!std::is_default_constructible_v<GComonad>);
+static_assert(!std::is_default_constructible_v<GRelMonad>);
+static_assert(!std::is_default_constructible_v<GAbsolute>);
+static_assert(!std::is_default_constructible_v<GRelative>);
+static_assert(!std::is_constructible_v<GAbsolute, EmptyValue, bool>, "the grade needs the key");
 
 static_assert(std::is_same_v<GAbsolute::value_type, EmptyValue>);
 static_assert(std::is_same_v<GAbsolute::lattice_type, TrivialBoolLattice>);
@@ -639,16 +518,12 @@ static_assert(sizeof(GEmptyGrade_Empty) == 1);
 static_assert(sizeof(GEmptyGrade_OneByte) == sizeof(OneByteValue));
 static_assert(sizeof(GEmptyGrade_EightB) == sizeof(EightByteValue));
 
-constexpr GOneByte g_at_top{OneByteValue{}, true};
+constexpr GOneByte g_at_top{self_test_authority::key(), OneByteValue{}, true};
 static_assert(g_at_top.grade() == true);
 static_assert(g_at_top.peek().c == 0);
 
-constexpr GOneByte g_bot = GOneByte::at_bottom(OneByteValue{});
+constexpr GOneByte g_bot{self_test_authority::key(), OneByteValue{}, TrivialBoolLattice::bottom()};
 static_assert(g_bot.grade() == false);
-
-constexpr GOneByte g_bot_noarg = GOneByte::at_bottom();
-static_assert(g_bot_noarg.grade() == false);
-static_assert(g_bot_noarg.peek().c == 0);
 
 constexpr GOneByte g_weakened = g_bot.weaken(true);
 static_assert(g_weakened.grade() == true);
@@ -656,14 +531,31 @@ static_assert(g_weakened.grade() == true);
 constexpr GOneByte g_composed = g_bot.compose(g_at_top);
 static_assert(g_composed.grade() == true);
 
+// Under a grade that any bytes satisfy, the default value and the
+// bottom-graded default are built without a key.
+using GSlotOneByte = Graded<ModalityKind::Absolute, TrivialSlotLattice, OneByteValue>;
+static_assert(std::is_default_constructible_v<GSlotOneByte>);
+constexpr GSlotOneByte g_slot_bot = GSlotOneByte::at_bottom();
+static_assert(g_slot_bot.grade() == false);
+static_assert(g_slot_bot.peek().c == 0);
+
 // A stored grade inside the order constructs at compile time; one
-// outside it fails the constructor's contract_assert and is not a
-// constant expression.  The negative direction is
+// outside it fails the constructor's check and is not a constant
+// expression.  The negative direction is
 // test/foundation/neg/neg_graded_stored_grade_outside_the_order.cpp.
 using GChainOneByte = Graded<ModalityKind::Absolute, TrivialChainLattice, OneByteValue>;
-constexpr GChainOneByte g_chain_in_order{OneByteValue{}, static_cast<unsigned char>(2)};
+constexpr GChainOneByte g_chain_in_order{self_test_authority::key(), OneByteValue{}, static_cast<unsigned char>(2)};
 static_assert(g_chain_in_order.grade() == 2);
 static_assert(g_chain_in_order.weaken(static_cast<unsigned char>(3)).grade() == 3);
+
+// The same chain as its own grade.  The value is checked against the
+// order as the stored grade is; the negative direction is
+// test/foundation/neg/neg_graded_element_grade_outside_the_order.cpp.
+using GChainElement = Graded<ModalityKind::Absolute, TrivialChainLattice, unsigned char>;
+constexpr GChainElement g_chain_element{static_cast<unsigned char>(2)};
+static_assert(g_chain_element.grade() == 2);
+static_assert(g_chain_element.weaken(static_cast<unsigned char>(3)).grade() == 3);
+static_assert(g_chain_element.compose(GChainElement{static_cast<unsigned char>(1)}).grade() == 2);
 
 // The reachability tests go through named concepts.  An inline
 // requires-expression against a member-function constraint is a hard
@@ -671,7 +563,10 @@ static_assert(g_chain_in_order.weaken(static_cast<unsigned char>(3)).grade() == 
 template <typename G>
 concept CanExtract = requires(G g) { std::move(g).extract(); };
 template <typename G>
-concept CanInject = requires { G::inject(typename G::value_type{}, typename G::grade_type{}); };
+concept CanInject =
+    requires { G::inject(self_test_authority::key(), typename G::value_type{}, typename G::grade_type{}); };
+template <typename G>
+concept CanInjectWithoutKey = requires { G::inject(typename G::value_type{}, typename G::grade_type{}); };
 
 static_assert(CanExtract<GComonad>);
 static_assert(!CanExtract<GAbsolute>);
@@ -682,38 +577,46 @@ static_assert(CanInject<GRelMonad>);
 static_assert(!CanInject<GComonad>);
 static_assert(!CanInject<GAbsolute>);
 static_assert(!CanInject<GRelative>);
+static_assert(!CanInjectWithoutKey<GRelMonad>);
 
-// at_bottom() must be reachable on all three specializations, subject
-// only to each one's intrinsic requirement: the primary and the
-// derived-grade form need a default-initializable T.
-//
-// at_bottom(T) is reachable on the primary alone.  These cells are the
-// witness for that split, and they are what a reintroduction of the
-// overload on either specialization would fail.  The overload once
-// existed on all three with two different meanings — set the grade
-// here, assert it there — so the value that this concept admits below
-// is the value the other two aborted on.
+// peek_mut without a key exists for a grade that any bytes satisfy.  The
+// keyed form exists wherever a write in place is sound at all.
+template <typename G>
+concept CanPeekMut = requires(G& g) { g.peek_mut(); };
+template <typename G>
+concept CanPeekMutWithKey = requires(G& g) { g.peek_mut(self_test_authority::key()); };
+
+static_assert(!CanPeekMut<GOneByte> && CanPeekMutWithKey<GOneByte>);
+static_assert(CanPeekMut<GSlotOneByte> && CanPeekMutWithKey<GSlotOneByte>);
+static_assert(!CanPeekMut<GComonad> && !CanPeekMutWithKey<GComonad>,
+              "a Comonad grade over a non-empty element names the value, and no key reopens it");
+
+// at_bottom() exists where the grade is derived from the type or the
+// value, and in the stored regime only for a grade that any bytes
+// satisfy.  at_bottom(T) exists nowhere.
 template <typename G>
 concept CanAtBottomNoArg = requires { G::at_bottom(); };
 template <typename G>
 concept CanAtBottomValue = requires(typename G::value_type v) { G::at_bottom(std::move(v)); };
 
-// Grade stored beside the value: both forms.
-static_assert(CanAtBottomNoArg<GOneByte>);
-static_assert(CanAtBottomValue<GOneByte>);
+// Grade stored beside the value.
+static_assert(!CanAtBottomNoArg<GOneByte>);
+static_assert(CanAtBottomNoArg<GSlotOneByte>);
+static_assert(!CanAtBottomValue<GOneByte> && !CanAtBottomValue<GSlotOneByte>,
+              "at_bottom(T) in the stored regime is the strongest claim about a value the caller chose.  The "
+              "keyed constructor with L::bottom() carries it.");
 
-// Grade is the value: the no-arg form only.
+// Grade is the value.
 using GBoolElement = Graded<ModalityKind::Absolute, TrivialBoolLattice, bool>;
 static_assert(CanAtBottomNoArg<GBoolElement>);
 static_assert(!CanAtBottomValue<GBoolElement>,
               "at_bottom(T) on a lattice whose element type is T could only honour the request by "
-              "discarding the argument.  Graded{value, L::bottom()} carries the checked form.");
+              "discarding the argument.");
+static_assert(std::is_default_constructible_v<GBoolElement>);
 
-// The equivalent the absent overload points callers at.  The witness
-// check in the two-arg constructor is the assertion that this value is
-// already at bottom, and it is not tautological: passing true here
-// fails it.
-constexpr GBoolElement g_bool_bot_checked{false, TrivialBoolLattice::bottom()};
+// The keyed constructor's witness is the assertion that this value is
+// already at bottom, and it is not tautological: passing true fails it.
+constexpr GBoolElement g_bool_bot_checked{self_test_authority::key(), false, TrivialBoolLattice::bottom()};
 static_assert(g_bool_bot_checked.grade() == TrivialBoolLattice::bottom());
 
 // The derived-grade lattice is written out here rather than reused,
@@ -741,19 +644,19 @@ static_assert(LatticeDerivesGrade<MiniDerivedLattice, MiniContainer>);
 
 using GDerivedSeq = Graded<ModalityKind::Absolute, MiniDerivedLattice, MiniContainer>;
 
-// Grade derived from the value: the no-arg form only.
+// Grade derived from the value.
 static_assert(CanAtBottomNoArg<GDerivedSeq>);
 static_assert(!CanAtBottomValue<GDerivedSeq>,
-              "at_bottom(T) on a derived-grade lattice would need an inverse of grade_of.  "
-              "Graded{value, L::bottom()} carries the checked form.");
+              "at_bottom(T) on a derived-grade lattice would need an inverse of grade_of.");
+static_assert(!CanPeekMut<GDerivedSeq> && CanPeekMutWithKey<GDerivedSeq>);
 
 constexpr GDerivedSeq g_derived_bot_noarg = GDerivedSeq::at_bottom();
 static_assert(g_derived_bot_noarg.grade() == MiniDerivedLattice::bottom());
 
-// The equivalent the absent overload points callers at.  Not
-// tautological: MiniContainer{3} fails the witness check.
-constexpr GDerivedSeq g_derived_bot_checked{MiniContainer{}, MiniDerivedLattice::bottom()};
+// Not tautological: MiniContainer{3} fails the witness check.
+constexpr GDerivedSeq g_derived_bot_checked{self_test_authority::key(), MiniContainer{}, MiniDerivedLattice::bottom()};
 static_assert(g_derived_bot_checked.grade() == MiniDerivedLattice::bottom());
+static_assert(GDerivedSeq{MiniContainer{3}}.grade() == 3);
 
 template <typename T>
 using AbsoluteOverEmpty = Graded<ModalityKind::Absolute, TrivialEmptyLattice, T>;
@@ -763,11 +666,12 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, double);
 
-static_assert(std::is_trivially_default_constructible_v<int>);
-static_assert(!std::is_trivially_default_constructible_v<AbsoluteOverEmpty<int>>,
-              "The NSDMI on the members makes the implicit default constructor "
-              "non-trivial even for a trivially default constructible T, so the "
-              "layout-invariant macro must not assert parity on that trait.");
+// The regimes whose grade is not stored keep one member of bytes: the
+// empty grade member shares the value's address.
+template <typename T>
+using ChainElementOver = Graded<ModalityKind::Absolute, TrivialChainLattice, T>;
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ChainElementOver, unsigned char);
+static_assert(sizeof(GDerivedSeq) == sizeof(MiniContainer));
 
 static_assert(std::is_trivially_destructible_v<int>);
 static_assert(std::is_trivially_destructible_v<AbsoluteOverEmpty<int>>);
@@ -790,23 +694,26 @@ template <typename G>
 concept HasConstWeaken = requires(G const& g, typename G::grade_type r) { g.weaken(r); };
 template <typename G>
 concept HasRvalueWeaken = requires(G g, typename G::grade_type r) { std::move(g).weaken(r); };
+template <typename G>
+concept HasConstRvalueWeaken = requires(G const g, typename G::grade_type r) { std::move(g).weaken(r); };
 
 static_assert(HasConstWeaken<GOneByte>);
 static_assert(HasRvalueWeaken<GOneByte>);
 static_assert(!HasConstWeaken<GMoveOnly>);
 static_assert(HasRvalueWeaken<GMoveOnly>);
+static_assert(!HasConstRvalueWeaken<GMoveOnly>, "a const rvalue cannot move its value out");
 
 }  // namespace detail::graded_self_test
 
 // IsGraded is strict identity: it holds for a Graded specialization
 // itself, not for a class that wraps one or derives from one.  It is
 // the reflection query of foundation/reflect/Instance.h asked of this
-// template, so its answer is a concept's and nothing a translation unit
-// declares can change it.  It once read a variable template with a
-// partial specialization for Graded<M, L, V>, and a variable template
-// can be explicitly specialized from anywhere, so a lookalike that
-// specialized it was Graded to every gate.  The value spelling below is
-// derived from the concept and read by nothing that gates.
+// template, so a trait or a variable template specialized from another
+// translation unit changes nothing it reads.  An explicit
+// specialization of Graded itself is an instance of the template, and
+// the query admits it.  Such a specialization declares whatever members
+// it likes, a public value and no key among them, and nothing in the
+// language refuses it.
 
 template <typename T>
 concept IsGraded = ::foundation::reflect::IsInstanceOf<T, ^^Graded>;

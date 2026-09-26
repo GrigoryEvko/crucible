@@ -192,13 +192,15 @@ template <class T>
     {
         // No starter recipe carries a sentinel family, so both specs here are
         // synthesized. This one sits at the family bottom.
-        RecipeSpec<const NumericalRecipe*> bottom_spec{nullptr, {Tolerance::RELAXED, RecipeFamily::None}};
+        RecipeSpec<const NumericalRecipe*> bottom_spec =
+            ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::RELAXED, RecipeFamily::None);
         assert(::fixy::admits(bottom_spec, Tolerance::RELAXED, RecipeFamily::None));
         assert(!::fixy::admits(bottom_spec, Tolerance::RELAXED, RecipeFamily::Pairwise));
         assert(!::fixy::admits(bottom_spec, Tolerance::ULP_FP16, RecipeFamily::None));
 
         // And this one at the family top.
-        RecipeSpec<const NumericalRecipe*> top_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::Any}};
+        RecipeSpec<const NumericalRecipe*> top_spec =
+            ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::Any);
         assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
         assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::Kahan));
         assert(::fixy::admits(top_spec, Tolerance::BITEXACT, RecipeFamily::BlockStable));
@@ -219,7 +221,8 @@ template <class T>
     // spec is synthesized.
     {
         auto a = reg.by_name_spec(names::kF32Strict).value();
-        RecipeSpec<const NumericalRecipe*> synth_kahan{a.peek(), {Tolerance::ULP_FP16, RecipeFamily::Kahan}};
+        RecipeSpec<const NumericalRecipe*> synth_kahan =
+            ::fixy::mint_recipe_spec(a.peek(), Tolerance::ULP_FP16, RecipeFamily::Kahan);
 
         auto joined = a.compose(synth_kahan);
         assert(::fixy::tolerance_of(joined) == Tolerance::BITEXACT);
@@ -311,8 +314,10 @@ template <class T>
         int rejection_count = 0;
         for (size_t i = 0; i < 4; ++i) {
             for (size_t j = i + 1; j < 4; ++j) {
-                RecipeSpec<const NumericalRecipe*> spec_i{nullptr, {Tolerance::BITEXACT, kFamilies[i]}};
-                RecipeSpec<const NumericalRecipe*> spec_j{nullptr, {Tolerance::BITEXACT, kFamilies[j]}};
+                RecipeSpec<const NumericalRecipe*> spec_i =
+                    ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, kFamilies[i]);
+                RecipeSpec<const NumericalRecipe*> spec_j =
+                    ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, kFamilies[j]);
                 assert(!::fixy::admits(spec_i, Tolerance::BITEXACT, kFamilies[j]));
                 assert(!::fixy::admits(spec_j, Tolerance::BITEXACT, kFamilies[i]));
                 rejection_count += 2;
@@ -336,8 +341,10 @@ template <class T>
         int join_count = 0;
         for (size_t i = 0; i < 4; ++i) {
             for (size_t j = i + 1; j < 4; ++j) {
-                RecipeSpec<const NumericalRecipe*> spec_i{base_recipe, {Tolerance::ULP_FP16, kFamilies[i]}};
-                RecipeSpec<const NumericalRecipe*> spec_j{base_recipe, {Tolerance::ULP_FP16, kFamilies[j]}};
+                RecipeSpec<const NumericalRecipe*> spec_i =
+                    ::fixy::mint_recipe_spec<const NumericalRecipe*>(base_recipe, Tolerance::ULP_FP16, kFamilies[i]);
+                RecipeSpec<const NumericalRecipe*> spec_j =
+                    ::fixy::mint_recipe_spec<const NumericalRecipe*>(base_recipe, Tolerance::ULP_FP16, kFamilies[j]);
                 auto joined = spec_i.compose(spec_j);
                 assert(::fixy::tolerance_of(joined) == Tolerance::ULP_FP16);
                 assert(::fixy::recipe_family_of(joined) == RecipeFamily::Any);
@@ -357,13 +364,15 @@ template <class T>
             RecipeFamily::BlockStable,
         };
 
-        RecipeSpec<const NumericalRecipe*> any_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::Any}};
+        RecipeSpec<const NumericalRecipe*> any_spec =
+            ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::Any);
         for (auto fam : kFamilies) {
             assert(::fixy::admits(any_spec, Tolerance::BITEXACT, fam));
         }
         assert(::fixy::admits(any_spec, Tolerance::BITEXACT, RecipeFamily::None));
 
-        RecipeSpec<const NumericalRecipe*> none_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::None}};
+        RecipeSpec<const NumericalRecipe*> none_spec =
+            ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::None);
         for (auto fam : kFamilies) {
             assert(!::fixy::admits(none_spec, Tolerance::BITEXACT, fam));
         }
@@ -427,8 +436,8 @@ template <class T>
         static_assert(!std::is_copy_constructible_v<RecipeSpec<MoveOnlyT>>);
         static_assert(std::is_move_constructible_v<RecipeSpec<MoveOnlyT>>);
 
-        RecipeSpec<MoveOnlyT> a{MoveOnlyT{42}, {Tolerance::ULP_FP16, RecipeFamily::Kahan}};
-        RecipeSpec<MoveOnlyT> b{MoveOnlyT{99}, {Tolerance::BITEXACT, RecipeFamily::Kahan}};
+        RecipeSpec<MoveOnlyT> a = ::fixy::mint_recipe_spec(MoveOnlyT{42}, Tolerance::ULP_FP16, RecipeFamily::Kahan);
+        RecipeSpec<MoveOnlyT> b = ::fixy::mint_recipe_spec(MoveOnlyT{99}, Tolerance::BITEXACT, RecipeFamily::Kahan);
 
         // The join takes the maximum on each axis and keeps the left carrier.
         auto joined = std::move(a).compose(b);
@@ -464,13 +473,15 @@ template <class T>
         assert(any_rejects == int{RecipeRegistry::STARTER_COUNT});
 
         // A wildcard spec admits both sentinel requests.
-        RecipeSpec<const NumericalRecipe*> wildcard_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::Any}};
+        RecipeSpec<const NumericalRecipe*> wildcard_spec =
+            ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::Any);
         assert(::fixy::admits(wildcard_spec, Tolerance::BITEXACT, RecipeFamily::None));
         assert(::fixy::admits(wildcard_spec, Tolerance::BITEXACT, RecipeFamily::Any));
 
         // A bottom spec admits only the bottom request. An Any request is above
         // it, and the ordering runs from request to spec, so it is rejected.
-        RecipeSpec<const NumericalRecipe*> none_spec{nullptr, {Tolerance::BITEXACT, RecipeFamily::None}};
+        RecipeSpec<const NumericalRecipe*> none_spec =
+            ::fixy::mint_recipe_spec<const NumericalRecipe*>(nullptr, Tolerance::BITEXACT, RecipeFamily::None);
         assert(::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::None));
         assert(!::fixy::admits(none_spec, Tolerance::BITEXACT, RecipeFamily::Any));
     }

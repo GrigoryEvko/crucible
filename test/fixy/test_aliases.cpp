@@ -75,7 +75,7 @@ concept can_extract = requires(C c) { std::move(c).extract(); };
 static_assert(can_extract<fixy::band_value_t<PureInt>>);
 static_assert(!can_extract<fixy::band_value_t<TotIoInt>>);
 
-constexpr PureInt pinned{Computation<Row<>, int>{42}, {}};
+constexpr PureInt pinned = fixy::mint_band<PureInt>(Computation<Row<>, int>{42});
 static_assert(pinned.peek().extract() == 42);
 static_assert(fixy::tier_of(pinned) == fixy::DetSafeTier_v::Pure);
 
@@ -93,8 +93,9 @@ void instantiate_every_alias_outside_an_assert() noexcept {
 
     static_assert(fixy::IsPure<fixy::PureRow> && fixy::IsAll<fixy::AllRow>);
 
-    fixy::Pure<int> pure_value{};
-    fixy::Tot<Row<Effect::IO>, int> tot_value{};
+    fixy::Pure<int> pure_value = fixy::mint_band<fixy::Pure<int>>(Computation<Row<>, int>{});
+    fixy::Tot<Row<Effect::IO>, int> tot_value =
+        fixy::mint_band<fixy::Tot<Row<Effect::IO>, int>>(Computation<Row<Effect::IO>, int>{});
 
     [[maybe_unused]] auto pure_tier = fixy::tier_of(pure_value);
     [[maybe_unused]] auto tot_tier = fixy::tier_of(tot_value);
@@ -111,20 +112,20 @@ int main() {
     volatile int raw = 5;
     const int seed = raw;
 
-    PureInt pure{Computation<Row<>, int>{seed}, {}};
+    PureInt pure = fixy::mint_band<PureInt>(Computation<Row<>, int>{seed});
     if (pure.peek().extract() != seed) {
         std::fprintf(stderr, "test_aliases: Pure<int> lost its value\n");
         return 1;
     }
 
-    PureMove pure_move{Computation<Row<>, MoveOnlyValue>{MoveOnlyValue{seed}}, {}};
+    PureMove pure_move = fixy::mint_band<PureMove>(Computation<Row<>, MoveOnlyValue>{MoveOnlyValue{seed}});
     MoveOnlyValue out = std::move(pure_move).consume().extract();
     if (out.v != seed) {
         std::fprintf(stderr, "test_aliases: Pure<MoveOnlyValue> lost its value\n");
         return 1;
     }
 
-    TotIoMove tot_move{Computation<Row<Effect::IO>, MoveOnlyValue>{MoveOnlyValue{seed}}, {}};
+    TotIoMove tot_move = fixy::mint_band<TotIoMove>(Computation<Row<Effect::IO>, MoveOnlyValue>{MoveOnlyValue{seed}});
     auto relaxed = fixy::relax<fixy::DetSafeTier_v::PhiloxRng>(std::move(tot_move));
     if (fixy::tier_of(relaxed) != fixy::DetSafeTier_v::PhiloxRng) {
         std::fprintf(stderr, "test_aliases: relax of a Tot value did not move the tier\n");
@@ -135,8 +136,8 @@ int main() {
         return 1;
     }
 
-    fixy::Tot<fixy::AllRow, std::unique_ptr<int>> tot_all{
-        Computation<fixy::AllRow, std::unique_ptr<int>>{std::make_unique<int>(seed)}, {}};
+    auto tot_all = fixy::mint_band<fixy::Tot<fixy::AllRow, std::unique_ptr<int>>>(
+        Computation<fixy::AllRow, std::unique_ptr<int>>{std::make_unique<int>(seed)});
     if (*tot_all.peek().graded().peek() != seed) {
         std::fprintf(stderr, "test_aliases: Tot<AllRow, unique_ptr<int>> lost its value\n");
         return 1;

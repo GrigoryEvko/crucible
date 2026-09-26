@@ -294,8 +294,10 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<Tagged>;
+
     constexpr explicit Tagged(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(v), typename lattice_type::element_type{}} {}
+        : impl_{key_{}, std::move(v), typename lattice_type::element_type{}} {}
 
     template <typename S, typename U>
         requires MintableTag<S>
@@ -312,9 +314,9 @@ public:
     // provenance-bearing construction site a deliberate call.  The door
     // is shut for an earned tag: a default Tagged<T, Verified> would
     // claim that a check passed on a T{} that no check ever saw.
-    constexpr Tagged() noexcept(std::is_nothrow_default_constructible_v<T>)
+    constexpr Tagged() noexcept(std::is_nothrow_default_constructible_v<T> && std::is_nothrow_move_constructible_v<T>)
         requires std::default_initializable<T> && MintableTag<Tag>
-    = default;
+        : impl_{key_{}, T{}, typename lattice_type::element_type{}} {}
 
     constexpr Tagged(const Tagged&) = default;
     constexpr Tagged(Tagged&&) = default;

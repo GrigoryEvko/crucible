@@ -159,6 +159,8 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<AppendOnly>;
+
     constexpr AppendOnly() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>) : impl_{Storage<T>{}} {}
 
     template <typename U, template <typename...> class S>
@@ -175,13 +177,15 @@ public:
         delete("AppendOnly never removes an element. An assignment would drop every element it holds.");
 
     // The lattice grade is derived from the container size, so growing
-    // the tail updates it with no separate field to maintain.
+    // the tail updates it with no separate field to maintain.  Growing is
+    // the one write this class makes, which keeps the derived grade
+    // moving up the order.
     template <typename... Args>
     void emplace(Args&&... args) {
-        impl_.peek_mut().emplace_back(std::forward<Args>(args)...);
+        impl_.peek_mut(key_{}).emplace_back(std::forward<Args>(args)...);
     }
 
-    void append(T item) { impl_.peek_mut().emplace_back(std::move(item)); }
+    void append(T item) { impl_.peek_mut(key_{}).emplace_back(std::move(item)); }
 
     [[nodiscard]] const T& operator[](std::size_t i) const noexcept { return impl_.peek()[i]; }
     [[nodiscard]] const T& front() const noexcept { return impl_.peek().front(); }

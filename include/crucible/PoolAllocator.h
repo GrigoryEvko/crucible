@@ -253,13 +253,13 @@ struct CRUCIBLE_OWNER PoolAllocator {
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
     inline ::fixy::alloc_class::Pool<void*> slot_ptr_pinned(SlotId sid, InitializedView const& view) const noexcept
         CRUCIBLE_LIFETIMEBOUND {
-        return ::fixy::alloc_class::Pool<void*>{slot_ptr(sid, view), {}};
+        return ::fixy::mint_band<::fixy::alloc_class::Pool<void*>>(slot_ptr(sid, view));
     }
 
     // Null when the pool has no bytes, so the caller inspects the result.
     [[nodiscard, gnu::pure]]
     inline ::fixy::alloc_class::Pool<void*> pool_base_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
-        return ::fixy::alloc_class::Pool<void*>{pool_, {}};
+        return ::fixy::mint_band<::fixy::alloc_class::Pool<void*>>(pool_);
     }
 
     // The precondition is what makes the stronger claim true: it is exactly
@@ -267,7 +267,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
     [[nodiscard, gnu::pure]]
     inline ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
         CRUCIBLE_PRE(pool_bytes_ >= crucible::warden::kHugePageBytes);
-        return ::fixy::alloc_class::HugePage<void*>{pool_, {}};
+        return ::fixy::mint_band<::fixy::alloc_class::HugePage<void*>>(pool_);
     }
 
     // Found by argument-dependent lookup from the view factory.

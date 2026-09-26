@@ -222,6 +222,8 @@ public:
 private:
     graded_type impl_;
 
+    using key_ = ::foundation::algebra::grade_key<EpochVersioned>;
+
     // The genesis version, which is the weakest claim.  It is the top of
     // the dual order and the bottom of the numeric one.
     [[nodiscard]] static constexpr version_t genesis_() noexcept {
@@ -234,25 +236,25 @@ private:
     constexpr void relinquish_version_() noexcept(std::is_nothrow_move_constructible_v<T>) {
         T left_behind = std::move(impl_).consume();
         std::destroy_at(&impl_);
-        std::construct_at(&impl_, std::move(left_behind), genesis_());
+        std::construct_at(&impl_, key_{}, std::move(left_behind), genesis_());
     }
 
     constexpr EpochVersioned(T value, version_t version) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), version} {}
+        : impl_{key_{}, std::move(value), version} {}
 
 public:
     EpochVersioned() = delete("a value that was never produced at a version has no version to report; "
                               "state one, or use at_genesis()");
 
     constexpr EpochVersioned(T value, VersionStamp const& stamp) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), version_t{stamp.epoch(), stamp.generation()}} {}
+        : impl_{key_{}, std::move(value), version_t{stamp.epoch(), stamp.generation()}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
     constexpr EpochVersioned(std::in_place_t, VersionStamp const& stamp,
                              Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                                       && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), version_t{stamp.epoch(), stamp.generation()}} {}
+        : impl_{key_{}, T(std::forward<Args>(args)...), version_t{stamp.epoch(), stamp.generation()}} {}
 
     [[nodiscard]] static constexpr EpochVersioned
     at_genesis(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {

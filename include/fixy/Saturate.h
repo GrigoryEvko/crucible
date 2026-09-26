@@ -22,10 +22,8 @@
 // The bodies are the old tree's.  Each *_sat_det wraps the checked
 // operation of Saturated.h in the band; each *_sat_from is that checked
 // operation read through a reference; each *_sat_into is *_sat_from
-// followed by the write-back.  One spelling changed with the band: the
-// old DetSafe took the value alone, and the Graded it is now takes the
-// value and the tier's element as a witness, which for a single-element
-// tier is the `{}` that relax in fixy/Bands.h passes.
+// followed by the write-back.  The band is built at its door,
+// mint_band in fixy/Bands.h, which names the Pure tier at each site.
 
 #include <fixy/Bands.h>
 #include <fixy/Saturated.h>
@@ -47,17 +45,17 @@ using DetSatPure = DetSafe<DetSafeTier_v::Pure, Saturated<T>>;
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr DetSatPure<T> add_sat_det(T a, T b) noexcept {
-    return DetSatPure<T>{add_sat_checked(a, b), {}};
+    return mint_band<DetSatPure<T>>(add_sat_checked(a, b));
 }
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr DetSatPure<T> sub_sat_det(T a, T b) noexcept {
-    return DetSatPure<T>{sub_sat_checked(a, b), {}};
+    return mint_band<DetSatPure<T>>(sub_sat_checked(a, b));
 }
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr DetSatPure<T> mul_sat_det(T a, T b) noexcept {
-    return DetSatPure<T>{mul_sat_checked(a, b), {}};
+    return mint_band<DetSatPure<T>>(mul_sat_checked(a, b));
 }
 
 template <std::integral T>

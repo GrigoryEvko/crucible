@@ -43,6 +43,14 @@ namespace fa = ::foundation::algebra;
 namespace fl = ::foundation::algebra::lattices;
 namespace fr = ::foundation::reflect;
 
+// The authority for the carriers built below.  It hands its key out,
+// which an authority in production code never does.
+struct test_authority {
+    [[nodiscard]] static constexpr fa::grade_key<test_authority> key() noexcept {
+        return fa::grade_key<test_authority>{};
+    }
+};
+
 struct TwoWords {
     unsigned long long lo{0};
     unsigned long long hi{0};
@@ -169,7 +177,7 @@ void det_safe_lattice_runs_at_run_time() {
     [[maybe_unused]] DetSafeTier m2 = DetSafeLattice::meet(mono, philox);
 
     OneByteValue v{42};
-    PureGraded<OneByteValue> initial{v, det_safe_tier::PureTier::bottom()};
+    PureGraded<OneByteValue> initial{test_authority::key(), v, det_safe_tier::PureTier::bottom()};
     auto widened = initial.weaken(det_safe_tier::PureTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(det_safe_tier::PureTier::top());
@@ -199,7 +207,7 @@ void alloc_class_lattice_runs_at_run_time() {
     [[maybe_unused]] AllocClassTag m2 = AllocClassLattice::meet(heap, arena);
 
     OneByteValue v{42};
-    StackGraded<OneByteValue> initial{v, alloc_class_tag::StackAlloc::bottom()};
+    StackGraded<OneByteValue> initial{test_authority::key(), v, alloc_class_tag::StackAlloc::bottom()};
     auto widened = initial.weaken(alloc_class_tag::StackAlloc::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(alloc_class_tag::StackAlloc::top());
@@ -228,7 +236,7 @@ void hot_path_lattice_runs_at_run_time() {
     [[maybe_unused]] HotPathTier m2 = HotPathLattice::meet(warm, b);
 
     OneByteValue v{42};
-    HotGraded<OneByteValue> initial{v, hot_path_tier::HotTier::bottom()};
+    HotGraded<OneByteValue> initial{test_authority::key(), v, hot_path_tier::HotTier::bottom()};
     auto widened = initial.weaken(hot_path_tier::HotTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(hot_path_tier::HotTier::top());
@@ -257,7 +265,7 @@ void cipher_tier_lattice_runs_at_run_time() {
     [[maybe_unused]] CipherTierTag m2 = CipherTierLattice::meet(warm, b);
 
     OneByteValue v{42};
-    HotGraded<OneByteValue> initial{v, cipher_tier_tag::HotTier::bottom()};
+    HotGraded<OneByteValue> initial{test_authority::key(), v, cipher_tier_tag::HotTier::bottom()};
     auto widened = initial.weaken(cipher_tier_tag::HotTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(cipher_tier_tag::HotTier::top());
@@ -287,7 +295,7 @@ void tolerance_lattice_runs_at_run_time() {
     [[maybe_unused]] Tolerance m2 = ToleranceLattice::meet(fp16, fp32);
 
     OneByteValue v{42};
-    BitexactGraded<OneByteValue> initial{v, tolerance::BitexactTier::bottom()};
+    BitexactGraded<OneByteValue> initial{test_authority::key(), v, tolerance::BitexactTier::bottom()};
     auto widened = initial.weaken(tolerance::BitexactTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(tolerance::BitexactTier::top());
@@ -317,7 +325,7 @@ void wait_lattice_runs_at_run_time() {
     [[maybe_unused]] WaitStrategy m2 = WaitLattice::meet(umwait, futex);
 
     OneByteValue v{42};
-    SpinPauseGraded<OneByteValue> initial{v, wait_strategy::SpinPauseStrategy::bottom()};
+    SpinPauseGraded<OneByteValue> initial{test_authority::key(), v, wait_strategy::SpinPauseStrategy::bottom()};
     auto widened = initial.weaken(wait_strategy::SpinPauseStrategy::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(wait_strategy::SpinPauseStrategy::top());
@@ -342,7 +350,7 @@ void lifetime_lattice_runs_at_run_time() {
     [[maybe_unused]] Lifetime top = LifetimeLattice::top();
 
     OneByteValue v{42};
-    FleetOpaque<OneByteValue> initial{v, lifetime::PerFleetTier::bottom()};
+    FleetOpaque<OneByteValue> initial{test_authority::key(), v, lifetime::PerFleetTier::bottom()};
     auto widened = initial.weaken(lifetime::PerFleetTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(lifetime::PerFleetTier::top());
@@ -374,7 +382,7 @@ void vendor_lattice_runs_at_run_time() {
     [[maybe_unused]] VendorBackend m2 = VendorLattice::meet(portable, b);
 
     OneByteValue v{42};
-    PortableGraded<OneByteValue> initial{v, vendor_backend::PortableVendor::bottom()};
+    PortableGraded<OneByteValue> initial{test_authority::key(), v, vendor_backend::PortableVendor::bottom()};
     auto widened = initial.weaken(vendor_backend::PortableVendor::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(vendor_backend::PortableVendor::top());
@@ -404,7 +412,7 @@ void recipe_family_lattice_runs_at_run_time() {
     if (sib_meet != RecipeFamily::None) std::abort();
 
     using RecipeGraded = Graded<ModalityKind::Absolute, RecipeFamilyLattice, int>;
-    RecipeGraded v{42, RecipeFamily::Kahan};
+    RecipeGraded v{test_authority::key(), 42, RecipeFamily::Kahan};
     [[maybe_unused]] auto g = v.grade();
     [[maybe_unused]] auto vp = v.peek();
 }
@@ -431,7 +439,7 @@ void barrier_strength_lattice_runs_at_run_time() {
     [[maybe_unused]] BarrierStrength rel_recovered = rel_pin;
 
     OneByteValue payload{9};
-    NoneGraded<OneByteValue> initial{payload, BarrierStrengthLattice::At<BarrierStrength::None>::bottom()};
+    NoneGraded<OneByteValue> initial{test_authority::key(), payload, BarrierStrengthLattice::At<BarrierStrength::None>::bottom()};
     auto widened = initial.weaken(BarrierStrengthLattice::At<BarrierStrength::None>::top());
     auto composed = initial.compose(widened);
     [[maybe_unused]] auto grade = widened.grade();
@@ -455,7 +463,7 @@ void memory_scope_lattice_runs_at_run_time() {
     [[maybe_unused]] bool xtrunk = mem_scope_same_trunk(a, b);  // false
 
     OneByteValue v{42};
-    SystemScopeGraded<OneByteValue> initial{v, memory_scope::SystemScope::bottom()};
+    SystemScopeGraded<OneByteValue> initial{test_authority::key(), v, memory_scope::SystemScope::bottom()};
     auto widened = initial.weaken(memory_scope::SystemScope::top());
     auto composed = initial.compose(widened);
     [[maybe_unused]] auto g = widened.grade();
@@ -479,7 +487,7 @@ void product_lattice_runs_at_run_time() {
     [[maybe_unused]] L::element_type tp = L::top();
 
     OneByteValue v{42};
-    BudgetU8U8<OneByteValue> initial{v, lo};
+    BudgetU8U8<OneByteValue> initial{test_authority::key(), v, lo};
     auto widened = initial.weaken(hi);
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(L::top());
@@ -507,7 +515,7 @@ void product_lattice_runs_at_run_time() {
     [[maybe_unused]] N::element_type n_tp = N::top();
 
     OneByteValue n_v{17};
-    Budgeted3U8<OneByteValue> n_initial{n_v, n_lo};
+    Budgeted3U8<OneByteValue> n_initial{test_authority::key(), n_v, n_lo};
     auto n_widened = n_initial.weaken(n_hi);
     auto n_composed = n_initial.compose(n_widened);
     [[maybe_unused]] auto n_g = n_composed.grade();
@@ -532,7 +540,7 @@ void pinning_requirement_lattice_runs_at_run_time() {
     [[maybe_unused]] PinningRequirement m2 = PinningRequirementLattice::meet(core, socket);
 
     OneByteValue v{42};
-    CorePinnedGraded<OneByteValue> initial{v, pinning_requirement::PerCorePin::bottom()};
+    CorePinnedGraded<OneByteValue> initial{test_authority::key(), v, pinning_requirement::PerCorePin::bottom()};
     auto widened = initial.weaken(pinning_requirement::PerCorePin::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(pinning_requirement::PerCorePin::top());
@@ -562,7 +570,7 @@ void suspend_behavior_lattice_runs_at_run_time() {
     [[maybe_unused]] SuspendBehavior m2 = SuspendBehaviorLattice::meet(mono, boot);
 
     OneByteValue v{42};
-    BootClockGraded<OneByteValue> initial{v, suspend_behavior::KeepsTickingClock::bottom()};
+    BootClockGraded<OneByteValue> initial{test_authority::key(), v, suspend_behavior::KeepsTickingClock::bottom()};
     auto widened = initial.weaken(suspend_behavior::KeepsTickingClock::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(suspend_behavior::KeepsTickingClock::top());
@@ -594,7 +602,7 @@ void clock_source_lattice_runs_at_run_time() {
     [[maybe_unused]] auto built = ClockSourceLattice::make_point(det, suspend, pin);
 
     EightByteValue payload{42};
-    ClockGraded<EightByteValue> initial{payload, boot_point};
+    ClockGraded<EightByteValue> initial{test_authority::key(), payload, boot_point};
     auto widened = initial.weaken(tsc_point);
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(ClockSourceLattice::top());
@@ -644,7 +652,7 @@ void affinity_lattice_runs_at_run_time() {
     if (intersected.popcount() != 64) std::abort();
 
     using AffinityGraded = Graded<ModalityKind::Absolute, AffinityLattice, double>;
-    AffinityGraded v{3.14, AffinityMask::range(0, 31)};
+    AffinityGraded v{test_authority::key(), 3.14, AffinityMask::range(0, 31)};
     [[maybe_unused]] auto g = v.grade();
     [[maybe_unused]] auto vp = v.peek();
 }
@@ -663,7 +671,7 @@ void numa_node_lattice_runs_at_run_time() {
     if (!is_concrete_numa_node(second) || is_concrete_numa_node(NumaNodeId::Any)) std::abort();
 
     using NumaGraded = Graded<ModalityKind::Absolute, NumaNodeLattice, int>;
-    NumaGraded const value{42, NumaNodeId{2}};
+    NumaGraded const value{test_authority::key(), 42, NumaNodeId{2}};
     if (value.grade() != NumaNodeId{2} || value.peek() != 42) std::abort();
 }
 
@@ -687,7 +695,7 @@ void scheduler_policy_lattice_runs_at_run_time() {
     [[maybe_unused]] bool tsc_ok = SchedulerPolicyLattice::leq(other, fifo);
 
     OneByteValue v{42};
-    FifoGraded<OneByteValue> initial{v, scheduler_policy::FifoClass::bottom()};
+    FifoGraded<OneByteValue> initial{test_authority::key(), v, scheduler_policy::FifoClass::bottom()};
     auto widened = initial.weaken(scheduler_policy::FifoClass::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(scheduler_policy::FifoClass::top());

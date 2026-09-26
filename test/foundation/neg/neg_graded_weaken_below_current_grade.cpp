@@ -12,8 +12,9 @@ namespace fa = ::foundation::algebra;
 using Chain = fa::detail::graded_self_test::TrivialChainLattice;
 using Value = fa::detail::graded_self_test::OneByteValue;
 using GradedByte = fa::Graded<fa::ModalityKind::Absolute, Chain, Value>;
+using Authority = fa::detail::graded_self_test::self_test_authority;
 
-constexpr GradedByte high{Value{}, static_cast<unsigned char>(3)};
+constexpr GradedByte high{Authority::key(), Value{}, static_cast<unsigned char>(3)};
 
 // 1 sits below 3 in the chain, so this weakening runs the wrong way.
 constexpr GradedByte lowered = high.weaken(static_cast<unsigned char>(1));

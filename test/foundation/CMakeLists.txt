@@ -125,12 +125,36 @@ foundation_neg_compile_test(neg_semiring_zero_does_not_annihilate
   "no matching function for call to .verify_semiring_axioms_at<\\{anonymous\\}::MaxMax>"
   "the expression .\\(semiring_laws_hold<S>\\)\\(\\) \\[with S = <unnamed>::MaxMax\\]. evaluated to .false.")
 
-# A stored grade outside the lattice's order is rejected by the primary
-# Graded constructor's contract_assert.  The location regex proves the
-# rejection came from inside Graded.h and not from the fixture's own line.
+# A grade outside the lattice's order is rejected during constant
+# evaluation by the in-body CRUCIBLE_PRE: a stored grade at the keyed
+# constructor, and a value that is its own grade at the constructor from
+# the value alone.  The first regex of each proves the trap came from the
+# guard in Graded.h, and the second names the constructor it refused.
 foundation_neg_compile_test(neg_graded_stored_grade_outside_the_order
-  "contract predicate is false in constant expression"
-  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: error")
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
+  "Graded<foundation::algebra::detail::graded_self_test::self_test_authority>\\(foundation::algebra::detail::graded_self_test::self_test_authority::key\\(\\), .*, 9\\)")
+foundation_neg_compile_test(neg_graded_element_grade_outside_the_order
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
+  "TrivialChainLattice, unsigned char>::Graded\\(9\\)")
+
+# A stored grade is a claim about the value, and each door that makes one
+# asks for a grade_key<Authority>.  Braces with no key meet no
+# constructor, a key built outside its authority meets the private
+# constructor, and a lattice that states nothing about its grade opens
+# neither the keyless write in place nor a default value.  The second
+# regex of each names the refused candidate or the claim-subject gate.
+foundation_neg_compile_test(neg_graded_grade_without_key
+  "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::Graded\\(<brace-enclosed initializer list>\\)."
+  "candidate 1: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
+foundation_neg_compile_test(neg_graded_key_outside_its_authority
+  "grade_key<Authority>::grade_key\\(\\) \\[with Authority = \\{anonymous\\}::Stranger\\]. is private within this context"
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_graded_peek_mut_without_key
+  "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::peek_mut\\(\\)."
+  "the expression .\\(claim_subject_v<L>\\) == foundation::algebra::ClaimSubject::slot \\[with L = foundation::algebra::detail::lattice_self_test::TrivialBoolLattice\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_graded_default_value_claims_bytes
+  "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::Graded\\(\\)."
+  "required by the constraints of .template<foundation::algebra::ModalityKind M, class L, class T> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(\\) requires ! foundation::algebra::Graded<M, L, T>::stores_grade_ \\|\\| \\(GradeIgnoresBytes<L>\\).")
 
 # Weakening down the lattice is rejected during constant evaluation by
 # the in-body CRUCIBLE_PRE.  The first regex is the trap the shim uses to

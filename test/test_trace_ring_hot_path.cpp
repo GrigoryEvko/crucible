@@ -179,7 +179,7 @@ static void test_full_ring_type_pin_survives_failure() {
     auto ring = std::make_unique<TraceRing>();
 
     using FullPathT = HotPath<HotPathTier_v::Hot, bool>;
-    FullPathT failure_value{false, {}};
+    FullPathT failure_value = ::fixy::mint_band<FullPathT>(false);
     static_assert(std::is_same_v<decltype(ring->try_append_pinned(make_entry(0))), FullPathT>);
     bool was_full = !std::move(failure_value).consume();
     assert(was_full);
@@ -195,7 +195,7 @@ static void test_metalog_full_buffer_type_pin_survives_failure() {
     meta.strides[0] = ::crucible::tensor_dim(1);
 
     using NonePathT = HotPath<HotPathTier_v::Hot, MetaIndex>;
-    NonePathT none_path{MetaIndex::none(), {}};
+    NonePathT none_path = ::fixy::mint_band<NonePathT>(MetaIndex::none());
     static_assert(std::is_same_v<decltype(log->try_append_pinned(&meta, 1)), NonePathT>);
     MetaIndex idx = std::move(none_path).consume();
     assert(!idx.is_valid());

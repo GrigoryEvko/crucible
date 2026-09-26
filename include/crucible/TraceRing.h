@@ -270,8 +270,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>
     try_append_pinned(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                       CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return ::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>{try_append(e, meta_start, scope_hash, callsite_hash),
-                                                                 {}};
+        return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>>(
+            try_append(e, meta_start, scope_hash, callsite_hash));
     }
 
     // Preferred at new call sites: appending touches memory only, so the
@@ -343,8 +343,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
                                                                                   CAPACITY))
             pre(::foundation::decide::valid_span(max_count, out)) {
-        return ::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>{
-            drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes), {}};
+        return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>>(
+            drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes));
     }
 
     // The consumer counterpart of try_append_pure. A drain touches memory

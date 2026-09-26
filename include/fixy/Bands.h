@@ -19,15 +19,18 @@
 // one operation that changes the tier is relax, which rebinds the type
 // and moves down the chain only.
 //
-// A band is constructed with the substrate's two-argument constructor,
-// Band{value, {}}: the second argument is the pinned singleton and the
-// braces are its whole witness.  Band::at_bottom(value) is the same door
-// read from the substrate side, because bottom and top coincide on a
-// singleton.
+// A band's tier is a claim about the bytes, and nothing checks it: a
+// DetSafe<Pure, T> says a deterministic source produced the value.  So a
+// band is built through one named door, mint_band<Band>(value), and a
+// search for mint_band< lists every site that asserts a tier.  The
+// substrate refuses the braces Band{value, {}} and a default value,
+// because both would pair a value with the tier and name no authority.
+// A class that builds a band through the substrate's keyed constructor
+// names itself in a grade_key, which the same kind of search finds.
 //
 // RecipeSpec is not a band.  It carries both numerical axes at run time,
 // so the grade is stored beside the value and the caller decides
-// admission with admits().
+// admission with admits().  Its door is mint_recipe_spec.
 //
 // Two bands pin a partial order rather than a chain.  ScopedFence's
 // scopes form two trunks that meet only at the ends, so two scopes on
@@ -158,6 +161,25 @@ template <typename B, auto Required>
     requires IsBand<B> && std::same_as<decltype(Required), band_tier_t<B>>
 inline constexpr bool satisfies_v = band_lattice_t<B>::leq(Required, band_tier_v<B>);
 
+// A band spelled exactly, with no cv or reference.
+template <typename B>
+concept ExactBand = IsBand<B> && std::same_as<B, std::remove_cvref_t<B>>;
+
+// The door through which a value takes a band's tier.  B names the band
+// exactly, so the tier a site asserts is spelled at that site.  The key's
+// authority is a class local to this function, which no other code can
+// name.
+template <ExactBand B>
+[[nodiscard]] constexpr B mint_band(band_value_t<B> value) noexcept(std::is_nothrow_move_constructible_v<band_value_t<B>>) {
+    struct door {
+        [[nodiscard]] static constexpr B open(band_value_t<B>&& held) noexcept(
+            std::is_nothrow_move_constructible_v<band_value_t<B>>) {
+            return B{::foundation::algebra::grade_key<door>{}, std::move(held), {}};
+        }
+    };
+    return door::open(std::move(value));
+}
+
 // relax moves a value down the chain and never up.  The requires clause
 // is the whole gate: a target above the pinned tier is a substitution
 // failure at the call site.  The const& form copies and so asks for a
@@ -168,7 +190,7 @@ template <auto WeakerTier, IsBand B>
           && std::copy_constructible<band_value_t<B>>
 [[nodiscard]] constexpr rebind_band_t<B, WeakerTier>
 relax(B const& band) noexcept(std::is_nothrow_copy_constructible_v<band_value_t<B>>) {
-    return rebind_band_t<B, WeakerTier>{band.peek(), {}};
+    return mint_band<rebind_band_t<B, WeakerTier>>(band.peek());
 }
 
 template <auto WeakerTier, IsBand B>
@@ -176,7 +198,7 @@ template <auto WeakerTier, IsBand B>
           && (!std::is_lvalue_reference_v<B>)
 [[nodiscard]] constexpr rebind_band_t<B, WeakerTier>
 relax(B&& band) noexcept(std::is_nothrow_move_constructible_v<band_value_t<B>>) {
-    return rebind_band_t<B, WeakerTier>{std::move(band).consume(), {}};
+    return mint_band<rebind_band_t<B, WeakerTier>>(std::move(band).consume());
 }
 
 // ── The bands ───────────────────────────────────────────────────────
@@ -462,12 +484,30 @@ template <std::meta::info Ns, std::meta::info EnumInfo>
 // tolerance tier and a reduction family, both carried at run time.  The
 // tiers form a chain; the families do not, so two named families are
 // incomparable siblings under a wildcard that stands for all of them.
-// Construction is RecipeSpec<T>{value, {tier, family}}.
 
 using RecipeSpecLattice = ::foundation::algebra::lattices::ProductLattice<ToleranceLattice, RecipeFamilyLattice>;
 
 template <class T>
 using RecipeSpec = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, RecipeSpecLattice, T>;
+
+// A payload a RecipeSpec can hold: an object that moves into the carrier.
+template <class T>
+concept RecipeSpecPayload = std::is_object_v<T> && std::move_constructible<T>;
+
+// The door through which a value takes a numerical strategy.  The two
+// axes are a claim about how the value was produced, and nothing checks
+// it, so it is made here by name, as a band's tier is made in mint_band.
+template <RecipeSpecPayload T>
+[[nodiscard]] constexpr RecipeSpec<T> mint_recipe_spec(T value, Tolerance tier,
+                                                       RecipeFamily family) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    struct door {
+        [[nodiscard]] static constexpr RecipeSpec<T> open(T&& held, Tolerance held_tier,
+                                                          RecipeFamily held_family) noexcept(std::is_nothrow_move_constructible_v<T>) {
+            return RecipeSpec<T>{::foundation::algebra::grade_key<door>{}, std::move(held), {held_tier, held_family}};
+        }
+    };
+    return door::open(std::move(value), tier, family);
+}
 
 // The detection surface of the old IsRecipeSpec.h: the Absolute carrier
 // over the product lattice, whatever the payload.
@@ -548,7 +588,22 @@ static_assert(!can_relax<PhiloxInt, DetSafeTier_v::Pure>,
               "relax<Pure> on a PhiloxRng value must be rejected.  It would "
               "claim a determinism the source does not provide.");
 
-constexpr PureInt pinned_pure{42, {}};
+// The tier is asserted at the door and nowhere else: not with braces,
+// not with a default value, not from the substrate side, and not with a
+// cv or reference spelling of the band.
+template <typename B>
+concept can_mint_band = requires(band_value_t<B> v) { mint_band<B>(std::move(v)); };
+template <typename B>
+concept can_build_at_bottom = requires(band_value_t<B> v) { B::at_bottom(std::move(v)); };
+
+static_assert(can_mint_band<PureInt>);
+static_assert(!can_mint_band<PureInt const>);
+static_assert(!can_mint_band<PureInt&>);
+static_assert(!std::is_constructible_v<PureInt, int, typename PureInt::grade_type>);
+static_assert(!std::is_default_constructible_v<PureInt>);
+static_assert(!can_build_at_bottom<PureInt>);
+
+constexpr PureInt pinned_pure = mint_band<PureInt>(42);
 static_assert(pinned_pure.peek() == 42);
 static_assert(tier_of(pinned_pure) == DetSafeTier_v::Pure);
 static_assert(relax<DetSafeTier_v::PhiloxRng>(pinned_pure).peek() == 42);
@@ -611,7 +666,7 @@ static_assert(!can_relax<CtaInt, MemoryScope_v::Inner>,
               "trunks are incomparable.");
 static_assert(!can_relax<InnerInt, MemoryScope_v::Cta>);
 
-constexpr GpuInt pinned_gpu{42, {}};
+constexpr GpuInt pinned_gpu = mint_band<GpuInt>(42);
 static_assert(tier_of(pinned_gpu) == MemoryScope_v::Gpu);
 static_assert(relax<MemoryScope_v::Cta>(pinned_gpu).peek() == 42);
 static_assert(tier_of(relax<MemoryScope_v::Cta>(pinned_gpu)) == MemoryScope_v::Cta);
@@ -646,7 +701,7 @@ static_assert(!can_relax<NvInt, VendorBackend_v::AMD>);
 static_assert(std::is_same_v<rebind_band_t<PortableInt, VendorBackend_v::AMD>, AmdInt>);
 static_assert(NvInt::lattice_name() == "VendorLattice::At<NV>");
 
-constexpr PortableInt pinned_portable{7, {}};
+constexpr PortableInt pinned_portable = mint_band<PortableInt>(7);
 static_assert(tier_of(relax<VendorBackend_v::CPU>(pinned_portable)) == VendorBackend_v::CPU);
 static_assert(relax<VendorBackend_v::CPU>(pinned_portable).peek() == 7);
 
@@ -668,10 +723,13 @@ static_assert(!can_relax<WarmInt, ResidencyHeatTag_v::Hot>);
 static_assert(std::is_same_v<rebind_band_t<HotInt, ResidencyHeatTag_v::Warm>, WarmInt>);
 static_assert(HotInt::lattice_name() == "ResidencyHeatLattice::At<Hot>");
 
-constexpr HotInt pinned_hot{9, {}};
+constexpr HotInt pinned_hot = mint_band<HotInt>(9);
 static_assert(tier_of(relax<ResidencyHeatTag_v::Warm>(pinned_hot)) == ResidencyHeatTag_v::Warm);
 
-constexpr RecipeSpec<int> spec{7, {Tolerance::ULP_FP16, RecipeFamily::Kahan}};
+static_assert(!std::is_constructible_v<RecipeSpec<int>, int, typename RecipeSpec<int>::grade_type>);
+static_assert(!std::is_default_constructible_v<RecipeSpec<int>>);
+
+constexpr RecipeSpec<int> spec = mint_recipe_spec(7, Tolerance::ULP_FP16, RecipeFamily::Kahan);
 static_assert(tolerance_of(spec) == Tolerance::ULP_FP16);
 static_assert(recipe_family_of(spec) == RecipeFamily::Kahan);
 static_assert(admits(spec, Tolerance::ULP_FP8, RecipeFamily::Kahan));

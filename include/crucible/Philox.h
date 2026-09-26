@@ -95,11 +95,11 @@ struct Philox {
     using DetSafePureKey = ::fixy::det_safe::Pure<uint64_t>;
 
     [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(Ctr ctr, Key key) {
-        return DetSafePhiloxCtr{generate(ctr, key), {}};
+        return ::fixy::mint_band<DetSafePhiloxCtr>(generate(ctr, key));
     }
 
     [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(uint64_t offset, uint64_t key) {
-        return DetSafePhiloxCtr{generate(offset, key), {}};
+        return ::fixy::mint_band<DetSafePhiloxCtr>(generate(offset, key));
     }
 
     // Taking the key as a tier-carrying type lets a caller chain a key
@@ -108,15 +108,15 @@ struct Philox {
     template <::fixy::DetSafeTier_v KeyTier>
         requires(::fixy::DetSafeLattice::leq(::fixy::DetSafeTier_v::PhiloxRng, KeyTier))
     [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(uint64_t offset, ::fixy::DetSafe<KeyTier, uint64_t> key) {
-        return DetSafePhiloxCtr{generate(offset, std::move(key).consume()), {}};
+        return ::fixy::mint_band<DetSafePhiloxCtr>(generate(offset, std::move(key).consume()));
     }
 
     [[nodiscard]] static constexpr DetSafePhiloxFloat to_uniform_det(uint32_t x) {
-        return DetSafePhiloxFloat{to_uniform(x), {}};
+        return ::fixy::mint_band<DetSafePhiloxFloat>(to_uniform(x));
     }
 
     [[nodiscard]] static constexpr DetSafePhiloxDouble to_uniform_d_det(uint32_t x) {
-        return DetSafePhiloxDouble{to_uniform_d(x), {}};
+        return ::fixy::mint_band<DetSafePhiloxDouble>(to_uniform_d(x));
     }
 
     // The bytes are Philox-derived, but the transform reaches sin, cos and
@@ -124,19 +124,19 @@ struct Philox {
     // units in the last place across implementations. The tier says so: this
     // result replays on the machine that produced it and nowhere else.
     [[nodiscard]] static DetSafeMonoClockFloatPair box_muller_det(uint32_t u1_raw, uint32_t u2_raw) {
-        return DetSafeMonoClockFloatPair{box_muller(u1_raw, u2_raw), {}};
+        return ::fixy::mint_band<DetSafeMonoClockFloatPair>(box_muller(u1_raw, u2_raw));
     }
 
     // Same transform with in-tree polynomial sin, cos and log and a correctly
     // rounded square root. No platform math library, so the result is
     // bit-identical everywhere and carries the stronger tier.
     [[nodiscard]] static DetSafePhiloxFloatPair box_muller_polynomial_det(uint32_t u1_raw, uint32_t u2_raw) {
-        return DetSafePhiloxFloatPair{::fixy::fp::box_muller_polynomial(u1_raw, u2_raw), {}};
+        return ::fixy::mint_band<DetSafePhiloxFloatPair>(::fixy::fp::box_muller_polynomial(u1_raw, u2_raw));
     }
 
     [[nodiscard]] static constexpr DetSafePureKey op_key_det(uint64_t master_counter, uint32_t op_index,
                                                              ContentHash content_hash) {
-        return DetSafePureKey{op_key_bytes_(master_counter, op_index, content_hash), {}};
+        return ::fixy::mint_band<DetSafePureKey>(op_key_bytes_(master_counter, op_index, content_hash));
     }
 
 private:

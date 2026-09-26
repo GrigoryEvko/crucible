@@ -13,6 +13,6 @@ concept covers_hot_requirement = fixy::satisfies_v<Provider, fixy::ResidencyHeat
 }
 
 int main() {
-    fixy::residency_heat::Cold<int> cold{7, {}};
+    auto cold = fixy::mint_band<fixy::residency_heat::Cold<int>>(7);
     return consume(cold);
 }

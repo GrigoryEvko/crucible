@@ -54,6 +54,14 @@ void expect(bool holds, char const* what) {
 template <typename L>
 using OnAxis = fa::Graded<fa::ModalityKind::Absolute, L, int>;
 
+// The authority for the carriers built below.  It hands its key out,
+// which an authority in production code never does.
+struct test_authority {
+    [[nodiscard]] static constexpr fa::grade_key<test_authority> key() noexcept {
+        return fa::grade_key<test_authority>{};
+    }
+};
+
 // A test scope that owns IO, the capability the checked read needs.
 using IoCtx = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>>;
 
@@ -535,9 +543,10 @@ void attack_graded_version_orientation() {
     using DualVersion = fa::Graded<fa::ModalityKind::Absolute, Dual<fl::EpochLattice>, int>;
     fl::Epoch const older = count_at<fl::EpochLattice>(s);
     fl::Epoch const newer = count_at<fl::EpochLattice>(s + 9);
-    DualVersion const current{1, newer};
+    DualVersion const current{test_authority::key(), 1, newer};
     expect(current.weaken(older).grade() == older, "the dual weakens toward the older epoch");
-    expect(DualVersion{2, older}.compose(current).grade() == older, "the dual composes to the older epoch");
+    expect(DualVersion{test_authority::key(), 2, older}.compose(current).grade() == older,
+           "the dual composes to the older epoch");
     expect(!Dual<fl::EpochLattice>::leq(older, newer),
            "an older epoch is not below a newer one in the dual, so no weaken reaches the newer");
 }

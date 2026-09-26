@@ -102,7 +102,7 @@ void graded_runs_at_run_time() {
     using namespace fa;
     using namespace fa::detail::graded_self_test;
     OneByteValue value{42};
-    GOneByte initial{value, false};
+    GOneByte initial{self_test_authority::key(), value, false};
     GOneByte widened = initial.weaken(true);
     GOneByte composed = initial.compose(widened);
     GOneByte moved = std::move(widened).weaken(true);
@@ -114,31 +114,42 @@ void graded_runs_at_run_time() {
     [[maybe_unused]] auto v1 = composed.peek().c;
     [[maybe_unused]] auto v2 = std::move(mcomposed).consume().c;
 
-    GOneByte prim_noarg = GOneByte::at_bottom();
-    GOneByte prim_value = GOneByte::at_bottom(OneByteValue{static_cast<char>(value.c + 1)});
-    [[maybe_unused]] bool gb1 = prim_noarg.grade();
-    [[maybe_unused]] auto vb1 = prim_value.peek().c;
+    // The keyed write in place, and the keyless one under a grade that
+    // any bytes satisfy.
+    GOneByte written{self_test_authority::key(), value, false};
+    written.peek_mut(self_test_authority::key()).c = static_cast<char>(value.c + 1);
+    [[maybe_unused]] auto vw = written.peek().c;
+    GSlotOneByte slot_noarg = GSlotOneByte::at_bottom();
+    slot_noarg.peek_mut().c = value.c;
+    [[maybe_unused]] bool gb1 = slot_noarg.grade();
+    [[maybe_unused]] auto vb1 = slot_noarg.peek().c;
 
-    // The two specializations publish at_bottom() alone.  The checked
-    // form runs here with a non-constant argument, where the witness
-    // predicate is evaluated under runtime semantics rather than folded
-    // away.
+    // The two regimes that derive the grade publish at_bottom() and the
+    // construction from the value alone.  The checked forms run here
+    // with a non-constant argument, where the witness predicate is
+    // evaluated under runtime semantics rather than folded away.
     GBoolElement same_noarg = GBoolElement::at_bottom();
-    GBoolElement same_checked{TrivialBoolLattice::bottom(), TrivialBoolLattice::bottom()};
+    bool bottom_runtime = TrivialBoolLattice::bottom();  // deliberately not constexpr
+    GBoolElement same_checked{self_test_authority::key(), bottom_runtime, TrivialBoolLattice::bottom()};
+    GBoolElement same_value{bottom_runtime};
     [[maybe_unused]] bool gs1 = same_noarg.grade();
     [[maybe_unused]] bool gs2 = same_checked.grade();
+    [[maybe_unused]] bool gs3 = same_value.grade();
 
     GDerivedSeq der_noarg = GDerivedSeq::at_bottom();
-    GDerivedSeq der_checked{MiniContainer{static_cast<std::size_t>(0)}, MiniDerivedLattice::bottom()};
+    GDerivedSeq der_checked{self_test_authority::key(), MiniContainer{static_cast<std::size_t>(0)},
+                            MiniDerivedLattice::bottom()};
     [[maybe_unused]] std::size_t gd1 = der_noarg.grade();
     [[maybe_unused]] std::size_t gd2 = der_checked.grade();
 
-    // The stored-grade bounds check with a non-constant grade, so the
-    // predicate runs under runtime semantics rather than being folded.
+    // The bounds checks with a non-constant grade, so the predicate runs
+    // under runtime semantics rather than being folded.
     unsigned char chain_grade = static_cast<unsigned char>(value.c % 4);  // 42 % 4 == 2, inside [0, 3]
-    GChainOneByte chain_checked{value, chain_grade};
+    GChainOneByte chain_checked{self_test_authority::key(), value, chain_grade};
     [[maybe_unused]] unsigned char gc1 = chain_checked.grade();
     [[maybe_unused]] unsigned char gc2 = chain_checked.weaken(static_cast<unsigned char>(3)).grade();
+    GChainElement chain_element{chain_grade};
+    [[maybe_unused]] unsigned char gc3 = chain_element.compose(chain_element).grade();
 }
 
 // The traits here have nothing to run at runtime.  What the function
@@ -148,7 +159,7 @@ void graded_runs_at_run_time() {
 void graded_trait_runs_at_run_time() {
     using namespace fa;
     using namespace fa::detail::is_graded_specialization_self_test;
-    GraderAB g{true, true};
+    GraderAB g{true};
     [[maybe_unused]] bool grade_view = g.grade();
     [[maybe_unused]] bool value_view = g.peek();
 

@@ -14,7 +14,7 @@
 #include <fixy/Bands.h>
 
 int main() {
-    fixy::scoped_fence::Cta<int> cta{42, {}};
+    auto cta = fixy::mint_band<fixy::scoped_fence::Cta<int>>(42);
     auto inner = fixy::relax<fixy::MemoryScope_v::Inner>(cta);
     return inner.peek();
 }

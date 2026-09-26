@@ -1,6 +1,8 @@
 #pragma once
 
-// Which way the order of a lattice reads as a claim about a value.
+// How a lattice reads as a claim: which way its order runs, and whether
+// the claim is about the bytes of a value or about the slot that holds
+// them.  The second question is answered near the end of this file.
 //
 // Graded reads its up direction as the weaker claim.  weaken() and
 // compose() move a grade up and nowhere else, so a grade that moves up
@@ -88,6 +90,51 @@ template <typename... Ls>
 template <typename L>
 concept GradableLattice = Lattice<L> && (claim_orientation_v<L> != ClaimOrientation::stronger_is_higher);
 
+// What a grade is a claim about.
+//
+// Most grades say something about the bytes a carrier holds: that they
+// satisfy a predicate, that a deterministic source produced them, that a
+// named backend built them.  Replacing the bytes can make such a grade
+// false, so Graded hands out a mutable reference, and builds a value at a
+// grade it cannot derive, only to a holder of a key (Graded.h).
+//
+// A few grades say something about the slot and nothing about what it
+// holds: how many times the slot may be used, for instance.  Any bytes
+// may sit under such a grade, so Graded opens those doors without a key.
+// A lattice states this with a static member claim_subject.  A lattice
+// that states nothing is read as a claim about the bytes, because an
+// unknown claim is refused rather than admitted.
+enum class ClaimSubject : std::uint8_t {
+    // The grade constrains the bytes.  This is the reading of a lattice
+    // that states nothing.
+    bytes = 0,
+    // The grade constrains the slot, and any bytes satisfy it.
+    slot = 1,
+};
+
+// The subject that L states, or bytes when L states none.  A member with
+// the right name and another type stops the build, so a misspelt
+// declaration cannot fall back to the default.
+template <typename L>
+[[nodiscard]] consteval ClaimSubject claim_subject_of() noexcept {
+    if constexpr (requires { L::claim_subject; }) {
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(L::claim_subject)>, ClaimSubject>,
+                      "claim_subject must be a foundation::algebra::ClaimSubject.  State bytes or slot, or "
+                      "remove the member.");
+        return L::claim_subject;
+    } else {
+        return ClaimSubject::bytes;
+    }
+}
+
+template <typename L>
+inline constexpr ClaimSubject claim_subject_v = claim_subject_of<L>();
+
+// A grade that any bytes satisfy.  This is the one condition under which
+// Graded writes or default-builds a value without a key.
+template <typename L>
+concept GradeIgnoresBytes = claim_subject_v<L> == ClaimSubject::slot;
+
 namespace detail::claim_orientation_self_test {
 
 struct Silent {
@@ -120,6 +167,18 @@ static_assert(product_orientation<>() == ClaimOrientation::unstated);
 
 static_assert(GradableLattice<Silent> && GradableLattice<Weaker> && !GradableLattice<Stronger>);
 static_assert(Lattice<Stronger>, "the refusal is about orientation, not about the lattice laws");
+
+struct AboutTheSlot : Silent {
+    static constexpr ClaimSubject claim_subject = ClaimSubject::slot;
+};
+struct AboutTheBytes : Silent {
+    static constexpr ClaimSubject claim_subject = ClaimSubject::bytes;
+};
+
+static_assert(claim_subject_v<Silent> == ClaimSubject::bytes, "a lattice that states nothing claims the bytes");
+static_assert(claim_subject_v<AboutTheSlot> == ClaimSubject::slot);
+static_assert(claim_subject_v<AboutTheBytes> == ClaimSubject::bytes);
+static_assert(GradeIgnoresBytes<AboutTheSlot> && !GradeIgnoresBytes<AboutTheBytes> && !GradeIgnoresBytes<Silent>);
 
 }  // namespace detail::claim_orientation_self_test
 

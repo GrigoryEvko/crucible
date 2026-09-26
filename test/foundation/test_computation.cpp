@@ -16,6 +16,14 @@ namespace fe = ::foundation::effects;
 using fe::Effect;
 using fe::Row;
 
+// The authority for the substrate cells below.  It hands its key out,
+// which an authority in production code never does.
+struct test_authority {
+    [[nodiscard]] static constexpr fa::grade_key<test_authority> key() noexcept {
+        return fa::grade_key<test_authority>{};
+    }
+};
+
 // A Computation is exactly its payload, whatever the row names, and it
 // satisfies the wrapper contract through its Graded base.
 static_assert(sizeof(fe::Computation<Row<Effect::Bg>, int>) == sizeof(int));
@@ -44,32 +52,29 @@ void computation_graded_runs_at_run_time() noexcept {
     using G_bg = ComputationGraded<Row<Effect::Bg>, int>;
 
     int value_runtime = 42;
-    G_pure pure{value_runtime, G_pure::grade_type{}};
-    G_bg bg{value_runtime + 1, G_bg::grade_type{}};
+    G_pure pure{test_authority::key(), value_runtime, G_pure::grade_type{}};
+    G_bg bg{test_authority::key(), value_runtime + 1, G_bg::grade_type{}};
 
-    G_pure pure_default{};
+    G_pure pure_zero{test_authority::key(), 0, G_pure::grade_type{}};
     G_pure pure_copy{pure};
     G_pure pure_moved{std::move(pure_copy)};
 
     [[maybe_unused]] int const& peeked = pure.peek();
-    [[maybe_unused]] int moved = std::move(pure_default).consume();
+    [[maybe_unused]] int moved = std::move(pure_zero).consume();
     [[maybe_unused]] auto grade = pure.grade();
 
-    G_pure pure_a{};
-    G_pure pure_b{};
-    pure_a.peek_mut() = 7;
+    G_pure pure_a{test_authority::key(), 0, G_pure::grade_type{}};
+    G_pure pure_b{test_authority::key(), 1, G_pure::grade_type{}};
+    pure_a.peek_mut(test_authority::key()) = 7;
     pure_a.swap(pure_b);
 
     [[maybe_unused]] auto widened = std::move(bg).weaken(G_bg::grade_type{});
 
-    G_pure pure_c{value_runtime, G_pure::grade_type{}};
-    G_pure pure_d{value_runtime + 2, G_pure::grade_type{}};
+    G_pure pure_c{test_authority::key(), value_runtime, G_pure::grade_type{}};
+    G_pure pure_d{test_authority::key(), value_runtime + 2, G_pure::grade_type{}};
     [[maybe_unused]] G_pure composed = pure_c.compose(pure_d);
 
-    [[maybe_unused]] G_pure pure_bot = G_pure::at_bottom(value_runtime);
-    [[maybe_unused]] G_bg bg_bot = G_bg::at_bottom(value_runtime + 3);
-
-    static_assert(detail::computation_graded_caps::HasPeekMut<G_pure>);
+    static_assert(!detail::computation_graded_caps::HasPeekMut<G_pure>);
     static_assert(detail::computation_graded_caps::HasWeaken<G_bg>);
     static_assert(!detail::computation_graded_caps::HasComonadExtract<G_pure>);
     static_assert(!detail::computation_graded_caps::HasRelMonadInject<G_bg>);

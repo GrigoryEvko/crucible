@@ -10,7 +10,8 @@
 int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
+    using Authority = fa::detail::graded_self_test::self_test_authority;
     fa::Graded<fa::ModalityKind::Absolute, fl::DualLattice<fl::PeakBytesLattice>, int> const measured{
-        1, fl::PeakBytesLattice::bottom()};
+        Authority::key(), 1, fl::PeakBytesLattice::bottom()};
     return measured.peek();
 }

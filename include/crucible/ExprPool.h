@@ -857,7 +857,7 @@ public:
     // footprint enough to make the hit path several times slower.  Default
     // inlining already pulls in the small binary helpers.
     [[nodiscard]] PureInternedExpr make(::foundation::effects::Alloc a, Op op, std::span<const Expr* const> args) {
-        return PureInternedExpr{::fixy::mint_tagged<::fixy::tags::source::Interned>(make_raw_(a, op, args)), {}};
+        return ::fixy::mint_band<PureInternedExpr>(::fixy::mint_tagged<::fixy::tags::source::Interned>(make_raw_(a, op, args)));
     }
 
 private:

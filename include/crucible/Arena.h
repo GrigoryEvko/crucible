@@ -125,20 +125,20 @@ public:
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
     alloc_obj_pinned(::foundation::effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
-        return ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>{alloc_obj<T>(a), {}};
+        return ::fixy::mint_band<::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>>(alloc_obj<T>(a));
     }
 
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
     alloc_array_pinned(::foundation::effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
-        return ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>{alloc_array<T>(a, n), {}};
+        return ::fixy::mint_band<::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>>(alloc_array<T>(a, n));
     }
 
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
     alloc_array_nonzero_pinned(::foundation::effects::Alloc a, size_t n) noexcept
         CRUCIBLE_LIFETIMEBOUND pre(::foundation::decide::positive(n)) {
-        return ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>{alloc_array_nonzero<T>(a, n), {}};
+        return ::fixy::mint_band<::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>>(alloc_array_nonzero<T>(a, n));
     }
 
     [[nodiscard]] const char* copy_string(::foundation::effects::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {

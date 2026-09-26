@@ -205,6 +205,7 @@ apply to the row.
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
+| `mint_band` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | · | HS14: 11 |
 | `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
@@ -221,6 +222,7 @@ apply to the row.
 | `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_owned_region(::foundation::effects::Alloc,Allocator&,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 16 |
 | `mint_owned_region(T*,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 16 |
+| `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 15 |
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
@@ -361,4 +363,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 100 | 50 | 41 | 9 | 0 | 91 | 32 |
-| new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 14 |
+| new (`include/foundation/`, `include/fixy/`) | 112 | 47 | 62 | 3 | 0 | · | 14 |

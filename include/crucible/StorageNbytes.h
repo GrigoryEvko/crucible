@@ -105,8 +105,8 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
 [[nodiscard, gnu::const]]
 CRUCIBLE_INLINE ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>
 compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
-    return ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>{
-        compute_storage_nbytes_scalar(meta), {}};
+    return ::fixy::mint_band<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>>(
+        compute_storage_nbytes_scalar(meta));
 }
 
 // The screen leans one way. Answering false for an input that would in fact
@@ -222,8 +222,8 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
 [[nodiscard, gnu::pure]]
 CRUCIBLE_INLINE ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>
 compute_storage_nbytes_simd_det(ExternalTensorMeta meta) noexcept {
-    return ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>{
-        compute_storage_nbytes_simd(meta), {}};
+    return ::fixy::mint_band<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::Saturated<uint64_t>>>(
+        compute_storage_nbytes_simd(meta));
 }
 
 }  // namespace crucible::detail

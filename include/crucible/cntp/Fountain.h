@@ -285,7 +285,7 @@ private:
     }
 
     std::span<const std::byte> input_{};
-    FountainSeed seed_{};
+    FountainSeed seed_ = ::fixy::mint_band<FountainSeed>(0);
     source_byte_count source_bytes_{1, typename source_byte_count::Trusted{}};
     std::uint32_t next_id_ = 0;
     bool active_ = false;

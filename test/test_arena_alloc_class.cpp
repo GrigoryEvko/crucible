@@ -301,13 +301,12 @@ static void test_null_on_zero_contract() {
     assert(w0p.peek() == nullptr);
 }
 
-static_assert(
-    requires { AllocClass<AllocClassTag_v::Arena, int*>{nullptr, {}}; },
-    "AllocClass<Arena, T*>{nullptr, {}} MUST be constructible.  "
-    "NullSafe + AllocClass are orthogonal axes.");
+static_assert(::fixy::mint_band<AllocClass<AllocClassTag_v::Arena, int*>>(nullptr).peek() == nullptr,
+              "mint_band<AllocClass<Arena, T*>>(nullptr) MUST be constructible.  "
+              "NullSafe + AllocClass are orthogonal axes.");
 
-static_assert(AllocClass<AllocClassTag_v::Arena, int*>{}.peek() == nullptr,
-              "AllocClass<Arena, T*> default-construction MUST yield wrapped nullptr.");
+static_assert(!std::is_default_constructible_v<AllocClass<AllocClassTag_v::Arena, int*>>,
+              "AllocClass<Arena, T*> takes its tier at mint_band alone, so no default value claims it.");
 
 using ArenaIntPtr = AllocClass<AllocClassTag_v::Arena, int*>;
 static_assert(::fixy::satisfies_v<ArenaIntPtr, AllocClassTag_v::Arena>,
@@ -388,7 +387,7 @@ static void test_e2e_fence_checked_consumer() {
     // A stronger tier passes the same fence.  The rejection of a weaker
     // one cannot be witnessed at runtime, and is pinned by the
     // static_asserts instead.
-    AllocClass<AllocClassTag_v::Stack, int*> stack_wrapper{arr, {}};
+    auto stack_wrapper = ::fixy::mint_band<AllocClass<AllocClassTag_v::Stack, int*>>(arr);
     int* p2 = consume_arena_or_stronger(std::move(stack_wrapper));
     assert(p2 == arr);
 }

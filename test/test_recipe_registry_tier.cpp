@@ -238,7 +238,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     // chain below walks.  Each step weakens the pin by one class and
     // stays admissible at the next consumer.
     {
-        NumericalTier<Tolerance::BITEXACT, int> bitexact{42, {}};
+        auto bitexact = ::fixy::mint_band<NumericalTier<Tolerance::BITEXACT, int>>(42);
         auto fp64 = ::fixy::relax<Tolerance::ULP_FP64>(std::move(bitexact));
         auto fp32 = ::fixy::relax<Tolerance::ULP_FP32>(std::move(fp64));
         auto fp16 = ::fixy::relax<Tolerance::ULP_FP16>(std::move(fp32));
@@ -387,7 +387,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         static_assert(!std::is_copy_constructible_v<NT_MO>);
         static_assert(std::is_move_constructible_v<NT_MO>);
 
-        NT_MO src{MoveOnlyT{77}, {}};
+        NT_MO src = ::fixy::mint_band<NT_MO>(MoveOnlyT{77});
         auto relaxed = ::fixy::relax<Tolerance::RELAXED>(std::move(src));
         static_assert(std::is_same_v<decltype(relaxed), NumericalTier<Tolerance::RELAXED, MoveOnlyT>>);
         MoveOnlyT v = std::move(relaxed).consume();

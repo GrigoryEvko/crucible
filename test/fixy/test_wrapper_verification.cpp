@@ -498,23 +498,23 @@ static_assert(!satisfies_v<opaque_lifetime::PerRequest<int>, Lifetime_v::PER_FLE
 }
 
 [[nodiscard]] bool smoke_bands() {
-    det_safe::Pure<int> pure{42, {}};
+    auto pure = mint_band<det_safe::Pure<int>>(42);
     if (pure.peek() != 42) return false;
     auto philox = relax<DetSafeTier_v::PhiloxRng>(pure);  // const& form copies
     if (philox.peek() != 42 || tier_of(philox) != DetSafeTier_v::PhiloxRng) return false;
     auto mono = relax<DetSafeTier_v::MonotonicClockRead>(std::move(philox));  // rvalue form moves
     if (mono.peek() != 42) return false;
 
-    numerical_tier::Bitexact<int> bitexact{7, {}};
+    auto bitexact = mint_band<numerical_tier::Bitexact<int>>(7);
     auto fp16 = relax<Tolerance::ULP_FP16>(std::move(bitexact));
     if (fp16.peek() != 7 || tier_of(fp16) != Tolerance::ULP_FP16) return false;
 
-    TaggedBitexact tagged = mint_tagged<FromUser>(numerical_tier::Bitexact<int>{77, {}});
+    TaggedBitexact tagged = mint_tagged<FromUser>(mint_band<numerical_tier::Bitexact<int>>(77));
     return std::move(tagged).into().peek() == 77;
 }
 
 [[nodiscard]] bool smoke_recipe_spec() {
-    RecipeSpec<int> spec{7, {Tolerance::ULP_FP16, RecipeFamily::Kahan}};
+    RecipeSpec<int> spec = mint_recipe_spec(7, Tolerance::ULP_FP16, RecipeFamily::Kahan);
     if (spec.peek() != 7) return false;
     if (!admits(spec, Tolerance::ULP_FP8, RecipeFamily::Kahan)) return false;
     return !admits(spec, Tolerance::BITEXACT, RecipeFamily::Kahan);
