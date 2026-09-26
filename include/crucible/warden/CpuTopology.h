@@ -24,8 +24,8 @@
 // every few milliseconds. Nothing here sits on a hot path, so the fold
 // bought nothing worth that.
 
-#include <crucible/safety/_Decide.h>
-#include <crucible/fixy/Handle.h>
+#include <fixy/OwnedFile.h>
+#include <foundation/contracts/Decide.h>
 
 #include <algorithm>
 #include <bitset>
@@ -54,11 +54,12 @@ namespace detail {
 
 [[nodiscard]] inline std::string read_small_file(const char* path) noexcept {
     std::string out;
-    // The close is discharged by the handle on every exit path,
-    // including the early return below. Its result is ignored because
-    // a failure to close a sysfs read offers nothing to act on.
-    ::crucible::fixy::handle::OwnedFile f{std::fopen(path, "r")};
-    if (!f.is_open()) return out;
+    // The close is discharged by the handle on every exit path. Its
+    // result is ignored because a failure to close a sysfs read offers
+    // nothing to act on. A file that does not open reads as empty.
+    auto opened = ::fixy::OwnedFile::open_path(path, "r");
+    if (!opened) return out;
+    const ::fixy::OwnedFile& f = *opened;
     char buf[512];
     while (std::fgets(buf, sizeof(buf), f.get()))
         out.append(buf);
@@ -365,7 +366,7 @@ struct CoreSelector {
 // node as the given CPU come first, and the given CPU itself is never
 // among them.
 [[nodiscard]] inline std::vector<int> select_warm_cpus(int hot_cpu, int count) noexcept
-    pre(::crucible::decide::non_negative(count)) {
+    pre(::foundation::decide::non_negative(count)) {
     const auto allowed = allowed_cpus();
     const int hot_numa = (hot_cpu >= 0) ? numa_node_of(hot_cpu) : -1;
 
