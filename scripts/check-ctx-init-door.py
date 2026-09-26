@@ -150,8 +150,11 @@ def candidate_files(root: Path, owner: str) -> list[Path]:
 
 
 def names_owner(node: tsast.Node, owner: str) -> bool:
-    """Say whether an identifier node is the name of the owner, after the splices of phase 2."""
-    return node.text == owner or ("\\" in node.text and tsast.spelled(node) == owner)
+    """Say whether a name leaf spells the owner, after the splices of phase 2.
+
+    A qualified name has children and is read through the leaves inside it.
+    """
+    return not node.children and tsast.lexeme(node) == owner
 
 
 def scope_of(node: tsast.Node) -> str:

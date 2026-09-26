@@ -459,7 +459,7 @@ def _marked(tree: tsast.Tree, row: int, marker: str) -> bool:
         Whether the row is exempt
     """
     pattern = re.compile(re.escape(marker) + r":\s*\S")
-    return any(comment.start[0] == row and pattern.search(comment.text)
+    return any(comment.start[0] == row and pattern.search(tsast.prose_text(comment))
                for comment in tsast.comments_by_row(tree).get(row, ()))
 
 
@@ -500,10 +500,9 @@ def scan(root: Path, ban: Ban) -> tuple[list[Hit], list[str]]:
         tree, rows, scope = rows_by_tree[rel]
         rows.update(macro_body_rows(body, ban, Scope(scope.std_names, is_fragment=True)))
     for rel, (tree, rows, _) in rows_by_tree.items():
-        lines = tree.source.decode("utf-8", "replace").split("\n")
         for row in sorted(rows):
             if not _marked(tree, row, ban.marker):
-                hits.append(Hit(rel, row + 1, lines[row].strip()))
+                hits.append(Hit(rel, row + 1, tree.line(row).strip()))
     return hits, failures
 
 
