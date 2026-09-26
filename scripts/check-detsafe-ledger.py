@@ -22,18 +22,26 @@ WHAT IS CHECKED
         resolves first against the directory of the file, as the compiler
         does.  An include that resolves to neither is a system or a
         third-party header, and nothing there can reach the ledger.
-      * A computed include must resolve through an object-like macro of the
+      * A computed include must resolve through object-like macros of the
         same file, or it is a violation, because the guard cannot see where
-        it goes.
+        it goes.  The macro value is read from its preprocessing tokens, so
+        a comment inside it changes nothing.
+      * A file that the parser cannot read, and a file that tsast lists as
+        not C++, stop the walk with a violation, because the guard cannot
+        follow them.
     It also fails when a file of the closure names a ledger namespace, a
     namespace `ledger` directly under a project root, without the include:
       * a qualified name, spelled from `::` or relative to an enclosing
         namespace, so `ledger::Verdict` inside namespace crucible counts;
       * a namespace definition, which is how a forward declaration dodges
-        the include;
+        the include.  An inline namespace is transparent, so
+        `namespace crucible { inline namespace v1 { namespace ledger {} } }`
+        defines crucible::ledger;
       * a using-directive or a using-declaration, qualified or not, and a
         namespace alias;
-      * the words `root::ledger` or `ledger::` in a macro body.
+      * `root::ledger` or `ledger::` in the preprocessing tokens of a macro
+        body, read from its whole replacement list, so a comment or a line
+        splice inside it hides nothing.
     Every name comes from the nodes of the parse tree, so a comment inside a
     qualified name does not hide it.  A relative name can reach the ledger in
     three ways, and the guard asks each one, which can only find more:
@@ -64,7 +72,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import sys
 import tempfile
 from collections import deque
@@ -74,7 +81,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 
 # The hashing path.
 ROOTS: tuple[str, ...] = (
@@ -147,57 +153,15 @@ NsPath = tuple[str, ...]
 # A name as written: whether it starts at `::`, and its parts, outermost first.
 Written = tuple[bool, NsPath]
 
-# Leaves whose own text is one name.  Reading the text of a leaf that the
-# parser has already classified reads a token, not structure.
-NAME_LEAVES = frozenset({"identifier", "namespace_identifier", "type_identifier", "field_identifier"})
+
+def joined(parts: tuple[str, ...]) -> NsPath:
+    """Return name parts with each line splice inside them removed, as translation phase 2 does."""
+    return tuple("".join(token.text for token in tsast.pp_tokens(part)) if "\\" in part else part for part in parts)
 
 
-def named_children(node: tsast.Node) -> list[tsast.Node]:
-    """Return the children of a node that are not comments."""
-    return [child for child in node.children if child.type != "comment"]
-
-
-def written_name(node: tsast.Node) -> Written:
-    """Return the full name that one name node spells, comments skipped.
-
-    Handles a leaf name, a nested_namespace_specifier (the target of an alias
-    and the name of a namespace definition), a qualified_identifier, and a
-    template_type or template_function through its name field.  A part the
-    guard cannot name comes back as "?", which matches no namespace.
-
-    A nested_namespace_specifier starts at `::` when its node starts before
-    its first child, because the only token that can stand there is `::`.
-    """
-    if node.type in NAME_LEAVES:
-        return False, (node.text,)
-    if node.type == "nested_namespace_specifier":
-        children = named_children(node)
-        is_global = bool(children) and children[0].start != node.start
-        parts: list[str] = []
-        for child in children:
-            parts.extend(written_name(child)[1])
-        return is_global, tuple(parts)
-    if node.type == "qualified_identifier":
-        scope, name = node.child_by_field("scope"), node.child_by_field("name")
-        scope_parts = written_name(scope)[1] if scope is not None else ()
-        name_parts = written_name(name)[1] if name is not None else ("?",)
-        return scope is None, scope_parts + name_parts
-    if node.type in ("template_type", "template_function"):
-        name = node.child_by_field("name")
-        return (False, written_name(name)[1]) if name is not None else (False, ("?",))
-    return False, ("?",)
-
-
-def namespace_path(node: tsast.Node) -> NsPath:
-    """Return the names of the namespaces that enclose a node, outermost first."""
-    parts: list[str] = []
-    owner = node.parent
-    while owner is not None:
-        if owner.type == "namespace_definition":
-            named = owner.child_by_field("name")
-            parts[:0] = written_name(named)[1] if named is not None else ("(anonymous)",)
-        owner = owner.parent
-    return tuple(parts)
+def enclosing_of(node: tsast.Node) -> NsPath:
+    """Return the namespaces around a node, outermost first, an inline namespace left out."""
+    return joined(tsast.namespace_path(node, skip_inline=True))
 
 
 def outermost_qualified(tree: tsast.Tree) -> Iterator[tsast.Node]:
@@ -208,14 +172,16 @@ def outermost_qualified(tree: tsast.Tree) -> Iterator[tsast.Node]:
             yield node
 
 
-def alias_target(node: tsast.Node) -> tsast.Node | None:
-    """Return the node that a namespace_alias_definition names as its target."""
-    return next((child for child in named_children(node) if child.field != "name"), None)
+def macro_tokens(tree: tsast.Tree, define: tsast.Node) -> list[tsast.Token]:
+    """Return the preprocessing tokens of the whole replacement list of one definition.
 
-
-def using_target(node: tsast.Node) -> tsast.Node | None:
-    """Return the name that a using-directive or a using-declaration nominates."""
-    return next(iter(named_children(node)), None)
+    The value can span several preproc_arg nodes, because a comment splits
+    it, so the tokens come from the text of the first value to the last one.
+    """
+    values = [child for child in define.children if child.field == "value"]
+    if not values:
+        return []
+    return tsast.pp_tokens(tree.slice(values[0].start, values[-1].end), values[0].start[0])
 
 
 class NameTables:
@@ -234,14 +200,12 @@ class NameTables:
 
     def add(self, tree: tsast.Tree) -> None:
         """Record the aliases and the using-directive targets of one parsed file."""
-        for node in tree.find("namespace_alias_definition"):
-            name, target = node.child_by_field("name"), alias_target(node)
-            if name is not None and target is not None:
-                self.written_aliases.setdefault(name.text, []).append((written_name(target), namespace_path(node)))
-        for node in tree.find("using_declaration"):
-            target = using_target(node)
-            if target is not None:
-                self.written_directives.append((written_name(target), namespace_path(node)))
+        for alias in tsast.namespace_aliases(tree):
+            self.written_aliases.setdefault(joined((alias.name,))[0], []).append(
+                ((alias.is_global, joined(alias.target)), enclosing_of(alias.node)))
+        for using in tsast.using_names(tree):
+            if using.is_directive:
+                self.written_directives.append(((using.is_global, joined(using.target)), enclosing_of(using.node)))
 
     def seal(self) -> None:
         """Resolve every alias to a fixpoint, then every directive target."""
@@ -293,44 +257,53 @@ def ledger_names(tree: tsast.Tree, tables: NameTables, roots: frozenset[str]) ->
     Complexity: linear in the number of nodes times the namespace depth.
     """
     for node in outermost_qualified(tree):
-        is_global, parts = written_name(node)
-        if len(parts) > 1 and reaches_ledger((is_global, parts[:-1]), namespace_path(node), tables, roots):
+        written = tsast.qualified_parts(node)
+        parts = joined(written[1]) if written is not None else ()
+        if len(parts) > 1 and reaches_ledger((written[0], parts[:-1]), enclosing_of(node), tables, roots):
             yield node.start[0], "a qualified name"
     for node in tree.find("namespace_definition"):
-        named = node.child_by_field("name")
-        if named is not None and is_ledger_namespace(namespace_path(node) + written_name(named)[1], roots):
+        body = node.child_by_field("body")
+        if body is not None and is_ledger_namespace(enclosing_of(body), roots):
             yield node.start[0], "a namespace definition"
-    for node in tree.find("using_declaration"):
-        target = using_target(node)
-        if target is not None and reaches_ledger(written_name(target), namespace_path(node), tables, roots):
-            yield node.start[0], "a using-directive or a using-declaration"
-    for node in tree.find("namespace_alias_definition"):
-        target = alias_target(node)
-        if target is not None and reaches_ledger(written_name(target), namespace_path(node), tables, roots):
-            yield node.start[0], "a namespace alias"
+    for using in tsast.using_names(tree):
+        if reaches_ledger((using.is_global, joined(using.target)), enclosing_of(using.node), tables, roots):
+            yield using.node.start[0], "a using-directive or a using-declaration"
+    for alias in tsast.namespace_aliases(tree):
+        if reaches_ledger((alias.is_global, joined(alias.target)), enclosing_of(alias.node), tables, roots):
+            yield alias.node.start[0], "a namespace alias"
 
 
-def lexical_ledger(text: str, roots: frozenset[str]) -> Iterator[int]:
-    """Yield the zero-based row of each `root::ledger` or `ledger::` in raw text, after the lexer blanks it."""
-    joined, joins = splice(text)
-    code, _ = blank(joined, blank_literals=True)
-    pattern = re.compile(r"\b(?:(?:" + "|".join(sorted(roots)) + r")\s*::\s*ledger\b|ledger\s*::)")
-    for match in pattern.finditer(code):
-        yield line_of(joined, joins, match.start()) - 1
+def token_ledger(tokens: list[tsast.Token], roots: frozenset[str]) -> Iterator[int]:
+    """Yield the zero-based row of each `root::ledger` or `ledger::` in a token list."""
+    for index, token in enumerate(tokens):
+        if token.kind != "identifier" or token.text != FORBIDDEN_NAMESPACE:
+            continue
+        follows_root = index >= 2 and tokens[index - 1].text == "::" and tokens[index - 2].text in roots \
+            and tokens[index - 2].kind == "identifier"
+        if follows_root or (index + 1 < len(tokens) and tokens[index + 1].text == "::"):
+            yield token.row
 
 
 def includes_of(root: Path, rel: str, tree: tsast.Tree) -> Iterator[tuple[str | None, int, str]]:
-    """Yield each include of a parsed file as (resolved file or None, row, spelling)."""
+    """Yield each include of a parsed file as (resolved file or None, row, spelling).
+
+    A computed include resolves through the object-like macros of the file,
+    a chain of them included, each value spelled from its tokens.
+    """
     macros = {}
     for node in tree.find("preproc_def"):
-        named, value = node.child_by_field("name"), node.child_by_field("value")
-        if named is not None and value is not None:
-            macros[named.text] = value.text.strip()
+        named = node.child_by_field("name")
+        if named is not None:
+            macros[named.text] = "".join(token.text for token in macro_tokens(tree, node))
     for node in tree.find("preproc_include"):
         path = node.child_by_field("path")
         spelled = path.text.strip() if path is not None else ""
         if path is not None and path.type == "identifier":
-            spelled = macros.get(path.text, "")
+            spelled = path.text
+            for _step in range(8):
+                if spelled not in macros:
+                    break
+                spelled = macros[spelled]
             if not spelled.startswith(("<", '"')):
                 yield None, node.start[0], f"#include {path.text}"
                 continue
@@ -338,13 +311,10 @@ def includes_of(root: Path, rel: str, tree: tsast.Tree) -> Iterator[tuple[str | 
 
 
 def file_names(tree: tsast.Tree, tables: NameTables, roots: frozenset[str]) -> list[tuple[int, str]]:
-    """Return each ledger name of one file as (row, form), sorted and without duplicates."""
-    if tree.diagnostic is not None:
-        source = tree.source.decode("utf-8", "replace")
-        return [(row, "a word in a file the parser cannot read") for row in lexical_ledger(source, roots)]
+    """Return each ledger name of one parsed file as (row, form), sorted and without duplicates."""
     rows = list(ledger_names(tree, tables, roots))
-    for body in tree.find("preproc_arg"):
-        rows.extend((body.start[0] + row, "a word in a macro body") for row in lexical_ledger(body.text, roots))
+    for define in tree.find("preproc_def", "preproc_function_def"):
+        rows.extend((row, "a word in a macro body") for row in token_ledger(macro_tokens(tree, define), roots))
     return sorted(set(rows))
 
 
@@ -386,13 +356,15 @@ def walk(root: Path, origin: str, trees: dict[str, tsast.Tree], violations: list
             for parsed in tsast.parse([root / path for path in pending], strict=False):
                 trees[Path(parsed.path).resolve().relative_to(root.resolve()).as_posix()] = parsed
         tree = trees[current]
-        if tree.diagnostic is not None and current not in tsast.UNPARSEABLE:
+        if not tsast.is_in_cpp_scope(current):
+            violations.append(f"{current}: the file is not C++ for the parser, so the guard cannot follow it. "
+                              f"Include chain: {closure.chain(current)}")
+            continue
+        if tree.diagnostic is not None:
             violations.append(f"{current}: the parser cannot read this file, so the guard cannot follow it. "
                               f"Include chain: {closure.chain(current)}")
             continue
         closure.order.append(current)
-        if tree.diagnostic is not None:
-            continue
         for child, row, spelled in includes_of(root, current, tree):
             if child is None and spelled.startswith("#include"):
                 violations.append(f"{current}:{row + 1} has a computed include that no object-like macro of the "
@@ -525,6 +497,22 @@ def self_test() -> int:
                                                   "using namespace other;\nint f(ledger::T*);\n",
         "include/crucible/planted/RootImport.h": "#pragma once\nusing namespace crucible;\nint f(planted::T*);\n",
         "include/crucible/planted/Macro.h": "#pragma once\n#define VERDICT crucible :: ledger :: Verdict\n",
+        "include/crucible/planted/MacroSplit.h": "#pragma once\n#define LEDGER crucible:: /* c */ ledger\n",
+        "include/crucible/planted/MacroSplice.h": "#pragma once\n#define VERDICT(x) crucible::led\\\nger x\n",
+        "include/crucible/planted/MacroText.h": '#pragma once\n#define TEXT "crucible::ledger::Verdict"\n'
+                                                "#define OTHER other::ledger_like\n",
+        "include/crucible/planted/SplicedName.h": "#pragma once\nint f(::crucible::led\\\nger::Verdict*);\n",
+        "include/crucible/planted/SplicedDefinition.h": "#pragma once\nnamespace crucible::led\\\nger { struct V; }\n",
+        "include/crucible/planted/InlineLedger.h":"#pragma once\nnamespace crucible { inline namespace v1 {\n"
+                                                   "namespace ledger { struct Verdict; } } }\n",
+        "include/crucible/planted/InlineNested.h": "#pragma once\n"
+                                                   "namespace crucible::inline v1::ledger { struct Verdict; }\n",
+        "include/crucible/planted/ComputedComment.h": "#pragma once\n#define LEDGER_HEADER /* c */ "
+                                                      "<crucible/ledger/Verdict.h>\n#include LEDGER_HEADER\n",
+        "include/crucible/planted/ComputedChain.h": "#pragma once\n#define LEDGER_PATH <crucible/ledger/Verdict.h>\n"
+                                                    "#define LEDGER_HEADER LEDGER_PATH\n#include LEDGER_HEADER\n",
+        "include/crucible/planted/ComputedClean.h": "#pragma once\n#define SIBLING_HEADER \"Sibling.h\"\n"
+                                                    "#include SIBLING_HEADER\n",
         "include/fixy/ledger/New.h": "#pragma once\n",
         "include/crucible/planted/NewTree.h": "#pragma once\n#include <fixy/ledger/New.h>\n",
         "include/crucible/planted/Broken.h": "#pragma once\nvoid f() { g(1) { } }\n",
@@ -548,6 +536,11 @@ def self_test() -> int:
         expect("a directive to a namespace outside a project root does not reach the ledger",
                not verdict("OtherImport"), True)
         expect("a directive to a root reaches only the names written after it", not verdict("RootImport"), True)
+        expect("a macro string and a longer name in a macro body are not the ledger", not verdict("MacroText"), True)
+        expect("a computed include that resolves to a clean header passes", not verdict("ComputedClean"), True)
+        computed = verdict("ComputedChain")
+        expect("caught: a computed include through a chain of macros, with its chain",
+               bool(computed) and "include/crucible/ledger/Verdict.h" in computed[0])
         transitive = verdict("Transitive")
         expect("caught: a transitive include, with its chain",
                bool(transitive) and "Middle.h -> include/crucible/ledger/Verdict.h" in transitive[0])
@@ -570,6 +563,13 @@ def self_test() -> int:
                             ("ImportedRoot", "a relative name after a using-directive to a root"),
                             ("AliasCrossUse", "an alias that another file of the closure defines"),
                             ("Alias", "a namespace alias"), ("Macro", "a macro body"),
+                            ("MacroSplit", "a macro body that a comment splits"),
+                            ("MacroSplice", "a function-like macro body with a line splice inside a name"),
+                            ("InlineLedger", "a ledger namespace inside an inline namespace"),
+                            ("SplicedName", "a qualified name with a line splice inside a part"),
+                            ("SplicedDefinition", "a namespace definition with a line splice inside its name"),
+                            ("InlineNested", "a nested ledger namespace name with an inline part"),
+                            ("ComputedComment", "a computed include whose macro holds a comment"),
                             ("NewTree", "a ledger directory of another project root"),
                             ("Reaches", "a closure file that the parser cannot read")):
             expect(f"caught: {label}", bool(verdict(name)))
