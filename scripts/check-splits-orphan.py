@@ -23,12 +23,17 @@ WHAT COUNTS AS A SPECIALIZATION
     splits_into_pack_authoring_witness), the _v variable of each, and
     well_authored_split_v and well_authored_split_pack_v.
 
-WHAT THE PARSER CANNOT READ
-    A macro body is raw text.  The guard lexes it with scripts/cxx_lex.py,
-    which drops comments and literals, and reports each `struct` or `class`
-    head and each trait variable name with template arguments in it.  A file
-    in tsast.UNPARSEABLE gets the same lexical scan over its whole text.  A
-    parse error in any other file is a guard failure.
+MACRO BODIES
+    A macro body is parsed on its own (tsast.macro_bodies), with every
+    fragment joined, so a block comment inside it does not split a head.  A
+    specialization in a macro body is refused wherever the macro stands,
+    because the tags that it names are its arguments.  A use of a trait
+    variable, such as a static_assert, is not a specialization.  A body that
+    the parser cannot read, such as one that pastes tokens with ##, is read
+    from its preprocessing tokens: a `struct` or `class` head of a trait with
+    `<` after it, and a trait variable with `<` after it.  The files of
+    tsast.UNPARSEABLE are not C++ and are out of scope.  A parse error in any
+    other file is a guard failure.
 
 WHERE A SPECIALIZATION IS ADMITTED
     Beside its tags: in the file that defines every tag it names.  A tag is
@@ -82,7 +87,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 
 TRAITS = frozenset({
     "can_split_into", "can_split_into_pack", "has_split_authoring_witness", "has_split_pack_authoring_witness",
@@ -90,6 +94,7 @@ TRAITS = frozenset({
 })
 VARIABLES = frozenset({name + "_v" for name in TRAITS} | {"well_authored_split_v", "well_authored_split_pack_v"})
 NEEDLES = re.compile(b"|".join(re.escape(name.encode()) for name in sorted(TRAITS | {"well_authored_split"})))
+LINE_SPLICE = re.compile(rb"\\\r?\n")
 # Each authoring location, with the reason that it still needs the exemption.
 # A key that ends in "/" admits every file under it, and any other key admits
 # one file.  A location that no specialization needs is stale, and the check
@@ -113,9 +118,6 @@ AUTHORING: dict[str, str] = {
              "that the mint refuses it",
 }
 ROOTS = ("include", "src", "vessel", "bench", "tools", "fuzz", "examples", "test")
-SUFFIXES = (".h", ".hpp", ".cpp", ".cc", ".inl", ".ipp")
-LEXICAL = re.compile(r"\b(?:struct|class)\s+(?:::\s*)?(?:\w+\s*::\s*)*(?P<trait>\w+)\s*<"
-                     r"|\b(?P<variable>\w+)\s*<")
 
 
 def authored_at(rel: str) -> str | None:
@@ -140,14 +142,15 @@ def final_name(node: tsast.Node | None) -> tuple[str, bool] | None:
         node: A name node: an identifier, a template-id or a qualified name
 
     Returns:
-        The name and True for a template-id, or None for another shape
+        The name, as the lexer spells it after the line splices of phase 2,
+        and True for a template-id, or None for another shape
     """
     while node is not None:
         if node.type in ("type_identifier", "identifier", "field_identifier"):
-            return node.text, False
+            return tsast.spelled(node), False
         if node.type in ("template_type", "template_function"):
             name = node.child_by_field("name")
-            return (name.text, True) if name is not None else None
+            return (tsast.spelled(name), True) if name is not None else None
         if node.type == "qualified_identifier":
             node = node.child_by_field("name")
         else:
@@ -201,45 +204,40 @@ def site_of(row: int, node: tsast.Node, name: tsast.Node | None) -> Site:
                 name is not None and name.type == "qualified_identifier")
 
 
-def ast_sites(tree: tsast.Tree) -> Iterator[Site]:
-    """Yield each split-trait specialization of a parsed file.
+def shapes(root: tsast.Node, declarations: tuple[str, ...]) -> Iterator[tuple[tsast.Node, tsast.Node, tsast.Node | None]]:
+    """Yield each split-trait specialization under a root node.
 
-    Complexity: linear in the number of nodes of the file.
+    Complexity: linear in the number of nodes under the root.
 
     Args:
-        tree: One parsed file
+        root: The root of a file, or of a macro body
+        declarations: The declaration node types whose declarator can name a trait variable
 
     Yields:
-        Each specialization, a class head or a trait variable
+        (the node where the head starts, the class or variable declaration, its declared name)
     """
-    for node in tree.find(*CLASS_NODES):
+    for node in root.descendants(*CLASS_NODES):
         found = final_name(node.child_by_field("name"))
         if found is not None and found[1] and found[0] in TRAITS:
-            yield site_of(node.start[0], node, node.child_by_field("name"))
-    for node in tree.find("declaration"):
+            yield node, node, node.child_by_field("name")
+    for node in root.descendants(*declarations):
         for declarator in node.children:
             if declarator.field != "declarator":
                 continue
             found = final_name(declared_name(declarator))
             if found is not None and found[1] and found[0] in VARIABLES:
-                yield site_of(declarator.start[0], node, declared_name(declarator))
+                yield declarator, node, declared_name(declarator)
+
+
+def ast_sites(tree: tsast.Tree) -> Iterator[Site]:
+    """Yield each split-trait specialization of a parsed file, a class head or a trait variable."""
+    for start, node, name in shapes(tree.root, ("declaration",)):
+        yield site_of(start.start[0], node, name)
 
 
 def namespace_path(node: tsast.Node) -> list[str]:
     """Return the names of the namespaces that enclose a node, outermost first."""
-    parts: list[str] = []
-    owner = node.parent
-    while owner is not None:
-        if owner.type == "namespace_definition":
-            named = owner.child_by_field("name")
-            if named is None:
-                parts.insert(0, "(anonymous)")
-            elif named.type == "nested_namespace_specifier":
-                parts[:0] = [part.text for part in named.descendants("namespace_identifier")]
-            else:
-                parts.insert(0, named.text)
-        owner = owner.parent
-    return parts
+    return list(tsast.namespace_path(node))
 
 
 def class_path(node: tsast.Node) -> tuple[str, ...] | None:
@@ -398,27 +396,38 @@ def beside_tags(site: Site, defined: set[tuple[str, ...]]) -> bool:
     return True
 
 
-def lexical_rows(text: str) -> Iterator[int]:
-    """Yield the zero-based row of each specialization shape in raw text, after the lexer blanks it.
+def body_rows(body: tsast.MacroBody) -> Iterator[int]:
+    """Yield the file row of each specialization shape in one macro body.
 
-    Args:
-        text: C++ text that the parser does not read, such as a macro body
-
-    Yields:
-        The row of each hit, in the text
+    A parsed body is read from its tree, where a class member list holds a
+    variable as a field declaration.  A body that did not parse is read from
+    its tokens: `struct` or `class`, an optional qualifier, a trait name and
+    `<`, or a trait variable name and `<`.
     """
-    joined, joins = splice(text)
-    code, _ = blank(joined, blank_literals=True)
-    for match in LEXICAL.finditer(code):
-        if match.group("trait") in TRAITS or match.group("variable") in VARIABLES:
-            yield line_of(joined, joins, match.start()) - 1
+    if body.is_parsed:
+        for start, _, _ in shapes(body.root, ("declaration", "field_declaration")):
+            yield body.origin(start)[0]
+        return
+    tokens = tsast.pp_tokens(body.text, body.first_row)
+    for index, token in enumerate(tokens):
+        after = tokens[index + 1].text if index + 1 < len(tokens) else ""
+        if token.text in VARIABLES and after == "<":
+            yield token.row
+        elif token.text in ("struct", "class"):
+            cursor = index + 1
+            while cursor + 1 < len(tokens) and (tokens[cursor].text == "::" or tokens[cursor + 1].text == "::"):
+                cursor += 1
+            if cursor + 1 < len(tokens) and tokens[cursor].text in TRAITS and tokens[cursor + 1].text == "<":
+                yield token.row
 
 
 def scope_files(root: Path) -> list[Path]:
-    """Return every C++ file under the scan roots whose bytes name a split trait, sorted.
+    """Return every C++ file under the scan roots that spells a split trait name, sorted.
 
-    A file that does not spell a trait name cannot specialize one, so the
-    parser does not read it.  Complexity: linear in the total size of the
+    The test reads the bytes with each line splice removed, so a name that
+    a splice cuts in two still counts.  A file that spells no trait name
+    cannot specialize one: a name that a macro builds with ## is not in the
+    text for the parser either.  Complexity: linear in the total size of the
     files under the scan roots.
     """
     found: list[Path] = []
@@ -426,9 +435,10 @@ def scope_files(root: Path) -> list[Path]:
         base = root / top
         if base.is_dir():
             for path in base.rglob("*"):
-                if path.is_file() and path.suffix in SUFFIXES \
-                        and not any(part.startswith("build") for part in path.relative_to(root).parts) \
-                        and NEEDLES.search(path.read_bytes()):
+                rel = path.relative_to(root)
+                if path.is_file() and tsast.is_in_cpp_scope(rel) \
+                        and not any(part.startswith("build") for part in rel.parts) \
+                        and NEEDLES.search(LINE_SPLICE.sub(b"", path.read_bytes())):
                     found.append(path)
     return sorted(found)
 
@@ -460,23 +470,23 @@ def scan(root: Path) -> Scan:
         The orphans, the parse failures and the use of each authoring location
     """
     result = Scan(needed={entry: [] for entry in AUTHORING})
+    trees: list[tsast.Tree] = []
+    refused: dict[str, set[int]] = {}
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
-        source = tree.source.decode("utf-8", "replace")
-        if tree.diagnostic is not None and rel not in tsast.UNPARSEABLE:
+        if tree.diagnostic is not None:
             result.failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
-        refused: set[int] = set()
-        if tree.diagnostic is not None:
-            refused.update(lexical_rows(source))
-        else:
-            defined = defined_classes(tree)
-            refused.update(site.row for site in ast_sites(tree) if not beside_tags(site, defined))
-            for body in tree.find("preproc_arg"):
-                refused.update(body.start[0] + row for row in lexical_rows(body.text))
-        lines = source.split("\n")
+        trees.append(tree)
+        defined = defined_classes(tree)
+        refused[rel] = {site.row for site in ast_sites(tree) if not beside_tags(site, defined)}
+    for body in tsast.macro_bodies(trees):
+        refused[Path(body.define.tree.path).relative_to(root).as_posix()].update(body_rows(body))
+    for tree in trees:
+        rel = Path(tree.path).relative_to(root).as_posix()
+        lines = tree.source.decode("utf-8", "replace").split("\n")
         entry = authored_at(rel)
-        for row in sorted(refused):
+        for row in sorted(refused[rel]):
             if entry is None:
                 result.orphans.append((rel, row + 1, lines[row].strip()))
             else:
@@ -555,8 +565,14 @@ def self_test() -> int:
         'inline const char* text = "template <> struct splits_into<P, L, R> {};";\n'  # 17
         "template <class P, class L, class R> struct splits_into_like {};\n"        # 18
         "struct can_split_into_record { int can_split_into = 0; };\n"              # 19
+        "#define FORGE2(P, L, R) template <> struct /* x */ \\\n"                  # 20
+        "    can_split_into<P, L, R> {};\n"                                         # 21
+        "#define READS(P, L, R) static_assert(can_split_into_v<P, L, R>);\n"       # 22
+        "#define PASTE(T) template <> struct can_split_into<T##_w, T##_l, T##_r> {};\n"  # 23
+        "template <> struct can_split_\\\n"                                         # 24
+        "into<crucible::P, crucible::L, crucible::R> {};\n"                         # 25
     )
-    expected = {4, 7, 10, 11, 12, 13, 14}
+    expected = {4, 7, 10, 11, 12, 13, 14, 20, 23, 24}
     trait = "template <> struct foundation::permissions::can_split_into"
     metalog = ("<::crucible::metalog_tag::Whole<U>, ::crucible::metalog_tag::Producer<U>, "
                "::crucible::metalog_tag::Consumer<U>> : std::true_type {};")
@@ -630,11 +646,16 @@ def self_test() -> int:
                             (11, "a partial specialization"),
                             (12, "a specialization declared with no body"),
                             (13, "a specialization of a trait variable"),
-                            (14, "a specialization inside a macro body")):
+                            (14, "a specialization inside a macro body"),
+                            (20, "a specialization in a macro body that a block comment splits"),
+                            (23, "a specialization in a macro body that pastes tokens, read from its tokens"),
+                            (24, "a trait name that a line splice cuts in two")):
             expect(f"caught: {label}", line in lines)
         expect("nothing else in the planted file is reported", lines <= expected, True)
         for line, label in ((15, "a line comment"), (16, "a block comment"), (17, "a string literal"),
-                            (18, "a different template name"), (19, "a member with a trait's name")):
+                            (18, "a different template name"), (19, "a member with a trait's name"),
+                            (21, "the second line of a split macro head"),
+                            (22, "a macro that only reads a trait variable")):
             expect(f"not caught: {label}", line not in lines, True)
         refused = {line for rel, line, _ in orphans if rel == "src/planted/Beside.h"}
         for line, (_, admitted, label) in enumerate(beside, start=1):
@@ -668,12 +689,17 @@ def self_test() -> int:
 
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
         (root / "src/planted/Silent.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
-        expect("a file that names no split trait is not parsed", not scan(root).failures, True)
-        (root / "src/planted/Broken.cpp").write_text("void f() { g(1) { } }  // can_split_into\n",
+        expect("a file that spells no split trait name is not parsed", not scan(root).failures, True)
+        rostered = root / next(iter(tsast.UNPARSEABLE))
+        rostered.parent.mkdir(parents=True, exist_ok=True)
+        rostered.write_text("void f() { g(1) { } }  // can_split_into\n", encoding="utf-8")
+        expect("a file of the UNPARSEABLE roster is out of scope", not scan(root).failures, True)
+        (root / "src/planted/Broken.cpp").write_text("void f() { g(1) { } }  // can_split_\\\ninto\n",
                                                      encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()):
             code = check(root)
-        expect("a file the parser cannot read fails the check", code == 1 and bool(scan(root).failures))
+        expect("a file the parser cannot read fails the check, and a splice does not hide its trait name",
+               code == 1 and bool(scan(root).failures))
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         listed = root / "include/crucible/permissions/_FederationPermission.h"

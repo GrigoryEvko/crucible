@@ -14,17 +14,27 @@ WHAT COUNTS AS A CONTEXT CAPABILITY CHECK
     The guard reads the parse tree of the pinned tree-sitter kit.  A check is
     a template-id named row_contains_v, bare or with any qualifier, so an
     alias of the effects namespace and a using-directive do not hide it,
-    whose first template argument reads the row of a context:
-    row_type_of_t<...>, or a member row_type such as `typename Ctx::row_type`.
-    A membership check on a concrete row, such as a required row that a
-    static_assert names, is not a context capability check.  The same shape
-    in a macro body is read as text after the lexer blanks comments and
-    literals.
+    whose first template argument reads the row of a context: a template-id
+    named row_type_of_t, or a qualified name whose last part is row_type,
+    such as `typename Ctx::row_type`.  A membership check on a concrete row,
+    such as a required row that a static_assert names, is not a context
+    capability check.
+
+    A macro body is parsed on its own (tsast.macro_bodies), with every
+    fragment joined, so a block comment inside the body does not split the
+    check.  A body that the parser cannot read, such as one that pastes
+    tokens with ##, is read from its preprocessing tokens: row_contains_v,
+    `<`, and a first argument that holds row_type_of_t or `:: row_type`.
 
 SCOPE
-    include/ and src/, without the definitions of the lifts
-    (include/foundation/effects/ and include/crucible/effects/) and without
-    the frozen paths of scripts/frozen-paths.txt, which cannot change.
+    Every C++ file of include/ and src/ that spells row_contains_v.  The
+    test removes each line splice first, so a splice cannot hide the name,
+    and a name is compared as the lexer spells it, after the splices.  These
+    files are out of scope:
+      * The definitions of the lifts, in include/foundation/effects/ and
+        include/crucible/effects/
+      * The frozen paths of scripts/frozen-paths.txt, which cannot change
+      * The files of tsast.UNPARSEABLE, which are not C++.
 
 EXEMPTION
     `// ROW-CONTAINS-OK: <reason>` on a line of the check or of the
@@ -49,17 +59,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 
 ROOTS = ("include", "src")
-SUFFIXES = (".h", ".hpp", ".cpp", ".cc", ".inl", ".ipp")
 EXCLUDED_PREFIXES = ("include/foundation/effects/", "include/crucible/effects/")
 EXCLUDED_COMPONENTS = frozenset({"test", "bench", "examples", "third_party", "external", "vendor"})
 FROZEN = "scripts/frozen-paths.txt"
 NAME = "row_contains_v"
-CONTEXT_ROW = re.compile(r"\brow_type_of_t\b|::\s*row_type\b")
+ROW_OF = "row_type_of_t"
+ROW_MEMBER = "row_type"
+ROW_NODES = ("template_type", "template_function", "qualified_identifier")
 MARKER = re.compile(r"ROW-CONTAINS-OK:\s*\S")
-LEXICAL = re.compile(r"\brow_contains_v\s*<\s*(?:typename\s+)?(?P<first>[^,<>]*(?:<[^<>]*>)?[^,<>]*)")
+LINE_SPLICE = re.compile(rb"\\\r?\n")
 STATEMENTS = ("declaration", "field_declaration", "alias_declaration", "requires_clause", "condition_clause",
               "expression_statement", "return_statement", "static_assert_declaration", "template_declaration",
               "concept_definition")
@@ -75,7 +85,11 @@ def frozen_prefixes(root: Path) -> tuple[str, ...]:
 
 
 def scope_files(root: Path) -> list[Path]:
-    """Return the C++ files in scope that name row_contains_v, sorted."""
+    """Return the C++ files in scope that spell row_contains_v, sorted.
+
+    The test reads the bytes with each line splice removed, so a name that
+    a splice cuts in two still counts.
+    """
     frozen = frozen_prefixes(root)
     found: list[Path] = []
     for top in ROOTS:
@@ -85,9 +99,9 @@ def scope_files(root: Path) -> list[Path]:
         for path in base.rglob("*"):
             rel = path.relative_to(root)
             posix = rel.as_posix()
-            if path.is_file() and path.suffix in SUFFIXES and not posix.startswith(EXCLUDED_PREFIXES + frozen) \
+            if path.is_file() and tsast.is_in_cpp_scope(rel) and not posix.startswith(EXCLUDED_PREFIXES + frozen) \
                     and not any(part in EXCLUDED_COMPONENTS or part.startswith("build") for part in rel.parts[:-1]) \
-                    and NAME.encode() in path.read_bytes():
+                    and NAME.encode() in LINE_SPLICE.sub(b"", path.read_bytes()):
                 found.append(path)
     return sorted(found)
 
@@ -101,6 +115,27 @@ def first_argument(node: tsast.Node) -> tsast.Node | None:
     return inner[0] if inner else None
 
 
+def reads_context_row(argument: tsast.Node) -> bool:
+    """Report whether a template argument reads the row of a context.
+
+    The argument reads it through a template-id named row_type_of_t, or
+    through a qualified name whose last part is row_type, such as
+    `typename Ctx::row_type`.  A comment inside the argument is its own node,
+    so it cannot supply either name.  A name is compared as the lexer spells
+    it, after the line splices of phase 2.
+    """
+    for node in [argument, *argument.descendants(*ROW_NODES)]:
+        named = node.child_by_field("name")
+        if named is None:
+            continue
+        if node.type in ("template_type", "template_function") and tsast.spelled(named) == ROW_OF:
+            return True
+        if node.type == "qualified_identifier" and node.child_by_field("scope") is not None \
+                and named.type in ("type_identifier", "identifier") and tsast.spelled(named) == ROW_MEMBER:
+            return True
+    return False
+
+
 def statement_rows(node: tsast.Node) -> range:
     """Return the rows of a check and of the statement that holds it, for a marker."""
     holder = node.ancestor_of_type(*STATEMENTS)
@@ -109,26 +144,61 @@ def statement_rows(node: tsast.Node) -> range:
     return range(first, last + 1)
 
 
-def unlifted_checks(tree: tsast.Tree) -> Iterator[int]:
-    """Yield the zero-based row of each context capability check that does not use a lift.
+def context_checks(nodes: Iterator[tsast.Node]) -> Iterator[tsast.Node]:
+    """Yield each template-id among the nodes that is a context capability check through row_contains_v."""
+    for node in nodes:
+        named = node.child_by_field("name")
+        argument = first_argument(node)
+        if named is not None and tsast.spelled(named) == NAME and argument is not None \
+                and reads_context_row(argument):
+            yield node
+
+
+def token_checks(tokens: list[tsast.Token]) -> Iterator[int]:
+    """Yield the row of each context capability check in a token list: the tokens of a body that did not parse.
+
+    The first argument runs from the `<` after row_contains_v to the first
+    `,` or the closing `>` at the same depth.  It reads a context row when it
+    holds row_type_of_t, or `::` followed by row_type.
+    """
+    for index, token in enumerate(tokens):
+        if token.text != NAME or index + 1 >= len(tokens) or tokens[index + 1].text != "<":
+            continue
+        depth, cursor, first = 0, index + 2, []
+        while cursor < len(tokens):
+            text = tokens[cursor].text
+            if text in (",", ">", ">>") and depth == 0:
+                break
+            depth += {"<": 1, ">": -1, ">>": -2}.get(text, 0)
+            first.append(tokens[cursor])
+            cursor += 1
+        texts = [piece.text for piece in first]
+        if ROW_OF in texts or any(texts[at] == "::" and texts[at + 1] == ROW_MEMBER for at in range(len(texts) - 1)):
+            yield token.row
+
+
+def unlifted_checks(tree: tsast.Tree, marked: set[int]) -> Iterator[int]:
+    """Yield the zero-based row of each context capability check in a file's own code that does not use a lift.
 
     Complexity: linear in the number of nodes of the file.
     """
-    marked = {node.start[0] for node in tree.find("comment") if MARKER.search(node.text)}
-    for node in tree.find("template_type", "template_function"):
-        named = node.child_by_field("name")
-        argument = first_argument(node)
-        if named is None or named.text != NAME or argument is None or not CONTEXT_ROW.search(argument.text):
-            continue
+    for node in context_checks(tree.find("template_type", "template_function")):
         if not any(row in marked for row in statement_rows(node)):
             yield node.start[0]
-    for body in tree.find("preproc_arg"):
-        joined, joins = splice(body.text)
-        code, _ = blank(joined, blank_literals=True)
-        for match in LEXICAL.finditer(code):
-            row = body.start[0] + line_of(joined, joins, match.start()) - 1
-            if CONTEXT_ROW.search(match.group("first")) and row not in marked:
-                yield row
+
+
+def unlifted_macro_checks(body: tsast.MacroBody, marked: set[int]) -> Iterator[int]:
+    """Yield the file row of each context capability check in one macro body that does not use a lift.
+
+    A marker on any row of the definition exempts the checks of its body.
+    """
+    if any(row in marked for row in range(body.define.start[0], body.define.end[0] + 1)):
+        return
+    if body.is_parsed:
+        for node in context_checks(body.root.descendants("template_type", "template_function")):
+            yield body.origin(node)[0]
+    else:
+        yield from token_checks(tsast.pp_tokens(body.text, body.first_row))
 
 
 def scan(root: Path) -> list[str]:
@@ -137,14 +207,25 @@ def scan(root: Path) -> list[str]:
     Complexity: linear in the total size of the files in scope.
     """
     violations: list[str] = []
+    trees: list[tsast.Tree] = []
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                violations.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
+            violations.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
+        trees.append(tree)
+    rows: dict[str, set[int]] = {}
+    marks: dict[str, set[int]] = {}
+    for tree in trees:
+        rel = Path(tree.path).relative_to(root).as_posix()
+        marks[rel] = {node.start[0] for node in tree.find("comment") if MARKER.search(node.text)}
+        rows[rel] = set(unlifted_checks(tree, marks[rel]))
+    for body in tsast.macro_bodies(trees):
+        rel = Path(body.define.tree.path).relative_to(root).as_posix()
+        rows[rel].update(unlifted_macro_checks(body, marks[rel]))
+    for rel in sorted(rows):
         violations.extend(f"{rel}:{row + 1}: a context capability check through row_contains_v"
-                          for row in sorted(set(unlifted_checks(tree))))
+                          for row in sorted(rows[rel]))
     return violations
 
 
@@ -209,6 +290,15 @@ def self_test() -> int:
         ('inline const char* text = "row_contains_v<row_type_of_t<Ctx>, X>";', False, "a string literal"),
         ("#define OWNS(C, E) effects::row_contains_v<effects::row_type_of_t<C>, E>", True, "a macro body"),
         ("#define HAS(R, E) effects::row_contains_v<R, E>", False, "a macro over a concrete row"),
+        ("#define SPLIT_OWNS(C, E) row_contains_v< /* ctx */ \\", True, "a macro body split by a block comment"),
+        ("    row_type_of_t<C>, E>", None, ""),
+        ("#define PASTE_OWNS(C, E) row_contains_v<row_type_of_t<C##_ctx>, E>", True,
+         "a macro body that pastes tokens, read from its tokens"),
+        ("#define PASTE_ROW(R, E) row_contains_v<R##_row, E>", False, "a pasting macro over a concrete row"),
+        ("#define MARKED_OWNS(C, E) row_contains_v<row_type_of_t<C>, E>  // ROW-CONTAINS-OK: fixture", False,
+         "a marked macro"),
+        ("template <class Ctx> requires row_contains_\\", True, "a check whose name a line splice cuts in two"),
+        ("v<row_type_of_t<Ctx>, X> void spliced();", None, ""),
         ("}", None, ""),
     ]
     with tempfile.TemporaryDirectory() as work:
