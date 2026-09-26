@@ -23,16 +23,19 @@ must carry no branch at all.  The taint tests cover the dynamic form.
 
 Two censuses keep the case list complete.  A reflection walk in the
 generated translation unit stops the compile when a namespace of
-primitives holds a function this guard does not wrap.  A source scan
-stops the guard when production code states the constant-time grade,
-through role::CtCrypto or through atom::constant_time, in a file with no
-case in CTCRYPTO_CASES.  A case is a wrapper that the guard compiles and
-checks with the primitives.  The map is empty, because no production
-function states the grade.
+primitives holds a function this guard does not wrap.  A parse-tree scan
+(scripts/tsast.py) stops the guard when production code states the
+constant-time grade, through role::CtCrypto or through atom::constant_time,
+in a file with no case in CTCRYPTO_CASES.  The scan reads name nodes, so a
+comment or a string literal that spells the grade is not a statement, and
+a name split over two lines still is one.  A namespace alias of fixy::atom
+resolves.  A case is a wrapper that the guard compiles and checks with the
+primitives.  The map is empty, because no production function states the
+grade.
 
 Exit 0: every wrapper is clean.  Exit 1: a finding, printed per wrapper.
-Exit 2: the guard could not run (no compiler, no objdump, a compile
-error), which is a failure, never a pass.
+Exit 2: the guard could not run (no compiler, no objdump, no pinned
+tree-sitter kit, a compile error), which is a failure, never a pass.
 """
 
 from __future__ import annotations
@@ -47,6 +50,9 @@ import sys
 import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "scripts"))
+
+import tsast  # noqa: E402
 
 WIDTHS = (("u8", "std::uint8_t"), ("u16", "std::uint16_t"), ("u32", "std::uint32_t"), ("u64", "std::uint64_t"))
 TREES = (("fixy", "::fixy::ct", "fixy/ConstantTime.h"), ("safety", "::crucible::safety::ct", "crucible/safety/_ConstantTime.h"))
@@ -77,8 +83,20 @@ CTCRYPTO_DEFINITION_FILES = {
     "include/crucible/fixy/_Fn.h",
 }
 
-# A binding states the grade through the role or through the atom.
-CTCRYPTO_STATEMENT = re.compile(r"\bCtCrypto\b|\b(?:atom|at)::constant_time\b")
+# A binding states the grade through the role or through the atom.  The
+# role is a name whose part is CtCrypto, unless the part before it is the
+# old tree's stance alias, which carries no binding.  The atom is a name
+# whose part is constant_time after a qualifier that is atom, at, or a
+# namespace alias of fixy::atom.
+CTCRYPTO_ROLE = "CtCrypto"
+CTCRYPTO_STANCE = "stance"
+CTCRYPTO_ATOM = "constant_time"
+CTCRYPTO_ATOM_QUALIFIERS = frozenset({"atom", "at"})
+CTCRYPTO_ROOTS = ("include", "src", "vessel")
+# The name leaves of the kit's grammar that can spell a grade.
+NAME_LEAVES = ("identifier", "type_identifier", "namespace_identifier", "field_identifier")
+# The nodes that a name leaf is part of, up to the name that holds it whole.
+NAME_OWNERS = frozenset({"template_type", "template_function", "template_method"})
 
 PREFIXES = {"rep", "repz", "repe", "repnz", "repne", "lock", "notrack", "bnd", "data16", "cs", "ds"}
 
@@ -282,38 +300,88 @@ def check_object(cxx: str, source: pathlib.Path, expected: dict[str, bool], work
     return findings
 
 
-def ctcrypto_statements(repo: pathlib.Path) -> dict[str, list[str]]:
-    """Map each production file under `repo` to its code lines that state the constant-time grade.
+def whole_name(leaf: tsast.Node) -> tsast.Node:
+    """Return the name that a name leaf is part of: its template name, then the qualified name around it.
 
-    A comment line is not a statement, and neither is the old tree's
-    stance alias, which carries no binding.  O(bytes of the scanned trees).
+    A leaf inside the template arguments of a name is a name of its own, so
+    the walk stops at an argument list.
     """
-    statements: dict[str, list[str]] = {}
-    for root in ("include", "src", "vessel"):
+    node = leaf
+    while node.parent is not None and (node.parent.type == "qualified_identifier"
+                                       or (node.parent.type in NAME_OWNERS and node.field == "name")):
+        node = node.parent
+    return node
+
+
+def states_grade(name: tsast.Node, aliases: list) -> bool:
+    """Say whether a whole name states the constant-time grade through the role or the atom."""
+    qualified = tsast.qualified_parts(name)
+    if qualified is None:
+        return False
+    is_global, parts = qualified
+    for index, part in enumerate(parts):
+        before = parts[:index]
+        if part == CTCRYPTO_ROLE and before[-1:] != (CTCRYPTO_STANCE,):
+            return True
+        if part == CTCRYPTO_ATOM and before:
+            resolved = tsast.resolve_namespace(before, name, aliases, is_global=is_global)
+            if before[-1] in CTCRYPTO_ATOM_QUALIFIERS or resolved[-1:] == ("atom",):
+                return True
+    return False
+
+
+def ctcrypto_statements(repo: pathlib.Path) -> tuple[dict[str, list[str]], list[str]]:
+    """Map each production file under `repo` to the names in it that state the constant-time grade.
+
+    The scan parses a file only when its bytes contain a spelling of the
+    grade, because no name node can spell it otherwise.  Each whole name
+    counts once.  Also return each such file that the kit cannot parse,
+    because the scan cannot read it.  O(bytes of the scanned trees) for the
+    byte filter, and O(size of each file parsed).
+
+    Raises:
+        tsast.KitMissing: If the pinned kit is not installed
+    """
+    candidates: list[pathlib.Path] = []
+    for root in CTCRYPTO_ROOTS:
         for path in sorted((repo / root).rglob("*")):
-            if path.suffix not in (".h", ".hpp", ".cpp", ".cc") or not path.is_file():
-                continue
             rel = path.relative_to(repo).as_posix()
-            if rel in CTCRYPTO_DEFINITION_FILES:
+            if not path.is_file() or not tsast.is_in_cpp_scope(rel) or rel in CTCRYPTO_DEFINITION_FILES:
                 continue
-            for number, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
-                code = line.split("//", 1)[0]
-                if code.lstrip().startswith("*") or "stance::CtCrypto" in code:
-                    continue
-                if CTCRYPTO_STATEMENT.search(code):
-                    statements.setdefault(rel, []).append(f"{rel}:{number}: {line.strip()}")
-    return statements
+            data = path.read_bytes()
+            if CTCRYPTO_ROLE.encode() in data or CTCRYPTO_ATOM.encode() in data:
+                candidates.append(path)
+    statements: dict[str, list[str]] = {}
+    unreadable: list[str] = []
+    for tree in tsast.parse(candidates, strict=False):
+        rel = pathlib.Path(tree.path).resolve().relative_to(repo.resolve()).as_posix()
+        if tree.diagnostic is not None:
+            unreadable.append(rel)
+            continue
+        aliases = tsast.namespace_aliases(tree)
+        seen: set[int] = set()
+        for leaf in tree.find(*NAME_LEAVES):
+            if leaf.text not in (CTCRYPTO_ROLE, CTCRYPTO_ATOM):
+                continue
+            name = whole_name(leaf)
+            if name.index in seen or not states_grade(name, aliases):
+                continue
+            seen.add(name.index)
+            statements.setdefault(rel, []).append(f"{rel}:{name.line}: {tsast.spelled(name)}")
+    return statements, unreadable
 
 
 def ctcrypto_problems(repo: pathlib.Path, cases: dict[str, tuple[tuple[str, bool, str], ...]]) -> list[str]:
-    """Return each statement of the grade with no case, and each case entry that checks nothing."""
-    statements = ctcrypto_statements(repo)
+    """Return each statement of the grade with no case, each case entry that checks nothing, and each
+    candidate file that the kit cannot parse."""
+    statements, unreadable = ctcrypto_statements(repo)
     problems = [
         f"a production binding states the constant-time grade and has no disassembly case: {line}"
         for rel, lines in statements.items()
         if rel not in cases
         for line in lines
     ]
+    problems += [f"the tree-sitter kit cannot parse {rel}, so the census cannot read it" for rel in unreadable]
     for rel, file_cases in cases.items():
         if not file_cases:
             problems.append(f"the case entry for {rel} holds no wrapper, so it checks nothing")
@@ -363,11 +431,21 @@ def self_test_case_list() -> int:
     binding = "using Seal = ::fixy::fn<int, ::fixy::atom::with<>, ::fixy::atom::constant_time>;\n"
     role = "using Mac = ::fixy::role::CtCrypto<int>;\n"
     comment = "// role::CtCrypto and atom::constant_time, named in a comment only\n"
+    block_comment = "/* role::CtCrypto */ int plain = 0;\n"
+    literal = 'inline constexpr char spelled[] = "role::CtCrypto and atom::constant_time";\n'
+    split = "using Seal = ::fixy::fn<int, ::fixy::atom::\n    constant_time>;\n"
+    aliased = "namespace grade = ::fixy::atom;\nusing Seal = ::fixy::fn<int, grade::constant_time>;\n"
+    stance = "using Old = ::crucible::safety::stance::CtCrypto;\n"
     wrapper = ("ct_case_seal", False, 'extern "C" int ct_case_seal(int x) noexcept { return x; }')
     trials = (
         ("an atom binding with no case", {"include/a.h": binding}, {}, 1),
         ("a role binding with no case", {"src/b.cpp": role}, {}, 1),
         ("a comment only", {"include/c.h": comment}, {}, 0),
+        ("a block comment only", {"include/c.h": block_comment}, {}, 0),
+        ("a string literal only", {"include/c.h": literal}, {}, 0),
+        ("an atom binding split over two lines", {"include/a.h": split}, {}, 1),
+        ("an atom binding through a namespace alias", {"include/a.h": aliased}, {}, 1),
+        ("the old stance alias", {"include/c.h": stance}, {}, 0),
         ("a binding with a case", {"include/a.h": binding}, {"include/a.h": (wrapper,)}, 0),
         ("a case entry with no wrapper", {"include/a.h": binding}, {"include/a.h": ()}, 1),
         ("a case entry for a file with no binding", {"include/c.h": comment}, {"include/c.h": (wrapper,)}, 1),
@@ -451,7 +529,11 @@ def main() -> int:
     if shutil.which("objdump") is None:
         sys.stderr.write("check-ct-disassembly: objdump is missing\n")
         return 2
-    return run_self_test(args.cxx) if args.self_test else run_guard(args.cxx)
+    try:
+        return run_self_test(args.cxx) if args.self_test else run_guard(args.cxx)
+    except tsast.KitMissing as exc:
+        sys.stderr.write(f"check-ct-disassembly: the census cannot run: {exc}\n")
+        return 2
 
 
 if __name__ == "__main__":
