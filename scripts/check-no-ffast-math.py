@@ -23,6 +23,12 @@ THE ENGINES
                   expression, variable and preset.  The guard reads it with
                   json, so a flag inside `$<$<CONFIG:Release>:...>` and a flag
                   in a CMake bracket comment each get the correct verdict.
+                  The compile database holds no link line, and a fast-math
+                  option at link time links crtfastmath.o, which sets the
+                  flush-to-zero bits of the process.  So the guard also reads
+                  the link fragments of each target from the codemodel reply
+                  of the CMake file API, which the root CMakeLists.txt asks
+                  for.  A build with no reply fails the guard.
                   Each CI build leg runs the guard on its own configuration.
                   CMakePresets.json is read with json as well, so a preset
                   that no leg configures still has its flag variables read.
@@ -37,7 +43,8 @@ THE ENGINES
 SCOPE
     Sources under include/, src/, vessel/ and tools/.  Compile-database
     entries of a file under test/, bench/, examples/ or fuzz/ are out of
-    scope: a bench that wants fast-math does not link crucible.
+    scope, and so is a target that a CMakeLists.txt in such a directory
+    declares: a bench that wants fast-math does not link crucible.
 
 EXEMPTIONS
     `// NO-FFAST-MATH-OK: <reason>` on the row of an override exempts it.
@@ -153,6 +160,79 @@ def build_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list
         suffix = f" and {more} more" if more > 0 else ""
         violations.append(Violation(f"{database}", f"{flag} on {len(set(files))} file(s): {shown}{suffix}"))
     return violations, []
+
+
+def codemodel_targets(build_dir: Path) -> tuple[Path, list[Path]] | str:
+    """Return the source directory and the target files of the codemodel reply of the CMake file API.
+
+    CMake writes a new index file at each configure, and the name of the
+    index holds its time, so the last name in sort order is the current one.
+
+    Returns:
+        The source directory that the codemodel names and the path of each
+        target file, or one line that says why the reply cannot be read
+    """
+    reply = build_dir / ".cmake" / "api" / "v1" / "reply"
+    indexes = sorted(reply.glob("index-*.json"))
+    if not indexes:
+        return (f"{reply}: the build has no reply of the CMake file API, so no link flag was read. The root "
+                f"CMakeLists.txt asks for the codemodel with cmake_file_api, which needs CMake 3.27 or a "
+                f"subsequent version. Configure the build again with such a CMake")
+    try:
+        index = json.loads(indexes[-1].read_text(encoding="utf-8"))
+        codemodel_file = next(item["jsonFile"] for item in index.get("objects", [])
+                              if item.get("kind") == "codemodel" and item.get("version", {}).get("major") == 2)
+        codemodel = json.loads((reply / codemodel_file).read_text(encoding="utf-8"))
+    except StopIteration:
+        return f"{indexes[-1]}: the reply holds no codemodel of version 2, so no link flag was read"
+    except (OSError, KeyError, json.JSONDecodeError) as error:
+        return f"{indexes[-1]}: cannot read the codemodel reply: {error}"
+    targets = [reply / target["jsonFile"] for configuration in codemodel.get("configurations", [])
+               for target in configuration.get("targets", [])]
+    return Path(codemodel.get("paths", {}).get("source", "")), targets
+
+
+def link_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list[str]]:
+    """Read the link line of each target from the CMake file API and return each banned flag, grouped by flag.
+
+    A fast-math option on the link line makes GCC link crtfastmath.o, which
+    sets the flush-to-zero and denormals-are-zero bits of the process at
+    startup.  The compile database holds no link line, so only this read
+    sees such an option.  A target in an exempt directory is out of scope,
+    as its compile entries are.
+
+    Complexity: linear in the size of the reply.
+
+    Returns:
+        The violations, and one line for each error that stops the read
+    """
+    found = codemodel_targets(build_dir)
+    if isinstance(found, str):
+        return [], [found]
+    source, targets = found
+    if not source.is_dir() or source.resolve() != root.resolve():
+        return [], [f"{build_dir}: the file API reply belongs to the source tree {source}, not to {root}, so no "
+                    f"link flag of this tree was read"]
+    by_flag: dict[str, set[str]] = {}
+    for target_file in targets:
+        try:
+            target = json.loads(target_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            return [], [f"{target_file}: cannot read the target reply: {error}"]
+        directory = root / target.get("paths", {}).get("source", ".") / "CMakeLists.txt"
+        if is_under(directory, root) and is_exempt(directory, root):
+            continue
+        for fragment in target.get("link", {}).get("commandFragments", []):
+            try:
+                tokens = shlex.split(fragment.get("fragment", ""))
+            except ValueError:
+                tokens = fragment.get("fragment", "").split()
+            for flag in tokens:
+                if flag in BANNED_FLAGS:
+                    by_flag.setdefault(flag, set()).add(target.get("name", target_file.name))
+    where = f"{build_dir / '.cmake' / 'api' / 'v1'}"
+    return [Violation(where, f"{flag} on the link line of {len(names)} target(s): {', '.join(sorted(names))}")
+            for flag, names in sorted(by_flag.items())], []
 
 
 def preset_violations(root: Path) -> tuple[list[Violation], list[str]]:
@@ -349,8 +429,10 @@ def check(root: Path, build_dir: Path | None) -> int:
     """
     violations: list[Violation] = []
     failures: list[str] = []
-    for found, lost in (preset_violations(root), source_violations(root),
-                        build_violations(build_dir, root) if build_dir is not None else ([], [])):
+    scans = [preset_violations(root), source_violations(root)]
+    if build_dir is not None:
+        scans += [build_violations(build_dir, root), link_violations(build_dir, root)]
+    for found, lost in scans:
         violations += found
         failures += lost
     rows = load_allowlist(root / ALLOWLIST)
@@ -372,7 +454,8 @@ def check(root: Path, build_dir: Path | None) -> int:
         return 1
     if stale:
         return 2
-    scope = "presets, sources and the compile database" if build_dir is not None else "presets and sources"
+    scope = ("presets, sources, compile database and link lines" if build_dir is not None
+             else "presets and sources")
     print(f"check-no-ffast-math: clean, no fast-math option in the {scope}.", file=sys.stderr)
     return 0
 
@@ -407,14 +490,27 @@ PLANTED_ROWS = (
 PLANTED_CMAKE = """\
 cmake_minimum_required(VERSION 3.28)
 project(planted CXX)
+cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2)
 add_library(planted_lib src/a.cpp)
 target_compile_options(planted_lib PRIVATE $<$<CONFIG:Debug>:-ffast-math>)
 target_compile_options(planted_lib PRIVATE -Ofast)
 #[[ a bracket comment
   add_compile_options(-fassociative-math)
+  target_link_options(planted_app PRIVATE -ffinite-math-only)
 ]]
+set(NAMED_BUT_UNUSED "-fno-signed-zeros")
 add_library(planted_test test/t.cpp)
 target_compile_options(planted_test PRIVATE -freciprocal-math)
+add_executable(planted_app src/main.cpp)
+target_link_options(planted_app PRIVATE $<$<CONFIG:Debug>:-funsafe-math-optimizations>)
+add_library(planted_shared SHARED src/b.cpp)
+target_link_libraries(planted_shared PRIVATE -ffp-contract=fast)
+add_subdirectory(test)
+"""
+
+PLANTED_TEST_CMAKE = """\
+add_executable(planted_test_app main.cpp)
+target_link_options(planted_test_app PRIVATE -fassociative-math)
 """
 
 PLANTED_PRESETS = {
@@ -474,10 +570,15 @@ def self_test(cmake: str, cxx: str) -> int:
         expect("-fno-fast-math in a preset is not reported", "-fno-fast-math" not in shown)
 
         (root / "CMakeLists.txt").write_text(PLANTED_CMAKE, encoding="utf-8")
-        (root / "src" / "a.cpp").parent.mkdir()
-        (root / "src" / "a.cpp").write_text("int planted_a() { return 0; }\n", encoding="utf-8")
-        (root / "test" / "t.cpp").parent.mkdir()
-        (root / "test" / "t.cpp").write_text("int planted_t() { return 0; }\n", encoding="utf-8")
+        (root / "src").mkdir()
+        (root / "test").mkdir()
+        for rel, text in (("src/a.cpp", "int planted_a() { return 0; }\n"),
+                          ("src/b.cpp", "int planted_b() { return 0; }\n"),
+                          ("src/main.cpp", "int main() { return 0; }\n"),
+                          ("test/t.cpp", "int planted_t() { return 0; }\n"),
+                          ("test/main.cpp", "int main() { return 0; }\n"),
+                          ("test/CMakeLists.txt", PLANTED_TEST_CMAKE)):
+            (root / rel).write_text(text, encoding="utf-8")
         build = Path(work) / "build"
         configured = subprocess.run([cmake, "-S", str(root), "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug",
                                      "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", f"-DCMAKE_CXX_COMPILER={cxx}"],
@@ -491,6 +592,31 @@ def self_test(cmake: str, cxx: str) -> int:
             expect("-Ofast is reported", "-Ofast on 1 file(s): src/a.cpp" in shown)
             expect("a flag in a CMake bracket comment is not reported", "-fassociative-math" not in shown)
             expect("a flag on a file under test/ is out of scope", "-freciprocal-math" not in shown)
+
+            link_found, link_lost = link_violations(build, root)
+            linked = " ".join(violation.what for violation in link_found)
+            expect("the file API reply reads", not link_lost)
+            expect("a link option inside a generator expression is reported",
+                   "-funsafe-math-optimizations on the link line of 1 target(s): planted_app" in linked)
+            expect("a flag passed through target_link_libraries is reported",
+                   "-ffp-contract=fast on the link line of 1 target(s): planted_shared" in linked)
+            expect("a link option in a CMake bracket comment is not reported", "-ffinite-math-only" not in linked)
+            expect("a flag that only a variable names is not reported", "-fno-signed-zeros" not in linked)
+            expect("a link option of a target declared under test/ is out of scope",
+                   "-fassociative-math" not in linked)
+            expect("a compile option is not a link option", "-Ofast" not in linked)
+
+            reply = build / ".cmake" / "api" / "v1" / "reply"
+            moved = Path(work) / "reply-moved"
+            reply.rename(moved)
+            _, missing = link_violations(build, root)
+            expect("a build with no file API reply fails", any("no reply of the CMake file API" in line
+                                                               for line in missing))
+            moved.rename(reply)
+            _, foreign = link_violations(build, root / "src")
+            expect("a reply of another source tree fails", any("belongs to the source tree" in line
+                                                               for line in foreign))
+            expect("the full check with the build reports the violations", check(root, build) == 1)
         else:
             print(configured.stderr)
 

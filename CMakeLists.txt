@@ -28,6 +28,14 @@ endif()
 
 project(crucible LANGUAGES CXX)
 
+# scripts/check-no-ffast-math.py reads the link line of each target from the
+# codemodel reply of the CMake file API, because the compile database holds
+# no link flag.  The command exists from CMake 3.27.  With an older CMake
+# the reply is absent, and the guard fails and gives that reason.
+if(COMMAND cmake_file_api)
+  cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2)
+endif()
+
 # The compiler must have each fix in toolchain/gcc/patches.  A configure
 # without cmake/Toolchain-gcc16.cmake takes the compiler that CMake finds,
 # for example the stock Fedora GCC 16.2.1 behind /usr/lib64/ccache/c++,

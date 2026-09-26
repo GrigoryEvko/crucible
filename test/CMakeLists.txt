@@ -843,12 +843,12 @@ add_test(NAME raw_array_member
 set_tests_properties(raw_array_member raw_array_member_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # The fast-math family is banned (CLAUDE.md §V, cmake/FpStrict.cmake is
-# the floor).  scripts/check-no-ffast-math.py reads the flags of this build
-# from its compile database, the flag variables of every configure preset,
-# and each optimize attribute, GCC optimize pragma and _Pragma from the
-# parse tree, macro bodies included.  The self-test configures a planted
-# project, so a flag inside a generator expression is judged as the
-# compiler receives it.
+# the floor).  scripts/check-no-ffast-math.py reads the compile flags of
+# this build from its compile database, the link line of each target from
+# the CMake file API, the flag variables of every configure preset, and each
+# optimize attribute, GCC optimize pragma and _Pragma from the parse tree,
+# macro bodies included.  The self-test configures a planted project, so a
+# flag inside a generator expression is judged as the compiler receives it.
 add_test(NAME no_ffast_math_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.py
           --self-test --cmake ${CMAKE_COMMAND} --cxx ${CMAKE_CXX_COMPILER})
