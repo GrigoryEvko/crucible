@@ -14,17 +14,21 @@ entry function of a background thread, that a reviewer admitted.
 
 THE RULE (each owner is checked alone, against its own allowlist)
     - A use is the identifier of the owner (InitOwner or BackgroundOwner) in
-      the code of a file under the trees of production code:
+      the code of a C++ file under the trees of production code:
       include/foundation, include/fixy, include/crucible, src, vessel, tools
       and examples.  A comment or a literal is not a use.  Each door is a
       static member, so a call always contains the name of the owner.  A type
       alias, a using-declaration and a friend declaration also contain it,
       so each of them is a use too.
+    - Each use comes from the parse tree: an identifier node of any kind, or
+      an identifier token of a macro body.  A name that a backslash-newline
+      splits is one name, as translation phase 2 makes it.  An argument of a
+      #pragma, #error or #warning line is not code, so it is not a use.
     - The scope of a use is the function whose definition encloses it, as the
-      parse gives it: the names of the enclosing classes, then the name of the
-      declarator.  A use in no function has the scope namespace-scope.  A use
-      in a macro body has the scope macro, because the parse cannot tell where
-      the macro expands.
+      parse gives it: the names of the enclosing classes, then the parts of
+      the declarator name.  A use in no function has the scope
+      namespace-scope.  A use in a macro body has the scope macro, because
+      the parse cannot tell where the macro expands.
     - Each scope with a use needs a row `PATH SCOPE [xN] — REASON` in the
       allowlist of the owner: scripts/ctx-init-door-allowlist.txt for the init
       owner, scripts/ctx-bg-door-allowlist.txt for the background owner.  N is
@@ -33,17 +37,17 @@ THE RULE (each owner is checked alone, against its own allowlist)
       fails.  A row in the allowlist of one owner admits no use of the other.
     - A row that admits more uses than its scope has is stale, and it fails.
       So the list becomes shorter when the code does.
-    - For each file, the count from the parse must equal the count from the
-      lexer.  A difference means that the parse lost a use, and the guard
-      fails.
-    - A file with a use that the parser cannot read fails, because the guard
-      cannot find the scope of the use.
+    - A file that the parser cannot read fails when its tokens name the
+      owner, because the guard cannot find the scope of the use.
+
+The guard parses each file whose bytes hold the name of the owner or a
+backslash-newline, because a use must spell the name or split it.
 
 The guard does not scan test/, bench/ and fuzz/.  The test door serves them,
 and a test of the door is not production code.
 
 What this guard does not see: a name of the owner that a macro makes by token
-pasting.  The scan reads the source text, and review sees such a macro.
+pasting.  Review sees such a macro.
 
 Exit 0 clean, 1 on an unlisted use, a stale row or a parse failure, 2 on a
 usage error, a malformed row or a failed self-test, 3 when the parser kit is
@@ -64,15 +68,13 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402
 import tsast  # noqa: E402
 
 SCAN_DIRS = ("include/foundation", "include/fixy", "include/crucible", "src", "vessel", "tools", "examples")
-SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".tpp", ".c", ".cc", ".cpp", ".cxx", ".cppm"})
 NAMESPACE_SCOPE = "namespace-scope"
 MACRO_SCOPE = "macro"
-CLASSES = ("class_specifier", "struct_specifier", "union_specifier")
 MACROS = ("preproc_def", "preproc_function_def")
+SPLICES = (b"\\\n", b"\\\r\n")
 ENTRY = re.compile(r"^(?P<path>\S+)\s+(?P<scope>\S+?)(?:\s+x(?P<count>[1-9][0-9]*))?\s+—\s+\S")
 
 Key = tuple[str, str]
@@ -125,101 +127,87 @@ def read_allowlist(root: Path, door: Door) -> dict[Key, tuple[int, int]]:
 
 
 def candidate_files(root: Path, owner: str) -> list[Path]:
-    """Return each file under the scan roots whose text contains the name of the owner, in sorted order.
+    """Return each C++ file under the scan roots that can hold a use of the owner, in sorted order.
+
+    A use must spell the name of the owner, or split it with a
+    backslash-newline, so a file with neither holds no use.
 
     Complexity: one read of each file under the scan roots.
     """
+    needle = owner.encode()
     found = []
     for directory in SCAN_DIRS:
         base = root / directory
         if not base.is_dir():
             continue
         for path in sorted(base.rglob("*")):
-            if path.suffix in SUFFIXES and path.is_file() and owner in path.read_text(errors="replace"):
+            if not path.is_file() or not tsast.is_in_cpp_scope(path.relative_to(root)):
+                continue
+            data = path.read_bytes()
+            if needle in data or any(splice in data for splice in SPLICES):
                 found.append(path)
     return found
 
 
-def lexed_lines(path: Path, owner: str) -> list[int]:
-    """Return the line of each use of the owner in the code of the file, from the lexer.
-
-    Complexity: linear in the length of the file.
-    """
-    joined, joins = cxx_lex.splice(path.read_text(errors="replace"))
-    _, hits = cxx_lex.blank(joined, frozenset({owner}), blank_literals=True)
-    return [cxx_lex.line_of(joined, joins, offset) for offset in hits]
-
-
-def spelled(text: str) -> str:
-    """Return a name as its tokens only, with the comments and the white space removed."""
-    return re.sub(r"\s+", "", cxx_lex.blank(text)[0])
+def names_owner(node: tsast.Node, owner: str) -> bool:
+    """Say whether an identifier node is the name of the owner, after the splices of phase 2."""
+    return node.text == owner or ("\\" in node.text and tsast.spelled(node) == owner)
 
 
 def scope_of(node: tsast.Node) -> str:
-    """Return the scope of one use: the enclosing classes and function, or namespace-scope."""
-    function = node.ancestor_of_type("function_definition")
-    if function is None:
+    """Return the scope of one use: the enclosing classes and function, or namespace-scope.
+
+    A function whose name the guard cannot read gives the scope `?`, which
+    no allowlist row names, so the use fails.
+    """
+    if node.ancestor_of_type("function_definition") is None:
         return NAMESPACE_SCOPE
-    declarator = function.child_by_field("declarator")
-    if declarator is None:
-        return NAMESPACE_SCOPE
-    target = declarator if declarator.type == "function_declarator" else next(
-        declarator.descendants("function_declarator"), None)
-    name_node = target.child_by_field("declarator") if target is not None else None
-    parts = [spelled((name_node or declarator).text)]
-    current = function.parent
-    while current is not None:
-        if current.type in CLASSES:
-            name = current.child_by_field("name")
-            if name is not None:
-                parts.insert(0, spelled(name.text))
-        current = current.parent
-    return "::".join(parts)
+    parts = tsast.enclosing_function(node)
+    return "::".join(parts) if parts else "?"
 
 
 def parsed_uses(tree: tsast.Tree, owner: str) -> list[tuple[str, int]]:
-    """Return (scope, line) for each use of the owner that the parse holds, in the order of the file.
+    """Return (scope, line) for each use of the owner, in the order of the file.
 
-    An identifier of each kind counts: a type, a namespace qualifier, a field
-    and a plain identifier.  A macro body is raw text in the parse, so the
-    guard reads that text with the lexer.
+    An identifier node of each kind counts: a type, a namespace qualifier, a
+    field and a plain identifier.  A macro body is one text node in the
+    parse, so its identifier tokens count, each with its own row.
 
-    Complexity: linear in the number of nodes of the tree.
+    Complexity: linear in the number of nodes of the tree plus the length of the macro bodies.
     """
     identifier_types = {kind for kind in set(tree.types) if kind.endswith("identifier")}
-    owner_text = re.compile(rf"\b{owner}\b")
-    found = [(scope_of(node), node.line) for node in tree.find(*identifier_types) if node.text == owner]
-    for node in tree.find(*MACROS):
-        body, _ = cxx_lex.blank(node.text, blank_literals=True)
-        found += [(MACRO_SCOPE, node.line + body.count("\n", 0, match.start()))
-                  for match in owner_text.finditer(body)]
+    found = [(scope_of(node), node.line) for node in tree.find(*identifier_types) if names_owner(node, owner)]
+    for define in tree.find(*MACROS):
+        for fragment in define.children:
+            if fragment.type == "preproc_arg":
+                found += [(MACRO_SCOPE, token.row + 1) for token in tsast.pp_tokens(fragment.text, fragment.start[0])
+                          if token.kind == "identifier" and token.text == owner]
     return sorted(found, key=lambda use: use[1])
+
+
+def unreadable_use(tree: tsast.Tree, owner: str) -> int | None:
+    """Return the line of the first token that names the owner in a file the parser cannot read, or None."""
+    text = tree.source.decode("utf-8", "replace")
+    return next((token.row + 1 for token in tsast.pp_tokens(text)
+                 if token.kind == "identifier" and token.text == owner), None)
 
 
 def scan(root: Path, door: Door) -> tuple[dict[Key, list[int]], list[str]]:
     """Return the lines of the uses of one owner by (path, scope), and a line for each file the guard cannot read.
 
-    Complexity: one lexical pass over each candidate file, and one parse of it.
+    Complexity: one parse of each candidate file.
     """
-    lexed_by_path = {path: lines for path in candidate_files(root, door.owner)
-                     if (lines := lexed_lines(path, door.owner))}
     uses: dict[Key, list[int]] = defaultdict(list)
     problems: list[str] = []
-    for tree in tsast.parse(list(lexed_by_path), strict=False):
-        path = Path(tree.path)
-        rel = path.relative_to(root).as_posix()
-        lexed = lexed_by_path[path]
+    for tree in tsast.parse(candidate_files(root, door.owner), strict=False):
+        rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            problems.append(f"PARSE     {rel}:{lexed[0]} — the parser cannot read the file, so the guard cannot "
-                            f"find the scope of its use of the {door.context} owner: {tree.diagnostic}")
+            line = unreadable_use(tree, door.owner)
+            if line is not None:
+                problems.append(f"PARSE     {rel}:{line} — the parser cannot read the file, so the guard cannot "
+                                f"find the scope of its use of the {door.context} owner: {tree.diagnostic}")
             continue
-        parsed = parsed_uses(tree, door.owner)
-        if len(parsed) != len(lexed):
-            problems.append(f"PARSE     {rel} — the lexer finds {len(lexed)} use(s) of the {door.context} owner and "
-                            f"the parse finds {len(parsed)}, so the parse lost a use and the guard cannot find its "
-                            f"scope.")
-            continue
-        for scope, line in parsed:
+        for scope, line in parsed_uses(tree, door.owner):
             uses[(rel, scope)].append(line)
     return uses, problems
 
@@ -336,6 +324,15 @@ def self_test() -> int:
                               "an alias of the owner at namespace scope"),
             "src/macro.cpp": (f"#define OPEN_THE_DOOR() {door}\nint g() {{ return 1; }}\n",
                               "src/macro.cpp:1 — the scope macro", "a macro body that names the owner"),
+            "src/spliced_macro.cpp": ("#define OPEN() foundation::effects::host::Init\\\nOwner::mint_init_context()\n"
+                                      "int g() { return 1; }\n", "src/spliced_macro.cpp:1 — the scope macro",
+                                      "a macro body that splits the name of the owner with a backslash-newline"),
+            "src/spliced_call.cpp": ("int start() { return foundation::effects::host::Init\\\n"
+                                     "Owner::mint_init_context(); }\n", "src/spliced_call.cpp:1 — the scope start",
+                                     "a call that splits the name of the owner, in a file that never spells it"),
+            "src/commented.cpp": (f"struct Boot {{ int run /* entry */ () {{ return {door}; }} }};\n",
+                                  "src/commented.cpp:1 — the scope Boot::run",
+                                  "a member function with a comment inside its declarator"),
         }
         for rel, (text, needle, name) in cases.items():
             write(root, rel, text)
@@ -375,6 +372,13 @@ def self_test() -> int:
         write(root, "src/broken.cpp", f"int broken( {{ return {door}; }}}}\n")
         expect(root, 1, ["PARSE     src/broken.cpp:1"], "a file that the parser cannot read fails", True)
         (root / "src/broken.cpp").unlink()
+        write(root, "src/pragma.cpp", "#pragma GCC poison InitOwner\nint clean() { return 0; }\n")
+        write(root, "src/broken_elsewhere.cpp", "#define JOIN(a, b) a##\\\nb\nint broken( { return 0; }}}\n")
+        expect(root, 0, ["4 use(s) of the init owner in 2 scope(s), each one admitted"],
+               "a #pragma argument is not a use, and a spliced file that the parser cannot read and that names no "
+               "owner passes")
+        (root / "src/pragma.cpp").unlink()
+        (root / "src/broken_elsewhere.cpp").unlink()
 
         # The background door is checked against its own allowlist, so a
         # row for the init door admits no call of the background door.
