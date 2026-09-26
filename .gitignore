@@ -40,3 +40,7 @@ __pycache__/
 
 # Local venv holding the Crucible-patched PyTorch (vessel/torch tracing)
 .venv-torch/
+
+# Recorded traces. The record scripts in vessel/torch/examples write .crtrace
+# files here. A trace is data from one run on one machine, not source.
+traces/
