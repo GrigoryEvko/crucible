@@ -126,6 +126,52 @@ template <ScopedEnum E>
     return found.empty() ? unknown_enum_sentinel<E> : found;
 }
 
+namespace detail {
+
+// The identifier in lower case, with the separator between words.  An
+// upper-case letter that follows a lower-case letter or a digit starts a
+// new word.  So CopyHostToDevice reads copy_host_to_device with '_', and
+// SocketOracle reads socket-oracle with '-'.  The text lives in static
+// storage.  Complexity: linear in the length of the identifier.
+[[nodiscard]] consteval std::string_view lower_words_of(std::string_view identifier, char separator) {
+    std::string words;
+    for (std::size_t index = 0; index < identifier.size(); ++index) {
+        const char letter = identifier[index];
+        const bool is_upper = letter >= 'A' && letter <= 'Z';
+        if (is_upper && index > 0) {
+            const char previous = identifier[index - 1];
+            const bool ends_word = (previous >= 'a' && previous <= 'z') || (previous >= '0' && previous <= '9');
+            if (ends_word) words += separator;
+        }
+        words += is_upper ? static_cast<char>(letter - 'A' + 'a') : letter;
+    }
+    return std::define_static_string(words);
+}
+
+}  // namespace detail
+
+// The identifier of the enumerator that holds `value`, in lower-case words
+// joined by Separator, or the sentinel when no enumerator holds it.  When
+// two enumerators share a value, the first in declaration order wins, as
+// in enumerator_name.
+template <ScopedEnum E, char Separator>
+[[nodiscard]] constexpr std::string_view enum_words(E value) noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    std::string_view words = unknown_enum_sentinel<E>;
+    bool is_found = false;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto e : enumerators) {
+        constexpr std::string_view spelled = detail::lower_words_of(std::meta::identifier_of(e), Separator);
+        if (!is_found && value == [:e:]) {
+            words = spelled;
+            is_found = true;
+        }
+    }
+#pragma GCC diagnostic pop
+    return words;
+}
+
 namespace detail::enum_name_self_test {
 
 enum class TestFlags : std::uint8_t {
@@ -168,6 +214,24 @@ static_assert(enum_name(TF::AlphaBeta) == "AlphaBeta");
 static_assert(enum_name(TF::None) == "None");
 static_assert(enum_name(static_cast<TF>(0xFF)) == "<unknown TestFlags>");
 static_assert(enum_name(static_cast<TF>(0xFF)) == unknown_enum_sentinel<TF>);
+
+// A word starts at an upper-case letter after a lower-case letter or a
+// digit, so a run of capitals and a digit run stay inside one word.
+enum class WordShapes : std::uint8_t {
+    CopyHostToDevice,
+    NvlinkP2pCopy,
+    Cpu,
+    IPv4Header,
+    Alias = CopyHostToDevice,
+};
+static_assert(enum_words<WordShapes, '_'>(WordShapes::CopyHostToDevice) == "copy_host_to_device");
+static_assert(enum_words<WordShapes, '_'>(WordShapes::NvlinkP2pCopy) == "nvlink_p2p_copy");
+static_assert(enum_words<WordShapes, '-'>(WordShapes::Cpu) == "cpu");
+static_assert(enum_words<WordShapes, '-'>(WordShapes::IPv4Header) == "ipv4-header");
+static_assert(enum_words<WordShapes, '-'>(WordShapes::Alias) == "copy-host-to-device",
+              "the first enumerator that holds a value names it");
+static_assert(enum_words<WordShapes, '_'>(static_cast<WordShapes>(0xFF)) == "<unknown WordShapes>");
+static_assert(enum_words<TF, '_'>(TF::AlphaBeta) == "alpha_beta");
 
 [[nodiscard]] consteval int count_enumerators() noexcept {
     int n = 0;

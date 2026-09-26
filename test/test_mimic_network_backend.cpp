@@ -109,10 +109,28 @@ void test_static_contracts() {
     static_assert(!mb::network_backend_has_emit_path_v<mb::NetworkBackendVendor::Mellanox>);
     static_assert(!mb::network_backend_has_emit_path_v<mb::NetworkBackendVendor::Broadcom>);
 
-    assert(mb::network_backend_vendor_name(mb::NetworkBackendVendor::Mellanox) == std::string_view{"mellanox"});
-    assert(mb::network_artifact_kind_name(mb::NetworkArtifactKind::DpuOffload) == std::string_view{"dpu-offload"});
-    assert(mb::network_backend_error_name(mb::NetworkBackendError::BackendUnavailable)
-           == std::string_view{"BackendUnavailable"});
+    // The names come from the enumerators.  These are the spellings the
+    // names had before, so a log or a cache key that holds one still reads.
+    static_assert(mb::network_backend_vendor_name(mb::NetworkBackendVendor::Cpu) == "cpu");
+    static_assert(mb::network_backend_vendor_name(mb::NetworkBackendVendor::Nv) == "nv");
+    static_assert(mb::network_backend_vendor_name(mb::NetworkBackendVendor::Am) == "am");
+    static_assert(mb::network_backend_vendor_name(mb::NetworkBackendVendor::Intel) == "intel");
+    static_assert(mb::network_backend_vendor_name(mb::NetworkBackendVendor::Broadcom) == "broadcom");
+    static_assert(mb::network_artifact_kind_name(mb::NetworkArtifactKind::SocketOracle) == "socket-oracle");
+    static_assert(mb::network_artifact_kind_name(mb::NetworkArtifactKind::CudaAwareRdma) == "cuda-aware-rdma");
+    static_assert(mb::network_artifact_kind_name(mb::NetworkArtifactKind::RocmAwareRdma) == "rocm-aware-rdma");
+    static_assert(mb::network_artifact_kind_name(mb::NetworkArtifactKind::IntelIpuRdma) == "intel-ipu-rdma");
+    static_assert(mb::network_artifact_kind_name(mb::NetworkArtifactKind::SwitchPipeline) == "switch-pipeline");
+    static_assert(mb::network_backend_vendor_name(static_cast<mb::NetworkBackendVendor>(0xFF))
+                  == "<unknown NetworkBackendVendor>");
+
+    // The same names read at run time, from values the compiler cannot fold.
+    volatile auto vendor = mb::NetworkBackendVendor::Mellanox;
+    volatile auto artifact = mb::NetworkArtifactKind::DpuOffload;
+    volatile auto error = mb::NetworkBackendError::BackendUnavailable;
+    assert(mb::network_backend_vendor_name(vendor) == std::string_view{"mellanox"});
+    assert(mb::network_artifact_kind_name(artifact) == std::string_view{"dpu-offload"});
+    assert(mb::network_backend_error_name(error) == std::string_view{"BackendUnavailable"});
 
     std::printf("  test_static_contracts: PASSED\n");
 }

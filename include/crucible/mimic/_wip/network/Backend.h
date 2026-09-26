@@ -56,42 +56,15 @@ enum class NetworkBackendError : std::uint8_t {
     EmptyContentHash,
 };
 
+// The vendor and artifact names are the enumerator identifiers in lower
+// case, with a hyphen between words, so SocketOracle reads socket-oracle.
+// A value that no enumerator holds names itself "<unknown ...>".
 [[nodiscard]] constexpr std::string_view network_backend_vendor_name(NetworkBackendVendor vendor) noexcept {
-    switch (vendor) {
-        case NetworkBackendVendor::Cpu:
-            return "cpu";
-        case NetworkBackendVendor::Nv:
-            return "nv";
-        case NetworkBackendVendor::Am:
-            return "am";
-        case NetworkBackendVendor::Intel:
-            return "intel";
-        case NetworkBackendVendor::Mellanox:
-            return "mellanox";
-        case NetworkBackendVendor::Broadcom:
-            return "broadcom";
-        default:
-            return "<unknown NetworkBackendVendor>";
-    }
+    return ::foundation::reflect::enum_words<NetworkBackendVendor, '-'>(vendor);
 }
 
 [[nodiscard]] constexpr std::string_view network_artifact_kind_name(NetworkArtifactKind kind) noexcept {
-    switch (kind) {
-        case NetworkArtifactKind::SocketOracle:
-            return "socket-oracle";
-        case NetworkArtifactKind::CudaAwareRdma:
-            return "cuda-aware-rdma";
-        case NetworkArtifactKind::RocmAwareRdma:
-            return "rocm-aware-rdma";
-        case NetworkArtifactKind::IntelIpuRdma:
-            return "intel-ipu-rdma";
-        case NetworkArtifactKind::DpuOffload:
-            return "dpu-offload";
-        case NetworkArtifactKind::SwitchPipeline:
-            return "switch-pipeline";
-        default:
-            return "<unknown NetworkArtifactKind>";
-    }
+    return ::foundation::reflect::enum_words<NetworkArtifactKind, '-'>(kind);
 }
 
 // The enumerator identifier, or "<unknown NetworkBackendError>" for a

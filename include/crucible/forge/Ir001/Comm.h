@@ -16,9 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <concepts>
-#include <meta>
 #include <span>
-#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -180,47 +178,12 @@ struct Ir001OpInfo {
     return category != Ir001OpCategory::Compute && kind != Ir001OpKind::Prefetch;
 }
 
-namespace detail {
 // The display name of an op kind is its enumerator identifier in lower
-// snake case.  An upper-case letter that follows a lower-case letter or a
-// digit starts a new word, so CopyHostToDevice reads copy_host_to_device
-// and NvlinkP2pCopy reads nvlink_p2p_copy.  Deriving the name from the
-// enumerator keeps a new kind from shipping without one.
-[[nodiscard]] consteval std::string_view snake_case_name(std::meta::info enumerator) {
-    std::string_view const identifier = std::meta::identifier_of(enumerator);
-    std::string name;
-    for (std::size_t index = 0; index < identifier.size(); ++index) {
-        char const letter = identifier[index];
-        bool const is_upper = letter >= 'A' && letter <= 'Z';
-        if (is_upper && index > 0) {
-            char const previous = identifier[index - 1];
-            bool const ends_word = (previous >= 'a' && previous <= 'z') || (previous >= '0' && previous <= '9');
-            if (ends_word) {
-                name += '_';
-            }
-        }
-        name += is_upper ? static_cast<char>(letter - 'A' + 'a') : letter;
-    }
-    return std::define_static_string(name);
-}
-}  // namespace detail
-
-// A value that no enumerator holds names itself "<unknown Ir001OpKind>".
+// snake case, so CopyHostToDevice reads copy_host_to_device.  Deriving the
+// name from the enumerator keeps a new kind from shipping without one.  A
+// value that no enumerator holds names itself "<unknown Ir001OpKind>".
 [[nodiscard]] constexpr std::string_view ir001_op_kind_name(Ir001OpKind kind) noexcept {
-    static constexpr auto kinds = std::define_static_array(std::meta::enumerators_of(^^Ir001OpKind));
-    std::string_view name = ::foundation::reflect::unknown_enum_sentinel<Ir001OpKind>;
-// An expansion statement declares the same induction variable in each
-// unrolled scope, so -Wshadow fires once per enumerator.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto enumerator : kinds) {
-        constexpr std::string_view spelled = detail::snake_case_name(enumerator);
-        if (kind == [:enumerator:]) {
-            name = spelled;
-        }
-    }
-#pragma GCC diagnostic pop
-    return name;
+    return ::foundation::reflect::enum_words<Ir001OpKind, '_'>(kind);
 }
 
 [[nodiscard]] constexpr Ir001OpInfo ir001_op_info(Ir001OpKind kind) noexcept {
