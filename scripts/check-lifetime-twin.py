@@ -50,7 +50,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -66,7 +65,7 @@ TOKEN = "CRUCIBLE_LIFETIMEBOUND"
 PARAMETERS = ("parameter_declaration", "optional_parameter_declaration", "variadic_parameter_declaration")
 FUNCTIONS = ("function_definition", "declaration", "field_declaration")
 SCOPES = frozenset({"namespace_definition", "class_specifier", "struct_specifier", "union_specifier"})
-ANGLE_GROUP = re.compile(r"<[^<>]*>")
+REFERENCES = ("reference_declarator", "abstract_reference_declarator")
 
 
 @dataclass(frozen=True)
@@ -92,24 +91,23 @@ def function_of(node: tsast.Node) -> tuple[tsast.Node, tsast.Node] | None:
 
 
 def name_of(declarator: tsast.Node) -> str:
-    """Return the name of a function declarator, with no template arguments or qualifier."""
+    """Return the name of a function declarator, with no template arguments or qualifier.
+
+    `ns::Box<T>::get` gives `get`, `operator<=>` gives `operator<=>` and a
+    constructor gives its class name.
+    """
     named = declarator.child_by_field("declarator")
-    if named is None:
-        return ""
-    text = re.sub(r"\s+", "", named.text)
-    while True:
-        shorter = ANGLE_GROUP.sub("", text)
-        if shorter == text:
-            break
-        text = shorter
-    return text.rsplit("::", 1)[-1]
+    leaf = tsast.leaf_name(named) if named is not None else None
+    return leaf or ""
 
 
 def scope_of(node: tsast.Node) -> str:
     """Return the chain of enclosing namespaces and classes of a declaration, as a key.
 
     A friend declaration names a function of the innermost enclosing
-    namespace, so its classes are not part of its scope.
+    namespace, so its classes are not part of its scope.  Each name is
+    spelled from its tokens, so a comment inside a nested namespace name does
+    not change the key.
     """
     in_friend = node.ancestor_of_type("friend_declaration") is not None
     parts: list[str] = []
@@ -117,7 +115,7 @@ def scope_of(node: tsast.Node) -> str:
     while owner is not None:
         if owner.type in SCOPES and not (in_friend and owner.type != "namespace_definition"):
             named = owner.child_by_field("name")
-            parts.insert(0, named.text if named is not None else "(anonymous)")
+            parts.insert(0, tsast.spelled(named) if named is not None else "(anonymous)")
         owner = owner.parent
     return "::".join(parts)
 
@@ -129,19 +127,23 @@ def parameters_of(declarator: tsast.Node) -> list[tsast.Node]:
 
 
 def base_type(parameter: tsast.Node) -> str:
-    """Return the type of a parameter with its qualifiers and white space removed."""
+    """Return the type of a parameter, spelled from its tokens, with its qualifiers left out.
+
+    A comment inside a template argument does not change the spelling.
+    """
     kind = parameter.child_by_field("type")
-    return re.sub(r"\s+", "", kind.text) if kind is not None else ""
+    return tsast.spelled(kind) if kind is not None else ""
 
 
 def is_rvalue_reference(parameter: tsast.Node) -> bool:
-    """Report whether a parameter is declared as an rvalue reference."""
+    """Report whether a parameter is declared as an rvalue reference.
+
+    The `&&` is the first token of the reference declarator.
+    """
     declarator = parameter.child_by_field("declarator")
     while declarator is not None and declarator.type == "attributed_declarator":
-        declarator = next((child for child in declarator.children
-                           if child.type in ("reference_declarator", "abstract_reference_declarator")), None)
-    return declarator is not None and declarator.type in ("reference_declarator", "abstract_reference_declarator") \
-        and declarator.text.lstrip().startswith("&&")
+        declarator = next((child for child in declarator.children if child.type in REFERENCES), None)
+    return declarator is not None and declarator.type in REFERENCES and declarator.tokens()[:1] == ["&&"]
 
 
 def template_parameters(node: tsast.Node) -> set[str]:
@@ -183,8 +185,9 @@ def twins_of(tree: tsast.Tree) -> list[Twin]:
         if declarator is None or declarator.type != "function_declarator":
             continue
         parameters = parameters_of(declarator)
-        variadic = any(parameter.type == "variadic_parameter_declaration" or "..." in parameter.text
-                       for parameter in parameters)
+        # A pack parameter parses as its own node type, so a `sizeof...` in
+        # the type of a plain parameter is no pack.
+        variadic = any(parameter.type == "variadic_parameter_declaration" for parameter in parameters)
         found.append(Twin(scope_of(node), name_of(declarator), tuple(parameters), variadic,
                           frozenset(template_parameters(node))))
     return found
@@ -240,13 +243,16 @@ def verdicts_of(tree: tsast.Tree, shown: str) -> list[Verdict]:
 def collect(roots: tuple[Path, ...] | list[Path]) -> tuple[list[Verdict], list[str]]:
     """Return the verdict of each site under the roots, and each header the parser cannot read.
 
-    Complexity: linear in the size of the headers that spell the token.
+    Every C++ file under the roots is parsed, with no text test first, so a
+    file whose token a line splice or a macro hides is still read.
+
+    Complexity: linear in the size of the files under the roots.
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
     """
-    files = sorted(path for root in roots if root.is_dir() for path in root.rglob("*.h")
-                   if TOKEN.encode() in path.read_bytes())
+    files = sorted(path for root in roots if root.is_dir() for path in root.rglob("*")
+                   if path.is_file() and path.name.endswith(tsast.CPP_SUFFIXES))
     verdicts: list[Verdict] = []
     unread: list[str] = []
     for tree in tsast.parse(files, strict=False):
@@ -332,6 +338,14 @@ def self_test() -> int:
         "template <class T> auto befriended(T&&) = delete;\n"
         "struct Holder { template <class U> friend int befriended(U& ref CRUCIBLE_LIFETIMEBOUND) noexcept; };\n"
         "}\n"
+        "int spanned(std::span<int> const& s CRUCIBLE_LIFETIMEBOUND) noexcept;\n"
+        "int spanned(std::span</*T*/int> const&&) = delete;\n"
+        "int packish(Carrier const& c CRUCIBLE_LIFETIMEBOUND, int n) noexcept;\n"
+        "template <class... Ts> int packish(Carrier const&&, decltype(sizeof...(Ts)) extra, long more) = delete;\n"
+        "struct Ordered {\n"
+        "    auto operator<=>(Carrier const& c CRUCIBLE_LIFETIMEBOUND) const noexcept;\n"
+        "    auto operator<=>(Carrier const&&) const = delete;\n"
+        "};\n"
     )
     with tempfile.TemporaryDirectory() as work:
         root = Path(work) / "inc"
@@ -348,6 +362,12 @@ def self_test() -> int:
                             ("other_scope", "a twin in another namespace")):
             expect(f"refused: {label}", status.get(name) == "missing", True)
         expect("a comment is no site", "in_a_comment" not in status)
+        expect("a comment inside a template argument does not change the type",
+               status.get("spanned") == "ok")
+        expect("refused: a twin whose parameter only mentions a pack, with another arity",
+               status.get("packish") == "missing", True)
+        expect("an operator keeps its whole name, and its twin enforces it",
+               status.get("operator<=>") == "ok" and "operator" not in status)
         befriended = [verdict.status for verdict in verdicts if verdict.name == "befriended"]
         expect("a friend re-declaration finds the twin of its namespace",
                befriended == ["ok", "ok"])
