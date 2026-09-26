@@ -45,7 +45,10 @@ guard refuses them in the source text instead:
   friend-template-specialization a specialization of a class template
                                  that a proof type befriends is a friend of
                                  that proof type.  The file that defines the
-                                 primary template may specialize it.
+                                 primary template, with a body, may
+                                 specialize it.  A declaration with no body
+                                 makes no file the owner, because any file
+                                 can declare the template again.
 
 The proof names
 ---------------
@@ -69,26 +72,28 @@ same spelling becomes a proof name too, which errs on the side that
 refuses.  A header that the parser cannot read fails the run.
 
 An identifier that the template parameter list of an enclosing template
-declaration binds names that parameter, not a proof type of the same
-spelling, so it is not a proof name inside that declaration.  The scope of
-a parameter list ends at the first `;` or `}` that closes the declaration.
-A `requires { ... }` clause before the body can end it early, which fails
-closed: a name after it is matched again.
+declaration or of an enclosing generic lambda binds names that parameter,
+not a proof type of the same spelling, so it is not a proof name inside
+that declaration.  A default argument binds nothing.
 
 Two passes
 ----------
-The lexical pass reads each C and C++ source file that git tracks, and
-each untracked file that .gitignore does not exclude, after
-scripts/cxx_lex.py blanks the comments and the literals.  The preprocessed
-pass runs with --compile-db: it runs each entry of the compile database
-through the preprocessor with the flags of the build, so a shape that a
-macro or token pasting forms is seen too.  The output comes from the shared
-store of scripts/preprocessed.py, so this guard and check-start-lifetime.sh
-preprocess each translation unit one time between them.  The records of a
-file stay in proof-routes-cache/ beside the compile database, under the key
-of the file's chunk list, so a header that many units expand the same way
-is read one time.  For each key the count is the larger count of the two
-passes.  A preprocessor failure refuses the run.
+Both passes read parse trees of the pinned tree-sitter kit
+(scripts/tsast.py): each rule is a node shape, and a comment or a literal is
+its own node, so neither can form a site.  The lexical pass parses each C
+and C++ source file that git tracks, and each untracked file that
+.gitignore does not exclude.  The preprocessed pass runs with
+--compile-db: it runs each entry of the compile database through the
+preprocessor with the flags of the build, and it parses each distinct
+expansion of each file, so a shape that a macro or token pasting forms is
+seen too.  The output comes from the shared store of
+scripts/preprocessed.py, so this guard and check-start-lifetime.sh
+preprocess each translation unit one time between them.  The records of an
+expansion stay in proof-routes-cache/ beside the compile database, under
+the key of the file's chunk list, so a header that many units expand the
+same way is parsed one time.  For each key the count is the larger count of
+the two passes.  A preprocessor failure, and a file or an expansion that the
+parser cannot read, refuses the run.
 
 A negative fixture of test/layer compiles against a staged layer root, an
 include directory that links only to the layers below it, and one of them
@@ -108,8 +113,6 @@ Out of scope, stated rather than implied
   which argument reaches T.  A parameter spelled like a proof type is the
   same route.  test/fixy/test_forgeable_proofs.cpp pins this route with its
   argument.
-- A template parameter list that a lambda opens with no `template` keyword.
-  Its names stay proof names, so the guard fails closed there.
 - A pointer value copied with std::memcpy into a variable whose type is a
   pointer to a proof type.  The copy names no proof type at the call.  The
   same ledger pins it.
@@ -124,8 +127,8 @@ has, or an entry for a key that the tree does not have, is stale.
 Exit codes
   0  each site in scope has an entry, and each entry admits its sites
   1  a site with no entry, or more sites than its entry admits
-  2  a stale entry, a preprocessor failure, a header the parser cannot
-     read, a bad invocation, or a failed self-test
+  2  a stale entry, a preprocessor failure, a file or an expansion that the
+     parser cannot read, a bad invocation, or a failed self-test
   3  the pinned tree-sitter kit is not installed, or the proof-name binary
      or the compile database that the arguments name is not built, which
      ctest reports as a skip
@@ -150,7 +153,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 from preprocessed import Store, files_of, joined  # noqa: E402
 
 SOURCE_SUFFIXES = frozenset({".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".inl", ".ipp", ".tpp",
@@ -164,198 +166,233 @@ NAMESPACE_SCOPE = frozenset({"translation_unit", "namespace_definition", "declar
 FIXTURE = re.compile(r"^test/(?:[^/]+/)*(?:neg|[^/]+_neg)/[^/]+$")
 BPF = re.compile(r"^include/crucible/[^/]+/bpf/|\.bpf\.c$")
 ENTRY = re.compile(r"^(?P<key>.*?)(?: x(?P<count>[1-9][0-9]*))?$")
-# Bumped when a rule reads the text differently, so an older cache entry
+# Bumped when a rule reads the source differently, so an older cache entry
 # is not reused.
-SCAN_VERSION = 2
+SCAN_VERSION = 3
 
-UNION = re.compile(r"\bunion\s+(?:\[\[[^\]]*\]\]\s*)*(?:alignas\s*\([^)]*\)\s*)*([A-Za-z_]\w*)?\s*(?:final\s*)?\{")
-CAST = re.compile(r"\b(static_cast|reinterpret_cast|bit_cast)\s*<")
-ALLOCATOR = re.compile(r"\b(allocator|allocator_traits|polymorphic_allocator)\s*<")
-RAW_ALLOCATION = re.compile(r"\b(operator\s+new|malloc|calloc|realloc|aligned_alloc)\s*\(")
-# `template` that starts a declaration and is not followed by a template
-# parameter list, `for` or a disambiguated member: an explicit instantiation.
-INSTANTIATION = re.compile(r"(?:(?<=[;{}])|^|(?<=\bextern))[ \t\n]*template\b(?![ \t\n]*(?:<|for\b))", re.M)
-SPECIALIZATION = re.compile(r"\btemplate\s*<\s*>")
-FRIEND_TEMPLATE = re.compile(r"\btemplate\s*<[^;{}]*>\s*friend\s+(?:class|struct)\s+([A-Za-z_]\w*)\s*;")
-PRIMARY = re.compile(r"\btemplate\s*<[^;{}]*?>\s*(?:class|struct)\s+(?:\[\[[^\]]*\]\]\s*)*([A-Za-z_]\w*)\s*(?:final\s*)?[:{;]")
-PARTIAL = re.compile(r"\btemplate\s*<([^;{}]*?)>\s*(?:class|struct)\s+(?:\[\[[^\]]*\]\]\s*)*([A-Za-z_]\w*)\s*<")
-MEMBER_POINTER = re.compile(r"&\s*(?:::)?[A-Za-z_][\w]*(?:\s*<[^;{}]*?>)?\s*::\s*[A-Za-z_~]")
-ALIAS = re.compile(r"\busing\s+([A-Za-z_]\w*)\s*=\s*([^;]+);|\btypedef\s+([^;]+?)\b([A-Za-z_]\w*)\s*;")
-IDENT = re.compile(r"[A-Za-z_]\w*")
-TEMPLATE_HEAD = re.compile(r"\btemplate\s*<")
-# The first `=` of a parameter that is not part of a comparison starts its
-# default argument.
-DEFAULT_ARGUMENT = re.compile(r"(?<![=!<>])=(?!=)")
-# Words that end a template parameter with no name, such as `class` or `int`.
-UNNAMED = frozenset({"class", "typename", "struct", "template", "auto", "const", "volatile", "unsigned", "signed",
-                     "int", "long", "short", "char", "bool", "double", "float", "void"})
+CASTS = frozenset({"static_cast", "reinterpret_cast", "bit_cast"})
+ALLOCATORS = frozenset({"allocator", "allocator_traits", "polymorphic_allocator"})
+RAW_ALLOCATORS = frozenset({"malloc", "calloc", "realloc", "aligned_alloc"})
+CLASS_HEADS = ("class_specifier", "struct_specifier", "union_specifier")
+# The leaves that spell one part of a name.
+NAME_LEAVES = ("identifier", "type_identifier", "namespace_identifier", "field_identifier")
+# The declarators that sit between a declared name and its type without
+# changing what the name is.
+PASS_THROUGH = frozenset({"init_declarator", "attributed_declarator", "parenthesized_declarator"})
 
 
-def normalized(fragment: str) -> str:
-    """Reduce white space: one space between two word characters, none elsewhere."""
-    squeezed = re.sub(r"\s+", " ", fragment.strip())
-    return re.sub(r" (?=\W)|(?<=\W) ", "", squeezed)
+def is_word(character: str) -> bool:
+    """True for a character that can continue an identifier or a number."""
+    return character.isalnum() or character == "_"
 
 
-def angle_argument(code: str, open_at: int) -> tuple[str, int] | None:
-    """The text of the balanced <...> that opens at the offset, and the offset after it."""
-    depth = 0
-    for index in range(open_at, min(len(code), open_at + 2048)):
-        ch = code[index]
-        if ch == "<":
-            depth += 1
-        elif ch == ">":
-            depth -= 1
-            if depth == 0:
-                return code[open_at + 1:index], index + 1
-        elif ch in ";{}":
-            return None
+def canonical(text: str) -> str:
+    """Reduce white space to the key form: one space between two word characters, none elsewhere.
+
+    The key is an identity for the allowlist, and this form keeps each key
+    of the allowlist stable.  Complexity: linear in the length of the text.
+    """
+    out: list[str] = []
+    pending_space = False
+    for character in text.strip():
+        if character.isspace():
+            pending_space = True
+            continue
+        if pending_space and out and is_word(out[-1][-1]) and is_word(character):
+            out.append(" ")
+        pending_space = False
+        out.append(character)
+    return "".join(out)
+
+
+def span_key(node: tsast.Node, start: tuple[int, int] | None = None, end: tuple[int, int] | None = None) -> str:
+    """Return the key form of the source that a node spans, or part of it, with every comment left out.
+
+    A comment is its own node, so its span is cut out before the white
+    space is reduced.
+    """
+    begin = node.start if start is None else start
+    finish = node.end if end is None else end
+    pieces: list[str] = []
+    cursor = begin
+    for comment in node.descendants("comment"):
+        if comment.start < begin or comment.end > finish:
+            continue
+        pieces.append(node.tree.slice(cursor, comment.start))
+        pieces.append(" ")
+        cursor = comment.end
+    pieces.append(node.tree.slice(cursor, finish))
+    return canonical("".join(pieces))
+
+
+def last_name(node: tsast.Node | None) -> str | None:
+    """Return the last part of a name, a template-id or a call, or None."""
+    return None if node is None else tsast.leaf_name(node)
+
+
+def names_in(node: tsast.Node) -> list[str]:
+    """Return the distinct names that a subtree spells, sorted, less the template parameters bound around it."""
+    bound = bound_parameters(node)
+    return sorted({leaf.text for leaf in node.descendants(*NAME_LEAVES)} - bound
+                  | ({node.text} - bound if node.type in NAME_LEAVES else set()))
+
+
+def leading_operator(node: tsast.Node) -> str:
+    """Return the operator token of a unary pointer expression: `&` or `*`."""
+    tokens = node.gap_tokens()
+    return tokens[0] if tokens else ""
+
+
+def is_member_pointer(node: tsast.Node) -> bool:
+    """True for `&A::m`: the address of a qualified name, which names a member."""
+    argument = node.child_by_field("argument")
+    return (node.type == "pointer_expression" and argument is not None
+            and argument.type == "qualified_identifier" and leading_operator(node) == "&")
+
+
+def top_declarator_kinds(descriptor: tsast.Node) -> set[str]:
+    """Return the kinds of the abstract declarators that wrap a type descriptor, outermost first."""
+    kinds: set[str] = set()
+    node = descriptor.child_by_field("declarator")
+    while node is not None:
+        kinds.add(node.type)
+        node = node.child_by_field("declarator")
+    return kinds
+
+
+def cast_record(call: tsast.Node) -> list | None:
+    """Return the pointer-cast record of a call, or None when the call is no cast to a pointer or a reference.
+
+    A cast to a function pointer selects an overload, and a cast of nullptr
+    gives a null pointer.  Neither gives a pointer to storage.
+    """
+    function = call.child_by_field("function")
+    if function is not None and function.type == "qualified_identifier":
+        function = function.child_by_field("name")
+    if function is None or function.type != "template_function":
+        return None
+    cast = last_name(function)
+    arguments = function.child_by_field("arguments")
+    if cast not in CASTS or arguments is None:
+        return None
+    descriptor = next((c for c in arguments.children if c.type == "type_descriptor"), None)
+    if descriptor is None:
+        return None
+    kinds = top_declarator_kinds(descriptor)
+    call_arguments = call.child_by_field("arguments")
+    values = [] if call_arguments is None else [c for c in call_arguments.children if c.type != "comment"]
+    is_nullptr = len(values) == 1 and values[0].type == "null"
+    if not kinds & {"abstract_pointer_declarator", "abstract_reference_declarator"}:
+        return None
+    if is_nullptr or "abstract_function_declarator" in kinds:
+        return None
+    return ["pointer-cast", f"{cast}<{span_key(descriptor)}>", call.line, names_in(descriptor), None]
+
+
+def specialized_id(declaration: tsast.Node) -> tsast.Node | None:
+    """Return the template-id that an explicit or partial specialization names, or None."""
+    if declaration.type in CLASS_HEADS:
+        name = declaration.child_by_field("name")
+        return name if name is not None and name.type == "template_type" else None
+    node = declaration.child_by_field("declarator")
+    while node is not None:
+        if node.type in ("template_function", "template_type"):
+            return node
+        if node.type == "qualified_identifier":
+            node = node.child_by_field("name")
+            continue
+        node = node.child_by_field("declarator")
     return None
 
 
-def declaration_head(code: str, start: int) -> str:
-    """The text from the offset to the first ; or { outside parentheses, at most 2 KiB."""
-    depth = 0
-    for index in range(start, min(len(code), start + 2048)):
-        ch = code[index]
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-        elif ch in ";{" and depth <= 0:
-            return code[start:index]
-    return code[start:start + 2048]
+def function_declarator_of(declaration: tsast.Node) -> tsast.Node | None:
+    """Return the function declarator of a declaration, or None for a variable or a type."""
+    node = declaration.child_by_field("declarator")
+    while node is not None and node.type in PASS_THROUGH:
+        node = node.child_by_field("declarator")
+    return node if node is not None and node.type == "function_declarator" else None
 
 
-def idents(text: str) -> list[str]:
-    """The distinct identifiers of the text, sorted."""
-    return sorted(set(IDENT.findall(text)))
+def specialization_records(template: tsast.Node) -> list[list]:
+    """Return the records of one template declaration that specializes: explicit (`template <>`) or partial."""
+    parameters = template.child_by_field("parameters")
+    declared = [c for c in template.children if c.field is None and c.type not in ("comment", "requires_clause")]
+    inner = declared[-1] if declared else None
+    if parameters is None or inner is None:
+        return []
+    explicit = not any(c.type != "comment" for c in parameters.children)
+    target = specialized_id(inner)
+    records: list[list] = []
+    if explicit:
+        body = inner.child_by_field("body")
+        head = span_key(inner, end=body.start if body is not None else None)[:160]
+        arguments = None if target is None else target.child_by_field("arguments")
+        if arguments is not None and any(is_member_pointer(p) for p in arguments.descendants("pointer_expression")):
+            records.append(["member-pointer-specialization", head, template.line, None, None])
+        if inner.type in CLASS_HEADS and target is not None:
+            records.append(["friend-template-specialization", head, template.line, None, last_name(target)])
+        elif target is not None and target.type == "template_function" and function_declarator_of(inner) is not None:
+            parameters_list = function_declarator_of(inner).child_by_field("parameters")
+            key = span_key(inner, end=parameters_list.start if parameters_list is not None else None)
+            records.append(["function-specialization", key[:160], template.line, None, None])
+    elif inner.type in CLASS_HEADS and target is not None:
+        arguments = target.child_by_field("arguments")
+        if arguments is not None:
+            key = span_key(template, end=arguments.start) + "<"
+            records.append(["friend-template-specialization", key[:160], template.line, None, last_name(target)])
+    return records
 
 
-def template_parameter_names(head: str) -> frozenset[str]:
-    """The names that one template parameter list binds, such as T and N in `class T, int N = 4`."""
-    parameters: list[str] = []
-    depth = 0
-    current: list[str] = []
-    for ch in head:
-        if ch in "<([":
-            depth += 1
-        elif ch in ">)]":
-            depth -= 1
-        if ch == "," and depth == 0:
-            parameters.append("".join(current))
-            current = []
-        else:
-            current.append(ch)
-    parameters.append("".join(current))
-    names = set()
-    for parameter in parameters:
-        words = IDENT.findall(DEFAULT_ARGUMENT.split(parameter, 1)[0])
-        if words and words[-1] not in UNNAMED:
-            names.add(words[-1])
-    return frozenset(names)
+def alias_names(node: tsast.Node) -> list[str]:
+    """Return the names that one alias declaration or typedef declares."""
+    if node.type == "alias_declaration":
+        named = node.child_by_field("name")
+        return [named.text] if named is not None else []
+    return [leaf.text for child in node.children if child.field == "declarator"
+            for leaf in ([child] if child.type == "type_identifier" else child.descendants("type_identifier"))]
 
 
-def declaration_end(code: str, start: int) -> int:
-    """The offset after the `;` or the `}` that closes the declaration that starts at the offset.
-
-    A brace inside parentheses, such as a default argument T{}, does not
-    close it.  Complexity: linear in the length of the declaration."""
-    parens = 0
-    braces = 0
-    for index in range(start, len(code)):
-        ch = code[index]
-        if ch in "([":
-            parens += 1
-        elif ch in ")]":
-            parens -= 1
-        elif ch == "{":
-            braces += 1
-        elif ch == "}":
-            braces -= 1
-            if braces <= 0 and parens <= 0:
-                return index + 1
-        elif ch == ";" and braces <= 0 and parens <= 0:
-            return index + 1
-    return len(code)
-
-
-def template_scopes(code: str) -> list[tuple[int, int, frozenset[str]]]:
-    """Each template parameter list of the code, as (start, end, names) of the declaration it opens.
-
-    Complexity: linear in the length of the code times the depth of the
-    nested templates."""
-    scopes = []
-    for m in TEMPLATE_HEAD.finditer(code):
-        found = angle_argument(code, m.end() - 1)
-        if found is None:
-            continue
-        head, after = found
-        names = template_parameter_names(head)
-        if names:
-            scopes.append((after, declaration_end(code, after), names))
-    return scopes
-
-
-# A record is [rule, key, offset, names, subject].  names is the list of
+# A record is [rule, key, line, names, subject].  names is the list of
 # identifiers that the rule tests against the proof names, or None when the
 # rule tests none.  subject is the class name of a class specialization, or
 # None.  A record holds no proof name, so a cached record stays valid when
 # the list of proof names changes.
-def extract(code: str) -> list[list]:
-    """Each candidate site and each alias of the code.  Complexity: linear in the length of the code."""
+def extract(tree: tsast.Tree) -> list[list]:
+    """Each candidate site and each alias of one parse.  Complexity: linear in the number of nodes."""
     records: list[list] = []
-    for m in ALIAS.finditer(code):
-        alias = m.group(1) or m.group(4)
-        if alias:
-            records.append(["alias", alias, m.start(), idents(m.group(2) or m.group(3)), None])
-    for m in UNION.finditer(code):
-        records.append(["union", m.group(1) or "<anonymous>", m.start(), None, None])
-    for m in CAST.finditer(code):
-        found = angle_argument(code, m.end() - 1)
-        if found is None:
+    for node in tree.find("alias_declaration", "type_definition"):
+        body = node.child_by_field("type")
+        if body is not None:
+            records += [["alias", name, node.line, names_in(body), None] for name in alias_names(node)]
+    for node in tree.find("union_specifier"):
+        if node.child_by_field("body") is not None:
+            name = node.child_by_field("name")
+            records.append(["union", name.text if name is not None else "<anonymous>", node.line, None, None])
+    for call in tree.find("call_expression"):
+        cast = cast_record(call)
+        if cast is not None:
+            records.append(cast)
             continue
-        target, after = found
-        # A cast to a function pointer selects an overload, and a cast of
-        # nullptr gives a null pointer.  Neither gives a pointer to storage.
-        is_nullptr = re.match(r"\s*\(\s*nullptr\s*\)", code[after:after + 64]) is not None
-        is_function_pointer = re.search(r"\(\s*[*&]\s*\)", target) is not None
-        if ("*" in target or "&" in target) and not is_nullptr and not is_function_pointer:
-            records.append(["pointer-cast", f"{m.group(1)}<{normalized(target)}>", m.start(), idents(target), None])
-    for m in ALLOCATOR.finditer(code):
-        found = angle_argument(code, m.end() - 1)
-        if found is not None:
-            records.append(["allocator", f"{m.group(1)}<{normalized(found[0])}>", m.start(), idents(found[0]), None])
-    for m in RAW_ALLOCATION.finditer(code):
-        sizes = re.findall(r"\bsizeof\s*\(([^()]*)\)", declaration_head(code, m.end()))
-        if sizes:
-            records.append(["raw-allocation", normalized(m.group(1)), m.start(), idents(" ".join(sizes)), None])
-    for m in INSTANTIATION.finditer(code):
-        head = declaration_head(code, m.end())
-        records.append(["explicit-instantiation", normalized(head)[:160], m.start(), None, None])
-    for m in SPECIALIZATION.finditer(code):
-        head = normalized(declaration_head(code, m.end()))
-        kind = re.match(r"(?:\[\[[^\]]*\]\])*(class|struct|union)\b\s*(?:\[\[[^\]]*\]\])*([A-Za-z_][\w:]*)?", head)
-        if MEMBER_POINTER.search(head):
-            records.append(["member-pointer-specialization", head[:160], m.start(), None, None])
-        if kind is not None:
-            subject = (kind.group(2) or "").rsplit("::", 1)[-1]
-            records.append(["friend-template-specialization", head[:160], m.start(), None, subject])
-        elif "(" in head.split("=", 1)[0]:
-            records.append(["function-specialization", head.split("(", 1)[0][:160], m.start(), None, None])
-    for m in PARTIAL.finditer(code):
-        if m.group(1).strip():
-            records.append(["friend-template-specialization", normalized(m.group(0))[:160], m.start(), None,
-                            m.group(2)])
-    # A name that an enclosing template parameter list binds is that
-    # parameter, so it is not a proof name at the site.
-    scopes = template_scopes(code)
-    for record in records:
-        if record[3] is None:
-            continue
-        bound = {name for start, end, names in scopes if start <= record[2] < end for name in names}
-        if bound:
-            record[3] = [name for name in record[3] if name not in bound]
+        callee = call.child_by_field("function")
+        name = last_name(callee)
+        if name in RAW_ALLOCATORS or name == "operator new":
+            arguments = call.child_by_field("arguments")
+            sizes = [] if arguments is None else list(arguments.descendants("sizeof_expression"))
+            if sizes:
+                names = sorted({n for size in sizes for n in names_in(size)})
+                records.append(["raw-allocation", name, call.line, names, None])
+    for node in tree.find("template_type", "template_function"):
+        name = last_name(node)
+        arguments = node.child_by_field("arguments")
+        if name in ALLOCATORS and arguments is not None:
+            records.append(["allocator", f"{name}{span_key(arguments)}", node.line, names_in(arguments), None])
+    for node in tree.find("template_instantiation"):
+        named = [c for c in node.children if c.type != "comment"]
+        if named:
+            records.append(["explicit-instantiation", span_key(node, named[0].start, named[-1].end)[:160],
+                            node.line, None, None])
+    for template in tree.find("template_declaration"):
+        records += specialization_records(template)
     return records
 
 
@@ -410,18 +447,6 @@ def judge(records: list[list], proofs: frozenset[str], friends: frozenset[str], 
     return sites
 
 
-def scan_code(code: str, proofs: frozenset[str], friends: frozenset[str], primaries: frozenset[str]):
-    """Each site of the code as (rule, key, offset).  Complexity: linear in the length of the code."""
-    return judge(extract(code), proofs, friends, primaries)
-
-
-def blanked(text: str) -> tuple[str, str, list[int]]:
-    """The spliced text, the text with comments and literals blanked, and the splice offsets."""
-    joined, joins = splice(text)
-    code, _ = blank(joined, blank_literals=True)
-    return joined, code, joins
-
-
 def in_scope(path: str) -> bool:
     """True when the guard reads the file: a source outside the fixtures and the BPF programs."""
     return Path(path).suffix in SOURCE_SUFFIXES and not FIXTURE.match(path) and not BPF.search(path)
@@ -469,24 +494,57 @@ def reflected_names(binary: str | None) -> dict[str, set[str]]:
     return names
 
 
+def key_words(key: str) -> list[str]:
+    """The identifiers that a key spells, in order, for a report."""
+    words: list[str] = []
+    current: list[str] = []
+    for character in key + " ":
+        if is_word(character):
+            current.append(character)
+            continue
+        if current and not current[0].isdigit():
+            words.append("".join(current))
+        current = []
+    return words
+
+
 def qualified_names(key: str, qualified: dict[str, set[str]]) -> str:
     """The qualified names of the proof names that a key spells, for a report."""
-    found = [f"{name} = {' or '.join(sorted(qualified[name]))}" for name in idents(key) if name in qualified]
+    found = [f"{name} = {' or '.join(sorted(qualified[name]))}" for name in dict.fromkeys(key_words(key))
+             if name in qualified]
     return f"  The key names {', and '.join(found)}." if found else ""
 
 
-def friend_and_primary_names(root: Path, files: list[str]) -> tuple[frozenset[str], dict[str, set[str]]]:
-    """The class templates that a class under include/ befriends, and the files that define each primary."""
-    friends: set[str] = set()
-    primaries: dict[str, set[str]] = defaultdict(set)
-    for path in files:
-        if not path.startswith("include/") or not in_scope(path):
+def template_friends(tree: tsast.Tree) -> set[str]:
+    """The class templates that a template friend declaration of the parse befriends, by their last name."""
+    found: set[str] = set()
+    for friend in tree.find("friend_declaration"):
+        if friend.parent is None or friend.parent.type != "template_declaration":
             continue
-        _, code, _ = blanked((root / path).read_text(errors="replace"))
-        friends.update(FRIEND_TEMPLATE.findall(code))
-        for m in PRIMARY.finditer(code):
-            primaries[m.group(1)].add(path)
-    return frozenset(friends), primaries
+        named = next((c for c in friend.children if c.type in ("type_identifier", "qualified_identifier",
+                                                                 "template_type")), None)
+        name = last_name(named)
+        if name is not None:
+            found.add(name)
+    return found
+
+
+def defined_primaries(tree: tsast.Tree) -> set[str]:
+    """The class templates whose primary definition, with a body, the parse holds.
+
+    A forward declaration defines nothing, so it does not let its file
+    specialize the template.
+    """
+    found: set[str] = set()
+    for template in tree.find("template_declaration"):
+        parameters = template.child_by_field("parameters")
+        if parameters is None or not any(c.type != "comment" for c in parameters.children):
+            continue
+        for head in template.children_of_type(*CLASS_HEADS):
+            name = head.child_by_field("name")
+            if head.child_by_field("body") is not None and name is not None and name.type == "type_identifier":
+                found.add(name.text)
+    return found
 
 
 def preprocessed_records(root: Path, compile_db: Path, failures: list[str],
@@ -496,40 +554,46 @@ def preprocessed_records(root: Path, compile_db: Path, failures: list[str],
     Only a file that the lexical pass also reads counts, so a file that the
     build generates under the root has no key that depends on the name of
     the build directory.  The records of a file name no proof type, so a
-    change to the list of proof names does not invalidate their cache.
+    change to the list of proof names does not invalidate their cache.  Each
+    distinct expansion is parsed one time, and an expansion that the parser
+    cannot read refuses the run.
 
     Complexity: linear in the number of units times the files each reads,
-    plus one extraction for each distinct expansion of a file."""
+    plus one parse for each distinct expansion of a file."""
     store = Store(compile_db, root, int(os.environ.get("PROOF_ROUTES_JOBS", "0") or 0))
     cache_dir = compile_db.parent / "proof-routes-cache"
     cache_dir.mkdir(exist_ok=True)
     records_of: dict[str, list[list]] = {}
-
-    def records(file_key: str, chunks) -> list[list]:
-        """The records of one expansion of a file, from memory, the cache or the text."""
-        if file_key in records_of:
-            return records_of[file_key]
-        cache_file = cache_dir / f"{SCAN_VERSION}-{file_key}.json"
-        try:
-            found = json.loads(cache_file.read_text())
-        except (OSError, ValueError):
-            code, _ = blank(joined(store, chunks), blank_literals=True)
-            found = extract(code)
-            staging = cache_file.with_suffix(f".{os.getpid()}.tmp")
-            staging.write_text(json.dumps(found))
-            os.replace(staging, cache_file)
-        records_of[file_key] = found
-        return found
-
-    found: list[tuple[str, list[list]]] = []
+    pending: dict[str, tuple[str, list]] = {}
+    expansions: list[tuple[str, str]] = []
     for unit in store.units():
         if unit.failure is not None:
             failures.append(unit.failure)
             continue
         for path, (file_key, chunks) in files_of(unit).items():
-            if path in tracked and in_scope(path):
-                found.append((path, records(file_key, chunks)))
-    return found
+            if path not in tracked or not in_scope(path):
+                continue
+            expansions.append((path, file_key))
+            if file_key in records_of or file_key in pending:
+                continue
+            try:
+                records_of[file_key] = json.loads((cache_dir / f"{SCAN_VERSION}-{file_key}.json").read_text())
+            except (OSError, ValueError):
+                pending[file_key] = (path, chunks)
+    keys = list(pending)
+    texts = [(f"{pending[key][0]} (expansion {key[:12]})", joined(store, pending[key][1])) for key in keys]
+    for key, tree in zip(keys, tsast.parse_texts(texts, strict=False)):
+        if tree.diagnostic is not None:
+            failures.append(f"{pending[key][0]}: the parser cannot read one expansion of this file, so its routes "
+                            f"are unknown")
+            continue
+        found = extract(tree)
+        cache_file = cache_dir / f"{SCAN_VERSION}-{key}.json"
+        staging = cache_file.with_suffix(f".{os.getpid()}.tmp")
+        staging.write_text(json.dumps(found))
+        os.replace(staging, cache_file)
+        records_of[key] = found
+    return [(path, records_of[key]) for path, key in expansions if key in records_of]
 
 
 def preprocessed_counts(expansions: list[tuple[str, list[list]]], proofs, friends, primaries) -> dict[str, int]:
@@ -554,59 +618,55 @@ def at_namespace_scope(node: tsast.Node) -> bool:
     return True
 
 
+def parameter_name(parameter: tsast.Node) -> str | None:
+    """The name that one template parameter binds, or None for a parameter with no name.
+
+    A default argument names another entity, so it binds nothing.  A
+    template template parameter binds the name of its inner parameter.
+    """
+    if parameter.type == "template_template_parameter_declaration":
+        inner = next((c for c in parameter.children if c.field != "parameters" and c.type != "comment"), None)
+        return None if inner is None else parameter_name(inner)
+    named = parameter.child_by_field("name")
+    if named is not None:
+        return named.text
+    declarator = parameter.child_by_field("declarator")
+    while declarator is not None and declarator.type not in NAME_LEAVES:
+        inner = declarator.child_by_field("declarator")
+        declarator = inner if inner is not None else next(
+            (c for c in declarator.children if c.type in NAME_LEAVES), None)
+    if declarator is not None:
+        return declarator.text
+    bare = next((c for c in parameter.children if c.field is None and c.type in ("type_identifier", "identifier")),
+                None)
+    return None if bare is None else bare.text
+
+
 def bound_parameters(node: tsast.Node) -> set[str]:
-    """The names that the parameter lists of the enclosing template declarations bind."""
+    """The names that the template parameter lists around a node bind: of a declaration or of a lambda."""
     bound: set[str] = set()
-    owner = node.ancestor_of_type("template_declaration")
+    owner = node.ancestor_of_type("template_declaration", "lambda_expression")
     while owner is not None:
-        parameters = owner.child_by_field("parameters")
+        field = "parameters" if owner.type == "template_declaration" else "template_parameters"
+        parameters = owner.child_by_field(field)
         if parameters is not None:
-            for parameter in parameters.children:
-                for field in ("name", "declarator"):
-                    named = parameter.child_by_field(field)
-                    if named is not None:
-                        bound.add(named.text)
-                bound.update(child.text for child in parameter.children
-                             if child.type in ("type_identifier", "identifier"))
-        owner = owner.ancestor_of_type("template_declaration")
+            bound.update(name for name in map(parameter_name, parameters.children) if name is not None)
+        owner = owner.ancestor_of_type("template_declaration", "lambda_expression")
     return bound
 
 
-def header_aliases(root: Path, files: list[str]) -> tuple[list[tuple[str, list[str]]], list[str]]:
-    """Each namespace-scope alias and typedef of each header in scope, as (alias, the identifiers of its definition).
+def namespace_aliases(tree: tsast.Tree) -> list[tuple[str, list[str]]]:
+    """Each namespace-scope alias and typedef of one parse, as (alias, the names of its definition).
 
-    The parse tree tells a namespace-scope alias from a member alias.  A
-    header that the parser cannot read fails the run, because an alias in it
-    is unknown.  Complexity: linear in the node count of the headers.
-
-    Raises:
-        tsast.KitMissing: If the pinned kit is not installed
+    The parse tree tells a namespace-scope alias from a member alias.
+    Complexity: linear in the number of nodes.
     """
-    headers = [path for path in files if in_scope(path) and Path(path).suffix in HEADER_SUFFIXES]
     aliases: list[tuple[str, list[str]]] = []
-    failures: list[str] = []
-    for tree in tsast.parse([root / path for path in headers], strict=False):
-        rel = Path(tree.path).relative_to(root).as_posix()
-        if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                failures.append(f"{rel}: the parser cannot read this header, so the aliases it declares are unknown")
-            continue
-        for node in tree.find("alias_declaration", "type_definition"):
-            if not at_namespace_scope(node):
-                continue
-            body = node.child_by_field("type")
-            if body is None:
-                continue
-            bound = bound_parameters(node)
-            parts = [name for name in idents(blank(body.text, blank_literals=True)[0]) if name not in bound]
-            if node.type == "alias_declaration":
-                named = node.child_by_field("name")
-                names = [named.text] if named is not None else []
-            else:
-                names = [leaf.text for child in node.children if child.field == "declarator"
-                         for leaf in ([child] if child.type == "type_identifier" else child.descendants("type_identifier"))]
-            aliases += [(name, parts) for name in names]
-    return aliases, failures
+    for node in tree.find("alias_declaration", "type_definition"):
+        body = node.child_by_field("type")
+        if body is not None and at_namespace_scope(node):
+            aliases += [(name, names_in(body)) for name in alias_names(node)]
+    return aliases
 
 
 def primaries_for(path: str, primaries: dict[str, set[str]]) -> set[str]:
@@ -646,22 +706,39 @@ def scan(root: Path, compile_db: Path | None, binary: str | None, allowlist: Pat
     for source in (roster_names(root), reflected_names(binary)):
         for name, spellings in source.items():
             qualified[name] |= spellings
-    friends, primaries = friend_and_primary_names(root, files)
+    # One parse of each file in scope gives its records, the templates that
+    # include/ befriends, the files that define each primary, and the
+    # namespace-scope aliases of each header.  A file that the parser cannot
+    # read refuses the run, because a route in it is unknown.
+    scope = sorted(path for path in files if in_scope(path))
+    records_of: dict[str, list[list]] = {}
+    friend_set: set[str] = set()
+    primaries: dict[str, set[str]] = defaultdict(set)
+    exported: list[tuple[str, list[str]]] = []
     failures: list[str] = []
+    for tree in tsast.parse([root / path for path in scope], strict=False):
+        rel = Path(tree.path).relative_to(root).as_posix()
+        if tree.diagnostic is not None:
+            if rel not in tsast.UNPARSEABLE:
+                failures.append(f"{rel}: the parser cannot read this file, so its routes are unknown")
+            continue
+        records_of[rel] = extract(tree)
+        if rel.startswith("include/"):
+            friend_set |= template_friends(tree)
+            for name in defined_primaries(tree):
+                primaries[name].add(rel)
+        if Path(rel).suffix in HEADER_SUFFIXES:
+            exported += namespace_aliases(tree)
+    friends = frozenset(friend_set)
     # A header can declare the alias that another file casts to, so each
     # namespace-scope alias of a header joins the proof names before any
     # file is judged.  An alias of a class body stays in its own file.
-    exported, unread = header_aliases(root, files)
-    failures += unread
     proofs = alias_closure(frozenset(qualified), exported)
     lexical: dict[str, list[int]] = defaultdict(list)
-    for path in files:
-        if not in_scope(path):
-            continue
-        joined, code, joins = blanked((root / path).read_text(errors="replace"))
+    for path, records in records_of.items():
         admitted = frozenset(primaries_for(path, primaries))
-        for rule, key, offset in scan_code(code, proofs, friends, admitted):
-            lexical[f"{path}:{rule}:{key}"].append(line_of(joined, joins, offset))
+        for rule, key, line in judge(records, proofs, friends, admitted):
+            lexical[f"{path}:{rule}:{key}"].append(line)
     preprocessed: dict[str, int] = {}
     if compile_db is not None:
         preprocessed = preprocessed_counts(preprocessed_records(root, compile_db, failures, frozenset(files)),
@@ -689,11 +766,11 @@ def scan(root: Path, compile_db: Path | None, binary: str | None, allowlist: Pat
     for error in errors:
         print(f"PROOF-ROUTE malformed: {error}", file=sys.stderr)
     for failure in failures:
-        print(f"PROOF-ROUTE preprocessor failure: {failure}.  A translation unit the guard cannot read can hold "
-              f"a route, so the run is refused.", file=sys.stderr)
+        print(f"PROOF-ROUTE unread input: {failure}.  A translation unit or a file that the guard cannot read can "
+              f"hold a route, so the run is refused.", file=sys.stderr)
     print(f"check-proof-routes: {len(proofs)} proof name(s), {len(friends)} befriended template(s), "
           f"{len(set(lexical) | set(preprocessed))} key(s), {unreviewed} unreviewed, {stale} stale, "
-          f"{len(errors)} malformed, {len(failures)} preprocessor failure(s).", file=sys.stderr)
+          f"{len(errors)} malformed, {len(failures)} unread input(s).", file=sys.stderr)
     if unreviewed:
         return 1
     return 2 if stale or errors or failures else 0
@@ -703,7 +780,7 @@ SELF_TEST_SOURCE = r"""
 #include <memory>
 namespace forge {
 class Door;
-template <class T> class Guarded { template <class U> friend class Opener; };
+template <class T> class Guarded { template <class U> friend class Opener; template <class V> friend class ::forge::Other; };
 union Loose { unsigned char byte; Door* door; };
 template <class P> union Held { unsigned char byte; P proof; };
 using Alias = Door;
@@ -732,32 +809,57 @@ template <class Door> concept Castable = requires(void* raw) { static_cast<Door*
 template <template <class> class Door> void* hold(void* raw) { return static_cast<Door<int>*>(raw); }
 template <class Door>
 void* grab() { return ::operator new(sizeof(Door)); }
+template <> class Other<long> {};
+void conditional(void* raw) { auto* c = static_cast<std::conditional_t<(1 > 0), Door, int>*>(raw); (void)c; }
+template <class T> using Rebound = typename T::
+    template rebind<int>;
+auto lam = []<class Door>(void* raw) { return static_cast<Door*>(raw); };
+template <class T, class X = Door> struct Defaulted { Door* get(void* raw) { return static_cast<Door*>(raw); } };
 }
 """
+
+
+def planted_records(text: str) -> tuple[list[list], frozenset[str]]:
+    """Parse one planted source, and return its records and the templates it befriends."""
+    with tempfile.TemporaryDirectory() as scratch:
+        path = Path(scratch) / "planted.cpp"
+        path.write_text(text, encoding="utf-8")
+        tree = next(iter(tsast.parse([path], strict=False)))
+        if tree.diagnostic is not None:
+            raise ValueError(f"the planted source does not parse: {tree.diagnostic}")
+        return extract(tree), frozenset(template_friends(tree))
 
 
 def self_test() -> int:
     """Plant each route in a scratch tree and prove the verdicts."""
     failures: list[str] = []
     proofs = frozenset({"Door"})
-    friends = frozenset({"Opener"})
-    joined, code, _ = blanked(SELF_TEST_SOURCE)
-    sites = scan_code(code, proofs, friends, frozenset())
+    records, friends = planted_records(SELF_TEST_SOURCE)
+    if friends != {"Opener", "Other"}:
+        failures.append(f"the befriended templates are {sorted(friends)}, not Opener and the qualified Other")
     by_rule: dict[str, list[str]] = defaultdict(list)
-    for rule, key, _ in sites:
+    for rule, key, _ in judge(records, proofs, friends, frozenset()):
         by_rule[rule].append(key)
     expected = {
         "union": ["Loose", "Held"],
         # The fourth is the cast after the template: a parameter named Door
-        # binds only inside its own declaration.
+        # binds only inside its own declaration.  The fifth closes its
+        # template argument list after a parenthesized `>`, and the sixth is
+        # in a template whose default argument names Door, which binds
+        # nothing.  The lambda's own parameter named Door binds.
         "pointer-cast": ["static_cast<Door*>", "static_cast<Alias*>", "reinterpret_cast<const Door*>",
+                         "static_cast<Door*>", "static_cast<std::conditional_t<(1>0),Door,int>*>",
                          "static_cast<Door*>"],
         "allocator": ["allocator<Door>"],
         "raw-allocation": ["operator new"],
+        # The dependent `template rebind<int>` after a line break is no
+        # instantiation.
         "explicit-instantiation": ["class Guarded<int>"],
         "function-specialization": ["void route_twice<Door>"],
         "member-pointer-specialization": ["struct Steal<&Door::secret>"],
-        "friend-template-specialization": ["class Opener<int>", "template<class U>class Opener<"],
+        # Other is befriended by its qualified name.
+        "friend-template-specialization": ["class Opener<int>", "template<class U>class Opener<",
+                                           "class Other<long>"],
     }
     for rule, keys in expected.items():
         if sorted(by_rule.get(rule, [])) != sorted(keys):
@@ -766,7 +868,8 @@ def self_test() -> int:
     if unexpected:
         failures.append(f"a rule fired that the plant does not hold: {sorted(unexpected)}")
     # The defining file of a primary may specialize it.
-    if any(r == "friend-template-specialization" for r, _, _ in scan_code(code, proofs, friends, frozenset({"Opener"}))):
+    if any(r == "friend-template-specialization" and "Opener" in k
+           for r, k, _ in judge(records, proofs, friends, frozenset({"Opener"}))):
         failures.append("a specialization in the file that defines the primary template was refused")
     # The allowlist admits a site, refuses a surplus and reports a stale entry.
     with tempfile.TemporaryDirectory() as scratch:
@@ -816,13 +919,36 @@ def self_test() -> int:
             failures.append(f"a cast through an alias that another file declares was not refused:\n{report.getvalue()}")
         (root / "y.cpp").unlink()
         (root / "include" / "A.h").unlink()
+        # A forward declaration of a befriended template defines nothing, so
+        # its file may not specialize the template.
+        (root / "include" / "F.h").write_text("namespace forge {\ntemplate <class T> class Box {\n"
+                                              "    template <class U> friend class Opener;\n};\n"
+                                              "template <class T> class Opener;\ntemplate <> class Opener<int> {};\n}\n")
+        report = io.StringIO()
+        with contextlib.redirect_stderr(report):
+            verdict = scan(root, None, None, allow, "check")
+        if verdict != 1 or "include/F.h:friend-template-specialization:class Opener<int>" not in report.getvalue():
+            failures.append(f"a specialization beside a forward declaration of its primary was admitted:\n"
+                            f"{report.getvalue()}")
+        (root / "include" / "F.h").unlink()
+        # A file that the parser cannot read can hold a route, so it refuses
+        # the run even when every site it can read has an entry.
+        (root / "bad.cpp").write_text("#define JOIN(a, b) a##b\nJOIN(uni, on) Hidden { int x; };\n")
+        report = io.StringIO()
+        with contextlib.redirect_stderr(report):
+            verdict = scan(root, None, None, allow, "check")
+        if verdict != 2 or "PROOF-ROUTE unread input: bad.cpp" not in report.getvalue():
+            failures.append(f"a file that the parser cannot read did not refuse the run:\n{report.getvalue()}")
+        (root / "bad.cpp").unlink()
         # Token pasting forms a union that the lexical pass cannot see, and
-        # the preprocessed pass sees it.  A second run reads the cache.
+        # the preprocessed pass sees it.  A second run reads the cache.  The
+        # file parses clean, so the lexical pass reads it and finds nothing.
         compiler = os.environ.get("CXX") or shutil.which("c++") or shutil.which("g++")
         if compiler is None:
             failures.append("no C++ compiler to run the preprocessed pass")
         else:
-            (root / "a.cpp").write_text("#define JOIN(a, b) a##b\nJOIN(uni, on) Hidden { int x; };\n")
+            (root / "a.cpp").write_text("#define JOIN(a, b) a##b\n#define HIDE(n) JOIN(uni, on) n { int x; }\n"
+                                        "HIDE(Hidden);\n")
             database = root / "compile_commands.json"
             database.write_text(json.dumps([{"directory": str(root), "file": "a.cpp",
                                              "command": f"{compiler} -std=c++20 -c a.cpp -o a.o"}]))
@@ -830,8 +956,10 @@ def self_test() -> int:
             for attempt in ("cold", "cached"):
                 report = subprocess.run([sys.executable, __file__, "--scan-root", str(root), "--compile-db",
                                          str(database), "--allowlist", str(allow)], capture_output=True, text=True)
-                if report.returncode != 1 or "a.cpp:union:Hidden" not in report.stderr:
-                    failures.append(f"the {attempt} preprocessed pass missed a union formed by token pasting")
+                if (report.returncode != 1 or "a.cpp:union:Hidden" not in report.stderr
+                        or "PROOF-ROUTE unread input" in report.stderr):
+                    failures.append(f"the {attempt} preprocessed pass missed a union formed by token pasting:\n"
+                                    f"{report.stderr}")
             if not any((root / "proof-routes-cache").glob("*.json")):
                 failures.append("the preprocessed pass wrote no cache entry")
             if not any((root / "preprocessed-cache" / "units").glob("*.json")):
@@ -842,16 +970,17 @@ def self_test() -> int:
             # found and no preprocessor failure refuses the run.
             (root / "include" / "lower").mkdir(parents=True, exist_ok=True)
             (root / "include" / "upper").mkdir()
-            (root / "include" / "upper" / "Up.h").write_text("#pragma once\n#define GLUE(a, b) a##b\n")
+            (root / "include" / "upper" / "Up.h").write_text("#pragma once\n#define GLUE(a, b) a##b\n"
+                                                             "#define STAGE(n) GLUE(uni, on) n { int x; }\n")
             (root / "layer-stage").mkdir()
             (root / "layer-stage" / "lower").symlink_to(root / "include" / "lower")
-            (root / "fixture.cpp").write_text("#include <upper/Up.h>\nGLUE(uni, on) Staged { int x; };\n")
+            (root / "fixture.cpp").write_text("#include <upper/Up.h>\nSTAGE(Staged);\n")
             database.write_text(json.dumps([{"directory": str(root), "file": "fixture.cpp",
                                              "command": f"{compiler} -std=c++20 -Ilayer-stage -c fixture.cpp "
                                                         f"-o fixture.o"}]))
             report = subprocess.run([sys.executable, __file__, "--scan-root", str(root), "--compile-db",
                                      str(database), "--allowlist", str(allow)], capture_output=True, text=True)
-            if "fixture.cpp:union:Staged" not in report.stderr or "PROOF-ROUTE preprocessor failure" in report.stderr:
+            if "fixture.cpp:union:Staged" not in report.stderr or "PROOF-ROUTE unread input" in report.stderr:
                 failures.append(f"a layer fixture under a staged root was not read with the include directory:\n"
                                 f"{report.stderr}")
         missing = subprocess.run([sys.executable, __file__, "--scan-root", str(root), "--proof-names-binary",
