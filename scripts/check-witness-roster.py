@@ -451,17 +451,19 @@ def walk_witnesses(roots: list[Path]) -> tuple[dict[str, str], list[str]]:
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
     """
-    files = sorted(path for root in roots if root.is_dir() for path in root.rglob("*.h"))
+    def shown_path(path: Path) -> Path:
+        """Return a path relative to the repository when it lies inside it."""
+        return path.relative_to(REPO) if path.is_relative_to(REPO) else path
+
+    files = sorted(path for root in roots if root.is_dir() for path in root.rglob("*.h")
+                   if tsast.is_in_cpp_scope(shown_path(path)))
     found: dict[str, str] = {}
     unread: list[str] = []
     for tree in tsast.parse(files, strict=False):
-        path = Path(tree.path)
-        shown = path.relative_to(REPO) if path.is_relative_to(REPO) else path
+        shown = shown_path(Path(tree.path))
         if tree.diagnostic is not None:
-            rel = shown.as_posix()
-            if rel not in tsast.UNPARSEABLE:
-                unread.append(f"UNREADABLE header: {rel} does not parse, so its door shapes are unknown.\n"
-                              f"  {tree.diagnostic}")
+            unread.append(f"UNREADABLE header: {shown.as_posix()} does not parse, so its door shapes are unknown.\n"
+                          f"  {tree.diagnostic}")
             continue
         for node in tree.find(*CLASS_NODES):
             named = node.child_by_field("name")

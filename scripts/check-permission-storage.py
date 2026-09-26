@@ -32,11 +32,11 @@ THE RULE
 
 WHAT READS THE MEMBERS
     The parse tree of the pinned tree-sitter kit (scripts/tsast.py), over
-    every C++ file of include/ and src/.  A member inside an arm of an `#if`
-    in a class body is a member of that class.  The substrate headers that
-    define Permission are exempt, and a file of tsast.UNPARSEABLE is not
-    C++ and is out of scope.  Any other file that the parser cannot read
-    fails.
+    each file of include/ and src/ that tsast.is_in_cpp_scope admits: a C++
+    suffix, and not a file of tsast.UNPARSEABLE.  A member inside an arm of
+    an `#if` in a class body is a member of that class.  The substrate
+    headers that define Permission are exempt.  Any other file that the
+    parser cannot read fails.
 
 Usage
     check-permission-storage.py              scan the tree
@@ -63,7 +63,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402  (the path insert above has to come first)
 
 ROOTS = ("include", "src")
-SUFFIXES = (".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".tpp", ".cpp", ".cc", ".cxx")
 SUBSTRATE = frozenset({"include/foundation/permissions/Permission.h", "include/crucible/permissions/_Permission.h"})
 MARKER = "PERMISSION-STORAGE-OK"
 MARKER_WITH_REASON = re.compile(rf"{MARKER}:\s*\S")
@@ -196,8 +195,9 @@ def scan(root: Path) -> list[Finding]:
     for top in ROOTS:
         base = root / top
         if base.is_dir():
-            files += [path for path in sorted(base.rglob("*")) if path.suffix in SUFFIXES and path.is_file()
-                      and path.relative_to(root).as_posix() not in tsast.UNPARSEABLE.keys() | SUBSTRATE]
+            files += [path for path in sorted(base.rglob("*")) if path.is_file()
+                      and tsast.is_in_cpp_scope(path.relative_to(root))
+                      and path.relative_to(root).as_posix() not in SUBSTRATE]
     findings: list[Finding] = []
     for tree in tsast.parse(files, strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
