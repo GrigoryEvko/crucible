@@ -18,10 +18,14 @@ WHAT COUNTS AS A SECOND BODY
         alias.  The exact name in a call or a using-declaration is a use.
       * A function or a lambda, under any name, whose body holds the salt
         0x9e3779b97f4a7c15, a shift left by 6, a shift right by 2 and a
-        call of fmix64.  That is the body of combine_ids.
-      * The same shapes in a macro body, read as text after the lexer
-        blanks comments and literals.
-    A comment and a string literal name nothing.
+        call of fmix64.  That is the body of combine_ids.  The salt and the
+        shift counts are read as number values, so a digit separator or a
+        suffix does not hide them.
+      * The same shapes in a macro body.  A body that parses is read as
+        nodes.  A body that does not parse, for example because it pastes
+        tokens with `##`, is read as preprocessing tokens.
+    A comment and a string literal name nothing.  Every C++ file under the
+    scan roots is parsed, with no text test first.
 
 EXEMPTIONS
     The canonical definition, and each path of EXEMPT with its reason.  An
@@ -37,7 +41,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -46,7 +49,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 
 CANONICAL = ("include/foundation/reflect/Hash.h", ("foundation", "reflect"))
 # Each path that may hold a second body, with its reason.
@@ -55,41 +57,65 @@ EXEMPT: dict[str, str] = {
 }
 NAME = "combine_ids"
 ROOTS = ("include", "src", "test", "bench", "tools", "vessel", "fuzz")
-SUFFIXES = (".h", ".hpp", ".cpp", ".cc", ".inl", ".ipp")
 EXCLUDED_COMPONENTS = frozenset({"third_party", "external", "vendor"})
-NEEDLE = re.compile(rb"combine_ids|9e3779b97f4a7c15", re.IGNORECASE)
-SALT = re.compile(r"0x9e3779b97f4a7c15", re.IGNORECASE)
-LEXICAL_NAME = re.compile(r"\b(?:\w+combine_ids\w*|combine_ids\w+)\b")
-SHIFT_LEFT_6 = re.compile(r"<<\s*6\b")
-SHIFT_RIGHT_2 = re.compile(r">>\s*2\b")
-FMIX = re.compile(r"\bfmix64\s*\(")
+SALT = 0x9E3779B97F4A7C15
+MIX = "fmix64"
 
 
-def namespace_path(node: tsast.Node) -> tuple[str, ...]:
-    """Return the names of the namespaces that enclose a node, outermost first."""
-    parts: list[str] = []
-    owner = node.parent
-    while owner is not None:
-        if owner.type == "namespace_definition":
-            named = owner.child_by_field("name")
-            text = named.text if named is not None else "(anonymous)"
-            parts[:0] = [part for part in text.replace(" ", "").split("::") if part]
-        owner = owner.parent
-    return tuple(parts)
+def body_shape(node: tsast.Node) -> bool:
+    """Return True when a function or lambda body has the shape of combine_ids.
+
+    The shape is the salt as a number value, a shift left by 6, a shift right
+    by 2 and a call of fmix64, in any order.  A shift is a binary or a compound
+    assignment expression whose right operand has the value.
+
+    Complexity: linear in the number of nodes under the body.
+    """
+    has_salt = any(tsast.number_value(literal) == SALT for literal in node.descendants("number_literal"))
+    shifts: set[tuple[str, int | None]] = set()
+    for expression in node.descendants("binary_expression", "assignment_expression"):
+        right = expression.child_by_field("right")
+        if right is not None:
+            shifts.add((tsast.operator_of(expression).rstrip("="), tsast.number_value(right)))
+    has_mix = any(tsast.leaf_name(call) == MIX for call in node.descendants("call_expression"))
+    return has_salt and ("<<", 6) in shifts and (">>", 2) in shifts and has_mix
 
 
-def function_name(function: tsast.Node) -> tsast.Node | None:
-    """Return the name node that a function definition declares, through its nested declarators."""
-    current = function.child_by_field("declarator")
-    while current is not None and current.type not in ("identifier", "field_identifier", "qualified_identifier",
-                                                         "destructor_name", "operator_name"):
-        current = current.child_by_field("declarator")
-    return current
+def token_value(text: str) -> int | None:
+    """Return the value of an integer literal token, or None for any other token.
+
+    The rule is tsast.number_value's rule, for a token of a macro body that
+    did not parse: digit separators, the base prefixes and the integer
+    suffixes are handled.
+    """
+    digits = text.replace("'", "").lower()
+    digits = digits.rstrip("ulz")
+    try:
+        if digits[:2] == "0x":
+            return int(digits[2:], 16)
+        if digits[:2] == "0b":
+            return int(digits[2:], 2)
+        if len(digits) > 1 and digits[0] == "0" and digits.isdigit():
+            return int(digits, 8)
+        return int(digits, 10)
+    except ValueError:
+        return None
 
 
-def is_combine_body(text: str) -> bool:
-    """Return True when a body, blanked of comments and literals except numbers, has the shape of combine_ids."""
-    return all(pattern.search(text) for pattern in (SALT, SHIFT_LEFT_6, SHIFT_RIGHT_2, FMIX))
+def token_shape(tokens: list[tsast.Token]) -> bool:
+    """Return True when the tokens of an unparsed macro body have the shape of combine_ids."""
+    values = [token_value(token.text) if token.kind == "number" else None for token in tokens]
+    has_salt = SALT in values
+    shifts = {(tokens[index].text.rstrip("="), values[index + 1]) for index in range(len(tokens) - 1)
+              if tokens[index].text in ("<<", "<<=", ">>", ">>=")}
+    has_mix = any(token.text == MIX and index + 1 < len(tokens) and tokens[index + 1].text == "("
+                  for index, token in enumerate(tokens))
+    return has_salt and ("<<", 6) in shifts and (">>", 2) in shifts and has_mix
+
+
+def is_derived_name(text: str) -> bool:
+    """Return True for a name that holds combine_ids with a prefix or a suffix."""
+    return NAME in text and text != NAME
 
 
 def second_bodies(rel: str, tree: tsast.Tree) -> Iterator[tuple[int, str]]:
@@ -98,59 +124,68 @@ def second_bodies(rel: str, tree: tsast.Tree) -> Iterator[tuple[int, str]]:
     Complexity: linear in the size of the file.
     """
     for function in tree.find("function_definition"):
-        named = function_name(function)
-        if named is None:
-            continue
-        last = named.child_by_field("name") if named.type == "qualified_identifier" else named
-        text = last.text if last is not None else named.text
+        declarator = function.child_by_field("declarator")
+        text = (tsast.leaf_name(declarator) if declarator is not None else None) or ""
         body = function.child_by_field("body")
         if NAME in text:
-            if not (rel == CANONICAL[0] and text == NAME and namespace_path(function) == CANONICAL[1]):
+            if not (rel == CANONICAL[0] and text == NAME and tsast.namespace_path(function) == CANONICAL[1]):
                 yield function.start[0], f"a definition named {text}"
-        elif body is not None and is_combine_body(code_of(body.text)):
+        elif body is not None and body_shape(body):
             yield function.start[0], f"a body with the shape of combine_ids, named {text}"
     for lambda_node in tree.find("lambda_expression"):
         body = lambda_node.child_by_field("body")
-        if body is not None and is_combine_body(code_of(body.text)):
+        if body is not None and body_shape(body):
             yield lambda_node.start[0], "a lambda with the shape of combine_ids"
     for node in tree.find("identifier", "field_identifier", "type_identifier", "namespace_identifier"):
         is_definition_name = node.parent is not None and node.parent.type == "function_declarator"
-        if NAME in node.text and node.text != NAME and not is_definition_name:
+        if is_derived_name(node.text) and not is_definition_name:
             yield node.start[0], f"the name {node.text}"
-    for body in tree.find("preproc_arg"):
-        code = code_of(body.text)
-        joined, joins = splice(body.text)
-        for match in LEXICAL_NAME.finditer(blank(joined, blank_literals=True)[0]):
-            yield body.start[0] + line_of(joined, joins, match.start()) - 1, f"the name {match.group(0)} in a macro"
-        if is_combine_body(code):
-            yield body.start[0], "a macro body with the shape of combine_ids"
 
 
-def code_of(text: str) -> str:
-    """Return text with its comments and its string and character literals blanked, and its numbers kept."""
-    joined, _ = splice(text)
-    return blank(joined, blank_literals=True)[0]
+def macro_hits(body: tsast.MacroBody) -> Iterator[tuple[int, str]]:
+    """Yield each derived name and each combine_ids shape in one macro body, as (row, form).
+
+    A macro parameter is a name of the macro, not of the program, so it does
+    not count.
+    """
+    tokens = tsast.pp_tokens(body.text, body.first_row)
+    for token in tokens:
+        if token.kind == "identifier" and is_derived_name(token.text) and token.text not in body.params:
+            yield token.row, f"the name {token.text} in a macro"
+    shaped = body_shape(body.root) if body.is_parsed else token_shape(tokens)
+    if shaped:
+        yield body.first_row, "a macro body with the shape of combine_ids"
 
 
 def scope_files(root: Path) -> list[Path]:
-    """Return every C++ file under the scan roots whose bytes name combine_ids or its salt, sorted."""
+    """Return every C++ file under the scan roots, sorted.
+
+    A file of the UNPARSEABLE roster is not C++, so it is out of scope.
+    """
     found: list[Path] = []
     for top in ROOTS:
         base = root / top
         if base.is_dir():
             for path in base.rglob("*"):
-                parts = path.relative_to(root).parts[:-1]
-                if path.is_file() and path.suffix in SUFFIXES \
-                        and not any(part in EXCLUDED_COMPONENTS or part.startswith("build") for part in parts) \
-                        and NEEDLE.search(path.read_bytes()):
+                rel = path.relative_to(root)
+                if path.is_file() and path.name.endswith(tsast.CPP_SUFFIXES) \
+                        and tsast.is_in_cpp_scope(rel) \
+                        and not any(part in EXCLUDED_COMPONENTS or part.startswith("build")
+                                    for part in rel.parts[:-1]):
                     found.append(path)
     return sorted(found)
+
+
+# The files whose trees stay alive at one time, so the macro bodies of a
+# batch parse in one run and the memory of the scan stays bounded.
+BATCH = 256
 
 
 def scan(root: Path) -> tuple[list[str], list[str], set[str]]:
     """Find each second body of combine_ids.
 
-    Complexity: linear in the total size of the files in scope.
+    Complexity: linear in the total size of the files in scope.  The trees
+    are kept for one batch of BATCH files at a time.
 
     Returns:
         Each violation, each parse failure, and each exempt path that held a second body
@@ -158,22 +193,30 @@ def scan(root: Path) -> tuple[list[str], list[str], set[str]]:
     violations: list[str] = []
     failures: list[str] = []
     used: set[str] = set()
+    batch: list[tuple[str, tsast.Tree, list[tuple[int, str]]]] = []
+
+    def flush() -> None:
+        """Add the macro-body hits of the batch, then report each file of it."""
+        by_tree = {id(tree): found for _, tree, found in batch}
+        for body in tsast.macro_bodies([tree for _, tree, _ in batch]):
+            by_tree[id(body.define.tree)].extend(macro_hits(body))
+        for rel, _, found in batch:
+            for row, form in sorted(set(found)):
+                if rel in EXEMPT:
+                    used.add(rel)
+                else:
+                    violations.append(f"{rel}:{row + 1}: {form}")
+        batch.clear()
+
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
-        if tree.diagnostic is not None and rel not in tsast.UNPARSEABLE:
+        if tree.diagnostic is not None:
             failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
-        if tree.diagnostic is not None:
-            source = tree.source.decode("utf-8", "replace")
-            hits = [(line_of(*splice(source), match.start()) - 1, f"the name {match.group(0)}")
-                    for match in LEXICAL_NAME.finditer(blank(splice(source)[0], blank_literals=True)[0])]
-        else:
-            hits = list(second_bodies(rel, tree))
-        for row, form in sorted(set(hits)):
-            if rel in EXEMPT:
-                used.add(rel)
-            else:
-                violations.append(f"{rel}:{row + 1}: {form}")
+        batch.append((rel, tree, list(second_bodies(rel, tree))))
+        if len(batch) == BATCH:
+            flush()
+    flush()
     return violations, failures, used
 
 
@@ -239,19 +282,33 @@ def self_test() -> int:
         ("inline unsigned long digest(unsigned long a) { return a + 0x9e3779b97f4a7c15ULL + (a << 6); }", False,
          "a salt without the full shape"),
         ("#define COMBINE_MACRO(a, b) combine_ids_macro(a, b)", True, "a name in a macro body"),
+        ("inline unsigned long split_salt(unsigned long a) { a ^= 0x9e37'79b9'7f4a'7c15ULL + (a << 6U) + "
+         "(a >> 2U); return fmix64(a); }", True, "a body with a separated salt and suffixed shift counts"),
+        ("#define SEPARATED_MACRO(a) ((a) ^ 0x9e37'79b9'7f4a'7c15ULL + ((a) << 6) + ((a) >> 2) + fmix64(a))",
+         True, "a macro body with a separated salt"),
+        ("#define PASTED_MACRO(a) a##_mix ^ 0x9e37'79b9'7f4a'7c15ULL + ((a) << 6) + ((a) >> 2) + fmix64(a)",
+         True, "a macro body that pastes tokens, so it does not parse, with a separated salt"),
+        ("inline unsigned long six_shift(unsigned long a) { a ^= 0x9e3779b97f4a7c15ULL + (a << 16) + (a >> 2); "
+         "return fmix64(a); }", False, "a shift by 16, which is not a shift by 6"),
         ("}", None, ""),
     ]
     canonical = ("#pragma once\nnamespace foundation::reflect {\n"
                  f"constexpr unsigned long combine_ids(unsigned long a, unsigned long b) {body}\n}}\n")
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
+        separated = ("namespace crucible::planted {\n"
+                     "inline unsigned long alone(unsigned long a) { a ^= 0x9e37'79b9'7f4a'7c15ULL + (a << 6) + "
+                     "(a >> 2); return fmix64(a); }\n}\n")
         for rel, text in (("include/foundation/reflect/Hash.h", canonical),
                           ("src/planted/Planted.cpp", "\n".join(line for line, _, _ in planted) + "\n"),
+                          ("src/planted/Separated.cpp", separated),
                           ("include/crucible/Expr.h", canonical.replace("foundation::reflect", "crucible"))):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
         violations, broken, used = scan(root)
         reported = {int(v.split(":")[1]) for v in violations if v.startswith("src/planted/Planted.cpp:")}
+        expect("caught: a file whose only trace is a separated salt",
+               any(v.startswith("src/planted/Separated.cpp:2") for v in violations))
         for line, (_, caught, label) in enumerate(planted, start=1):
             if caught is True:
                 expect(f"caught: {label}", line in reported)
@@ -279,6 +336,7 @@ def self_test() -> int:
         expect("the planted tree fails the check", captured(root)[0] == 1)
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
         (root / "src/planted/Planted.cpp").unlink()
+        (root / "src/planted/Separated.cpp").unlink()
         (root / "include/crucible/Expr.h").write_text("#pragma once\n#include <foundation/reflect/Hash.h>\n"
                                                        "// combine_ids now comes from Hash.h.\n", encoding="utf-8")
         code, report = captured(root)
