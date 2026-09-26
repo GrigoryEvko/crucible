@@ -786,12 +786,15 @@ set_tests_properties(use_after_move_attacks PROPERTIES
 # scripts/check-no-unchecked-access.py admits it only in the files that
 # scripts/unchecked-access-allowlist.txt names, each with its reason.  A
 # bare splice of a static data member has no door token, so the guard also
-# refuses a writable private or protected static data member.  Exit 3 (the
-# pinned tree-sitter kit is absent) is a skip.
+# refuses a writable private or protected static data member.  It reads the
+# macro expansions of this build too, so a door that ## builds and a member
+# that a macro declares are seen.  Exit 3 (the pinned tree-sitter kit is
+# absent) is a skip.
 add_test(NAME no_unchecked_access_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-unchecked-access.py --self-test)
 add_test(NAME no_unchecked_access
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-unchecked-access.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-unchecked-access.py
+          --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # A function in a detail namespace does the work of a door with no gate of
