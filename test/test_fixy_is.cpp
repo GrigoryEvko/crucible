@@ -95,7 +95,7 @@ static_assert(fis::WitnessAtLeast<AssertedW, AssertedW>,
 //
 // This gate proves fidelity, not completeness: it says every symbol
 // named here resolves correctly, not that the list covers the whole
-// substrate surface.  Completeness is scripts/check-isx-parity.sh,
+// substrate surface.  Completeness is scripts/check-isx-parity.py,
 // which derives the demand set from the headers, so a newly added
 // substrate alias is demanded without anyone editing this file.
 namespace isx_alias_reach {

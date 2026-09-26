@@ -236,8 +236,8 @@ jobs:
 
       - name: fixy::is alias parity (self-test + scan)
         run: |
-          bash scripts/check-isx-parity.sh --self-test
-          bash scripts/check-isx-parity.sh
+          python3 scripts/check-isx-parity.py --self-test
+          python3 scripts/check-isx-parity.py
 
       - name: stub-vs-live discipline (self-test + scan)
         run: |
