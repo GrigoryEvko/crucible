@@ -1,8 +1,10 @@
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// A membership with no active slot has no overlay.  The shape of the mint
+// refuses a zero active capacity.
 #include <crucible/canopy/HyParView.h>
 
-// Provokes the HyParViewShape concept: an active view with zero capacity cannot
-// form a usable overlay.
 int main() {
-    auto membership = crucible::canopy::mint_hyparview<0, 8>(crucible::effects::testing::init());
+    auto membership = crucible::canopy::mint_hyparview<0, 8>(::foundation::effects::testing::init());
     return static_cast<int>(membership.active_size().value());
 }

@@ -1,14 +1,16 @@
 #include <crucible/canopy/Plumtree.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace {
+
+namespace cc = crucible::canopy;
 
 [[nodiscard]] crucible::cog::CogIdentity peer(std::uint64_t id) noexcept {
     crucible::cog::CogIdentity out{};
@@ -17,60 +19,76 @@ namespace {
     return out;
 }
 
-[[nodiscard]] crucible::canopy::HyParViewPeer hp(std::uint64_t id) noexcept {
-    auto admitted = crucible::canopy::admit_hyparview_peer(peer(id));
+[[nodiscard]] cc::HyParViewPeer hp(std::uint64_t id) noexcept {
+    auto admitted = cc::admit_hyparview_peer(peer(id));
     assert(admitted.has_value());
     return *admitted;
+}
+
+[[nodiscard]] cc::HyParViewPositiveCount positive(std::uint16_t count) noexcept {
+    return ::fixy::mint_refined<::fixy::positive>(count);
+}
+
+// An overlay config with room for `active` active peers.
+[[nodiscard]] cc::HyParViewConfig overlay_config(std::uint16_t active, std::uint16_t passive) noexcept {
+    return cc::HyParViewConfig{
+        .active_size = positive(active),
+        .passive_size = positive(passive),
+        .active_random_walk_length = positive(3),
+        .passive_random_walk_length = positive(2),
+        .active_random_walk_acceptance = positive(2),
+    };
+}
+
+// A broadcast config with an eager fanout of `fanout`.
+[[nodiscard]] cc::PlumtreeConfig broadcast_config(std::uint16_t fanout) noexcept {
+    return cc::PlumtreeConfig{.max_eager_fanout = positive(fanout)};
+}
+
+[[nodiscard]] cc::GossipedPlumtreeIHave<8> gossiped(cc::PlumtreeIHave<8> ihave) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::Gossiped>(ihave);
+}
+
+[[nodiscard]] cc::GossipedPlumtreeMessage gossiped(cc::PlumtreeMessage message) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::Gossiped>(message);
 }
 
 }  // namespace
 
 int main() {
-    namespace cc = crucible::canopy;
-
     using Broadcast = cc::PlumtreeBroadcast<4, 8>;
+    static_assert(!std::is_default_constructible_v<Broadcast>);
     static_assert(!std::is_copy_constructible_v<Broadcast>);
     static_assert(!std::is_move_constructible_v<Broadcast>);
     static_assert(alignof(Broadcast) >= 64);
-    static_assert(std::same_as<cc::PlumtreeMessageId::tag_type, crucible::safety::source::Plumtree>);
+    static_assert(std::same_as<cc::PlumtreeMessageId::tag_type, ::fixy::tags::source::Plumtree>);
 
-    assert(cc::plumtree_error_name(cc::PlumtreeError::UnknownPeer) == std::string_view{"UnknownPeer"});
-    // Every error code has to round-trip through the name function,
-    // or a diagnostic reporting it prints nothing a reader can use.
-    assert(cc::plumtree_error_name(cc::PlumtreeError::TransientShapeInconsistency)
-           == std::string_view{"TransientShapeInconsistency"});
+    static_assert(::foundation::reflect::enum_name(cc::PlumtreeError::UnknownPeer) == "UnknownPeer");
+
+    // A tree needs a link slot for each peer that the active view can hold.
+    static_assert(cc::PlumtreeFitsOverlay<4, 8, 3, 4>);
+    static_assert(cc::PlumtreeFitsOverlay<4, 8, 4, 8>);
+    static_assert(!cc::PlumtreeFitsOverlay<3, 8, 5, 6>);
 
     std::array active{hp(1), hp(2), hp(3)};
-    cc::HyParViewConfig hy_config{
-        .active_size = cc::HyParViewPositiveCount{3},
-        .passive_size = cc::HyParViewPositiveCount{4},
-        .active_random_walk_length = cc::HyParViewPositiveCount{3},
-        .passive_random_walk_length = cc::HyParViewPositiveCount{2},
-        .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-        .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
-    };
-    auto membership = cc::mint_hyparview<3, 4>(crucible::effects::testing::init(),
-                                               std::span<const cc::HyParViewPeer>{active}, {}, hy_config);
+    auto membership = cc::mint_hyparview<3, 4>(::foundation::effects::testing::init(),
+                                               std::span<const cc::HyParViewPeer>{active}, {}, overlay_config(3, 4));
 
-    cc::PlumtreeConfig config{
-        .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
-        .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
-        .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
-        .max_eager_fanout = cc::PlumtreePositiveCount{2},
-    };
-    auto broadcast = cc::mint_plumtree<4, 8>(crucible::effects::testing::init(), membership, config);
+    auto broadcast = cc::mint_plumtree<4, 8>(::foundation::effects::testing::init(), membership, broadcast_config(2));
 
     assert(broadcast.link_count().value() == 3);
     assert(broadcast.eager_count().value() == 2);
     assert(broadcast.lazy_count().value() == 1);
-    // A membership that fits the link slots skips nobody.
-    assert(broadcast.transient_skipped_count() == 0);
     assert(broadcast.add_lazy_peer(hp(4)).has_value());
     assert(broadcast.link_count().value() == 4);
 
     auto duplicate = broadcast.add_eager_peer(hp(4));
     assert(!duplicate.has_value());
     assert(duplicate.error() == cc::PlumtreeError::DuplicatePeer);
+
+    auto full = broadcast.add_lazy_peer(hp(5));
+    assert(!full.has_value());
+    assert(full.error() == cc::PlumtreeError::CapacityExceeded);
 
     std::array<std::byte, 5> payload{
         std::byte{0x70}, std::byte{0x6c}, std::byte{0x75}, std::byte{0x6d}, std::byte{0x21},
@@ -86,20 +104,20 @@ int main() {
     assert(published.has_value());
     assert(published->message.id_hash == cc::plumtree_message_hash(*id));
     assert(published->message.payload_bytes == payload.size());
-    assert(published->eager_count == 2);
-    assert(published->lazy_count == 2);
-    assert(published->eager_size().value() == 2);
+    assert(published->eager_peers.count == 2);
+    assert(published->lazy_peers.count == 2);
+    assert(published->eager_peers.size().value() == 2);
     assert(broadcast.history_size().value() == 1);
 
     auto summary = broadcast.ihave_summary();
     assert(summary.size().value() == 1);
-    assert(summary.ids[0] == cc::plumtree_message_hash(*id));
+    assert(summary.slots[0] == cc::plumtree_message_hash(*id));
 
     cc::PlumtreeMessage remote_msg{
         .id_hash = cc::plumtree_message_hash(*id),
         .payload_bytes = static_cast<std::uint32_t>(payload.size()),
     };
-    auto duplicate_receive = broadcast.receive_message(hp(1), cc::GossipedPlumtreeMessage{remote_msg});
+    auto duplicate_receive = broadcast.receive_message(hp(1), gossiped(remote_msg));
     assert(duplicate_receive.has_value());
     assert(duplicate_receive->kind == cc::PlumtreeReceiveKind::Duplicate);
     assert(broadcast.link_state(peer(1).uuid).value() == cc::PlumtreeLinkState::Lazy);
@@ -116,15 +134,19 @@ int main() {
         .id_hash = cc::plumtree_message_hash(*other_id),
         .payload_bytes = static_cast<std::uint32_t>(other_payload.size()),
     };
-    auto first_receive = broadcast.receive_message(hp(4), cc::GossipedPlumtreeMessage{unseen_msg});
+    auto first_receive = broadcast.receive_message(hp(4), gossiped(unseen_msg));
     assert(first_receive.has_value());
     assert(first_receive->kind == cc::PlumtreeReceiveKind::FirstSeen);
-    assert(first_receive->forward.eager_count == 1);
-    assert(first_receive->forward.lazy_count == 2);
+    assert(first_receive->forward.eager_peers.count == 1);
+    assert(first_receive->forward.lazy_peers.count == 2);
     assert(broadcast.history_size().value() == 2);
 
+    auto unknown_sender = broadcast.receive_message(hp(98), gossiped(unseen_msg));
+    assert(!unknown_sender.has_value());
+    assert(unknown_sender.error() == cc::PlumtreeError::UnknownPeer);
+
     cc::PlumtreeIHave<8> ihave{};
-    ihave.ids[0] = cc::plumtree_message_hash(*other_id);
+    assert(ihave.push(cc::plumtree_message_hash(*other_id)));
     auto missing_payload = std::array<std::byte, 3>{
         std::byte{0x6e},
         std::byte{0x65},
@@ -132,13 +154,12 @@ int main() {
     };
     auto missing_id = cc::plumtree_message_id(std::span<const std::byte>{missing_payload});
     assert(missing_id.has_value());
-    ihave.ids[1] = cc::plumtree_message_hash(*missing_id);
-    ihave.count = 2;
-    auto repair = broadcast.receive_ihave(hp(2), cc::GossipedPlumtreeIHave<8>{ihave});
+    assert(ihave.push(cc::plumtree_message_hash(*missing_id)));
+    auto repair = broadcast.receive_ihave(hp(2), gossiped(ihave));
     assert(repair.has_value());
     assert(repair->source.uuid == peer(2).uuid);
-    assert(repair->size().value() == 1);
-    assert(repair->requested[0] == cc::plumtree_message_hash(*missing_id));
+    assert(repair->requested.size().value() == 1);
+    assert(repair->requested.slots[0] == cc::plumtree_message_hash(*missing_id));
 
     auto promote_payload = std::array<std::byte, 4>{
         std::byte{0x70},
@@ -149,136 +170,52 @@ int main() {
     auto promote_id = cc::plumtree_message_id(std::span<const std::byte>{promote_payload});
     assert(promote_id.has_value());
     cc::PlumtreeIHave<8> promote_ihave{};
-    promote_ihave.ids[0] = cc::plumtree_message_hash(*promote_id);
-    promote_ihave.count = 1;
-    auto promoted_repair = broadcast.receive_ihave(hp(3), cc::GossipedPlumtreeIHave<8>{promote_ihave});
+    assert(promote_ihave.push(cc::plumtree_message_hash(*promote_id)));
+    auto promoted_repair = broadcast.receive_ihave(hp(3), gossiped(promote_ihave));
     assert(promoted_repair.has_value());
-    assert(promoted_repair->size().value() == 1);
+    assert(promoted_repair->requested.size().value() == 1);
     assert(broadcast.link_state(peer(3).uuid).value() == cc::PlumtreeLinkState::Eager);
     assert(broadcast.eager_count().value() == broadcast.config().max_eager_fanout.value());
 
-    auto unknown = broadcast.receive_ihave(hp(99), cc::GossipedPlumtreeIHave<8>{ihave});
+    auto unknown = broadcast.receive_ihave(hp(99), gossiped(ihave));
     assert(!unknown.has_value());
     assert(unknown.error() == cc::PlumtreeError::UnknownPeer);
 
-    // Admission rejects an over-capacity configuration and an
-    // over-capacity membership by returning an error rather than by
-    // killing the process.  A caller handed untrusted input needs a
-    // way to validate it first and recover from a bad one.
-
-    // The eager fanout must not exceed the number of link slots.
+    // Admission rejects an eager fanout that exceeds the link slots by
+    // returning an error rather than by stopping the process.  A caller
+    // handed untrusted input needs a way to check it first.
     {
-        cc::PlumtreeConfig too_big{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .max_eager_fanout = cc::PlumtreePositiveCount{99},
-        };
-        auto admitted = cc::admit_plumtree_config<4>(too_big);
+        auto admitted = cc::admit_plumtree_config<4>(broadcast_config(99));
         assert(!admitted.has_value());
         assert(admitted.error() == cc::PlumtreeError::InvalidConfig);
     }
 
     {
-        cc::PlumtreeConfig ok{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .max_eager_fanout = cc::PlumtreePositiveCount{2},
-        };
-        auto admitted = cc::admit_plumtree_config<4>(ok);
+        auto admitted = cc::admit_plumtree_config<4>(broadcast_config(2));
         assert(admitted.has_value());
         assert(admitted->max_eager_fanout.value() == 2);
     }
 
-    // An active view larger than the link slots is refused as a whole,
-    // rather than one peer at a time.
+    // An overlay whose active view fills every link slot: each active peer
+    // becomes a link, the first two eager and the rest lazy.
     {
-        std::array big_active{hp(60), hp(61), hp(62), hp(63), hp(64)};
-        cc::HyParViewConfig big_hy{
-            .active_size = cc::HyParViewPositiveCount{5},
-            .passive_size = cc::HyParViewPositiveCount{6},
-            .active_random_walk_length = cc::HyParViewPositiveCount{3},
-            .passive_random_walk_length = cc::HyParViewPositiveCount{2},
-            .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-            .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
-        };
-        auto big_membership = cc::mint_hyparview<5, 6>(crucible::effects::testing::init(),
-                                                       std::span<const cc::HyParViewPeer>{big_active}, {}, big_hy);
-
-        cc::PlumtreeConfig small_pt{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .max_eager_fanout = cc::PlumtreePositiveCount{2},
-        };
-        auto admitted = cc::admit_plumtree_config<3>(small_pt);
-        assert(admitted.has_value());
-        cc::PlumtreeBroadcast<3, 8> b{*admitted};
-        auto rc = cc::populate_plumtree_from_membership(b, big_membership);
-        assert(!rc.has_value());
-        assert(rc.error() == cc::PlumtreeError::CapacityExceeded);
-        // The rejection lands before any peer is added, so the
-        // broadcast is left empty rather than partly filled.
-        assert(b.link_count().value() == 0);
-    }
-
-    // A membership view can be momentarily inconsistent while a
-    // shuffle is in flight, so construction skips a peer it cannot
-    // admit instead of failing.  The skip count is exposed so the
-    // caller can rebuild once the shuffle settles.
-    {
-        // Five active peers against three link slots, so exactly two
-        // are skipped and the count reports the overshoot.
-        std::array overshoot_active{hp(80), hp(81), hp(82), hp(83), hp(84)};
-        cc::HyParViewConfig overshoot_hy{
-            .active_size = cc::HyParViewPositiveCount{5},
-            .passive_size = cc::HyParViewPositiveCount{6},
-            .active_random_walk_length = cc::HyParViewPositiveCount{3},
-            .passive_random_walk_length = cc::HyParViewPositiveCount{2},
-            .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-            .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
-        };
-        auto overshoot_membership = cc::mint_hyparview<5, 6>(
-            crucible::effects::testing::init(), std::span<const cc::HyParViewPeer>{overshoot_active}, {}, overshoot_hy);
-
-        cc::PlumtreeConfig small_cfg{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .max_eager_fanout = cc::PlumtreePositiveCount{2},
-        };
-        cc::PlumtreeBroadcast<3, 8> b{overshoot_membership, small_cfg};
-        assert(b.link_count().value() == 3);
-        assert(b.transient_skipped_count() == 2);
-    }
-
-    {
-        std::array good_active{hp(70), hp(71)};
-        cc::HyParViewConfig good_hy{
-            .active_size = cc::HyParViewPositiveCount{2},
-            .passive_size = cc::HyParViewPositiveCount{4},
-            .active_random_walk_length = cc::HyParViewPositiveCount{3},
-            .passive_random_walk_length = cc::HyParViewPositiveCount{2},
-            .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-            .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
-        };
-        auto good_membership = cc::mint_hyparview<2, 4>(crucible::effects::testing::init(),
-                                                        std::span<const cc::HyParViewPeer>{good_active}, {}, good_hy);
-
-        cc::PlumtreeConfig good_pt{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
-            .max_eager_fanout = cc::PlumtreePositiveCount{2},
-        };
-        auto admitted = cc::admit_plumtree_config<4>(good_pt);
-        assert(admitted.has_value());
-        cc::PlumtreeBroadcast<4, 8> b{*admitted};
-        auto rc = cc::populate_plumtree_from_membership(b, good_membership);
-        assert(rc.has_value());
-        assert(b.link_count().value() == 2);
+        std::array full_active{hp(70), hp(71), hp(72), hp(73)};
+        auto full_membership = cc::mint_hyparview<4, 8>(::foundation::effects::testing::init(),
+                                                        std::span<const cc::HyParViewPeer>{full_active}, {},
+                                                        overlay_config(4, 8));
+        auto b = cc::mint_plumtree<4, 8>(::foundation::effects::testing::init(), full_membership, broadcast_config(2));
+        assert(b.link_count().value() == 4);
         assert(b.eager_count().value() == 2);
+        assert(b.lazy_count().value() == 2);
+    }
+
+    // An empty overlay mints an empty tree.
+    {
+        auto empty_membership =
+            cc::mint_hyparview<2, 4>(::foundation::effects::testing::init(), {}, {}, overlay_config(2, 4));
+        auto b = cc::mint_plumtree<4, 8>(::foundation::effects::testing::init(), empty_membership, broadcast_config(2));
+        assert(b.link_count().value() == 0);
+        assert(b.eager_count().value() == 0);
     }
 
     return 0;

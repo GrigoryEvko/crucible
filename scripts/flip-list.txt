@@ -55,8 +55,6 @@ include/crucible/Cipher.h
 include/crucible/CostModel.h
 include/crucible/Vigil.h
 include/crucible/_Saturate.h
-include/crucible/canopy/HyParView.h
-include/crucible/canopy/Plumtree.h
 include/crucible/cipher/CipherTierPromotion.h
 include/crucible/cipher/SessionPersistenceSurface.h
 include/crucible/cntp/ConnectionPool.h

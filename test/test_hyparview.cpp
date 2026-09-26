@@ -1,13 +1,15 @@
 #include <crucible/canopy/HyParView.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <cassert>
 #include <cstdint>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace {
+
+namespace cc = crucible::canopy;
 
 [[nodiscard]] crucible::cog::CogIdentity peer(std::uint64_t id) noexcept {
     crucible::cog::CogIdentity out{};
@@ -16,37 +18,41 @@ namespace {
     return out;
 }
 
-[[nodiscard]] crucible::canopy::HyParViewPeer hp(std::uint64_t id) noexcept {
-    auto admitted = crucible::canopy::admit_hyparview_peer(peer(id));
+[[nodiscard]] cc::HyParViewPeer hp(std::uint64_t id) noexcept {
+    auto admitted = cc::admit_hyparview_peer(peer(id));
     assert(admitted.has_value());
     return *admitted;
+}
+
+[[nodiscard]] cc::HyParViewPositiveCount positive(std::uint16_t count) noexcept {
+    return ::fixy::mint_refined<::fixy::positive>(count);
 }
 
 }  // namespace
 
 int main() {
-    namespace cc = crucible::canopy;
-
     using Membership = cc::HyParViewMembership<3, 6>;
+    static_assert(!std::is_default_constructible_v<Membership>);
     static_assert(!std::is_copy_constructible_v<Membership>);
     static_assert(!std::is_move_constructible_v<Membership>);
-    static_assert(std::same_as<cc::HyParViewPeer::tag_type, crucible::safety::source::HyParView>);
+    static_assert(std::same_as<cc::HyParViewPeer::tag_type, ::fixy::tags::source::HyParView>);
 
-    assert(cc::hyparview_error_name(cc::HyParViewError::PeerNotFound) == std::string_view{"PeerNotFound"});
+    static_assert(::foundation::reflect::enum_name(cc::HyParViewError::PeerNotFound) == "PeerNotFound");
+    static_assert(::foundation::reflect::enum_name(cc::HyParViewError::PassiveViewFull) == "PassiveViewFull");
     assert(!cc::admit_hyparview_peer(crucible::cog::CogIdentity{}).has_value());
 
     std::array active{hp(1), hp(2)};
     std::array passive{hp(3), hp(4), hp(5)};
     cc::HyParViewConfig config{
-        .active_size = cc::HyParViewPositiveCount{3},
-        .passive_size = cc::HyParViewPositiveCount{6},
-        .active_random_walk_length = cc::HyParViewPositiveCount{3},
-        .passive_random_walk_length = cc::HyParViewPositiveCount{3},
-        .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-        .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
+        .active_size = positive(3),
+        .passive_size = positive(6),
+        .active_random_walk_length = positive(3),
+        .passive_random_walk_length = positive(3),
+        .active_random_walk_acceptance = positive(2),
+        .shuffle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30'000'000'000}),
     };
     auto membership =
-        cc::mint_hyparview<3, 6>(crucible::effects::testing::init(), std::span<const cc::HyParViewPeer>{active},
+        cc::mint_hyparview<3, 6>(::foundation::effects::testing::init(), std::span<const cc::HyParViewPeer>{active},
                                  std::span<const cc::HyParViewPeer>{passive}, config);
 
     assert(membership.active_size().value() == 2);
@@ -93,9 +99,8 @@ int main() {
     assert(plan->sample.count <= membership.config().passive_random_walk_length.value());
 
     cc::HyParViewShuffle<6> incoming{};
-    incoming.peers[0] = peer(8);
-    incoming.count = 1;
-    assert(membership.apply_shuffle(cc::GossipedHyParViewShuffle<6>{incoming}).has_value());
+    assert(incoming.push(peer(8)));
+    assert(membership.apply_shuffle(::fixy::mint_tagged<::fixy::tags::source::Gossiped>(incoming)).has_value());
     passive_view = membership.passive_view();
     bool saw_shuffle = false;
     for (crucible::cog::CogIdentity const& id : passive_view.as_span()) {
@@ -103,11 +108,18 @@ int main() {
     }
     assert(saw_shuffle);
 
+    // A gossiped shuffle that names a zero uuid is refused.
+    cc::HyParViewShuffle<6> zero_incoming{};
+    assert(zero_incoming.push(crucible::cog::CogIdentity{}));
+    auto zero_shuffle = membership.apply_shuffle(::fixy::mint_tagged<::fixy::tags::source::Gossiped>(zero_incoming));
+    assert(!zero_shuffle.has_value());
+    assert(zero_shuffle.error() == cc::HyParViewError::ZeroUuid);
+
     auto forward = membership.forward_join_plan(hp(9));
     assert(forward.has_value());
     assert(forward->joining.uuid == peer(9).uuid);
     assert(forward->ttl == membership.config().active_random_walk_length.value());
-    assert(forward->count == membership.config().active_random_walk_acceptance.value());
+    assert(forward->targets.count == membership.config().active_random_walk_acceptance.value());
 
     auto missing = membership.mark_failed(peer(99).uuid);
     assert(!missing.has_value());
@@ -120,10 +132,21 @@ int main() {
     // An active size larger than the template parameter allows.
     {
         cc::HyParViewConfig too_big{
-            .active_size = cc::HyParViewPositiveCount{99},
-            .passive_size = cc::HyParViewPositiveCount{200},
+            .active_size = positive(99),
+            .passive_size = positive(200),
         };
         auto admitted = cc::admit_hyparview_config<3, 6>(too_big);
+        assert(!admitted.has_value());
+        assert(admitted.error() == cc::HyParViewError::InvalidConfig);
+    }
+
+    // An active size larger than the passive size.
+    {
+        cc::HyParViewConfig inverted{
+            .active_size = positive(3),
+            .passive_size = positive(2),
+        };
+        auto admitted = cc::admit_hyparview_config<3, 6>(inverted);
         assert(!admitted.has_value());
         assert(admitted.error() == cc::HyParViewError::InvalidConfig);
     }
@@ -131,23 +154,23 @@ int main() {
     // A valid config comes back unchanged.
     {
         cc::HyParViewConfig ok{
-            .active_size = cc::HyParViewPositiveCount{2},
-            .passive_size = cc::HyParViewPositiveCount{4},
+            .active_size = positive(2),
+            .passive_size = positive(4),
         };
         auto admitted = cc::admit_hyparview_config<3, 6>(ok);
         assert(admitted.has_value());
         assert(admitted->active_size.value() == 2);
     }
 
-    // An active span larger than the config allows.
+    // An active span larger than the room of the active view.
     {
         cc::HyParViewConfig small_cfg{
-            .active_size = cc::HyParViewPositiveCount{1},
-            .passive_size = cc::HyParViewPositiveCount{4},
+            .active_size = positive(1),
+            .passive_size = positive(4),
         };
         auto admitted = cc::admit_hyparview_config<3, 6>(small_cfg);
         assert(admitted.has_value());
-        cc::HyParViewMembership<3, 6> m{*admitted};
+        auto m = cc::mint_hyparview<3, 6>(::foundation::effects::testing::init(), {}, {}, *admitted);
         std::array over_capacity{hp(50), hp(51), hp(52)};  // 3 > 1
         auto rc = cc::populate_hyparview_membership(m, std::span<const cc::HyParViewPeer>{over_capacity});
         assert(!rc.has_value());
@@ -157,15 +180,56 @@ int main() {
         assert(m.active_size().value() == 0);
     }
 
+    // A passive span larger than the room of the passive view.
+    {
+        cc::HyParViewConfig small_cfg{
+            .active_size = positive(2),
+            .passive_size = positive(2),
+        };
+        auto m = cc::mint_hyparview<3, 6>(::foundation::effects::testing::init(), {}, {}, small_cfg);
+        std::array good_active{hp(53)};
+        std::array over_passive{hp(54), hp(55), hp(56)};  // 3 > 2
+        auto rc = cc::populate_hyparview_membership(m, std::span<const cc::HyParViewPeer>{good_active},
+                                                    std::span<const cc::HyParViewPeer>{over_passive});
+        assert(!rc.has_value());
+        assert(rc.error() == cc::HyParViewError::PassiveViewFull);
+        assert(m.active_size().value() == 0);
+        assert(m.passive_size().value() == 0);
+    }
+
+    // A peer named twice, or named in both lists, is refused before any
+    // insertion, so the peers before it stay out as well.
+    {
+        cc::HyParViewConfig cfg{
+            .active_size = positive(3),
+            .passive_size = positive(6),
+        };
+        auto m = cc::mint_hyparview<3, 6>(::foundation::effects::testing::init(), {}, {}, cfg);
+        std::array repeated_active{hp(57), hp(58), hp(57)};
+        auto repeated = cc::populate_hyparview_membership(m, std::span<const cc::HyParViewPeer>{repeated_active});
+        assert(!repeated.has_value());
+        assert(repeated.error() == cc::HyParViewError::DuplicatePeer);
+        assert(m.active_size().value() == 0);
+
+        std::array one_active{hp(59)};
+        std::array crossing_passive{hp(60), hp(59)};
+        auto crossing = cc::populate_hyparview_membership(m, std::span<const cc::HyParViewPeer>{one_active},
+                                                          std::span<const cc::HyParViewPeer>{crossing_passive});
+        assert(!crossing.has_value());
+        assert(crossing.error() == cc::HyParViewError::DuplicatePeer);
+        assert(m.active_size().value() == 0);
+        assert(m.passive_size().value() == 0);
+    }
+
     // Happy path: well-sized span + valid peers → succeeds.
     {
         cc::HyParViewConfig cfg{
-            .active_size = cc::HyParViewPositiveCount{2},
-            .passive_size = cc::HyParViewPositiveCount{4},
+            .active_size = positive(2),
+            .passive_size = positive(4),
         };
         auto admitted = cc::admit_hyparview_config<3, 6>(cfg);
         assert(admitted.has_value());
-        cc::HyParViewMembership<3, 6> m{*admitted};
+        auto m = cc::mint_hyparview<3, 6>(::foundation::effects::testing::init(), {}, {}, *admitted);
         std::array good_active{hp(60), hp(61)};
         std::array good_passive{hp(70), hp(71), hp(72)};
         auto rc = cc::populate_hyparview_membership(m, std::span<const cc::HyParViewPeer>{good_active},

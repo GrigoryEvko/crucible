@@ -6703,41 +6703,98 @@ crucible_neg_compile_multi_test(neg_swim_witness_count_assign
   "no match for .operator=. \\(operand types are .crucible::canopy::SlotCount<4>."
   "and .uint16_t.")
 
-# GAPS-211 — canopy/HyParView.h bounded active/passive overlay substrate.
-#   * neg_hyparview_zero_active: MaxActive=0 is rejected structurally.
-#   * neg_hyparview_raw_peer_join: join requires source::HyParView.
-#   * neg_hyparview_cross_tag_peer: source::External cannot substitute.
-#   * neg_hyparview_raw_shuffle: shuffle exchange must be gossiped.
-#   * neg_hyparview_mint_test_context: Init-only mint rejects Test.
-crucible_neg_compile_test(neg_hyparview_zero_active
-  "constraints not satisfied|HyParViewShape|MaxActive")
-crucible_neg_compile_test(neg_hyparview_raw_peer_join
-  "cannot convert|no matching function|could not convert|HyParViewPeer|Tagged")
-crucible_neg_compile_test(neg_hyparview_cross_tag_peer
-  "cannot convert|no matching function|could not convert|External|HyParView")
-crucible_neg_compile_test(neg_hyparview_raw_shuffle
-  "cannot convert|no matching function|could not convert|GossipedHyParViewShuffle|Tagged")
+# canopy/HyParView.h, the bounded active and passive overlay.
+#   * neg_hyparview_zero_active, neg_hyparview_active_exceeds_passive: the
+#     shape of the mint refuses a zero active capacity and an active
+#     capacity above the passive capacity.
+#   * neg_hyparview_raw_peer_join, neg_hyparview_cross_tag_peer: join takes
+#     an overlay peer, and neither a raw nor an External identity converts
+#     to one.
+#   * neg_hyparview_raw_shuffle, neg_hyparview_external_shuffle: a received
+#     shuffle is gossiped, and neither a raw nor an External shuffle
+#     converts to one.
+#   * neg_hyparview_direct_ctor: the constructor is private, and
+#     mint_hyparview is the only door.
+#   * neg_hyparview_mint_test_context and
+#     neg_hyparview_mint_background_context: the mint takes Init, and
+#     neither a Test nor a background context converts to it.
+crucible_neg_compile_multi_test(neg_hyparview_zero_active
+  "required for the satisfaction of .HyParViewShape<MaxActive, MaxPassive>. \\[with MaxActive = 0. MaxPassive = 8\\]"
+  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_hyparview_active_exceeds_passive
+  "required for the satisfaction of .HyParViewShape<MaxActive, MaxPassive>. \\[with MaxActive = 8. MaxPassive = 4\\]"
+  "the expression .MaxActive <= MaxPassive \\[with MaxActive = 8. MaxPassive = 4\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_hyparview_raw_peer_join
+  "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::HyParViewPeer."
+  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::join\\(crucible::canopy::HyParViewPeer\\)")
+crucible_neg_compile_multi_test(neg_hyparview_cross_tag_peer
+  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::HyParView>."
+  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::join\\(crucible::canopy::HyParViewPeer\\)")
+crucible_neg_compile_multi_test(neg_hyparview_raw_shuffle
+  "cannot convert .crucible::canopy::HyParViewShuffle<8>. to .crucible::canopy::GossipedHyParViewShuffle<8>."
+  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::apply_shuffle\\(crucible::canopy::GossipedHyParViewShuffle<MaxPassive>\\)")
+crucible_neg_compile_multi_test(neg_hyparview_external_shuffle
+  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
+  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::apply_shuffle\\(crucible::canopy::GossipedHyParViewShuffle<MaxPassive>\\)")
+crucible_neg_compile_multi_test(neg_hyparview_direct_ctor
+  "HyParViewMembership<MaxActive, MaxPassive>::HyParViewMembership\\(std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::HyParView> >, std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::HyParView> >, crucible::canopy::HyParViewConfig\\)"
+  "is private within this context")
 crucible_neg_compile_effects_test(neg_hyparview_mint_test_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Test|effects::Init")
+  "no matching function for call to .mint_hyparview<4>\\(foundation::effects::Test\\)."
+  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
+crucible_neg_compile_effects_test(neg_hyparview_mint_background_context
+  "no matching function for call to .mint_hyparview<4>\\(foundation::effects::Bg\\)."
+  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
 
-# GAPS-212 — canopy/Plumtree.h eager/lazy broadcast substrate.
-#   * neg_plumtree_zero_peers: MaxPeers=0 is rejected structurally.
-#   * neg_plumtree_raw_peer: link mutation requires source::HyParView.
-#   * neg_plumtree_raw_message: received messages must be gossiped.
-#   * neg_plumtree_raw_ihave: repair summaries must be gossiped.
-#   * neg_plumtree_mint_test_context: Init-only mint rejects Test.
-crucible_neg_compile_test(neg_plumtree_zero_peers
-  "constraints not satisfied|PlumtreeShape|MaxPeers")
-crucible_neg_compile_test(neg_plumtree_raw_peer
-  "cannot convert|no matching function|could not convert|HyParViewPeer|Tagged")
-crucible_neg_compile_test(neg_plumtree_raw_message
-  "cannot convert|no matching function|could not convert|GossipedPlumtreeMessage|Tagged")
-crucible_neg_compile_test(neg_plumtree_raw_ihave
-  "cannot convert|no matching function|could not convert|GossipedPlumtreeIHave|Tagged")
+# canopy/Plumtree.h, the eager and lazy broadcast tree.
+#   * neg_plumtree_zero_peers, neg_plumtree_overlay_too_large: the shape
+#     gate of the mint refuses a zero peer capacity and an overlay whose
+#     active view does not fit the link slots.
+#   * neg_plumtree_raw_peer, neg_plumtree_external_peer: a link takes an
+#     overlay peer, and neither a raw nor an External identity converts to
+#     one.
+#   * neg_plumtree_raw_message, neg_plumtree_external_message: a received
+#     message is gossiped.
+#   * neg_plumtree_raw_ihave, neg_plumtree_external_ihave: a received
+#     repair summary is gossiped.
+#   * neg_plumtree_direct_ctor: the constructor is private, and
+#     mint_plumtree is the only door.
+#   * neg_plumtree_mint_test_context and
+#     neg_plumtree_mint_background_context: the mint takes Init, and
+#     neither a Test nor a background context converts to it.
+crucible_neg_compile_multi_test(neg_plumtree_zero_peers
+  "required for the satisfaction of .PlumtreeShape<MaxPeers, MaxHistory>. \\[with MaxPeers = 0. MaxHistory = 8\\]"
+  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_plumtree_overlay_too_large
+  "required for the satisfaction of .PlumtreeFitsOverlay<MaxPeers, MaxHistory, HyMaxActive, HyMaxPassive>. \\[with MaxPeers = 4. MaxHistory = 8. HyMaxActive = 8. HyMaxPassive = 64\\]"
+  "the expression .HyMaxActive <= MaxPeers \\[with HyMaxActive = 8. MaxPeers = 4\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_plumtree_raw_peer
+  "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::HyParViewPeer."
+  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::add_eager_peer\\(crucible::canopy::HyParViewPeer\\)")
+crucible_neg_compile_multi_test(neg_plumtree_external_peer
+  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::HyParView>."
+  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::add_lazy_peer\\(crucible::canopy::HyParViewPeer\\)")
+crucible_neg_compile_multi_test(neg_plumtree_raw_message
+  "cannot convert .crucible::canopy::PlumtreeMessage. to .crucible::canopy::GossipedPlumtreeMessage."
+  "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeReceivePlan<MaxPeers, MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_message\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeMessage\\)")
+crucible_neg_compile_multi_test(neg_plumtree_external_message
+  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
+  "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeReceivePlan<MaxPeers, MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_message\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeMessage\\)")
+crucible_neg_compile_multi_test(neg_plumtree_raw_ihave
+  "cannot convert .crucible::canopy::PlumtreeIHave<8>. to .crucible::canopy::GossipedPlumtreeIHave<8>."
+  "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeRepairPlan<MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_ihave\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeIHave<MaxHistory>\\)")
+crucible_neg_compile_multi_test(neg_plumtree_external_ihave
+  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
+  "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeRepairPlan<MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_ihave\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeIHave<MaxHistory>\\)")
+crucible_neg_compile_multi_test(neg_plumtree_direct_ctor
+  "PlumtreeBroadcast<MaxPeers, MaxHistory>::PlumtreeBroadcast\\(const crucible::canopy::HyParViewMembership<[A-Za-z]+, [A-Za-z]+>&, crucible::canopy::PlumtreeConfig\\)"
+  "is private within this context")
 crucible_neg_compile_effects_test(neg_plumtree_mint_test_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Test|effects::Init")
+  "no matching function for call to .mint_plumtree<4, 8>\\(foundation::effects::Test, crucible::canopy::HyParViewMembership<4, 8>&\\)."
+  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
+crucible_neg_compile_effects_test(neg_plumtree_mint_background_context
+  "no matching function for call to .mint_plumtree<4, 8>\\(foundation::effects::Bg, crucible::canopy::HyParViewMembership<4, 8>&\\)."
+  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
 
 # canopy/Lifeguard.h, the SWIM false-positive reduction.
 #   * neg_lifeguard_zero_peers: a zero peer bound fails the shape of the

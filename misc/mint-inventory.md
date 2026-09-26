@@ -64,9 +64,9 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_hlc` | `include/crucible/canopy/Hlc.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 3 |
-| `mint_hyparview` | `include/crucible/canopy/HyParView.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 5 |
+| `mint_hyparview` | `include/crucible/canopy/HyParView.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 19 |
 | `mint_lifeguard_swim` | `include/crucible/canopy/Lifeguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 4 |
-| `mint_plumtree` | `include/crucible/canopy/Plumtree.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_plumtree` | `include/crucible/canopy/Plumtree.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 10 |
 | `mint_scuttlebutt` | `include/crucible/canopy/Scuttlebutt.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 6 |
 | `mint_swim_membership` | `include/crucible/canopy/Swim.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 5 |
 | `mint_vector_clock` | `include/crucible/canopy/VectorClock.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
@@ -363,5 +363,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 100 | 50 | 41 | 9 | 0 | 91 | 32 |
+| old (`include/crucible/`) | 100 | 50 | 41 | 9 | 0 | 91 | 31 |
 | new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |

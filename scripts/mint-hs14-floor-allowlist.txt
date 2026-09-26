@@ -24,9 +24,6 @@
 # or moved — reds CI at exit 2, so the file drains in lockstep and cannot
 # quietly outlive the debt it records.
 
-# ── canopy ───────────────────────────────────────────────────────────
-mint_plumtree|include/crucible/canopy/Plumtree.h
-
 # ── cntp ─────────────────────────────────────────────────────────────
 mint_admission_decision|include/crucible/cntp/Backpressure.h
 mint_bbr_qdisc_config|include/crucible/cntp/Pacing.h

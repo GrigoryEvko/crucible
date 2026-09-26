@@ -1,11 +1,13 @@
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// join takes an overlay peer.  An identity under the External source tag
+// is untrusted input, and it is not an overlay peer.
 #include <crucible/canopy/HyParView.h>
 
-// Provokes the HyParViewPeer provenance gate: source::External identities
-// cannot substitute for peers admitted into the HyParView overlay.
 int main() {
-    auto membership = crucible::canopy::mint_hyparview<4, 8>(crucible::effects::testing::init());
+    auto membership = crucible::canopy::mint_hyparview<4, 8>(::foundation::effects::testing::init());
     crucible::cog::CogIdentity raw{.uuid = crucible::cog::Uuid{1, 2}};
-    crucible::safety::Tagged<crucible::cog::CogIdentity, crucible::safety::source::External> external{raw};
+    auto external = ::fixy::mint_tagged<::fixy::tags::source::External>(raw);
     auto result = membership.join(external);
     return result.has_value() ? 0 : 1;
 }

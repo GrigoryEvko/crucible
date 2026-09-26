@@ -1,9 +1,12 @@
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// receive_message takes a message that a peer sent, under the Gossiped
+// tag.  A raw message does not convert to one.
 #include <crucible/canopy/Plumtree.h>
 
-// Provokes the message provenance gate: received messages must be tagged as
-// gossiped before they update duplicate/history/link state.
 int main() {
-    crucible::canopy::PlumtreeBroadcast<4, 8> broadcast{};
+    auto membership = crucible::canopy::mint_hyparview<4, 8>(::foundation::effects::testing::init());
+    auto broadcast = crucible::canopy::mint_plumtree<4, 8>(::foundation::effects::testing::init(), membership);
     crucible::cog::CogIdentity raw{.uuid = crucible::cog::Uuid{1, 2}};
     auto peer = crucible::canopy::admit_hyparview_peer(raw).value();
     (void)broadcast.add_eager_peer(peer);

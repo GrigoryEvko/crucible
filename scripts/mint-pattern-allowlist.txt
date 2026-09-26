@@ -49,7 +49,7 @@
 #     explicitly permits dropping `constexpr` "in favour of plain
 #     [[nodiscard]] noexcept" for genuinely-allocating mints.  Examples:
 #     fixy/Mmap.h `mmap(2)`, fixy/Io.h `io_uring_setup(2)`, the eBPF /
-#     perf-event `perf/*` mints, the `canopy/*` gossip-state mints, the
+#     perf-event `perf/*` mints, the
 #     class-method view mints (`mint_open_view`, `mint_compiled_view`).
 #
 #   `requires-ok` — a templated mint that carries no type-level constraint
@@ -111,16 +111,16 @@
 # any guard script, or in any commit message — this file was the only
 # document asserting it, and the only document relying on it.  A
 # justification that cites nothing but itself is not a justification, so
-# the claim is withdrawn.  The canopy/ and cntp/ entries stand or fall
-# on their own category, like every other entry here; the section
-# headers below no longer label either tree as banned.
+# the claim is withdrawn.  The cntp/ entries stand or fall on their own
+# category, like every other entry here.  The section headers below do
+# not label the tree as banned.
 #
 # ── Known over-breadth in `constexpr-ok` ─────────────────────────────
 #
 # §XXI's constexpr escape is conditioned on the factory "genuinely
 # allocating".  Several `constexpr-ok` entries name a mint that builds a
-# fixed-capacity aggregate in place and allocates nothing — the canopy/
-# gossip-state mints are the clearest cases.  Those entries are carrying
+# fixed-capacity aggregate in place and allocates nothing.  Those entries
+# are carrying
 # a rationale that does not apply to them.  Nothing here fails on it
 # today, which is precisely why it is written down: an over-broad
 # category is how a real drift gets absorbed without anyone noticing.
@@ -136,10 +136,6 @@ include/crucible/Vigil.h:mint_producer_context:constexpr-ok
 # function that is not constexpr.
 include/crucible/CKernel.h:mint_mutable_view:constexpr-ok
 include/crucible/SchemaTable.h:mint_mutable_view:constexpr-ok
-
-# ── canopy/ gossip-state mints ───────────────────────────────────────
-include/crucible/canopy/HyParView.h:mint_hyparview:constexpr-ok
-include/crucible/canopy/Plumtree.h:mint_plumtree:constexpr-ok
 
 # ── cntp/ transport mints ────────────────────────────────────────────
 include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok
