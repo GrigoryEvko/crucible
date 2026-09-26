@@ -45,9 +45,10 @@ MACRO BODIES
     block comment inside the body cannot cut a member call away from its
     object.  A body that the parser cannot read, such as one that pastes
     tokens with ##, is read from its preprocessing tokens with the same two
-    spellings.  A marker on any row of the definition covers the calls of
-    its body.  The files of tsast.UNPARSEABLE are not C++ and are out of
-    scope.  A parse error in any other file is a guard failure.
+    spellings.  A marker on any row from the `#define` to the last token of
+    its body covers the calls of the body.  The files of tsast.UNPARSEABLE
+    are not C++ and are out of scope.  A parse error in any other file is a
+    guard failure.
 
 Usage:
   check-syscall-capability.py              scan; exit 1 on a violation, 2 on a stale entry
@@ -191,13 +192,9 @@ def statement_rows(node: tsast.Node) -> tuple[int, int]:
     return first, last
 
 
-def define_rows(define: tsast.Node) -> tuple[int, int]:
-    """Return the first and last row of a `#define`.
-
-    The parser ends a definition at column 0 of the row after it, because the
-    node holds the closing newline, so that row is not part of the definition.
-    """
-    return define.start[0], define.end[0] - (define.end[1] == 0)
+def define_rows(body: tsast.MacroBody) -> tuple[int, int]:
+    """Return the first row of a `#define` and the row of the last token of its body."""
+    return body.define.start[0], body.last_row
 
 
 def token_calls(tokens: list[tsast.Token]) -> Iterator[tuple[int, set[str]]]:
@@ -226,8 +223,8 @@ def token_calls(tokens: list[tsast.Token]) -> Iterator[tuple[int, set[str]]]:
             depth, cursor = 0, index + 1
             while cursor < len(tokens):
                 depth += {"(": 1, ")": -1}.get(tokens[cursor].text, 0)
-                if tokens[cursor].kind == "identifier" and tokens[cursor].text.startswith("SYS_"):
-                    numbers.add(tokens[cursor].text[4:])
+                if tokens[cursor].kind == "identifier" and tsast.lexeme(tokens[cursor]).startswith("SYS_"):
+                    numbers.add(tsast.lexeme(tokens[cursor])[4:])
                 if depth == 0:
                     break
                 cursor += 1
@@ -262,8 +259,8 @@ def syscall_numbers(call: tsast.Node) -> set[str]:
     arguments = call.child_by_field("arguments")
     if arguments is None:
         return set()
-    return {tsast.spelled(node)[4:] for node in arguments.descendants("identifier")
-            if tsast.spelled(node).startswith("SYS_")}
+    return {tsast.lexeme(node)[4:] for node in arguments.descendants("identifier")
+            if tsast.lexeme(node).startswith("SYS_")}
 
 
 @dataclass(frozen=True)
@@ -339,7 +336,7 @@ def scan(root: Path) -> Scan:
             calls[rel].add(row, names, statement_rows(call), holder_of(call))
     for body in tsast.macro_bodies(trees):
         record = calls[Path(body.define.tree.path).relative_to(root).as_posix()]
-        span = define_rows(body.define)
+        span = define_rows(body)
         holder = (body.name,) if body.name else ()
         if body.is_parsed:
             for call in body.root.descendants("call_expression"):
@@ -358,7 +355,7 @@ def scan(root: Path) -> Scan:
         record = calls[rel]
         markers: dict[int, list[tsast.Node]] = {}
         for comment in tree.find("comment"):
-            if MARKER_WORD in comment.text:
+            if MARKER_WORD in tsast.prose_text(comment):
                 markers.setdefault(comment.start[0], []).append(comment)
         used: set[int] = set()
         before = len(found.sites)
@@ -366,7 +363,7 @@ def scan(root: Path) -> Scan:
             covering = [comment for first, last in record.spans[row] for probe in range(first, last + 1)
                         for comment in markers.get(probe, ())]
             used.update(comment.index for comment in covering)
-            if not any(MARKER.search(comment.text) for comment in covering):
+            if not any(MARKER.search(tsast.prose_text(comment)) for comment in covering):
                 found.sites.append(Site(rel, row + 1, f"{rel}:{tsast.site_key(tree, row)}",
                                         frozenset(record.names[row]), frozenset(record.holders[row])))
         found.dead.extend(Marker(rel, comment.line) for row in sorted(markers) for comment in markers[row]

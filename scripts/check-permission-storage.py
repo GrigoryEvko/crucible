@@ -142,7 +142,7 @@ def check_tree(tree: tsast.Tree, rel: str) -> list[Finding]:
     aliases = permission_aliases(tree)
     markers = {}
     for comment in tree.find("comment"):
-        if MARKER in comment.text:
+        if MARKER in tsast.prose_text(comment):
             markers[comment.start[0]] = comment
     used: set[int] = set()
     for member in tree.find("field_declaration"):
@@ -164,7 +164,7 @@ def check_tree(tree: tsast.Tree, rel: str) -> list[Finding]:
         suppressions = [markers[row] for row in rows if row in markers]
         if suppressions:
             used.update(comment.start[0] for comment in suppressions)
-            if not all(MARKER_WITH_REASON.search(comment.text) for comment in suppressions):
+            if not all(MARKER_WITH_REASON.search(tsast.prose_text(comment)) for comment in suppressions):
                 findings.append(Finding("marker", rel, member.line,
                                         f"PERMISSION-STORAGE marker without a reason: {rel}:{member.line} — write "
                                         f"`// {MARKER}: <reason>`."))
@@ -174,7 +174,7 @@ def check_tree(tree: tsast.Tree, rel: str) -> list[Finding]:
         what = "a static Permission member" if is_static else "a Permission member without [[no_unique_address]]"
         findings.append(Finding("violation", rel, member.line,
                                 f"PERMISSION-STORAGE violation: {rel}:{member.line} — {what}: "
-                                f"{member.text.splitlines()[0].strip()}"))
+                                f"{tsast.excerpt(member)}"))
     for row, comment in sorted(markers.items()):
         if row not in used:
             findings.append(Finding("dead-marker", rel, comment.line,

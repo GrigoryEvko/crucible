@@ -484,11 +484,10 @@ def scan(root: Path) -> Scan:
         refused[Path(body.define.tree.path).relative_to(root).as_posix()].update(body_rows(body))
     for tree in trees:
         rel = Path(tree.path).relative_to(root).as_posix()
-        lines = tree.source.decode("utf-8", "replace").split("\n")
         entry = authored_at(rel)
         for row in sorted(refused[rel]):
             if entry is None:
-                result.orphans.append((rel, row + 1, lines[row].strip()))
+                result.orphans.append((rel, row + 1, tree.line(row).strip()))
             else:
                 result.needed[entry].append(f"{rel}:{row + 1}")
     return result
