@@ -70,7 +70,6 @@ include/crucible/cog/OpcodeLatencyTable.h
 include/crucible/cog/SrIov.h
 
 # ── forge/ (2 files: 1 stable + 1 _wip) ─────────────────────────
-include/crucible/forge/Ir001/Comm.h
 include/crucible/forge/_wip/Phases/Comm.h
 
 # ── mimic/ (2 files: 1 stable + 1 _wip) ─────────────────────────

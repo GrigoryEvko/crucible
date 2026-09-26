@@ -104,8 +104,8 @@ Node collective_node(std::span<const crucible::cog::CogIdentity> p, net::Network
     node.attrs.input.slot = crucible::SlotId{6};
     node.attrs.output.meta = tensor(crucible::ScalarType::Float);
     node.attrs.output.slot = crucible::SlotId{7};
-    node.attrs.participants.peers = ir::DeclaredPeerSet{p};
-    node.attrs.participants.count = ir::Ir001ParticipantCount{4, typename ir::Ir001ParticipantCount::Trusted{}};
+    node.attrs.participants.peers = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(p);
+    node.attrs.participants.count = ::fixy::mint_refined<ir::kIr001ParticipantRange>(std::uint16_t{4});
     node.attrs.recipe = recipe(crucible::ReductionDeterminism::ORDERED);
     node.attrs.algorithm = algorithm;
     return node;
@@ -184,7 +184,7 @@ void test_recipe_and_algorithm_blocks() {
     assert(strict_reduce.error() == phase::CommPhaseError::RecipeForbidsPattern);
 
     auto odd_peers = collective_node<AllReduceNode>(p, net::NetworkCollectiveAlgorithm::RecursiveHalvingDoubling);
-    odd_peers.attrs.participants.count = ir::Ir001ParticipantCount{3, typename ir::Ir001ParticipantCount::Trusted{}};
+    odd_peers.attrs.participants.count = ::fixy::mint_refined<ir::kIr001ParticipantRange>(std::uint16_t{3});
     auto bad_algorithm = phase::admit_comm_fusion<phase::CommFusionPattern::ReduceOnRecv, crucible::cog::CogKind::Gpu>(
         ir::admit_ir001_node(recv_node()), ir::admit_ir001_node(odd_peers), ordered);
     assert(!bad_algorithm.has_value());

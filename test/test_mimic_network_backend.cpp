@@ -69,9 +69,9 @@ ir::AllReduceOp all_reduce(std::span<const cog::CogIdentity> p, net::NetworkColl
     node.attrs.input.slot = crucible::SlotId{1};
     node.attrs.output.meta = tensor();
     node.attrs.output.slot = crucible::SlotId{2};
-    node.attrs.participants.peers = ir::DeclaredPeerSet{p};
+    node.attrs.participants.peers = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(p);
     node.attrs.participants.count =
-        ir::Ir001ParticipantCount{static_cast<std::uint16_t>(p.size()), typename ir::Ir001ParticipantCount::Trusted{}};
+        ::fixy::mint_refined<ir::kIr001ParticipantRange>(static_cast<std::uint16_t>(p.size()));
     node.attrs.recipe = recipe(crucible::ReductionDeterminism::ORDERED);
     node.attrs.algorithm = algorithm;
     return node;
@@ -166,12 +166,12 @@ void test_empty_content_hash_rejected_with_distinct_error() {
     auto cpu = mimic_for<cog::CogKind::CpuSocket>(cpu_identity);
 
     // admit_ir001_node maps a zero hash to one, so the empty-hash path cannot
-    // be reached through it. Re-zeroing through the mutable accessor is the
-    // only way to drive the pre-check, and it is a bypass reserved for tests.
-    // Production code never calls value_mut() on a declared node.
+    // be reached through it. A node minted under the Ir001 tag without the
+    // admission step keeps the hash it was built with, which is how a caller
+    // that skips admission reaches the planner, and the pre-check must catch it.
     auto raw_node = all_reduce(p, net::NetworkCollectiveAlgorithm::Ring);
-    auto declared = ir::admit_ir001_node(raw_node);
-    declared.value_mut().content_hash = crucible::ContentHash{0};
+    raw_node.content_hash = crucible::ContentHash{0};
+    auto declared = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(raw_node);
 
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(cpu, declared, constraints);
 

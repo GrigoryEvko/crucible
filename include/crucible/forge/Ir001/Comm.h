@@ -4,17 +4,21 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_EffectRow.h>
 #include <crucible/forge/recipes/Network.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Row.h>
+#include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <concepts>
+#include <meta>
 #include <span>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -112,14 +116,17 @@ enum class Ir001OpKind : std::uint16_t {
     ScuttlebuttDeltaSend,
 };
 
-inline constexpr std::uint16_t kIr001OpKindCount = 72;
-inline constexpr std::uint8_t kIr001MaxPorts = 16;
+inline constexpr auto kIr001OpKindCount =
+    static_cast<std::uint16_t>(::foundation::reflect::enum_count<Ir001OpKind>);
 inline constexpr std::uint16_t kIr001MaxParticipants = 4096;
+inline constexpr std::uint32_t kIr001MaxTimeoutMs = 600000;
 
-using Ir001PortCount = safety::Bounded<std::uint8_t{0}, kIr001MaxPorts, std::uint8_t>;
-using Ir001ParticipantCount = safety::Bounded<std::uint16_t{1}, kIr001MaxParticipants, std::uint16_t>;
-using Ir001QuorumCount = safety::Bounded<std::uint16_t{1}, kIr001MaxParticipants, std::uint16_t>;
-using Ir001TimeoutMs = safety::Bounded<std::uint32_t{0}, std::uint32_t{600000}, std::uint32_t>;
+inline constexpr auto kIr001ParticipantRange = ::fixy::in_range<std::uint16_t{1}, kIr001MaxParticipants>;
+inline constexpr auto kIr001TimeoutRange = ::fixy::in_range<std::uint32_t{0}, kIr001MaxTimeoutMs>;
+
+using Ir001ParticipantCount = ::fixy::Refined<kIr001ParticipantRange, std::uint16_t>;
+using Ir001QuorumCount = ::fixy::Refined<kIr001ParticipantRange, std::uint16_t>;
+using Ir001TimeoutMs = ::fixy::Refined<kIr001TimeoutRange, std::uint32_t>;
 
 struct Ir001OpInfo {
     Ir001OpKind kind = Ir001OpKind::Gemm;
@@ -173,156 +180,47 @@ struct Ir001OpInfo {
     return category != Ir001OpCategory::Compute && kind != Ir001OpKind::Prefetch;
 }
 
-[[nodiscard]] constexpr std::string_view ir001_op_kind_name(Ir001OpKind kind) noexcept {
-    using enum Ir001OpKind;
-    switch (kind) {
-        case Gemm:
-            return "gemm";
-        case Conv:
-            return "conv";
-        case Attention:
-            return "attention";
-        case Reduction:
-            return "reduction";
-        case Elementwise:
-            return "elementwise";
-        case Softmax:
-            return "softmax";
-        case LayerNorm:
-            return "layernorm";
-        case Scan:
-            return "scan";
-        case CopyHostToDevice:
-            return "copy_host_to_device";
-        case CopyDeviceToHost:
-            return "copy_device_to_host";
-        case CopyDeviceToDevice:
-            return "copy_device_to_device";
-        case NvlinkP2pCopy:
-            return "nvlink_p2p_copy";
-        case PciePeerCopy:
-            return "pcie_peer_copy";
-        case TmaGatherScatter:
-            return "tma_gather_scatter";
-        case Prefetch:
-            return "prefetch";
-        case Evict:
-            return "evict";
-        case SendSync:
-            return "send_sync";
-        case SendAsync:
-            return "send_async";
-        case SendWithCompletion:
-            return "send_with_completion";
-        case SendInline:
-            return "send_inline";
-        case RecvSync:
-            return "recv_sync";
-        case RecvAsync:
-            return "recv_async";
-        case RecvWithCompletion:
-            return "recv_with_completion";
-        case RecvIntoExistingBuffer:
-            return "recv_into_existing_buffer";
-        case SendRecv:
-            return "sendrecv";
-        case Put:
-            return "put";
-        case Get:
-            return "get";
-        case AtomicCompareExchange:
-            return "atomic_compare_exchange";
-        case AtomicFetchAdd:
-            return "atomic_fetch_add";
-        case AllReduce:
-            return "all_reduce";
-        case AllGather:
-            return "all_gather";
-        case AllGatherV:
-            return "all_gather_v";
-        case ReduceScatter:
-            return "reduce_scatter";
-        case Broadcast:
-            return "broadcast";
-        case MultiRootBroadcast:
-            return "multi_root_broadcast";
-        case Scatter:
-            return "scatter";
-        case Gather:
-            return "gather";
-        case GatherV:
-            return "gather_v";
-        case AllToAll:
-            return "all_to_all";
-        case AllToAllV:
-            return "all_to_all_v";
-        case Barrier:
-            return "barrier";
-        case BarrierWithTimeout:
-            return "barrier_with_timeout";
-        case SparseAllToAll:
-            return "sparse_all_to_all";
-        case AsyncSendBatch:
-            return "async_send_batch";
-        case AsyncRecvBatch:
-            return "async_recv_batch";
-        case GossipRound:
-            return "gossip_round";
-        case EventualAggregate:
-            return "eventual_aggregate";
-        case BarrierWithQuorum:
-            return "barrier_with_quorum";
-        case LeaseAcquire:
-            return "lease_acquire";
-        case LeaseRelease:
-            return "lease_release";
-        case AtomicAddRemote:
-            return "atomic_add_remote";
-        case SemaphoreWait:
-            return "semaphore_wait";
-        case SemaphorePost:
-            return "semaphore_post";
-        case LoadNvme:
-            return "load_nvme";
-        case StoreNvme:
-            return "store_nvme";
-        case Checkpoint:
-            return "checkpoint";
-        case Restore:
-            return "restore";
-        case Branch:
-            return "branch";
-        case Loop:
-            return "loop";
-        case Fork:
-            return "fork";
-        case Join:
-            return "join";
-        case CounterRead:
-            return "counter_read";
-        case SamplePmu:
-            return "sample_pmu";
-        case SampleThermal:
-            return "sample_thermal";
-        case WirePcapEmit:
-            return "wire_pcap_emit";
-        case IntTelemetryEmit:
-            return "int_telemetry_emit";
-        case LldpSend:
-            return "lldp_send";
-        case LldpRecv:
-            return "lldp_recv";
-        case SwimPing:
-            return "swim_ping";
-        case SwimAck:
-            return "swim_ack";
-        case SwimIndirectPing:
-            return "swim_indirect_ping";
-        case ScuttlebuttDeltaSend:
-            return "scuttlebutt_delta_send";
-        default:
-            return "<unknown Ir001OpKind>";
+namespace detail {
+// The display name of an op kind is its enumerator identifier in lower
+// snake case.  An upper-case letter that follows a lower-case letter or a
+// digit starts a new word, so CopyHostToDevice reads copy_host_to_device
+// and NvlinkP2pCopy reads nvlink_p2p_copy.  Deriving the name from the
+// enumerator keeps a new kind from shipping without one.
+[[nodiscard]] consteval std::string_view snake_case_name(std::meta::info enumerator) {
+    std::string_view const identifier = std::meta::identifier_of(enumerator);
+    std::string name;
+    for (std::size_t index = 0; index < identifier.size(); ++index) {
+        char const letter = identifier[index];
+        bool const is_upper = letter >= 'A' && letter <= 'Z';
+        if (is_upper && index > 0) {
+            char const previous = identifier[index - 1];
+            bool const ends_word = (previous >= 'a' && previous <= 'z') || (previous >= '0' && previous <= '9');
+            if (ends_word) {
+                name += '_';
+            }
+        }
+        name += is_upper ? static_cast<char>(letter - 'A' + 'a') : letter;
     }
+    return std::define_static_string(name);
+}
+}  // namespace detail
+
+// A value that no enumerator holds names itself "<unknown Ir001OpKind>".
+[[nodiscard]] constexpr std::string_view ir001_op_kind_name(Ir001OpKind kind) noexcept {
+    static constexpr auto kinds = std::define_static_array(std::meta::enumerators_of(^^Ir001OpKind));
+    std::string_view name = ::foundation::reflect::unknown_enum_sentinel<Ir001OpKind>;
+// An expansion statement declares the same induction variable in each
+// unrolled scope, so -Wshadow fires once per enumerator.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto enumerator : kinds) {
+        constexpr std::string_view spelled = detail::snake_case_name(enumerator);
+        if (kind == [:enumerator:]) {
+            name = spelled;
+        }
+    }
+#pragma GCC diagnostic pop
+    return name;
 }
 
 [[nodiscard]] constexpr Ir001OpInfo ir001_op_info(Ir001OpKind kind) noexcept {
@@ -347,11 +245,11 @@ struct TensorPort {
     SlotId slot = SlotId::none();
 };
 
-using DeclaredPeerSet = safety::Tagged<std::span<const cog::CogIdentity>, safety::source::Ir001>;
+using DeclaredPeerSet = ::fixy::Tagged<std::span<const cog::CogIdentity>, ::fixy::tags::source::Ir001>;
 
 struct PeerSetRef {
-    DeclaredPeerSet peers{std::span<const cog::CogIdentity>{}};
-    Ir001ParticipantCount count{std::uint16_t{1}, typename Ir001ParticipantCount::Trusted{}};
+    DeclaredPeerSet peers = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(std::span<const cog::CogIdentity>{});
+    Ir001ParticipantCount count = ::fixy::mint_refined<kIr001ParticipantRange>(std::uint16_t{1});
 };
 
 struct Ir001WireHeader {
@@ -420,7 +318,7 @@ template <typename E>
 }
 }  // namespace detail
 
-template <Ir001OpKind Kind, class Attrs, class Row = effects::Row<>>
+template <Ir001OpKind Kind, class Attrs, class Row = ::foundation::effects::Row<>>
 struct Ir001Node {
     using attrs_type = Attrs;
     using row_type = Row;
@@ -440,7 +338,7 @@ concept Ir001NodeLike = requires(T node) {
 };
 
 template <Ir001NodeLike Node>
-using DeclaredIr001Node = safety::Tagged<Node, safety::source::Ir001>;
+using DeclaredIr001Node = ::fixy::Tagged<Node, ::fixy::tags::source::Ir001>;
 
 struct CollectiveAttrs {
     TensorPort input{};
@@ -453,13 +351,13 @@ struct CollectiveAttrs {
 struct PointToPointAttrs {
     TensorPort payload{};
     cog::CogIdentity peer{};
-    Ir001TimeoutMs timeout_ms{std::uint32_t{0}, typename Ir001TimeoutMs::Trusted{}};
+    Ir001TimeoutMs timeout_ms = ::fixy::mint_refined<kIr001TimeoutRange>(std::uint32_t{0});
 };
 
 struct BarrierAttrs {
     PeerSetRef participants{};
-    Ir001QuorumCount quorum{std::uint16_t{1}, typename Ir001QuorumCount::Trusted{}};
-    Ir001TimeoutMs timeout_ms{std::uint32_t{0}, typename Ir001TimeoutMs::Trusted{}};
+    Ir001QuorumCount quorum = ::fixy::mint_refined<kIr001ParticipantRange>(std::uint16_t{1});
+    Ir001TimeoutMs timeout_ms = ::fixy::mint_refined<kIr001TimeoutRange>(std::uint32_t{0});
 };
 
 struct StorageAttrs {
@@ -472,11 +370,11 @@ struct TelemetryAttrs {
     std::uint64_t value = 0;
 };
 
-template <Ir001OpKind Kind, class Row = effects::Row<>>
+template <Ir001OpKind Kind, class Row = ::foundation::effects::Row<>>
     requires Ir001CollectiveKind<Kind>
 using CollectiveOp = Ir001Node<Kind, CollectiveAttrs, Row>;
 
-template <Ir001OpKind Kind, class Row = effects::Row<>>
+template <Ir001OpKind Kind, class Row = ::foundation::effects::Row<>>
     requires Ir001PointToPointKind<Kind>
 using PointToPointOp = Ir001Node<Kind, PointToPointAttrs, Row>;
 
@@ -522,7 +420,7 @@ template <Ir001NodeLike Node>
 template <Ir001NodeLike Node>
 [[nodiscard]] constexpr DeclaredIr001Node<Node> admit_ir001_node(Node node) noexcept {
     node.content_hash = compute_ir001_content_hash(node);
-    return DeclaredIr001Node<Node>{node};
+    return ::fixy::mint_tagged<::fixy::tags::source::Ir001>(node);
 }
 
 template <Ir001NodeLike Node, class Visitor>
@@ -540,8 +438,9 @@ template <Ir001NodeLike Node>
     };
 }
 
+// The category ladder reads the kinds as one dense range from zero, so the
+// last enumerator must sit at the count minus one.
 static_assert(kIr001OpKindCount == std::to_underlying(Ir001OpKind::ScuttlebuttDeltaSend) + 1U);
-static_assert(sizeof(Ir001PortCount) == sizeof(std::uint8_t));
 static_assert(sizeof(Ir001ParticipantCount) == sizeof(std::uint16_t));
 static_assert(sizeof(Ir001WireHeader) == 16);
 static_assert(std::is_trivially_copyable_v<Ir001WireHeader>);

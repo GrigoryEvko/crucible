@@ -81,6 +81,16 @@ void test_taxonomy() {
     assert(all_reduce.side_effecting);
     assert(all_reduce.network_visible);
 
+    // The names come from the enumerators: every capital that follows a
+    // lower-case letter or a digit starts a word.
+    static_assert(ir::ir001_op_kind_name(ir::Ir001OpKind::CopyHostToDevice) == "copy_host_to_device");
+    static_assert(ir::ir001_op_kind_name(ir::Ir001OpKind::NvlinkP2pCopy) == "nvlink_p2p_copy");
+    static_assert(ir::ir001_op_kind_name(ir::Ir001OpKind::AllGatherV) == "all_gather_v");
+    static_assert(ir::ir001_op_kind_name(ir::Ir001OpKind::SendRecv) == "send_recv");
+    static_assert(ir::ir001_op_kind_name(ir::Ir001OpKind::ScuttlebuttDeltaSend) == "scuttlebutt_delta_send");
+    static_assert(ir::ir001_op_kind_name(static_cast<ir::Ir001OpKind>(ir::kIr001OpKindCount))
+                  == "<unknown Ir001OpKind>");
+
     auto gemm = ir::ir001_op_info(ir::Ir001OpKind::Gemm);
     assert(gemm.category == ir::Ir001OpCategory::Compute);
     assert(!gemm.side_effecting);
@@ -96,8 +106,9 @@ void test_collective_node_admission() {
     op.attrs.input.slot = crucible::SlotId{7};
     op.attrs.output.meta = tensor(crucible::ScalarType::Float);
     op.attrs.output.slot = crucible::SlotId{8};
-    op.attrs.participants.peers = ir::DeclaredPeerSet{std::span<const crucible::cog::CogIdentity>{p}};
-    op.attrs.participants.count = ir::Ir001ParticipantCount{2, typename ir::Ir001ParticipantCount::Trusted{}};
+    op.attrs.participants.peers =
+        ::fixy::mint_tagged<::fixy::tags::source::Ir001>(std::span<const crucible::cog::CogIdentity>{p});
+    op.attrs.participants.count = ::fixy::mint_refined<ir::kIr001ParticipantRange>(std::uint16_t{2});
     op.attrs.recipe = recipe();
     op.attrs.algorithm = crucible::forge::recipes::NetworkCollectiveAlgorithm::Ring;
 
@@ -137,7 +148,7 @@ void test_collective_node_admission() {
     changed_peer[1].uuid = crucible::cog::Uuid{1, 12};
     auto changed_participants = op;
     changed_participants.attrs.participants.peers =
-        ir::DeclaredPeerSet{std::span<const crucible::cog::CogIdentity>{changed_peer}};
+        ::fixy::mint_tagged<::fixy::tags::source::Ir001>(std::span<const crucible::cog::CogIdentity>{changed_peer});
     auto const peer_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_participants)).content_hash;
     assert(peer_hash != header.content_hash);
 
@@ -147,9 +158,13 @@ void test_collective_node_admission() {
 void test_other_attr_shapes() {
     static_assert(sizeof(ir::Ir001WireHeader) == 16);
     static_assert(std::is_trivially_copyable_v<ir::Ir001WireHeader>);
-    static_assert(std::is_trivially_copyable_v<ir::CollectiveAttrs>);
-    static_assert(std::is_trivially_copyable_v<ir::PointToPointAttrs>);
-    static_assert(std::is_trivially_copyable_v<ir::BarrierAttrs>);
+    // A refined count or timeout keeps the attribute structs from being
+    // trivially copyable, so no byte image becomes a checked value.  The
+    // copy stays trivial, which is what the node's value passing needs.
+    static_assert(!std::is_trivially_copyable_v<ir::CollectiveAttrs>);
+    static_assert(std::is_trivially_copy_constructible_v<ir::CollectiveAttrs>);
+    static_assert(std::is_trivially_copy_constructible_v<ir::PointToPointAttrs>);
+    static_assert(std::is_trivially_copy_constructible_v<ir::BarrierAttrs>);
 
     ir::SendOp send{};
     send.attrs.payload.meta = tensor(crucible::ScalarType::BFloat16);
@@ -159,7 +174,7 @@ void test_other_attr_shapes() {
         .level = crucible::cog::CogLevel::L0_Atomic,
         .kind = crucible::cog::CogKind::NicPort,
     };
-    send.attrs.timeout_ms = ir::Ir001TimeoutMs{25, typename ir::Ir001TimeoutMs::Trusted{}};
+    send.attrs.timeout_ms = ::fixy::mint_refined<ir::kIr001TimeoutRange>(std::uint32_t{25});
     auto declared_send = ir::admit_ir001_node(send);
     auto send_header = ir::serialize_ir001_header(declared_send);
     assert(send_header.kind == std::to_underlying(ir::Ir001OpKind::SendAsync));
