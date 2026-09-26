@@ -65,6 +65,8 @@ class Gate:
     replacement: str  # the text the mutant puts in the span
     entity: str       # the name of the declaration that holds the gate
     original: str     # the text of the span, for the report
+    words: tuple[str, ...] = ()  # the identifiers of the gate's own nodes, which a test that reaches it names
+    owner: str = ""   # the class that holds the gate, or an empty string
 
     @property
     def key(self) -> str:
@@ -93,23 +95,32 @@ def _entity(node: tsast.Node) -> str:
         inner = [child for child in decl.children if child.type in NAMED_DECLS]
         decl = inner[0] if inner else decl.ancestor_of_type(*NAMED_DECLS)
     while decl is not None:
-        name = decl.child_by_field("name")
-        if name is not None:
-            return name.text.split("::")[-1]
-        declarator = decl.child_by_field("declarator")
-        while declarator is not None and declarator.type in (
-            "function_declarator", "pointer_declarator", "reference_declarator", "init_declarator",
-        ):
-            inner = declarator.child_by_field("declarator")
-            if inner is None:
-                break
-            declarator = inner
-        if declarator is not None:
-            text = re.split(r"[\s(<]", declarator.text.split("::")[-1].strip(), maxsplit=1)[0]
-            if text:
-                return text
+        # The name field of a class or a concept, else the declarator of a
+        # function or a variable.  tsast.leaf_name drops the qualifier and the
+        # template arguments, and spells an operator in full: `operator new[]`.
+        name = decl.child_by_field("name") or decl.child_by_field("declarator")
+        leaf = tsast.leaf_name(name) if name is not None else None
+        if leaf:
+            return leaf
         decl = decl.ancestor_of_type(*NAMED_DECLS)
     return ""
+
+
+WORD_NODES = ("identifier", "type_identifier", "field_identifier", "namespace_identifier")
+
+
+def _words(node: tsast.Node) -> tuple[str, ...]:
+    """The names that the nodes under one gate spell, each once, in order."""
+    return tuple(dict.fromkeys(word.text for word in node.descendants(*WORD_NODES)))
+
+
+def _owner(node: tsast.Node) -> str:
+    """The name of the class that holds a node, without template arguments, or an empty string."""
+    klass = node.ancestor_of_type("class_specifier", "struct_specifier", "union_specifier")
+    while klass is not None and klass.child_by_field("body") is None:
+        klass = klass.ancestor_of_type("class_specifier", "struct_specifier", "union_specifier")
+    name = klass.child_by_field("name") if klass is not None else None
+    return (tsast.leaf_name(name) or "") if name is not None else ""
 
 
 def _bounded(source: bytes, start: int, end: int, replacement: str) -> str:
@@ -132,24 +143,21 @@ def _bounded(source: bytes, start: int, end: int, replacement: str) -> str:
     return text
 
 
-def _joined_by_and(node: tsast.Node, source: bytes, starts: list[int]) -> bool:
-    """Say whether a two-operand node joins its operands with &&.
-
-    The parse lists only named children, so the operator is read from the
-    bytes between the two operands."""
-    if len(node.children) != 2:
-        return False
-    _, left_end = _span(node.children[0], starts)
-    right_start, _ = _span(node.children[1], starts)
-    return source[left_end:right_start].strip() in (b"&&", b"and")
+def _non_comment(node: tsast.Node) -> list[tsast.Node]:
+    """The children of a node that are not comments."""
+    return [child for child in node.children if child.type != "comment"]
 
 
-def _conjuncts(node: tsast.Node, source: bytes, starts: list[int]) -> list[tsast.Node]:
-    """The leaves of a chain of && in a constraint, left to right."""
-    if node.type in ("constraint_conjunction", "binary_expression") and _joined_by_and(node, source, starts):
-        return _conjuncts(node.children[0], source, starts) + _conjuncts(node.children[1], source, starts)
-    if node.type == "parenthesized_expression" and len(node.children) == 1:
-        leaves = _conjuncts(node.children[0], source, starts)
+def _conjuncts(node: tsast.Node) -> list[tsast.Node]:
+    """The leaves of a chain of && in a constraint, left to right.
+
+    tsast.operator_of reads the operator from the tokens between the two
+    operands, so a comment beside `&&` does not hide the split."""
+    if node.type in ("constraint_conjunction", "binary_expression") and tsast.operator_of(node) in ("&&", "and"):
+        return _conjuncts(node.child_by_field("left")) + _conjuncts(node.child_by_field("right"))
+    inner = _non_comment(node)
+    if node.type == "parenthesized_expression" and len(inner) == 1:
+        leaves = _conjuncts(inner[0])
         if len(leaves) > 1:
             return leaves
     return [node]
@@ -187,19 +195,19 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
     def add(kind: str, node: tsast.Node, replacement: str, span: tuple[int, int] | None = None) -> None:
         start, end = span if span is not None else _span(node, starts)
         gates.append(Gate(rel, kind, node.line, start, end, _bounded(source, start, end, replacement), _entity(node),
-                          source[start:end].decode("utf-8", errors="replace")))
+                          source[start:end].decode("utf-8", errors="replace"), _words(node), _owner(node)))
 
     for clause in tree.find("requires_clause"):
-        constraint = [child for child in clause.children]
+        constraint = _non_comment(clause)
         if not constraint:
             continue
-        for leaf in _conjuncts(constraint[-1], source, starts):
+        for leaf in _conjuncts(constraint[-1]):
             add("requires", leaf, "true")
 
     for concept in tree.find("concept_definition"):
-        bodies = [child for child in concept.children if child.field != "name"]
+        bodies = [child for child in _non_comment(concept) if child.field != "name"]
         if bodies:
-            for leaf in _conjuncts(bodies[-1], source, starts):
+            for leaf in _conjuncts(bodies[-1]):
                 add("concept", leaf, "true")
 
     for assertion in tree.find("static_assert_declaration"):
@@ -219,11 +227,14 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
         function = call.child_by_field("function")
         if function is None:
             continue
-        callee = function.text.split("::")[-1]
+        # A qualified or a templated callee, `ns::require_seal_holds<X>`,
+        # reads as its last name.
+        callee = tsast.leaf_name(function)
         if callee in CALL_GATES:
             arguments = call.child_by_field("arguments")
-            if arguments is not None and len(arguments.children) > CALL_GATES[callee]:
-                add("contract", arguments.children[CALL_GATES[callee]], "true")
+            listed = _non_comment(arguments) if arguments is not None else []
+            if len(listed) > CALL_GATES[callee]:
+                add("contract", listed[CALL_GATES[callee]], "true")
         elif callee in SEAL_CALLS:
             add("seal", call, "static_cast<void>(0)")
 
@@ -247,8 +258,9 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
             continue
         if not _is_primary_template(struct):
             continue
-        for child in base.children:
-            if child.text.replace(" ", "") in ("std::false_type", "::std::false_type"):
+        for child in _non_comment(base):
+            spelled = tsast.qualified_parts(child)
+            if spelled is not None and spelled[1] == ("std", "false_type"):
                 add("primary", child, "std::true_type")
 
     # A gate nested inside a deleted declaration or another span stays its

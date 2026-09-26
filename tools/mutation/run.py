@@ -42,6 +42,7 @@ kill.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import re
@@ -173,23 +174,95 @@ def cmd_deps(args: argparse.Namespace) -> int:
 # ── the candidates ─────────────────────────────────────────────────────
 
 
-CTEST_ADD_TEST = re.compile(r'^add_test\((.*)\)\s*$', re.M)
-CTEST_ARG = re.compile(r'"((?:[^"\\]|\\.)*)"')
+# CMake evaluates the CTestTestfile.cmake tree with these three commands
+# replaced.  add_test writes one JSON array per test (its name, then its
+# command), subdirs follows the tree, and set_tests_properties does nothing.
+# Each argument is read by its index, so a `;` inside one stays in it.  A
+# subdirectory with no test file is skipped, as ctest skips it.
+CTEST_SHIM = r"""
+function(_crucible_json_string out value)
+  string(REPLACE "\\" "\\\\" value "${value}")
+  string(REPLACE "\"" "\\\"" value "${value}")
+  string(REPLACE "\n" "\\n" value "${value}")
+  string(REPLACE "\t" "\\t" value "${value}")
+  set(${out} "\"${value}\"" PARENT_SCOPE)
+endfunction()
+function(add_test)
+  set(line "")
+  math(EXPR last "${ARGC} - 1")
+  foreach(index RANGE 0 ${last})
+    _crucible_json_string(item "${ARGV${index}}")
+    if(line STREQUAL "")
+      set(line "${item}")
+    else()
+      string(APPEND line ",${item}")
+    endif()
+  endforeach()
+  file(APPEND "${CRUCIBLE_TESTS_OUT}" "[${line}]\n")
+endfunction()
+function(set_tests_properties)
+endfunction()
+macro(subdirs)
+  foreach(crucible_subdir ${ARGN})
+    include("${CMAKE_CURRENT_LIST_DIR}/${crucible_subdir}/CTestTestfile.cmake" OPTIONAL)
+  endforeach()
+endmacro()
+include("${CRUCIBLE_TESTS_FILE}")
+"""
 
 
 def _ctest_commands(build: Path) -> dict[str, list[str]]:
-    """The command of each test, read from the CTestTestfile.cmake files that ctest itself reads.
+    """The command of each test, from CMake's own evaluation of the CTestTestfile.cmake tree.
 
     ctest --show-only reports no command for a test whose executable is not
-    built yet, and the run tier must build that executable first.
+    built yet, and the run tier must build that executable first, so the
+    files that ctest reads are evaluated here with a shim.
     Complexity: linear in the size of the test files."""
-    commands: dict[str, list[str]] = {}
-    for testfile in build.rglob("CTestTestfile.cmake"):
-        for match in CTEST_ADD_TEST.finditer(testfile.read_text(errors="replace")):
-            args = [re.sub(r"\\(.)", r"\1", arg) for arg in CTEST_ARG.findall(match.group(1))]
-            if len(args) >= 2 and args[1] != "NOT_AVAILABLE":
-                commands.setdefault(args[0], args[1:])
+    with tempfile.TemporaryDirectory(prefix="mutation-ctest-") as tmp_name:
+        shim = Path(tmp_name) / "shim.cmake"
+        listing = Path(tmp_name) / "tests.jsonl"
+        shim.write_text(CTEST_SHIM)
+        listing.write_text("")
+        subprocess.run(["cmake", f"-DCRUCIBLE_TESTS_FILE={build / 'CTestTestfile.cmake'}",
+                        f"-DCRUCIBLE_TESTS_OUT={listing}", "-P", str(shim)], check=True, capture_output=True)
+        commands: dict[str, list[str]] = {}
+        for line in listing.read_text().splitlines():
+            name, *command = json.loads(line)
+            if command and command[0] != "NOT_AVAILABLE":
+                commands.setdefault(name, command)
     return commands
+
+
+FILE_API_CLIENT = "client-crucible-mutation"
+
+
+def _target_sources(build: Path) -> dict[str, list[str]]:
+    """Each artifact of the build, as an absolute path, with the absolute paths of its sources.
+
+    The CMake file API gives the target model.  The query is written once,
+    and a configure of the build answers it.
+    Complexity: one configure when the reply is missing, then linear in the
+    size of the target model."""
+    api = build / ".cmake" / "api" / "v1"
+    query = api / "query" / FILE_API_CLIENT / "codemodel-v2"
+    if not query.exists():
+        query.parent.mkdir(parents=True, exist_ok=True)
+        query.write_text("")
+        subprocess.run(["cmake", str(build)], check=True, capture_output=True)
+    indexes = sorted((api / "reply").glob("index-*.json"))
+    if not indexes:
+        raise SystemExit(f"mutation: the CMake file API left no reply under {api / 'reply'}")
+    index = json.loads(indexes[-1].read_text())
+    model_file = index["reply"][FILE_API_CLIENT]["codemodel-v2"]["jsonFile"]
+    model = json.loads((api / "reply" / model_file).read_text())
+    source_dir, build_dir = Path(model["paths"]["source"]), Path(model["paths"]["build"])
+    sources: dict[str, list[str]] = {}
+    for target in model["configurations"][0]["targets"]:
+        detail = json.loads((api / "reply" / target["jsonFile"]).read_text())
+        files = [str((source_dir / source["path"]).resolve()) for source in detail.get("sources", [])]
+        for artifact in detail.get("artifacts", []):
+            sources[str((build_dir / artifact["path"]).resolve())] = files
+    return sources
 
 
 def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
@@ -199,11 +272,7 @@ def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
     declared = _ctest_commands(build)
     entries = json.loads((build / "compile_commands.json").read_text())
     by_file = {str(Path(entry["file"]).resolve()): entry for entry in entries}
-    by_target: dict[str, list[dict]] = {}
-    for entry in entries:
-        match = re.search(r"CMakeFiles/([^/]+)\.dir/", entry.get("output", "") or entry.get("command", ""))
-        if match:
-            by_target.setdefault(match.group(1), []).append(entry)
+    artifacts = _target_sources(build)
     candidates: list[Candidate] = []
     for test in tests:
         command = test.get("command") or declared.get(test["name"], [])
@@ -219,11 +288,11 @@ def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
             compile_argv = _strip_output(_entry_argv(entry)) if entry else []
             candidates.append(Candidate(test["name"], "neg", command, str(build), env, source,
                                         frozenset(deps.get(source, [])), compile_argv))
-        elif command and Path(command[0]).name in by_target:
+        elif command and str(Path(command[0]).resolve()) in artifacts:
             test_sources: list[str] = []
-            for entry in by_target[Path(command[0]).name]:
-                source = str(Path(entry["file"]).resolve())
-                if "/test/" not in source:
+            for source in artifacts[str(Path(command[0]).resolve())]:
+                entry = by_file.get(source)
+                if entry is None or "/test/" not in source:
                     continue
                 test_sources.append(source)
                 compile_argv = _strip_output(_entry_argv(entry))
@@ -270,7 +339,29 @@ def _closure(entity: str, users: dict[str, list[str]]) -> list[str]:
     return order
 
 
-def _rank(candidate: Candidate, names: list[str], extra: list[str], cache: dict[str, str]) -> tuple[int, int]:
+# The node types whose text is a name that a test source spells in code.
+SPELLED_NAMES = ("identifier", "type_identifier", "field_identifier", "namespace_identifier", "operator_name")
+
+
+def _spelled_names(sources: list[str], cache: dict[str, frozenset[str]]) -> None:
+    """Add to cache the names that each new source spells in code, from one parse of all of them.
+
+    A name inside a comment or a string is no node of these types, so it
+    does not count.  An operator name is kept in the canonical spelling of
+    tsast.spelled, which is the spelling of the gate entity: `operator new[]`.
+    Complexity: one kit run over the sources that the cache does not hold."""
+    tsast = gate_finder.tsast
+    fresh = sorted({source for source in sources if source not in cache})
+    readable = [source for source in fresh if Path(source).is_file()]
+    for source in set(fresh) - set(readable):
+        cache[source] = frozenset()
+    for tree in tsast.parse([Path(source) for source in readable], strict=False):
+        cache[str(tree.path)] = frozenset(tsast.spelled(node) if node.type == "operator_name" else node.text
+                                          for node in tree.find(*SPELLED_NAMES))
+
+
+def _rank(candidate: Candidate, names: list[str], extra: list[str],
+          cache: dict[str, frozenset[str]]) -> tuple[int, int]:
     """How near the candidate's source comes to the gate, as a sort key.
 
     The first part is the position in names of the nearest name the source
@@ -279,14 +370,8 @@ def _rank(candidate: Candidate, names: list[str], extra: list[str], cache: dict[
     of a contract names the words of the contract's condition."""
     if not names:
         return 0, 0
-    if candidate.source not in cache:
-        try:
-            cache[candidate.source] = Path(candidate.source).read_text(errors="replace")
-        except OSError:
-            cache[candidate.source] = ""
-    words = names + [word for word in extra if word not in names]
-    pattern = re.compile(r"\b(" + "|".join(re.escape(word) for word in words) + r")\b")
-    used = {m.group(1) for m in pattern.finditer(cache[candidate.source])}
+    spelled = cache.get(candidate.source, frozenset())
+    used = {word for word in names + extra if word in spelled}
     position = {name: index for index, name in enumerate(names)}
     return min((position[word] for word in used if word in position), default=len(names)), -len(used)
 
@@ -381,19 +466,26 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
     header_abs = src_root / header
     original = header_abs.read_bytes()
     found = gate_finder.find_gates(header_abs, src_root)
-    found = [gate_finder.Gate(header, g.kind, g.line, g.start, g.end, g.replacement, g.entity, g.original)
-             for g in found if only_lines is None or g.line in only_lines]
+    found = [dataclasses.replace(gate, header=header) for gate in found
+             if only_lines is None or gate.line in only_lines]
     users = gate_finder.entity_users(header_abs)
     reach = [c for c in candidates if header in c.headers]
-    text_cache: dict[str, str] = {}
+    name_cache: dict[str, frozenset[str]] = {}
+    _spelled_names([c.source for c in reach if c.source], name_cache)
 
     def plan(gate: gate_finder.Gate) -> tuple[list[Candidate], list[Candidate], bool]:
-        """The compile checks and the run checks for one gate, and whether a cap cut them."""
+        """The compile checks and the run checks for one gate, and whether a cap cut them.
+
+        A test reaches an operator through the class that declares it, and it
+        rarely spells the operator's name, so the class follows the closure
+        of an operator entity."""
         names = _closure(gate.entity, users)
-        extra = [word for word in re.findall(r"[A-Za-z_]\w{3,}", gate.original) if word not in KEYWORDS]
+        if gate.entity.startswith("operator") and gate.owner and gate.owner not in names:
+            names.append(gate.owner)
+        extra = [word for word in gate.words if len(word) > 3 and word not in KEYWORDS]
 
         def ranked(kind: str) -> list[tuple[tuple[int, int], Candidate]]:
-            rows = [(_rank(c, names, extra, text_cache), c) for c in reach if c.kind == kind]
+            rows = [(_rank(c, names, extra, name_cache), c) for c in reach if c.kind == kind]
             return sorted(rows, key=lambda row: row[0])
 
         negs = ranked("neg")
@@ -542,6 +634,13 @@ inline int half(int n) { contract_assert(n % 2 == 0); return n / 2; }
 inline int third(int n) noexcept PLANTED_ANNOTATION pre(n % 3 == 0) { return n / 3; }
 inline auto negate(int n) -> int pre(n < 0) { return -n; }
 inline int positive(int n) post(r: r > 0) { return n < 0 ? -n : n + 1; }
+template <class T> struct Wide {
+    T v;
+    friend constexpr bool operator==(Wide const&, Wide const&) requires Small<T> { return true; }
+};
+template <class T> requires Small<T> && /* and */ std::integral<T> constexpr int both(T) { return 4; }
+template <class T> struct Box {};
+template <class T> struct Box<std::type_identity<T>> { static_assert(sizeof(T) > 0); };
 }
 """
 FIXTURE = """#include "planted.h"
@@ -555,6 +654,24 @@ int main() { return planted::widen(1.5); }
 USER = """#include "planted.h"
 static_assert(planted::take(1) == 1 && planted::count(1) == 2);
 int main() {}
+"""
+# A test of the gate on Wide's operator spells the class and never the
+# operator's name, as a real test does.
+WIDE_USER = """#include "planted.h"
+static_assert(!std::equality_comparable<planted::Wide<long double>>);
+int main() {}
+"""
+# A project whose tests the CTest reader and the file API must read: a
+# test with an argument that CMake writes as a bracket argument, and a test
+# in a subdirectory.
+API_PROJECT = """cmake_minimum_required(VERSION 3.20)
+project(planted_api CXX)
+enable_testing()
+add_executable(planted_test planted_test.cpp)
+add_test(NAME planted_case COMMAND planted_test "has \\"quotes\\"" plain)
+add_subdirectory(sub)
+"""
+API_SUBDIR = """add_test(NAME sub_case COMMAND planted_test second)
 """
 # A death test in miniature: it passes only when the contract of half stops the call.
 RUNNER = """#include <contracts>
@@ -578,6 +695,35 @@ build run_third: cxx run_third.cpp | include/planted.h
 """
 
 
+def _selftest_build_model(work: Path, args: argparse.Namespace) -> list[str]:
+    """Configure a small project, and check what the CTest reader and the file API read from it.
+
+    The test with a quoted argument is the case the old regex over
+    CTestTestfile.cmake got wrong: CMake writes that argument as a bracket
+    argument, and the regex dropped it."""
+    source, build = work / "src", work / "build"
+    (source / "sub").mkdir(parents=True)
+    (source / "CMakeLists.txt").write_text(API_PROJECT)
+    (source / "sub" / "CMakeLists.txt").write_text(API_SUBDIR)
+    (source / "planted_test.cpp").write_text("int main() { return 0; }\n")
+    generator = ["-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={NINJA}"] if shutil.which(NINJA) else []
+    configured = subprocess.run(["cmake", "-S", str(source), "-B", str(build), *generator,
+                                 f"-DCMAKE_CXX_COMPILER={args.compiler}"], capture_output=True, text=True)
+    if configured.returncode != 0:
+        return [f"the planted project does not configure:\n{configured.stderr[-2000:]}"]
+    failures: list[str] = []
+    executable = str((build / "planted_test").resolve())
+    commands = _ctest_commands(build)
+    if commands.get("planted_case") != [executable, 'has "quotes"', "plain"]:
+        failures.append(f"the CTest reader reads planted_case as {commands.get('planted_case')!r}")
+    if commands.get("sub_case") != [executable, "second"]:
+        failures.append(f"the CTest reader does not follow the subdirectory: {commands.get('sub_case')!r}")
+    sources = _target_sources(build)
+    if sources.get(executable) != [str((source / "planted_test.cpp").resolve())]:
+        failures.append(f"the file API gives the sources of planted_test as {sources.get(executable)!r}")
+    return failures
+
+
 def cmd_selftest(args: argparse.Namespace) -> int:
     """Plant a header with witnessed gates and bare gates, and check each verdict.
 
@@ -586,8 +732,12 @@ def cmd_selftest(args: argparse.Namespace) -> int:
     gate written `requires(` with no space proves that its mutant parses.
     Three pre and post specifiers prove that the parse finds a specifier after
     an annotation macro and after a trailing return type, and that a post span
-    leaves its result name out.  The check of the invalid outcomes is then
-    proved on a planted invalid outcome, with and without an exemption."""
+    leaves its result name out.  A gate on an operator falls to a test that
+    names only its class.  A comment beside && keeps the split of a
+    constraint, and a gate in a partial specialization names its template.
+    The check of the invalid outcomes is then proved on a planted invalid
+    outcome, with and without an exemption.  Last, a small CMake project
+    proves the CTest reader and the file API."""
     global NINJA
     NINJA = args.ninja or NINJA
     with tempfile.TemporaryDirectory() as tmp_name:
@@ -597,6 +747,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         (tmp / "neg_take_large.cpp").write_text(FIXTURE)
         (tmp / "neg_widen_double.cpp").write_text(WIDEN_FIXTURE)
         (tmp / "user.cpp").write_text(USER)
+        (tmp / "wide_user.cpp").write_text(WIDE_USER)
         (tmp / "run_half.cpp").write_text(RUNNER)
         (tmp / "run_third.cpp").write_text(THIRD_RUNNER)
         (tmp / "build.ninja").write_text(NINJA_FILE.format(compiler=args.compiler))
@@ -618,6 +769,8 @@ def cmd_selftest(args: argparse.Namespace) -> int:
                       str(tmp), {}, str(tmp / "neg_widen_double.cpp"), headers),
             Candidate("syntax:user.cpp", "syntax", base + ["-fsyntax-only", str(tmp / "user.cpp")],
                       str(tmp), {}, str(tmp / "user.cpp"), headers),
+            Candidate("syntax:wide_user.cpp", "syntax", base + ["-fsyntax-only", str(tmp / "wide_user.cpp")],
+                      str(tmp), {}, str(tmp / "wide_user.cpp"), headers),
             Candidate("run:run_half", "run", [str(tmp / "run_half")], str(tmp), {}, str(tmp / "run_half.cpp"),
                       headers, target="run_half", build_dir=str(tmp)),
             Candidate("run:run_third", "run", [str(tmp / "run_third")], str(tmp), {}, str(tmp / "run_third.cpp"),
@@ -633,16 +786,26 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         expected = {("concept", "Small"): "killed", ("requires", "take"): "killed",
                     ("requires", "count"): "survived", ("requires", "widen"): "killed",
                     ("contract", "half"): "killed", ("contract", "third"): "killed",
-                    ("contract", "negate"): "survived", ("contract", "positive"): "survived"}
+                    ("contract", "negate"): "survived", ("contract", "positive"): "survived",
+                    ("requires", "operator=="): "killed", ("requires", "both"): "survived",
+                    ("static_assert", "Box"): "survived"}
         failures = [f"{k}: expected {v}, got {verdicts.get(k)}" for k, v in expected.items() if verdicts.get(k) != v]
+        # A comment beside && must not hide the split, so both has two
+        # gates, and so one more mutant than expected has keys.
+        if sum(1 for o in outcomes if o.entity == "both") != 2:
+            failures.append(f"the constraint of both must split into 2 gates, not "
+                            f"{sum(1 for o in outcomes if o.entity == 'both')}")
         if killers.get(("contract", "half")) != "run:run_half":
             failures.append(f"the contract of half must fall to the run tier, not {killers.get(('contract', 'half'))!r}")
         if killers.get(("contract", "third")) != "run:run_third":
             failures.append(f"the pre of third must fall to its death test, not {killers.get(('contract', 'third'))!r}")
         if killers.get(("requires", "widen")) != "neg_widen_double":
             failures.append(f"the gate of widen must fall to its fixture, not {killers.get(('requires', 'widen'))!r}")
-        if len(outcomes) != len(expected):
-            failures.append(f"expected {len(expected)} mutants, got {len(outcomes)}: {sorted(verdicts)}")
+        if killers.get(("requires", "operator==")) != "syntax:wide_user.cpp":
+            failures.append(f"the gate of Wide's operator must fall to the test that names Wide, not "
+                            f"{killers.get(('requires', 'operator=='))!r}")
+        if len(outcomes) != len(expected) + 1:
+            failures.append(f"expected {len(expected) + 1} mutants, got {len(outcomes)}: {sorted(verdicts)}")
         spans = {(o.kind, o.entity): o.original for o in outcomes}
         if spans.get(("contract", "positive")) != "r > 0":
             failures.append(f"the post of positive must span its condition only, not {spans.get(('contract', 'positive'))!r}")
@@ -666,11 +829,12 @@ def cmd_selftest(args: argparse.Namespace) -> int:
                 failures.append(f"the probe output {text!r} must read as {verdict}, not {probe_verdict(text)}")
         if (tmp / "include" / "planted.h").read_text() != PLANTED:
             failures.append("the planted header was not restored")
+        failures.extend(_selftest_build_model(tmp / "api", args))
         for line in failures:
             print(f"mutation selftest: FAIL {line}", file=sys.stderr)
         if not failures:
-            kills = sum(1 for status in expected.values() if status == "killed")
-            print(f"mutation selftest: {len(expected) - kills} survivors and {kills} kills, as planted, "
+            kills = sum(1 for o in outcomes if o.status == "killed")
+            print(f"mutation selftest: {len(outcomes) - kills} survivors and {kills} kills, as planted, "
                   "and the invalid check holds")
         return 1 if failures else 0
 
