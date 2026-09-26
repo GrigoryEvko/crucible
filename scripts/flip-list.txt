@@ -44,7 +44,6 @@
 bench/bench_cipher.cpp
 bench/bench_dispatch.cpp
 bench/bench_merkle_dag.cpp
-bench/bench_perf_loader.cpp
 bench/bench_phases.cpp
 bench/bench_pool_allocator.cpp
 bench/bench_record_leaf.cpp

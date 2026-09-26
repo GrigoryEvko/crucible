@@ -72,7 +72,6 @@
 
 #include <unistd.h>  // ::getpid (workload-shaped demo syscall driver)
 
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/SenseHub.h>
 
@@ -681,7 +680,7 @@ int main() {
         const auto spin_until = steady::now() + std::chrono::milliseconds(30);
         while (steady::now() < spin_until) {
             for (int i = 0; i < 1024; ++i) {
-                spin_acc += static_cast<std::uint64_t>(i) * 2654435761ULL;
+                spin_acc += static_cast<std::uint64_t>(i) * std::uint64_t{2654435761};
             }
             bench::do_not_optimize(spin_acc);
         }
@@ -731,31 +730,31 @@ int main() {
     if (cov.sched_switch_attached) {
         const auto d = ss_post - ss_pre;
         std::printf("  SchedSwitch.delta:     ctx_switches=%llu  timeline_events=%llu\n",
-                    (unsigned long long)d.ctx_switches, (unsigned long long)d.timeline_index);
+                    static_cast<unsigned long long>(d.ctx_switches), static_cast<unsigned long long>(d.timeline_index));
     }
     if (cov.pmu_sample_attached) {
         const auto d = pm_post - pm_pre;
-        std::printf("  PmuSample.delta:       samples=%llu\n", (unsigned long long)d.samples);
+        std::printf("  PmuSample.delta:       samples=%llu\n", static_cast<unsigned long long>(d.samples));
     }
     if (cov.lock_contention_attached) {
         const auto d = lc_post - lc_pre;
         std::printf("  LockContention.delta:  wait_count=%llu  timeline_events=%llu\n",
-                    (unsigned long long)d.wait_count, (unsigned long long)d.timeline_index);
+                    static_cast<unsigned long long>(d.wait_count), static_cast<unsigned long long>(d.timeline_index));
     }
     if (cov.syscall_latency_attached) {
         const auto d = sl_post - sl_pre;
         std::printf("  SyscallLatency.delta:  total_syscalls=%llu  timeline_events=%llu\n",
-                    (unsigned long long)d.total_syscalls, (unsigned long long)d.timeline_index);
+                    static_cast<unsigned long long>(d.total_syscalls), static_cast<unsigned long long>(d.timeline_index));
     }
     if (cov.sched_tp_btf_attached) {
         const auto d = stp_post - stp_pre;
         std::printf("  SchedTpBtf.delta:      ctx_switches=%llu  timeline_events=%llu\n",
-                    (unsigned long long)d.ctx_switches, (unsigned long long)d.timeline_index);
+                    static_cast<unsigned long long>(d.ctx_switches), static_cast<unsigned long long>(d.timeline_index));
     }
     if (cov.syscall_tp_btf_attached) {
         const auto d = syt_post - syt_pre;
         std::printf("  SyscallTpBtf.delta:    total_syscalls=%llu  timeline_events=%llu\n",
-                    (unsigned long long)d.total_syscalls, (unsigned long long)d.timeline_index);
+                    static_cast<unsigned long long>(d.total_syscalls), static_cast<unsigned long long>(d.timeline_index));
     }
     if (cov.attached_count() == 0) {
         std::printf("  (no facades attached; deltas would have been printed here.\n"
