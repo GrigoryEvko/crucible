@@ -1134,12 +1134,14 @@ set_tests_properties(no_combine_ids_duplicate
 #
 # This test makes the count self-guarding: a new guard script
 # registered without the label fails HERE, so the gap cannot reopen
-# silently.
+# silently.  The guard reads the tests that ctest itself lists for this
+# build directory, so it sees every subdirectory and every label change.
 add_test(NAME ci_guard_labels_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.sh
-          --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.py
+          --self-test --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND})
 add_test(NAME ci_guard_labels
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.py
+          --build-dir ${CMAKE_BINARY_DIR} --ctest ${CMAKE_CTEST_COMMAND})
 set_tests_properties(ci_guard_labels ci_guard_labels_self_test PROPERTIES
     LABELS "ci_guard")
 # The cross-build row_hash determinism witness.  The test runs
