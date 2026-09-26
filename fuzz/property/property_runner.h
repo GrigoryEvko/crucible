@@ -109,7 +109,7 @@ public:
     }
 
 private:
-    void refill_() noexcept {
+    constexpr void refill_() noexcept {
         // Each iteration gets a fresh 4×u32 pool.  block_idx_
         // increments to walk further into the iteration's stream
         // when one pool is exhausted; the (iteration, block_idx)
