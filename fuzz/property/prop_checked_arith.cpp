@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_checked_arith.cpp — multi-width fuzzer for the overflow-mode
-// arithmetic primitives (safety/Checked.h).
+// arithmetic primitives (fixy/Checked.h).
 //
 // Checked.h is an L0 foundation: every size/offset/capacity computation
 // that must not silently wrap routes through checked_* / wrapping_* /
@@ -39,7 +39,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/safety/_Checked.h>
+#include <fixy/Checked.h>
 
 #include <cstdint>
 #include <limits>
@@ -48,7 +48,7 @@
 
 namespace {
 
-namespace ck = crucible::safety;
+namespace ck = ::fixy;
 using crucible::fuzz::prop::Rng;
 
 __extension__ using w_s = __int128;

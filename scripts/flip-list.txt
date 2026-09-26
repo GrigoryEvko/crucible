@@ -57,7 +57,6 @@ bench/bench_spsc_session.cpp
 bench/bench_swmr_session.cpp
 fuzz/boundary/old_tree.h
 fuzz/property/prop_callsite_table_dedup.cpp
-fuzz/property/prop_checked_arith.cpp
 fuzz/property/prop_expr_pool_intern.cpp
 fuzz/property/prop_factorization_eq.cpp
 fuzz/property/prop_fractional_lattice.cpp
