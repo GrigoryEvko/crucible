@@ -1,22 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-CostModel-8 fixture: wave_efficiency<CallerRow> is a pure
-// projection and requires CallerRow to satisfy Subrow<CallerRow, Row<>>.
-// Row<IO> contains an effect atom, so {IO} is not a subrow of the empty
-// pure row.  The cost model must not be callable from an IO-bearing
-// context without an explicit effect-boundary decision.
-//
-// [GCC-WRAPPER-TEXT] - requires-clause constraint failure on
-// Subrow<Row<IO>, Row<>>.
+// wave_efficiency is pure arithmetic, and CtxFitsCostModel admits only a
+// context whose row is empty.  This context claims IO, so the gate refuses
+// the call.  A caller with IO narrows its context to the empty row first,
+// and that call compiles.
 
 #include <crucible/CostModel.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
 
-namespace eff = ::crucible::effects;
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
+
+namespace eff = ::foundation::effects;
 
 int main() {
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::IO>> io_ctx{eff::testing::bg()};
     auto hw = ::crucible::blackwell_b200();
-    (void)::crucible::wave_efficiency<eff::Row<eff::Effect::IO>>(1u, hw);
+    (void)::crucible::wave_efficiency(io_ctx, 1u, hw);
     return 0;
 }

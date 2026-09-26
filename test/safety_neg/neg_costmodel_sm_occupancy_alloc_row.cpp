@@ -1,22 +1,25 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-CostModel-8 fixture: sm_occupancy<CallerRow> is a pure
-// projection and requires CallerRow to satisfy Subrow<CallerRow, Row<>>.
-// Row<Alloc> is not pure, so a caller that may allocate cannot silently
-// invoke the pure cost-model projection.
-//
-// [GCC-WRAPPER-TEXT] - requires-clause constraint failure on
-// Subrow<Row<Alloc>, Row<>>.
+// sm_occupancy is pure arithmetic, and CtxFitsCostModel admits only a
+// context whose row is empty.  This context claims Alloc, so the gate
+// refuses the call.  A caller that can allocate narrows its context to the
+// empty row first, and that call compiles.
 
 #include <crucible/CostModel.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
 
-namespace eff = ::crucible::effects;
+#include <fixy/Refined.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
+
+#include <cstdint>
+
+namespace eff = ::foundation::effects;
 
 int main() {
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Alloc>> alloc_ctx{eff::testing::bg()};
     auto hw = ::crucible::blackwell_b200();
-    (void)::crucible::sm_occupancy<eff::Row<eff::Effect::Alloc>>(::crucible::ValidRegsPerThread{std::uint16_t{32}}, 0u,
-                                                                 8u, hw);
+    const auto regs = ::fixy::mint_refined<::crucible::valid_regs_per_thread>(std::uint16_t{32});
+    (void)::crucible::sm_occupancy(alloc_ctx, regs, 0u, std::uint16_t{8}, hw);
     return 0;
 }

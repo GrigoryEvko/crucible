@@ -7,8 +7,9 @@
 // every size is bytes.
 
 #include <crucible/Types.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/fixy/Wrap.h>
+#include <fixy/Refined.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <algorithm>
 #include <cmath>
@@ -16,9 +17,13 @@
 
 namespace crucible {
 
+// Each refinement below names its predicate, so a site that builds one
+// writes ::fixy::mint_refined<predicate>(value) and the check runs there.
+
 // 255 is the per-thread register ceiling on every shipped backend, so a value
 // past it names no real hardware.
-using ValidRegsPerThread = fixy::wrap::Refined<fixy::wrap::bounded_above<uint16_t{255}>, uint16_t>;
+inline constexpr auto valid_regs_per_thread = ::fixy::bounded_above<uint16_t{255}>;
+using ValidRegsPerThread = ::fixy::Refined<valid_regs_per_thread, uint16_t>;
 static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
               "ValidRegsPerThread must be the same size as the value it wraps");
 
@@ -30,9 +35,8 @@ static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
 // represent any other width. The widest shipped width is 64, and 128 leaves
 // one doubling of headroom. Past that the per-warp register pressure is
 // intractable on any plausible silicon.
-using ValidWarpSize =
-    fixy::wrap::Refined<fixy::wrap::all_of<fixy::wrap::power_of_two, fixy::wrap::bounded_above<uint16_t{128}>>,
-                        uint16_t>;
+inline constexpr auto valid_warp_size = ::fixy::all_of<::fixy::power_of_two, ::fixy::bounded_above<uint16_t{128}>>;
+using ValidWarpSize = ::fixy::Refined<valid_warp_size, uint16_t>;
 static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t), "ValidWarpSize must be the same size as the value it wraps");
 
 // A dimensionless ratio that both producers below construct in [0, 1] by
@@ -41,9 +45,19 @@ static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t), "ValidWarpSize must be 
 // that does not exist, or drive a predicted time past the hardware peak, so
 // the bound is checked once where the value is made and assumed everywhere
 // after.
-using ValidUtilization = fixy::wrap::Refined<fixy::wrap::in_range<0.0f, 1.0f>, float>;
+inline constexpr auto valid_utilization = ::fixy::in_range<0.0f, 1.0f>;
+using ValidUtilization = ::fixy::Refined<valid_utilization, float>;
 static_assert(sizeof(ValidUtilization) == sizeof(float),
               "ValidUtilization must be the same size as the value it wraps");
+
+// The evaluators below are pure arithmetic over values the caller already
+// owns.  Each one takes the caller's context and admits only a context whose
+// row claims no effect.  A caller that holds a wider row narrows its context
+// to the empty row first, so each call states its effect boundary.
+template <class Ctx>
+concept CtxFitsCostModel =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, ::foundation::effects::Row<>>;
 
 // Nominal figures from vendor specifications. Calibration replaces them with
 // measured values at startup, so nothing here is authoritative at run time.
@@ -51,7 +65,7 @@ static_assert(sizeof(ValidUtilization) == sizeof(float),
 
 struct HardwareProfile {
     uint32_t num_sms = 0;  // streaming multiprocessors, or compute units on AMD
-    ValidWarpSize warp_size{uint16_t{32}};
+    ValidWarpSize warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{32});
     uint16_t max_warps_per_sm = 64;
 
     uint32_t regs_per_sm = 65536;  // 32-bit registers
@@ -59,7 +73,7 @@ struct HardwareProfile {
     // The receiving end of the register check below. Typing it too means a
     // preset or a deserialised snapshot cannot raise the ceiling past what any
     // hardware supports and let an over-wide kernel config through.
-    ValidRegsPerThread max_regs_per_thread{uint16_t{255}};
+    ValidRegsPerThread max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
     uint16_t pad0 = 0;
 
     uint32_t smem_per_sm = 233472;  // shared memory, or LDS on AMD
@@ -132,10 +146,10 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile blackwell_b200() {
     HardwareProfile hw{};
     hw.num_sms = 128;
-    hw.warp_size = ValidWarpSize{uint16_t{32}};
+    hw.warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{32});
     hw.max_warps_per_sm = 64;
     hw.regs_per_sm = 65536;
-    hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
+    hw.max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
     hw.smem_per_sm = 233472;
     hw.tmem_per_sm = 65536;
     hw.l1_per_sm = 262144;
@@ -163,10 +177,10 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile hopper_h100() {
     HardwareProfile hw{};
     hw.num_sms = 132;
-    hw.warp_size = ValidWarpSize{uint16_t{32}};
+    hw.warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{32});
     hw.max_warps_per_sm = 64;
     hw.regs_per_sm = 65536;
-    hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
+    hw.max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
     hw.smem_per_sm = 233472;
     hw.tmem_per_sm = 0;
     hw.l1_per_sm = 262144;
@@ -194,10 +208,10 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile mi300x() {
     HardwareProfile hw{};
     hw.num_sms = 304;
-    hw.warp_size = ValidWarpSize{uint16_t{64}};
+    hw.warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{64});
     hw.max_warps_per_sm = 32;
     hw.regs_per_sm = 65536;
-    hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
+    hw.max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
     hw.smem_per_sm = 65536;
     hw.tmem_per_sm = 0;
     hw.l1_per_sm = 131072;
@@ -225,10 +239,10 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile ampere_a100() {
     HardwareProfile hw{};
     hw.num_sms = 108;
-    hw.warp_size = ValidWarpSize{uint16_t{32}};
+    hw.warp_size = ::fixy::mint_refined<valid_warp_size>(uint16_t{32});
     hw.max_warps_per_sm = 64;
     hw.regs_per_sm = 65536;
-    hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
+    hw.max_regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{255});
     hw.smem_per_sm = 167936;
     hw.tmem_per_sm = 0;
     hw.l1_per_sm = 196608;
@@ -260,7 +274,7 @@ struct KernelConfig {
     uint8_t pipeline_stages = 3;
     uint8_t warps_per_block = 8;
     uint32_t smem_bytes = 0;
-    ValidRegsPerThread regs_per_thread{uint16_t{64}};
+    ValidRegsPerThread regs_per_thread = ::fixy::mint_refined<valid_regs_per_thread>(uint16_t{64});
     uint8_t vec_width = 4;  // elements per vectorised load or store
     uint8_t pad0 = 0;
 };
@@ -286,8 +300,8 @@ struct CostBreakdown {
     uint64_t bytes = 0;  // traffic at the bottleneck level of the hierarchy
 
     float arithmetic_intensity = 0;
-    ValidUtilization wave_efficiency{0.0f};
-    ValidUtilization occupancy{0.0f};
+    ValidUtilization wave_efficiency = ::fixy::mint_refined<valid_utilization>(0.0f);
+    ValidUtilization occupancy = ::fixy::mint_refined<valid_utilization>(0.0f);
 
     enum class Bottleneck : uint8_t {
         COMPUTE,
@@ -301,30 +315,31 @@ struct CostBreakdown {
 // waves the width of the whole chip, so a final partial wave leaves some
 // multiprocessors idle for its entire duration.
 
-template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] constexpr ValidUtilization wave_efficiency(uint64_t elements, const HardwareProfile& hw) {
+template <class Ctx>
+    requires CtxFitsCostModel<Ctx>
+[[nodiscard]] constexpr ValidUtilization wave_efficiency(Ctx const&, uint64_t elements, const HardwareProfile& hw) {
     uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size.value();
-    if (tpw == 0 || elements == 0) return ValidUtilization{0.0f};
+    if (tpw == 0 || elements == 0) return ::fixy::mint_refined<valid_utilization>(0.0f);
     uint64_t waves = (elements + tpw - 1) / tpw;
     // The ceiling division makes the denominator an upper bound on the
     // numerator, and round-to-nearest is monotonic on non-negative operands,
     // so the quotient is in range and the wrapper's check cannot fire. It is
     // there to catch an inversion introduced later, such as a swapped
     // numerator or an off-by-one in the tile width.
-    return ValidUtilization{static_cast<float>(elements) / static_cast<float>(waves * tpw)};
+    return ::fixy::mint_refined<valid_utilization>(static_cast<float>(elements) / static_cast<float>(waves * tpw));
 }
 
 // The fraction of the multiprocessor's warp slots that can be resident at
 // once, whichever of register pressure and shared-memory pressure binds first.
 
-template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] constexpr ValidUtilization sm_occupancy(ValidRegsPerThread regs_per_thread, uint32_t smem_per_block,
-                                                      uint16_t warps_per_block, const HardwareProfile& hw) {
+template <class Ctx>
+    requires CtxFitsCostModel<Ctx>
+[[nodiscard]] constexpr ValidUtilization sm_occupancy(Ctx const&, ValidRegsPerThread regs_per_thread,
+                                                      uint32_t smem_per_block, uint16_t warps_per_block,
+                                                      const HardwareProfile& hw) {
     const uint16_t warp_v = hw.warp_size.value();
     uint32_t max_threads = static_cast<uint32_t>(warp_v) * hw.max_warps_per_sm;
-    if (max_threads == 0) return ValidUtilization{0.0f};
+    if (max_threads == 0) return ::fixy::mint_refined<valid_utilization>(0.0f);
 
     // How many threads the register file holds. Zero registers is the only
     // case the type does not already exclude, so it is guarded here.
@@ -349,16 +364,16 @@ template <typename CallerRow = ::crucible::effects::Row<>>
     // fire. It catches a later regression, such as dropping the warp-
     // granularity round-down above so that the register limit exceeds the
     // thread ceiling.
-    return ValidUtilization{static_cast<float>(actual) / static_cast<float>(max_threads)};
+    return ::fixy::mint_refined<valid_utilization>(static_cast<float>(actual) / static_cast<float>(max_threads));
 }
 
 // Takes flops, bytes and element counts rather than a graph node, so the cost
 // model stays independent of the graph representation.
 
-template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] inline CostBreakdown evaluate_cost(uint64_t flops, uint64_t bytes, uint64_t elements, ScalarType dtype,
-                                                 const KernelConfig& cfg, const HardwareProfile& hw) {
+template <class Ctx>
+    requires CtxFitsCostModel<Ctx>
+[[nodiscard]] inline CostBreakdown evaluate_cost(Ctx const& ctx, uint64_t flops, uint64_t bytes, uint64_t elements,
+                                                 ScalarType dtype, const KernelConfig& cfg, const HardwareProfile& hw) {
     CostBreakdown cb;
     cb.flops = flops;
     cb.bytes = bytes;
@@ -366,8 +381,8 @@ template <typename CallerRow = ::crucible::effects::Row<>>
 
     cb.arithmetic_intensity = (bytes > 0) ? static_cast<float>(flops) / static_cast<float>(bytes) : 0.0f;
 
-    cb.wave_efficiency = wave_efficiency<CallerRow>(elements, hw);
-    cb.occupancy = sm_occupancy<CallerRow>(cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw);
+    cb.wave_efficiency = wave_efficiency(ctx, elements, hw);
+    cb.occupancy = sm_occupancy(ctx, cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw);
 
     // The factor of 1e3 turns TFLOPS into FLOPs per nanosecond. The two
     // utilisation tests below filter exactly the structural zeros, since
@@ -399,12 +414,12 @@ template <typename CallerRow = ::crucible::effects::Row<>>
     return cb;
 }
 
-template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] inline CostBreakdown evaluate_cost(uint64_t flops, uint64_t bytes, uint64_t elements, ScalarType dtype,
-                                                 const HardwareProfile& hw) {
+template <class Ctx>
+    requires CtxFitsCostModel<Ctx>
+[[nodiscard]] inline CostBreakdown evaluate_cost(Ctx const& ctx, uint64_t flops, uint64_t bytes, uint64_t elements,
+                                                 ScalarType dtype, const HardwareProfile& hw) {
     KernelConfig default_cfg{};
-    return evaluate_cost<CallerRow>(flops, bytes, elements, dtype, default_cfg, hw);
+    return evaluate_cost(ctx, flops, bytes, elements, dtype, default_cfg, hw);
 }
 
 // Fusion wins on two counts: intermediates stay in registers or shared memory
@@ -419,10 +434,10 @@ struct FusionBenefit {
     float speedup = 0;  // above one when fusing wins
 };
 
-template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] inline FusionBenefit compute_fusion_benefit(double unfused_ns, double fused_ns, uint64_t saved_bytes,
-                                                          uint32_t saved_launches) {
+template <class Ctx>
+    requires CtxFitsCostModel<Ctx>
+[[nodiscard]] inline FusionBenefit compute_fusion_benefit(Ctx const&, double unfused_ns, double fused_ns,
+                                                          uint64_t saved_bytes, uint32_t saved_launches) {
     FusionBenefit fb;
     fb.unfused_ns = unfused_ns;
     fb.fused_ns = fused_ns;

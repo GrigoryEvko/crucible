@@ -1,20 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-CostModel-8 fixture: compute_fusion_benefit<CallerRow> is pure
-// arithmetic over already-computed costs and requires
-// Subrow<CallerRow, Row<>>.  Row<Block> is not pure, preventing blocking
-// contexts from being typed as pure projections by accident.
-//
-// [GCC-WRAPPER-TEXT] - requires-clause constraint failure on
-// Subrow<Row<Block>, Row<>>.
+// compute_fusion_benefit is pure arithmetic over costs the caller already
+// has, and CtxFitsCostModel admits only a context whose row is empty.  This
+// context claims Block, so the gate refuses the call.  A caller that can
+// block narrows its context to the empty row first, and that call compiles.
 
 #include <crucible/CostModel.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
 
-namespace eff = ::crucible::effects;
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
+
+namespace eff = ::foundation::effects;
 
 int main() {
-    (void)::crucible::compute_fusion_benefit<eff::Row<eff::Effect::Block>>(10.0, 5.0, 64u, 1u);
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Block>> block_ctx{eff::testing::bg()};
+    (void)::crucible::compute_fusion_benefit(block_ctx, 10.0, 5.0, 64u, 1u);
     return 0;
 }

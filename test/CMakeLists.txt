@@ -7583,116 +7583,60 @@ crucible_neg_compile_multi_test(neg_region_ops_ptr_cross_source_assignment
   "neg_region_ops_ptr_cross_source_assignment.cpp:28:26: error: conversion from"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::RegionOps>. requested")
 
-# ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
+# ─── CostModel refinements and context gate ──────────────────────────
 #
-# Per #897, ValidRegsPerThread is
-# safety::Refined<safety::bounded_above<uint16_t{255}>, uint16_t> and
-# pins KernelConfig::regs_per_thread at the type level.  255 is the
-# hardware ceiling on every shipped backend (NVIDIA Hopper / Blackwell
-# SM_VERSION ≥ 80, AMD CDNA3+/RDNA3+); the corresponding
-# HardwareProfile::max_regs_per_thread defaults to 255 in every preset.
-#
-# Two fixtures per HS14 mandate, demonstrating distinct mismatch
-# classes:
-#   * neg_costmodel_regs_per_thread_overflow — boundary edge (256,
-#     exactly one past the ceiling).  Catches off-by-one drift in
-#     callers that compute regs_per_thread = something + 1.
-#   * neg_costmodel_regs_per_thread_max_uint16 — wide miss (UINT16_MAX
-#     = 65535).  Catches drift where a caller passes
-#     std::numeric_limits<uint16_t>::max(), uninitialised stack
-#     garbage that happens to read as max, or a corrupt cost-model
-#     snapshot deserialiser.
-#
-# Defense-in-depth: the existing runtime check inside validate_config
-# (constraint C2: cfg.regs_per_thread > hw.max_regs_per_thread) is
-# retained.  ValidRegsPerThread catches the value at construction
-# time via the typed alias path; the C2 body check catches per-
-# hardware ceilings that may be < 255 on future silicon.
-crucible_neg_compile_test(neg_costmodel_regs_per_thread_overflow
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_costmodel_regs_per_thread_max_uint16
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+# ValidRegsPerThread, ValidWarpSize and ValidUtilization are fixy::Refined
+# over named predicates, and the checked mint is the only door to each.
+# Two fixtures pin each predicate.  The first regex says that the
+# precondition of the mint failed.  The second names the mint, its
+# predicate and the refused value.
+#   * regs_per_thread: 256, one above the ceiling of 255, and 65535, the
+#     largest uint16_t.  validate_config also compares the count with the
+#     ceiling of the part, which can be below 255.
+#   * warp_size: 33, not a power of two, and 256, a power of two above the
+#     ceiling of 128.
+#   * utilization: 1.5 and -0.5, one on each side of [0, 1].  The formulas
+#     keep the ratio in range, so the mint never fires on a valid input.
+crucible_neg_compile_multi_test(neg_costmodel_regs_per_thread_overflow
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<255>\\(\\), short unsigned int>\\(256\\)")
+crucible_neg_compile_multi_test(neg_costmodel_regs_per_thread_max_uint16
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<255>\\(\\), short unsigned int>\\(std::numeric_limits<short unsigned int>::max\\(\\)\\)")
+crucible_neg_compile_multi_test(neg_costmodel_warp_size_not_power_of_two
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<refined_algebra::AllOf<IsPowerOfTwo\\(\\), BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(33\\)")
+crucible_neg_compile_multi_test(neg_costmodel_warp_size_too_large
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<refined_algebra::AllOf<IsPowerOfTwo\\(\\), BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(256\\)")
+crucible_neg_compile_multi_test(neg_costmodel_utilization_above_one
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<InRange<0.0f, 1.0e\\+0f>\\(\\), float>\\(1.5e\\+0f\\)")
+crucible_neg_compile_multi_test(neg_costmodel_utilization_negative
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<InRange<0.0f, 1.0e\\+0f>\\(\\), float>\\(-5.0e-1f\\)")
 
-# ─── #896 WRAP-CostModel-2 neg-compile tests ────────────────────────
-#
-# Per #896, ValidWarpSize is
-# safety::Refined<safety::all_of<safety::power_of_two,
-#                                 safety::bounded_above<uint16_t{128}>>,
-#                  uint16_t> and pins HardwareProfile::warp_size at the
-# type level.  Every shipped GPU backend (NVIDIA Volta-and-later: 32
-# threads, AMD GCN/CDNA/RDNA: 64 threads) emits warps in power-of-two
-# widths ≤ 128.
-#
-# Two fixtures per HS14 mandate, demonstrating distinct mismatch
-# classes for the COMPOSITE predicate:
-#   * neg_costmodel_warp_size_not_power_of_two — fails the
-#     power_of_two predicate (33).  Catches off-by-one drift in
-#     callers that compute warp_size = nominal + 1, or stub fence-
-#     padding schemes that treat warp_size as an opaque count.
-#   * neg_costmodel_warp_size_too_large — fails the bounded_above<128>
-#     predicate (256, power-of-two but past the ceiling).  Catches
-#     drift where a future architecture is rumoured to widen
-#     wavefronts and a deserialiser accepts the rumour, or where a
-#     hostile cost-model snapshot inflates warp_size to push every
-#     real kernel into a single MAP-Elites cell.
-#
-# Defense-in-depth: there is no runtime warp_size cap inside
-# validate_config — the structural ceiling is a property of the
-# silicon, not a per-config knob.  ValidWarpSize catches the value at
-# construction time, which is the only meaningful enforcement point.
-crucible_neg_compile_test(neg_costmodel_warp_size_not_power_of_two
-  "contract|Refined|power_of_two|all_of|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_costmodel_warp_size_too_large
-  "contract|Refined|bounded_above|all_of|not a constant|non-constant|constexpr")
-
-# ─── #898 WRAP-CostModel-4 neg-compile tests ────────────────────────
-#
-# Per #898, ValidUtilization is
-# safety::Refined<safety::in_range<0.0f, 1.0f>, float> and pins the
-# return types of wave_efficiency() / sm_occupancy() and the symmetric
-# receiver fields CostBreakdown::wave_efficiency / occupancy at the
-# type level.  Both functions structurally produce values in [0, 1]
-# under IEEE 754 round-to-nearest (waves × tpw ≥ elements; min(...)
-# ≤ max_threads), so the pre clause never fires under documented
-# inputs — it is the soundness witness that catches future caller-
-# introduced inversions or sign flips.
-#
-# Two fixtures per HS14 mandate, demonstrating distinct mismatch
-# classes for the InRange<0.0f, 1.0f> predicate:
-#   * neg_costmodel_utilization_above_one — fails the upper bound
-#     (1.5f).  Catches numerator/denominator inversion in a future
-#     wave_efficiency rewrite and off-by-one drift where the formula
-#     divides by a rounded-down denominator.
-#   * neg_costmodel_utilization_negative — fails the lower bound
-#     (-0.5f).  Catches sign flips, signed loop counters wrapping
-#     past zero before float conversion, and signed-difference
-#     formulations that produce negative ratios.
-#
-# Defense-in-depth: there is no runtime [0, 1] clamp anywhere in
-# evaluate_cost — the structural bound is a property of the formulas
-# themselves, not a per-call knob.  ValidUtilization catches the
-# value at construction time, which is the only meaningful
-# enforcement point.
-crucible_neg_compile_test(neg_costmodel_utilization_above_one
-  "contract|Refined|in_range|InRange|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_costmodel_utilization_negative
-  "contract|Refined|in_range|InRange|not a constant|non-constant|constexpr")
-
-# ─── #902 WRAP-CostModel-8 pure-row neg-compile tests ───────────────
-#
-# CostModel's evaluator family is pure arithmetic over already-owned
-# inputs.  The row-typed overloads require Subrow<CallerRow, Row<>>,
-# so any caller that declares IO / Alloc / Bg / Block authority is
-# rejected at substitution time instead of silently weakening the pure
-# projection into an effect-bearing context.
-crucible_neg_compile_test(neg_costmodel_wave_efficiency_io_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_costmodel_sm_occupancy_alloc_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_costmodel_evaluate_cost_bg_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
-crucible_neg_compile_test(neg_costmodel_fusion_benefit_block_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+# The evaluators are pure arithmetic over values the caller owns, and
+# CtxFitsCostModel admits only a context whose row is empty.  Each fixture
+# calls one evaluator with a context that claims one effect.  The first
+# regex names the refused call and the context.  The second says that the
+# gate failed, and the third names the refused row.
+crucible_neg_compile_multi_test(neg_costmodel_wave_efficiency_io_row
+  "no matching function for call to .wave_efficiency\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO> >&"
+  "required for the satisfaction of .CtxFitsCostModel<Ctx>."
+  "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_costmodel_sm_occupancy_alloc_row
+  "no matching function for call to .sm_occupancy\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc> >&"
+  "required for the satisfaction of .CtxFitsCostModel<Ctx>."
+  "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_costmodel_evaluate_cost_bg_row
+  "no matching function for call to .evaluate_cost\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >&"
+  "required for the satisfaction of .CtxFitsCostModel<Ctx>."
+  "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Bg>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_costmodel_fusion_benefit_block_row
+  "no matching function for call to .compute_fusion_benefit\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Block> >&"
+  "required for the satisfaction of .CtxFitsCostModel<Ctx>."
+  "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
 
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
