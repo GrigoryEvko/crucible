@@ -4873,47 +4873,41 @@ crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
     "constraint|constraints.*not satisfied"
     "CtxFitsCogMimic|row_subset|TestRunnerCtx")
 
-# ─── HS14 fixtures #1 + #2 for topology::TopologyGraph (GAPS-110 #1209) ──
+# ─── topology::TopologyGraph ──────────────────────────────────────────
 #
-# Two fixtures per the HS14 mandate, each a distinct mismatch class:
-#
-#   * #1 IsExecCtx CONJUNCT — CtxFitsTopologyGraph refuses a bare
-#     `int` (or any non-ExecCtx type) at the first conjunct.  Without
-#     this gate, mint_topology_graph(0, ...) would either deduce
-#     Ctx=int and produce a deep-template error inside the body, or
-#     silently construct a graph with a garbage row tag, polluting
-#     federation row_hash slots.
-#
-#   * #2 ROW-CONTAINS-INIT CONJUNCT — CtxFitsTopologyGraph refuses
-#     contexts whose effect row carries neither Init nor (in this
-#     immutable carrier's case) ANY non-Init effect.  The Test-row
-#     ctx fixture witnesses rejection.  Without this gate, a unit-test
-#     mock could mint a TopologyGraph with a Test-tagged row, polluting
-#     any cross-test federation cache slot.
+#   * neg_topology_graph_non_ctx_first_arg — an int in the context slot is
+#     refused by the IsExecCtx constraint, not deep inside the factory.
+#   * neg_topology_graph_test_ctx_refused — a test context carries no Init
+#     row, so it cannot mint the fleet's topology graph.
 crucible_neg_compile_topology_test(neg_topology_graph_non_ctx_first_arg
-    "constraint|constraints.*not satisfied"
-    "CtxFitsTopologyGraph|GAPS-110")
+    "no matching function for call to .mint_topology_graph.int,"
+    "IsExecCtx<Ctx>. \\[with Ctx = int\\]")
 crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
-    "constraint|constraints.*not satisfied"
-    "CtxFitsTopologyGraph|row_contains|GAPS-110")
+    "no matching function for call to .mint_topology_graph.fixy::TestRunnerCtx&"
+    "CtxFitsTopologyGraph<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test")
 
-# ─── HS14 fixtures for topology::Discovery (GAPS-111 #1217) ─────────
+# ─── topology::Discovery ──────────────────────────────────────────────
 #
-#   * neg_topology_discovery_mint_test_ctx — structural discovery snapshots
-#     are Init-owned; test-only rows cannot mint production topology storage.
-#   * neg_topology_discovery_raw_lspci_text — parser boundaries consume
-#     Tagged<source::External> text, not raw string views.
-#   * neg_topology_discovery_zero_nodes — snapshot shape requires at least
-#     one node and one edge slot.
+#   * neg_topology_discovery_mint_test_ctx — a snapshot is built only from
+#     an initialisation context; a test context is refused.
+#   * neg_topology_discovery_direct_construct — the snapshot's constructor
+#     is private, so the mint is the only door.
+#   * neg_topology_discovery_raw_lspci_text — a parser takes only text
+#     tagged as External, never a raw string.
+#   * neg_topology_discovery_zero_nodes — a snapshot needs at least one node
+#     slot and one edge slot.
 crucible_neg_compile_topology_test(neg_topology_discovery_mint_test_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsDiscoveryInit|GAPS-111")
+    "no matching function for call to .mint_discovery_snapshot<1, 1>.fixy::TestRunnerCtx&"
+    "CtxFitsDiscoveryInit<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test")
+crucible_neg_compile_topology_test(neg_topology_discovery_direct_construct
+    "is private within this context"
+    "DiscoverySnapshot<MaxNodes, MaxEdges>::DiscoverySnapshot\\(\\)")
 crucible_neg_compile_topology_test(neg_topology_discovery_raw_lspci_text
-    "could not convert|no matching function"
-    "ExternalDiscoveryText")
+    "could not convert .\\(const char\\*\\)\"Slot:.* from .const char\\*. to .crucible::topology::ExternalDiscoveryText."
+    "fixy::Tagged<std::basic_string_view<char>, fixy::tags::source::External>")
 crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
-    "constraint|constraints.*not satisfied"
-    "DiscoveryShape|GAPS-111")
+    "no matching function for call to .mint_discovery_snapshot<0, 1>.fixy::ColdInitCtx&"
+    "required for the satisfaction of .DiscoveryShape<MaxNodes, MaxEdges>. \\[with MaxNodes = 0; MaxEdges = 1\\]")
 
 # ─── topology::Health ─────────────────────────────────────────────────
 #

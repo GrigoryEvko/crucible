@@ -179,7 +179,7 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_asymmetric_failure_detector` | `include/crucible/topology/AsymmetricFailure.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_congestion_telemetry_worker` | `include/crucible/topology/CongestionTelemetryWorker.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |

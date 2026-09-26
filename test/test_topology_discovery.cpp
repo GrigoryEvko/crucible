@@ -1,33 +1,33 @@
 #include <crucible/topology/Discovery.h>
+#include <foundation/reflect/EnumName.h>
 
-#include <cassert>
+#include "test_assert.h"
+
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace topology = crucible::topology;
-namespace effects = crucible::effects;
 namespace cog = crucible::cog;
+namespace eff = ::fixy;
 
-using InitCtx =
-    effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound, effects::ctx_heat::Cold,
-                     effects::ctx_resid::DRAM, effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
+// The log spelling of the four enums comes from reflection.
+static void test_enum_names_come_from_reflection() {
+    using ::foundation::reflect::enum_name;
+    static_assert(enum_name(topology::DiscoveryError::TooManyNodes) == "TooManyNodes");
+    static_assert(enum_name(topology::DiscoverySource::EthtoolInfo) == "EthtoolInfo");
+    static_assert(enum_name(topology::DiscoveryOutcome::Partial) == "Partial");
+    static_assert(enum_name(topology::DiscoveryNodeKind::NicPort) == "NicPort");
 
-using BgCtx =
-    effects::ExecCtx<effects::Bg, effects::ctx_numa::Any, effects::ctx_alloc::Arena, effects::ctx_heat::Warm,
-                     effects::ctx_resid::L3, effects::Row<effects::Effect::Bg>, effects::ctx_workload::Unspecified>;
-
-static void test_name_coverage() {
-    assert(topology::discovery_error_name(topology::DiscoveryError::TooManyNodes) == std::string_view{"TooManyNodes"});
-    assert(topology::discovery_source_name(topology::DiscoverySource::EthtoolInfo) == std::string_view{"EthtoolInfo"});
-    assert(topology::discovery_outcome_name(topology::DiscoveryOutcome::Partial) == std::string_view{"Partial"});
-    assert(topology::discovery_node_kind_name(topology::DiscoveryNodeKind::NicPort) == std::string_view{"NicPort"});
-    std::printf("  test_name_coverage:                  PASSED\n");
+    volatile auto source = topology::DiscoverySource::Lldp;
+    assert(enum_name(static_cast<topology::DiscoverySource>(source)) == std::string_view{"Lldp"});
+    std::printf("  test_enum_names_come_from_reflection: PASSED\n");
 }
 
 static void test_lspci_and_graph_materialization() {
-    InitCtx ctx{::crucible::effects::testing::init()};
-    auto snapshot = topology::DefaultDiscoverySnapshot{};
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+    auto snapshot = topology::mint_discovery_snapshot(ctx);
     constexpr std::string_view lspci = "Slot:\t0000:00:00.0\n"
                                        "Class:\tPCI bridge\n"
                                        "Vendor:\tIntel Corporation\n"
@@ -52,6 +52,7 @@ static void test_lspci_and_graph_materialization() {
     assert(snapshot.nodes()[0].kind == cog::CogKind::PcieRoot);
     assert(snapshot.nodes()[1].kind == cog::CogKind::NicPort);
     assert(snapshot.nodes()[2].kind == cog::CogKind::Gpu);
+    assert(snapshot.nodes()[1].vendor.value() == std::string_view{"Mellanox Technologies"});
 
     auto graph = snapshot.graph(ctx);
     assert(graph.node_count() == 3);
@@ -64,8 +65,8 @@ static void test_lspci_and_graph_materialization() {
 }
 
 static void test_ethtool_features_and_lldp() {
-    InitCtx ctx{::crucible::effects::testing::init()};
-    auto snapshot = topology::DefaultDiscoverySnapshot{};
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+    auto snapshot = topology::mint_discovery_snapshot(ctx);
     topology::DiscoveryNodeFact local{
         .kind = cog::CogKind::NicPort,
         .vendor = topology::tag_vendor_discovery_string("Mellanox"),
@@ -82,6 +83,8 @@ static void test_ethtool_features_and_lldp() {
     assert(info_status.has_value());
     assert(snapshot.node_facts()[*local_idx].driver.value() == std::string_view{"mlx5_core"});
     assert(snapshot.node_facts()[*local_idx].firmware.value() == std::string_view{"22.39.1002"});
+    assert(snapshot.nodes()[*local_idx].firmware_revision.value()
+           == topology::stable_discovery_hash(std::string_view{"22.39.1002"}));
 
     constexpr std::string_view features = "tcp-segmentation-offload: on\n"
                                           "generic-segmentation-offload: on\n"
@@ -114,8 +117,8 @@ static void test_ethtool_features_and_lldp() {
 }
 
 static void test_lldp_record_state_reset() {
-    InitCtx ctx{::crucible::effects::testing::init()};
-    auto snapshot = topology::DefaultDiscoverySnapshot{};
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+    auto snapshot = topology::mint_discovery_snapshot(ctx);
     auto local_idx = snapshot.add_node(topology::DiscoveryNodeFact{
         .kind = cog::CogKind::NicPort,
         .vendor = topology::tag_vendor_discovery_string("Mellanox"),
@@ -144,14 +147,14 @@ static void test_lldp_record_state_reset() {
 }
 
 static void test_graceful_empty_live_discovery() {
-    InitCtx ctx{::crucible::effects::testing::init()};
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto snapshot = topology::mint_discovery_snapshot<4, 4>(ctx);
     auto result = topology::discover_local_topology(ctx, snapshot);
     assert(result.node_count() == 0);
     assert(snapshot.report().view().size() == 1);
     assert(snapshot.report().view()[0].outcome == topology::DiscoveryOutcome::NotAttempted);
 
-    BgCtx bg{::crucible::effects::testing::bg()};
+    eff::BgDrainCtx bg{::foundation::effects::testing::bg()};
     auto trigger = topology::notify_rediscovery_trigger(bg, topology::DiscoverySource::Udev);
     assert(trigger.has_value());
     assert(trigger->source == topology::DiscoverySource::Udev);
@@ -159,19 +162,24 @@ static void test_graceful_empty_live_discovery() {
 }
 
 static void test_static_gates() {
-    static_assert(topology::CtxFitsDiscoveryInit<InitCtx>);
-    static_assert(!topology::CtxFitsDiscoveryInit<BgCtx>);
-    static_assert(topology::CtxFitsDiscoveryBg<BgCtx>);
+    static_assert(topology::CtxFitsDiscoveryInit<eff::ColdInitCtx>);
+    static_assert(!topology::CtxFitsDiscoveryInit<eff::BgDrainCtx>);
+    static_assert(!topology::CtxFitsDiscoveryInit<eff::TestRunnerCtx>);
+    static_assert(topology::CtxFitsDiscoveryBg<eff::BgDrainCtx>);
+    static_assert(!topology::CtxFitsDiscoveryBg<int>);
     static_assert(!topology::DiscoveryShape<0, 1>);
     static_assert(topology::DiscoveryShape<1, 1>);
     static_assert(sizeof(topology::ExternalDiscoveryText) == sizeof(std::string_view));
     static_assert(std::is_trivially_destructible_v<topology::DiscoverySnapshot<16, 32>>);
+    static_assert(!std::is_default_constructible_v<topology::DiscoverySnapshot<16, 32>>);
+    static_assert(std::is_same_v<decltype(topology::mint_discovery_snapshot(std::declval<eff::ColdInitCtx const&>())),
+                                 topology::DefaultDiscoverySnapshot>);
     std::printf("  test_static_gates:                    PASSED\n");
 }
 
 int main() {
     std::printf("test_topology_discovery:\n");
-    test_name_coverage();
+    test_enum_names_come_from_reflection();
     test_lspci_and_graph_materialization();
     test_ethtool_features_and_lldp();
     test_lldp_record_state_reset();

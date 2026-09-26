@@ -32,7 +32,8 @@ inline void run_discovery_text(std::span<const std::uint8_t> bytes) {
     const auto which = cursor.take<std::uint8_t>();
     const auto text = topology::tag_external_discovery_text(as_text(cursor.rest()));
 
-    auto snapshot = topology::DefaultDiscoverySnapshot{};
+    const ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
+    auto snapshot = topology::mint_discovery_snapshot(init);
     switch (which % 4) {
         case 0:
             (void)topology::parse_lspci_vmm_tree(text, snapshot);

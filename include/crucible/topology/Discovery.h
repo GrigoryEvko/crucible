@@ -6,11 +6,13 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Tagged.h>
 #include <crucible/topology/TopologyGraph.h>
+#include <fixy/Bits.h>
+#include <fixy/Ctx.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
 #include <cstddef>
@@ -23,8 +25,11 @@
 
 namespace crucible::topology {
 
-using ExternalDiscoveryText = safety::Tagged<std::string_view, safety::source::External>;
-using VendorDiscoveryString = safety::Tagged<std::string_view, safety::source::Vendor>;
+// The text a discovery parser reads comes from a tool or a peer, never from
+// this process.  A parser takes only this type, so a caller must name the
+// source with mint_tagged before the parser sees a byte.
+using ExternalDiscoveryText = ::fixy::Tagged<std::string_view, ::fixy::tags::source::External>;
+using VendorDiscoveryString = cog::VendorClaim<std::string_view>;
 
 enum class DiscoveryError : std::uint8_t {
     EmptyInput = 0,
@@ -126,11 +131,11 @@ struct DiscoveryNodeFact {
     cog::Uuid uuid{};
     cog::CogLevel level = cog::CogLevel::L0_Atomic;
     cog::CogKind kind = cog::CogKind::Gpu;
-    VendorDiscoveryString vendor{std::string_view{}};
-    VendorDiscoveryString model{std::string_view{}};
-    VendorDiscoveryString driver{std::string_view{}};
-    VendorDiscoveryString firmware{std::string_view{}};
-    VendorDiscoveryString bus_info{std::string_view{}};
+    VendorDiscoveryString vendor{};
+    VendorDiscoveryString model{};
+    VendorDiscoveryString driver{};
+    VendorDiscoveryString firmware{};
+    VendorDiscoveryString bus_info{};
     std::int16_t numa_node = -1;
     cog::NicPortTargetCaps nic_caps{};
 };
@@ -149,22 +154,24 @@ template <std::size_t MaxNodes, std::size_t MaxEdges>
 concept DiscoveryShape = MaxNodes > 0 && MaxEdges > 0;
 
 template <class Ctx>
-concept CtxFitsDiscoveryInit = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsDiscoveryInit =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 template <class Ctx>
-concept CtxFitsDiscoveryBg = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+concept CtxFitsDiscoveryBg =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
-[[nodiscard]] std::string_view discovery_error_name(DiscoveryError error) noexcept;
-[[nodiscard]] std::string_view discovery_source_name(DiscoverySource source) noexcept;
-[[nodiscard]] std::string_view discovery_outcome_name(DiscoveryOutcome outcome) noexcept;
-[[nodiscard]] std::string_view discovery_node_kind_name(DiscoveryNodeKind kind) noexcept;
+// foundation::reflect::enum_name gives the log spelling of the four enums
+// above.
 
 [[nodiscard]] constexpr ExternalDiscoveryText tag_external_discovery_text(std::string_view text) noexcept {
-    return ExternalDiscoveryText{text};
+    return ::fixy::mint_tagged<::fixy::tags::source::External>(text);
 }
 
 [[nodiscard]] constexpr VendorDiscoveryString tag_vendor_discovery_string(std::string_view text) noexcept {
-    return VendorDiscoveryString{text};
+    return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(text);
 }
 
 [[nodiscard]] constexpr cog::CogKind cog_kind_from_discovery(DiscoveryNodeKind kind) noexcept {
@@ -224,7 +231,28 @@ concept CtxFitsDiscoveryBg = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapabili
 
 template <std::size_t MaxNodes, std::size_t MaxEdges>
     requires DiscoveryShape<MaxNodes, MaxEdges>
+class DiscoverySnapshot;
+
+// The shape the host parsers fill.
+inline constexpr std::size_t default_discovery_nodes = 64;
+inline constexpr std::size_t default_discovery_edges = 128;
+using DefaultDiscoverySnapshot = DiscoverySnapshot<default_discovery_nodes, default_discovery_edges>;
+
+template <std::size_t MaxNodes = default_discovery_nodes, std::size_t MaxEdges = default_discovery_edges, class Ctx>
+    requires DiscoveryShape<MaxNodes, MaxEdges> && CtxFitsDiscoveryInit<Ctx>
+[[nodiscard]] constexpr DiscoverySnapshot<MaxNodes, MaxEdges> mint_discovery_snapshot(Ctx const&) noexcept;
+
+// The storage behind a discovered graph.  Only mint_discovery_snapshot builds
+// one, so a snapshot exists only where an initialisation context exists.
+template <std::size_t MaxNodes, std::size_t MaxEdges>
+    requires DiscoveryShape<MaxNodes, MaxEdges>
 class DiscoverySnapshot {
+    template <std::size_t N, std::size_t E, class Ctx>
+        requires DiscoveryShape<N, E> && CtxFitsDiscoveryInit<Ctx>
+    friend constexpr DiscoverySnapshot<N, E> mint_discovery_snapshot(Ctx const&) noexcept;
+
+    constexpr DiscoverySnapshot() noexcept = default;
+
 public:
     [[nodiscard]] constexpr std::span<const cog::CogIdentity> nodes() const noexcept {
         return {nodes_.data(), node_count_};
@@ -264,11 +292,10 @@ public:
             .uuid = fact.uuid,
             .level = fact.level,
             .kind = fact.kind,
-            .vendor = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::string_view>(fact.vendor.value()),
-            .model = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::string_view>(fact.model.value()),
-            .firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(
-                stable_discovery_hash(fact.firmware.value())),
-            .bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0),
+            .vendor = fact.vendor,
+            .model = fact.model,
+            .firmware_revision = firmware_claim(fact),
+            .bios_revision = {},
         };
         ++node_count_;
         return idx;
@@ -283,10 +310,9 @@ public:
         nodes_[idx].uuid = fact.uuid;
         nodes_[idx].level = fact.level;
         nodes_[idx].kind = fact.kind;
-        nodes_[idx].vendor = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::string_view>(fact.vendor.value());
-        nodes_[idx].model = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::string_view>(fact.model.value());
-        nodes_[idx].firmware_revision =
-            ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(stable_discovery_hash(fact.firmware.value()));
+        nodes_[idx].vendor = fact.vendor;
+        nodes_[idx].model = fact.model;
+        nodes_[idx].firmware_revision = firmware_claim(fact);
         return {};
     }
 
@@ -303,11 +329,10 @@ public:
             .id = EdgeId{idx},
             .kind = fact.kind,
             .peer = &nodes_[fact.to_node],
-            .bandwidth_bytes_per_sec =
-                safety::Tagged<std::uint64_t, safety::source::Calibrated>{fact.bandwidth_bytes_per_sec},
-            .rtt_ns_p50 = safety::Tagged<std::uint64_t, safety::source::Calibrated>{fact.rtt_ns_p50},
-            .rtt_ns_p99 = safety::Tagged<std::uint64_t, safety::source::Calibrated>{fact.rtt_ns_p99},
-            .drop_rate = safety::Tagged<float, safety::source::Calibrated>{fact.drop_rate},
+            .bandwidth_bytes_per_sec = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.bandwidth_bytes_per_sec),
+            .rtt_ns_p50 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p50),
+            .rtt_ns_p99 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p99),
+            .drop_rate = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.drop_rate),
         };
         ++edge_count_;
         return idx;
@@ -322,6 +347,11 @@ public:
     }
 
 private:
+    // The firmware string is opaque, so the identity carries its hash.
+    [[nodiscard]] static constexpr cog::VendorClaim<std::uint64_t> firmware_claim(DiscoveryNodeFact const& fact) noexcept {
+        return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(stable_discovery_hash(fact.firmware.value()));
+    }
+
     std::array<DiscoveryNodeFact, MaxNodes> node_facts_{};
     std::array<DiscoveryEdgeFact, MaxEdges> edge_facts_{};
     std::array<cog::CogIdentity, MaxNodes> nodes_{};
@@ -334,7 +364,7 @@ private:
 template <std::size_t MaxNodes, std::size_t MaxEdges, class Ctx>
     requires DiscoveryShape<MaxNodes, MaxEdges> && CtxFitsDiscoveryInit<Ctx>
 [[nodiscard]] constexpr DiscoverySnapshot<MaxNodes, MaxEdges> mint_discovery_snapshot(Ctx const&) noexcept {
-    return {};
+    return DiscoverySnapshot<MaxNodes, MaxEdges>{};
 }
 
 template <std::size_t MaxNodes, std::size_t MaxEdges, class Ctx>
@@ -360,8 +390,6 @@ notify_rediscovery_trigger(Ctx const&, DiscoverySource source) noexcept {
     };
 }
 
-using DefaultDiscoverySnapshot = DiscoverySnapshot<64, 128>;
-
 [[nodiscard]] std::expected<DiscoverySourceStatus, DiscoveryError>
 parse_lspci_vmm_tree(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot) noexcept;
 
@@ -380,5 +408,11 @@ static_assert(DiscoveryShape<1, 1>);
 static_assert(!DiscoveryShape<0, 1>);
 static_assert(std::is_trivially_destructible_v<DiscoveryNodeFact>);
 static_assert(std::is_trivially_destructible_v<DiscoveryEdgeFact>);
+static_assert(!std::is_default_constructible_v<DefaultDiscoverySnapshot>,
+              "a snapshot is built only by mint_discovery_snapshot");
+static_assert(CtxFitsDiscoveryInit<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsDiscoveryInit<::fixy::BgDrainCtx>);
+static_assert(CtxFitsDiscoveryBg<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsDiscoveryBg<::fixy::ColdInitCtx>);
 
 }  // namespace crucible::topology

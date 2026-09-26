@@ -88,11 +88,9 @@ include/crucible/ledger/HostFingerprint.h
 include/crucible/mimic/Semaphore.h
 include/crucible/topology/CongestionTelemetry.h
 include/crucible/topology/CongestionTelemetryWorker.h
-include/crucible/topology/Discovery.h
 include/crucible/topology/Pingmesh.h
 include/crucible/topology/Ptp.h
 include/crucible/topology/Telemetry.h
-include/crucible/topology/TopologyGraph.h
 include/crucible/warden/DeadlineWatchdog.h
 include/crucible/warden/Quarantine.h
 src/cntp/RoceConfig.cpp

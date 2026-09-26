@@ -9,10 +9,10 @@
 // evaluator.
 
 #include <crucible/topology/TopologyGraph.h>
+#include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
 
-#include <array>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
@@ -22,71 +22,24 @@
 
 namespace topology = crucible::topology;
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
-namespace safety = crucible::safety;
+namespace eff = ::fixy;
 
-// The tables below are written out by hand and checked against the
-// enumerator counts, so adding an enumerator without naming it here
-// fails rather than silently going untested.
-static void test_link_kind_name_coverage() {
-    constexpr topology::LinkKind kinds[] = {
-        topology::LinkKind::Unknown,
-        topology::LinkKind::PciE,
-        topology::LinkKind::NvLink,
-        topology::LinkKind::NvSwitchPort,
-        topology::LinkKind::AmdInfinityFabric,
-        topology::LinkKind::CxlMem,
-        topology::LinkKind::CxlCache,
-        topology::LinkKind::QpiUpi,
-        topology::LinkKind::Cxio,
-        topology::LinkKind::Ethernet,
-        topology::LinkKind::Infiniband,
-        topology::LinkKind::RoceV2,
-        topology::LinkKind::Loopback,
-    };
-    static_assert(sizeof(kinds) / sizeof(kinds[0]) == topology::link_kind_count,
-                  "Manual LinkKind table diverged from link_kind_count.");
+// The log spelling of the three enums comes from reflection.  The pins
+// hold the spellings a log reader matches on, and the counts the size of
+// each enum; a new enumerator moves a count and fails here.
+static void test_enum_names_come_from_reflection() {
+    using ::foundation::reflect::enum_count;
+    using ::foundation::reflect::enum_name;
+    static_assert(enum_count<topology::LinkKind> == 13);
+    static_assert(enum_count<topology::LinkLayer> == 3);
+    static_assert(enum_count<topology::CongestionState> == 5);
+    static_assert(enum_name(topology::LinkKind::AmdInfinityFabric) == "AmdInfinityFabric");
+    static_assert(enum_name(topology::LinkLayer::L3) == "L3");
+    static_assert(enum_name(topology::CongestionState::Saturated) == "Saturated");
 
-    for (topology::LinkKind k : kinds) {
-        volatile auto v = k;
-        std::string_view name = topology::link_kind_name(static_cast<topology::LinkKind>(v));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown LinkKind>"});
-    }
-    std::printf("  test_link_kind_name_coverage:         PASSED\n");
-}
-
-static void test_link_layer_name_coverage() {
-    constexpr topology::LinkLayer layers[] = {
-        topology::LinkLayer::Unknown,
-        topology::LinkLayer::L2,
-        topology::LinkLayer::L3,
-    };
-    static_assert(sizeof(layers) / sizeof(layers[0]) == topology::link_layer_count);
-
-    for (topology::LinkLayer L : layers) {
-        volatile auto v = L;
-        std::string_view name = topology::link_layer_name(static_cast<topology::LinkLayer>(v));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown LinkLayer>"});
-    }
-    std::printf("  test_link_layer_name_coverage:        PASSED\n");
-}
-
-static void test_congestion_state_name_coverage() {
-    constexpr topology::CongestionState states[] = {
-        topology::CongestionState::Healthy,   topology::CongestionState::Mild, topology::CongestionState::Severe,
-        topology::CongestionState::Saturated, topology::CongestionState::Down,
-    };
-    static_assert(sizeof(states) / sizeof(states[0]) == topology::congestion_state_count);
-
-    for (topology::CongestionState C : states) {
-        volatile auto v = C;
-        std::string_view name = topology::congestion_state_name(static_cast<topology::CongestionState>(v));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown CongestionState>"});
-    }
-    std::printf("  test_congestion_state_name_coverage:  PASSED\n");
+    volatile auto kind = topology::LinkKind::RoceV2;
+    assert(enum_name(static_cast<topology::LinkKind>(kind)) == std::string_view{"RoceV2"});
+    std::printf("  test_enum_names_come_from_reflection: PASSED\n");
 }
 
 // The mapping from link kind to layer is a partition, so every kind
@@ -145,6 +98,14 @@ static void test_edge_id_runtime() {
 }
 
 static void test_default_topology_edge() {
+    static_assert([] {
+        topology::TopologyEdge const zero{};
+        return zero.id.is_none() && zero.kind == topology::LinkKind::Unknown
+            && zero.state == topology::CongestionState::Healthy && zero.peer == nullptr
+            && zero.bandwidth_bytes_per_sec.value() == 0 && zero.rtt_ns_p50.value() == 0
+            && zero.rtt_ns_p99.value() == 0 && std::bit_cast<std::uint32_t>(zero.drop_rate.value()) == 0u;
+    }());
+
     topology::TopologyEdge e{};
     assert(e.id.is_none());
     assert(e.kind == topology::LinkKind::Unknown);
@@ -161,10 +122,6 @@ static void test_default_topology_edge() {
     static_assert(sizeof(topology::TopologyEdge) == 64);
     std::printf("  test_default_topology_edge:           PASSED\n");
 }
-
-using InitCtx =
-    effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound, effects::ctx_heat::Cold,
-                     effects::ctx_resid::DRAM, effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
 
 static void test_mint_topology_graph_round_trip() {
     // Three nodes in a line, joined by two links.  Each link is stored
@@ -183,7 +140,7 @@ static void test_mint_topology_graph_round_trip() {
     edges[0].kind = topology::LinkKind::PciE;
     edges[0].peer = &nodes[1];
     edges[0].bandwidth_bytes_per_sec =
-        safety::Tagged<std::uint64_t, safety::source::Calibrated>{std::uint64_t{32} * 1024 * 1024 * 1024};
+        ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(std::uint64_t{32} * 1024 * 1024 * 1024);
 
     edges[1].id = topology::EdgeId{1};
     edges[1].kind = topology::LinkKind::PciE;
@@ -197,7 +154,7 @@ static void test_mint_topology_graph_round_trip() {
     edges[3].kind = topology::LinkKind::Ethernet;
     edges[3].peer = &nodes[1];
 
-    InitCtx ctx{::crucible::effects::testing::init()};
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto g = topology::mint_topology_graph(ctx, std::span<const cog::CogIdentity>{nodes, 3},
                                            std::span<const topology::TopologyEdge>{edges, 4});
 
@@ -233,20 +190,32 @@ static void test_mint_topology_graph_round_trip() {
     std::printf("  test_mint_topology_graph_round_trip:  PASSED\n");
 }
 
+// A graph minted over no storage reports no nodes and no edges, in the
+// constant evaluator and at run time.
+static void test_empty_topology_graph() {
+    static_assert([] {
+        eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+        auto g = topology::mint_topology_graph(ctx, std::span<const cog::CogIdentity>{},
+                                               std::span<const topology::TopologyEdge>{});
+        return g.node_count() == 0 && g.edge_count() == 0;
+    }());
+
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+    auto g = topology::mint_topology_graph(ctx, std::span<const cog::CogIdentity>{},
+                                           std::span<const topology::TopologyEdge>{});
+    volatile auto nc = g.node_count();
+    volatile auto ec = g.edge_count();
+    assert(nc == 0);
+    assert(ec == 0);
+    std::printf("  test_empty_topology_graph:            PASSED\n");
+}
+
 // Each concept result is captured into a volatile so the compiler
 // cannot fold the branch away and skip evaluating it.
-using BgCtx = effects::ExecCtx<effects::Bg, effects::ctx_numa::Any, effects::ctx_alloc::Arena, effects::ctx_heat::Warm,
-                               effects::ctx_resid::L3, effects::Row<effects::Effect::Bg, effects::Effect::Alloc>,
-                               effects::ctx_workload::Unspecified>;
-
-using TestCtx =
-    effects::ExecCtx<effects::Test, effects::ctx_numa::Any, effects::ctx_alloc::Unbound, effects::ctx_heat::Cold,
-                     effects::ctx_resid::DRAM, effects::Row<effects::Effect::Test>, effects::ctx_workload::Unspecified>;
-
 static void test_ctx_fits_topology_graph_runtime() {
-    volatile bool init_admits = topology::CtxFitsTopologyGraph<InitCtx>;
-    volatile bool bg_admits = topology::CtxFitsTopologyGraph<BgCtx>;
-    volatile bool test_admits = topology::CtxFitsTopologyGraph<TestCtx>;
+    volatile bool init_admits = topology::CtxFitsTopologyGraph<eff::ColdInitCtx>;
+    volatile bool bg_admits = topology::CtxFitsTopologyGraph<eff::BgDrainCtx>;
+    volatile bool test_admits = topology::CtxFitsTopologyGraph<eff::TestRunnerCtx>;
     volatile bool int_admits = topology::CtxFitsTopologyGraph<int>;
 
     // Only a context carrying the initialization effect is admitted.
@@ -276,13 +245,12 @@ static void test_topology_graph_pinned() {
 
 int main() {
     std::printf("test_topology_graph:\n");
-    test_link_kind_name_coverage();
-    test_link_layer_name_coverage();
-    test_congestion_state_name_coverage();
+    test_enum_names_come_from_reflection();
     test_link_layer_for_runtime();
     test_edge_id_runtime();
     test_default_topology_edge();
     test_mint_topology_graph_round_trip();
+    test_empty_topology_graph();
     test_ctx_fits_topology_graph_runtime();
     test_topology_graph_pinned();
     std::printf("test_topology_graph: all PASSED\n");
