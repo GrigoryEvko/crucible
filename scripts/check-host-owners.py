@@ -10,33 +10,45 @@ scripts/host-owner-roster.txt names, and nowhere else.
 
 THE RULE
     - A class defined in a namespace named host, by any spelling, is an owner
-      definition.  The guard reads the enclosing namespaces from the parse and
-      the qualifier from the class name, so `struct fe::host::X {}` after a
-      namespace alias, `struct host::X {}` after a using-directive and
-      `namespace foundation::effects::host { struct X {}; }` are all owner
-      definitions.  A declaration without a body, such as a friend
-      declaration, is not.
+      definition.  The guard reads the enclosing namespaces and the qualifier
+      of the class name from the parse of scripts/tsast.py, so a comment, a
+      line splice or an attribute cannot hide one.  `struct fe::host::X {}`
+      after a namespace alias, `struct host::X {}` after a using-directive
+      and `namespace foundation::effects::host { struct X {}; }` are all
+      owner definitions.  An inline namespace is transparent.  A declaration
+      without a body, such as a friend declaration, is not a definition.
     - A qualifier resolves through each namespace alias of the whole scan,
       a chain of aliases included, and not only through the aliases of its
-      own file.  So `struct h::X {}` is an owner definition when any file
-      defines `namespace h = foundation::effects::host;`, and a file that
-      spells only the alias is parsed too.  An alias name with two targets
-      keeps both, so a spelling can only be found more often.
-    - A class definition inside a macro body counts, read from the macro
-      text, because the parse keeps a macro body as raw text.
+      own file.  An alias name with two targets keeps both, so a spelling can
+      only be found more often.
+    - A class definition inside a macro body counts.  The guard parses each
+      macro body on its own, through tsast.macro_bodies.  A body that does
+      not parse, or whose parse a line splice inside a name has split, is
+      read from its preprocessing tokens: a class key, its attributes and a
+      qualified name before `{`, `:` or `final`.  A body of that kind that
+      opens a namespace named host fails, because the guard cannot read what
+      its expansion defines.
     - Each owner definition must match a roster row by name and file.
     - Each roster row must match an owner definition.  A row whose file does
       not define the owner fails, so the roster cannot go stale.
-    - A file under the scan roots that the parser cannot read fails, unless
-      scripts/tsast.py lists it as unparseable, and then its text is read.
+    - A file in scope that the parser cannot read fails.  A file that
+      tsast.UNPARSEABLE lists is not C++ and is out of scope.
+
+WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
+    - A namespace or a class whose name a macro supplies at the use, for
+      example `namespace foundation::effects::NS {` where NS expands to host.
+    - A class that a macro builds from pieces with ##.
 
 Negative-compile fixtures (a test directory named neg or *_neg) are out of
 scope: a fixture that defines an owner to prove that the build refuses it is
 the point of the fixture.
 
-Exit 0 clean, 1 on an unlisted owner definition, a stale row or a parse
-failure, 2 on a usage error, a bad roster or a failed self-test, 3 when the
-parser kit is missing.
+The guard parses every C++ file under the scan roots, because an alias that
+any of them defines can reach the namespace host.
+
+Exit 0 clean, 1 on an unlisted owner definition, a stale row, a macro that
+opens host or a parse failure, 2 on a usage error, a bad roster or a failed
+self-test, 3 when the parser kit is missing.
 """
 
 from __future__ import annotations
@@ -49,26 +61,37 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 ROSTER = "scripts/host-owner-roster.txt"
 SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "fuzz", "examples")
-SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inl", ".ipp", ".tpp"})
 CLASSES = ("class_specifier", "struct_specifier", "union_specifier")
-MACROS = ("preproc_def", "preproc_function_def")
-# A namespace alias definition, read as text so that one lexical pass over
-# every file builds the alias table before any parse.
-ALIAS = re.compile(r"\bnamespace\s+(\w+)\s*=\s*((?:::\s*)?\w+(?:\s*::\s*\w+)*)\s*;")
+CLASS_KEYS = frozenset({"class", "struct", "union"})
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")
+# The trees whose macro bodies go to the kit together.  A chunk bounds the
+# memory that the file trees of one parse of macro bodies hold.
+MACRO_CHUNK = 256
+
+# A namespace path, outermost name first.
+NsPath = tuple[str, ...]
 
 
 class Refused(Exception):
     """The roster is missing or malformed (exit 2)."""
+
+
+class Head(NamedTuple):
+    """One class definition that can be an owner: its name, where it stands, and each path it can read as."""
+
+    owner: str
+    rel: str
+    line: int
+    paths: tuple[NsPath, ...]
 
 
 def read_roster(root: Path) -> list[tuple[str, str]]:
@@ -99,18 +122,7 @@ def scope_files(root: Path) -> list[str]:
         paths = {p for p in listed.stdout.decode().split("\0") if p}
     else:
         paths = {str(p.relative_to(root)) for r in SCAN_ROOTS for p in (root / r).rglob("*") if p.is_file()}
-    return sorted(p for p in paths if Path(p).suffix in SUFFIXES and not NEG_FIXTURE.search(p)
-                  and (root / p).is_file())
-
-
-def spelled(text: str) -> str:
-    """Return a name as its tokens alone: comments and white space removed."""
-    return re.sub(r"\s+", "", cxx_lex.blank(text)[0])
-
-
-def segments(text: str) -> list[str]:
-    """Return the names of a qualified spelling, without template arguments."""
-    return [re.sub(r"<.*", "", part) for part in spelled(text).split("::") if part]
+    return sorted(p for p in paths if tsast.is_in_cpp_scope(p) and not NEG_FIXTURE.search(p) and (root / p).is_file())
 
 
 class Aliases:
@@ -122,13 +134,14 @@ class Aliases:
 
     def __init__(self) -> None:
         """Start with no alias."""
-        self.targets: dict[str, set[tuple[str, ...]]] = {}
+        self.targets: dict[str, set[NsPath]] = {}
 
-    def add(self, name: str, target: str) -> None:
-        """Record one alias definition."""
-        self.targets.setdefault(name, set()).add(tuple(segments(target)))
+    def add(self, tree: tsast.Tree) -> None:
+        """Record every alias of one parsed file."""
+        for alias in tsast.namespace_aliases(tree):
+            self.targets.setdefault(alias.name, set()).add(alias.target)
 
-    def expand(self, path: list[str], depth: int = 0) -> list[list[str]]:
+    def expand(self, path: NsPath, depth: int = 0) -> list[NsPath]:
         """Return the path and each path that its first name reaches through an alias.
 
         Complexity: bounded by the depth limit of 8 on a chain of aliases,
@@ -136,97 +149,151 @@ class Aliases:
         """
         found = [path]
         if depth < 8 and path and path[0] in self.targets:
-            for target in self.targets[path[0]]:
-                found += self.expand(list(target) + path[1:], depth + 1)
+            for target in sorted(self.targets[path[0]]):
+                found += self.expand(target + path[1:], depth + 1)
         return found
 
-    def host_names(self) -> set[str]:
-        """Return each alias name that reaches a namespace named host."""
-        return {name for name in self.targets if any(p and p[-1] == "host" for p in self.expand([name]))}
 
-
-def names_host(path: list[str], aliases: Aliases) -> bool:
+def names_host(path: NsPath, aliases: Aliases) -> bool:
     """Return True when a class path, through any alias, puts the class directly in a namespace named host."""
     return any(len(candidate) >= 2 and candidate[-2] == "host" for candidate in aliases.expand(path))
 
 
-def text_definitions(text: str, aliases: Aliases) -> list[tuple[str, int]]:
-    """Return (owner, line) for each class head in raw text whose qualifier reaches a namespace host."""
-    found = []
-    for match in TEXT_HEAD.finditer(text):
-        path = segments(match.group(1)) + [match.group(2)]
-        if names_host(path, aliases):
-            found.append((match.group(2), text.count("\n", 0, match.start()) + 1))
-    return found
+def parsed_heads(rel: str, root: tsast.Node, row_of: callable) -> list[Head]:
+    """Return each class definition under a node, with every path its name can read as.
 
-
-# A qualified class head, inside a macro body or an unparseable file.
-TEXT_HEAD = re.compile(r"\b(?:class|struct|union)\s+((?:::\s*)?(?:\w+\s*::\s*)+)(\w+)\s*(?:final\s*)?[{:]")
-
-
-def scope_of(node: tsast.Node) -> list[str]:
-    """Return the names of the namespaces around a node, outermost first.  An inline namespace is transparent."""
-    parts: list[str] = []
-    current = node.parent
-    while current is not None:
-        if current.type == "namespace_definition" and not current.text.lstrip().startswith("inline"):
-            name = current.child_by_field("name")
-            if name is not None:
-                parts[:0] = [p for p in spelled(name.text).split("::") if p]
-        current = current.parent
-    return parts
-
-
-def definitions(tree: tsast.Tree, aliases: Aliases) -> list[tuple[str, int]]:
-    """Return (owner name, line) for each class that the parse defines in a namespace named host.
-
-    A relative qualifier is read two ways: from the enclosing namespaces and
+    A relative qualifier reads two ways: from the enclosing namespaces and
     from the global namespace.  Either way can reach an alias, and a match
     through any of them counts, so a spelling can only be found more often.
     """
-    found = []
-    for node in tree.find(*CLASSES):
+    found: list[Head] = []
+    for node in root.descendants(*CLASSES):
         name, body = node.child_by_field("name"), node.child_by_field("body")
-        if name is None or body is None:
+        written = None if name is None or body is None else tsast.qualified_parts(name)
+        if written is None:
             continue
-        written = spelled(name.text)
-        qualifier = segments(written)
-        paths = [qualifier] if written.startswith("::") else [scope_of(node) + qualifier, qualifier]
-        if any(names_host(path, aliases) for path in paths):
-            found.append((qualifier[-1], node.line))
-    for node in tree.find(*MACROS):
-        found += [(owner, node.line + line - 1) for owner, line in text_definitions(node.text, aliases)]
+        is_global, qualifier = written
+        paths = (qualifier,) if is_global else (tsast.namespace_path(node, skip_inline=True) + qualifier, qualifier)
+        found.append(Head(qualifier[-1], rel, row_of(node) + 1, paths))
     return found
 
 
-def scan(root: Path) -> tuple[list[tuple[str, str, int]], list[str]]:
-    """Return every owner definition as (owner, path, line), and a line for each file that does not parse.
+def attribute_end(tokens: list[tsast.Token], index: int) -> int:
+    """Return the index after one attribute group that starts at a token, or the same index when none starts there.
 
-    Complexity: one lexical pass over each file, and one parse of each file
-    that names a namespace host or an alias that reaches one.
+    An attribute group is `[[...]]`, `alignas(...)`, `__attribute__((...))` or
+    `__declspec(...)`, with its brackets balanced.
     """
-    texts = {}
-    aliases = Aliases()
-    for rel in scope_files(root):
-        text, _ = cxx_lex.blank(cxx_lex.splice((root / rel).read_text(errors="replace"))[0], blank_literals=True)
-        texts[rel] = text
-        for match in ALIAS.finditer(text):
-            aliases.add(match.group(1), match.group(2))
-    hint = re.compile(r"\b(?:" + "|".join(sorted({"host"} | aliases.host_names())) + r")\b")
-    hinted = [rel for rel, text in texts.items() if hint.search(text)]
-    found: list[tuple[str, str, int]] = []
+    if index + 1 < len(tokens) and tokens[index].text == "[" and tokens[index + 1].text == "[":
+        opening, closing = "[", "]"
+    elif tokens[index].text in ("alignas", "__attribute__", "__declspec") and index + 1 < len(tokens) \
+            and tokens[index + 1].text == "(":
+        opening, closing = "(", ")"
+        index += 1
+    else:
+        return index
+    depth = 0
+    while index < len(tokens):
+        depth += {opening: 1, closing: -1}.get(tokens[index].text, 0)
+        index += 1
+        if depth == 0:
+            return index
+    return index
+
+
+def qualified_name_at(tokens: list[tsast.Token], index: int) -> tuple[bool, NsPath, int]:
+    """Return (is_global, parts, index after the name) for the qualified name that starts at a token."""
+    is_global = index < len(tokens) and tokens[index].text == "::"
+    index += is_global
+    parts: list[str] = []
+    while index < len(tokens) and tokens[index].kind == "identifier":
+        parts.append(tokens[index].text)
+        if index + 2 < len(tokens) and tokens[index + 1].text == "::" and tokens[index + 2].kind == "identifier":
+            index += 2
+            continue
+        index += 1
+        break
+    return is_global, tuple(parts), index
+
+
+def token_heads(rel: str, tokens: list[tsast.Token]) -> tuple[list[Head], list[int]]:
+    """Return each class definition head in a token list, and the row of each namespace named host it opens.
+
+    A head is a class key, its attribute groups and a qualified name, then
+    `final`, `{` or `:`.  The body has no enclosing namespace, because a
+    macro can expand anywhere, so a relative qualifier reads only as written.
+    """
+    heads: list[Head] = []
+    opened: list[int] = []
+    for index, token in enumerate(tokens):
+        if token.text not in CLASS_KEYS and token.text != "namespace":
+            continue
+        after = index + 1
+        while (skipped := attribute_end(tokens, after)) != after:
+            after = skipped
+        _, parts, after = qualified_name_at(tokens, after)
+        if not parts or after >= len(tokens):
+            continue
+        if token.text == "namespace":
+            if tokens[after].text == "{" and parts[-1] == "host":
+                opened.append(token.row)
+        elif tokens[after].text in ("final", "{", ":"):
+            heads.append(Head(parts[-1], rel, token.row + 1, (parts,)))
+    return heads, opened
+
+
+def macro_heads(root: Path, trees: list[tsast.Tree]) -> tuple[list[Head], list[str]]:
+    """Return each class definition in the macro bodies of some trees, and a line for each body that opens host.
+
+    Complexity: one parse of every macro body of the trees, in at most three
+    kit runs, plus a token pass over each body.
+    """
+    heads: list[Head] = []
     problems: list[str] = []
-    for tree in tsast.parse([root / rel for rel in hinted], strict=False):
+    for body in tsast.macro_bodies(trees):
+        rel = str(Path(body.define.tree.path).relative_to(root))
+        values = [child for child in body.define.children if child.field == "value"]
+        raw = tsast.pp_tokens(body.define.tree.slice(values[0].start, values[-1].end), body.first_row)
+        is_split = [token.text for token in raw] != [token.text for token in tsast.pp_tokens(body.text)]
+        if body.is_parsed and not is_split:
+            heads += parsed_heads(rel, body.root, lambda node, body=body: body.origin(node)[0])
+            continue
+        found, opened = token_heads(rel, raw)
+        heads += found
+        problems += [f"MACRO     {rel}:{row + 1} — the macro {body.name} opens a namespace named host, and the guard "
+                     f"cannot read what its expansion defines.  Define the owner in its roster file without a "
+                     f"macro." for row in opened]
+    return heads, problems
+
+
+def scan(root: Path) -> tuple[list[tuple[str, str, int]], list[str]]:
+    """Return every owner definition as (owner, path, line), and a line for each problem.
+
+    Complexity: one parse of each file under the scan roots, and one parse
+    of each macro body.
+    """
+    aliases = Aliases()
+    heads: list[Head] = []
+    problems: list[str] = []
+    chunk: list[tsast.Tree] = []
+    for tree in tsast.parse([root / rel for rel in scope_files(root)], strict=False):
         rel = str(Path(tree.path).relative_to(root))
         if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot see its "
-                                f"owner definitions: {tree.diagnostic}")
-                continue
-            found += [(owner, rel, line) for owner, line in text_definitions(texts[rel], aliases)]
+            problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot see its owner "
+                            f"definitions: {tree.diagnostic}")
             continue
-        found += [(owner, rel, line) for owner, line in definitions(tree, aliases)]
-    return found, problems
+        aliases.add(tree)
+        heads += parsed_heads(rel, tree.root, lambda node: node.start[0])
+        if next(tree.find("preproc_def", "preproc_function_def"), None) is not None:
+            chunk.append(tree)
+        if len(chunk) >= MACRO_CHUNK:
+            found, failed = macro_heads(root, chunk)
+            heads, problems, chunk = heads + found, problems + failed, []
+    found, failed = macro_heads(root, chunk)
+    heads, problems = heads + found, problems + failed
+    owners = [(head.owner, head.rel, head.line) for head in heads
+              if any(names_host(path, aliases) for path in head.paths)]
+    return sorted(owners, key=lambda owner: (owner[1], owner[2], owner[0])), problems
 
 
 def check(root: Path) -> int:
@@ -310,23 +377,38 @@ def self_test() -> int:
         write(root, "src/Uses.cpp", "int n = foundation::effects::host::InitOwner::key();\n")
         write(root, "src/OtherAlias.cpp", "namespace q = foundation::effects;\nstruct q::Unrelated {};\n"
                                           "namespace host_like = foundation::effects;\nstruct host_like::Other {};\n")
+        write(root, "src/MacroText.cpp", '#define TEXT "struct foundation::effects::host::InitOwner {}"\n'
+                                         "#define FRIEND friend struct ::foundation::effects::host::InitOwner;\n"
+                                         "#define OTHER struct foundation::effects::Other {}\n")
         expect(root, 0, "2 owner definition(s)",
-               "each owner in its roster file, uses, a friend and a class through an alias of another namespace pass")
+               "each owner in its roster file, uses, a friend, a class through an alias of another namespace, a "
+               "macro string, a macro friend and a macro class elsewhere pass", True)
 
         forgeries = {
             "src/Qualified.cpp": "struct foundation::effects::host::InitOwner { static int key(); };\n",
             "src/Reopened.cpp": "namespace foundation::effects::host { struct BackgroundOwner {}; }\n",
             "src/Nested.cpp": "namespace foundation { namespace effects { inline namespace v1 {} namespace host {\n"
                               "class ForegroundOwner\n{\n};\n} } }\n",
+            "src/InlineHost.cpp": "namespace foundation::effects { inline namespace v2 { namespace host {\n"
+                                  "struct InitOwner {}; } } }\n",
             "src/Alias.cpp": "namespace fe = foundation::effects;\nstruct fe::host::InitOwner {};\n",
+            "src/AliasComment.cpp": "namespace fe = foundation:: /*c*/ effects;\nstruct fe::host::InitOwner {};\n",
             "src/Using.cpp": "using namespace foundation::effects;\nstruct host::ForegroundOwner {};\n",
-            "src/Macro.cpp": "#define FORGE struct foundation::effects::host::InitOwner {}\nFORGE;\n",
+            "src/AttributeHead.cpp": "struct [[nodiscard]] foundation::effects::host::InitOwner {};\n",
             "src/Commented.cpp": "struct foundation::effects::/* hidden */host::\n    InitOwner { };\n",
+            "src/SplicedName.cpp": "struct foundation::effects::host::Init\\\nOwner { };\n",
             "src/HostAlias.cpp": "namespace h = foundation::effects::host;\nstruct h::InitOwner {};\n",
             "src/ChainAlias.cpp": "namespace e = ::foundation::effects;\nnamespace h2 = e::host;\n"
                                   "namespace h3 = h2;\nstruct h3::ForegroundOwner {};\n",
+            "src/Macro.cpp": "#define FORGE struct foundation::effects::host::InitOwner {}\nFORGE;\n",
             "src/MacroAlias.cpp": "namespace hm = foundation::effects::host;\n"
                                   "#define FORGE_ALIAS struct hm::BackgroundOwner {}\nFORGE_ALIAS;\n",
+            "src/MacroNamespace.cpp": "#define FORGE namespace foundation::effects::host { struct InitOwner {}; }\n",
+            "src/MacroAttribute.cpp": "#define FORGE struct [[nodiscard]] foundation::effects::host::InitOwner {}\n",
+            "src/MacroSplice.cpp": "#define FORGE struct \\\n    foundation::effects::host::InitOwner {}\n",
+            "src/MacroSplicedName.cpp": "#define FORGE struct foundation::effects::host::Init\\\nOwner {}\n",
+            "src/MacroComment.cpp": "#define FORGE struct foundation:: /* c */ \\\n    effects::host::InitOwner {}\n",
+            "src/MacroPasted.cpp": "#define FORGE(x) struct foundation::effects::host::InitOwner { int x##_; }\n",
         }
         for rel, text in forgeries.items():
             write(root, rel, text)
@@ -338,13 +420,18 @@ def self_test() -> int:
                True)
         (root / "include/foundation/effects/Alias.h").unlink()
         (root / "src/CrossFile.cpp").unlink()
+        write(root, "src/MacroOpens.cpp", "#define OPEN_HOST namespace foundation::effects::host {\n")
+        expect(root, 1, "MACRO     src/MacroOpens.cpp:1 — the macro OPEN_HOST opens a namespace named host",
+               "a macro that opens host fails", True)
+        (root / "src/MacroOpens.cpp").unlink()
 
         write(root, "test/foundation/neg/neg_forge_owner.cpp",
               "struct foundation::effects::host::InitOwner {};\n")
         write(root, "src/Declares.cpp", "namespace foundation::effects::host { struct InitOwner; }\n"
                                         "// struct foundation::effects::host::InitOwner {};\n"
                                         'const char* s = "struct host::InitOwner {}";\n')
-        expect(root, 0, "2 owner definition(s)", "a negative fixture, a declaration, a comment and a string pass")
+        expect(root, 0, "2 owner definition(s)", "a negative fixture, a declaration, a comment and a string pass",
+               True)
 
         write(root, ROSTER, "# planted\n"
               "InitOwner — include/foundation/effects/Effect.h — the init context\n"
