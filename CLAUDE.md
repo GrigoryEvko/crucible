@@ -1,7 +1,9 @@
 # The Crucible Runtime
-*Adaptive ML infrastructure.*
+*Adaptive infrastructure for HPC and ML programs.*
 
 Three layers: **Hardware** — compute nodes, heterogeneous and replaceable. **The Model** — weights and computation graphs. **Crucible** — the runtime that abstracts hardware, persists state across node failures, and migrates to new devices.
+
+**Scope.** Crucible is for general scientific and commercial high-performance computing (HPC) programs, and also for machine learning (ML) programs. The PyTorch Vessel is the first front-end adapter, and at this time it is the only one. More front-end adapters will follow. Most layer sections of this file describe the ML path, because that path came first.
 
 Python describes. Crucible executes. The 492,000 lines of framework overhead between them become unnecessary. There is no training or inference — there is only a model in Crucible.
 
@@ -71,7 +73,7 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<T*>` / `BoundedMonotonic<T, Max>` / `Ord
 
 **Verification harness.** `test/test_migration_verification.cpp` is a single TU asserting cross-cutting properties (sizeof preservation, forwarder fidelity, cross-composition, GradedWrapper concept satisfaction) for all 10 migrated wrappers + the SharedPermission façade. `test/test_concept_cheat_probe.cpp` runs 18 adversarial cheats against the concept; build only succeeds when every cheat is correctly rejected (or documented as architectural limit).
 
-**Soundness via measurement, not proof.** Numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance fails the build.
+**Soundness via measurement, not proof.** Numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance fails the build. The `BITEXACT_TC` tier has a hardware limit, and §L2 states it: FP16 and BF16 tensor-core fragments are not bit-identical across vendors. No compute backend exists at this time, so the matrix does not run.
 
 **No external SMT dependency.** Crucible ships no Z3, no CVC5, no third-party SMT solver. The `verify` CMake preset is reserved for an internal small-SMT solver (deferred — interim: contract-only enforcement at boundaries) that will discharge residual integer / Presburger obligations only — bounds, divisibility, modular arithmetic, the same narrow scope TVM Analyzer (PR #1367) uses. Default budget 5 ms per query; not on the hot path. Out of scope (and never planned): kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems handled by the cross-vendor CI harness (MIMIC.md §41), not theorem proving.
 
@@ -101,11 +103,15 @@ GPUs are ecosystems: tensor cores (1000 TFLOPS FP16 on H100), scalar ALUs (60 TF
 
 Current frameworks: static lookup (op + dtype → library kernel). Same kernel for 64×64 and 8192×8192, A100 and 3090, contiguous and transposed. No adaptation.
 
-**Forge + Mimic replace the vendor stack.** `Forge` (vendor-agnostic optimizer, FORGE.md) lowers IR001 tensor DAG to IR002 portable kernel DAG with pinned `NumericalRecipe` — same IR002 kernel produces ULP-bounded-equivalent or bit-exact results on every supported chip. `Mimic` (per-vendor backend, MIMIC.md) emits native ISA from IR002: `mimic/nv/` (Hopper/Blackwell SASS), `mimic/am/` (CDNA3+/RDNA3+ AMDGPU), `mimic/tpu/` (TPU executable), `mimic/trn/` (NEFF), `mimic/cpu/` (reference oracle). No vendor libraries: zero cuBLAS, zero cuDNN, zero NCCL, zero libtpu — only kernel-driver ioctls.
+**Forge + Mimic replace the vendor stack.** `Forge` (vendor-agnostic optimizer, FORGE.md) lowers the IR001 tensor DAG to the IR002 portable kernel DAG with a pinned `NumericalRecipe`. The same IR002 kernel gives bit-exact results, or results inside a bound in units in the last place (ULP), on every supported chip. The numerics paragraph of this section states the limit for tensor-core fragments. `Mimic` (per-vendor backend, MIMIC.md) emits native ISA from IR002: `mimic/nv/` (Hopper/Blackwell SASS), `mimic/am/` (CDNA3+/RDNA3+ AMDGPU), `mimic/tpu/` (TPU executable), `mimic/trn/` (NEFF), `mimic/cpu/` (reference oracle). No vendor libraries: zero cuBLAS, zero cuDNN, zero NCCL, zero libtpu — only kernel-driver ioctls.
 
 **MAP-Elites kernel search** replaces autotuning. Six behavior axes (occupancy, register usage, smem usage, pipeline depth, MMA shape family, warp-group split) × 8 buckets each = ~260K cells, typically 500-5K populated per kernel family. Per-vendor three-tier simulator (fast ~1-5 ms / medium ~10-30 ms / accurate ~100-500 ms) calibrated to 95-98% against real silicon via hardware-counter probes (CUPTI / rocprof / PJRT profiler / neuron-profile). Insight-driven mutations — structured diagnostics (WGMMA_UNDERUTILIZED, REGISTER_PRESSURE_HIGH, L2_QUEUE_SATURATED, ~40 kinds) map to concrete mutation operators. Hybrid mode validates top-K archive cells on real hardware.
 
-**Cross-vendor numerics CI (MIMIC.md §41)** enforces the portability contract. Every (KernelKind × NumericalRecipe × target) triple compiled, executed, output-compared pairwise against CPU scalar-FMA oracle. `BITEXACT_STRICT` → 0 bytes diff; `BITEXACT_TC` → ≤1 ULP; `ORDERED` → per-recipe tolerance. A backend that violates tolerance fails the build.
+**Cross-vendor numerics CI (MIMIC.md §41)** enforces the portability contract. Every (KernelKind × NumericalRecipe × target) triple compiled, executed, output-compared pairwise against CPU scalar-FMA oracle. `BITEXACT_STRICT` permits a difference of 0 bytes, and `ORDERED` permits the tolerance of its recipe. A backend that violates tolerance fails the build.
+
+**The limit of `BITEXACT_TC`.** `include/crucible/NumericalRecipe.h` defines `BITEXACT_TC` as short tensor-core fragments with a pinned outer scalar reduction, and at most one ULP of difference. That bound holds only for exact fragments: integer matrix multiply-accumulate (MMA), FP64 or FP32 MMA, or inputs split so that each product is exact. FP16 and BF16 tensor-core fragments are not bit-identical across vendors or across GPU generations. Their fused width, the truncation of the fused sum and the rounding are different for the same inputs.
+
+Bit-accurate models of ten GPU architectures (MMA-Sim, arXiv 2511.10909) and the FTTN tests (arXiv 2403.00232) show this. In MMA-Sim, only FP64 and FP32 MMA agree on every architecture. The starter recipes `f16_f32accum_tc` and `bf16_f32accum_tc` in `include/crucible/RecipeRegistry.h` have `BITEXACT_TC`, so the hardware does not give the tier that they have.
 
 **KernelCache:** maps (content_hash, device_capability) → CompiledKernel. Content-addressing: identical ops on identical shapes produce identical hashes. Reuse across iterations, runs, models sharing sub-computations, even organizations. Multiple variants coexist per hash; best selected per device, alternatives benchmarked during dead time. Cache grows monotonically across restarts. Lock-free open-addressing hash table — zero overhead on hot path.
 
@@ -152,29 +158,33 @@ Per-tensor, optimal, no manual `torch.utils.checkpoint()`. Threshold adapts to m
 
 **The atomic unit. What happens when Python says `x + y`.**
 
-Every PyTorch op dispatches through the Dispatcher's priority-ordered function pointer table. `DispatchKey::Conductor` intercepts above backend keys.
+Every PyTorch op dispatches through the Dispatcher's priority-ordered function pointer table. `DispatchKey::Crucible` intercepts each operation above the backend keys. The patched PyTorch fork adds that key, and `vessel/torch/register.cpp` registers one recording kernel for each of the 3110 ATen operators of the fork.
 
 **RECORD mode** (6 steps, ~20ns total):
 1. Snapshot input TensorMeta (shapes, strides, dtype, device, data_ptr). Handle TensorList unpacking. Encode scalars as int64 (up to 5 inline).
 2. Compute schema_hash (op name) and shape_hash (input sizes).
 3. Execute eagerly via redispatch.
 4. Snapshot output TensorMeta.
-5. Append to MetaLog (SPSC buffer, 1M entries, ~144MB).
+5. Append to MetaLog (an SPSC buffer of 1M entries at 168 bytes each, about 176 MB).
 6. Record to TraceRing (64-byte cache-line-aligned entry).
 
-**COMPILED mode** (~2ns total):
+**COMPILED mode, as built.** The backend still does each operation immediately, in eager mode. The kernel in `vessel/torch/record_kernel.h` redispatches the operation first, and then it gives the trace entry to `Vigil::dispatch_op`. The Vigil compares the schema hash and the shape hash with the next operation of the compiled region, and it moves the replay cursor forward. If the hashes are different, the Vigil tries a cached region that agrees with the operation at that position. If no cached region agrees, the Vigil changes to RECORDING mode and does not record the divergent operation.
+
+**COMPILED mode, as planned** (Phase 4 of the Development Plan, ~2ns total):
 1. Advance op index
 2. Check guard: `compiled_trace[idx].schema_hash == current?` — if not, DIVERGE
-3. Push pre-allocated shadow handles (ConductorTensorImpl with correct metadata, pointing into memory plan)
+3. Push pre-allocated shadow handles (a shadow TensorImpl with correct metadata, pointing into memory plan)
 4. Return. No execution, no allocation.
 
-GPU executes compiled kernels asynchronously on streams, decoupled from Python.
+In the plan, the compiled kernels operate on GPU streams, independently of Python.
 
 **Graduated divergence detection:**
 - schema_hash mismatch → hard diverge, immediate eager fallback
 - shape_hash mismatch → hard diverge (dynamic shapes changed)
 - scope_hash mismatch → soft warning (different module, same ATen op)
 - callsite_hash mismatch → softest warning (refactored code, identical behavior)
+
+The replay guard compares only the schema hash and the shape hash. The two warnings on the scope hash and the callsite hash are planned, and no code gives them.
 
 Pre-emptive: prepare eager path before confirming compilation is broken.
 
@@ -197,11 +207,11 @@ No training/inference distinction at L4 — same fallback, same recording, same 
 
 **Metadata, shadow handles, and the latent space.**
 
-**ConductorTensorImpl (shadow handle):** real PyTorch tensor with correct metadata (shape, strides, dtype, device) but storage points into pre-planned memory pool. Data written asynchronously by compiled kernels. Python holds the shadow, inspects metadata, passes to next op (which returns another shadow in COMPILED mode). Not a future — a full TensorImpl with `DispatchKey::Conductor`.
+**Shadow handle (planned, Phase 4).** No shadow handle exists at this time, and COMPILED mode gives real tensors (refer to L4). The plan: a real PyTorch tensor with correct metadata (shape, strides, dtype, device) but storage points into pre-planned memory pool. Data written asynchronously by compiled kernels. Python holds the shadow, inspects metadata, passes to next op (which returns another shadow in COMPILED mode). Not a future — a full TensorImpl with `DispatchKey::Crucible`.
 
-**Sync points** (the only moments Python blocks): `.item()`, `.cpu()`, `.numpy()`, `print()`, conditionals on values, unrecognized ops. Everything else is shadow. 1000 ops with 1 `loss.item()`: 999 shadow returns (~2μs) + 1 sync (~10μs). Python wall time: ~12μs vs ~15ms eager.
+**Sync points** (in the plan, the only moments Python blocks): `.item()`, `.cpu()`, `.numpy()`, `print()`, conditionals on values, unrecognized ops. Everything else is shadow. 1000 ops with 1 `loss.item()`: 999 shadow returns (~2μs) + 1 sync (~10μs). Python wall time: ~12μs vs ~15ms eager.
 
-**TensorMeta:** 144 bytes/tensor — sizes[8], strides[8], data_ptr, ndim, dtype, device_type, device_idx. Lives in MetaLog parallel to TraceRing. Sparse tensor shadows (COO, CSR/CSC/BSR/BSC) extend the same pattern.
+**TensorMeta:** 168 bytes/tensor (`include/crucible/TensorMeta.h`) — sizes[8], strides[8], data_ptr, ndim, dtype, device_type, device_idx, layout, requires_grad, flags, output_nr, storage_offset, version, storage_nbytes, grad_fn_hash. Lives in MetaLog parallel to TraceRing. Sparse tensor shadows (COO, CSR/CSC/BSR/BSC) extend the same pattern.
 
 **Latent space is observable** (during recording, actual data is available):
 - **Intrinsic dimensionality:** PCA on activations reveals effective rank per layer. A 4096-dim state might use only 600 dims → 3496 wasted.
@@ -504,7 +514,7 @@ Goal: complete the L0 structural-guarantee layer — axioms, safety wrappers, se
 Goal: vendor-agnostic optimizer + per-vendor backend framework per FORGE.md / MIMIC.md. No dependency on 2a; the two phases proceed in parallel.
 
 - **IR002 scaffolding** (FORGE.md §18): `KernelGraph`, `KernelNode`, `NumericalRecipe` (interned), `TileSpec`, per-kind attrs pools, `ExecutionPlan`, PatchPoint taxonomy (8 kinds), ChainEdge semaphore pool.
-- **Recipe registry** (FORGE.md §20) — `crucible/data/recipes.json` with four-tier determinism per recipe (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT), `native_on` bitmap per chip, `tc_shape_constraint` for BITEXACT_TC recipes.
+- **Recipe registry** (FORGE.md §20) — a compiled table in `include/crucible/RecipeRegistry.h`. It holds eight starter recipes, and the registry interns them into a `RecipePool`. Each recipe has one of four determinism tiers (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A `native_on` bitmap per chip and a `tc_shape_constraint` for BITEXACT_TC recipes are planned, and no field holds them at this time.
 - **Forge 12-phase pipeline** (FORGE.md §5): INGEST → ANALYZE → REWRITE → FUSE → LOWER_TO_KERNELS → TILE → MEMPLAN → COMPILE → SCHEDULE → EMIT → DISTRIBUTE → VALIDATE. Hard wall-clock budgets per phase.
 - **Mimic CPU reference backend first** (correctness oracle): x86_64 AVX512 / aarch64 NEON, scalar-FMA BITEXACT_STRICT always, every higher-tier recipe validated pairwise against CPU output.
 - **Mimic NVIDIA backend** (M2-M9 of MIMIC.md build plan): IR003NV + SASS emitter + three-tier simulator + MAP-Elites + CUPTI calibration harness + runtime library (direct `/dev/nvidia*` ioctls, no libcuda) + collective library (CNTP, no NCCL).
@@ -525,7 +535,7 @@ cooperating surfaces.
 Goal: shadow-handle dispatch and pushbuffer replay — push the foreground past
 recording into a model where the user-visible work per op is just metadata.
 
-- Shadow handles: ConductorTensorImpl with metadata pointing into PoolAllocator.
+- Shadow handles: a shadow TensorImpl with `DispatchKey::Crucible` and with metadata that points into PoolAllocator.
 - Batched kernel launch: accumulate MAP-Elites-selected kernels, one doorbell write per ExecutionPlan.
 - Pushbuffer + PatchPoint + ChainEdge replay: plan composition per CRUCIBLE.md §11.9 and FORGE.md §J.6.
 
@@ -814,7 +824,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 | Feature | Paper | Usage |
 |---|---|---|
-| Contracts (`pre`/`post`/`contract_assert`) | P2900R14 | Every boundary function. Debug `enforce`, Release `observe`; only the TUs listed in CMakeLists.txt SECTION 6b drop to `ignore` |
+| Contracts (`pre`/`post`/`contract_assert`) | P2900R14 | Every boundary function. Debug `enforce`, Release `observe`. Only a TU that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS` changes to `ignore` (§XII names each one) |
 | Erroneous behavior for uninit reads | P2795R5 | Foundation of InitSafe axiom |
 | Partial program correctness | P1494R5 | Contract violation = `std::terminate`, not UB |
 | Trivial infinite loops not UB | P2809R3 | Closes LLVM `while(1){}` → unreachable optimization |
@@ -1028,10 +1038,10 @@ Common flags +
 -DNDEBUG
 -g                                    keep frame info for profiling
 -flto=auto                            whole-program LTO, ~10-20% typical win
--fcontract-evaluation-semantic=observe  evaluate + report — the Release default;
-                                      the handler aborts, so a violation ends
-                                      the process; CMakeLists.txt SECTION 6b
-                                      holds the complete list of TUs that opt out
+-fcontract-evaluation-semantic=observe  the Release default. It does the check
+                                      and reports a violation. The handler
+                                      aborts, so a violation ends the process.
+                                      §XII names the TUs outside this policy.
 -ftree-vectorize                      on by default at -O3
 -fvect-cost-model=unlimited           aggressive auto-vec
 -mprefer-vector-width=512             AVX-512 where HW supports
@@ -1880,7 +1890,7 @@ Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in th
 
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
-| **Impossible** (contract violation) | `pre` / `post` / `contract_assert` | Checked in Debug and in Release; both terminate, because the handler aborts. 0 ns only in a SECTION 6b TU | Null pointer, OOB index, invariant violation |
+| **Impossible** (contract violation) | `pre` / `post` / `contract_assert` | Debug and Release do the check, and both end the process, because the handler aborts. Its cost is 0 ns only in a TU that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS` | Null pointer, OOB index, invariant violation |
 | **Expected-but-rare** | `std::expected<T, E>` return | ~1 ns (branch on `.has_value()`) | Parse error, shape out of bucket, peer timeout |
 | **Catastrophic** | `crucible_abort(msg)` | — | OOM, hardware fault, corrupt state, FLR failure |
 
@@ -1888,9 +1898,16 @@ Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in th
 
 The semantic is set by the build system, never in the source. Debug gets the
 compiler default `enforce`. Release gets `observe`, which evaluates the clause
-and reports through `handle_contract_violation`. A translation unit leaves that
-policy only by appearing in `CRUCIBLE_CONTRACT_IGNORE_TUS` in SECTION 6b at the
-foot of `CMakeLists.txt`, which is the complete and only opt-out list in the tree.
+and reports through `handle_contract_violation`. The `verify` preset sets
+`CRUCIBLE_VERIFY`, and its Release build gets `enforce`. A translation unit
+leaves that policy only through `CRUCIBLE_CONTRACT_IGNORE_OPTIONS`, and two
+places in the tree apply that list:
+
+- SECTION 6b at the foot of `CMakeLists.txt` applies it to the four bench TUs
+  in `CRUCIBLE_CONTRACT_IGNORE_TUS`, and only in a Release build with
+  `CRUCIBLE_BENCH`.
+- `test/CMakeLists.txt` applies it to the `test_pre_post_cost` target in every
+  build, because that test measures the ignore arm of `CRUCIBLE_PRE`.
 
 `observe` does not mean the program keeps running. P2900 says the handler returns
 and execution resumes, but this project's `handle_contract_violation`
@@ -1900,7 +1917,7 @@ so a program that wants true log-and-continue overrides it with a returning
 definition — that is a production failure-policy decision, not a build flag.
 
 ```cmake
-# CMakeLists.txt SECTION 6 — Release default, PUBLIC on the crucible target
+# CMakeLists.txt SECTION 6 — Release default, INTERFACE on the crucible_dialect target
 -fcontract-evaluation-semantic=observe
 
 # CMakeLists.txt SECTION 6b — the opt-out list, one line per exempt TU
@@ -1909,8 +1926,9 @@ set_source_files_properties(${CRUCIBLE_CONTRACT_IGNORE_TUS}
   PROPERTIES COMPILE_OPTIONS "${CRUCIBLE_CONTRACT_IGNORE_OPTIONS}")
 ```
 
-The mechanism is source-file `COMPILE_OPTIONS`, which CMake emits last on the
-compile line, and GCC takes the last `-fcontract-evaluation-semantic` it sees.
+In SECTION 6b, the mechanism is the source-file property `COMPILE_OPTIONS`.
+CMake puts it last on the compile line, and GCC uses the last
+`-fcontract-evaluation-semantic` that it reads.
 
 Do NOT use `#pragma GCC contract_evaluation_semantic`. Earlier revisions of this
 section described a per-file pragma; it never shipped, appears zero times in
@@ -1922,7 +1940,7 @@ callers along with its hot ones.
 the same semantic. Their runtime arm is a `contract_assert`, and a Release
 library does their check as Debug does. `NDEBUG` has no effect on them.
 
-A translation unit in the opt-out list gets `CRUCIBLE_CONTRACT_IGNORE_OPTIONS`
+A translation unit outside that policy gets `CRUCIBLE_CONTRACT_IGNORE_OPTIONS`
 from `cmake/ContractSemantic.cmake`. The list sets the flag and the define
 `CRUCIBLE_CONTRACT_SEMANTIC_IGNORE`, because GCC gives no macro for the
 semantic. With the define, the two macros keep only their consteval trap and
@@ -1979,8 +1997,8 @@ const auto& ck = *r;  // happy path
 // Boundary precondition. NOT always-on: it expands to a P2900
 // `contract_assert`, so the build-system semantic decides whether it
 // checks. Debug enforces. Release observes, which reports through a
-// handler that aborts. Both therefore terminate on violation — except
-// in the TUs listed in SECTION 6b of CMakeLists.txt, where the macro
+// handler that aborts. Both therefore end the process on a violation.
+// In a TU that takes CRUCIBLE_CONTRACT_IGNORE_OPTIONS, the macro
 // compiles to nothing at all.
 #define CRUCIBLE_ASSERT(cond) contract_assert(cond)
 
@@ -2035,17 +2053,17 @@ const auto& ck = *r;  // happy path
 - `CRUCIBLE_ASSERT` — public API entry. Contracts handle it.
 - `CRUCIBLE_DEBUG_ASSERT` — SPSC ring bounds, arena bump sanity, RNG counter — hot path, can't afford a branch.
 - `CRUCIBLE_INVARIANT` — loop trip counts, alignment, range bounds. The optimizer uses it.
-- `CRUCIBLE_PRE` / `CRUCIBLE_POST` — boundary pre/postcondition where the predicate references `this->` members or the return value's pointee. Mandatory replacement for vanilla P2900 `pre()` / `post (r:...)` whenever the consteval-bypass family applies. CONTRACT-100..127 sweep (Decide-cite-discipline) plus the dual-side pre+post audit rule run through this rail.
+- `CRUCIBLE_PRE` / `CRUCIBLE_POST` — boundary pre/postcondition where the predicate references `this->` members or the return value's pointee. Mandatory replacement for vanilla P2900 `pre()` / `post (r:...)` whenever the consteval-bypass family applies. The decide-catalog predicates and the dual-side audit of pre and post use this rail.
 
 #### VC discharge framing — three layers stack
 
 `CRUCIBLE_PRE` / `CRUCIBLE_POST` are the production-level discharge mechanism for verification conditions (VCs) that the type system cannot statically prove. Three layers stack from cheapest to most expensive:
 
 1. **Type-level proof (always-discharge):** `Refined<bounded_above<8>, uint8_t>` proves at construction that the wrapped value is in [0, 8]. Downstream functions that take `Refined<...>` need NO pre clause — the type IS the proof. Cheapest, most preferred form.
-2. **Named predicate cite (catalog discharge):** `CRUCIBLE_PRE(decide::in_range<uint8_t>(idx, 0, 7))` — one of 14 named predicates in `safety/Decide.h` (CONTRACT-020 catalog). Names are grep-discoverable; future hardening (lifting `idx` to `Refined`) propagates through the predicate name once. Cite-discipline migrations follow `CONTRACT-100..127` commit-message tags.
-3. **Anonymous predicate (one-off discharge):** `CRUCIBLE_PRE(p != nullptr && p->ready)` — direct expression, no catalog cite. Acceptable for genuinely bespoke mid-body invariants, but the CONTRACT-* migration sweep prefers (2) so audits can count "operations guarded against integer overflow" via `grep decide::no_overflow_sum`.
+2. **Named predicate cite (catalog discharge):** `CRUCIBLE_PRE(decide::in_range<uint8_t>(idx, 0, 7))` names one of the 24 predicates in `include/foundation/contracts/Decide.h`, in namespace `foundation::decide`. A search finds each name. When a subsequent change lifts `idx` to `Refined`, that change goes through the predicate name one time.
+3. **Anonymous predicate (one-off discharge):** `CRUCIBLE_PRE(p != nullptr && p->ready)` — direct expression, no catalog cite. Use it only for an invariant that no catalog predicate names. Use (2) when you can, because an audit can then count the integer-overflow checks with `grep decide::no_overflow_sum`.
 
-**Dual-side discipline:** every CONTRACT-* migration audits BOTH `CRUCIBLE_PRE` and `CRUCIBLE_POST`. Skip post only with documented rationale: tautological (body IS the post), racy (atomic CAS re-read opens TOCTOU), or structurally-not-guaranteed (XOR-collision corner case). See `feedback_pre_post_dual_discipline.md` for the pattern. Three classes of post recur: state-mutation (`state == new_value` after a setter), result-shape (returned value satisfies a structural invariant), lifecycle reset (ctor/init/clear/destroy returns the structure to a documented invariant).
+**Dual-side discipline:** each migration to these macros does an audit of both `CRUCIBLE_PRE` and `CRUCIBLE_POST`. Skip post only with documented rationale: tautological (body IS the post), racy (atomic CAS re-read opens TOCTOU), or structurally-not-guaranteed (XOR-collision corner case). See `feedback_pre_post_dual_discipline.md` for the pattern. Three classes of post recur: state-mutation (`state == new_value` after a setter), result-shape (returned value satisfies a structural invariant), lifecycle reset (ctor/init/clear/destroy returns the structure to a documented invariant).
 
 **Two known traps:**
 - **Disjunction-vs-implies for null-guarded post:** `decide::implies(p != nullptr, p->status == X)` evaluates BOTH args eagerly under C++ function-call semantics — `p->status` derefs null when p is null. Use C++ short-circuit `||` (`p == nullptr || p->status == X`) when the consequent dereferences a witnessed non-null pointer. See `feedback_decide_implies_eager_eval.md` (UBSan-caught regression on `Tx::activate`, fixed in `9a0fc58`).
@@ -2306,25 +2324,25 @@ GCC 16 has ABI-stable modules but we defer: CMake/ninja integration still maturi
 
 ## XVI. Safety Wrappers
 
-Library types in `include/crucible/safety/` that mechanize the axioms from §II at compile time. Every wrapper is a phantom-type newtype with **zero runtime cost** — `sizeof(Wrapper<T>) == sizeof(T)`, same machine code as the bare primitive under `-O3`. Generated assembly is indistinguishable from the unwrapped equivalent.
+These library types make the axioms from §II true at compile time. They are in `include/fixy/` and in `include/foundation/permissions/`. The old headers in `include/crucible/safety/` have a leading underscore, which identifies them as superseded. Most wrappers add no cost at run time: `sizeof(Wrapper<T>) == sizeof(T)`, and under `-O3` the machine code is that of the bare primitive. A wrapper whose lattice stores its grade per instance, such as `fixy::RecipeSpec<T>`, adds the size of that grade.
 
 ### Header catalog
 
 | Header | Axioms it enforces | Role |
 |---|---|---|
-| `Linear.h` | MemSafe, LeakSafe, BorrowSafe | Move-only `Linear<T>`. `.consume() &&` takes ownership; `.peek() const&` borrows. Construction is `[[nodiscard]]`. |
-| `Refined.h` | InitSafe, NullSafe, TypeSafe | `Refined<Pred, T>`. The mint checks the predicate with a precondition that obeys the contract semantic. Downstream bodies trust the invariant. |
-| `Secret.h` | DetSafe + information-flow discipline | Classified-by-default `Secret<T>`. Escapes only via `declassify<Policy>()` with a grep-able `secret_policy::*` tag. |
-| `Tagged.h` | TypeSafe | Phantom tags for provenance (`source::FromUser`, `source::FromDb`, `source::Internal`) and trust (`trust::Verified`, `trust::Unverified`). Mismatch at call sites = compile error. |
-| `Session.h` | BorrowSafe | Type-state protocol channels. Each `.send()` / `.recv()` returns a new type carrying the remaining protocol. Wrong order or missing step = compile error. State lives in the type; zero runtime cost. |
-| `Checked.h` | TypeSafe, DetSafe | `checked_add` / `wrapping_add` / `trapping_add` over `__builtin_*_overflow`. `std::add_sat` / `std::mul_sat` / `std::sub_sat` pass-through for saturation. |
-| `Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
-| `ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
-| `Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` for lifetime-bound borrows. Factories: `permission_root_mint` / `permission_split` / `permission_combine` / `permission_split_n`. |
-| `PermissionFork.h` | ThreadSafe, BorrowSafe | `permission_fork<Children...>(parent, callables...)` — encodes CSL parallel composition rule as RAII fork-join over `std::jthread`. Constraint: `can_split_into_pack_v<Parent, Children...>`. Returns parent permission after all children join. |
+| `fixy/Qtt.h` | MemSafe, LeakSafe, BorrowSafe | Move-only `Linear<T>`. `.consume() &&` takes ownership; `.peek() const&` borrows. Construction is `[[nodiscard]]`. |
+| `fixy/Refined.h` | InitSafe, NullSafe, TypeSafe | `Refined<Pred, T>`. The mint `mint_refined` checks the predicate with a precondition that obeys the contract semantic. Downstream bodies trust the invariant. |
+| `fixy/Secret.h` | DetSafe + information-flow discipline | Classified-by-default `Secret<T>`. Escapes only via `declassify<Policy>()` with a grep-able `secret_policy::*` tag. |
+| `fixy/Tagged.h` | TypeSafe | Phantom tags in `fixy::tags` for provenance (`source::FromUser`, `source::FromDb`, `source::FromInternal`) and trust (`trust::Verified`, `trust::Unverified`). Mismatch at call sites = compile error. |
+| `fixy/session/Handle.h` | BorrowSafe | `SessionHandle<Proto, Resource>`: type-state protocol channels. Each `.send()` / `.recv()` returns a new type carrying the remaining protocol. Wrong order or missing step = compile error. State lives in the type; zero runtime cost. |
+| `fixy/Checked.h` | TypeSafe, DetSafe | `checked_add` / `wrapping_add` / `trapping_add` over `__builtin_*_overflow`. `std::add_sat` / `std::mul_sat` / `std::sub_sat` pass-through for saturation. |
+| `fixy/Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
+| `fixy/ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
+| `foundation/permissions/Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` in `ReadView.h` for lifetime-bound borrows. Factories: `mint_permission_root`, `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n`, `mint_permission_combine_n` and `mint_permission_share`. |
+| `foundation/permissions/PermissionFork.h` | ThreadSafe, BorrowSafe | `mint_permission_fork<Children...>(ctx, parent, callables...)` is the CSL parallel composition rule, as a fork-join with one `std::jthread` for each child. Its constraint is `CtxFitsPermissionFork<Ctx, Parent, Children...>`, which asks for `can_split_into_pack_v<Parent, Children...>` and a context that has `Effect::Bg`. `mint_permission_fork_inline` does the bodies inline in child order. Each mint gives back the parent permission after all bodies complete. |
 
 Every header is header-only and self-contained. The dependency rule is the layer
-rule, and `scripts/check-layer-boundary.sh` enforces it: `foundation` names only
+rule, and `scripts/check-layer-boundary.py` enforces it: `foundation` names only
 `foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`
 names anything below it.
 
@@ -2353,11 +2371,11 @@ is owed.
 2. **Every resource type wraps in `Linear<T>`** — file handles, mmap regions, TraceRing, channel endpoints, arena-owned objects with drop semantics.
 3. **Every load-bearing predicate gets a named alias** — `PositiveInt`, `NonNullTraceEntry`, `ValidSlotId`, `NonEmptySpan<T>`. Not anonymous refinements at call sites.
 4. **Every classified value wraps in `Secret<T>`** — Philox keys, Cipher encryption keys, private weights, credentials. Declassification requires a `secret_policy::*` tag.
-5. **Every trust-boundary crossing uses `Tagged<T, source::*>`** — deserialized input, network payload, FFI return. Sanitized-only APIs demand `source::Internal`.
+5. **Every trust-boundary crossing uses `Tagged<T, source::*>`** — deserialized input, network payload, FFI return. An API that takes only sanitized input asks for `source::FromInternal`.
 6. **Every fixed-order protocol uses `Session<...>`** — handshakes, init sequences, channel lifecycles, plan-chain acquisition.
 7. **Every append-only or monotonic structure wraps** in `AppendOnly<>` / `Monotonic<T, Cmp>` — event logs, generation counters, version numbers, Cipher warm writes.
 8. **Every crypto path uses `ct::*` primitives** for comparisons and selections. Non-CT code in a `with Crypto` context is a review reject.
-9. **Every concurrent producer/consumer endpoint wraps in `Permission<Tag>`** — handles holding a Permission are `Pinned`; cross-thread handoff goes through `permission_fork` (structured concurrency), `SharedPermissionPool::lend()` (refcounted shared read), or move-into-`std::jthread`-lambda (single owner). Never a raw `std::thread` without a Permission token; never two threads simultaneously calling the same `try_push` on a shared queue without a Permission split. The cache-tier rule (§IX) decides whether to actually parallelize — Permissions just prove the access pattern is sound.
+9. **Every concurrent producer/consumer endpoint wraps in `Permission<Tag>`** — handles holding a Permission are `Pinned`; cross-thread handoff goes through `mint_permission_fork` (structured concurrency), `SharedPermissionPool::lend()` (refcounted shared read), or move-into-`std::jthread`-lambda (single owner). Never a raw `std::thread` without a Permission token; never two threads simultaneously calling the same `try_push` on a shared queue without a Permission split. The cache-tier rule (§IX) decides whether to actually parallelize — Permissions just prove the access pattern is sound.
 
 ### Compiler enforcement
 
@@ -2366,8 +2384,8 @@ is owed.
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
 - Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (Debug) and `semantic=observe` (Release, through a handler that aborts). Under `semantic=ignore` (CRUCIBLE_CONTRACT_IGNORE_OPTIONS) they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
 - Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `Session<>` / `Permission<Tag>` means the compiler rejects accidental duplication.
-- `permission_split`, `permission_combine`, `permission_split_n`, `permission_fork` all `static_assert` on `can_split_into_v` / `can_split_into_pack_v` — splitting into undeclared subregions is a compile error, naming the missing trait specialization in the diagnostic.
-- Contract violations abort via `std::terminate` (P1494R5), never invoke undefined behavior.
+- `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n` and `mint_permission_combine_n` have a `static_assert` on `can_split_into_v` or `can_split_into_pack_v` in their bodies. `mint_permission_fork` has `can_split_into_pack_v` in its constraint `CtxFitsPermissionFork`. A split into subregions that no manifest declares is a compile error.
+- A contract violation ends the process: the handler in `src/foundation/ContractHandler.cpp` calls `std::abort()`. A violation never causes undefined behavior (P1494R5).
 
 ### Review enforcement
 
@@ -2380,44 +2398,57 @@ Rules for code review and grep-guards:
 - A new public API taking raw `int`, `size_t`, `void*`, or `T*` without a wrapper → questioned on review; almost always rewritten.
 - A new resource-carrying type without `Linear<>` → questioned; must have justification.
 - Any `[[unlikely]]` body of more than 8 non-trivial lines without being outlined into a `CRUCIBLE_COLD` helper → reject.
-- A new concurrent producer/consumer pair without a `Permission<Tag>` discipline → questioned; bare `std::thread` + raw atomic SPSC is an old-style pattern; new code uses `Permission<Tag>` for the static safety + `permission_fork` for handoff.
-- A `permission_root_mint<X>()` call site outside `main()` / a Vessel/Keeper init function → reject; root-mint is once-per-program-per-tag and review-discoverable via `grep permission_root_mint<` exactly because of this rule.
+- A new concurrent producer/consumer pair without a `Permission<Tag>` discipline → questioned; bare `std::thread` + raw atomic SPSC is an old-style pattern; new code uses `Permission<Tag>` for the static safety + `mint_permission_fork` for handoff.
+- A `mint_permission_root<X>()` call site outside `main()` / a Vessel/Keeper init function → reject; root-mint is once-per-program-per-tag and review-discoverable via `grep mint_permission_root<` exactly because of this rule.
 - A new `can_split_into<...>` or `can_split_into_pack<...>` specialization in a header far from its tag tree's declaration → questioned; the manifest belongs in the same TU as the tags so reviewers see the whole region tree at one glance.
 - A `Permission<Tag>` stored in a struct field of a type that is itself shared between threads (i.e., not Pinned + not handle-pattern) → reject; defeats linearity.
 - Bypassing `AdaptiveScheduler` to spawn N raw threads when working set is L2-resident → questioned; cache-tier rule (§IX) says sequential wins. Override requires bench evidence and a justification comment.
 
-### Canonical wrapper-nesting order (FOUND-I03)
+### How a graded wrapper is built
 
-Composition is **wrapper-nesting**, not mega-product-lattice. Each `Graded<Modality, Lattice, T>` instantiation is one algebraic slice; multi-axis composition stacks them, outer-to-inner. The order is canonical, not aesthetic — wrapper-nesting is order-sensitive (`Stale<Tagged<T>>` ≢ `Tagged<Stale<T>>`) and the canonical order is what `row_hash` (`safety/diag/RowHashFold.h`, FOUND-I02) folds along when computing federation cache keys. Out-of-order stacks compile fine but produce DIFFERENT row hashes; review questions deviations unless the author documents a deliberate-different-cache-slot intent.
+A grade is a claim about the value, so each door that attaches a grade to a value takes a key. `foundation::algebra::grade_key<Authority>` in `include/foundation/algebra/Graded.h` is that passkey. Its constructors are private and `Authority` is its one friend, so only a member of `Authority` can build a key. Three doors of `Graded` take the key: the two-argument constructor, `inject` of a relative monad, and the keyed `peek_mut`. A search for `grade_key<` therefore lists every site that attaches a grade.
+
+Some doors take no key. If the grade of a lattice says nothing about the bytes, the lattice opens `peek_mut`, the default constructor and `at_bottom()` with no key. Where the grade is the value, or `grade_of` calculates it from the value, the constructor from the value alone takes no key.
+
+A band is an alias over `Graded<Absolute, L::At<Tier>, T>` in `include/fixy/Bands.h`, for example `fixy::DetSafe<Tier, T>` or `fixy::NumericalTier<Tolerance, T>`. The one door of a band is `fixy::mint_band<Band>(value)`. `Band` must name the band exactly, and the authority of the key is a class local to the mint. A search for `mint_band<` therefore lists every site that sets a tier. `fixy::relax<WeakerTier>(band)` moves a band down its lattice and never up.
+
+`fixy::RecipeSpec<T>` is not a band. It stores the tolerance tier and the reduction family at run time, and its one door is `fixy::mint_recipe_spec(value, tier, family)`.
+
+### Canonical wrapper-nesting order
+
+Composition is **wrapper-nesting**, not one large product lattice. Each `Graded<Modality, Lattice, T>` instantiation is one algebraic slice, and a stack of wrappers puts several axes together, outer to inner. The order is canonical, because nesting is order-sensitive: `Stale<Tagged<T>>` and `Tagged<Stale<T>>` are two different types. The row hash folds along the stack, so a stack in a different order compiles but gets a different cache slot. `include/fixy/CanonicalOrder.h` states the order. A site that must have that order uses the concept `fixy::canonical_order::CanonicallyOrdered<Stack>` as a constraint. Review asks why a stack has a different order, unless a comment gives the reason for the separate cache slot.
 
 ```
 HotPath ⊃ DetSafe ⊃ NumericalTier ⊃ Vendor ⊃ ResidencyHeat ⊃
-  CipherTier ⊃ AllocClass ⊃ Wait ⊃ MemOrder ⊃ Progress ⊃
-  Stale ⊃ Tagged ⊃ Refined ⊃ Secret ⊃ Linear ⊃ Computation
+  CipherTier ⊃ AllocClass ⊃ Wait ⊃ Stale ⊃ Tagged ⊃ Refined ⊃
+  Secret ⊃ Linear ⊃ Computation
 ```
+
+The old order also held MemOrder and Progress between Wait and Stale. Neither band has a carrier in the new tree, so the order has no position for them.
 
 Outer wrappers carry "higher-level" properties (where in the system this runs, what tier it serves); inner wrappers are "closer to the value" (provenance tags, refinement predicates, classification, ownership). Reading example bottom-up: the value `T` is wrapped in `Computation<Row, T>` to declare its OS-effect row, then in `Linear<>` to declare exclusive ownership, then in `Secret<>` to mark as classified, and so on outward. Reading top-down: `HotPath<Hot, ...>` says "this lives on the hot path", and the rest of the stack refines what kind of hot-path value.
 
 Worked example — a tensor that comes back from a Bg-context kernel, BITEXACT, NV vendor, hot-path:
 
 ```cpp
-HotPath<HotPathTier::Hot,
-    DetSafe<DetSafeTier::Pure,
-        NumericalTier<NumericalTier::BITEXACT,
-            Vendor<VendorBackend::NV,
-                Computation<Row<Effect::Bg>, ResultTensor>>>>>
+fixy::HotPath<fixy::HotPathTier_v::Hot,
+    fixy::DetSafe<fixy::DetSafeTier_v::Pure,
+        fixy::NumericalTier<fixy::Tolerance::BITEXACT,
+            fixy::Vendor<fixy::VendorBackend_v::NV,
+                foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>,
+                                                 ResultTensor>>>>>
 ```
 
-Each layer EBO-collapses if its grade is a type-level singleton (regime-1 or regime-2 per `algebra/GradedTrait.h`). The 5-deep nest is `sizeof(ResultTensor) + at most a few bytes for non-singleton grades + alignment` — usually exactly `sizeof(T)`.
+Each band has a one-element grade, and the carrier `Computation<R, T>` adds no storage to `T`. The five-deep nest therefore has the size of `ResultTensor`.
 
-**F\*-style named aliases** (FOUND-G79/80, `effects/FxAliases.h`) provide canonical compositions for the common cases — `Pure<int>` is "Progress<Terminating, DetSafe<Pure, Computation<Row<>, int>>>", `Tot<E_os, T>` is "Progress<Terminating, DetSafe<Pure, Computation<E_os, T>>>", etc. Use the aliases at production call sites; the substrate's per-wrapper composition is the authoritative algebraic story but verbose for everyday code.
+**F\*-style named aliases** in `include/fixy/Aliases.h` give names to the common compositions. `Pure<T>` is `DetSafe<DetSafeTier_v::Pure, Computation<PureRow, T>>`, and `Tot<E_os, T>` is `DetSafe<DetSafeTier_v::Pure, Computation<E_os, T>>`. The old forms also had a `Progress` band around them, and the new tree has no `Progress` band. Use the aliases at production call sites, because the full stack is long for everyday code.
 
 **Order-discipline summary:**
 
 1. Wrapper authors construct stacks in canonical order. Deviations question on review unless commented with a deliberate cache-slot-separation rationale.
-2. `row_hash_contribution<W<Inner>>` specializations follow: `combine_ids(<W's tag bits>, row_hash_contribution_v<Inner>)`. The Boost-style combiner is order-sensitive — once a wrapper W ships its specialization, `W<X>` and `X` fold to different hashes, and stacks `W1<W2<T>>` vs `W2<W1<T>>` produce different hashes (different cache slots, different semantics).
-3. `Computation<R, T>` is the innermost member of every effect stack — it is the carrier; everything else is metadata about the carrier. The `row_hash_contribution<Computation<R, T>>` specialization (FOUND-I02-AUDIT) folds the row R "outer" and the payload T's contribution "inner".
-4. **Append-only Universe extension** (FOUND-I04 backlog): adding a new effect atom (e.g., `Effect::Refute`) is permitted only at the next free position; existing atom positions never change. This bounds cache invalidation to entries that actually mention the new atom — `Row<Effect::Bg>` keeps the same hash forever because `Effect::Bg`'s underlying value never changes.
+2. The fold mixes the salt, the modality and the lattice identity of each layer with the contribution of the layer inside it. The combiner is order-sensitive, so `W<X>` and `X` fold to different hashes, and `W1<W2<T>>` and `W2<W1<T>>` fold to different hashes too.
+3. `Computation<R, T>` is the innermost member of every effect stack. It is the carrier, and each other layer is metadata about it. Its specialization in `foundation/diag/RowHash.h` folds the row `R` first and the payload `T` second.
+4. **Append-only extension of the effect enum.** A new effect atom (for example `Effect::Refute`) takes the next free position, and no existing position changes. Cache invalidation then touches only the entries that contain the new atom. `Row<Effect::Bg>` keeps its hash, because the underlying value of `Effect::Bg` does not change.
 
 `Permission<Tag>` is not itself a `Graded` wrapper and does not enter the
 wrapper-nesting stack.  Effectful ownership is connected to Met(X) rows through
@@ -2425,43 +2456,13 @@ wrapper-nesting stack.  Effectful ownership is connected to Met(X) rows through
 template, while row-bearing tags require ctx-bound mints, transfers, splits,
 shares, and pool borrows whose `ExecCtx::row_type` admits the tag row.
 
-**Currently shipped row_hash specializations (FOUND-I02 + FOUND-I02-AUDIT + GAPS-028/029):**
+**How the row hash folds.** `include/foundation/diag/RowHash.h` holds one fold for every graded wrapper, so no wrapper has a specialization of its own. The fold reads the shape that a wrapper publishes: `modality`, `lattice_type` and `value_type`. It mixes a salt and the modality with the canonical identity of the lattice. Then it mixes the result with the contribution of the payload, which recurses into the next layer. A wrapper that also publishes `row_discipline`, such as a sealed refinement, folds that identity between the lattice and the payload. A bare type contributes zero.
 
-- `row_hash_contribution<effects::Row<Es...>>` — sort-fold over Effect underlying values, cardinality-seeded.
-- `row_hash_contribution<effects::Computation<R, T>>` — combine_ids(R-hash, T-hash); payload-blind for bare T, row-discriminating, nested-non-collapsing.
-- `row_hash_contribution<HotPath<Tier, T>>`
-- `row_hash_contribution<DetSafe<Tier, T>>`
-- `row_hash_contribution<NumericalTier<Tier, T>>`
-- `row_hash_contribution<Vendor<Backend, T>>`
-- `row_hash_contribution<ResidencyHeat<Tier, T>>`
-- `row_hash_contribution<CipherTier<Tier, T>>`
-- `row_hash_contribution<AllocClass<Tag, T>>`
-- `row_hash_contribution<Wait<Strategy, T>>`
-- `row_hash_contribution<MemOrder<Tag, T>>`
-- `row_hash_contribution<Progress<Class, T>>`
-- `row_hash_contribution<Stale<T>>`
-- `row_hash_contribution<Tagged<T, Source>>`
-- `row_hash_contribution<Refined<Pred, T>>`
-- `row_hash_contribution<Secret<T>>`
-- `row_hash_contribution<Linear<T>>`
+Other carriers have folds of their own in the same header. The effect row, `Computation<R, T>`, a capability context, `ExecCtx` and `Capability` each have a specialization. A carrier that publishes `row_discipline` and `row_payload` goes to the discipline fold. A session handle publishes the Stepping modality and goes to the stepping fold. The multi-axis binding in `fixy/Fn.h` has its own specialization.
 
-Plus 10 additional Graded-backed wrappers tracked in `DimensionTraits.h` that ship `row_hash_contribution` but are NOT in the §XVI canonical outer→inner order above — they are "off-tree" extensions (Tier-L Representation / Tier-V Version / cross-cutting dimensions) that contributors stack at the position dictated by their dimension:
+The lattice identity is a reflected name, so the graded fold is not portable across toolchains. Peers that can have different toolchains use `federation_key_with_toolchain<T>()` for their keys. `test/fixy/test_row_hash_wrappers.cpp` reads the carrier roster by reflection. It gives an error for each wrapper that folds to zero with no stated reason. `test/foundation/test_row_hash.cpp` holds the algebra of the fold. `tools/dump_row_hashes_foundation.cpp` with its committed golden is the cross-build witness.
 
-- `row_hash_contribution<SealedRefined<Pred, T>>` — Refinement axis, peer to Refined
-- `row_hash_contribution<TimeOrdered<T, N, Tag>>` — Representation (Tier-L), peer to ResidencyHeat
-- `row_hash_contribution<Monotonic<T, Cmp>>` — Mutation axis
-- `row_hash_contribution<AppendOnly<T, Storage>>` — Mutation axis
-- `row_hash_contribution<Consistency<Level, T>>` — Version (Tier-V)
-- `row_hash_contribution<OpaqueLifetime<Scope, T>>` — Lifetime axis
-- `row_hash_contribution<Crash<Class, T>>` — Effect axis
-- `row_hash_contribution<Budgeted<T>>` — Space axis
-- `row_hash_contribution<EpochVersioned<T>>` — Version (Tier-V)
-- `row_hash_contribution<NumaPlacement<T>>` — Representation (Tier-L)
-- `row_hash_contribution<RecipeSpec<T>>` — Precision axis
-
-All 26 entries in `DimensionTraits.h` ship `row_hash_contribution`; the 16 canonical wrappers above plus the 10 off-tree extensions. Nested compositions hash differently based on wrapper order — `Stale<Tagged<T>>` and `Tagged<Stale<T>>` produce distinct federation-cache-slot keys. The discipline is regression-tested in `test/test_migration_verification.cpp` nesting-order cells per GAPS-029.
-
-`safety/DimensionTraits.h` pins the wrapper × lattice × modality × tier quadruple for every shipped Graded-backed safety wrapper via `wrapper_dimension<W>`, `wrapper_tier_v<W>`, and `verify_quadruple<W>()` (GAPS-091). `TimeOrdered<T, N, Tag>` is deliberately Tier-L (`Representation`) over `HappensBeforeLattice<N, Tag>`; `EpochVersioned<T>` is deliberately Tier-V (`Version`) over the epoch/generation product lattice.
+The old `include/crucible/safety/_DimensionTraits.h` gave the wrapper, lattice, modality and tier of each wrapper. It is superseded, and the new tree has no equivalent of it.
 
 ### GCC 16 contracts — implementation gotchas
 
@@ -2483,9 +2484,9 @@ constexpr R(int x)
     : v{x} {}
 ```
 
-**`-fcontracts` and `-freflection` require `-std=c++26`.**  CMake's compiler-probe step runs before the project's `CMAKE_CXX_STANDARD` takes effect, so putting these flags in `CMAKE_CXX_FLAGS` via the preset breaks configuration.  Instead, set them at target level via `target_compile_options(crucible INTERFACE -freflection -fcontracts)` after `project()` has declared the standard.
+**`-fcontracts` and `-freflection` require `-std=c++26`.**  CMake's compiler-probe step runs before the project's `CMAKE_CXX_STANDARD` takes effect, so putting these flags in `CMAKE_CXX_FLAGS` via the preset breaks configuration.  The root `CMakeLists.txt` sets them at target level instead, with `target_compile_options(crucible_dialect INTERFACE -freflection -fcontracts)` after `project()` declares the standard.
 
-**`handle_contract_violation` must be defined by the program.**  GCC 16 / libstdc++ 16 does not ship a default handler.  Every program that enables contracts must provide one; otherwise the link fails with `undefined reference to handle_contract_violation(std::contracts::contract_violation const&)`.  The project default belongs in a shared `CrucibleContractHandler.cpp` wired to `crucible_abort()`.
+**`handle_contract_violation` must be defined by the program.**  GCC 16 / libstdc++ 16 does not ship a default handler.  Every program that enables contracts must provide one; otherwise the link fails with `undefined reference to handle_contract_violation(std::contracts::contract_violation const&)`.  The project default is `src/foundation/ContractHandler.cpp`, a weak definition that ends in `std::abort()`.
 
 ```cpp
 #include <contracts>
@@ -2522,7 +2523,7 @@ template for (constexpr auto m : members) { ... }
 
 **Clangd parses with stale config after a toolchain swap.**  After dropping Clang from the presets, IDE diagnostics may still show `Unknown argument: '-freflection'` and `'__config_site' file not found` errors.  Delete `build/compile_commands.json` and reconfigure: `rm -rf build && cmake --preset default` so clangd re-reads the new compile flags.  The actual build is unaffected.
 
-**Runtime libstdc++ resolution.**  Binaries compiled with the local GCC 16 tree link against that tree's `libstdc++.so.6` which is newer than the system's.  Without an rpath, they fail at runtime.  The `default` preset's `CMAKE_EXE_LINKER_FLAGS` / `SHARED_LINKER_FLAGS` / `MODULE_LINKER_FLAGS` all carry `-Wl,-rpath,$(gcc16 prefix)/usr/lib64`; verify with `readelf -d build/test/test_X | grep RUNPATH`.
+**Runtime libstdc++ resolution.**  Binaries compiled with the local GCC 16 tree link against that tree's `libstdc++.so.6` which is newer than the system's.  Without an rpath, they fail at runtime.  `cmake/Toolchain-gcc16.cmake` sets `CMAKE_EXE_LINKER_FLAGS_INIT`, `CMAKE_SHARED_LINKER_FLAGS_INIT` and `CMAKE_MODULE_LINKER_FLAGS_INIT` to an rpath that it calculates from the GCC prefix: `<prefix>/usr/lib64` and `<prefix>/lib64`. To make sure of the rpath, use `readelf -d build/test/test_X | grep RUNPATH`.
 
 ### What the wrappers do not cover
 
@@ -2694,7 +2695,7 @@ The `mint_*` prefix is load-bearing. It marks every site where the type system v
 
 The convention has TWO modes, distinguished by whether the mint threads ctx-driven policy:
 
-- **Token mint** — synthesizes a fresh authoritative token whose authority derives from a parent token (or root authority). NO Ctx parameter; no `CtxFitsX` gate. Examples: `mint_permission_root<Tag>()`, `mint_permission_split<L,R>(parent)`, `mint_cap<E>(source)`, `mint_session_handle<Proto>(res)`.
+- **Token mint** — synthesizes a fresh authoritative token whose authority derives from a parent token (or root authority). It has no `CtxFitsX` gate. A permission token mint takes an optional leading context, and a tag that declares a non-empty effect row makes that context necessary. Examples: `mint_permission_root<Tag>()`, `mint_permission_split<L,R>(parent)`, `mint_cap<E>(source)`, `mint_session_handle<Proto>(res)`.
   - Note that `mint_permission_split` and `mint_permission_combine` consume a parent token and produce fresh children/parent — the children/parent are authoritative tokens that didn't exist before the call. Mint applies even though the operation is shape-preserving decomposition/composition.
 
 - **Ctx-bound mint** — threads ctx-driven policy through the constructed type. Ctx is the FIRST parameter; the requires-clause is a single `CtxFitsX<X, Ctx>` concept. Examples: `mint_from_ctx<E>(ctx)`, `mint_session<Proto>(ctx, res)`, `mint_permissioned_session<Proto>(ctx, res, perms...)`, `mint_substrate_session<...>(ctx, handle)`, `mint_endpoint<...>(ctx, handle)`.
@@ -2703,36 +2704,36 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 
 | Status | Layer | Mint | Concept gate | Returns |
 |---|---|---|---|---|
-| ✅ | Permission token | `mint_permission_root<Tag>()` | (none — root authority) | `Permission<Tag>` |
-| ✅ | Permission token | `mint_permission_split<L, R>(parent)` | `can_split_into<P, L, R>` | `pair<Permission<L>, Permission<R>>` |
-| ✅ | Permission token | `mint_permission_combine<P>(l, r)` | `can_split_into<P, L, R>` | `Permission<P>` |
-| ✅ | Permission token | `mint_permission_split_n<...>(parent)` | `can_split_into_pack<...>` | `tuple<Permission<...>...>` |
-| ✅ | Permission token | `mint_permission_combine_n<P>(...)` | `can_split_into_pack<...>` | `Permission<P>` |
-| ✅ | Permission token | `mint_permission_share<Tag>(p, pool)` | (none — fractional from pool) | `SharedPermission<Tag>` |
-| ✅ | Ctx-bound permission token | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `CtxFitsPermissionFork<Ctx, P, Children...>` (`IsExecCtx` + `row_contains<Bg>` + `can_split_into_pack`) | `Permission<parent>` (after inline run or join) |
+| ✅ | Permission token | `mint_permission_root<Tag>([ctx])` | `PermissionRootArgs<Tag, Args...>` | `Permission<Tag, Brand>` with a fresh brand |
+| ✅ | Permission token | `mint_permission_split<L, R>([ctx,] parent)` | `PermissionSplitArgs<L, R, Args...>`; the body asserts `can_split_into_v<P, L, R>` | `pair<Permission<L, Brand>, Permission<R, Brand>>` |
+| ✅ | Permission token | `mint_permission_combine<P>([ctx,] l, r)` | `PermissionCombineArgs<P, Args...>`; the body asserts `can_split_into_v<P, L, R>` | `Permission<P, Brand>` |
+| ✅ | Permission token | `mint_permission_split_n<Children...>([ctx,] parent)` | `PermissionSplitNArgs<tuple<Children...>, Args...>`; the body asserts `can_split_into_pack_v<P, Children...>` | `tuple<Permission<Children, Brand>...>` |
+| ✅ | Permission token | `mint_permission_combine_n<P>([ctx,] children...)` | `PermissionCombineNArgs<P, Args...>`; the body asserts `can_split_into_pack_v<P, Children...>` | `Permission<P, Brand>` |
+| ✅ | Permission token | `mint_permission_share([ctx,] perm)` | `PermissionShareArgs<Args...>`; an untracked share, with no pool | `SharedPermission<Tag, Brand>` |
+| ✅ | Ctx-bound permission token | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `CtxFitsPermissionFork<Ctx, P, Children...>` (the inline gate plus `CtxOwnsCapability<Ctx, Effect::Bg>`) | `Permission<P, Brand>` after the threads join |
+| ✅ | Ctx-bound permission token | `mint_permission_fork_inline<Children...>(ctx, parent, callables...)` | `CtxFitsPermissionForkInline<Ctx, P, Children...>` (`IsExecCtx`, the context admits each tag, `can_split_into_pack_v`) | `Permission<P, Brand>` after the bodies run in child order |
 | ✅ | Capability token | `mint_cap<E>(source)` | `CanMintCap<E, S>` | `Capability<E, S>` |
-| ✅ | Ctx-bound | `mint_from_ctx<E>(ctx)` | `CtxCanMint<Ctx, E>` | `Capability<E, ctx_cap_t<Ctx>>` |
-| ✅ | Session token | `mint_session_handle<Proto>(res)` | `is_well_formed_v<Proto> ∧ SessionResource<Res>` | `SessionHandle<Proto, Res>` |
-| ✅ | Session token | `mint_channel<Proto>(rA, rB)` | duality + well-formedness | `pair<SessionHandle<Proto,A>, SessionHandle<dual<Proto>,B>>` |
-| ✅ | Session token | `mint_permissioned_session<Proto>(res, perms...)` | `is_well_formed_v<Proto>` | `PermissionedSessionHandle<Proto, PS, Res>` |
-| ✅ | Session token | `mint_producer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Send<T,Continue>>, ...>` |
-| ✅ | Session token | `mint_consumer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Recv<T,Continue>>, ...>` |
-| ✅ | Session token | `mint_chaselev_owner<Deque>(deque, owner_perm)` | substrate-shape | `Deque::OwnerHandle` |
-| ✅ | Session token | `mint_chaselev_thief<Deque>(deque[, proof])` | substrate-shape / fractional proof | `optional<Deque::ThiefHandle>` |
-| ✅ | Session token | `mint_owner_session<Deque>(owner)` | substrate-shape | `PSH<Loop<Select<Send<T,Continue>,Recv<T,Continue>>>, ...>` |
-| ✅ | Session token | `mint_thief_session<Deque>(thief)` | substrate-shape | `PSH<Loop<Recv<Borrowed<T,ThiefTag>,Continue>>, ...>` |
-| ✅ | Ctx-bound | `mint_session<Proto>(ctx, res)` | `CtxFitsPermissionedProtocol<Proto, Ctx, EmptyPermSet>` | `PermissionedSessionHandle<Proto, EmptyPermSet, Res>` |
-| ✅ | Ctx-bound | `mint_permissioned_session<Proto>(ctx, res, perms...)` | `CtxFitsPermissionedProtocol<Proto, Ctx, PermSet<Perms...>>` | `PermissionedSessionHandle<Proto, PermSet<Perms...>, Res>` |
-| ✅ | Ctx-bound | `mint_substrate_session<Substr, Dir>(ctx, handle)` | `IsBridgeableDirection<Substr, Dir> ∧ SubstrateFitsCtxResidency<Substr, Ctx>` | `PSH<default_proto_for_t<...>, ...>` |
-| ✅ | Ctx-bound (Tier 2) | `mint_endpoint<Substr, Dir>(ctx, handle)` | `IsBridgeableDirection<Substr, Dir> ∧ SubstrateFitsCtxResidency<Substr, Ctx>` | `Endpoint<Substr, Dir, Ctx>` |
-| ✅ | Bridge wrap | `mint_recording_session(handle, log, self, peer)` | explicit `requires ::crucible::safety::extract::IsSessionHandle<H>` on each overload (bare SessionHandle / CrashWatchedHandle / PermissionedSessionHandle); tautological via parameter SFINAE, ships for §XXI grep-discoverability (fixy-A2-026) | `RecordingSessionHandle<Proto, R, L>` |
-| ✅ | Bridge wrap | `mint_crash_watched_session<PeerTag>(handle, flag)` | explicit `requires ::crucible::safety::extract::IsSessionHandle<H>` on both overloads (bare SessionHandle / PSH); body retains `require_crash_watched_contract_<Proto,C>()` + `require_crash_survivors_declared_<PeerTag>()` static_asserts as defense-in-depth; PeerTag non-deducible (fixy-A2-026) | `CrashWatchedHandle<Proto, R, PeerTag, LoopCtx>` |
-| ✅ | Tier 3 | `mint_stage<auto FnPtr>(ctx, in, out)` | shape/ctx gate plus `EffectRowMismatch` assertions equivalent to `CtxFitsStage<FnPtr, Ctx>` (≡ `PipelineStage<FnPtr> ∧ IsExecCtx<Ctx> ∧ Subrow<payload_row_t<input_value_type>, Ctx::row_type> ∧ Subrow<payload_row_t<output_value_type>, Ctx::row_type>`) | `Stage<FnPtr, Ctx>` |
-| ✅ | Tier 3 | `mint_pipeline(ctx, stages...)` | chain/ctx gate plus `EffectRowMismatch` assertion equivalent to `CtxFitsPipeline<Ctx, Stages...>` (≡ `IsExecCtx<Ctx> ∧ pipeline_chain<Stages...> ∧ Subrow<pipeline_row_union_t<Stages...>, Ctx::row_type>`; chain folds `stages_chain<S_i, S_{i+1}>` over adjacent pairs) | `Pipeline<Stages...>` |
-| ✅ | Tier 2→3 bridge | `mint_stage_from_endpoints<auto FnPtr>(ctx, in_ep, out_ep)` | `CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp, ProducerEp>` (≡ `PipelineStage<FnPtr> ∧ IsExecCtx<Ctx> ∧ IsConsumerEndpoint<ConsumerEp> ∧ IsProducerEndpoint<ProducerEp> ∧ StageHandlesMatchEndpoints<FnPtr, ConsumerEp, ProducerEp>`); consumes endpoints via `into_handle()`, threads through `mint_stage` | `Stage<FnPtr, Ctx>` |
+| ✅ | Ctx-bound | `mint_from_ctx<E>(ctx)` | `CtxOwnsCapability<Ctx, E>`: the row of the context contains `E` | `Capability<E, cap_type_of_t<Ctx>>` |
+| ✅ | Grade token | `fixy::mint_band<Band>(value)` | `ExactBand<Band>`; the key authority is a class local to the mint | `Band` |
+| ✅ | Grade token | `fixy::mint_recipe_spec(value, tier, family)` | `RecipeSpecPayload<T>` | `RecipeSpec<T>` |
+| ✅ | Session token | `mint_session_handle<Proto>(res)` | `WellFormedRunnableProtocol<Proto> ∧ SessionResource<Res> ∧ PermissionFlowCloses<Proto, EmptyPermSet>` | the first `SessionHandle` of `Proto` over `Res` |
+| ✅ | Ctx-bound | `mint_session<Proto>(ctx, res)` | `CtxFitsSession<Ctx, Proto, Res>` | the first handle of `Proto`, with `EmptyPermSet` |
+| ✅ | Ctx-bound | `mint_permissioned_session<Proto>(ctx, res, perms...)` | `CtxFitsPermissionedSession<Ctx, Proto, Res, Tags...>` (a non-empty tag set) | the first handle of `Proto`, with `PermSet<Tags...>` |
+| ✅ | Ctx-bound | `mint_forked_channel<Proto, SelfTag, PeerTag>(ctx, parent, res_self, res_peer, self_body, peer_body)` | `CtxFitsForkedChannel<Ctx, Proto, Parent, SelfTag, PeerTag>`, plus checks of each resource and each body | `Permission<Parent, Brand>` after the two threads join |
+| ✅ | Ctx-bound | `mint_substrate_session<Substr, Dir>(ctx, std::move(handle))` | `CtxFitsSubstrateSessionMint<Substr, Dir, Ctx>` (`IsBridgeableDirection` and `CtxFitsSession` of the default protocol) | the first handle of `default_proto_for_t<Substr, Dir>` |
+| ✅ | Ctx-bound (Tier 2) | `mint_endpoint<Substr, Dir>(ctx, std::move(handle))` | `CtxFitsEndpointMint<Substr, Dir, Ctx>` (the substrate gate and a copyable context) | `Endpoint<Substr, Dir, Ctx>` |
+| ✅ | Session wrap | `fixy::session::mint_recorded_session(handle, log, self, peer)` | `RecordableHandle<H>` | `Recorded<H>` |
+| ✅ | Session wrap | `fixy::session::mint_crash_session<Proto, Self, Peer>(res, peer_cell)` | `CrashSessionAdmissible<Proto, Self, Peer, Reliable> ∧ SessionResource<Res>` | `CrashWatched<Handle, Self, Peer, Reliable>` over the first handle of `Proto` |
+| ✅ | Tier 3 | `mint_stage<auto FnPtr>(ctx, in, out)` | `CtxFitsStage<FnPtr, Ctx>` (≡ `PipelineStage<FnPtr> ∧ IsExecCtx<Ctx> ∧ StageInputRowAdmitted<FnPtr, Ctx> ∧ StageOutputRowAdmitted<FnPtr, Ctx>`) | `Stage<FnPtr, Ctx>` |
+| ✅ | Tier 3 | `mint_pipeline(ctx, stages...)` | `CtxFitsPipeline<Ctx, Stages...>` (≡ `IsExecCtx<Ctx> ∧ pipeline_chain<Stages...> ∧ decide::row_subset<pipeline_row_union_t<Stages...>, Ctx::row_type>()`) | `Pipeline<Stages...>` |
+| ✅ | Tier 2→3 bridge | `mint_stage_from_endpoints<auto FnPtr>(ctx, in_ep, out_ep)` | `CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp, ProducerEp>` (≡ `CtxFitsStage<FnPtr, Ctx> ∧ IsConsumerEndpoint<ConsumerEp> ∧ IsProducerEndpoint<ProducerEp> ∧ IsMovedEndpoint` for each endpoint `∧ StageHandlesMatchEndpoints<FnPtr, ConsumerEp, ProducerEp>`); it takes each handle through `into_handle()` and calls `mint_stage` | `Stage<FnPtr, Ctx>` |
 | 🔮 | Tier 4 | `mint_vigil<L, D, C>(ctx, parts...)` | per-component fit | `Vigil<L, D, C>` |
 | 🔮 | Tier 5 | `mint_keeper<Vigils...>(ctx, vigils, topo)` | per-Vigil fit | `Keeper<Vigils..., ...>` |
 | 🔮 | Tier 6 | `mint_canopy<Keepers...>(ctx, keepers, mesh)` | per-Keeper fit | `Canopy<Keepers..., ...>` |
+
+The old tree also had SPSC and Chase-Lev session mints: `mint_producer_session`, `mint_consumer_session`, `mint_chaselev_owner`, `mint_chaselev_thief`, `mint_owner_session` and `mint_thief_session`. They are only in superseded headers under `include/crucible/sessions/`. In the new tree, a handle of an SPSC or MPSC channel goes into a session through `mint_substrate_session` or `mint_endpoint`. `mint_channel` is deleted, because it gave the two endpoints of one channel to one caller. A test that operates the two endpoints on one thread uses `mint_test_channel` with a test context.
+
+**Passkeys.** A mint builds its product through a key or a door that only the mint can use. `cap_mint_key` controls the construction of `Capability`. A door class with private static members controls each session wrap. `grade_key<Authority>` controls each door of `Graded` that attaches a grade to a value. §XVI ("How a graded wrapper is built") describes `grade_key`, `mint_band` and `mint_recipe_spec`.
 
 ### Why the pattern is load-bearing
 
@@ -2748,8 +2749,8 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 - **The `requires` clause MUST be a single concept** (`CtxFitsX<X, Ctx>` for ctx-bound mints, or the equivalent token-validity concept for token mints). Multi-clause requires-lists belong INSIDE the concept definition, not at the call site.
 - **Every mint MUST be `[[nodiscard]] constexpr noexcept`**, with two exceptions, and each exception is `[[nodiscard]] noexcept` only. The first is a factory that genuinely allocates: `constexpr` would lie about the runtime cost. The second is a factory whose body can never be constant evaluated, because it reads runtime state such as an atomic, a thread identity or a system call. The build has no `-fimplicit-constexpr`, and `-Winvalid-constexpr` with `-Werror` refuses `constexpr` on such a function. Never hide runtime state behind `if consteval` to keep the keyword: a constant evaluation would then read a value that the program never has.
 - **Returned types are CONCRETE, not type-erased.** `mint_endpoint<...>(ctx, h)` returns `Endpoint<Substr, Dir, Ctx>`, not `auto`-erased-into-virtual. Concept-overloaded specialization downstream depends on the concrete type.
-- **Diagnostics route through `safety::diag::Category`.** A mint that fails its `requires` clause emits a category-tagged diagnostic so user-facing errors stay readable.
-- **Internal helpers do NOT use the `mint_` prefix.** The convention marks USER-FACING authorization points; internal detail-namespace helpers carry the trailing-underscore convention (e.g., `permission_fork_spawn_`, `permission_fork_rebuild_`) so `grep "mint_"` returns only the public surface.
+- **Diagnostics route through `foundation::diag::Category`.** A mint that fails its `requires` clause emits a category-tagged diagnostic so user-facing errors stay readable.
+- **Internal helpers do NOT use the `mint_` prefix.** The convention marks USER-FACING authorization points; internal detail-namespace helpers carry the trailing-underscore convention (for example `PermissionForkRunner::spawn_` and `PermissionForkRunner::run_` in `foundation/permissions/PermissionFork.h`) so `grep "mint_"` returns only the public surface.
 - **Session ctx-bound mints use the permissioned family.** `mint_session<Proto>(ctx, res)` is the empty-`PermSet` shim; `mint_permissioned_session<Proto>(ctx, res, perms...)` is the non-empty `PermSet` form. Both route through the same ctx row gate and local permission-flow closure gate.
 - **Every new mint factory MUST ship at least 2 negative-compile fixtures** demonstrating the `requires` clause fires on each kind of mismatch. See HS14.
 - **Inventory of every mint** lives in `misc/mint-inventory.md`, regenerated by `python3 scripts/gen-mint-inventory.py --write`. It reads the AST mint model in `scripts/mintmodel.py`, the same model the §XXI guard `scripts/check-mint-pattern.py` reads, over all of `include/` (old tree and new tree). Each row gives the §XXI flags (nodiscard, constexpr, noexcept, a type-level constraint), the authorization shape (ctx, token or member), whether a ctx-bound mint's constraint gates its context, the old-tree fixy re-export, and the HS14 count of fixtures from the mint's own tree. `--check` fails CI on drift, and `--check-floor` fails CI on a mint under the HS14 floor that `scripts/mint-hs14-floor-allowlist.txt` does not list.
