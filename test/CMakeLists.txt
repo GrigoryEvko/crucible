@@ -14681,7 +14681,7 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_session_wrong_org
 # factories (≥2 per factory).  Each fixture's expected diagnostic
 # regex is wide enough to tolerate GCC phrasing drift across patch
 # levels but specific enough to fail when the underlying gate goes
-# missing.  Driver: scripts/neg_compile_driver.py.
+# missing.  Driver: test/neg_compile_driver.py.
 crucible_neg_compile_bridges_test(neg_mint_recording_session_non_handle
     "no matching function for call to|could not match"
     "mint_recording_session")
