@@ -108,8 +108,6 @@ include/crucible/concurrent/_AdaptiveScheduler.h:workers_.reserve(worker_count_)
 #
 # Drain the section as sites convert.  The stale-entry gate (exit 2)
 # forces the entries out as soon as their call text changes.
-bench/bench_adaptive_scheduler.cpp:dispatch_samples.reserve(kJobsPerPolicy);
-bench/bench_adaptive_scheduler.cpp:results.reserve(10);
 bench/bench_auto_router.cpp:reports.reserve(136);
 bench/bench_auto_split.cpp:reports.reserve(32);
 bench/bench_auto_split_compare.cpp:reports.reserve(scenarios.size() * 3 * 4);
@@ -120,7 +118,4 @@ bench/bench_no_regression.cpp:reports.reserve(workloads.size() * 3);
 bench/bench_no_regression.cpp:threads.reserve(w.forced_workers);
 bench/bench_no_regression.cpp:workloads.reserve(4);
 bench/bench_permissioned_calendar_grid.cpp:reports.reserve(12);
-bench/bench_scheduler_policies.cpp:ns.reserve(total_samples);
-bench/bench_scheduler_policies.cpp:per_thread_ns[0].reserve(batches_per_owner * CONTENDED_ITERATIONS);
-bench/bench_scheduler_policies.cpp:v.reserve(batches_per_prod * CONTENDED_ITERATIONS);
 bench/bench_session_persistence.cpp:reports.reserve(3);

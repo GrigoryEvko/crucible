@@ -60,7 +60,6 @@ endfunction()
 # ── Migrated to the new bench::Run / Report / Compare API ─────────────
 crucible_bench(bench_arena)
 crucible_bench(bench_meta_zero)
-crucible_bench(bench_adaptive_scheduler)
 crucible_bench(bench_observe_metrics_swmr)
 crucible_bench(bench_cipher)
 crucible_bench(bench_ckernel)
@@ -116,7 +115,6 @@ crucible_bench(bench_chainedge_session)
 crucible_bench(bench_swmr_session)
 crucible_bench(bench_chaselev_session)
 target_compile_definitions(bench_chaselev_session PRIVATE NDEBUG)
-crucible_bench(bench_scheduler_policies)
 
 # ── The one gated latency number ─────────────────────────────────────
 #
