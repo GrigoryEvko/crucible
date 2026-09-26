@@ -700,15 +700,17 @@ set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PRO
     SKIP_RETURN_CODE 3)
 # A script that writes to a git repository names it and clears the
 # caller's repository variables.  scripts/check-git-isolation.py refuses a
-# script under scripts/ or tools/ that runs git init, commit, update-ref,
-# reset or checkout without scripts/throwaway_repo.py, or, in shell,
-# without the unset and the --absolute-git-dir check.
+# script under scripts/, tools/ or toolchain/ that runs git init, commit,
+# update-ref, reset, checkout, fetch or apply without
+# scripts/throwaway_repo.py, or, in shell, without the unset and the
+# --absolute-git-dir check.  It reads shell with the pinned ast-grep, and
+# exit 3 when that binary is absent reports a skip.
 add_test(NAME git_isolation_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-git-isolation.py --self-test)
 add_test(NAME git_isolation
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-git-isolation.py)
 set_tests_properties(git_isolation git_isolation_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # A spelling of a branded type that names no brand is the erased
 # identity.  scripts/check-brand-drain.py reads those spellings from the
 # parse tree, and scripts/brand-drain.txt holds one count per file.  A

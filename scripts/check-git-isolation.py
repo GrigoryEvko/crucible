@@ -8,31 +8,41 @@ the self-test of one script sent its fixture commits into the real
 repository this way and emptied its main branch.
 
 THE RULE
-    A script under scripts/ or tools/ that runs git init, commit,
-    update-ref, reset or checkout must clear every repository variable
-    before it, and must stop unless git resolves the repository it means.
+    A script under scripts/, tools/ or toolchain/ that runs git init, commit,
+    update-ref, reset, checkout, fetch or apply must clear every repository
+    variable before it, and must stop unless git resolves the repository it
+    means.
       Python   The script calls throwaway_repo.init(), which clears the
                variables in scripts/throwaway_repo.py, makes the
                repository, and stops unless `rev-parse --absolute-git-dir`
                names it.  The verb counts when it is a string constant of
                the module and the module builds a git argv (a list or tuple
                literal whose first element is "git"), so a verb passed
-               through a wrapper counts too.
+               through a wrapper counts too.  The Python `ast` module reads
+               the script.
       Shell    The script names each repository variable in an `unset`
-               and checks `--absolute-git-dir`.  The verb counts on a line
-               outside a comment where git, or an expansion of an argv
-               array, comes before it.
+               command and passes `--absolute-git-dir` to a command.  The
+               verb is the first argument of a git command that is not an
+               option or the value of one.  A git command is a command whose
+               name is git, or the expansion of every element of an array,
+               which is how a script keeps a git argv.  ast-grep's bash
+               grammar reads the script (the pinned binary from
+               scripts/install-ast-grep.sh), so the text of a heredoc body or
+               a comment is not a command.
     scripts/throwaway_repo.py is the implementation and is not read.
 
-Exit 0 clean, 1 on a violation, 2 on a usage error or a failed self-test.
+Exit 0 clean, 1 on a violation, 2 on a usage error or a failed self-test,
+3 when the pinned ast-grep is not installed.
 """
 
 from __future__ import annotations
 
 import ast
-import re
+import json
+import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -40,13 +50,53 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import throwaway_repo  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ROOTS = ("scripts", "tools")
+ROOTS = ("scripts", "tools", "toolchain")
 IMPLEMENTATION = "scripts/throwaway_repo.py"
-MUTATING = frozenset({"init", "commit", "update-ref", "reset", "checkout"})
-# git, or the expansion of an argv array, then options, then the verb.
-SHELL_MUTATION = re.compile(r"""(?:(?<![\w./-])git|\[@\]\}"?)(?:\s+(?:-C\s+\S+|-c\s+\S+|--?[\w-]+(?:=\S+)?|"[^"]*"))*"""
-                            r"""\s+(init|commit|update-ref|reset|checkout)\b""")
-UNSET = re.compile(r"\bunset\s+((?:[A-Z_][A-Z0-9_]*\s*(?:\\\n\s*)?)+)")
+MUTATING = frozenset({"init", "commit", "update-ref", "reset", "checkout", "fetch", "apply"})
+# A global git option that takes the next argument as its value when it is
+# not written with `=`.  The verb comes after the options and their values.
+OPTIONS_WITH_VALUE = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+                                "--config-env", "--super-prefix"})
+# The three ast-grep rules that read a shell script.  A git command is a
+# command whose name is git (or a path ending in /git), or whose name
+# expands every element of an array.  ast-grep's JSON gives each argument
+# of the command in order, and the verb is picked from them below.
+AST_GREP_RULES = """\
+id: git-command
+language: bash
+rule:
+  all:
+    - pattern: $CMD $$$ARGS
+    - any:
+        - has: {field: name, regex: '^(.*/)?git$'}
+        - has: {field: name, has: {stopBy: end, kind: subscript, has: {field: index, regex: '^[@*]$'}}}
+---
+id: unset
+language: bash
+rule:
+  pattern: unset $$$NAMES
+---
+id: resolve-check
+language: bash
+rule:
+  kind: word
+  regex: '^--absolute-git-dir$'
+  inside:
+    kind: command
+"""
+
+
+class AstGrepMissing(RuntimeError):
+    """The pinned ast-grep binary is not installed."""
+
+
+@dataclass
+class ShellFacts:
+    """What the parse of one shell script says about its git writes."""
+
+    verbs: set[str] = field(default_factory=set)
+    cleared: set[str] = field(default_factory=set)
+    checks_git_dir: bool = False
 
 
 def python_violation(text: str) -> str | None:
@@ -85,48 +135,130 @@ def python_violation(text: str) -> str | None:
             f"sends the write to the caller's repository")
 
 
-def shell_violation(text: str) -> str | None:
-    """Return why a shell script writes to a repository it has not isolated, or None.
+def git_verb(arguments: list[str]) -> str | None:
+    """Return the verb of a git command from its arguments, or None when it has no verb.
 
-    Complexity: linear in the length of the script.
+    Each argument is the text of one argument node of the command.  An
+    option starts with `-`.  A quoted or expanded argument is never a verb.
     """
-    code = "\n".join("" if line.lstrip().startswith("#") else line for line in text.splitlines())
-    verbs = {match.group(1) for match in SHELL_MUTATION.finditer(code)}
-    if not verbs:
+    skip_next = False
+    for argument in arguments:
+        if skip_next:
+            skip_next = False
+            continue
+        if argument in OPTIONS_WITH_VALUE:
+            skip_next = True
+            continue
+        if argument.startswith(("-", '"', "'", "$")):
+            continue
+        return argument
+    return None
+
+
+def ast_grep_binary() -> str:
+    """Return the path of the pinned ast-grep binary.
+
+    Raises:
+        AstGrepMissing: If scripts/install-ast-grep.sh reports that it is absent
+        RuntimeError: If the installer fails in another way
+    """
+    result = subprocess.run(["bash", str(REPO_ROOT / "scripts" / "install-ast-grep.sh"), "--print-bin"],
+                            capture_output=True, text=True)
+    if result.returncode == 3:
+        raise AstGrepMissing("the pinned ast-grep is not installed; run: bash scripts/install-ast-grep.sh")
+    if result.returncode != 0:
+        raise RuntimeError(f"scripts/install-ast-grep.sh --print-bin failed:\n{result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def shell_facts(paths: list[Path]) -> dict[Path, ShellFacts]:
+    """Parse each shell script with ast-grep and collect its git verbs, its unsets and its repository check.
+
+    One ast-grep run reads every script.  Complexity: linear in the total
+    size of the scripts.
+
+    Raises:
+        AstGrepMissing: If the pinned ast-grep is not installed
+        RuntimeError: If ast-grep fails or gives output that is not JSON
+    """
+    facts = {path: ShellFacts() for path in paths}
+    if not paths:
+        return facts
+    result = subprocess.run([ast_grep_binary(), "scan", "--inline-rules", AST_GREP_RULES, "--json=compact",
+                             *(str(path) for path in paths)], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ast-grep failed (exit {result.returncode}):\n{result.stderr.strip()}")
+    try:
+        matches = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"ast-grep printed output that is not JSON: {exc}") from exc
+    by_path = {str(path): path for path in paths}
+    for match in matches:
+        path = by_path.get(match["file"])
+        if path is None:
+            raise RuntimeError(f"ast-grep reported {match['file']}, which is not a scanned script")
+        multi = match["metaVariables"]["multi"]
+        if match["ruleId"] == "git-command":
+            verb = git_verb([node["text"] for node in multi.get("ARGS", [])])
+            if verb in MUTATING:
+                facts[path].verbs.add(verb)
+        elif match["ruleId"] == "unset":
+            facts[path].cleared |= {node["text"] for node in multi.get("NAMES", [])
+                                    if not node["text"].startswith("-")}
+        elif match["ruleId"] == "resolve-check":
+            facts[path].checks_git_dir = True
+    return facts
+
+
+def shell_violation(facts: ShellFacts) -> str | None:
+    """Return why a shell script writes to a repository it has not isolated, or None."""
+    if not facts.verbs:
         return None
-    cleared = {name for match in UNSET.finditer(code) for name in re.findall(r"[A-Z_][A-Z0-9_]*", match.group(1))}
-    missing = [name for name in throwaway_repo.REPOSITORY_VARIABLES if name not in cleared]
+    missing = [name for name in throwaway_repo.REPOSITORY_VARIABLES if name not in facts.cleared]
     reasons = []
     if missing:
         reasons.append(f"it does not unset {', '.join(missing)}")
-    if "--absolute-git-dir" not in code:
+    if not facts.checks_git_dir:
         reasons.append("it never checks --absolute-git-dir")
     if not reasons:
         return None
-    return f"it runs git {', '.join(sorted(verbs))}, and " + ", and ".join(reasons)
+    return f"it runs git {', '.join(sorted(facts.verbs))}, and " + ", and ".join(reasons)
 
 
 def scan(root: Path) -> list[str]:
-    """Return one report line for each script under the roots that writes to an unisolated repository."""
-    report = []
+    """Return one report line for each script under the roots that writes to an unisolated repository.
+
+    Raises:
+        AstGrepMissing: If there is a shell script to read and the pinned ast-grep is not installed
+    """
+    scripts: list[tuple[str, Path]] = []
     for top in ROOTS:
         base = root / top
         if not base.is_dir():
             continue
         for path in sorted(base.rglob("*")):
             rel = path.relative_to(root).as_posix()
-            if not path.is_file() or rel == IMPLEMENTATION or path.suffix not in (".py", ".sh"):
-                continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            why = python_violation(text) if path.suffix == ".py" else shell_violation(text)
-            if why is not None:
-                report.append(f"GIT-ISOLATION violation: {rel} — {why}.")
+            if path.is_file() and rel != IMPLEMENTATION and path.suffix in (".py", ".sh"):
+                scripts.append((rel, path))
+    shells = shell_facts([path for _, path in scripts if path.suffix == ".sh"])
+    report = []
+    for rel, path in scripts:
+        if path.suffix == ".py":
+            why = python_violation(path.read_text(encoding="utf-8", errors="replace"))
+        else:
+            why = shell_violation(shells[path])
+        if why is not None:
+            report.append(f"GIT-ISOLATION violation: {rel} — {why}.")
     return report
 
 
 def check(root: Path) -> int:
     """Scan one tree and print the report."""
-    report = scan(root)
+    try:
+        report = scan(root)
+    except AstGrepMissing as exc:
+        print(f"check-git-isolation: {exc}", file=sys.stderr)
+        return 3
     for line in report:
         print(line, file=sys.stderr)
     if report:
@@ -143,11 +275,11 @@ def self_test() -> int:
     failures: list[str] = []
     negatives = 0
 
-    def expect(name: str, ok: bool, negative: bool = False) -> None:
+    def expect(name: str, holds: bool, negative: bool = False) -> None:
         nonlocal negatives
         negatives += negative
-        print(f"  {'ok  ' if ok else 'FAIL'} {name}")
-        if not ok:
+        print(f"  {'ok  ' if holds else 'FAIL'} {name}")
+        if not holds:
             failures.append(name)
 
     unset_all = "unset " + " \\\n      ".join(throwaway_repo.REPOSITORY_VARIABLES) + "\n"
@@ -166,35 +298,62 @@ def self_test() -> int:
                                    '"${g[@]}" commit -q -m x\n'),
         "scripts/sh_array_bare.sh": 'g=(git -C "$tmp")\n"${g[@]}" update-ref refs/heads/x HEAD\n',
         "scripts/sh_comment.sh": '# git commit -m example\ngit log -1\n',
+        # A heredoc body is data.  The text scan read its line as a command.
+        "scripts/sh_heredoc.sh": 'cat > note.txt <<EOF\ngit commit -m fixture\nEOF\ngit log -1\n',
+        # A check named only in a comment checks nothing.  The text scan
+        # accepted the word anywhere in the file.
+        "scripts/sh_check_in_comment.sh": unset_all + 'git -C "$tmp" commit -q -m x  # --absolute-git-dir\n',
+        # An option that takes a value hides nothing: the verb is still found.
+        "scripts/sh_option_value.sh": 'git -c user.name=x --git-dir "$tmp/.git" reset --hard\n',
+        # A verb name as the argument of a read is not a write.
+        "scripts/sh_verb_as_argument.sh": 'git log --grep init\n',
+        "scripts/sh_apply.sh": 'git -C "$src" apply p.patch\n',
         "tools/tool_reset.sh": 'git reset --hard HEAD\n',
+        "toolchain/tc_fetch.sh": 'git init -q "$src"\ngit -C "$src" fetch -q --depth 1 "$url" "$commit"\n',
         "scripts/throwaway_repo.py": 'import subprocess\nsubprocess.run(["git", "init"])\n',
         "include/not_a_root.sh": 'git commit -m x\n',
     }
-    with tempfile.TemporaryDirectory() as work:
-        root = Path(work)
-        for rel, text in planted.items():
-            (root / rel).parent.mkdir(parents=True, exist_ok=True)
-            (root / rel).write_text(text, encoding="utf-8")
-        report = "\n".join(scan(root))
-        for rel, label in (("scripts/py_bare_init.py", "a Python init with no isolation"),
-                           ("scripts/py_wrapped_commit.py", "a Python commit through a wrapper"),
-                           ("scripts/sh_bare.sh", "a shell commit with no unset"),
-                           ("scripts/sh_partial.sh", "a shell commit that unsets two variables"),
-                           ("scripts/sh_no_resolve_check.sh", "a shell commit that never checks the repository"),
-                           ("scripts/sh_array_bare.sh", "an update-ref through an argv array"),
-                           ("tools/tool_reset.sh", "a reset under tools/")):
-            expect(f"refused: {label}", f"violation: {rel} " in report, True)
-        for rel, label in (("scripts/py_isolated.py", "a Python commit after throwaway_repo.init()"),
-                           ("scripts/py_reads_only.py", "a Python script whose git calls only read"),
-                           ("scripts/sh_isolated.sh", "a shell commit after the unset and the check"),
-                           ("scripts/sh_comment.sh", "a commit inside a comment"),
-                           ("scripts/throwaway_repo.py", "the implementation itself"),
-                           ("include/not_a_root.sh", "a script outside scripts/ and tools/")):
-            expect(f"admitted: {label}", f"violation: {rel} " not in report)
-        expect("the partial unset names the missing variables",
-               "does not unset GIT_INDEX_FILE" in report and "GIT_CEILING_DIRECTORIES" in report)
-        expect("exactly seven violations", report.count("GIT-ISOLATION violation:") == 7)
-        expect("a planted tree fails the check", check(root) == 1, True)
+    try:
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            for rel, text in planted.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(text, encoding="utf-8")
+            report = "\n".join(scan(root))
+            refused = (("scripts/py_bare_init.py", "a Python init with no isolation"),
+                       ("scripts/py_wrapped_commit.py", "a Python commit through a wrapper"),
+                       ("scripts/sh_bare.sh", "a shell commit with no unset"),
+                       ("scripts/sh_partial.sh", "a shell commit that unsets two variables"),
+                       ("scripts/sh_no_resolve_check.sh", "a shell commit that never checks the repository"),
+                       ("scripts/sh_array_bare.sh", "an update-ref through an argv array"),
+                       ("scripts/sh_check_in_comment.sh", "a shell commit whose check is only a comment"),
+                       ("scripts/sh_option_value.sh", "a reset after options that take values"),
+                       ("scripts/sh_apply.sh", "an apply with no isolation"),
+                       ("tools/tool_reset.sh", "a reset under tools/"),
+                       ("toolchain/tc_fetch.sh", "an init and a fetch under toolchain/"))
+            for rel, label in refused:
+                expect(f"refused: {label}", f"violation: {rel} " in report, True)
+            for rel, label in (("scripts/py_isolated.py", "a Python commit after throwaway_repo.init()"),
+                               ("scripts/py_reads_only.py", "a Python script whose git calls only read"),
+                               ("scripts/sh_isolated.sh", "a shell commit after the unset and the check"),
+                               ("scripts/sh_comment.sh", "a commit inside a comment"),
+                               ("scripts/sh_heredoc.sh", "a commit inside a heredoc body"),
+                               ("scripts/sh_verb_as_argument.sh", "a verb name as the argument of a read"),
+                               ("scripts/throwaway_repo.py", "the implementation itself"),
+                               ("include/not_a_root.sh", "a script outside scripts/, tools/ and toolchain/")):
+                expect(f"admitted: {label}", f"violation: {rel} " not in report)
+            expect("the partial unset names the missing variables",
+                   "does not unset GIT_INDEX_FILE" in report and "GIT_CEILING_DIRECTORIES" in report)
+            expect("the comment-only check is named as missing",
+                   "scripts/sh_check_in_comment.sh — it runs git commit, and it never checks --absolute-git-dir"
+                   in report)
+            expect("the toolchain script names both verbs", "toolchain/tc_fetch.sh — it runs git fetch, init" in report)
+            expect("exactly one violation per refused script",
+                   report.count("GIT-ISOLATION violation:") == len(refused))
+            expect("a planted tree fails the check", check(root) == 1, True)
+    except AstGrepMissing as exc:
+        print(f"check-git-isolation --self-test: {exc}", file=sys.stderr)
+        return 3
     if failures:
         print(f"check-git-isolation --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

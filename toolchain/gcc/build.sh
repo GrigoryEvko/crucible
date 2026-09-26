@@ -68,7 +68,15 @@ src=$work/src
 obj=$work/obj
 
 printf 'build.sh: download %s at %s\n' "$url" "$commit"
+# A repository variable in the caller's environment wins over `git -C`.  With
+# GIT_DIR exported, the init, fetch and apply below would write to the
+# repository that GIT_DIR names.  Clear each variable, then stop unless git
+# resolves the new repository itself.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE GIT_CEILING_DIRECTORIES
 git init -q "$src"
+[[ $(realpath -- "$(git -C "$src" rev-parse --absolute-git-dir)") == $(realpath -- "$src/.git") ]] \
+    || die "git resolves a repository other than $src/.git"
 git -C "$src" fetch -q --depth 1 "$url" "$commit"
 [[ $(git -C "$src" rev-parse FETCH_HEAD) == "$commit" ]] || die "the download is not commit $commit"
 git -C "$src" archive FETCH_HEAD | tar -x -C "$src"

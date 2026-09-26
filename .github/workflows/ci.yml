@@ -110,6 +110,15 @@ jobs:
           bash scripts/install-tree-sitter.sh --self-test
           bash scripts/install-tree-sitter.sh
 
+      # The guards read shell scripts with ast-grep's bash grammar, so a git
+      # call inside a heredoc body or a comment is not a call.  The installer
+      # verifies the release zip against a SHA256 hardcoded in the script and
+      # runs a fixture through the binary.  The binary lands in .tools/.
+      - name: Install the pinned ast-grep (self-test + install)
+        run: |
+          bash scripts/install-ast-grep.sh --self-test
+          bash scripts/install-ast-grep.sh
+
       # Non-blocking for now, matching the aarch64 and vessel-dispatch
       # convention: flip `continue-on-error` off once a run confirms the
       # runner's clang-format agrees with this tree.
@@ -477,6 +486,10 @@ jobs:
       # download instead of a full build.  The pin covers both matrix arches.
       - name: Install the pinned tree-sitter C++ kit
         run: bash scripts/install-tree-sitter.sh
+
+      # The git isolation guard reads shell scripts with the pinned ast-grep.
+      - name: Install the pinned ast-grep
+        run: bash scripts/install-ast-grep.sh
 
       # The committed vmlinux.h is an x86_64 BTF dump; on aarch64 the BPF
       # programs need the matching arm64 layout. Regenerate it from the runner
