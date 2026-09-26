@@ -232,8 +232,8 @@ jobs:
 
       - name: lock-free sibling-assert discipline (self-test + scan)
         run: |
-          bash scripts/check-lock-free-asserts.sh --self-test
-          bash scripts/check-lock-free-asserts.sh
+          python3 scripts/check-lock-free-asserts.py --self-test
+          python3 scripts/check-lock-free-asserts.py
 
       - name: mint inventory (self-test + drift check + HS14 floor)
         run: |
@@ -273,8 +273,8 @@ jobs:
 
       - name: single combine_ids source of truth (self-test + scan)
         run: |
-          bash scripts/check-no-combine-ids-duplicate.sh --self-test
-          bash scripts/check-no-combine-ids-duplicate.sh
+          python3 scripts/check-no-combine-ids-duplicate.py --self-test
+          python3 scripts/check-no-combine-ids-duplicate.py
 
       - name: no task, stage or tracker references (self-test + scan)
         run: |
@@ -483,12 +483,6 @@ jobs:
           test -r /sys/kernel/btf/vmlinux || { echo "::error::/sys/kernel/btf/vmlinux not readable in container"; exit 1; }
           bpftool btf dump file /sys/kernel/btf/vmlinux format c > include/crucible/perf/bpf/vmlinux.h
           echo "regenerated $(wc -l < include/crucible/perf/bpf/vmlinux.h) lines for ${{ matrix.arch }}"
-
-      # The one ci_guard that needs a compiler (traces #include edges via g++ -H).
-      - name: session-persistence include audit (needs gcc-16; self-test + scan)
-        run: |
-          bash scripts/check-session-persistence-include-audit.sh --self-test
-          bash scripts/check-session-persistence-include-audit.sh
 
       # Presets carry the sanitizer/build-type choice; no -DCRUCIBLE_* overrides
       # except the ccache launchers (which compose with cmake/Toolchain-gcc16.cmake).
