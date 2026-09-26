@@ -21,7 +21,7 @@
 // Expected diagnostic: "cannot convert", "no matching function",
 // "conversion from", "no known conversion".
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 namespace perm = ::crucible::permissions;
 

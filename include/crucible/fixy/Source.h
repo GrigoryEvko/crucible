@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Types.h>
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Tagged.h>
 

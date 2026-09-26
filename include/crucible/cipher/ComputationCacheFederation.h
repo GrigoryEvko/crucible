@@ -24,7 +24,7 @@
 #include <crucible/Types.h>
 #include <crucible/cipher/ComputationCache.h>
 #include <crucible/cipher/FederationProtocol.h>
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/safety/diag/_CanonicalOrder.h>
 #include <crucible/safety/diag/_RowHashFold.h>
 #include <crucible/sessions/FederationProtocol.h>

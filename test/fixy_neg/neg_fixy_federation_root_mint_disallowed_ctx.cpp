@@ -15,7 +15,7 @@
 // reason string.
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 namespace eff = crucible::effects;
 namespace perm = crucible::permissions;

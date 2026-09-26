@@ -104,7 +104,7 @@ AUTHORING: dict[str, str] = {
     "include/crucible/concurrent/_PermissionedSnapshot.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/_PermissionedSpscChannel.h": FROZEN_CHANNEL,
     "include/crucible/concurrent/_Queue.h": FROZEN_CHANNEL,
-    "include/crucible/permissions/FederationPermission.h":
+    "include/crucible/permissions/_FederationPermission.h":
         "the split of a federated peer is partial over its children, which are template parameters",
     "include/crucible/safety/_PermissionTreeGenerator.h": "the generator splits every parent into its slices",
     "include/crucible/safety/_PermissionGridGenerator.h": "the generator splits every parent into its grid cells",
@@ -676,7 +676,7 @@ def self_test() -> int:
         expect("a file the parser cannot read fails the check", code == 1 and bool(scan(root).failures))
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        listed = root / "include/crucible/permissions/FederationPermission.h"
+        listed = root / "include/crucible/permissions/_FederationPermission.h"
         listed.parent.mkdir(parents=True)
         listed.write_text("namespace foundation::permissions {\nstruct W {}; struct A {}; struct B {};\n"
                           "template <> struct can_split_into<W, A, B> {};\n}\n", encoding="utf-8")
@@ -684,7 +684,7 @@ def self_test() -> int:
         with contextlib.redirect_stderr(buffer):
             code = check(root)
         expect("a listed file whose splits all sit beside their tags is a stale location",
-               code == 2 and "stale authoring location include/crucible/permissions/FederationPermission.h"
+               code == 2 and "stale authoring location include/crucible/permissions/_FederationPermission.h"
                in buffer.getvalue())
     if failures:
         print(f"check-splits-orphan --self-test: FAILED — {len(failures)} case(s) did not hold")

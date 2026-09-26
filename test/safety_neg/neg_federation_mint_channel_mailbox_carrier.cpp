@@ -14,7 +14,7 @@
 // the two endpoints is false.  The receiver endpoint is PerPairFifo.  The
 // gate rejects the call because of the sender endpoint.
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>

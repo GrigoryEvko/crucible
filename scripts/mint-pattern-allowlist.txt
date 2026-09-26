@@ -199,12 +199,3 @@ include/crucible/sessions/FederationProtocol.h:mint_federation_pool:requires-ok
 include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok
 include/crucible/topology/Ptp.h:mint_ptp_handle:constexpr-ok
 include/crucible/warden/Hardening.h:mint_hardening:constexpr-ok
-
-# The AST guard sees a template the bash window could not: the template
-# parameter list sits at line 288 and the signature at line 305,
-# seventeen lines apart against a fifteen-line window,
-# so the old guard found no template, skipped the requires axis and passed a
-# templated mint that carries no clause.  The site is under a frozen path and
-# the federation permission surface has no port yet, so the clause cannot be
-# added here.  The port carries it.
-include/crucible/permissions/FederationPermission.h:mint_federation_admittance:requires-ok

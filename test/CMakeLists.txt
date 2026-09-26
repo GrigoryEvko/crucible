@@ -1325,7 +1325,7 @@ crucible_test(test_federation_permission)
 # forgery is rejected, this test reddens; that signals the
 # [[deprecated]] tag on mint_federation_admittance + the pragma
 # suppressions in 4 TUs must be removed.  See header doc-block in
-# include/crucible/permissions/FederationPermission.h §fixy-CR-02.
+# include/crucible/permissions/_FederationPermission.h §fixy-CR-02.
 crucible_test(attack_federation_forgery
               safety_attack/attack_federation_forgery.cpp)
 set_tests_properties(attack_federation_forgery PROPERTIES
@@ -1339,7 +1339,7 @@ set_tests_properties(attack_federation_forgery PROPERTIES
 # Cipher store OR Cipher-epoch binding), this test reddens; that
 # signals the fixy-CR-03 axis of the [[deprecated]] message on
 # mint_federation_admittance can be dropped.  See header doc-block in
-# include/crucible/permissions/FederationPermission.h §fixy-CR-03.
+# include/crucible/permissions/_FederationPermission.h §fixy-CR-03.
 crucible_test(attack_federation_replay
               safety_attack/attack_federation_replay.cpp)
 set_tests_properties(attack_federation_replay PROPERTIES
@@ -1357,7 +1357,7 @@ set_tests_properties(attack_federation_replay PROPERTIES
 # reddens; that signals the fixy-CR-04 axis of the [[deprecated]]
 # message on mint_federation_admittance can be dropped.  See
 # header doc-block in
-# include/crucible/permissions/FederationPermission.h §fixy-CR-04.
+# include/crucible/permissions/_FederationPermission.h §fixy-CR-04.
 crucible_test(attack_federation_authority_bypass
               safety_attack/attack_federation_authority_bypass.cpp)
 set_tests_properties(attack_federation_authority_bypass PROPERTIES
@@ -1374,7 +1374,7 @@ set_tests_properties(attack_federation_authority_bypass PROPERTIES
 # check.  When fixy-M-29 lands (namespace-private or friend-
 # constrained splits_into), the malicious specialization fails to
 # compile and this TU itself reds.  See header doc-block in
-# include/crucible/permissions/FederationPermission.h §fixy-CR-05.
+# include/crucible/permissions/_FederationPermission.h §fixy-CR-05.
 crucible_test(attack_federation_cross_org_escalation
               safety_attack/attack_federation_cross_org_escalation.cpp)
 set_tests_properties(attack_federation_cross_org_escalation PROPERTIES

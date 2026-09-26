@@ -16,7 +16,7 @@
 // Pairs with neg_federation_mint_no_row_bg_drain.cpp (distinct
 // rejection class: BgCompileCtx missing only the Block atom).
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>

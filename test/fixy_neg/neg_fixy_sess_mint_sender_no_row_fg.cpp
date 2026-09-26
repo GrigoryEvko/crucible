@@ -8,7 +8,7 @@
 // Expected diagnostic: "CtxFitsFederation" / "EffectRowMismatch" /
 // "constraints not satisfied" / "row_subset" / "federation_required_row".
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>

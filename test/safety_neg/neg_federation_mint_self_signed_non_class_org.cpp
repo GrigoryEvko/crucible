@@ -16,7 +16,7 @@
 // Expected diagnostic: constraints not satisfied / no matching
 // function / FederationOrgTag / std::is_class_v.
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 namespace perm = ::crucible::permissions;
 

@@ -5,7 +5,7 @@
 // deserialize_federation_entry remains the test under verification.
 
 #include <crucible/cipher/FederationProtocol.h>
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 #include <array>
 #include <cstdint>

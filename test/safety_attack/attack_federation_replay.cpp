@@ -54,7 +54,7 @@
 //     observer can use it indefinitely.  (Freshness failure.)
 //   Both must be closed for the federation to be production-safe.
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 #include "../test_assert.h"
 

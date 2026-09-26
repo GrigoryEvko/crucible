@@ -5,7 +5,7 @@
 // the fixy surface an entry point that does not name those namespaces.
 
 #include <crucible/permissions/_FairSharedPermissionPool.h>
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/permissions/_PermissionFork.h>
 #include <crucible/permissions/_PermissionInherit.h>

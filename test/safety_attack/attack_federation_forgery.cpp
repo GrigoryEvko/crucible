@@ -51,10 +51,10 @@
 // federation trust chain collapses to "knows the org_id" — i.e.,
 // knows the program at all.
 //
-// See: include/crucible/permissions/FederationPermission.h §fixy-CR-02
+// See: include/crucible/permissions/_FederationPermission.h §fixy-CR-02
 
 #include <crucible/cipher/ComputationCacheFederation.h>
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/safety/_IsTagged.h>
 
 // fixy-CR-02 — mint_federation_admittance is [[deprecated]] in V1.

@@ -11,7 +11,7 @@
 // Expected diagnostic: GCC shows that CarrierIsPerPairFifo is false,
 // because the session_network value is not PerPairFifo.
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>

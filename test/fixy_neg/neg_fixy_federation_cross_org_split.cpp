@@ -39,7 +39,7 @@
 // be specialized true") or the unsatisfied requires-clause naming
 // the trait.
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 #include <utility>
 

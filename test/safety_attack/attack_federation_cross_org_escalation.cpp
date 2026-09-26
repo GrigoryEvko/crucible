@@ -76,7 +76,7 @@
 // V1 federation trust model is structurally not-yet-production-safe
 // across four orthogonal axes.
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 #include "../test_assert.h"
 

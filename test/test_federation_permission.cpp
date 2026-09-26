@@ -1,5 +1,5 @@
 #include <crucible/cipher/ComputationCacheFederation.h>
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/safety/_IsTagged.h>
 
 // The admittance mint is deprecated while its verifier is a placeholder.

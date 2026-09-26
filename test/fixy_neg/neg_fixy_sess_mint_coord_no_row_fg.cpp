@@ -9,7 +9,7 @@
 // "constraints not satisfied" / "row_subset" / "federation_required_row" /
 // "mint_coord".
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>

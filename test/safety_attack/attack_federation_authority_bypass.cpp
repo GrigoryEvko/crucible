@@ -79,7 +79,7 @@
 //   - CR-04: ANY borrower of the local permission ref can mint,
 //            with EITHER a forged OR a legitimate handshake.
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 #include "../test_assert.h"
 

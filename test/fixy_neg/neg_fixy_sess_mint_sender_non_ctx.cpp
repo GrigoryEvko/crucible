@@ -8,7 +8,7 @@
 // Expected diagnostic: "CtxFitsFederation" / "IsExecCtx" /
 // "constraints not satisfied".
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include <utility>

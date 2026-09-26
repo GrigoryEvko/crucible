@@ -18,7 +18,7 @@
 // Expected diagnostic: GCC's "use of deleted function" naming
 // `mint_permission_root` and citing the fixy-CR-06 reason string.
 
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 namespace perm = crucible::permissions;
 namespace saf = crucible::safety;

@@ -1,5 +1,5 @@
 #include <crucible/sessions/FederationProtocol.h>
-#include <crucible/permissions/FederationPermission.h>
+#include <crucible/permissions/_FederationPermission.h>
 
 #include <utility>
 
