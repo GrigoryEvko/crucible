@@ -1302,6 +1302,17 @@ foundation_test(test_identity_attacks)
 # branded context, like the unbranded one, is not built from a byte or
 # over a buffer.
 foundation_test(test_host_owner_attacks)
+# A producer claim that one shared object wins and a second shared object
+# destroys, as the PyTorch vessel does with a Vigil.  Under -fvisibility=hidden
+# each shared object holds its own record of a brand, so the destructor must
+# leave the record that the win entered.
+foreach(_claim_library producer_claim_winner producer_claim_owner)
+  add_library(test_${_claim_library} SHARED ${_claim_library}.cpp)
+  target_link_libraries(test_${_claim_library} PRIVATE foundation)
+endforeach()
+foundation_test(test_producer_claim_across_libraries)
+target_link_libraries(test_producer_claim_across_libraries PRIVATE
+  test_producer_claim_winner test_producer_claim_owner)
 foundation_neg_compile_test(neg_host_owner_defined_again
   "redefinition of .struct foundation::effects::host::ForegroundOwner."
   "neg_host_owner_defined_again.cpp:9")

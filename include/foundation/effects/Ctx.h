@@ -325,7 +325,8 @@ namespace detail::producer_claim {
 
 // The fields of the record of one brand (host::ProducerClaim below).  The
 // type holds no key and builds no context.  Only a private function of the
-// claim holds an object of it.
+// claim holds an object of it, and a claim that entered a record keeps its
+// address.
 struct BrandRecord {
     std::atomic_flag lock{};
     std::atomic<const void*> holder{nullptr};
@@ -366,9 +367,10 @@ public:
     // implicit-lifetime type.  GCC counts a class whose copies are all
     // deleted as trivially copyable, and std::start_lifetime_as would
     // then build a claim over bytes that a thread already holds.  A claim
-    // that a thread won also removes itself from the record of its brand.
+    // that a thread won also removes itself from the record that the win
+    // entered, which can be the record of a different shared object.
     ~ProducerClaim() noexcept {
-        if (holder_.load(std::memory_order_relaxed) != std::thread::id{}) leave_brand_();
+        if (entered_record_ != nullptr) leave_brand_(*entered_record_);
     }
 
     // The part that inlines is a relaxed load, a comparison and a branch.
@@ -403,6 +405,8 @@ private:
 
     friend Brand;
 
+    using BrandRecord = detail::producer_claim::BrandRecord;
+
     [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::thread::id current_tid) noexcept {
         auto holder = holder_.load(std::memory_order_relaxed);
         if (holder == std::thread::id{}) {
@@ -410,8 +414,12 @@ private:
             // records which thread arrived first.  A failed exchange leaves
             // the winner's id in `holder`, which the check below reports.
             if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_relaxed)) {
-                const bool is_only_brand_thread = enter_brand_(calling_thread_identity_());
-                if (is_only_brand_thread) return;
+                BrandRecord& record = brand_record_();
+                const bool is_only_brand_thread = enter_brand_(record, calling_thread_identity_());
+                if (is_only_brand_thread) {
+                    entered_record_ = &record;
+                    return;
+                }
                 // Another thread holds a live claim of this brand.  The claim
                 // is undone first, so that its destructor removes no entry
                 // that it did not make.
@@ -431,8 +439,7 @@ private:
     // cannot tell the two threads apart.  Only a won claim and its
     // destructor write the record, so the flag that guards the count is
     // never on the path that runs for each op.
-    [[gnu::cold, gnu::noinline]] static bool enter_brand_(const void* thread_identity) noexcept {
-        BrandRecord& record = brand_record_();
+    [[gnu::cold, gnu::noinline]] static bool enter_brand_(BrandRecord& record, const void* thread_identity) noexcept {
         lock_brand_(record);
         const bool is_only_brand_thread =
             record.claims == 0 || record.holder.load(std::memory_order_relaxed) == thread_identity;
@@ -444,8 +451,7 @@ private:
         return is_only_brand_thread;
     }
 
-    [[gnu::cold, gnu::noinline]] static void leave_brand_() noexcept {
-        BrandRecord& record = brand_record_();
+    [[gnu::cold, gnu::noinline]] static void leave_brand_(BrandRecord& record) noexcept {
         lock_brand_(record);
         const bool has_entry = record.claims != 0;
         if (has_entry && --record.claims == 0) record.holder.store(nullptr, std::memory_order_release);
@@ -465,12 +471,12 @@ private:
         return &identity_byte;
     }
 
-    // The record is process-wide because the global schema and kernel
-    // tables have one writer.  It is a function-local static and not a
-    // static data member, because a splice of a static data member has no
-    // access check, and a splice cannot reach a local.
-    using BrandRecord = detail::producer_claim::BrandRecord;
-
+    // The record exists because the global schema and kernel tables have one
+    // writer.  Under -fvisibility=hidden each shared object that instantiates
+    // the claim has its own copy of this static, so a claim keeps the address
+    // of the record that its win entered.  It is a function-local static and
+    // not a static data member, because a splice of a static data member has
+    // no access check, and a splice cannot reach a local.
     [[nodiscard]] static BrandRecord& brand_record_() noexcept {
         static constinit BrandRecord record{};
         return record;
@@ -487,6 +493,17 @@ private:
     static_assert(std::atomic<std::thread::id>::is_always_lock_free,
                   "std::atomic<std::thread::id> must be lock-free on this target.");
     std::atomic<std::thread::id> holder_{};
+
+    // The record that the win of this claim entered, or null before a win.
+    // Under -fvisibility=hidden each shared object that instantiates the
+    // claim has a record of its own, so the destructor cannot find the entry
+    // through brand_record_() when it runs in a different shared object from
+    // the win.  test/foundation/test_producer_claim_across_libraries.cpp holds
+    // that case.  Only the winning thread writes the pointer, one time, after
+    // its entry.
+    // The shared object of that record must stay loaded until the claim is
+    // destroyed.
+    BrandRecord* entered_record_ = nullptr;
 };
 
 // The run-time half of a cold gate of a brand.  The context is evidence
