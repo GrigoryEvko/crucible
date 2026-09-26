@@ -20,7 +20,7 @@ static void test_empty_graph() {
     Arena arena{1 << 16};
     TraceGraph g{};
     build_csr(t.alloc, arena, &g, nullptr, 0, 0);
-    static_assert(std::is_same_v<TraceGraph::BuiltCount, safety::WriteOnce<uint32_t>>);
+    static_assert(std::is_same_v<TraceGraph::BuiltCount, ::fixy::WriteOnce<uint32_t>>);
     assert(g.num_edges.get_assuming_set() == 0);
     std::printf("  test_empty:                     PASSED\n");
 }
