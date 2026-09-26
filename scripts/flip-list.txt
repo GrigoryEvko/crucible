@@ -51,7 +51,6 @@ bench/bench_pool_allocator.cpp
 bench/bench_record_leaf.cpp
 bench/bench_region_cache.cpp
 bench/bench_serialize.cpp
-bench/bench_spsc_session.cpp
 bench/bench_swmr_session.cpp
 fuzz/boundary/old_tree.h
 fuzz/property/prop_callsite_table_dedup.cpp
