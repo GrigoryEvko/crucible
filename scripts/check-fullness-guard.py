@@ -155,7 +155,7 @@ def counter_is_protected(node: tsast.Node) -> bool:
     while node is not None and node.type == "subscript_expression":
         node = unwrap(node.child_by_field("argument"))
     last = final_segment(node) if node is not None else None
-    return last is not None and tsast.spelled(last).endswith("_")
+    return last is not None and tsast.lexeme(last).endswith("_")
 
 
 def is_bound_name(node: tsast.Node | None) -> bool:
@@ -164,7 +164,7 @@ def is_bound_name(node: tsast.Node | None) -> bool:
     if node is None or node.type not in ("identifier", "qualified_identifier", "field_expression"):
         return False
     last = final_segment(node)
-    return last is not None and BOUND_NAME.fullmatch(tsast.spelled(last)) is not None
+    return last is not None and BOUND_NAME.fullmatch(tsast.lexeme(last)) is not None
 
 
 def is_bound_call(node: tsast.Node | None) -> bool:
@@ -267,7 +267,8 @@ def bound_after(tokens: list[tsast.Token], index: int) -> bool:
     cursor = index
     while cursor + 2 < len(tokens) and tokens[cursor].kind == "identifier" and tokens[cursor + 1].text == "::":
         cursor += 2
-    if cursor < len(tokens) and tokens[cursor].kind == "identifier" and BOUND_NAME.fullmatch(tokens[cursor].text) \
+    if cursor < len(tokens) and tokens[cursor].kind == "identifier" \
+            and BOUND_NAME.fullmatch(tsast.lexeme(tokens[cursor])) \
             and (cursor + 1 >= len(tokens) or tokens[cursor + 1].text != "("):
         return True
     cursor = index
@@ -281,7 +282,7 @@ def bound_after(tokens: list[tsast.Token], index: int) -> bool:
 def bound_before(tokens: list[tsast.Token], index: int) -> bool:
     """Say whether a bound name ends right before a token, with no member access before it."""
     cursor = index - 1
-    if cursor < 0 or tokens[cursor].kind != "identifier" or not BOUND_NAME.fullmatch(tokens[cursor].text):
+    if cursor < 0 or tokens[cursor].kind != "identifier" or not BOUND_NAME.fullmatch(tsast.lexeme(tokens[cursor])):
         return False
     while cursor >= 2 and tokens[cursor - 1].text == "::" and tokens[cursor - 2].kind == "identifier":
         cursor -= 2
@@ -298,11 +299,11 @@ def token_rows(tokens: list[tsast.Token]) -> Iterator[int]:
         if token.text != "==":
             continue
         start = counter_before(tokens, index)
-        if start is not None and not tokens[index - 1].text.endswith("_") and bound_after(tokens, index + 1):
+        if start is not None and not tsast.lexeme(tokens[index - 1]).endswith("_") and bound_after(tokens, index + 1):
             yield tokens[start].row
             continue
         end = counter_after(tokens, index + 1)
-        if end is not None and not tokens[end].text.endswith("_") and bound_before(tokens, index):
+        if end is not None and not tsast.lexeme(tokens[end]).endswith("_") and bound_before(tokens, index):
             yield tokens[index + 1].row
 
 
@@ -338,15 +339,13 @@ def scan(root: Path) -> tuple[list[Site], list[str]]:
             failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
         trees.append(tree)
-        marks[rel] = {node.start[0] for node in tree.find("comment") if MARKER.search(node.text)}
+        marks[rel] = {node.start[0] for node in tree.find("comment") if MARKER.search(tsast.prose_text(node))}
         rows[rel] = {node.start[0] for node in fullness_nodes(tree.root)
                      if not any(row in marks[rel] for row in marker_rows(node))}
     for body in tsast.macro_bodies(trees):
         rel = Path(body.define.tree.path).relative_to(root).as_posix()
-        # A marker on any row of the definition exempts the tests of its body.  The node ends at
-        # column 0 of the row after the definition, because it holds the closing newline.
-        last = body.define.end[0] - (body.define.end[1] == 0)
-        if any(row in marks[rel] for row in range(body.define.start[0], last + 1)):
+        # A marker on any row of the definition, to the row of its last token, exempts the tests of its body.
+        if any(row in marks[rel] for row in range(body.define.start[0], body.last_row + 1)):
             continue
         if body.is_parsed:
             rows[rel].update(body.origin(node)[0] for node in fullness_nodes(body.root))
@@ -355,8 +354,7 @@ def scan(root: Path) -> tuple[list[Site], list[str]]:
     sites: list[Site] = []
     for tree in trees:
         rel = Path(tree.path).relative_to(root).as_posix()
-        lines = tree.source.decode("utf-8", "replace").split("\n")
-        sites.extend(Site(rel, row + 1, lines[row].strip()) for row in sorted(rows[rel]))
+        sites.extend(Site(rel, row + 1, tree.line(row).strip()) for row in sorted(rows[rel]))
     return sites, failures
 
 

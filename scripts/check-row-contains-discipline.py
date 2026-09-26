@@ -190,12 +190,10 @@ def unlifted_checks(tree: tsast.Tree, marked: set[int]) -> Iterator[int]:
 def unlifted_macro_checks(body: tsast.MacroBody, marked: set[int]) -> Iterator[int]:
     """Yield the file row of each context capability check in one macro body that does not use a lift.
 
-    A marker on any row of the definition exempts the checks of its body.  The
-    parser ends a definition at column 0 of the row after it, because the node
-    holds the closing newline, so that row is not part of the definition.
+    A marker on any row of the definition, to the row of the last token of
+    its body, exempts the checks of its body.
     """
-    last = body.define.end[0] - (body.define.end[1] == 0)
-    if any(row in marked for row in range(body.define.start[0], last + 1)):
+    if any(row in marked for row in range(body.define.start[0], body.last_row + 1)):
         return
     if body.is_parsed:
         for node in context_checks(body.root.descendants("template_type", "template_function")):
@@ -221,7 +219,7 @@ def scan(root: Path) -> list[str]:
     marks: dict[str, set[int]] = {}
     for tree in trees:
         rel = Path(tree.path).relative_to(root).as_posix()
-        marks[rel] = {node.start[0] for node in tree.find("comment") if MARKER.search(node.text)}
+        marks[rel] = {node.start[0] for node in tree.find("comment") if MARKER.search(tsast.prose_text(node))}
         rows[rel] = set(unlifted_checks(tree, marks[rel]))
     for body in tsast.macro_bodies(trees):
         rel = Path(body.define.tree.path).relative_to(root).as_posix()

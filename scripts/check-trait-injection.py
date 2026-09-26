@@ -210,7 +210,7 @@ def root_sites(root: tsast.Node, path: str, line_of: Callable[[tsast.Node], int]
             name = template_name(named) if named is not None else None
             relation = NAMES.get(name or "")
             if relation is not None and relation.kind == "specialization":
-                sites.append(Site(relation.label, path, line_of(node), node.text.splitlines()[0].strip()))
+                sites.append(Site(relation.label, path, line_of(node), tsast.excerpt(node)))
     for node in root.descendants("namespace_definition"):
         named = node.child_by_field("name")
         if named is None:
@@ -219,12 +219,12 @@ def root_sites(root: tsast.Node, path: str, line_of: Callable[[tsast.Node], int]
             if named.type == "nested_namespace_specifier" else [tsast.spelled(named)]
         relation = NAMES.get(parts[-1]) if parts else None
         if relation is not None and relation.kind == "reopening":
-            sites.append(Site(relation.label, path, line_of(node), node.text.splitlines()[0].strip()))
+            sites.append(Site(relation.label, path, line_of(node), tsast.excerpt(node)))
     for node in root.descendants("macro_invocation", "call_expression"):
         callee = node.child_by_field("name") or node.child_by_field("function")
         name = tsast.spelled(callee) if callee is not None else ""
         if name in MACRO_OF:
-            sites.append(Site(MACRO_OF[name], path, line_of(node), node.text.splitlines()[0].strip()))
+            sites.append(Site(MACRO_OF[name], path, line_of(node), tsast.excerpt(node)))
     return sites
 
 
@@ -254,7 +254,6 @@ def head_name(tokens: list[tsast.Token], index: int) -> tuple[str, str]:
 
 def token_sites(body: tsast.MacroBody, path: str) -> list[Site]:
     """Return the sites of a macro body that did not parse, read from its preprocessing tokens."""
-    lines = body.define.tree.source.decode("utf-8", "replace").split("\n")
     tokens = tsast.pp_tokens(body.text, body.first_row)
     sites: list[Site] = []
     for index, token in enumerate(tokens):
@@ -269,7 +268,7 @@ def token_sites(body: tsast.MacroBody, path: str) -> list[Site]:
             if relation is not None and relation.kind == kind and follower == opener:
                 label = relation.label
         if label is not None:
-            sites.append(Site(label, path, token.row + 1, lines[token.row].strip()))
+            sites.append(Site(label, path, token.row + 1, body.define.tree.line(token.row).strip()))
     return sites
 
 
