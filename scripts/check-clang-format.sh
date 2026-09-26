@@ -33,7 +33,8 @@
 # Exit status:
 #   0  — every file matches the config
 #   1  — at least one file drifts (the list is printed)
-#   2  — bad invocation, or no formatter found
+#   2  — bad invocation, no formatter found, or the formatter failed on a
+#        batch (an unreadable config, a crash), so a file was not checked
 
 set -euo pipefail
 
@@ -123,19 +124,46 @@ list_files() {
 }
 
 # The formatter prints one diagnostic per drifting construct, so a file can
-# appear many times.  Reduce to the file set: keep lines that start with a
-# path ending in a source extension, strip the trailing colon, dedupe.
+# appear many times.  Reduce to the file set: keep the violation lines, cut
+# the path, dedupe.
+#
+# The exit status of each batch is read, because it is the only sign of a
+# formatter that failed.  `--dry-run -Werror` exits 1 on drift.  A batch that
+# exits 1 with no violation line did not check its files: a config the
+# formatter cannot read, or a crash.  A batch that exits 0 with a violation
+# line, or with any other status, is also a failure.  Each failure goes to
+# stderr and the function returns 2, so a formatter that checked nothing can
+# never read as a clean tree.
+readonly VIOLATION='^[^ ][^:]*\.(h|hpp|cpp|cc|cxx):[0-9]+:[0-9]+: error: code should be clang-formatted'
+
+run_batch_() {
+    local output status=0 drift
+    output="$("$formatter" --dry-run -Werror "$@" 2>&1)" || status=$?
+    drift="$(printf '%s\n' "$output" | grep -oE "$VIOLATION" | cut -d: -f1 | sort -u || true)"
+    if { [[ "$status" -eq 0 && -z "$drift" ]]; } || { [[ "$status" -eq 1 && -n "$drift" ]]; }; then
+        [[ -n "$drift" ]] && printf '%s\n' "$drift"
+        return 0
+    fi
+    printf 'check-clang-format: the formatter failed on a batch of %d files (exit %d, %d violation lines):\n' \
+        "$#" "$status" "$(printf '%s' "$drift" | grep -c . || true)" >&2
+    printf '%s\n' "$output" | head -20 >&2
+    return 2
+}
+
 drifting_files() {
-    local files_list="$1"
-    # `--dry-run -Werror` exits non-zero when it finds drift, so xargs
-    # returns 123 and `set -e` would kill the script on the very case this
-    # guard exists to report.  The exit code carries no information the
-    # file list does not, so it is discarded deliberately.
-    xargs -a "$files_list" -n "$BATCH" "$formatter" --dry-run -Werror 2>&1 \
-        | grep -oE '^[^ ][^:]*\.(h|hpp|cpp|cc|cxx):' \
-        | tr -d ':' \
-        | sort -u \
-        || true
+    local files_list="$1" file failed=0
+    local -a batch=()
+    while IFS= read -r file; do
+        batch+=("$file")
+        if (( ${#batch[@]} == BATCH )); then
+            run_batch_ "${batch[@]}" || failed=1
+            batch=()
+        fi
+    done <"$files_list"
+    if (( ${#batch[@]} > 0 )); then
+        run_batch_ "${batch[@]}" || failed=1
+    fi
+    (( failed == 0 )) || return 2
 }
 
 if [[ "$mode" == "self-test" ]]; then
@@ -183,7 +211,28 @@ DRIFT
         exit 2
     fi
 
-    printf 'check-clang-format: self-test passed — a formatted tree passes, planted drift exits 1.\n' >&2
+    # A formatter that fails without a violation line checked nothing.  The
+    # guard must say so, not report a clean tree.
+    rc=0
+    CLANG_FORMAT=false CRUCIBLE_CLANG_FORMAT_TEST_ROOT="$tmp_root" bash "${BASH_SOURCE[0]}" >/dev/null 2>&1 || rc=$?
+    if (( rc != 2 )); then
+        printf 'check-clang-format: SELF-TEST FAILED — a formatter that fails must exit 2 (got %d).\n' "$rc" >&2
+        exit 2
+    fi
+
+    # A config the formatter cannot read makes every batch fail the same way.
+    broken_root="$tmp_root/broken"
+    mkdir -p "$broken_root/include/crucible"
+    printf 'NotARealClangFormatKey: 7\n' >"$broken_root/.clang-format"
+    cp "$tmp_root/include/crucible/planted_clean.h" "$broken_root/include/crucible/planted_clean.h"
+    rc=0
+    CRUCIBLE_CLANG_FORMAT_TEST_ROOT="$broken_root" bash "${BASH_SOURCE[0]}" >/dev/null 2>&1 || rc=$?
+    if (( rc != 2 )); then
+        printf 'check-clang-format: SELF-TEST FAILED — an unreadable config must exit 2 (got %d).\n' "$rc" >&2
+        exit 2
+    fi
+
+    printf 'check-clang-format: self-test passed — a formatted tree passes, planted drift exits 1, and a failing formatter or an unreadable config exits 2.\n' >&2
     exit 0
 fi
 
@@ -197,8 +246,13 @@ if [[ ! -s "$files_tmp" ]]; then
     exit 2
 fi
 
-drifting_files "$files_tmp" >"$drift_tmp"
-drift_count="$(grep -c . "$drift_tmp" || true)"
+drift_rc=0
+drifting_files "$files_tmp" >"$drift_tmp" || drift_rc=$?
+if (( drift_rc != 0 )); then
+    printf 'check-clang-format: the formatter did not check every file, so the tree is not known to be clean.\n' >&2
+    exit 2
+fi
+drift_count="$(sort -u "$drift_tmp" | grep -c . || true)"
 
 if [[ "$mode" == "fix" ]]; then
     if (( drift_count == 0 )); then
