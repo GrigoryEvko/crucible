@@ -1,9 +1,10 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Pre.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -315,9 +316,14 @@ concept IsMimicSubstrate = cog_family_v<K> == CogFamily::Compute || cog_family_v
 template <CogKind K>
 concept IsComputeKind = cog_family_v<K> == CogFamily::Compute;
 
-// A vendor-tagged attribute crossed the driver or firmware boundary
-// and has not been reconciled against measurement. It is a claim, not
-// a fact.
+// A value that crossed the driver or firmware boundary and has not been
+// reconciled against measurement. It is a claim, not a fact.
+// ::fixy::mint_tagged<::fixy::tags::source::Vendor, T>(value) builds
+// one. Name T at the call: an unsigned long long literal deduces a
+// different type than std::uint64_t, and the field refuses it.
+template <typename T>
+using VendorClaim = ::fixy::Tagged<T, ::fixy::tags::source::Vendor>;
+
 struct CogIdentity {
     Uuid uuid;
     CogLevel level = CogLevel::L0_Atomic;
@@ -325,14 +331,14 @@ struct CogIdentity {
 
     // The character storage behind these views lives in the topology
     // arena, which must outlive this identity.
-    safety::Tagged<std::string_view, safety::source::Vendor> vendor{std::string_view{}};
-    safety::Tagged<std::string_view, safety::source::Vendor> model{std::string_view{}};
+    VendorClaim<std::string_view> vendor{};
+    VendorClaim<std::string_view> model{};
 
     // Opaque to this file. A vendor encodes a version number, a build
     // number or a hash of the image as it pleases, and the only
     // operation performed on the value is equality.
-    safety::Tagged<std::uint64_t, safety::source::Vendor> firmware_revision{0};
-    safety::Tagged<std::uint64_t, safety::source::Vendor> bios_revision{0};
+    VendorClaim<std::uint64_t> firmware_revision{};
+    VendorClaim<std::uint64_t> bios_revision{};
 
     // A null parent means this Cog is a root. The topology arena that
     // owns both the parent and the children guarantees that the graph
@@ -373,7 +379,7 @@ static_assert(std::is_standard_layout_v<CogIdentity>,
     // silently drops a contract clause on a const-reference parameter
     // during constant evaluation, which would let a rejection test
     // pass. The macro fires during constant evaluation as well.
-    CRUCIBLE_PRE(crucible::decide::is_non_zero(c.uuid));
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(c.uuid));
     constexpr auto fmix = [](std::uint64_t h) constexpr noexcept {
         h ^= h >> 33;
         h *= 0xFF51AFD7ED558CCDULL;
@@ -502,8 +508,8 @@ static_assert(
     [] {
         CogIdentity a{};
         a.uuid = Uuid{0xDEADBEEFULL, 0xCAFEBABEULL};
-        a.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0x12345678ULL};
-        a.bios_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0xABCDEF01ULL};
+        a.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0x12345678ULL);
+        a.bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0xABCDEF01ULL);
 
         CogIdentity b = a;
         return content_hash(a) == content_hash(b);
@@ -514,10 +520,10 @@ static_assert(
     [] {
         CogIdentity a{};
         a.uuid = Uuid{0xDEADBEEFULL, 0xCAFEBABEULL};
-        a.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{1};
+        a.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(1);
 
         CogIdentity b = a;
-        b.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{2};
+        b.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(2);
         return content_hash(a) != content_hash(b);
     }(),
     "content_hash ignores firmware_revision, so a kernel compiled "

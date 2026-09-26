@@ -32,7 +32,7 @@ cog::CogIdentity identity_for(cog::Uuid uuid) {
     identity.uuid = uuid;
     identity.kind = Kind;
     identity.level = cog::CogLevel::L0_Atomic;
-    identity.firmware_revision = crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{7};
+    identity.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(7);
     return identity;
 }
 

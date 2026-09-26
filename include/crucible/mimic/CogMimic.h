@@ -343,10 +343,10 @@ static_assert(
         cog::CogIdentity id_a{};
         id_a.uuid = cog::Uuid{0xDEAD0001ULL, 0xCAFE0002ULL};
         id_a.kind = cog::CogKind::Gpu;
-        id_a.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{1};
+        id_a.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(1);
 
         cog::CogIdentity id_b = id_a;
-        id_b.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{2};
+        id_b.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(2);
 
         CogMimic<cog::CogKind::Gpu> a{};
         a.identity = &id_a;
@@ -402,7 +402,7 @@ static_assert(
         cog::CogIdentity id{};
         id.uuid = cog::Uuid{0xAA0001ULL, 0xBB0002ULL};
         id.kind = cog::CogKind::NicPort;
-        id.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{42};
+        id.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(42);
 
         cog::NicPortTargetCaps caps{};
         caps.link_layer = safety::Tagged<cog::LinkLayer, safety::source::Vendor>{cog::LinkLayer::Roce};

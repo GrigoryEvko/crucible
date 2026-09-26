@@ -102,11 +102,11 @@ static void test_cog_kernel_cache_key_firmware_rotation() {
     cog::CogIdentity id_v1{};
     id_v1.uuid = cog::Uuid{0xAA000001ULL, 0xBB000002ULL};
     id_v1.kind = cog::CogKind::Gpu;
-    id_v1.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{1};
-    id_v1.bios_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{42};
+    id_v1.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(1);
+    id_v1.bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(42);
 
     cog::CogIdentity id_v2 = id_v1;
-    id_v2.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{2};
+    id_v2.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(2);
 
     cog::GpuTargetCaps caps{};
     caps.sm_version = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{90}};
@@ -129,7 +129,7 @@ static void test_cog_kernel_cache_key_firmware_rotation() {
     assert(cog_v1 != cog_v2);
 
     cog::CogIdentity id_bios_drift = id_v1;
-    id_bios_drift.bios_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{43};
+    id_bios_drift.bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(43);
 
     mimic::CogMimic<cog::CogKind::Gpu> mimic_bios_drift{};
     mimic_bios_drift.identity = &id_bios_drift;
@@ -148,8 +148,8 @@ static void test_mint_cog_mimic_round_trip() {
     cog::CogIdentity id{};
     id.uuid = cog::Uuid{0xCAFEBABEULL, 0xDEADBEEFULL};
     id.kind = cog::CogKind::Gpu;
-    id.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0xABCDULL};
-    id.bios_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0x1234ULL};
+    id.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0xABCDULL);
+    id.bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0x1234ULL);
 
     cog::GpuTargetCaps caps{};
     caps.sm_version = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{90}};
@@ -209,7 +209,7 @@ static void test_mint_cpu_paths() {
     cog::CogIdentity cpu_id{};
     cpu_id.uuid = cog::Uuid{0x1ULL, 0x2ULL};
     cpu_id.kind = cog::CogKind::CpuCore;
-    cpu_id.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0xC0DEULL};
+    cpu_id.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0xC0DEULL);
 
     cog::CpuCoreTargetCaps cpu_caps{};
     cpu_caps.base_clock_mhz = safety::Tagged<std::uint32_t, safety::source::Vendor>{2500U};

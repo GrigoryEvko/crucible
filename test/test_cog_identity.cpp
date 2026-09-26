@@ -110,8 +110,8 @@ static void test_cog_identity_runtime() {
     gpu.uuid = cog::Uuid{0xDEADBEEFULL, 0xCAFEBABEULL};
     gpu.level = cog::CogLevel::L0_Atomic;
     gpu.kind = cog::CogKind::Gpu;
-    gpu.firmware_revision = crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{0x12345678ULL};
-    gpu.bios_revision = crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{0xABCDEF01ULL};
+    gpu.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0x12345678ULL);
+    gpu.bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0xABCDEF01ULL);
 
     cog::CogIdentity gpu_copy = gpu;
 
@@ -121,13 +121,13 @@ static void test_cog_identity_runtime() {
 
     cog::CogIdentity gpu_new_fw = gpu;
     gpu_new_fw.firmware_revision =
-        crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{0xFFFFFFFFFFFFFFFFULL};
+        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0xFFFFFFFFFFFFFFFFULL);
     volatile std::uint64_t h3 = cog::content_hash(gpu_new_fw);
     assert(h1 != h3);
 
     cog::CogIdentity gpu_new_bios = gpu;
     gpu_new_bios.bios_revision =
-        crucible::safety::Tagged<std::uint64_t, crucible::safety::source::Vendor>{0xFFFFFFFFFFFFFFFFULL};
+        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0xFFFFFFFFFFFFFFFFULL);
     volatile std::uint64_t h4 = cog::content_hash(gpu_new_bios);
     assert(h1 != h4);
     assert(h3 != h4);

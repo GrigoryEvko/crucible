@@ -264,11 +264,11 @@ public:
             .uuid = fact.uuid,
             .level = fact.level,
             .kind = fact.kind,
-            .vendor = fact.vendor,
-            .model = fact.model,
-            .firmware_revision =
-                safety::Tagged<std::uint64_t, safety::source::Vendor>{stable_discovery_hash(fact.firmware.value())},
-            .bios_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0},
+            .vendor = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::string_view>(fact.vendor.value()),
+            .model = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::string_view>(fact.model.value()),
+            .firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(
+                stable_discovery_hash(fact.firmware.value())),
+            .bios_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(0),
         };
         ++node_count_;
         return idx;
@@ -283,10 +283,10 @@ public:
         nodes_[idx].uuid = fact.uuid;
         nodes_[idx].level = fact.level;
         nodes_[idx].kind = fact.kind;
-        nodes_[idx].vendor = fact.vendor;
-        nodes_[idx].model = fact.model;
+        nodes_[idx].vendor = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::string_view>(fact.vendor.value());
+        nodes_[idx].model = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::string_view>(fact.model.value());
         nodes_[idx].firmware_revision =
-            safety::Tagged<std::uint64_t, safety::source::Vendor>{stable_discovery_hash(fact.firmware.value())};
+            ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(stable_discovery_hash(fact.firmware.value()));
         return {};
     }
 
