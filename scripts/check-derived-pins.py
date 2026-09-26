@@ -64,7 +64,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
 ROOTS = ("include", "src", "test", "bench", "tools", "vessel")
-SUFFIXES = (".h", ".hpp", ".cpp", ".cc", ".inl", ".ipp")
 FROZEN = "scripts/frozen-paths.txt"
 ALLOWLIST = "scripts/derived-pins-allowlist.txt"
 FIXTURE_DIR = re.compile(r"^test/(?:[^/]+_neg|safety_attack)/")
@@ -72,20 +71,11 @@ COMPARISONS = frozenset({"=="})
 SEPARATOR = " — "
 
 
-def integer_value(text: str) -> int | None:
-    """Return the value of an integer literal, through its suffix, its separators and its base prefix."""
-    cleaned = text.replace("'", "").rstrip("uUlLzZ")
-    try:
-        return int(cleaned, 0) if not re.fullmatch(r"0[0-7]+", cleaned) else int(cleaned, 8)
-    except ValueError:
-        return None
-
-
 def literal_of(node: tsast.Node | None) -> int | None:
     """Return the integer that an expression spells as a literal, through parentheses and casts, or None."""
     while node is not None:
         if node.type == "number_literal":
-            return integer_value(node.text)
+            return tsast.number_value(node)
         inner = [child for child in node.children if child.type != "comment"]
         if node.type in ("parenthesized_expression", "initializer_list", "argument_list") and len(inner) == 1:
             node = inner[0]
@@ -116,12 +106,19 @@ def scope_of(node: tsast.Node) -> tuple[str, ...]:
     while owner is not None:
         if owner.type == "namespace_definition":
             named = owner.child_by_field("name")
-            text = named.text if named is not None else "(anonymous)"
-            parts[:0] = [part for part in re.sub(r"\s+", "", text).split("::") if part]
+            if named is None:
+                parts.insert(0, "(anonymous)")
+            elif named.type == "namespace_identifier":
+                parts.insert(0, named.text)
+            else:
+                parts[:0] = [segment.text for segment in named.descendants("namespace_identifier")]
         elif owner.type in ("class_specifier", "struct_specifier", "union_specifier") \
                 and owner.child_by_field("body") is not None:
+            # A specialization reads as its template name, and a class
+            # defined through a qualifier reads as each part of the qualifier.
             named = owner.child_by_field("name")
-            parts.insert(0, re.sub(r"<.*", "", named.text) if named is not None else f"(class@{owner.start[0]})")
+            spelled = tsast.qualified_parts(named) if named is not None else None
+            parts[:0] = list(spelled[1]) if spelled is not None else [f"(class@{owner.start[0]})"]
         elif owner.type in ("function_definition", "lambda_expression"):
             parts.insert(0, f"(function@{owner.start[0]})")
         owner = owner.parent
@@ -234,9 +231,9 @@ def pins(tree: tsast.Tree) -> Iterator[tuple[int, str, int]]:
         for node in [condition, *condition.descendants("binary_expression")]:
             if node.type != "binary_expression":
                 continue
-            left, right = node.child_by_field("left"), node.child_by_field("right")
-            if left is None or right is None or tree.slice(left.end, right.start).strip() not in COMPARISONS:
+            if tsast.operator_of(node) not in COMPARISONS:
                 continue
+            left, right = node.child_by_field("left"), node.child_by_field("right")
             for name_side, literal_side in ((left, right), (right, left)):
                 spelling, value = spelled_name(name_side), literal_of(literal_side)
                 if spelling is not None and value is not None and value in lookup(constants, node, spelling):
@@ -253,7 +250,7 @@ def frozen_prefixes(root: Path) -> tuple[str, ...]:
 
 
 def scope_files(root: Path) -> list[Path]:
-    """Return the C++ files in scope that hold a static_assert, sorted."""
+    """Return the C++ files in scope, sorted: tsast.is_in_cpp_scope, less the frozen paths and the fixtures."""
     frozen = frozen_prefixes(root)
     found: list[Path] = []
     for top in ROOTS:
@@ -262,10 +259,9 @@ def scope_files(root: Path) -> list[Path]:
             continue
         for path in base.rglob("*"):
             rel = path.relative_to(root).as_posix()
-            if path.is_file() and path.suffix in SUFFIXES and not rel.startswith(frozen) \
+            if path.is_file() and tsast.is_in_cpp_scope(rel) and not rel.startswith(frozen) \
                     and not FIXTURE_DIR.match(rel) \
-                    and not any(part.startswith("build") for part in path.relative_to(root).parts[:-1]) \
-                    and b"static_assert" in path.read_bytes():
+                    and not any(part.startswith("build") for part in path.relative_to(root).parts[:-1]):
                 found.append(path)
     return sorted(found)
 
@@ -283,8 +279,7 @@ def scan(root: Path) -> tuple[list[tuple[str, int, str, int]], list[str]]:
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
+            failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
         found.extend((rel, row + 1, name, value) for row, name, value in sorted(set(pins(tree))))
     return found, failures
@@ -361,6 +356,7 @@ def self_test() -> int:
         ("namespace foundation::planted {", None, ""),
         ("inline constexpr int plain = 28;", None, ""),
         ("static_assert(plain == 28, \"plain\");", True, "a plain pin"),
+        ("static_assert(plain /* n */ == 28);", True, "a comment beside the operator"),
         ("inline constexpr std::size_t reversed = 7;", None, ""),
         ("static_assert(7 == reversed);", True, "the literal on the left"),
         ("inline constexpr unsigned long long suffixed = 0x10ULL;", None, ""),
@@ -398,6 +394,10 @@ def self_test() -> int:
         ("}", None, ""),
         ("static_assert(far == 11);", True, "a pin above its declaration, at any distance"),
         ("inline constexpr int far = 11;", None, ""),
+        ("namespace foundation::/* nested */ inner {", None, ""),
+        ("inline constexpr int spaced = 5;", None, ""),
+        ("}", None, ""),
+        ("static_assert(foundation::inner::spaced == 5);", True, "a namespace name with a comment inside"),
     ]
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
