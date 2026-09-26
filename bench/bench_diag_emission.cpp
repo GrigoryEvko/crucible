@@ -1,4 +1,4 @@
-#include <crucible/safety/diag/_JsonEmitter.h>
+#include <foundation/diag/JsonEmitter.h>
 
 #include "bench_harness.h"
 
@@ -7,7 +7,7 @@
 #include <string_view>
 
 int main() {
-    namespace diag = ::crucible::safety::diag;
+    namespace diag = ::foundation::diag;
 
     bench::print_system_info();
     bench::elevate_priority();
