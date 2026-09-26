@@ -1000,38 +1000,31 @@ add_test(NAME session_oracle_self_test
 set_tests_properties(session_oracle_check session_oracle_self_test
     PROPERTIES LABELS "ci_guard;session_oracle")
 
-# Stage A port completeness.  Three completed port tasks (A2.3, A9, A11.2)
-# were incomplete and each was found by downstream work or a one-off
-# sweep, never by review.  This is the sweep's permanent form: every
-# public symbol of every superseded `_Foo.h` under include/crucible/
-# must exist by name under include/foundation/ or include/fixy/, or be
-# listed in scripts/port-drops.txt with one sentence saying why not.  The
-# old surface is enumerated by a reflection sentinel the guard compiles
-# at test time (hence CXX), by the preprocessor for macros, and by a
-# namespace-scope scan for using-declarations; the guard prints the
-# whole surface before comparing.  A drop entry is checked both ways —
-# stale if its symbol left the old tree, obsolete if it arrived in the
-# new one — so the file drains.  The self-test plants one ported and one
-# unported symbol and proves exactly the second is reported, then a
-# template, an alias, a re-export and a macro, then each direction of
-# drop-file failure.
+# The port completeness.  Each public symbol of each superseded `_Foo.h`
+# under include/crucible/ must exist in include/foundation/ or
+# include/fixy/, or have one sentence in scripts/port-drops.txt.  A
+# reflection sentinel that the guard compiles at test time (so CXX is set)
+# gives the old names, the preprocessor gives the macros, and the parse tree
+# gives the using-declarations and decides which header declares each name.
+# A new-tree name counts only when the new tree declares it, not when it
+# only uses it.  A drop row is checked both ways, stale and obsolete, so the
+# file drains.
 #
-# The guard also checks the other half of a trait's identity.  A trait can
-# survive the port by name and lose every specialisation, and then answer
-# the same thing for every argument, which is how the Qtt discipline
-# tables made linearity a tautology (#193).  Such a trait needs a sentence
-# in scripts/port-folds.txt naming what now computes the answer.  The
-# self-test plants two traits, one that loses its specialisation and one
-# that keeps one, and proves exactly the first is reported.
+# A trait can keep its name through the port and lose every specialisation,
+# and then answer the same thing for every argument.  The guard counts the
+# specialisations of classes and variable templates on both sides from the
+# parse trees, and such a trait needs a sentence in scripts/port-folds.txt.
+# The self-test plants each kind of miss, fold and bad row, and a layout
+# that a line scan misreads.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME port_completeness_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-port-completeness.sh
-          --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-port-completeness.py --self-test)
 add_test(NAME port_completeness
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-port-completeness.sh --quiet)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-port-completeness.py --quiet)
 set_tests_properties(port_completeness port_completeness_self_test
     PROPERTIES
   ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
-  LABELS "ci_guard")
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
 # The row-membership discipline.  scripts/check-row-contains-discipline.py
 # reads each row_contains_v whose first argument is the row of a context
 # from the parse tree, with any qualifier, and requires the named lift

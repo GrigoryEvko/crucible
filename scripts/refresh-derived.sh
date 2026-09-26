@@ -154,7 +154,7 @@ fi
 printf 'refresh-derived: checking\n' >&2
 run_ 'frozen tree'                   python3 scripts/check-frozen-tree.py --compile-db "$COMPILE_DB"
 run_ 'allowlist keys and prose'      bash scripts/check-allowlist-keys.sh
-run_ 'port completeness'             bash scripts/check-port-completeness.sh
+run_ 'port completeness'             python3 scripts/check-port-completeness.py
 run_ 'mint inventory'                python3 scripts/gen-mint-inventory.py --check
 run_ 'witness roster'                python3 scripts/check-witness-roster.py --check
 

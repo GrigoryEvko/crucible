@@ -9,7 +9,7 @@
 # how fixy/Qtt.h shipped two discipline tables that made linearity a
 # tautology.
 #
-# scripts/check-port-completeness.sh counts specialisations on both sides.
+# scripts/check-port-completeness.py counts specialisations on both sides.
 # A name the old tree specialises at least once, whose primary the new
 # tree declares, and which the new tree specialises zero times, must be
 # listed here with one sentence naming the mechanism that replaced the
@@ -44,6 +44,7 @@
 # specialisations reports exactly one member, measured 2026-09-20.  A
 # sentence here is a written claim reviewed by a person, not a proof.
 
+include/foundation/algebra/Graded.h:Graded  — the two partial specialisations for the element regime and the derived regime are one template, and detail::graded::regime_of<L, T>() selects the storage with if constexpr.
 include/foundation/algebra/GradedTrait.h:graded_modality  — the one specialisation read a member, and the primary now reads T::modality directly, so every wrapper that declares the member answers for itself.
 include/foundation/algebra/GradedTrait.h:is_graded_specialization  — the primary delegates to the IsGraded concept, which recognises a Graded specialisation structurally rather than by a listed instantiation.
 include/foundation/contracts/DecideOracle.h:widen  — the eight per-type specialisations became one conditional_t over width and signedness, pinned by six static_asserts, and it answers for long and long long as well, which the listed form did not.

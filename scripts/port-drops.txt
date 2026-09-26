@@ -1,7 +1,7 @@
 # port-drops — superseded-header symbols that deliberately have no home
 # in the new tree.
 #
-# scripts/check-port-completeness.sh enumerates every public symbol of
+# scripts/check-port-completeness.py enumerates every public symbol of
 # every `_Foo.h` under include/crucible/ (the underscore is the superseded
 # marking, so that set is exactly what the project claims to have ported)
 # and requires each to exist by name under include/foundation/ or
@@ -48,8 +48,8 @@
 # clause as UNCARRIED DEFERRAL.
 #
 # `→ none` is the honest form for a type no header carries yet.  Those
-# rows are pinned BY NAME in the guard (uncarried_pinned in
-# scripts/check-port-completeness.sh): a `→ none` row the guard does not
+# rows are pinned BY NAME in the guard (UNCARRIED_PINNED in
+# scripts/check-port-completeness.py): a `→ none` row the guard does not
 # pin is UNPINNED, and a pin with no such row is STALE.  The set can only
 # change by editing that list, so it shrinks in the same commit as the
 # port that gives a type a carrier, and one name cannot silently replace
@@ -62,7 +62,7 @@
 #               drop; remove the entry.
 # Either is exit 2 from the guard.
 #
-# To add an entry, run `scripts/check-port-completeness.sh --emit-drops`:
+# To add an entry, run `scripts/check-port-completeness.py --emit-drops`:
 # it prints a template line for every current miss.  Replace the angle-
 # bracket placeholder with the sentence.  Do not add an entry to make the
 # guard green; add it because the symbol has no business in the new tree.
@@ -159,6 +159,7 @@ crucible/effects/_ExecCtx.h:is_workload_hint  — One of the six policy axes (wo
 crucible/effects/_ExecCtx.h:IsWorkloadHint  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:is_workload_hint_v  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:ItemBudget  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:L1  — One of the six policy axes (residency) that foundation/effects/Ctx.h does not carry. No production site used it, and Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:L3  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:MayDiverge  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:numa_policy_of_t  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
@@ -245,6 +246,7 @@ crucible/fixy/_Hw.h:rationale_nonempty_v  — The rationale check of the assembl
 crucible/fixy/_Hw.h:scope_arch_trunk_consistent  — The coherence check between a memory scope and a fence dialect. V402 in fixy/Collision.h checks a scope atom against the SIMD atom of the binding instead.
 crucible/fixy/_Hw.h:CpuPinProof  — An empty token that stated that the thread was pinned, and any code could make it. fixy/os/CpuPinned.h carries a pin proof that only mint_affinity makes, after sched_setaffinity succeeds.
 crucible/fixy/_Hw.h:root  — The permission tag of the MSR mint. The MSR grant was not carried, so the tag has no use.
+crucible/fixy/_Hw.h:barrier  — The barrier grant tag. A binding states the fence strength with an atom of fixy/atoms/Barrier.h, which names no fence dialect.
 crucible/fixy/_Hw.h:tsc  — The TSC grant tag. The atom non_deterministic_tsc at fixy/atoms/Hw.h:84 states the tier, and fixy/os/Time.h mints the reader.
 crucible/fixy/_Hw.h:msr  — The MSR grant tag. The atom privileged_msr at fixy/atoms/Hw.h:88 states the tier, and V202 in fixy/Collision.h requires an Init context for it.
 crucible/fixy/_Hw.h:port_io  — The port IO grant tag. The atom privileged_msr at fixy/atoms/Hw.h:88 covers IN and OUT, as fixy/atoms/Hw.h:69 records.
@@ -287,6 +289,7 @@ crucible/fixy/_Hw.h:mint_tsc_grant  — The mint of the TSC grant. fixy/os/Time.
 crucible/fixy/_Hw.h:mint_msr_grant  — The mint of the MSR grant. An atom is a type that a binding names, not a value that a context mints, so no mint applies.
 crucible/fixy/_Hw.h:mint_scoped_fence  — The mint of the scope grant. A binding states the memory scope with an atom of fixy/atoms/Scope.h, and the ScopedFence band of fixy/Bands.h:245 carries a scope on a value.
 crucible/fixy/_Sched.h:affinity  — The CPU pin grant tag. fixy/os/Sched.h:10 records that the four scheduling grant tags were not carried, because nothing outside the old self-test read them.
+crucible/fixy/_Sched.h:scheduler_policy  — The scheduling-policy grant tag. fixy/os/Sched.h:10 records that the four scheduling grant tags were not carried, because nothing outside the old self-test read them.
 crucible/fixy/_Sched.h:thread_name  — The thread-name grant tag. fixy/os/Sched.h:10 records that the four scheduling grant tags were not carried, because nothing outside the old self-test read them.
 crucible/fixy/_Sched.h:which_dim  — The axis registration of the scheduling grant tags, dropped with the tags, as fixy/os/Sched.h:10 records.
 crucible/fixy/_Sched.h:CtxFitsAffinityMint  → include/fixy/os/CpuPinned.h  — The gate moved to namespace fixy at fixy/os/CpuPinned.h:146 with the declaration of mint_affinity, as fixy/os/Sched.h:128 records.
@@ -693,6 +696,7 @@ crucible/concurrent/_PermissionedChainEdge.h:splits_into_authoring_witness  — 
 crucible/concurrent/_PermissionedChainEdge.h:splits_into_pack  — The same for the pack manifest, which drops with the channel.
 crucible/concurrent/_PermissionedChainEdge.h:splits_into_pack_authoring_witness  — The same for the pack witness, which drops with the channel.
 crucible/concurrent/_PermissionedChainEdge.h:Waiter  — A role tag of the dropped chain edge, so its tag tree drops with it.
+crucible/concurrent/_PermissionedChaseLevDeque.h:Owner  — A role tag of the dropped wrapper, so its tag tree drops with it.
 crucible/concurrent/_PermissionedChaseLevDeque.h:PermissionedChaseLevDeque  — The deque itself is fixy/concurrent/ChaseLevDeque.h. No production file reaches this permissioned wrapper, so the wrapper drops.
 crucible/concurrent/_PermissionedChaseLevDeque.h:splits_into  — The header specialized the binary manifest for the tag tree of its wrapper, and the tree drops with the wrapper.
 crucible/concurrent/_PermissionedChaseLevDeque.h:splits_into_authoring_witness  — The same for the binary witness, which drops with the wrapper.
@@ -709,10 +713,12 @@ crucible/concurrent/_PermissionedShardedCalendarGrid.h:PermissionedShardedCalend
 crucible/concurrent/_PermissionedShardedCalendarGrid.h:ShardedCalendarKeyExtractorOf  — Dropped with the sharded calendar grid. No production file reaches it, and the new tree has no keyed channel.
 crucible/concurrent/_PermissionedShardedGrid.h:PermissionedShardedGrid  — Dropped with the header. No production file reaches it, and the bridge table of the new tree holds the SPSC and the MPSC channel only.
 crucible/concurrent/_PermissionedSnapshot.h:PermissionedSnapshot  — The old tree had two permissioned single-writer many-reader channels over AtomicSnapshot. The port keeps fixy/concurrent/SwmrSession.h, and this second one drops.
+crucible/concurrent/_PermissionedSnapshot.h:Reader  — A role tag of the dropped channel, so its tag tree drops with it.
 crucible/concurrent/_PermissionedSnapshot.h:splits_into  — The header specialized the binary manifest for the tag tree of its channel, and the tree drops with the channel.
 crucible/concurrent/_PermissionedSnapshot.h:splits_into_authoring_witness  — The same for the binary witness, which drops with the channel.
 crucible/concurrent/_PermissionedSnapshot.h:splits_into_pack  — The same for the pack manifest, which drops with the channel.
 crucible/concurrent/_PermissionedSnapshot.h:splits_into_pack_authoring_witness  — The same for the pack witness, which drops with the channel.
+crucible/concurrent/_PermissionedSnapshot.h:Writer  — A role tag of the dropped channel, so its tag tree drops with it.
 crucible/concurrent/_Queue.h:auto_queue_t  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
 crucible/concurrent/_Queue.h:is_mpsc_kind  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
 crucible/concurrent/_Queue.h:is_mpsc_kind_v  — Dropped with the queue facade. No production file reaches it, and a caller of the new tree names PermissionedSpscChannel or PermissionedMpscChannel directly.
