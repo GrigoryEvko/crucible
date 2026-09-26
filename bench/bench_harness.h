@@ -76,9 +76,11 @@
 #include <crucible/perf/Senses.h>
 #endif
 
-#include <crucible/fixy/_Sched.h>  // mint_priority<-10>
 #include <crucible/warden/Hardening.h>
 #include <crucible/warden/Policy.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/Sched.h>
+#include <foundation/effects/Effect.h>
 
 namespace bench {
 
@@ -1713,43 +1715,34 @@ inline void print_system_info(FILE* out = stdout) {
     std::fprintf(out, "\n");
 }
 
-// FIXY-V-197: routes the bench's nice-value bump through the V-191 typed
-// `mint_priority<-10>(init_ctx)` factory instead of raw setpriority(2).
-// Both produce the SAME kernel side effect — on Linux,
-// `setpriority(PRIO_PROCESS, 0, nice)` with who=0 sets the CALLING
-// THREAD's nice value (Linux LWP semantics; POSIX PRIO_PROCESS is
-// re-interpreted per-thread).  The mint additionally returns a typed
-// `SchedPriority<-10>` witness whose existence documents at the type
-// level that the priority bump executed in an Init-row context.  The
-// witness is discarded here because bench main doesn't propagate it
-// downstream — the side effect is what matters, not a witness chain.
+// The bench raises its nice value through the typed mint
+// `mint_priority<-10>(ctx)`, not through a raw setpriority(2).  On Linux,
+// `setpriority(PRIO_PROCESS, 0, nice)` sets the nice value of the calling
+// thread.  The mint also returns a `SchedPriority<-10>` proof, which shows
+// that the change ran in a context whose row owns Init.  The bench does
+// not pass the proof on, so it discards it.
 //
-// Pre-V-197 behavior preserved: EPERM / EBADRQC / EINVAL are silently
-// absorbed (matched the prior `(void)setpriority(...)` discipline).
-// Bench callers that need elevated priority but run under non-root
-// continue at default nice — measurement still runs, just with more
-// scheduler noise on the tail.
+// A failed call (EPERM, EACCES or EINVAL) is ignored.  A bench that runs
+// without the permission keeps the default nice value.  The measurement
+// still runs, with more scheduler noise in the tail.
 inline void elevate_priority() noexcept {
 #ifdef __linux__
-    // ColdInitCtx is the ExecCtx alias whose row owns Init, Alloc and IO,
-    // and it satisfies CtxFitsPriorityMint.  A context over Init is built
-    // only from an Init source, and the bench takes that source from the
-    // test witness.
-    auto p = ::crucible::fixy::sched::mint_priority<-10>(
-        ::crucible::effects::ColdInitCtx{::crucible::effects::testing::init()});
+    // ColdInitCtx owns Init, Alloc and IO, and it satisfies
+    // CtxFitsPriorityMint.  A context over Init is built only from an Init
+    // source, and the bench takes that source from the test witness.
+    auto p = ::fixy::sched::mint_priority<-10>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     (void)p;
 #endif
 }
 
-// FIXY-V-197 sentinel: the elevate_priority() mint produces an
-// `expected<SchedPriority<-10>, int>`; if a future change moves the
-// nice value or alters the return type, this trips at every bench
-// TU that includes bench_harness.h.
-static_assert(std::is_same_v<decltype(::crucible::fixy::sched::mint_priority<-10>(
-                                 ::crucible::effects::ColdInitCtx{::crucible::effects::testing::init()})),
-                             std::expected<::crucible::fixy::sched::SchedPriority<-10>, int>>,
-              "FIXY-V-197: elevate_priority must mint a SchedPriority<-10> witness "
-              "via fixy::sched::mint_priority<-10>(ColdInitCtx).");
+// The mint returns `expected<SchedPriority<-10>, int>`.  A change to the
+// nice value or to the return type stops every bench TU that includes
+// this header.
+static_assert(std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(
+                                 ::fixy::ColdInitCtx{::foundation::effects::testing::init()})),
+                             std::expected<::fixy::sched::SchedPriority<-10>, int>>,
+              "elevate_priority must mint a SchedPriority<-10> proof through "
+              "fixy::sched::mint_priority<-10>(ColdInitCtx).");
 
 // ── Per-bench boilerplate helpers ──────────────────────────────────
 //

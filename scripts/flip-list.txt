@@ -57,7 +57,6 @@ bench/bench_dispatch.cpp
 bench/bench_expr_pool.cpp
 bench/bench_fusion.cpp
 bench/bench_graph.cpp
-bench/bench_harness.h
 bench/bench_merkle_dag.cpp
 bench/bench_mpmc_saturation.cpp
 bench/bench_mpsc_contention.cpp
