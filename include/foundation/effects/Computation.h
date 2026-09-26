@@ -8,14 +8,22 @@
 //
 // It is one instantiation of the graded substrate, not a parallel
 // hierarchy: ComputationGraded<R, T> is Graded<Relative, At<Es...>, T>
-// and Computation<R, T> derives from it with no members of its own.
-// The modality is Relative because a row carries neither a unit nor a
-// counit.  A value cannot be injected into a row, since the row is
-// already the typing context, and it cannot be extracted out of one
-// short of closing the universe.  What a row does carry is propagation,
-// which `weaken` widens up the lattice, and the derived class adds the
-// row-level operations the substrate cannot express — the empty-row
-// extract, the type-changing weaken, map, then, and the lifts.
+// and Computation<R, T> derives from it privately, with no members of
+// its own.  The modality is Relative because a row carries neither a
+// unit nor a counit.  A value cannot be injected into a row, since the
+// row is already the typing context, and it cannot be extracted out of
+// one short of closing the universe.  What a row does carry is
+// propagation, which `weaken` widens up the lattice, and the derived
+// class adds the row-level operations the substrate cannot express — the
+// empty-row extract, the type-changing weaken, map, then, and the two
+// mints.
+//
+// The base is private, so the substrate's consume, peek and peek_mut are
+// not members of a Computation.  They read and move the payload whatever
+// the row and whatever the payload holds, and each route out of a
+// Computation carries the gate that belongs to it.  An engaged row is
+// built only by the witnessed mint, which reads the row of a context, or
+// by a member that keeps or widens a row the value already had.
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Modality.h>
@@ -328,7 +336,7 @@ template <typename T>
 concept IsComputation = detail::is_computation<std::remove_cvref_t<T>>::value;
 
 template <typename R, typename T>
-class [[nodiscard]] Computation : public ComputationGraded<R, T> {
+class [[nodiscard]] Computation : private ComputationGraded<R, T> {
     using base = ComputationGraded<R, T>;
 
 public:
@@ -338,16 +346,25 @@ public:
     using typename base::lattice_type;
     using typename base::value_type;
 
+    // The diagnostic surface of the substrate, which GradedWrapper reads.
+    // Each names the grade or the type and none of them reads the payload.
+    using base::grade;
+    using base::lattice_name;
+    using base::modality;
+    using base::modality_name;
+    using base::value_type_name;
+
     static constexpr std::size_t row_size = row_size_v<R>;
 
     [[nodiscard]] static consteval std::size_t effect_count_in_row() noexcept { return row_size_v<R>; }
 
-    // A default value needs no effect, so it sits under every row.  The
-    // constraint keeps the body from being defined for a payload that has
-    // no default constructor.
+    // A default value makes no claim only at the empty row.  At an engaged
+    // row it would claim effects that nothing exercised, which the
+    // witnessed mint exists to check.  The constraint also keeps the body
+    // from being defined for a payload that has no default constructor.
     constexpr Computation() noexcept(std::is_nothrow_default_constructible_v<T>
                                      && std::is_nothrow_move_constructible_v<T>)
-        requires std::is_default_constructible_v<T>
+        requires(row_size_v<R> == 0) && std::is_default_constructible_v<T>
         : base{::foundation::algebra::grade_key<Computation>{}, T{}, grade_type{}} {}
     constexpr Computation(const Computation&) = default;
     constexpr Computation(Computation&&) = default;
@@ -355,11 +372,17 @@ public:
     constexpr Computation& operator=(Computation&&) = default;
     ~Computation() = default;
 
-    // Explicit, so that no value slides into a Computation without the
-    // lift being written out.
+private:
+    // Every Computation reaches the private constructor and the payload
+    // of every other one, so a member that keeps or widens a row builds
+    // its result through the same door as the two mints.
+    template <typename, typename>
+    friend class Computation;
+
     explicit constexpr Computation(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
         : base{::foundation::algebra::grade_key<Computation>{}, std::move(x), grade_type{}} {}
 
+public:
     // The lift of a pure value, named so that one grep over mint_ finds
     // every authorization point.  It derives its authority from the
     // empty-row constraint alone, so it takes no context.
@@ -383,27 +406,16 @@ public:
         return std::move(*this).base::consume();
     }
 
-    // This form takes the caller's word for it.  Nothing about a raw T
-    // proves that producing it exercised Cap, and no type-level axis
-    // could supply that proof, so the honesty of the claim is a matter
-    // of review.  Where the caller has a context in hand,
-    // mint_computation_in_ctx below checks the claim against that
-    // context's row instead.
-    template <Effect Cap>
-        requires IsEffect<Cap>
-    [[nodiscard]] static constexpr auto lift(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> Computation<Row<Cap>, T> {
-        return Computation<Row<Cap>, T>{std::move(x)};
-    }
-
-    // The third predicate is the one that matters: it is the proof
-    // that the caller's context permits the claimed effect.  The first
-    // two only reject typos.  A caller whose context carries the empty
-    // row finds no candidate here, whatever effect it asks for.
+    // The one mint of an engaged row.  Its constraint is the proof that
+    // the caller's context owns the claimed effect, so a caller whose
+    // context carries the empty row finds no candidate here, whatever
+    // effect it asks for.  Nothing about a raw T proves that producing it
+    // exercised Cap.  The context does prove that the caller may exercise
+    // Cap, and that is the claim the row makes.
     //
     // The context argument is read for its type alone.
     template <Effect Cap, class Ctx>
-        requires IsEffect<Cap> && IsExecCtx<Ctx> && row_contains_v<typename std::remove_cvref_t<Ctx>::row_type, Cap>
+        requires IsEffect<Cap> && CtxOwnsCapability<Ctx, Cap>
     [[nodiscard]] static constexpr auto mint_computation_in_ctx(Ctx const&,
                                                                 T x) noexcept(std::is_nothrow_move_constructible_v<T>)
         -> Computation<Row<Cap>, T> {
@@ -416,7 +428,7 @@ public:
     // a subrow of every row, so Subrow alone would let a pure value
     // claim any effect it liked.  Widening is therefore allowed only
     // from an already-engaged row, or between two empty ones.  To
-    // attach a row at construction, lift instead.
+    // attach a row at construction, use the witnessed mint.
     //
     // The copy-constructible conjunct moves the failure for a
     // move-only payload from deep inside the body out to overload
@@ -437,8 +449,12 @@ public:
     // The row is unchanged because f is a value transformation and
     // cannot introduce an effect.  An f that wants one goes through
     // `then`.
+    //
+    // The payload constraint is the one extract carries.  f receives the
+    // payload, so a payload that conveys an authority would hand it to f
+    // under a row that does not name it.
     template <typename F>
-        requires std::is_invocable_v<F, const T&>
+        requires std::is_invocable_v<F, const T&> && detail::extract_admits_payload_v<T>
     [[nodiscard]] constexpr auto
     map(F&& f) const& noexcept(std::is_nothrow_invocable_v<F, const T&>
                                && std::is_nothrow_move_constructible_v<std::invoke_result_t<F, const T&>>)
@@ -448,7 +464,7 @@ public:
     }
 
     template <typename F>
-        requires std::is_invocable_v<F, T>
+        requires std::is_invocable_v<F, T> && detail::extract_admits_payload_v<T>
     [[nodiscard]] constexpr auto
     map(F&& f) && noexcept(std::is_nothrow_invocable_v<F, T>
                            && std::is_nothrow_move_constructible_v<std::invoke_result_t<F, T>>)
@@ -464,12 +480,14 @@ public:
     // this distinct from map: a callback returning a plain value is
     // rejected here rather than accepted as a degenerate bind.
     //
-    // The payload constraint rejects a callback whose declared row
-    // hides an engaged Computation in the returned value.  After the
-    // union the inner row would be invisible in the result type.
-    // Chaining several binds does the same job honestly.
+    // The payload constraint on the returned value rejects a callback
+    // whose declared row hides an engaged Computation in the returned
+    // value.  After the union the inner row would be invisible in the
+    // result type.  Chaining several binds does the same job honestly.
+    // The payload constraint on T is the one map carries.
     template <typename F>
-        requires std::is_invocable_v<F, const T&> && IsComputation<std::invoke_result_t<F, const T&>>
+        requires std::is_invocable_v<F, const T&> && detail::extract_admits_payload_v<T>
+              && IsComputation<std::invoke_result_t<F, const T&>>
               && detail::extract_admits_payload_v<typename std::invoke_result_t<F, const T&>::value_type>
     [[nodiscard]] constexpr auto
     then(F&& k) const& -> Computation<row_union_t<R, typename std::invoke_result_t<F, const T&>::row_type>,
@@ -479,11 +497,12 @@ public:
         using U = typename Inner::value_type;
         using Result = Computation<row_union_t<R, R2>, U>;
         Inner intermediate = std::forward<F>(k)(base::peek());
-        return Result{std::move(intermediate).graded().consume()};
+        return Result{std::move(intermediate).Inner::base::consume()};
     }
 
     template <typename F>
-        requires std::is_invocable_v<F, T> && IsComputation<std::invoke_result_t<F, T>>
+        requires std::is_invocable_v<F, T> && detail::extract_admits_payload_v<T>
+              && IsComputation<std::invoke_result_t<F, T>>
               && detail::extract_admits_payload_v<typename std::invoke_result_t<F, T>::value_type>
     [[nodiscard]] constexpr auto
     then(F&& k) && -> Computation<row_union_t<R, typename std::invoke_result_t<F, T>::row_type>,
@@ -493,15 +512,25 @@ public:
         using U = typename Inner::value_type;
         using Result = Computation<row_union_t<R, R2>, U>;
         Inner intermediate = std::forward<F>(k)(std::move(*this).base::consume());
-        return Result{std::move(intermediate).graded().consume()};
+        return Result{std::move(intermediate).Inner::base::consume()};
     }
 
     // The way out to the substrate view, for code that wants the
     // uniform grade and lattice diagnostics or a cache key.  The view
-    // is the base subobject: no copy, no second object.
-    [[nodiscard]] constexpr const graded_type& graded() const& noexcept { return *this; }
+    // is the base subobject and const: no copy, no second object, and no
+    // write through it.  Each form carries the payload constraint that
+    // map carries, because the substrate reads the payload out.  The
+    // rvalue form moves the substrate out, and the row stays in its
+    // lattice type.
+    [[nodiscard]] constexpr const graded_type& graded() const& noexcept
+        requires detail::extract_admits_payload_v<T>
+    {
+        return *this;
+    }
 
-    [[nodiscard]] constexpr graded_type graded() && noexcept(std::is_nothrow_move_constructible_v<graded_type>) {
+    [[nodiscard]] constexpr graded_type graded() && noexcept(std::is_nothrow_move_constructible_v<graded_type>)
+        requires detail::extract_admits_payload_v<T>
+    {
         return std::move(*this);
     }
 };
@@ -556,7 +585,24 @@ static_assert(std::is_same_v<C_eight_byte::graded_type, ComputationGraded<Row<Ef
 
 static_assert(std::is_default_constructible_v<C_empty>);
 static_assert(std::is_default_constructible_v<C_one_byte>);
-static_assert(std::is_default_constructible_v<C_eight_byte>);
+static_assert(!std::is_default_constructible_v<C_eight_byte>,
+              "A default value at an engaged row would claim effects that nothing exercised.");
+
+// The substrate's consume, peek and peek_mut hand out the payload with no
+// gate, so none of them is a member of a Computation, and no public
+// constructor builds one from a value.
+template <typename C>
+concept ExposesSubstratePayload = requires(C& c) {
+    { c.peek() };
+} || requires(C& c) {
+    { c.peek_mut() };
+} || requires(C&& c) {
+    { std::move(c).consume() };
+};
+static_assert(!ExposesSubstratePayload<C_empty> && !ExposesSubstratePayload<C_eight_byte>);
+static_assert(!std::is_constructible_v<C_eight_byte, EightByteValue> && !std::is_constructible_v<C_one_byte, OneByteValue>);
+static_assert(!std::is_convertible_v<C_eight_byte*, typename C_eight_byte::graded_type*>,
+              "The substrate is a private base, so no pointer conversion reaches it.");
 
 static_assert(sizeof(C_empty) == 1);
 static_assert(sizeof(C_one_byte) == sizeof(OneByteValue));
@@ -591,24 +637,8 @@ static_assert(
     }(),
     "The round trip through mk and extract on an empty-row Computation<int> failed.");
 
-static_assert(
-    [] consteval {
-        auto bg = Computation<Row<>, int>::lift<Effect::Bg>(7);
-        using BgComp = decltype(bg);
-        return std::is_same_v<BgComp, Computation<Row<Effect::Bg>, int>>;
-    }(),
-    "A lift at Effect::Bg did not produce a Computation at Row<Bg>.");
-
-// The final read goes through the substrate accessor because extract
-// is gated off for a non-empty row.
-static_assert(
-    [] consteval {
-        auto bg = Computation<Row<>, int>::lift<Effect::Bg>(13);
-        auto wider = bg.template weaken<Row<Effect::Bg, Effect::Alloc>>();
-        auto widest = wider.template weaken<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
-        return widest.graded().peek() == 13;
-    }(),
-    "A chain of weaken calls through nested subrows did not preserve the inner value.");
+// The scenarios that build an engaged row take a context from the test
+// door, so they sit in test/foundation/test_computation.cpp.
 
 static_assert(
     noexcept(std::declval<Computation<Row<Effect::Bg>, int>>().template weaken<Row<Effect::Bg, Effect::IO>>()),
@@ -752,36 +782,19 @@ static_assert(
     "hidden by an empty inner row.");
 
 using LaunderingInner = Computation<Row<Effect::Bg>, int>;
-using LaunderingCallback = decltype([](int) {
-    return Computation<Row<>, LaunderingInner>::mint_computation(Computation<Row<>, int>::lift<Effect::Bg>(42));
-});
 static_assert(!detail::extract_admits_payload_v<LaunderingInner>,
               "A callback whose returned value is itself an engaged Computation must not admit through "
               "then.  The inner row would disappear from the union.");
 
 }  // namespace then_payload_gate
 
-namespace lift_provenance_surface {
+namespace mint_provenance_surface {
 
-// The next two record that the unwitnessed lift grants an effect
-// claim to a value produced without it.  They pin that surface, so a
-// later change to how lift is gated reds here and forces a deliberate
-// migration rather than passing unnoticed.
-static_assert(
-    std::is_same_v<decltype(Computation<Row<>, int>::lift<Effect::Bg>(42)), Computation<Row<Effect::Bg>, int>>,
-    "A lift at Effect::Bg over a plain int yields a Computation engaged at Row<Bg>, with nothing "
-    "vouching for the claim.");
-
-static_assert(std::is_same_v<decltype(Computation<Row<>, int>::lift<Effect::IO>(7)), Computation<Row<Effect::IO>, int>>,
-              "The same ungated claim holds at Effect::IO.  The surface is not specific to one atom.");
-
-static_assert(IsEffect<Effect::Bg> && IsEffect<Effect::IO> && IsEffect<Effect::Alloc> && IsEffect<Effect::Block>,
-              "The IsEffect gate on lift must accept every Effect atom.  If it does not, the gate has "
-              "stopped recognizing a core atom, which shows up first as errors at lift call sites.");
-
-static_assert(decltype(Computation<Row<>, int>::lift<Effect::Bg>(0))::effect_count_in_row() == 1u,
-              "The row claimed by a lift is visible in the result type.  What the unwitnessed form "
-              "lacks is provenance, not the claim.");
+// The witnessed mint is the one door of an engaged row.  No unwitnessed
+// lift exists.
+template <typename C>
+concept HasUnwitnessedLift = requires { C::template lift<Effect::Bg>(0); };
+static_assert(!HasUnwitnessedLift<Computation<Row<>, int>>);
 
 // The asymmetry between the two contexts below is the closure: one
 // carries Bg in its row and can witness a Bg claim, the other cannot.
@@ -797,16 +810,16 @@ static_assert(!row_contains_v<typename detail::ctx_witnesses::FgWitness::row_typ
 static_assert(std::is_same_v<decltype(Computation<Row<>, int>::template mint_computation_in_ctx<Effect::Bg>(
                                  std::declval<detail::ctx_witnesses::BgWitness const&>(), 42)),
                              Computation<Row<Effect::Bg>, int>>,
-              "The witnessed lift must admit when the context's row contains the requested effect, and "
-              "must give the same result type as the unwitnessed form.");
+              "The witnessed mint must admit when the context's row contains the requested effect, and "
+              "must return a Computation at the one-atom row.");
 
-static_assert(decltype(Computation<Row<>, int>::template mint_computation_in_ctx<Effect::Bg>(
-                  std::declval<detail::ctx_witnesses::BgWitness const&>(), 0))::effect_count_in_row()
-                  == 1u,
-              "The witnessed lift preserves the type-level claim.  Only the construction path gained a "
-              "check.");
+template <Effect Cap, class Ctx>
+concept MintsInCtx = requires(Ctx const& ctx) { Computation<Row<>, int>::template mint_computation_in_ctx<Cap>(ctx, 0); };
+static_assert(MintsInCtx<Effect::Bg, detail::ctx_witnesses::BgWitness>);
+static_assert(!MintsInCtx<Effect::IO, detail::ctx_witnesses::BgWitness>);
+static_assert(!MintsInCtx<Effect::Bg, detail::ctx_witnesses::FgWitness>);
 
-}  // namespace lift_provenance_surface
+}  // namespace mint_provenance_surface
 
 static_assert(noexcept(std::declval<Computation<Row<>, int>>().extract()),
               "The rvalue extract must be noexcept for a payload that is trivially move-constructible.");
@@ -839,27 +852,6 @@ static_assert(
 
 static_assert(
     [] consteval {
-        auto bg = Computation<Row<>, int>::lift<Effect::Bg>(10);
-        auto chained = bg.then([](int x) { return Computation<Row<>, int>::lift<Effect::IO>(x + 1); });
-        using Chained = decltype(chained);
-        return is_subrow_v<Row<Effect::Bg>, Chained::row_type> && is_subrow_v<Row<Effect::IO>, Chained::row_type>
-            && std::is_same_v<Chained::value_type, int>;
-    }(),
-    "A bind must carry the effects of both sides into the result row.");
-
-// The two rows below overlap, and the mutual subrow test is how the
-// assertion says the union collapsed them into one.
-static_assert(
-    [] consteval {
-        auto bg = Computation<Row<>, int>::lift<Effect::Bg>(100);
-        auto chained = std::move(bg).then([](int x) { return Computation<Row<>, int>::lift<Effect::Bg>(x); });
-        using Chained = decltype(chained);
-        return is_subrow_v<Row<Effect::Bg>, Chained::row_type> && is_subrow_v<Chained::row_type, Row<Effect::Bg>>;
-    }(),
-    "A bind over two rows naming the same effect must absorb the duplicate.");
-
-static_assert(
-    [] consteval {
         auto pure = Computation<Row<>, int>::mint_computation(5);
         auto chained = pure.then([](int x) { return Computation<Row<>, int>::mint_computation(x * 2); });
         return chained.extract() == 10 && std::is_same_v<decltype(chained)::row_type, Row<>>;
@@ -875,14 +867,17 @@ static_assert(
     }(),
     "The lvalue graded accessor must expose the substrate view at the matching specialization.");
 
-static_assert(
-    [] consteval {
-        auto pure = Computation<Row<Effect::Bg>, int>{77};
-        auto g = std::move(pure).graded();
-        using G = decltype(g);
-        return std::is_same_v<G, ComputationGraded<Row<Effect::Bg>, int>> && g.peek() == 77;
-    }(),
-    "The rvalue graded accessor must move the substrate out at the matching specialization.");
+// The view is const, and a payload that conveys an authority does not
+// reach the substrate view at all.
+static_assert(std::is_same_v<decltype(std::declval<Computation<Row<>, int> const&>().graded()),
+                             ComputationGraded<Row<>, int> const&>);
+template <typename C>
+concept HasGradedView = requires(C const& c) { c.graded(); };
+template <typename C>
+concept HasGradedMove = requires(C&& c) { std::move(c).graded(); };
+static_assert(HasGradedView<Computation<Row<Effect::Bg>, int>> && HasGradedMove<Computation<Row<Effect::Bg>, int>>);
+static_assert(!detail::extract_admits_payload_v<detail::ctx_witnesses::BgWitness>,
+              "The positive witness for the graded constraint depends on a context conveying authority.");
 
 }  // namespace detail::computation_self_test
 

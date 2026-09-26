@@ -420,10 +420,14 @@ foundation_neg_compile_test(neg_extract_bare_thread_atom
   "no matching function for call to .extract_bare"
   "satisfaction of .HasBareTag<E>.")
 
-# The witnessed lift reads the context's row, not the caller's word.
+# The witnessed lift reads the context's row, not the caller's word, and
+# a capability source is not a context.
 foundation_neg_compile_test(neg_lift_in_ctx_without_the_effect
   "constraints not satisfied"
   "row_contains_v")
+foundation_neg_compile_test(neg_mint_computation_in_ctx_source_is_not_a_context
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, int>::mint_computation_in_ctx<foundation::effects::Effect::Bg>\\(const foundation::effects::Bg&, int\\)."
+  "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::Bg\\]")
 
 # extract must not hand out an authority the carrier's row never names.
 # Two fixtures, because the relation enumerates the authority kinds and
@@ -452,6 +456,42 @@ foundation_neg_compile_test(neg_computation_extract_capability_in_member
 foundation_neg_compile_test(neg_computation_extract_capturing_lambda
   "constraints not satisfied"
   "Computation<foundation::effects::Row<>, main\\(\\)::<lambda\\(\\)> >::extract\\(\\)")
+
+# The substrate is a private base, so its unchecked consume and peek_mut
+# are not members of a Computation.  The second regex of each names the
+# base that the access check refused.
+foundation_neg_compile_test(neg_computation_consume_is_not_a_member
+  "constexpr T foundation::algebra::Graded<M, L, T>::consume\\(\\) && \\[with foundation::algebra::ModalityKind M = foundation::algebra::ModalityKind::Relative; L = foundation::effects::EffectRowLattice::At<>; T = foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test>\\]. is inaccessible within this context"
+  "is not an accessible base of .std::remove_reference<foundation::effects::Computation<foundation::effects::Row<>, foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test> >&>::type.")
+foundation_neg_compile_test(neg_computation_peek_mut_is_not_a_member
+  "constexpr T& foundation::algebra::Graded<M, L, T>::peek_mut\\(const foundation::algebra::grade_key<Authority>&\\) & requires .* \\[with Authority = \\{anonymous\\}::outside_authority; foundation::algebra::ModalityKind M = foundation::algebra::ModalityKind::Relative; L = foundation::effects::EffectRowLattice::At<foundation::effects::Effect::Bg>; T = int\\]. is inaccessible within this context"
+  ".foundation::algebra::Graded<foundation::algebra::ModalityKind::Relative, foundation::effects::EffectRowLattice::At<foundation::effects::Effect::Bg>, int>. is not an accessible base of .foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int>.")
+
+# An engaged row is built only by the witnessed mint: the constructor from
+# a value is private, and the default constructor admits the empty row
+# alone.
+foundation_neg_compile_test(neg_computation_engaged_row_from_a_value
+  "constexpr foundation::effects::Computation<R, T>::Computation\\(T\\) \\[with R = foundation::effects::Row<foundation::effects::Effect::IO>; T = int\\]. is private within this context"
+  "foundation/effects/Computation\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_computation_engaged_row_default_built
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>::Computation\\(\\)."
+  "the expression .\\(row_size_v<R>\\) == 0 \\[with R = foundation::effects::Row<foundation::effects::Effect::IO>\\]. evaluated to .false.")
+
+# Each route that hands the payload out carries the payload constraint of
+# extract: the substrate view in both forms, map and then.  The second
+# regex of each names the payload that the constraint refused.
+foundation_neg_compile_test(neg_computation_graded_move_of_a_capability
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test> >::graded\\(\\)."
+  "the expression .extract_admits_payload_v<T> \\[with T = foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_computation_graded_view_of_a_context
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> > >::graded\\(\\) const."
+  "the expression .extract_admits_payload_v<T> \\[with T = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_computation_map_hands_out_a_capability
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test> >::map\\(main\\(\\)::<lambda\\(IoCap\\)>\\)."
+  "the expression .extract_admits_payload_v<T> \\[with T = foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_computation_then_hands_out_a_capability
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test> >::then\\(main\\(\\)::<lambda\\(IoCap\\)>\\)."
+  "the expression .extract_admits_payload_v<T> \\[with T = foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test>\\]. evaluated to .false.")
 
 # The contracts tests keep the file names of the tests they are ported
 # from.  The target names carry the contracts prefix because the old

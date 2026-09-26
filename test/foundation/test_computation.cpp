@@ -35,7 +35,70 @@ static_assert(fa::IsGraded<fe::ComputationGraded<Row<Effect::Bg>, int>>);
 static_assert(!fa::IsGraded<fe::Computation<Row<Effect::Bg>, int>>,
               "the derived class is not itself a Graded specialization; its graded_type is");
 static_assert(std::is_base_of_v<fe::ComputationGraded<Row<Effect::Bg>, int>, fe::Computation<Row<Effect::Bg>, int>>);
+static_assert(!std::is_convertible_v<fe::Computation<Row<Effect::Bg>, int>&, fe::ComputationGraded<Row<Effect::Bg>, int>&>,
+              "the base is private, so no conversion reaches the substrate and its unchecked consume");
 static_assert(fe::Computation<Row<Effect::Bg>, int>::modality == fa::ModalityKind::Relative);
+
+// The contexts of the test door that witness an engaged row.
+using BgCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc>>;
+using BgIoCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
+
+// An engaged row is built by the witnessed mint, and a member keeps or
+// widens it.  Each scenario below runs during constant evaluation.
+static_assert(
+    [] consteval {
+        BgCtx const ctx{fe::testing::bg()};
+        auto bg = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 7);
+        return std::is_same_v<decltype(bg), fe::Computation<Row<Effect::Bg>, int>>;
+    }(),
+    "The witnessed mint at Effect::Bg did not produce a Computation at Row<Bg>.");
+
+// The final read goes through the substrate view because extract is
+// gated off for a non-empty row.
+static_assert(
+    [] consteval {
+        BgCtx const ctx{fe::testing::bg()};
+        auto bg = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 13);
+        auto wider = bg.template weaken<Row<Effect::Bg, Effect::Alloc>>();
+        auto widest = wider.template weaken<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
+        return widest.graded().peek() == 13;
+    }(),
+    "A chain of weaken calls through nested subrows did not preserve the inner value.");
+
+static_assert(
+    [] consteval {
+        BgIoCtx const ctx{fe::testing::bg()};
+        auto bg = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 10);
+        auto chained = bg.then(
+            [&ctx](int x) { return fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::IO>(ctx, x + 1); });
+        using Chained = decltype(chained);
+        return fe::is_subrow_v<Row<Effect::Bg>, Chained::row_type> && fe::is_subrow_v<Row<Effect::IO>, Chained::row_type>
+            && std::is_same_v<Chained::value_type, int> && chained.graded().peek() == 11;
+    }(),
+    "A bind must carry the effects of both sides into the result row.");
+
+// The two rows below overlap, and the mutual subrow test is how the
+// assertion says the union collapsed them into one.
+static_assert(
+    [] consteval {
+        BgCtx const ctx{fe::testing::bg()};
+        auto bg = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 100);
+        auto chained = std::move(bg).then(
+            [&ctx](int x) { return fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, x); });
+        using Chained = decltype(chained);
+        return fe::is_subrow_v<Row<Effect::Bg>, Chained::row_type> && fe::is_subrow_v<Chained::row_type, Row<Effect::Bg>>;
+    }(),
+    "A bind over two rows naming the same effect must absorb the duplicate.");
+
+static_assert(
+    [] consteval {
+        BgCtx const ctx{fe::testing::bg()};
+        auto engaged = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 77);
+        auto g = std::move(engaged).graded();
+        using G = decltype(g);
+        return std::is_same_v<G, fe::ComputationGraded<Row<Effect::Bg>, int>> && g.peek() == 77;
+    }(),
+    "The rvalue graded accessor must move the substrate out at the matching specialization.");
 
 // Both bodies below were inline smoke tests in Computation.h, compiled
 // into every translation unit that included it.  Both sit directly in
@@ -91,7 +154,8 @@ void computation_runs_at_run_time() {
     (void)read_lvalue;
     (void)read_rvalue;
 
-    auto bg_pure = Computation<Row<>, int>::lift<Effect::Bg>(200);
+    BgIoCtx const ctx{testing::bg()};
+    auto bg_pure = Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 200);
     static_assert(std::is_same_v<decltype(bg_pure), Computation<Row<Effect::Bg>, int>>);
 
     auto bg_widened_lvalue = bg_pure.template weaken<Row<Effect::Bg, Effect::Alloc>>();
@@ -106,19 +170,20 @@ void computation_runs_at_run_time() {
     (void)map_rvalue;
 
     auto then_pure = Computation<Row<>, int>::mint_computation(11);
-    auto then_lvalue = then_pure.then([](int x) { return Computation<Row<>, int>::lift<Effect::Bg>(x + 100); });
-    auto then_rvalue =
-        std::move(then_pure).then([](int x) { return Computation<Row<>, int>::lift<Effect::IO>(x + 200); });
+    auto then_lvalue = then_pure.then(
+        [&ctx](int x) { return Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, x + 100); });
+    auto then_rvalue = std::move(then_pure).then(
+        [&ctx](int x) { return Computation<Row<>, int>::mint_computation_in_ctx<Effect::IO>(ctx, x + 200); });
     static_assert(std::is_same_v<decltype(then_lvalue)::row_type, Row<Effect::Bg>>);
     static_assert(std::is_same_v<decltype(then_rvalue)::row_type, Row<Effect::IO>>);
     (void)then_lvalue;
     (void)then_rvalue;
 
-    auto graded_lvalue_owner = Computation<Row<Effect::Bg>, int>{555};
+    auto graded_lvalue_owner = Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 555);
     auto const& g_view = graded_lvalue_owner.graded();
     [[maybe_unused]] int peeked = g_view.peek();
 
-    auto graded_rvalue_owner = Computation<Row<Effect::Bg>, int>{666};
+    auto graded_rvalue_owner = Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 666);
     auto g_moved = std::move(graded_rvalue_owner).graded();
     [[maybe_unused]] int peeked_moved = g_moved.peek();
 }
