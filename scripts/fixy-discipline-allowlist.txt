@@ -67,7 +67,6 @@ include/crucible/cog/SrIov.h
 include/crucible/mimic/_wip/network/Backend.h
 
 # ── topology/ ──────────────────────────────────────────────────
-include/crucible/topology/AsymmetricFailure.h
 include/crucible/topology/CongestionTelemetry.h
 include/crucible/topology/Discovery.h
 include/crucible/topology/Pingmesh.h

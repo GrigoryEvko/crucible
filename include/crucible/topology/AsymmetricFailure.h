@@ -1,27 +1,29 @@
 #pragma once
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/SyntheticProbe.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
 #include <crucible/topology/Health.h>
+#include <fixy/Bits.h>
+#include <fixy/Ctx.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <foundation/Pinned.h>
+#include <foundation/diag/Catalog.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string_view>
 #include <type_traits>
 
 namespace crucible::topology {
 
+// foundation::reflect::enum_name gives the log spelling of both enums.
 enum class FailureClass : std::uint8_t {
     BidiOk = 0,
     TxBroken = 1,
@@ -29,8 +31,6 @@ enum class FailureClass : std::uint8_t {
     BidiFailed = 3,
     Inconclusive = 4,
 };
-
-[[nodiscard]] std::string_view failure_class_name(FailureClass cls) noexcept;
 
 enum class FailureSignal : std::uint32_t {
     LocalOutboundFailed = 1u << 0,
@@ -43,9 +43,7 @@ enum class FailureSignal : std::uint32_t {
     InsufficientWitnesses = 1u << 7,
 };
 
-[[nodiscard]] std::string_view failure_signal_name(FailureSignal signal) noexcept;
-
-struct AsymmetricFailureDetected : safety::diag::tag_base {
+struct AsymmetricFailureDetected : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "AsymmetricFailureDetected";
     static constexpr std::string_view description =
         "Bidirectional probes or witness votes detected a one-way or gray path failure.";
@@ -54,11 +52,11 @@ struct AsymmetricFailureDetected : safety::diag::tag_base {
         "only quarantine when multi-vantage votes agree that the peer is dead.";
 };
 
-using PositiveProbeSamples = safety::Positive<std::uint16_t>;
+using PositiveProbeSamples = ::fixy::Positive<std::uint16_t>;
 
 struct AsymmetricFailurePolicy {
-    PositiveProbeSamples min_local_samples{std::uint16_t{2}};
-    PositiveProbeSamples min_witnesses{std::uint16_t{1}};
+    PositiveProbeSamples min_local_samples = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{2});
+    PositiveProbeSamples min_witnesses = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
 };
 
 struct DirectionWindow {
@@ -71,7 +69,7 @@ struct FailureSummary {
     cog::Uuid peer_uuid{};
     FailureClass local = FailureClass::Inconclusive;
     FailureClass with_witnesses = FailureClass::Inconclusive;
-    safety::Bits<FailureSignal> signals{};
+    ::fixy::Bits<FailureSignal> signals{};
     std::uint16_t outbound_samples = 0;
     std::uint16_t inbound_samples = 0;
     std::uint16_t outbound_successes = 0;
@@ -85,7 +83,7 @@ struct AsymmetricFailureEvent {
     cog::Uuid peer_uuid{};
     FailureClass from = FailureClass::Inconclusive;
     FailureClass to = FailureClass::Inconclusive;
-    safety::Bits<FailureSignal> signals{};
+    ::fixy::Bits<FailureSignal> signals{};
     std::uint16_t witnesses = 0;
     std::uint16_t witness_reachable = 0;
     std::uint64_t sequence = 0;
@@ -93,11 +91,13 @@ struct AsymmetricFailureEvent {
 
 template <class Ctx>
 concept CtxFitsAsymmetricFailureMint =
-    effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 template <class Ctx>
 concept CtxFitsAsymmetricFailureRecord =
-    effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
 namespace detail {
 
@@ -106,10 +106,6 @@ enum class LegState : std::uint8_t {
     Passing = 1,
     Failing = 2,
 };
-
-[[nodiscard]] constexpr bool same_cog_uuid(cog::Uuid lhs, cog::Uuid rhs) noexcept {
-    return lhs.hi == rhs.hi && lhs.lo == rhs.lo;
-}
 
 [[nodiscard]] constexpr LegState majority_state(DirectionWindow window, std::uint16_t min_samples) noexcept {
     if (window.count < min_samples) {
@@ -127,8 +123,18 @@ enum class LegState : std::uint8_t {
 
 }  // namespace detail
 
-template <std::size_t MaxPeers, std::size_t Window = 8, std::size_t MaxWitnesses = 8>
-class AsymmetricFailureDetector : public safety::Pinned<AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>> {
+template <std::size_t MaxPeers, std::size_t Window, std::size_t MaxWitnesses>
+class AsymmetricFailureDetector;
+
+// The only door into a detector.  An Init-row context mints it; a
+// background worker then records probes and witness votes on it.
+template <class Ctx, std::size_t MaxPeers, std::size_t Window = 8, std::size_t MaxWitnesses = 8>
+    requires CtxFitsAsymmetricFailureMint<Ctx>
+[[nodiscard]] constexpr AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>
+mint_asymmetric_failure_detector(Ctx const&, AsymmetricFailurePolicy policy = {}) noexcept;
+
+template <std::size_t MaxPeers, std::size_t Window, std::size_t MaxWitnesses>
+class AsymmetricFailureDetector : public ::foundation::Pinned<AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>> {
     static_assert(MaxPeers > 0, "AsymmetricFailureDetector requires peer slots");
     static_assert(Window > 0, "AsymmetricFailureDetector requires a non-empty probe window");
     static_assert(Window <= 8, "AsymmetricFailureDetector local state is cache-line sized for Window <= 8");
@@ -138,7 +144,7 @@ class AsymmetricFailureDetector : public safety::Pinned<AsymmetricFailureDetecto
         bool occupied = false;
         cog::Uuid witness_uuid{};
         bool reachable = false;
-        safety::Monotonic<std::uint64_t> sequence{0};
+        MonotoneCount sequence = ::fixy::mint_monotonic<std::uint64_t>(0);
     };
 
     struct alignas(64) PeerSlot {
@@ -149,7 +155,7 @@ class AsymmetricFailureDetector : public safety::Pinned<AsymmetricFailureDetecto
         DirectionWindow outbound_window{};
         DirectionWindow inbound_window{};
         FailureClass last_class = FailureClass::Inconclusive;
-        safety::Monotonic<std::uint64_t> sequence{0};
+        MonotoneCount sequence = ::fixy::mint_monotonic<std::uint64_t>(0);
     };
     static_assert(sizeof(PeerSlot) <= 64, "AsymmetricFailureDetector keeps local peer state within one cache line");
 
@@ -160,29 +166,38 @@ class AsymmetricFailureDetector : public safety::Pinned<AsymmetricFailureDetecto
     std::size_t event_count_ = 0;
     AsymmetricFailurePolicy policy_{};
 
+    template <class Ctx, std::size_t Peers, std::size_t W, std::size_t Witnesses>
+        requires CtxFitsAsymmetricFailureMint<Ctx>
+    friend constexpr AsymmetricFailureDetector<Peers, W, Witnesses>
+    mint_asymmetric_failure_detector(Ctx const&, AsymmetricFailurePolicy policy) noexcept;
+
+    explicit constexpr AsymmetricFailureDetector(AsymmetricFailurePolicy policy) noexcept : policy_{policy} {}
+
+    // The occupied slot of this peer, or nullptr.  One body serves the
+    // const readers and the mutating recorders.
+    [[nodiscard]] constexpr auto find(this auto& self, cog::Uuid const& uuid) noexcept {
+        for (auto& slot : self.peers_) {
+            if (slot.occupied && slot.peer_uuid == uuid) {
+                return std::addressof(slot);
+            }
+        }
+        return decltype(std::addressof(self.peers_.front())){nullptr};
+    }
+
+    // The slot of this peer, claimed from a free slot on first sight.  A
+    // zero identity is never a peer.
     [[nodiscard]] constexpr PeerSlot* find_or_insert(cog::CogIdentity const& peer) noexcept {
         if (peer.uuid.is_zero()) {
             return nullptr;
         }
-        for (auto& slot : peers_) {
-            if (slot.occupied && detail::same_cog_uuid(slot.peer_uuid, peer.uuid)) {
-                return &slot;
-            }
+        if (PeerSlot* found = find(peer.uuid)) {
+            return found;
         }
         for (auto& slot : peers_) {
             if (!slot.occupied) {
                 slot.occupied = true;
                 slot.peer_uuid = peer.uuid;
-                return &slot;
-            }
-        }
-        return nullptr;
-    }
-
-    [[nodiscard]] constexpr PeerSlot const* find(cog::CogIdentity const& peer) const noexcept {
-        for (auto const& slot : peers_) {
-            if (slot.occupied && detail::same_cog_uuid(slot.peer_uuid, peer.uuid)) {
-                return &slot;
+                return std::addressof(slot);
             }
         }
         return nullptr;
@@ -298,11 +313,9 @@ class AsymmetricFailureDetector : public safety::Pinned<AsymmetricFailureDetecto
     }
 
 public:
-    explicit constexpr AsymmetricFailureDetector(AsymmetricFailurePolicy policy = {}) noexcept : policy_{policy} {}
-
     [[nodiscard]] constexpr AsymmetricFailurePolicy policy() const noexcept { return policy_; }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsAsymmetricFailureRecord<Ctx>
     [[nodiscard]] constexpr bool record_outbound(Ctx const&, cog::CogIdentity const& peer, bool success,
                                                  std::uint64_t sequence) noexcept {
@@ -315,7 +328,7 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsAsymmetricFailureRecord<Ctx>
     [[nodiscard]] constexpr bool record_inbound(Ctx const&, cog::CogIdentity const& peer, bool success,
                                                 std::uint64_t sequence) noexcept {
@@ -328,7 +341,7 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsAsymmetricFailureRecord<Ctx>
     [[nodiscard]] constexpr bool record_synthetic_round(Ctx const& ctx, cog::CogIdentity const& peer,
                                                         observe::ProbeOutcome outbound,
@@ -337,7 +350,7 @@ public:
             && record_inbound(ctx, peer, inbound.ok(), std::max(outbound.sequence, inbound.sequence));
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsAsymmetricFailureRecord<Ctx>
     [[nodiscard]] constexpr bool record_witness(Ctx const&, cog::CogIdentity const& target,
                                                 cog::CogIdentity const& witness, bool witness_reaches_target,
@@ -351,7 +364,7 @@ public:
         }
         auto& witnesses = witnesses_[slot_index(*slot)];
         for (auto& existing : witnesses) {
-            if (existing.occupied && detail::same_cog_uuid(existing.witness_uuid, witness.uuid)) {
+            if (existing.occupied && existing.witness_uuid == witness.uuid) {
                 if (sequence < existing.sequence.get()) {
                     return false;
                 }
@@ -377,7 +390,7 @@ public:
     }
 
     [[nodiscard]] constexpr FailureClass classify(cog::CogIdentity const& peer) const noexcept {
-        PeerSlot const* slot = find(peer);
+        PeerSlot const* slot = find(peer.uuid);
         if (slot == nullptr) {
             return FailureClass::Inconclusive;
         }
@@ -385,7 +398,7 @@ public:
     }
 
     [[nodiscard]] constexpr FailureClass classify_with_witnesses(cog::CogIdentity const& peer) const noexcept {
-        PeerSlot const* slot = find(peer);
+        PeerSlot const* slot = find(peer.uuid);
         if (slot == nullptr) {
             return FailureClass::Inconclusive;
         }
@@ -393,7 +406,7 @@ public:
     }
 
     [[nodiscard]] constexpr FailureSummary summary(cog::CogIdentity const& peer) const noexcept {
-        PeerSlot const* slot = find(peer);
+        PeerSlot const* slot = find(peer.uuid);
         if (slot == nullptr) {
             FailureSummary missing{};
             missing.peer_uuid = peer.uuid;
@@ -428,21 +441,23 @@ public:
     }
 }
 
-template <effects::IsExecCtx Ctx, std::size_t MaxPeers, std::size_t Window = 8, std::size_t MaxWitnesses = 8>
+template <class Ctx, std::size_t MaxPeers, std::size_t Window, std::size_t MaxWitnesses>
     requires CtxFitsAsymmetricFailureMint<Ctx>
 [[nodiscard]] constexpr AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>
-mint_asymmetric_failure_detector(Ctx const&, AsymmetricFailurePolicy policy = {}) noexcept {
+mint_asymmetric_failure_detector(Ctx const&, AsymmetricFailurePolicy policy) noexcept {
     return AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>{policy};
 }
 
-static_assert(safety::diag::is_diagnostic_class_v<AsymmetricFailureDetected>);
+static_assert(::foundation::diag::is_diagnostic_class_v<AsymmetricFailureDetected>);
 static_assert(sizeof(DirectionWindow) == 6);
 static_assert(std::is_trivially_copyable_v<FailureSummary>);
 static_assert(std::is_trivially_copyable_v<AsymmetricFailureEvent>);
 static_assert(sizeof(AsymmetricFailureEvent) <= 64);
-static_assert(CtxFitsAsymmetricFailureMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsAsymmetricFailureMint<effects::BgDrainCtx>);
-static_assert(CtxFitsAsymmetricFailureRecord<effects::BgDrainCtx>);
-static_assert(!CtxFitsAsymmetricFailureRecord<effects::HotFgCtx>);
+static_assert(!std::is_constructible_v<AsymmetricFailureDetector<1, 1, 1>, AsymmetricFailurePolicy>,
+              "the detector is reached only through mint_asymmetric_failure_detector");
+static_assert(CtxFitsAsymmetricFailureMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsAsymmetricFailureMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsAsymmetricFailureRecord<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsAsymmetricFailureRecord<::fixy::HotFgCtx>);
 
 }  // namespace crucible::topology

@@ -4960,23 +4960,28 @@ crucible_neg_compile_topology_test(neg_topology_telemetry_window_overflow
     "static assertion failed"
     "uint16_t|bounded history|GAPS-112")
 
-# ─── HS14 fixtures for topology::AsymmetricFailure (GAPS-127 #1220) ──
+# ─── topology::AsymmetricFailure ──────────────────────────────────────
 #
 #   * neg_asymmetric_failure_mint_bg_ctx — only Init-row contexts mint
 #     the bounded detector.
+#   * neg_asymmetric_failure_direct_construct — the detector's constructor
+#     is private, so the mint is the only door.
 #   * neg_asymmetric_failure_record_fg_ctx — hot foreground contexts
 #     cannot mutate probe/witness state.
 #   * neg_asymmetric_failure_zero_window — a detector must carry a
 #     non-empty bounded probe window.
 crucible_neg_compile_topology_test(neg_asymmetric_failure_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsAsymmetricFailureMint")
+    "no matching function for call to .mint_asymmetric_failure_detector<fixy::BgDrainCtx, 2>"
+    "CtxFitsAsymmetricFailureMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
+crucible_neg_compile_topology_test(neg_asymmetric_failure_direct_construct
+    "is private within this context"
+    "AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>::AsymmetricFailureDetector\\(crucible::topology::AsymmetricFailurePolicy\\)")
 crucible_neg_compile_topology_test(neg_asymmetric_failure_record_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsAsymmetricFailureRecord")
+    "no matching function for call to .crucible::topology::AsymmetricFailureDetector<2, 8, 8>::record_outbound"
+    "CtxFitsAsymmetricFailureRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
-    "static assertion failed"
-    "non-empty probe window|Window > 0")
+    "static assertion failed: AsymmetricFailureDetector requires a non-empty probe window"
+    "non-empty probe window")
 
 # ─── HS14 fixtures for topology::Pingmesh (GAPS-134 #1237) ──────────
 #

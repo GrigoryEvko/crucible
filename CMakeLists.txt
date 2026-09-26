@@ -364,7 +364,6 @@ add_library(crucible STATIC
   src/warden/Quarantine.cpp
   src/cntp/dataplane/TcEbpf.cpp
   src/cntp/dataplane/Xdp.cpp
-  src/topology/AsymmetricFailure.cpp
   src/topology/CongestionTelemetry.cpp
   src/topology/Discovery.cpp
   src/topology/Pingmesh.cpp
