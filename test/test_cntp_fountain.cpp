@@ -1,4 +1,7 @@
 #include <crucible/cntp/Fountain.h>
+#include <fixy/Ctx.h>
+#include <fixy/Qtt.h>
+#include <foundation/effects/Ctx.h>
 
 #include <algorithm>
 #include <array>
@@ -36,8 +39,7 @@ template <std::size_t N>
 template <typename Packet>
 [[nodiscard]] Packet equation_packet(std::uint64_t mask, std::byte fill) noexcept {
     Packet packet{};
-    packet.source_bytes =
-        typename Packet::source_byte_count{Packet::max_source_bytes, typename Packet::source_byte_count::Trusted{}};
+    packet.source_bytes = Packet::admit_source_bytes(Packet::max_source_bytes).value();
     packet.mask = mask;
     packet.payload.fill(fill);
     return packet;
@@ -60,12 +62,15 @@ int main() {
     static_assert(Encoder::max_source_bytes == 32);
     static_assert(std::is_same_v<Encoder::concurrent_budget,
                                  ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>>);
-    static_assert(sizeof(ci::LinearFountainBuffer<std::array<std::byte, 16>>) == sizeof(std::array<std::byte, 16>));
+    static_assert(::fixy::qtt_consume_tracked
+                  || sizeof(ci::LinearFountainBuffer<std::array<std::byte, 16>>) == sizeof(std::array<std::byte, 16>));
 
     auto key = crucible::Philox::op_key_det(0x12345678ULL, 19U, crucible::ContentHash{0xCAFEBEEFULL});
 
-    auto encoder = ci::mint_fountain_encoder<8, 4>(crucible::effects::testing::init());
-    auto decoder = ci::mint_fountain_decoder<8, 4>(crucible::effects::testing::init());
+    // A codec is start-up work, so each mint takes the cold init context.
+    ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
+    auto encoder = ci::mint_fountain_encoder<8, 4>(init);
+    auto decoder = ci::mint_fountain_decoder<8, 4>(init);
 
     {
         constexpr auto payload = payload_seed<29>();
@@ -100,7 +105,7 @@ int main() {
         // the one below it, that two runs from the same seed produce
         // byte-identical masks.
         using Probe = ci::FountainEncoder<7, 8>;
-        auto probe = ci::mint_fountain_encoder<7, 8>(crucible::effects::testing::init());
+        auto probe = ci::mint_fountain_encoder<7, 8>(init);
         constexpr auto probe_payload = payload_seed<Probe::max_source_bytes>();
         assert(probe.start_encoding(std::span<const std::byte>{probe_payload}, key).has_value());
 
@@ -120,7 +125,7 @@ int main() {
             assert(count > 0);
         }
 
-        auto probe_again = ci::mint_fountain_encoder<7, 8>(crucible::effects::testing::init());
+        auto probe_again = ci::mint_fountain_encoder<7, 8>(init);
         assert(probe_again.start_encoding(std::span<const std::byte>{probe_payload}, key).has_value());
         for (std::uint32_t id = 0; id < masks_a.size(); ++id) {
             auto packet = probe_again.next_packet();
@@ -141,11 +146,11 @@ int main() {
 
     {
         constexpr auto payload = payload_seed<13>();
-        ci::LinearFountainBuffer<std::array<std::byte, payload.size()>> owned_payload{payload};
+        auto owned_payload = ::fixy::mint_linear<std::array<std::byte, payload.size()>>(payload);
         auto owned_packet = encoder.encode_owned(std::move(owned_payload), key, 0);
         assert(owned_packet.has_value());
 
-        auto owned_decoder = ci::mint_fountain_decoder<8, 4>(crucible::effects::testing::init());
+        auto owned_decoder = ci::mint_fountain_decoder<8, 4>(init);
         auto state = owned_decoder.add_packet_owned(std::move(*owned_packet));
         assert(state.has_value());
         assert(*state == ci::FountainDecodeState::NeedsMore);
@@ -167,10 +172,10 @@ int main() {
     {
         auto bad = Packet{};
         bad.symbol_count = 7;
-        bad.source_bytes = Packet::source_byte_count{16, Packet::source_byte_count::Trusted{}};
+        bad.source_bytes = Packet::admit_source_bytes(16).value();
         bad.mask = 1;
 
-        auto shape_decoder = ci::mint_fountain_decoder<8, 4>(crucible::effects::testing::init());
+        auto shape_decoder = ci::mint_fountain_decoder<8, 4>(init);
         auto rejected = shape_decoder.add_packet(bad);
         assert(!rejected.has_value());
         assert(rejected.error() == ci::FountainError::PacketShapeMismatch);
@@ -180,7 +185,7 @@ int main() {
         using SmallDecoder = ci::FountainDecoder<4, 4, 4>;
         using SmallPacket = ci::FountainPacket<4, 4>;
 
-        SmallDecoder small{};
+        SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
         assert(small.add_packet(equation_packet<SmallPacket>(0b0011, std::byte{0x11})).has_value());
         assert(small.add_packet(equation_packet<SmallPacket>(0b0101, std::byte{0x22})).has_value());
         assert(small.add_packet(equation_packet<SmallPacket>(0b0110, std::byte{0x33})).has_value());
@@ -195,7 +200,7 @@ int main() {
         using SmallDecoder = ci::FountainDecoder<4, 4, 4>;
         using SmallPacket = ci::FountainPacket<4, 4>;
 
-        SmallDecoder small{};
+        SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
         auto first = equation_packet<SmallPacket>(0b0011, std::byte{0x11});
         auto second = first;
         second.payload[0] = std::byte{0x22};
@@ -210,7 +215,7 @@ int main() {
         using SmallDecoder = ci::FountainDecoder<4, 4, 4>;
         using SmallPacket = ci::FountainPacket<4, 4>;
 
-        SmallDecoder small{};
+        SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
         assert(small.add_packet(equation_packet<SmallPacket>(0b0001, std::byte{0x11})).has_value());
 
         auto conflicting = equation_packet<SmallPacket>(0b0001, std::byte{0x22});

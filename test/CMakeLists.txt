@@ -7477,24 +7477,45 @@ crucible_neg_compile_effects_test(neg_fec_mint_test_context
 crucible_neg_compile_test(neg_fec_encode_non_contiguous_owned
   "constraints not satisfied|ByteContiguousBuffer|no matching function")
 
-# GAPS-119 — cntp/Fountain.h deterministic LT fountain primitive.
-#   * neg_fountain_zero_symbols / neg_fountain_zero_symbol_bytes:
-#     fountain shape dimensions must be positive.
-#   * neg_fountain_mint_test_context: the mint is Init-only.
-#   * neg_fountain_raw_seed: repair choices require a DetSafe Philox key.
-#   * neg_fountain_encode_non_contiguous_owned: owned payloads must be
-#     Linear byte-contiguous buffers.
-crucible_neg_compile_test(neg_fountain_zero_symbols
-  "constraints not satisfied|FountainShape|SourceSymbols")
-crucible_neg_compile_test(neg_fountain_zero_symbol_bytes
-  "constraints not satisfied|FountainShape|SymbolBytes")
+# cntp/Fountain.h, the deterministic LT fountain codec.
+#   * neg_fountain_zero_symbols / neg_fountain_zero_symbol_bytes: each
+#     shape dimension of a codec is positive.
+#   * neg_fountain_mint_test_context / neg_fountain_decoder_mint_bg_ctx:
+#     the mint gate asks for the initialization row.
+#   * neg_fountain_encoder_mint_zero_symbols /
+#     neg_fountain_decoder_mint_short_equations: the mint gate also holds
+#     the shape.
+#   * neg_fountain_raw_seed: a repair choice takes a DetSafe Philox key.
+#   * neg_fountain_encode_non_contiguous_owned: an owned payload is a
+#     Linear byte-contiguous buffer.
+crucible_neg_compile_multi_test(neg_fountain_zero_symbols
+  "template constraint failure for .template<long unsigned int SourceSymbols, long unsigned int SymbolBytes, class Algorithm>  requires \\(FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>\\) && \\(FountainAlgorithm<Algorithm>\\) class crucible::cntp::FountainEncoder."
+  "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>. .with SourceSymbols = 0. SymbolBytes = 16.")
+crucible_neg_compile_multi_test(neg_fountain_zero_symbol_bytes
+  "template constraint failure for .template<long unsigned int SourceSymbols, long unsigned int SymbolBytes, class Algorithm>  requires \\(FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>\\) && \\(FountainAlgorithm<Algorithm>\\) class crucible::cntp::FountainEncoder."
+  "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>. .with SourceSymbols = 4. SymbolBytes = 0.")
 crucible_neg_compile_effects_test(neg_fountain_mint_test_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Test|effects::Init")
-crucible_neg_compile_test(neg_fountain_raw_seed
-  "cannot convert|no matching function|DetSafe|FountainSeed")
-crucible_neg_compile_test(neg_fountain_encode_non_contiguous_owned
-  "constraints not satisfied|ByteContiguousBuffer|no matching function")
+  "no matching function for call to .mint_fountain_encoder<4, 16>\\(fixy::TestRunnerCtx&\\)."
+  "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Init> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, "
+  "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, SourceSymbols, Algorithm>. ")
+crucible_neg_compile_effects_test(neg_fountain_encoder_mint_zero_symbols
+  "no matching function for call to .mint_fountain_encoder<0, 16>\\(fixy::ColdInitCtx&\\)."
+  "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, MaxEquations>. .with SourceSymbols = 0. SymbolBytes = 16. MaxEquations = 0."
+  "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, SourceSymbols, Algorithm>. ")
+crucible_neg_compile_effects_test(neg_fountain_decoder_mint_bg_ctx
+  "no matching function for call to .mint_fountain_decoder<8, 16>\\(fixy::BgDrainCtx&\\)."
+  "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Init> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, "
+  "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>. ")
+crucible_neg_compile_effects_test(neg_fountain_decoder_mint_short_equations
+  "no matching function for call to .mint_fountain_decoder<8, 16, 7>\\(fixy::ColdInitCtx&\\)."
+  "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, MaxEquations>. .with SourceSymbols = 8. SymbolBytes = 16. MaxEquations = 7."
+  "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>. ")
+crucible_neg_compile_multi_test(neg_fountain_raw_seed
+  "cannot convert .long long unsigned int. to .crucible::cntp::FountainSeed."
+  "initializing argument 2 of .std::expected<void, crucible::cntp::FountainError> crucible::cntp::FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>::start_encoding\\(std::span<const std::byte>, crucible::cntp::FountainSeed\\)")
+crucible_neg_compile_multi_test(neg_fountain_encode_non_contiguous_owned
+  "no matching function for call to .crucible::cntp::FountainEncoder<4, 16, crucible::cntp::LtFountain>::encode_owned\\("
+  "required for the satisfaction of .ByteContiguousBuffer<Input>. .with Input = NotWireBytes.")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.

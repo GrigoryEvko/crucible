@@ -28,7 +28,6 @@
 mint_admission_decision|include/crucible/cntp/Backpressure.h
 mint_bbr_qdisc_config|include/crucible/cntp/Pacing.h
 mint_dctcp_incast_config|include/crucible/cntp/IncastControl.h
-mint_fountain_decoder|include/crucible/cntp/Fountain.h
 mint_incast_config|include/crucible/cntp/IncastControl.h
 mint_resource_limit|include/crucible/cntp/Backpressure.h
 mint_resource_pressure|include/crucible/cntp/Backpressure.h

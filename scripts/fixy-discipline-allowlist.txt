@@ -37,7 +37,6 @@
 # fixy::wrap migration removes its entry.
 
 # ── cntp/ ──────────────────────────────────────────────────────
-include/crucible/cntp/Fountain.h
 include/crucible/cntp/Tcam.h
 include/crucible/cntp/dataplane/TcEbpf.h
 include/crucible/cntp/_wip/Doca.h

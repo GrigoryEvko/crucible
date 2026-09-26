@@ -1,13 +1,17 @@
 #pragma once
 
 #include <crucible/Philox.h>
+#include <crucible/Platform.h>
 #include <crucible/cntp/Fec.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_DetSafe.h>
-#include <crucible/safety/_Linear.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Bands.h>
+#include <fixy/Ctx.h>
+#include <fixy/Qtt.h>
+#include <fixy/Refined.h>
 #include <foundation/effects/Concurrent.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/Resources.h>
+#include <foundation/effects/Row.h>
 
 #include <algorithm>
 #include <array>
@@ -33,6 +37,15 @@ template <std::size_t SourceSymbols, std::size_t SymbolBytes, std::size_t MaxEqu
 concept FountainShape = SourceSymbols > 0 && SourceSymbols <= 64 && SymbolBytes > 0
                      && SymbolBytes <= std::numeric_limits<std::uint16_t>::max() && MaxEquations >= SourceSymbols;
 
+// A codec holds its tables by value, so a mint zeroes every byte of them.
+// That is start-up work, so the mint takes a context that admits the
+// initialization row, and the shape must hold.
+template <class Ctx, std::size_t SourceSymbols, std::size_t SymbolBytes, std::size_t MaxEquations, typename Algorithm>
+concept CtxFitsFountainMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>
+    && FountainShape<SourceSymbols, SymbolBytes, MaxEquations> && FountainAlgorithm<Algorithm>;
+
 enum class FountainError : std::uint8_t {
     InvalidInputSize,
     InvalidOutputSize,
@@ -51,7 +64,7 @@ enum class FountainDecodeState : std::uint8_t {
 using FountainSeed = Philox::DetSafePureKey;
 
 template <typename Buffer>
-using LinearFountainBuffer = safety::Linear<Buffer>;
+using LinearFountainBuffer = ::fixy::Linear<Buffer>;
 
 template <std::size_t SourceSymbols, std::size_t SymbolBytes>
     requires FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>
@@ -60,18 +73,50 @@ struct FountainPacket {
     static constexpr std::size_t symbol_bytes = SymbolBytes;
     static constexpr std::size_t max_source_bytes = SourceSymbols * SymbolBytes;
 
-    using source_byte_count = safety::Refined<safety::in_range<1, max_source_bytes>, std::size_t>;
+    // A source holds at least one byte and at most the full capacity.
+    static constexpr auto source_bytes_range = ::fixy::in_range<std::size_t{1}, max_source_bytes>;
+    using source_byte_count = ::fixy::Refined<source_bytes_range, std::size_t>;
+
+    // The one door to a byte count.  A count outside the range comes back
+    // as the error, so a wire decoder can refuse the packet and go on.
+    [[nodiscard]] static constexpr std::expected<source_byte_count, FountainError>
+    admit_source_bytes(std::size_t bytes) noexcept {
+        return ::fixy::admit_refined<source_bytes_range>(bytes, FountainError::InvalidInputSize);
+    }
 
     std::uint32_t encoding_id = 0;
     std::uint16_t symbol_count = static_cast<std::uint16_t>(SourceSymbols);
     std::uint16_t bytes_per_symbol = static_cast<std::uint16_t>(SymbolBytes);
-    source_byte_count source_bytes{1, typename source_byte_count::Trusted{}};
+    source_byte_count source_bytes = ::fixy::mint_refined<source_bytes_range>(std::size_t{1});
     std::uint64_t mask = 0;
     std::array<std::byte, SymbolBytes> payload{};
 };
 
 template <std::size_t SourceSymbols, std::size_t SymbolBytes>
-using LinearFountainPacket = safety::Linear<FountainPacket<SourceSymbols, SymbolBytes>>;
+using LinearFountainPacket = ::fixy::Linear<FountainPacket<SourceSymbols, SymbolBytes>>;
+
+template <std::size_t SourceSymbols, std::size_t SymbolBytes, typename Algorithm>
+    requires FountainShape<SourceSymbols, SymbolBytes, SourceSymbols> && FountainAlgorithm<Algorithm>
+class FountainEncoder;
+
+template <std::size_t SourceSymbols, std::size_t SymbolBytes, std::size_t MaxEquations, typename Algorithm>
+    requires FountainShape<SourceSymbols, SymbolBytes, MaxEquations> && FountainAlgorithm<Algorithm>
+class FountainDecoder;
+
+// The one door to each codec.  The default constructor of each codec is
+// private, and its mint below is the one friend.
+template <std::size_t SourceSymbols, std::size_t SymbolBytes, typename Algorithm = LtFountain,
+          ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, SourceSymbols, Algorithm>
+[[nodiscard]] constexpr FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>
+mint_fountain_encoder(Ctx const&) noexcept;
+
+template <std::size_t SourceSymbols, std::size_t SymbolBytes,
+          std::size_t MaxEquations = SourceSymbols + (SourceSymbols / 2U) + 8U, typename Algorithm = LtFountain,
+          ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>
+[[nodiscard]] constexpr FountainDecoder<SourceSymbols, SymbolBytes, MaxEquations, Algorithm>
+mint_fountain_decoder(Ctx const&) noexcept;
 
 namespace fountain_detail {
 
@@ -194,10 +239,7 @@ public:
 
     [[nodiscard]] static constexpr std::expected<source_byte_count, FountainError>
     admit_source_bytes(std::size_t bytes) noexcept {
-        if (bytes == 0 || bytes > max_source_bytes) {
-            return std::unexpected(FountainError::InvalidInputSize);
-        }
-        return source_byte_count{bytes, typename source_byte_count::Trusted{}};
+        return packet_type::admit_source_bytes(bytes);
     }
 
     [[nodiscard]] std::expected<void, FountainError> start_encoding(std::span<const std::byte> input,
@@ -233,7 +275,7 @@ public:
         if (!packet) {
             return std::unexpected(packet.error());
         }
-        return LinearFountainPacket<SourceSymbols, SymbolBytes>{*packet};
+        return ::fixy::mint_linear<packet_type>(*packet);
     }
 
     [[nodiscard]] std::expected<packet_type, FountainError>
@@ -253,10 +295,16 @@ public:
         if (!packet) {
             return std::unexpected(packet.error());
         }
-        return LinearFountainPacket<SourceSymbols, SymbolBytes>{*packet};
+        return ::fixy::mint_linear<packet_type>(*packet);
     }
 
 private:
+    constexpr FountainEncoder() noexcept = default;
+
+    template <std::size_t Symbols, std::size_t Bytes, typename Algo, ::foundation::effects::IsExecCtx FriendCtx>
+        requires CtxFitsFountainMint<FriendCtx, Symbols, Bytes, Symbols, Algo>
+    friend constexpr FountainEncoder<Symbols, Bytes, Algo> mint_fountain_encoder(FriendCtx const&) noexcept;
+
     [[nodiscard]] CRUCIBLE_HOT std::expected<packet_type, FountainError>
     encode_packet(std::span<const std::byte> input, FountainSeed seed, source_byte_count source_bytes,
                   std::uint32_t encoding_id) const noexcept {
@@ -286,7 +334,7 @@ private:
 
     std::span<const std::byte> input_{};
     FountainSeed seed_ = ::fixy::mint_band<FountainSeed>(0);
-    source_byte_count source_bytes_{1, typename source_byte_count::Trusted{}};
+    source_byte_count source_bytes_ = ::fixy::mint_refined<packet_type::source_bytes_range>(std::size_t{1});
     std::uint32_t next_id_ = 0;
     bool active_ = false;
 };
@@ -375,6 +423,13 @@ public:
     }
 
 private:
+    constexpr FountainDecoder() noexcept = default;
+
+    template <std::size_t Symbols, std::size_t Bytes, std::size_t Equations, typename Algo,
+              ::foundation::effects::IsExecCtx FriendCtx>
+        requires CtxFitsFountainMint<FriendCtx, Symbols, Bytes, Equations, Algo>
+    friend constexpr FountainDecoder<Symbols, Bytes, Equations, Algo> mint_fountain_decoder(FriendCtx const&) noexcept;
+
     struct Equation {
         std::uint64_t mask = 0;
         std::array<std::byte, SymbolBytes> payload{};
@@ -385,11 +440,10 @@ private:
             || ((packet.mask & ~fountain_detail::valid_mask<SourceSymbols>()) != 0)) {
             return std::unexpected(FountainError::PacketShapeMismatch);
         }
-        // A wire-deserialized packet builds source_bytes through the Trusted
-        // escape hatch from attacker-controlled bytes, so the refinement
-        // bound does not hold on arrival.  It is re-checked here because
-        // extract_decoded() hands out source_bytes_ bytes of decoded_, which
-        // is exactly max_source_bytes long.
+        // A wire decoder can build source_bytes through mint_refined_trusted,
+        // which skips the bound, so the bound is not proved on arrival.  It
+        // is checked again here because extract_decoded() hands out
+        // source_bytes_ bytes of decoded_, which is max_source_bytes long.
         const auto claimed_source_bytes = packet.source_bytes.value();
         if (claimed_source_bytes == 0 || claimed_source_bytes > max_source_bytes) {
             return std::unexpected(FountainError::PacketShapeMismatch);
@@ -492,23 +546,23 @@ private:
 
     std::array<Equation, MaxEquations> equations_{};
     std::array<std::byte, SourceSymbols * SymbolBytes> decoded_{};
-    source_byte_count source_bytes_{1, typename source_byte_count::Trusted{}};
+    source_byte_count source_bytes_ = ::fixy::mint_refined<packet_type::source_bytes_range>(std::size_t{1});
     std::uint64_t decoded_mask_ = 0;
     bool have_source_bytes_ = false;
 };
 
-template <std::size_t SourceSymbols, std::size_t SymbolBytes, typename Algorithm = LtFountain>
-    requires FountainShape<SourceSymbols, SymbolBytes, SourceSymbols> && FountainAlgorithm<Algorithm>
+template <std::size_t SourceSymbols, std::size_t SymbolBytes, typename Algorithm, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, SourceSymbols, Algorithm>
 [[nodiscard]] constexpr FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>
-mint_fountain_encoder(effects::Init) noexcept {
+mint_fountain_encoder(Ctx const&) noexcept {
     return FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>{};
 }
 
-template <std::size_t SourceSymbols, std::size_t SymbolBytes,
-          std::size_t MaxEquations = SourceSymbols + (SourceSymbols / 2U) + 8U, typename Algorithm = LtFountain>
-    requires FountainShape<SourceSymbols, SymbolBytes, MaxEquations> && FountainAlgorithm<Algorithm>
+template <std::size_t SourceSymbols, std::size_t SymbolBytes, std::size_t MaxEquations, typename Algorithm,
+          ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>
 [[nodiscard]] constexpr FountainDecoder<SourceSymbols, SymbolBytes, MaxEquations, Algorithm>
-mint_fountain_decoder(effects::Init) noexcept {
+mint_fountain_decoder(Ctx const&) noexcept {
     return FountainDecoder<SourceSymbols, SymbolBytes, MaxEquations, Algorithm>{};
 }
 
@@ -516,6 +570,22 @@ static_assert(FountainShape<8, 1024, 16>);
 static_assert(!FountainShape<0, 1024, 16>);
 static_assert(!FountainShape<8, 0, 16>);
 static_assert(!FountainShape<65, 1024, 80>);
-static_assert(sizeof(LinearFountainBuffer<std::span<std::byte>>) == sizeof(std::span<std::byte>));
+static_assert(::fixy::qtt_consume_tracked
+              || sizeof(LinearFountainBuffer<std::span<std::byte>>) == sizeof(std::span<std::byte>));
+
+// Each codec is reached only through its mint, and each mint takes a
+// context that admits the initialization row.
+static_assert(!std::is_default_constructible_v<FountainEncoder<8, 16>>);
+static_assert(!std::is_default_constructible_v<FountainDecoder<8, 16>>);
+static_assert(CtxFitsFountainMint<::fixy::ColdInitCtx, 8, 16, 8, LtFountain>);
+static_assert(!CtxFitsFountainMint<::fixy::TestRunnerCtx, 8, 16, 8, LtFountain>,
+              "a test context carries no initialization effect");
+static_assert(!CtxFitsFountainMint<::fixy::BgDrainCtx, 8, 16, 8, LtFountain>,
+              "a codec is built at start-up, not on a background drain");
+static_assert(!CtxFitsFountainMint<::fixy::ColdInitCtx, 8, 16, 7, LtFountain>,
+              "a decoder needs an equation slot for each source symbol");
+static_assert(!FountainPacket<8, 16>::admit_source_bytes(0).has_value());
+static_assert(!FountainPacket<8, 16>::admit_source_bytes(129).has_value());
+static_assert(FountainPacket<8, 16>::admit_source_bytes(128).value().value() == 128);
 
 }  // namespace crucible::cntp

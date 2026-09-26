@@ -1,12 +1,16 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-119 fixture #3: fountain encoder minting is initialization
-// authority.  A Test context cannot stand in for effects::Init.
+// A fountain encoder is start-up work, so its mint takes a context that
+// admits the initialization row.  A test context carries no such effect,
+// and the gate refuses it.
 
 #include <crucible/cntp/Fountain.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
 int main() {
-    auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(crucible::effects::testing::test());
+    ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
+    auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(test_ctx);
     (void)encoder;
     return 0;
 }

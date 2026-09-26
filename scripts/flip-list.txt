@@ -54,7 +54,6 @@ include/crucible/Vigil.h
 include/crucible/_Saturate.h
 include/crucible/cipher/CipherTierPromotion.h
 include/crucible/cipher/SessionPersistenceSurface.h
-include/crucible/cntp/Fountain.h
 include/crucible/cntp/Tcam.h
 include/crucible/cntp/_wip/Doca.h
 include/crucible/cntp/_wip/GpuDirect.h

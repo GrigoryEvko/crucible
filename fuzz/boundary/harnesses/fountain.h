@@ -8,6 +8,8 @@
 #include "../harness.h"
 
 #include <crucible/cntp/Fountain.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
 namespace crucible::fuzz::boundary {
 
@@ -29,9 +31,9 @@ namespace crucible::fuzz::boundary {
 inline void run_fountain(std::span<const std::uint8_t> bytes) {
     using Decoder = ::crucible::cntp::FountainDecoder<8, 16>;
     using Packet = Decoder::packet_type;
-    using SourceBytes = Decoder::source_byte_count;
 
-    Decoder decoder{};
+    const ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
+    Decoder decoder = ::crucible::cntp::mint_fountain_decoder<8, 16>(init);
     ByteCursor cursor{bytes};
     std::size_t declared_source_bytes = 0;
     while (cursor.remaining() >= 8) {
@@ -39,10 +41,11 @@ inline void run_fountain(std::span<const std::uint8_t> bytes) {
         packet.encoding_id = cursor.take<std::uint32_t>();
         packet.symbol_count = cursor.take<std::uint16_t>();
         packet.bytes_per_symbol = cursor.take<std::uint16_t>();
-        // A wire decoder checks the count before it builds the refinement.
+        // A wire decoder admits the count before it builds the packet.
         const auto source_bytes = std::size_t{cursor.take<std::uint16_t>()};
-        if (source_bytes < 1 || source_bytes > Decoder::max_source_bytes) continue;
-        packet.source_bytes = SourceBytes{source_bytes};
+        auto admitted = Packet::admit_source_bytes(source_bytes);
+        if (!admitted) continue;
+        packet.source_bytes = *admitted;
         packet.mask = cursor.take<std::uint64_t>();
         const auto payload = cursor.take_bytes(packet.payload.size());
         for (std::size_t i = 0; i < payload.size(); ++i) packet.payload[i] = std::byte{payload[i]};

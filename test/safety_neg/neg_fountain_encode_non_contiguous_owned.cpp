@@ -1,10 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-119 fixture #5: encode_owned consumes a Linear-owned byte
-// buffer.  Non-contiguous application structs must be serialized before
-// entering the fountain encoder.
+// encode_owned consumes a Linear byte buffer.  An application struct that
+// is not contiguous bytes must be serialized before it enters the
+// encoder, so encode_owned refuses it.
 
 #include <crucible/cntp/Fountain.h>
+#include <fixy/Ctx.h>
+#include <fixy/Qtt.h>
+#include <foundation/effects/Ctx.h>
 
 #include <cstdint>
 #include <utility>
@@ -14,9 +17,10 @@ struct NotWireBytes {
 };
 
 int main() {
-    auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(crucible::effects::testing::init());
+    ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
+    auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(init);
     auto seed = crucible::Philox::op_key_det(1, 2, crucible::ContentHash{3});
-    crucible::cntp::LinearFountainBuffer<NotWireBytes> input{NotWireBytes{}};
+    auto input = ::fixy::mint_linear<NotWireBytes>();
     (void)encoder.encode_owned(std::move(input), seed, 0);
     return 0;
 }

@@ -96,8 +96,8 @@ apply to the row.
 | `mint_custom_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_dctcp_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_doca_deploy_plan` | `include/crucible/cntp/_wip/Doca.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_fountain_decoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_fountain_encoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
+| `mint_fountain_decoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| `mint_fountain_encoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_gossip_multicast_plan` | `include/crucible/cntp/GossipMulticast.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_gpu_direct_mr_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_gpu_direct_storage_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 0 ⚠ |
@@ -362,5 +362,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 99 | 50 | 40 | 9 | 0 | 90 | 25 |
+| old (`include/crucible/`) | 99 | 52 | 38 | 9 | 0 | 90 | 24 |
 | new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |
