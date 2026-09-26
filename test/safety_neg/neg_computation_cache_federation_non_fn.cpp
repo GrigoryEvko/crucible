@@ -20,9 +20,9 @@
 // IsCacheableFunction<42>.
 
 #include <crucible/cipher/ComputationCacheFederation.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     // First template arg is `42` — an integral NTTP.  Not a

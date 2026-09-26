@@ -16,9 +16,9 @@
 // same computation. Two peers that exchange keys must either share a
 // toolchain or fold a discriminator for it into the key.
 
-#include <crucible/safety/diag/_StableName.h>
-#include <crucible/safety/diag/_RowHashFold.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/diag/RowHash.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 #include <foundation/reflect/Hash.h>
 
 #include <atomic>
@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <meta>
 #include <string_view>
+#include <type_traits>
 
 namespace crucible::cipher {
 
@@ -78,19 +79,13 @@ inline constexpr std::string_view kUnstableKeyIdentity =
 // indistinguishable from the row-blind one. And a caller who meant
 // the first argument type would find it bound to the row position
 // instead, with no diagnostic.
-
-namespace detail {
-
-template <typename R>
-inline constexpr bool is_effect_row_v = false;
-
-template <::crucible::effects::Effect... Es>
-inline constexpr bool is_effect_row_v<::crucible::effects::Row<Es...>> = true;
-
-}  // namespace detail
+//
+// The fence is exact. The effects concept strips cv-qualifiers and
+// references, but the row fold matches the bare row type alone, so a
+// qualified row would pass that concept and fold to zero.
 
 template <typename R>
-concept IsEffectRow = detail::is_effect_row_v<R>;
+concept IsEffectRow = std::is_same_v<R, std::remove_cvref_t<R>> && ::foundation::effects::IsEffectRow<R>;
 
 namespace detail {
 
@@ -106,10 +101,9 @@ template <auto FnPtr, typename... Args>
     requires ::crucible::cipher::IsCacheableFunction<FnPtr>
 [[nodiscard]] consteval std::uint64_t computation_cache_key_impl() noexcept {
     static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
-    std::uint64_t k =
-        ::crucible::safety::diag::detail::hash_name(std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
-    k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_function_id<FnPtr>);
-    ((k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_type_id<Args>)), ...);
+    std::uint64_t k = ::foundation::reflect::stable_function_name_id<FnPtr>;
+    k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_function_id<FnPtr>);
+    ((k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_type_id<Args>)), ...);
     return k;
 }
 
@@ -160,14 +154,13 @@ template <auto FnPtr, typename Row, typename... Args>
     requires ::crucible::cipher::IsCacheableFunction<FnPtr> && ::crucible::cipher::IsEffectRow<Row>
 [[nodiscard]] consteval std::uint64_t computation_cache_key_in_row_impl() noexcept {
     static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
-    std::uint64_t k =
-        ::crucible::safety::diag::detail::hash_name(std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
-    k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_function_id<FnPtr>);
+    std::uint64_t k = ::foundation::reflect::stable_function_name_id<FnPtr>;
+    k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_function_id<FnPtr>);
     // The combiner is order-sensitive, so this fold differs from the
     // row-blind one by the position of this step alone. Even a row
     // contributing zero would still key elsewhere.
-    k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::row_hash_contribution_v<Row>);
-    ((k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_type_id<Args>)), ...);
+    k = ::foundation::reflect::combine_ids(k, ::foundation::diag::row_hash_contribution_v<Row>);
+    ((k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_type_id<Args>)), ...);
     return k;
 }
 
@@ -274,52 +267,55 @@ static_assert(!::crucible::cipher::IsCacheableFunction<&s_data_global>);
 // all, which is why the constraint needs no comparison of its own.
 static_assert(!::crucible::cipher::IsCacheableFunction<nullptr>);
 
-static_assert(::crucible::cipher::IsEffectRow<::crucible::effects::Row<>>);
-static_assert(::crucible::cipher::IsEffectRow<::crucible::effects::Row<::crucible::effects::Effect::Bg>>);
+static_assert(::crucible::cipher::IsEffectRow<::foundation::effects::Row<>>);
+static_assert(::crucible::cipher::IsEffectRow<::foundation::effects::Row<::foundation::effects::Effect::Bg>>);
 static_assert(::crucible::cipher::IsEffectRow<
-              ::crucible::effects::Row<::crucible::effects::Effect::Bg, ::crucible::effects::Effect::IO>>);
+              ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::IO>>);
 
 // A caller who reaches for the alias instead of the bare row must
 // land in the same slot. Wrapping the alias in anything other than a
 // plain alias would break that, and would break here first.
-static_assert(::crucible::cipher::IsEffectRow<::crucible::effects::EmptyRow>);
-static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::EmptyRow, int>
-                  == ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>,
+static_assert(::crucible::cipher::IsEffectRow<::foundation::effects::EmptyRow>);
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::EmptyRow, int>
+                  == ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>,
               "EmptyRow and Row<> must hash to the same key — the alias is "
               "transparent through the cache.");
 
 static_assert(!::crucible::cipher::IsEffectRow<int>);
 static_assert(!::crucible::cipher::IsEffectRow<void>);
-static_assert(!::crucible::cipher::IsEffectRow<::crucible::effects::Effect>);
+static_assert(!::crucible::cipher::IsEffectRow<::foundation::effects::Effect>);
+static_assert(!::crucible::cipher::IsEffectRow<::foundation::effects::Row<> const>,
+              "a qualified row folds to zero, so the fence refuses it.");
+static_assert(!::crucible::cipher::IsEffectRow<::foundation::effects::Row<>&>);
 
-static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>
                   != ::crucible::cipher::computation_cache_key_in_row<
-                      &p_unary, ::crucible::effects::Row<::crucible::effects::Effect::Bg>, int>,
+                      &p_unary, ::foundation::effects::Row<::foundation::effects::Effect::Bg>, int>,
               "the row-aware cache must key the same function and arguments "
               "under different rows to different slots.");
 
-static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>
-              != ::crucible::cipher::computation_cache_key_in_row<&p_binary, ::crucible::effects::Row<>, int, double>);
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>
+              != ::crucible::cipher::computation_cache_key_in_row<&p_binary, ::foundation::effects::Row<>, int, double>);
 
-static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>
-              == ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>);
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>
+              == ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>);
 
 static_assert(
     ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::Row<::crucible::effects::Effect::Bg, ::crucible::effects::Effect::IO>, int>
+        &p_unary, ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::IO>, int>
         == ::crucible::cipher::computation_cache_key_in_row<
-            &p_unary, ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Bg>, int>,
+            &p_unary, ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Bg>, int>,
     "the row-aware cache key must not change when the effect pack is "
     "reordered, because the row hash sorts before it folds.");
 
 static_assert(::crucible::cipher::computation_cache_key<&p_unary, int>
-                  != ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>,
+                  != ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>,
               "the row-aware key must differ from the row-blind key even for "
               "an empty row, or the two families would alias each other's "
               "compiled bodies.");
 
-static_assert(::crucible::cipher::computation_cache_key_in_row<&p_void, ::crucible::effects::Row<>> != 0);
-static_assert(::crucible::cipher::computation_cache_key_in_row<&p_void, ::crucible::effects::Row<>>
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_void, ::foundation::effects::Row<>> != 0);
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_void, ::foundation::effects::Row<>>
               != ::crucible::cipher::computation_cache_key<&p_void>);
 
 static_assert(std::atomic<::crucible::cipher::CompiledBody*>::is_always_lock_free,

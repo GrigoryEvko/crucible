@@ -1,18 +1,16 @@
-// fix-08 HS14 fixture (1/2) — federation publish-boundary canonical gate
+// HS14 fixture (1/2) — the canonical-order gate at the federation boundary.
 //
-// MUST fail to compile: presenting a §XVI-INVERTED wrapper stack as an
-// Arg to the federation key projection violates the
-// `ArgsCanonicallyOrdered` requires-clause that fix-08 wired onto
-// `federation_key` (and `federation_content_hash` /
+// MUST fail to compile.  An argument that inverts the canonical wrapper
+// order fails the `ArgsCanonicallyOrdered` requires-clause on
+// `federation_key` (and on `federation_content_hash` and
 // `serialize_computation_cache_federation_entry`).
 //
-// Tagged has canonical_layer_index 11 and Stale has index 10; nesting
-// Stale INSIDE Tagged (Tagged ⊃ Stale) walks 11 then 10 — a strict
-// DECREASE — so `CanonicallyOrdered<Tagged<Stale<int>, ...>>` is false.
-// Before fix-08 this stack would silently project to a federation cache
-// slot DISTINCT from a canonical-order peer's `Stale<Tagged<int>, ...>`,
-// fragmenting the L16 computation genome.  The boundary now rejects it
-// at the publish site instead.
+// Stale has canonical_layer_index 8 and Tagged has index 9.  Stale inside
+// Tagged (Tagged ⊃ Stale) walks 9 then 8, which is a strict decrease, so
+// `CanonicallyOrdered<Tagged<Stale<int>, ...>>` is false.  Without the
+// gate this stack projects to a federation cache slot that differs from
+// the slot of a peer's canonical `Stale<Tagged<int>, ...>`, and the
+// shared cache fragments.  The gate refuses it at the publish site.
 //
 // Expected diagnostic substrings (the call is ill-formed because no
 // federation_key overload satisfies its constraints):
@@ -21,18 +19,18 @@
 //   * "ArgsCanonicallyOrdered"  — the specific gate that rejected it
 
 #include <crucible/cipher/ComputationCacheFederation.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/_Stale.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Stale.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Row.h>
 
 namespace fed = crucible::cipher::federation;
-namespace sf = crucible::safety;
-namespace eff = crucible::effects;
+namespace eff = ::foundation::effects;
 
 inline void target(int) noexcept {}
 
-// §XVI-inverted wrapper stack: Tagged(11) wrapping Stale(10).
-using InvertedStack = sf::Tagged<sf::Stale<int>, sf::source::FromUser>;
+// The inverted wrapper stack: Tagged (9) wrapping Stale (8).
+using InvertedStack = ::fixy::Tagged<::fixy::Stale<int>, ::fixy::tags::source::FromUser>;
 
 // Force instantiation of the constrained projection at TU scope.  The
 // ArgsCanonicallyOrdered<InvertedStack> requires-clause is unsatisfied,

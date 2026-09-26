@@ -8,7 +8,7 @@
 // is there to catch.
 
 #include <crucible/cipher/ComputationCache.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Row.h>
 
 #include "test_assert.h"
 
@@ -20,7 +20,7 @@
 namespace {
 
 namespace cipher = ::crucible::cipher;
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 using EmptyR = eff::Row<>;
 using BgR = eff::Row<eff::Effect::Bg>;

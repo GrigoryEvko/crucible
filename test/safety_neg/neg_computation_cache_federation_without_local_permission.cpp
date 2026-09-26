@@ -1,11 +1,11 @@
 #include <crucible/cipher/ComputationCacheFederation.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
 #include <cstdint>
 #include <span>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 inline void neg_payload(int) noexcept {}
 

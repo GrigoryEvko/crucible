@@ -24,12 +24,16 @@
 #include <crucible/Types.h>
 #include <crucible/cipher/ComputationCache.h>
 #include <crucible/cipher/FederationProtocol.h>
-#include <crucible/permissions/_FederationPermission.h>
-#include <crucible/safety/diag/_CanonicalOrder.h>
-#include <crucible/safety/diag/_RowHashFold.h>
+#include <fixy/CanonicalOrder.h>
+#include <fixy/Federation.h>
 #include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Protocol.h>
+#include <foundation/diag/RowHash.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/permissions/Permission.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -108,7 +112,7 @@ using ComputationCacheFederationContentAddressedPayload =
 // argument, rather than fragmenting the cache later.
 
 template <typename... Args>
-concept ArgsCanonicallyOrdered = (::crucible::safety::diag::canonical_order::CanonicallyOrdered<Args> && ...);
+concept ArgsCanonicallyOrdered = (::fixy::canonical_order::CanonicallyOrdered<Args> && ...);
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
@@ -119,7 +123,7 @@ template <auto FnPtr, typename Row, typename... Args>
 template <typename Row>
     requires IsEffectRow<Row>
 [[nodiscard]] inline constexpr RowHash federation_row_hash() noexcept {
-    return RowHash{::crucible::safety::diag::row_hash_contribution_v<Row>};
+    return RowHash{::foundation::diag::row_hash_contribution_v<Row>};
 }
 
 template <auto FnPtr, typename Row, typename... Args>
@@ -131,20 +135,26 @@ template <auto FnPtr, typename Row, typename... Args>
     };
 }
 
-template <auto FnPtr, typename Row, typename... Args>
+// The local cipher permission is the proof that this process may write
+// into the federation.  The call reads it and does not consume it, and
+// its brand is deduced, so a caller passes the token it holds.
+template <typename Brand>
+using LocalCipherPermission = ::foundation::permissions::Permission<::fixy::federation::LocalCipherTag, Brand>;
+
+template <auto FnPtr, typename Row, typename... Args, typename Brand>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline std::expected<std::size_t, FederationError> serialize_computation_cache_federation_entry(
-    const ::crucible::permissions::LocalCipherPermission& local_permission, std::span<std::uint8_t> out_buf,
+    const LocalCipherPermission<Brand>& local_permission, std::span<std::uint8_t> out_buf,
     ComputationCacheFederationContentAddressedPayload<FnPtr, Row, Args...> dispatcher_payload) noexcept {
     (void)local_permission;
 
     return serialize_federation_entry(out_buf, federation_key<FnPtr, Row, Args...>(), dispatcher_payload.bytes());
 }
 
-template <auto FnPtr, typename Row, typename... Args>
+template <auto FnPtr, typename Row, typename... Args, typename Brand>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
-serialize_computation_cache_federation_entry(const ::crucible::permissions::LocalCipherPermission& local_permission,
+serialize_computation_cache_federation_entry(const LocalCipherPermission<Brand>& local_permission,
                                              std::span<std::uint8_t> out_buf,
                                              std::span<const std::uint8_t> dispatcher_payload) noexcept {
     return serialize_computation_cache_federation_entry<FnPtr, Row, Args...>(
@@ -167,7 +177,7 @@ inline void f12_p_unary(int) noexcept {}
 inline void f12_p_binary(int, double) noexcept {}
 inline void f12_p_void() noexcept {}
 
-namespace eff_local = ::crucible::effects;
+namespace eff_local = ::foundation::effects;
 using EmptyR = eff_local::Row<>;
 using BgR = eff_local::Row<eff_local::Effect::Bg>;
 using IOR = eff_local::Row<eff_local::Effect::IO>;
@@ -230,30 +240,31 @@ static_assert(ArgsCanonicallyOrdered<>, "an empty argument pack is vacuously can
 static_assert(ArgsCanonicallyOrdered<int>, "a bare payload type is vacuously canonical.");
 static_assert(ArgsCanonicallyOrdered<int, double>, "a pack of bare payload types is vacuously canonical.");
 
-static_assert(ArgsCanonicallyOrdered<
-                  ::crucible::safety::Stale<::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>>,
+using FromUser = ::fixy::tags::source::FromUser;
+
+static_assert(ArgsCanonicallyOrdered<::fixy::Stale<::fixy::Tagged<int, FromUser>>>,
               "Stale outside Tagged is the canonical nesting order and must be "
               "accepted as an argument.");
 
-static_assert(!ArgsCanonicallyOrdered<
-                  ::crucible::safety::Tagged<::crucible::safety::Stale<int>, ::crucible::safety::source::FromUser>>,
+static_assert(!ArgsCanonicallyOrdered<::fixy::Tagged<::fixy::Stale<int>, FromUser>>,
               "Tagged outside Stale inverts the canonical nesting order and "
               "must be refused at the publish boundary.");
 
-static_assert(
-    !federation_key<&f12_p_unary, EmptyR,
-                    ::crucible::safety::Stale<::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>>()
-         .is_zero(),
-    "a canonically nested argument projects to a well-formed federation "
-    "key.");
+static_assert(!federation_key<&f12_p_unary, EmptyR, ::fixy::Stale<::fixy::Tagged<int, FromUser>>>().is_zero(),
+              "a canonically nested argument projects to a well-formed federation "
+              "key.");
 
 }  // namespace detail::computation_cache_federation_self_test
 
-inline bool computation_cache_federation_smoke_test() noexcept {
+// The caller passes the local cipher permission it holds.  A root of
+// that permission is minted once per program under a context that
+// admits its IO row, and a library header does not mint one.
+template <typename Brand>
+[[nodiscard]] inline bool computation_cache_federation_smoke_test(
+    const LocalCipherPermission<Brand>& local_permission) noexcept {
     using namespace detail::computation_cache_federation_self_test;
 
     bool ok = true;
-    auto local_permission = ::crucible::safety::mint_permission_root<::crucible::permissions::tag::LocalCipherTag>();
 
     {
         std::array<std::uint8_t, 64> buf{};

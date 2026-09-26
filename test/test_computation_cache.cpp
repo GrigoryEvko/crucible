@@ -319,7 +319,7 @@ int main() {
     // One function under three different rows is three slots.  A
     // dispatcher that aliased compiled bodies across effect rows would
     // run a body compiled for one row in another.
-    namespace eff = ::crucible::effects;
+    namespace eff = ::foundation::effects;
     using EmptyR = eff::Row<>;
     using BgR = eff::Row<eff::Effect::Bg>;
     using IOR = eff::Row<eff::Effect::IO>;

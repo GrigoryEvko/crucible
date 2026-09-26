@@ -90,8 +90,6 @@ include/crucible/canopy/HyParView.h
 include/crucible/canopy/Plumtree.h
 include/crucible/canopy/Scuttlebutt.h
 include/crucible/cipher/CipherTierPromotion.h
-include/crucible/cipher/ComputationCache.h
-include/crucible/cipher/ComputationCacheFederation.h
 include/crucible/cipher/SessionPersistenceSurface.h
 include/crucible/cntp/AfXdp.h
 include/crucible/cntp/Backpressure.h

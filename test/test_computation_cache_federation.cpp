@@ -2,11 +2,14 @@
 #include <crucible/cipher/ComputationCache.h>
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/Types.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_Stale.h>
-#include <crucible/safety/_Tagged.h>
-#include <crucible/safety/diag/_CanonicalOrder.h>
+#include <fixy/CanonicalOrder.h>
+#include <fixy/Federation.h>
+#include <fixy/Stale.h>
+#include <fixy/Tagged.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
+#include <foundation/permissions/Permission.h>
 
 #include "test_assert.h"
 
@@ -18,7 +21,7 @@
 
 using namespace crucible;
 namespace fed = crucible::cipher::federation;
-namespace eff = crucible::effects;
+namespace eff = ::foundation::effects;
 
 #define ASSERT_TRUE(...) assert((__VA_ARGS__))
 
@@ -45,8 +48,13 @@ using RIOBg = eff::Row<eff::Effect::IO, eff::Effect::Bg>;
 using RFull = eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Bg, eff::Effect::Init,
                        eff::Effect::Test>;
 
-const crucible::permissions::LocalCipherPermission& local_cipher_permission() {
-    static const auto permission = crucible::safety::mint_permission_root<crucible::permissions::tag::LocalCipherTag>();
+// The local cipher permission declares an IO row, so its root is minted
+// under a context that admits IO.
+using IoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
+
+const auto& local_cipher_permission() {
+    static const auto permission =
+        ::foundation::permissions::mint_permission_root<::fixy::federation::LocalCipherTag>(IoCtx{eff::testing::bg()});
     return permission;
 }
 }  // namespace
@@ -229,7 +237,7 @@ static void test_t13_composes_with_f11_cache_key() {
 }
 
 static void test_t14_header_smoke_test() {
-    bool ok = fed::computation_cache_federation_smoke_test();
+    bool ok = fed::computation_cache_federation_smoke_test(local_cipher_permission());
     assert(ok);
     std::printf("  T14 header_smoke_test:                       PASSED\n");
 }
@@ -445,13 +453,13 @@ static void test_audit_e_saturation_row_round_trip() {
 }
 
 namespace {
-namespace co = crucible::safety::diag::canonical_order;
-namespace sf = crucible::safety;
+namespace co = ::fixy::canonical_order;
+using FromUser = ::fixy::tags::source::FromUser;
 
 // Stale sits outside Tagged in the canonical wrapper order.
-using CanonStack = sf::Stale<sf::Tagged<int, sf::source::FromUser>>;
+using CanonStack = ::fixy::Stale<::fixy::Tagged<int, FromUser>>;
 // This stack inverts that order.
-using InvStack = sf::Tagged<sf::Stale<int>, sf::source::FromUser>;
+using InvStack = ::fixy::Tagged<::fixy::Stale<int>, FromUser>;
 }  // namespace
 
 static void test_gate_a_canonical_args_accepted() {

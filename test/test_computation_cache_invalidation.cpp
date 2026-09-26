@@ -8,8 +8,8 @@
 // distinct and non-zero.  A new atom can then only produce new keys.
 
 #include <crucible/cipher/ComputationCache.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include "test_assert.h"
 
@@ -21,7 +21,7 @@
 namespace {
 
 namespace cipher = ::crucible::cipher;
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 // Only the function's identity contributes to the key.  Renaming it or
 // its namespace changes every pinned key and reads as algorithm drift.
