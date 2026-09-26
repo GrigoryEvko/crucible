@@ -43,12 +43,10 @@
 
 bench/bench_cipher.cpp
 bench/bench_concurrent_queues.cpp
-bench/bench_concurrent_saturation.cpp
 bench/bench_content_hash.cpp
 bench/bench_dispatch.cpp
 bench/bench_merkle_dag.cpp
 bench/bench_mpmc_saturation.cpp
-bench/bench_mpsc_contention.cpp
 bench/bench_no_regression.cpp
 bench/bench_observe_metrics_swmr.cpp
 bench/bench_perf_loader.cpp

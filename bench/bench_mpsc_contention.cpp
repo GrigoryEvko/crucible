@@ -38,13 +38,13 @@
 #include <thread>
 #include <vector>
 
-#include <crucible/concurrent/_MpscRing.h>
+#include <fixy/concurrent/MpscRing.h>
 
 #include "bench_harness.h"
 
 namespace {
 
-using crucible::concurrent::MpscRing;
+using ::fixy::concurrent::MpscRing;
 using Item = std::uint64_t;
 
 constexpr std::size_t kCap = 1U << 14;  // 16K cells; headroom

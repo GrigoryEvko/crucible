@@ -27,13 +27,13 @@
 #include <cstring>
 #include <span>
 
-#include <crucible/concurrent/_SpscRing.h>
+#include <fixy/concurrent/SpscRing.h>
 
 #include "bench_harness.h"
 
 namespace {
 
-using crucible::concurrent::SpscRing;
+using ::fixy::concurrent::SpscRing;
 
 // Item type: 8-byte uint64 — the smallest practical SPSC payload.
 using Item = std::uint64_t;
