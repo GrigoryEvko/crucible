@@ -220,14 +220,6 @@ enum class TransportPostureTag : unsigned char {
 template <TransportPostureTag Posture>
 struct TransportPosture {};
 
-// A per-call parallelism recommendation minted by the workload
-// profiler. The tag is the proof of origin a dispatch routine needs:
-// without it a caller could synthesize a free-standing decision and
-// bypass the profiler's cache-tier reasoning. Distinct from
-// Calibrated and Meridian, which mark measurements rather than
-// per-call recommendations.
-struct WorkloadProfiler {};
-
 // Paths supplied by an interactive operator: argv entries, REPL input, stdin.
 // The most adversarial input class, because the operator can construct a path
 // specifically to escape the intended sandbox.

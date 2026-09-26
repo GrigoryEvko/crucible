@@ -172,8 +172,7 @@ apply to the row.
 | `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_workload_profiler(Ctx const&,const Senses*,::crucible::effects::Init)` | `include/crucible/perf/WorkloadProfiler.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_workload_profiler(Ctx const&,const Senses*,::crucible::effects::Init,WorkloadProfiler::Config)` | `include/crucible/perf/WorkloadProfiler.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 
 ## include/crucible/topology/
 
@@ -362,5 +361,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 102 | 51 | 42 | 9 | 0 | 93 | 40 |
+| old (`include/crucible/`) | 101 | 50 | 42 | 9 | 0 | 92 | 40 |
 | new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 22 |

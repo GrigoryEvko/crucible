@@ -1533,12 +1533,12 @@ crucible_test(test_perf_syscall_tp_btf_smoke)
 # verifies type-shape (move-only, ≤64 B), nullptr-Senses graceful
 # degradation, demote_one_step ladder, and reset() semantics.
 crucible_test(test_warden_deadline_watchdog_smoke)
-# GAPS-004h (#1284): perf::WorkloadProfiler wires SenseHub counters
-# into ParallelismRule's parallel-vs-sequential decision.  Smoke
-# verifies type-shape (move-only), nullptr-Senses pass-through over
-# bare ParallelismRule, L1-resident short-circuit (cache-tier gate
-# fires without telemetry read), reset() semantics, and the never-
-# promote invariant.
+# perf::WorkloadProfiler reads the SenseHub counters between calls and
+# demotes a parallel ParallelismRule decision under scheduler stress.
+# The smoke test checks that the profiler is move-only, passes the
+# structural decision through with no Senses, skips the telemetry read
+# for an L1-resident budget, clears its diagnostics on reset, never
+# promotes, and dispatches a ProfiledDecision to the right arm.
 crucible_test(test_perf_workload_profiler_smoke)
 # Vigil ↔ DeadlineWatchdog wiring (GAPS-004h follow-up): verifies the
 # bg-thread-write / fg-thread-read atomic counter publication path
@@ -3196,23 +3196,17 @@ crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_nice_out_of_range
     "no matching function|constraints.*not satisfied"
     "mint_priority|CtxFitsPriorityMint|Nice|-21|-20")
 
-# FIXY-V-074 — `dispatch_workload_decision` HS14 floor (2 fixtures, two
-# distinct mismatch classes per HS14 discipline).  The Tagged<>-typed
-# return shape of WorkloadProfiler::recommend() is the load-bearing
-# soundness gate; without these fixtures a regression that loosens
-# either (a) the CtxFitsWorkloadDecisionDispatch concept or (b) the
-# TaggedParallelismDecision parameter type would silently compile.
-#
-# Fixture (a) — hot_fg: HotFgCtx fails the concept gate because its
-# Row<> doesn't contain Effect::Bg.
-# Fixture (b) — raw_decision: a bare ParallelismDecision (not Tagged)
-# fails the function signature.  Tests the parameter-type half.
+# dispatch_workload_decision has two gates, and each fixture reaches
+# one.  hot_fg passes a well-formed ProfiledDecision under the hot
+# foreground context, whose empty row lacks Bg.  raw_decision passes a
+# context the gate admits with a decision written by hand, which the
+# parameter type refuses.
 crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_hot_fg
-    "no matching function|constraints.*not satisfied"
-    "dispatch_workload_decision|CtxFitsWorkloadDecisionDispatch|Bg|row_contains")
+    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Bg>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsWorkloadDecisionDispatch<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision
-    "no matching function|cannot convert"
-    "dispatch_workload_decision|TaggedParallelismDecision|Tagged|ParallelismDecision")
+    "no matching function for call to .dispatch_workload_decision\\(const fixy::BgDrainCtx&, const fixy::concurrent::ParallelismDecision&,"
+    "cannot convert .raw_decision. \\(type .const fixy::concurrent::ParallelismDecision.\\) to type .const crucible::perf::ProfiledDecision&.")
 
 # The per-role federation mints mint_sender, mint_receiver and
 # mint_coord take (ctx, endpoint, admittance) and require
@@ -4725,11 +4719,23 @@ crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_perf_test(neg_workload_profiler_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsWorkloadProfilerMint")
+    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Init>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsWorkloadProfilerMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsWorkloadProfilerMint")
+    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Init>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "required for the satisfaction of .CtxFitsWorkloadProfilerMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
+# The two constructors are private: a profiler comes only from its
+# mint, and a ProfiledDecision only from a profiler.  The decision is
+# not trivially copyable either, so std::bit_cast cannot forge one.
+crucible_neg_compile_perf_test(neg_workload_profiler_constructor_private
+    "is private within this context"
+    ".constexpr crucible::perf::WorkloadProfiler::WorkloadProfiler\\(const crucible::perf::Senses\\*, crucible::perf::WorkloadProfilerConfig\\). is private")
+crucible_neg_compile_perf_test(neg_workload_profiler_decision_constructor_private
+    "is private within this context"
+    ".constexpr crucible::perf::ProfiledDecision::ProfiledDecision\\(fixy::concurrent::ParallelismDecision\\). is private")
+crucible_neg_compile_perf_test(neg_workload_profiler_decision_bit_cast
+    "the expression .is_trivially_copyable_v<_To> .with _To = crucible::perf::ProfiledDecision.. evaluated to .false."
+    ".crucible::perf::ProfiledDecision. is not trivially copyable")
 
 # The second pair of fixtures for each BPF hub mint:
 #
@@ -5369,18 +5375,6 @@ crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_constructor_priva
 crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_mint_no_ctx
     "no matching function for call to .mint_deadline_watchdog\\(std::nullptr_t, crucible::warden::Policy&\\)."
     "candidate expects 3 arguments, 2 provided")
-
-# GAPS-004h (#1284): perf::WorkloadProfiler cap-tag gate.  Construction
-# takes effects::Init by value as the second parameter (third is the
-# defaulted Config) — wrong-cap and no-cap fixtures pin the gate against
-# silent default-arg regressions.  Hot-path frames hold no Init token,
-# so structurally can't construct a profiler from a hot call site.
-crucible_neg_compile_effects_test(neg_perf_workload_profiler_wrong_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "WorkloadProfiler")
-crucible_neg_compile_effects_test(neg_perf_workload_profiler_no_cap
-    "use of deleted function|no matching function|static assertion failed|constraints.*not satisfied|is private within this context|incomplete type|has no member named|could not convert|cannot convert|cannot bind|passing "
-    "WorkloadProfiler")
 
 # FIXY-V-075: WorkloadBudgetCoherent<Ctx, Pipeline> static check.
 # Two HS14 fixtures pin the concept's distinct mismatch classes:

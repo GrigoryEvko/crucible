@@ -485,6 +485,7 @@ crucible/safety/_Secret.h:kCount  — A hand-written cardinality pin; the roster
 crucible/safety/_Tagged.h:kAdmittedForwardEdgeCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kCatalogRosterMatchesCount  — A hand-written cardinality pin on the retag catalog, which is now the namespace admitted_retags; such pins were deleted throughout the port.
 crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog tuple became the namespace admitted_retags of fail-closed edges in fixy/Tagged.h.
+crucible/safety/_Tagged.h:WorkloadProfiler  — Any caller can mint a value under a source tag, so the proof of origin of a profiled decision is the class ProfiledDecision in crucible/perf/WorkloadProfiler.h, which only WorkloadProfiler builds.
 
 # ── fixy/os ─────────────────────────────────────────────────────────────
 #

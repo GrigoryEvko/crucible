@@ -1,9 +1,8 @@
-#include <crucible/concurrent/_ParallelismRule.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/WorkloadProfiler.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Ctx.h>
+#include <fixy/concurrent/ParallelismRule.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <cstdint>
@@ -12,19 +11,25 @@
 
 namespace {
 
+using crucible::perf::ProfiledDecision;
 using crucible::perf::WorkloadProfiler;
-using crucible::perf::TaggedParallelismDecision;
 using crucible::perf::dispatch_workload_decision;
-using crucible::concurrent::ParallelismDecision;
-using crucible::concurrent::ParallelismRule;
-using crucible::concurrent::WorkBudget;
+using fixy::concurrent::ParallelismDecision;
+using fixy::concurrent::ParallelismRule;
+using fixy::concurrent::WorkBudget;
 
-// The wrapper asserts its own zero-cost property.  Restating it here is
-// the per-translation-unit witness that the alias keeps it across this
-// layer.
-static_assert(sizeof(TaggedParallelismDecision) == sizeof(ParallelismDecision),
-              "Tagged<ParallelismDecision, source::WorkloadProfiler> must collapse "
-              "to sizeof(ParallelismDecision): the phantom tag carries no storage");
+// Every profiler in this test comes from the mint, under a cold init
+// context.
+[[nodiscard]] WorkloadProfiler make_profiler(const crucible::perf::Senses* senses) noexcept {
+    return crucible::perf::mint_workload_profiler(::fixy::ColdInitCtx{::foundation::effects::testing::init()},
+                                                  senses);
+}
+
+// The header asserts that the proof of origin carries no storage.
+// Restating it here is the per-translation-unit witness that it keeps
+// that across this layer.
+static_assert(sizeof(ProfiledDecision) == sizeof(ParallelismDecision),
+              "ProfiledDecision must collapse to sizeof(ParallelismDecision)");
 
 static_assert(!std::is_copy_constructible_v<WorkloadProfiler>,
               "WorkloadProfiler holds a borrowed Senses* + per-instance baseline; "
@@ -47,7 +52,7 @@ int main() {
     int failures = 0;
 
     {
-        WorkloadProfiler profiler{/*senses=*/nullptr, ::crucible::effects::testing::init()};
+        WorkloadProfiler profiler = make_profiler(/*senses=*/nullptr);
 
         // This budget is L3-resident, so the structural rule recommends
         // parallel.  A profiler with no telemetry must forward that
@@ -80,7 +85,7 @@ int main() {
     {
         auto senses = crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                           crucible::perf::SensesMask{.sense_hub = true});
-        WorkloadProfiler profiler{&senses, ::crucible::effects::testing::init()};
+        WorkloadProfiler profiler = make_profiler(&senses);
 
         const WorkBudget tiny_budget{
             .read_bytes = 1024,  // ~L1d-resident on every modern CPU
@@ -112,7 +117,7 @@ int main() {
     {
         auto senses = crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                           crucible::perf::SensesMask{.sense_hub = true});
-        WorkloadProfiler profiler{&senses, ::crucible::effects::testing::init()};
+        WorkloadProfiler profiler = make_profiler(&senses);
 
         const WorkBudget l3_budget{
             .read_bytes = 8 * 1024 * 1024,
@@ -159,7 +164,7 @@ int main() {
     }
 
     {
-        WorkloadProfiler profiler{/*senses=*/nullptr, ::crucible::effects::testing::init()};
+        WorkloadProfiler profiler = make_profiler(/*senses=*/nullptr);
         if (profiler.last_was_demoted() || profiler.last_futex_wait_delta() != 0
             || profiler.last_ctx_vol_delta() != 0) {
             std::fprintf(stderr, "fresh profiler diagnostics not at zero\n");
@@ -173,7 +178,7 @@ int main() {
     }
 
     {
-        WorkloadProfiler profiler{/*senses=*/nullptr, ::crucible::effects::testing::init()};
+        WorkloadProfiler profiler = make_profiler(/*senses=*/nullptr);
         const WorkBudget budget{
             .read_bytes = 8 * 1024 * 1024,
             .write_bytes = 8 * 1024 * 1024,
@@ -190,7 +195,7 @@ int main() {
     }
 
     {
-        WorkloadProfiler profiler_src{/*senses=*/nullptr, ::crucible::effects::testing::init()};
+        WorkloadProfiler profiler_src = make_profiler(/*senses=*/nullptr);
         WorkloadProfiler profiler_sink = std::move(profiler_src);
         const WorkBudget budget{
             .read_bytes = 1024,
@@ -207,11 +212,11 @@ int main() {
         }
     }
 
-    // The tagged form is the production-facing surface.  The tag is
-    // phantom, so every field of the decision must come through it
-    // unchanged.
+    // The profiled form is the production-facing surface.  The proof of
+    // origin carries no storage, so every field of the decision must
+    // come through it unchanged.
     {
-        WorkloadProfiler profiler{/*senses=*/nullptr, ::crucible::effects::testing::init()};
+        WorkloadProfiler profiler = make_profiler(/*senses=*/nullptr);
 
         const WorkBudget tiny_budget{
             .read_bytes = 1024,
@@ -219,39 +224,39 @@ int main() {
             .item_count = 256,
         };
 
-        const TaggedParallelismDecision tagged = profiler.recommend(tiny_budget);
-        if (tagged.value().kind != ParallelismDecision::Kind::Sequential) {
+        const ProfiledDecision profiled = profiler.recommend(tiny_budget);
+        if (profiled.value().kind != ParallelismDecision::Kind::Sequential) {
             std::fprintf(stderr,
-                         "recommend() on an L1-resident budget must yield a tagged "
+                         "recommend() on an L1-resident budget must yield a profiled "
                          "Sequential; got kind=%d via .value()\n",
-                         static_cast<int>(tagged.value().kind));
+                         static_cast<int>(profiled.value().kind));
             ++failures;
         }
 
-        // The reset clears the baseline, so the untagged call sees the
-        // same structural state the tagged one did.
+        // The reset clears the baseline, so the bare call sees the same
+        // structural state the profiled one did.
         profiler.reset();
         const auto bare = profiler.recommend_bare(tiny_budget);
-        if (bare.kind != tagged.value().kind || bare.factor != tagged.value().factor) {
+        if (bare.kind != profiled.value().kind || bare.factor != profiled.value().factor) {
             std::fprintf(stderr,
                          "recommend() and recommend_bare() must agree on "
-                         "structural decision; bare=(%d,%zu) tagged=(%d,%zu)\n",
-                         static_cast<int>(bare.kind), bare.factor, static_cast<int>(tagged.value().kind),
-                         tagged.value().factor);
+                         "structural decision; bare=(%d,%zu) profiled=(%d,%zu)\n",
+                         static_cast<int>(bare.kind), bare.factor, static_cast<int>(profiled.value().kind),
+                         profiled.value().factor);
             ++failures;
         }
 
         // The dispatch must reach the sequential body and hand it the
-        // bare decision rather than the tagged one.
+        // bare decision.
         bool seq_fired = false;
         bool par_fired = false;
         ParallelismDecision::Kind observed_kind = ParallelismDecision::Kind::Parallel;
-        ::crucible::effects::BgDrainCtx bg_ctx{::crucible::effects::testing::bg()};
+        const ::fixy::BgDrainCtx bg_ctx{::foundation::effects::testing::bg()};
         // A fresh decision keeps this check independent of the one
         // above.
-        const TaggedParallelismDecision tagged2 = profiler.recommend(tiny_budget);
+        const ProfiledDecision profiled2 = profiler.recommend(tiny_budget);
         dispatch_workload_decision(
-            bg_ctx, tagged2,
+            bg_ctx, profiled2,
             /*seq_body=*/
             [&](const ParallelismDecision& d) noexcept {
                 seq_fired = true;

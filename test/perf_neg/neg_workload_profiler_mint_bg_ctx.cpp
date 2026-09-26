@@ -1,16 +1,16 @@
-// FIXY-U-083 HS14 neg-compile fixture (1 of 2 for mint_workload_profiler).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_workload_profiler rejects BgDrainCtx — BgDrain carries Bg +
-// Alloc but neither engages Init.  WorkloadProfiler's ctor reads the
-// borrowed Senses* once to capture a baseline snapshot from an
-// underlying SenseHub that is itself Init-row; the profiler must
-// therefore be constructed during Init, not bg-drain.
+// mint_workload_profiler asks for a context whose row holds Init,
+// because a profiler is built at process startup.  The background drain
+// context claims Bg and Alloc, so the gate refuses it.
 
 #include <crucible/perf/WorkloadProfiler.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 int main() {
-    auto wp = crucible::perf::mint_workload_profiler(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()},
-                                                     /*senses=*/nullptr, crucible::effects::testing::init());
-    (void)wp;
+    auto profiler = crucible::perf::mint_workload_profiler(
+        ::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, /*senses=*/nullptr);
+    (void)profiler;
     return 0;
 }
