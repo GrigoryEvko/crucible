@@ -16,6 +16,12 @@ Testing/
 .playwright-mcp/
 .claude/
 
+# Git worktrees: git worktree add .worktrees/NAME. Each one holds a full copy
+# of the sources and often a build directory. The guards list files with
+# git ls-files --exclude-standard, so this line keeps those copies out of
+# every scan.
+.worktrees/
+
 # Pinned binary tools that the repo installs for itself. Crucible holds its own
 # tree-sitter CLI and C++ grammar here rather than reach for one on the PATH,
 # because a PATH binary is an unpinned input. scripts/install-tree-sitter.sh
