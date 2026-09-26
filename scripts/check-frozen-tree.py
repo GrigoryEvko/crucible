@@ -6,7 +6,7 @@ the old one coexists with it, the old one is frozen: a bug found in old code is
 fixed in the new tree or not at all, and nothing is added to the old tree.  A
 deletion passes, because the old tree ends by deletion.  The frozen prefixes are
 the lines of scripts/frozen-paths.txt, the one list that this guard,
-scripts/check-flip-list.py and scripts/check-start-lifetime.sh share.
+scripts/check-flip-list.py and scripts/check-start-lifetime.py share.
 
 HOW THE CHANGE SET IS READ
     The guard compares the tree of the freeze base with the files on disk.  It

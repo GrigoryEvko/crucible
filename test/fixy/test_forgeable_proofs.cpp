@@ -521,7 +521,7 @@ static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
 // They still compile: std::start_lifetime_as over an array of proofs,
 // std::start_lifetime_as_array over proofs, and std::start_lifetime_as
 // over an aggregate or a std::array that holds a proof.  Each one names
-// std::start_lifetime_as, and scripts/check-start-lifetime.sh refuses
+// std::start_lifetime_as, and scripts/check-start-lifetime.py refuses
 // that name outside a reviewed list whose element types are
 // implicit-lifetime types.  Its self-test plants each of the four routes.
 // foundation::lifetime::start_as_array, which new code uses, refuses the

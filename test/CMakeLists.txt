@@ -717,18 +717,20 @@ set_tests_properties(brand_drain brand_drain_self_test PROPERTIES
 # std::start_lifetime_as over an array of proofs, over an aggregate that
 # holds one, and std::start_lifetime_as_array over proofs each give a
 # pointer to a proof whose lifetime never started, and no property of a
-# type refuses them.  scripts/check-start-lifetime.sh refuses each use of
+# type refuses them.  scripts/check-start-lifetime.py refuses each use of
 # the two library names outside a reviewed and counted list.  The guard
 # reads the compile database of this build, so a generated source and a
 # source with an unusual suffix are in scope.  The self-test plants each
-# route and each known bypass.
+# route and each known bypass.  Exit 3 (the pinned tree-sitter kit is
+# absent) is a skip.
 add_test(NAME start_lifetime_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-start-lifetime.sh --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-start-lifetime.py --self-test)
 add_test(NAME start_lifetime
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-start-lifetime.sh
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-start-lifetime.py
           --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # A union, a cast of a void pointer, an allocator, an explicit
 # instantiation and a specialization of a door each build a proof type
 # with no call to its door, and the language refuses none of them.
@@ -746,7 +748,7 @@ set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # scripts/preprocessed.py preprocesses each unit of the compile database
-# one time for check-start-lifetime.sh and check-proof-routes.py together.
+# one time for check-start-lifetime.py and check-proof-routes.py together.
 # The self-test proves that a warm run reads the store, that a changed
 # header makes its units stale, and that two runs at one time share work.
 add_test(NAME preprocessed_store_self_test

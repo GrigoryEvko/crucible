@@ -87,7 +87,7 @@ and C++ source file that git tracks, and each untracked file that
 preprocessor with the flags of the build, and it parses each distinct
 expansion of each file, so a shape that a macro or token pasting forms is
 seen too.  The output comes from the shared store of
-scripts/preprocessed.py, so this guard and check-start-lifetime.sh
+scripts/preprocessed.py, so this guard and check-start-lifetime.py
 preprocess each translation unit one time between them.  The records of an
 expansion stay in proof-routes-cache/ beside the compile database, under
 the key of the file's chunk list, so a header that many units expand the

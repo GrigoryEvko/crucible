@@ -1,5 +1,5 @@
 # start-lifetime-allowlist — the reviewed uses of std::start_lifetime_as
-# and std::start_lifetime_as_array.  scripts/check-start-lifetime.sh reads
+# and std::start_lifetime_as_array.  scripts/check-start-lifetime.py reads
 # this file.
 #
 # Format: path:key, or path:key xN.  The key is the name and its template

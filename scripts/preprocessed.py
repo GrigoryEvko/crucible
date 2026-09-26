@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One preprocessor run for each translation unit, shared by the guards that read preprocessed output.
 
-scripts/check-proof-routes.py and scripts/check-start-lifetime.sh read the
+scripts/check-proof-routes.py and scripts/check-start-lifetime.py read the
 output of the preprocessor over the compile database.  Each guard gets that
 output from this module, so a translation unit is preprocessed one time for
 the two guards.

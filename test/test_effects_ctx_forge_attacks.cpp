@@ -132,7 +132,7 @@ static_assert(!is_forgeable_from_bytes_v<eff::Capability<eff::Effect::Block, eff
 // An array, an aggregate or a union over a context.  Each is an
 // implicit-lifetime type whatever its elements are, so
 // std::start_lifetime_as gives a pointer to a context whose lifetime never
-// started.  scripts/check-start-lifetime.sh refuses the library start
+// started.  scripts/check-start-lifetime.py refuses the library start
 // outside the checked start, a frozen file and a negative fixture, and it
 // reads the preprocessed text, so a macro does not hide it.  The checked
 // start refuses each such type at compile time, as the assertions below

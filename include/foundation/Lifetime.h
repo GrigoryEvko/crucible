@@ -30,7 +30,7 @@
 // class carries the annotation no_start_over_bytes, and the walk refuses it
 // wherever it sits: alone, in an array, as a base or as a member.
 //
-// scripts/check-start-lifetime.sh refuses a direct use of the two library
+// scripts/check-start-lifetime.py refuses a direct use of the two library
 // functions outside a reviewed list.  New code uses start_as_array.
 
 #include <concepts>
