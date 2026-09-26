@@ -125,6 +125,11 @@ def scope_files(root: Path) -> list[str]:
     return sorted(p for p in paths if tsast.is_in_cpp_scope(p) and not NEG_FIXTURE.search(p) and (root / p).is_file())
 
 
+def joined(parts: tuple[str, ...]) -> NsPath:
+    """Return name parts with each line splice inside them removed, as translation phase 2 does."""
+    return tuple("".join(token.text for token in tsast.pp_tokens(part)) if "\\" in part else part for part in parts)
+
+
 class Aliases:
     """The namespace aliases of the whole scan, by alias name.
 
@@ -139,7 +144,7 @@ class Aliases:
     def add(self, tree: tsast.Tree) -> None:
         """Record every alias of one parsed file."""
         for alias in tsast.namespace_aliases(tree):
-            self.targets.setdefault(alias.name, set()).add(alias.target)
+            self.targets.setdefault(joined((alias.name,))[0], set()).add(joined(alias.target))
 
     def expand(self, path: NsPath, depth: int = 0) -> list[NsPath]:
         """Return the path and each path that its first name reaches through an alias.
@@ -172,8 +177,9 @@ def parsed_heads(rel: str, root: tsast.Node, row_of: callable) -> list[Head]:
         written = None if name is None or body is None else tsast.qualified_parts(name)
         if written is None:
             continue
-        is_global, qualifier = written
-        paths = (qualifier,) if is_global else (tsast.namespace_path(node, skip_inline=True) + qualifier, qualifier)
+        is_global, qualifier = written[0], joined(written[1])
+        enclosing = joined(tsast.namespace_path(node, skip_inline=True))
+        paths = (qualifier,) if is_global else (enclosing + qualifier, qualifier)
         found.append(Head(qualifier[-1], rel, row_of(node) + 1, paths))
     return found
 
@@ -397,6 +403,9 @@ def self_test() -> int:
             "src/AttributeHead.cpp": "struct [[nodiscard]] foundation::effects::host::InitOwner {};\n",
             "src/Commented.cpp": "struct foundation::effects::/* hidden */host::\n    InitOwner { };\n",
             "src/SplicedName.cpp": "struct foundation::effects::host::Init\\\nOwner { };\n",
+            "src/SplicedHost.cpp": "struct foundation::effects::ho\\\nst::InitOwner { };\n",
+            "src/SplicedNamespace.cpp": "namespace foundation::effects::ho\\\nst { struct InitOwner {}; }\n",
+            "src/SplicedAlias.cpp": "namespace hs = foundation::effects::ho\\\nst;\nstruct hs::InitOwner {};\n",
             "src/HostAlias.cpp": "namespace h = foundation::effects::host;\nstruct h::InitOwner {};\n",
             "src/ChainAlias.cpp": "namespace e = ::foundation::effects;\nnamespace h2 = e::host;\n"
                                   "namespace h3 = h2;\nstruct h3::ForegroundOwner {};\n",

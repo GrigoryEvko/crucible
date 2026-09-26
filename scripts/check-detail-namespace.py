@@ -183,9 +183,14 @@ def detail_namespace(path: NsPath) -> str | None:
     return "::" + "::".join(path[:path.index("detail", 1) + 1])
 
 
+def joined(parts: tuple[str, ...]) -> NsPath:
+    """Return name parts with each line splice inside them removed, as translation phase 2 does."""
+    return tuple("".join(token.text for token in tsast.pp_tokens(part)) if "\\" in part else part for part in parts)
+
+
 def enclosing_of(node: tsast.Node) -> NsPath:
     """Return the namespaces around a node, outermost first, an inline namespace left out."""
-    return tsast.namespace_path(node, skip_inline=True)
+    return joined(tsast.namespace_path(node, skip_inline=True))
 
 
 def prefixes(path: NsPath) -> list[NsPath]:
@@ -386,16 +391,16 @@ def file_facts(root: Path, rel: str, tree: tsast.Tree, *, with_names: bool) -> F
     directives: list[Directive] = []
     directive_nodes: set[Position] = set()
     for alias in tsast.namespace_aliases(tree):
-        enclosing = enclosing_of(alias.node)
-        aliases.append(AliasDef(alias.name, alias.is_global, alias.target, enclosing, alias.scope.start,
+        enclosing, target = enclosing_of(alias.node), joined(alias.target)
+        aliases.append(AliasDef(joined((alias.name,))[0], alias.is_global, target, enclosing, alias.scope.start,
                                 alias.scope.end, alias.node.start, alias.scope.type in NAMESPACE_SCOPES))
-        names.append(Name(alias.node.line, alias.is_global, alias.target, enclosing, alias.node.start))
+        names.append(Name(alias.node.line, alias.is_global, target, enclosing, alias.node.start))
     for using in tsast.using_names(tree):
         if using.is_directive:
             directive_nodes.add(using.node.start)
-            enclosing = enclosing_of(using.node)
-            names.append(Name(using.node.line, using.is_global, using.target, enclosing, using.node.start))
-            directives.append(Directive(using.node.start, using.scope.end, using.is_global, using.target, enclosing,
+            enclosing, target = enclosing_of(using.node), joined(using.target)
+            names.append(Name(using.node.line, using.is_global, target, enclosing, using.node.start))
+            directives.append(Directive(using.node.start, using.scope.end, using.is_global, target, enclosing,
                                         using.scope.type in NAMESPACE_SCOPES))
     includes = resolved_includes(root, rel, tree)
     if not with_names:
@@ -406,7 +411,7 @@ def file_facts(root: Path, rel: str, tree: tsast.Tree, *, with_names: bool) -> F
             continue
         parts = tsast.qualified_parts(node)
         if parts is not None:
-            names.append(Name(node.line, parts[0], parts[1], enclosing_of(node), node.start))
+            names.append(Name(node.line, parts[0], joined(parts[1]), enclosing_of(node), node.start))
     for definition in tree.find("namespace_definition"):
         body = definition.child_by_field("body")
         if body is not None and detail_namespace(enclosing_of(body)):
@@ -620,6 +625,9 @@ def self_test() -> int:
             "src/Macro.cpp": "#define REACH ::fixy::session::detail::Core\nREACH core;\n",
             "src/SplitMacro.cpp": "#define REACH ::fixy::session:: /* c */ \\\n    detail::Core\nREACH core;\n",
             "src/MultiLine.cpp": "auto key = foundation /* hidden */ ::\n    effects::detail::Key{};\n",
+            "src/SplicedPart.cpp": "auto key = foundation::effects::det\\\nail::Key{};\n",
+            "src/SplicedAlias.cpp": "namespace fe = foundation::eff\\\nects;\nvoid f(fe::detail::Key);\n",
+            "src/SplicedReopen.cpp": "namespace foundation::effects::det\\\nail { int forged; }\n",
             "src/TemplateArgument.cpp": "std::vector<::fixy::session::detail::Core> cores;\n",
             "src/ParenArgument.cpp": "auto k = ::foundation::effects::detail::Key<(1 > 0)>{};\n",
             "include/crucible/Base.h": "struct Derived : fixy::session::detail::Core {};\n",

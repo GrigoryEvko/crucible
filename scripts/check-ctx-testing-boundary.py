@@ -81,6 +81,11 @@ class Run(NamedTuple):
     alias_name: str | None
 
 
+def joined(part: str) -> str:
+    """Return one name part with each line splice inside it removed, as translation phase 2 does."""
+    return "".join(token.text for token in tsast.pp_tokens(part)) if "\\" in part else part
+
+
 def scope_files(root: Path) -> list[Path]:
     """Return every C++ file under the scan directories, sorted, relative to the root."""
     found: list[Path] = []
@@ -149,7 +154,7 @@ def alias_targets(trees: Sequence[tsast.Tree]) -> dict[str, set[tuple[str, ...]]
     targets: dict[str, set[tuple[str, ...]]] = {}
     for tree in trees:
         for alias in tsast.namespace_aliases(tree):
-            targets.setdefault(alias.name, set()).add(alias.target)
+            targets.setdefault(joined(alias.name), set()).add(tuple(joined(part) for part in alias.target))
         for tokens in macro_bodies(tree):
             for run in macro_runs(tokens):
                 if run.alias_name is not None:
@@ -226,17 +231,17 @@ def tree_uses(tree: tsast.Tree, doors: frozenset[str]) -> list[int]:
         leaves = name_leaves(node)
         if leaves is None:
             continue
-        found, held = pair_rows([leaf.text for leaf in leaves], [leaf.start[0] for leaf in leaves], doors)
+        found, held = pair_rows([joined(leaf.text) for leaf in leaves], [leaf.start[0] for leaf in leaves], doors)
         rows += found
         held_leaves |= {(leaves[position].start, leaves[position].end) for position in held}
     for leaf in tree.find(*LEAVES):
-        if leaf.text in WITNESSES and (leaf.start, leaf.end) not in held_leaves:
+        if joined(leaf.text) in WITNESSES and (leaf.start, leaf.end) not in held_leaves:
             rows.append(leaf.start[0])
     for using in tsast.using_names(tree):
-        if using.is_directive and any(part in doors for part in using.target):
+        if using.is_directive and any(joined(part) in doors for part in using.target):
             rows.append(using.node.start[0])
     for alias in tsast.namespace_aliases(tree):
-        if alias.target and alias.target[-1] in doors:
+        if alias.target and joined(alias.target[-1]) in doors:
             rows.append(alias.node.start[0])
     for tokens in macro_bodies(tree):
         for run in macro_runs(tokens):
@@ -355,6 +360,9 @@ def self_test() -> int:
         "src/macro_alias_use.cpp": "inline int m() { return mt::test(); }\n",
         "src/macro_split.cpp": "#define SPLIT ::crucible::effects::testing:: /* c */ bg()\n"
                                "#define SPLICE ::crucible::effects::test\\\ning::init()\n",
+        "src/spliced.cpp": "inline int f() { return ::foundation::effects::test\\\ning::init(); }\n"
+                           "namespace st = ::crucible::effects::test\\\ning;\n"
+                           "struct Key { friend struct Test\\\nWitness; };\n",
         "include/crucible/effects/Clean.h":
             "#pragma once\n// effects::testing::bg() hands out a context, so this header never calls it.\n"
             "inline const char* note = \"testing::bg() and TestWitness\";\n"
@@ -393,6 +401,8 @@ def self_test() -> int:
                len(found.get("src/macro_alias_use.cpp", [])) == 1)
         expect("caught: a macro body split by a comment, and a name split by a backslash-newline",
                len(found.get("src/macro_split.cpp", [])) == 2)
+        expect("caught: a call, an alias and a friend whose door or witness name a backslash-newline splits",
+               len(found.get("src/spliced.cpp", [])) == 3)
         expect("not caught: a comment, a literal, an include path, a macro string, an alias of another namespace "
                "and another namespace called testing that holds no door member",
                "include/crucible/effects/Clean.h" not in found)
@@ -416,7 +426,7 @@ def self_test() -> int:
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
         for rel in ("include/foundation/effects/Planted.h", "src/planted.cpp", "src/cross.cpp", "src/directive.cpp",
                     "src/commented.cpp", "src/witness.cpp", "src/macro.cpp", "src/macro_alias_use.cpp",
-                    "src/macro_split.cpp"):
+                    "src/macro_split.cpp", "src/spliced.cpp"):
             (root / rel).unlink()
         with (root / "include/crucible/effects/Listed.h").open("a", encoding="utf-8") as listed:
             listed.write("inline void more() { (void)::crucible::effects::testing::init(); }\n")
