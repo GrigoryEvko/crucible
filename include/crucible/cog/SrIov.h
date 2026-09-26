@@ -3,23 +3,26 @@
 // Admission for partitioning a physical NIC into virtual functions.
 // Nothing here mutates kernel state or guesses at vendor behaviour. A
 // privileged backend consumes the declared plan this header mints.
+//
+// foundation::reflect::enum_name gives the name of each enumerator.
 
+#include <crucible/cntp/Pacing.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/cntp/Pacing.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
+#include <foundation/reflect/Hash.h>
 
 #include <array>
 #include <cstdint>
 #include <expected>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cog::sriov {
@@ -50,13 +53,22 @@ enum class SrIovError : std::uint8_t {
     QueryDeferred = 15,
 };
 
-[[nodiscard]] std::string_view sriov_error_name(SrIovError error) noexcept;
+// Zero virtual functions is the disabled state, which disable() reaches.
+// An enable plan asks for at least one.
+inline constexpr auto vf_count_bound = ::fixy::in_range<std::uint16_t{1}, std::uint16_t{4096}>;
+inline constexpr auto vf_index_bound = ::fixy::in_range<std::uint16_t{0}, std::uint16_t{4095}>;
+inline constexpr auto vf_vlan_bound = ::fixy::in_range<std::uint16_t{0}, std::uint16_t{4094}>;
+inline constexpr auto vf_rate_limit_bound = ::fixy::in_range<std::uint64_t{0}, std::uint64_t{1000000000ull}>;
+inline constexpr auto vf_resource_limit_bound = ::fixy::in_range<std::uint32_t{0}, std::uint32_t{1000000}>;
 
-using VfCount = safety::Bounded<std::uint16_t{1}, std::uint16_t{4096}, std::uint16_t>;
-using VfIndex = safety::Bounded<std::uint16_t{0}, std::uint16_t{4095}, std::uint16_t>;
-using VfVlanId = safety::Bounded<std::uint16_t{0}, std::uint16_t{4094}, std::uint16_t>;
-using VfRateLimitMbps = safety::Bounded<std::uint64_t{0}, std::uint64_t{1000000000ull}, std::uint64_t>;
-using VfResourceLimit = safety::Bounded<std::uint32_t{0}, std::uint32_t{1000000}, std::uint32_t>;
+using VfCount = ::fixy::Refined<vf_count_bound, std::uint16_t>;
+using VfIndex = ::fixy::Refined<vf_index_bound, std::uint16_t>;
+using VfVlanId = ::fixy::Refined<vf_vlan_bound, std::uint16_t>;
+using VfRateLimitMbps = ::fixy::Refined<vf_rate_limit_bound, std::uint64_t>;
+using VfResourceLimit = ::fixy::Refined<vf_resource_limit_bound, std::uint32_t>;
+
+inline constexpr VfIndex first_vf_index = ::fixy::mint_refined<vf_index_bound>(std::uint16_t{0});
+inline constexpr VfResourceLimit no_resource_limit = ::fixy::mint_refined<vf_resource_limit_bound>(std::uint32_t{0});
 
 struct MacAddress {
     std::array<std::uint8_t, 6> bytes{};
@@ -66,8 +78,8 @@ struct MacAddress {
     }
 
     [[nodiscard]] constexpr bool is_zero() const noexcept {
-        for (const std::uint8_t b : bytes) {
-            if (b != 0u) return false;
+        for (const std::uint8_t octet : bytes) {
+            if (octet != 0u) return false;
         }
         return true;
     }
@@ -77,81 +89,113 @@ struct MacAddress {
     constexpr auto operator<=>(MacAddress const&) const noexcept = default;
 };
 
-inline constexpr auto vf_mac_valid = [](MacAddress mac) constexpr noexcept {
-    return !mac.is_zero() && !mac.is_multicast();
+// A virtual function takes a unicast identity. The zero address names no
+// station, and a multicast address names a group rather than one port.
+struct IsAssignableVfMac {
+    [[nodiscard]] constexpr bool operator()(MacAddress const& mac) const noexcept {
+        return !mac.is_zero() && !mac.is_multicast();
+    }
 };
 
-using VfMacAddress = safety::Refined<vf_mac_valid, MacAddress>;
+inline constexpr IsAssignableVfMac vf_mac_valid{};
+
+using VfMacAddress = ::fixy::Refined<vf_mac_valid, MacAddress>;
 
 struct VfConfig {
-    VfMacAddress mac{MacAddress::locally_administered(1), typename VfMacAddress::Trusted{}};
-    VfVlanId vlan{std::uint16_t{0}, typename VfVlanId::Trusted{}};
-    VfRateLimitMbps rate_limit_mbps{std::uint64_t{0}, typename VfRateLimitMbps::Trusted{}};
-    VfResourceLimit max_qps{std::uint32_t{0}, typename VfResourceLimit::Trusted{}};
-    VfResourceLimit max_mrs{std::uint32_t{0}, typename VfResourceLimit::Trusted{}};
+    VfMacAddress mac = ::fixy::mint_refined<vf_mac_valid>(MacAddress::locally_administered(1));
+    VfVlanId vlan = ::fixy::mint_refined<vf_vlan_bound>(std::uint16_t{0});
+    VfRateLimitMbps rate_limit_mbps = ::fixy::mint_refined<vf_rate_limit_bound>(std::uint64_t{0});
+    VfResourceLimit max_qps = no_resource_limit;
+    VfResourceLimit max_mrs = no_resource_limit;
     bool spoofchk = true;
 };
 
 struct SrIovPlan {
     CogIdentity physical{};
     cntp::NicInterfaceName interface{};
-    VfCount num_vfs{std::uint16_t{1}};
+    VfCount num_vfs = ::fixy::mint_refined<vf_count_bound>(std::uint16_t{1});
     VfConfig default_vf{};
     bool allow_privileged_apply = false;
 };
 
-struct VfHandle {
-    VfIndex index{std::uint16_t{0}, typename VfIndex::Trusted{}};
-    Uuid parent_uuid{};
-    CogIdentity identity{};
+using DeclaredVfConfig = ::fixy::Tagged<VfConfig, ::fixy::tags::source::SrIov>;
+using DeclaredSrIovPlan = ::fixy::Tagged<SrIovPlan, ::fixy::tags::source::SrIov>;
+
+// The two salts keep the upper and the lower half of a derived identity
+// apart, so a virtual function never shares a half with its parent.
+[[nodiscard]] constexpr CogIdentity derive_vf_identity(CogIdentity physical, VfIndex index) noexcept {
+    CogIdentity vf{};
+    vf.uuid = Uuid{::foundation::reflect::fmix64(physical.uuid.hi ^ (0x5352494fULL << 16u) ^ index.value()),
+                   ::foundation::reflect::fmix64(physical.uuid.lo ^ 0x56465f434f47ULL ^ index.value())};
+    vf.level = CogLevel::L0_Atomic;
+    vf.kind = CogKind::NicPort;
+    vf.vendor = physical.vendor;
+    vf.model = physical.model;
+    vf.firmware_revision = physical.firmware_revision;
+    vf.bios_revision = physical.bios_revision;
+    return vf;
+}
+
+class VfHandle;
+
+[[nodiscard]] constexpr std::expected<std::span<VfHandle>, SrIovError>
+materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
+
+[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept;
+
+// A handle names one virtual function of a declared plan. Only the two
+// functions above build one, from the plan, so a handle cannot name a
+// function under a parent that no plan admitted.
+class VfHandle {
+public:
+    // The empty slot of a handle buffer. It names no function, and
+    // configure_vf refuses it.
+    constexpr VfHandle() noexcept = default;
+
+    [[nodiscard]] constexpr VfIndex index() const noexcept { return index_; }
+    [[nodiscard]] constexpr Uuid parent_uuid() const noexcept { return parent_uuid_; }
+    [[nodiscard]] constexpr CogIdentity identity() const noexcept { return identity_; }
+
+private:
+    constexpr VfHandle(CogIdentity physical, VfIndex index) noexcept
+        : index_{index}, parent_uuid_{physical.uuid}, identity_{derive_vf_identity(physical, index)} {}
+
+    friend constexpr std::expected<std::span<VfHandle>, SrIovError> materialize_vf_handles(DeclaredSrIovPlan plan,
+                                                                                            std::span<VfHandle> out) noexcept;
+    friend constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept;
+
+    VfIndex index_ = first_vf_index;
+    Uuid parent_uuid_{};
+    CogIdentity identity_{};
 };
 
-using DeclaredVfConfig = safety::Tagged<VfConfig, safety::source::SrIov>;
-using DeclaredSrIovPlan = safety::Tagged<SrIovPlan, safety::source::SrIov>;
-
 template <class Ctx>
-concept CtxFitsSrIovMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsSrIovMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 [[nodiscard]] constexpr std::expected<VfCount, SrIovError> admit_vf_count(std::uint16_t count) noexcept {
-    if (count == 0u || count > 4096u) {
-        return std::unexpected(SrIovError::InvalidVfCount);
-    }
-    return VfCount{count, typename VfCount::Trusted{}};
+    return ::fixy::admit_refined<vf_count_bound>(count, SrIovError::InvalidVfCount);
 }
 
 [[nodiscard]] constexpr std::expected<VfIndex, SrIovError> admit_vf_index(std::uint16_t index) noexcept {
-    if (index > 4095u) {
-        return std::unexpected(SrIovError::InvalidVfIndex);
-    }
-    return VfIndex{index, typename VfIndex::Trusted{}};
+    return ::fixy::admit_refined<vf_index_bound>(index, SrIovError::InvalidVfIndex);
 }
 
 [[nodiscard]] constexpr std::expected<VfVlanId, SrIovError> admit_vlan(std::uint16_t vlan) noexcept {
-    if (vlan > 4094u) {
-        return std::unexpected(SrIovError::InvalidVlan);
-    }
-    return VfVlanId{vlan, typename VfVlanId::Trusted{}};
+    return ::fixy::admit_refined<vf_vlan_bound>(vlan, SrIovError::InvalidVlan);
 }
 
 [[nodiscard]] constexpr std::expected<VfRateLimitMbps, SrIovError> admit_rate_limit_mbps(std::uint64_t rate) noexcept {
-    if (rate > 1000000000ull) {
-        return std::unexpected(SrIovError::InvalidRateLimit);
-    }
-    return VfRateLimitMbps{rate, typename VfRateLimitMbps::Trusted{}};
+    return ::fixy::admit_refined<vf_rate_limit_bound>(rate, SrIovError::InvalidRateLimit);
 }
 
 [[nodiscard]] constexpr std::expected<VfResourceLimit, SrIovError> admit_resource_limit(std::uint32_t limit) noexcept {
-    if (limit > 1000000u) {
-        return std::unexpected(SrIovError::InvalidResourceLimit);
-    }
-    return VfResourceLimit{limit, typename VfResourceLimit::Trusted{}};
+    return ::fixy::admit_refined<vf_resource_limit_bound>(limit, SrIovError::InvalidResourceLimit);
 }
 
 [[nodiscard]] constexpr std::expected<VfMacAddress, SrIovError> admit_mac(MacAddress mac) noexcept {
-    if (!vf_mac_valid(mac)) {
-        return std::unexpected(SrIovError::InvalidMac);
-    }
-    return VfMacAddress{mac, typename VfMacAddress::Trusted{}};
+    return ::fixy::admit_refined<vf_mac_valid>(mac, SrIovError::InvalidMac);
 }
 
 [[nodiscard]] constexpr bool interface_name_present(cntp::NicInterfaceName interface) noexcept {
@@ -172,53 +216,17 @@ concept CtxFitsSrIovMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, ef
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, SrIovError> validate_vf_config(VfConfig config) noexcept {
-    if (!vf_mac_valid(config.mac.value())) {
-        return std::unexpected(SrIovError::InvalidMac);
-    }
-    return {};
-}
-
+// Every field of a VfConfig is refined, so a plan needs no check of its
+// default function beyond the checks of the physical port and the name.
 [[nodiscard]] constexpr std::expected<void, SrIovError> validate_plan(SrIovPlan const& plan,
                                                                       NicPortTargetCaps const& caps) noexcept {
-    auto physical = validate_physical(plan.physical, caps);
-    if (!physical.has_value()) {
-        return std::unexpected(physical.error());
+    if (auto physical = validate_physical(plan.physical, caps); !physical.has_value()) {
+        return physical;
     }
     if (!interface_name_present(plan.interface)) {
         return std::unexpected(SrIovError::InvalidInterfaceName);
     }
-    return validate_vf_config(plan.default_vf);
-}
-
-[[nodiscard]] constexpr std::uint64_t mix_vf_uuid(std::uint64_t x) noexcept {
-    x ^= x >> 33u;
-    x *= 0xff51afd7ed558ccdULL;
-    x ^= x >> 33u;
-    x *= 0xc4ceb9fe1a85ec53ULL;
-    x ^= x >> 33u;
-    return x;
-}
-
-[[nodiscard]] constexpr CogIdentity derive_vf_identity(CogIdentity physical, VfIndex index) noexcept {
-    CogIdentity vf{};
-    vf.uuid = Uuid{mix_vf_uuid(physical.uuid.hi ^ (0x5352494fULL << 16u) ^ index.value()),
-                   mix_vf_uuid(physical.uuid.lo ^ 0x56465f434f47ULL ^ index.value())};
-    vf.level = CogLevel::L0_Atomic;
-    vf.kind = CogKind::NicPort;
-    vf.vendor = physical.vendor;
-    vf.model = physical.model;
-    vf.firmware_revision = physical.firmware_revision;
-    vf.bios_revision = physical.bios_revision;
-    return vf;
-}
-
-[[nodiscard]] constexpr VfHandle make_vf_handle(CogIdentity physical, VfIndex index) noexcept {
-    return VfHandle{
-        .index = index,
-        .parent_uuid = physical.uuid,
-        .identity = derive_vf_identity(physical, index),
-    };
+    return {};
 }
 
 template <class Ctx>
@@ -233,17 +241,20 @@ mint_sriov_plan(Ctx const&, CogIdentity physical, NicPortTargetCaps caps, cntp::
         .default_vf = default_vf,
         .allow_privileged_apply = allow_privileged_apply,
     };
-    auto valid = validate_plan(plan, caps);
-    if (!valid.has_value()) {
+    if (auto valid = validate_plan(plan, caps); !valid.has_value()) {
         return std::unexpected(valid.error());
     }
-    return DeclaredSrIovPlan{plan};
+    return ::fixy::mint_tagged<::fixy::tags::source::SrIov>(plan);
 }
 
-[[nodiscard]] constexpr DeclaredVfConfig declare_vf_config(VfConfig config) noexcept {
-    return DeclaredVfConfig{config};
+// Every field of a VfConfig is refined, so the refinements are the whole
+// validation and the declaration only records the provenance.
+[[nodiscard]] constexpr DeclaredVfConfig declare_vf_config(VfConfig const& config) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::SrIov>(config);
 }
 
+// An index below num_vfs, which is at most 4096, is at most 4095, so the
+// checked mint of each index passes.
 [[nodiscard]] constexpr std::expected<std::span<VfHandle>, SrIovError>
 materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept {
     const std::uint16_t count = plan.value().num_vfs.value();
@@ -251,17 +262,16 @@ materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept
         return std::unexpected(SrIovError::InsufficientHandleCapacity);
     }
     for (std::uint16_t i = 0; i < count; ++i) {
-        out[i] = make_vf_handle(plan.value().physical, VfIndex{i, typename VfIndex::Trusted{}});
+        out[i] = VfHandle{plan.value().physical, ::fixy::mint_refined<vf_index_bound>(i)};
     }
     return out.first(count);
 }
 
-[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
-                                                                         VfIndex index) noexcept {
+[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept {
     if (index.value() >= plan.value().num_vfs.value()) {
         return std::unexpected(SrIovError::VfIndexOutOfRange);
     }
-    return make_vf_handle(plan.value().physical, index);
+    return VfHandle{plan.value().physical, index};
 }
 
 // Every method below and every free function that mirrors one is a
@@ -269,7 +279,7 @@ materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept
 // compile time rather than only through the returned sentinel. A
 // caller that means to touch a stub suppresses the warning around the
 // call.
-class SrIovManager : public safety::Pinned<SrIovManager> {
+class SrIovManager : public ::foundation::Pinned<SrIovManager> {
 public:
     SrIovManager() = default;
 
@@ -309,11 +319,17 @@ static_assert(sizeof(VfRateLimitMbps) == sizeof(std::uint64_t));
 static_assert(sizeof(VfResourceLimit) == sizeof(std::uint32_t));
 static_assert(sizeof(VfMacAddress) == sizeof(MacAddress));
 static_assert(sizeof(DeclaredSrIovPlan) == sizeof(SrIovPlan));
-static_assert(CtxFitsSrIovMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsSrIovMint<effects::BgDrainCtx>);
+static_assert(CtxFitsSrIovMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsSrIovMint<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsSrIovMint<::fixy::HotFgCtx>);
 static_assert(std::is_trivially_copyable_v<MacAddress>);
-static_assert(std::is_trivially_copyable_v<VfConfig>);
-static_assert(std::is_trivially_copyable_v<VfHandle>);
-static_assert(std::is_trivially_copyable_v<SrIovPlan>);
+static_assert(!std::is_constructible_v<VfHandle, CogIdentity, VfIndex>, "a handle is built only from a declared plan");
+
+// A refined field keeps a plan cheap to copy and free to destroy. No
+// byte copy builds a refined field, so a plan is not trivially copyable.
+static_assert(std::is_trivially_copy_constructible_v<VfConfig> && std::is_trivially_destructible_v<VfConfig>);
+static_assert(std::is_trivially_copy_constructible_v<SrIovPlan> && std::is_trivially_destructible_v<SrIovPlan>);
+static_assert(std::is_trivially_copy_constructible_v<VfHandle> && std::is_trivially_destructible_v<VfHandle>);
+static_assert(!std::is_trivially_copyable_v<VfHandle>);
 
 }  // namespace crucible::cog::sriov

@@ -1,9 +1,13 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-147. SR-IOV enablement requires a
-// source::SrIov-declared plan, not a raw SrIovPlan aggregate.
+// Enabling virtual functions takes a declared plan. A raw plan never
+// passed the mint or its validation, and it does not convert to one.
 
 #include <crucible/cog/SrIov.h>
+
+// The enable path is a stub, and its deprecation is not the error under
+// test.
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace sriov = crucible::cog::sriov;
 

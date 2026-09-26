@@ -67,8 +67,6 @@ include/crucible/cntp/_wip/QuicTransport.h
 include/crucible/cntp/_wip/Sharp.h
 include/crucible/cntp/_wip/Wireguard.h
 include/crucible/cntp/dataplane/TcEbpf.h
-include/crucible/cog/NicConfig.h
-include/crucible/cog/SrIov.h
 include/crucible/mimic/Semaphore.h
 include/crucible/topology/Telemetry.h
 include/crucible/warden/DeadlineWatchdog.h

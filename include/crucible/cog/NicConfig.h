@@ -4,21 +4,25 @@
 // writes a kernel tunable or does any work that needs the network
 // administration capability. A privileged backend consumes the
 // declared values this header mints.
+//
+// foundation::reflect::enum_name gives the name of each enumerator.
+// qdisc_kind_name is a different mapping: it gives the name that the
+// kernel uses for the queueing discipline.
 
+#include <crucible/cntp/CongestionControl.h>
+#include <crucible/cntp/Pacing.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/NicOffloadAudit.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/cntp/CongestionControl.h>
-#include <crucible/cntp/Pacing.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Bits.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-#include <array>
 #include <cstdint>
 #include <expected>
 #include <string_view>
@@ -54,8 +58,6 @@ enum class NicConfigError : std::uint8_t {
     QueryDeferred = 16,
 };
 
-[[nodiscard]] std::string_view nic_config_error_name(NicConfigError error) noexcept;
-
 enum class NicOffload : std::uint32_t {
     Tso = 1u << 0,
     Gso = 1u << 1,
@@ -68,33 +70,6 @@ enum class NicOffload : std::uint32_t {
     TxVlan = 1u << 8,
     RxHash = 1u << 9,
 };
-
-[[nodiscard]] constexpr std::string_view nic_offload_name(NicOffload offload) noexcept {
-    switch (offload) {
-        case NicOffload::Tso:
-            return "Tso";
-        case NicOffload::Gso:
-            return "Gso";
-        case NicOffload::Gro:
-            return "Gro";
-        case NicOffload::Lro:
-            return "Lro";
-        case NicOffload::RxChecksum:
-            return "RxChecksum";
-        case NicOffload::TxChecksum:
-            return "TxChecksum";
-        case NicOffload::ScatterGather:
-            return "ScatterGather";
-        case NicOffload::RxVlan:
-            return "RxVlan";
-        case NicOffload::TxVlan:
-            return "TxVlan";
-        case NicOffload::RxHash:
-            return "RxHash";
-        default:
-            return "<unknown NicOffload>";
-    }
-}
 
 enum class RssHashFunction : std::uint8_t {
     Toeplitz = 0,
@@ -132,22 +107,34 @@ enum class QdiscKind : std::uint8_t {
     }
 }
 
-using NicRingSize =
-    safety::Refined<safety::all_of<safety::power_of_two, safety::in_range<std::uint16_t{256}, std::uint16_t{8192}>>,
-                    std::uint16_t>;
-using NicQueueCount = safety::Bounded<std::uint16_t{1}, std::uint16_t{4096}, std::uint16_t>;
-using RssTableSize = safety::Bounded<std::uint16_t{1}, std::uint16_t{4096}, std::uint16_t>;
-using LinkSpeedMbps = safety::Positive<std::uint32_t>;
-using PositiveQdiscParam = safety::Positive<std::uint32_t>;
-using SysctlBytes =
-    safety::Refined<safety::all_of<safety::positive, safety::bounded_above<std::uint64_t{1ull << 40u}>>, std::uint64_t>;
-using SysctlPackets = safety::Positive<std::uint32_t>;
-using BusyPollUs = safety::Bounded<std::uint32_t{0}, std::uint32_t{1000000}, std::uint32_t>;
-using TcpRtoMinUs = safety::Bounded<std::uint32_t{1}, std::uint32_t{60000000}, std::uint32_t>;
+// Each bound is named once, so a mint and the type it fills cannot
+// spell two different predicates.
+inline constexpr auto ring_size_bound =
+    ::fixy::all_of<::fixy::power_of_two, ::fixy::in_range<std::uint16_t{256}, std::uint16_t{8192}>>;
+inline constexpr auto queue_count_bound = ::fixy::in_range<std::uint16_t{1}, std::uint16_t{4096}>;
+inline constexpr auto sysctl_bytes_bound =
+    ::fixy::all_of<::fixy::positive, ::fixy::bounded_above<std::uint64_t{1ull << 40u}>>;
+inline constexpr auto busy_poll_us_bound = ::fixy::in_range<std::uint32_t{0}, std::uint32_t{1000000}>;
+inline constexpr auto tcp_rto_min_us_bound = ::fixy::in_range<std::uint32_t{1}, std::uint32_t{60000000}>;
+
+using NicRingSize = ::fixy::Refined<ring_size_bound, std::uint16_t>;
+// A queue count and an indirection table size share one bound, so they
+// are one type under two names.
+using NicQueueCount = ::fixy::Refined<queue_count_bound, std::uint16_t>;
+using RssTableSize = NicQueueCount;
+using LinkSpeedMbps = ::fixy::Positive<std::uint32_t>;
+using PositiveQdiscParam = ::fixy::Positive<std::uint32_t>;
+using SysctlBytes = ::fixy::Refined<sysctl_bytes_bound, std::uint64_t>;
+using SysctlPackets = ::fixy::Positive<std::uint32_t>;
+using BusyPollUs = ::fixy::Refined<busy_poll_us_bound, std::uint32_t>;
+using TcpRtoMinUs = ::fixy::Refined<tcp_rto_min_us_bound, std::uint32_t>;
+
+inline constexpr NicRingSize default_ring_size = ::fixy::mint_refined<ring_size_bound>(std::uint16_t{4096});
+inline constexpr NicQueueCount single_queue_count = ::fixy::mint_refined<queue_count_bound>(std::uint16_t{1});
 
 struct RssConfig {
     RssHashFunction hash = RssHashFunction::Toeplitz;
-    RssTableSize indirection_entries{std::uint16_t{128}};
+    RssTableSize indirection_entries = ::fixy::mint_refined<queue_count_bound>(std::uint16_t{128});
     bool four_tuple_hash = true;
 };
 
@@ -158,20 +145,20 @@ struct PauseConfig {
 };
 
 struct LinkConfig {
-    LinkSpeedMbps speed_mbps{std::uint32_t{100000}};
+    LinkSpeedMbps speed_mbps = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{100000});
     DuplexMode duplex = DuplexMode::Full;
     bool autoneg = true;
 };
 
 struct EthtoolConfig {
     cntp::NicInterfaceName interface{};
-    NicRingSize tx_ring_size{std::uint16_t{4096}};
-    NicRingSize rx_ring_size{std::uint16_t{4096}};
-    NicQueueCount tx_queues{std::uint16_t{1}};
-    NicQueueCount rx_queues{std::uint16_t{1}};
-    NicQueueCount combined_queues{std::uint16_t{1}};
-    NicQueueCount other_queues{std::uint16_t{1}};
-    safety::Bits<NicOffload> offloads{};
+    NicRingSize tx_ring_size = default_ring_size;
+    NicRingSize rx_ring_size = default_ring_size;
+    NicQueueCount tx_queues = single_queue_count;
+    NicQueueCount rx_queues = single_queue_count;
+    NicQueueCount combined_queues = single_queue_count;
+    NicQueueCount other_queues = single_queue_count;
+    ::fixy::Bits<NicOffload> offloads{};
     RssConfig rss{};
     PauseConfig pause{};
     LinkConfig link{};
@@ -180,29 +167,29 @@ struct EthtoolConfig {
 struct QdiscConfig {
     cntp::NicInterfaceName interface{};
     QdiscKind kind = QdiscKind::Fq;
-    PositiveQdiscParam max_quantum{std::uint32_t{8192}};
-    PositiveQdiscParam flow_limit{std::uint32_t{100}};
-    PositiveQdiscParam ce_threshold_us{std::uint32_t{1}};
-    NicQueueCount bands{std::uint16_t{3}};
+    PositiveQdiscParam max_quantum = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{8192});
+    PositiveQdiscParam flow_limit = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{100});
+    PositiveQdiscParam ce_threshold_us = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    NicQueueCount bands = ::fixy::mint_refined<queue_count_bound>(std::uint16_t{3});
 };
 
 struct TcpMemoryTriple {
-    SysctlBytes min{std::uint64_t{4096}};
-    SysctlBytes pressure{std::uint64_t{87380}};
-    SysctlBytes max{std::uint64_t{6291456}};
+    SysctlBytes min = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{4096});
+    SysctlBytes pressure = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{87380});
+    SysctlBytes max = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{6291456});
 };
 
 struct SysctlConfig {
-    SysctlBytes rmem_max{std::uint64_t{134217728}};
-    SysctlBytes wmem_max{std::uint64_t{134217728}};
-    SysctlBytes rmem_default{std::uint64_t{262144}};
-    SysctlBytes wmem_default{std::uint64_t{262144}};
-    SysctlPackets netdev_max_backlog{std::uint32_t{250000}};
-    SysctlPackets netdev_budget{std::uint32_t{600}};
-    BusyPollUs busy_poll_us{std::uint32_t{0}};
-    BusyPollUs busy_read_us{std::uint32_t{0}};
+    SysctlBytes rmem_max = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{134217728});
+    SysctlBytes wmem_max = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{134217728});
+    SysctlBytes rmem_default = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{262144});
+    SysctlBytes wmem_default = ::fixy::mint_refined<sysctl_bytes_bound>(std::uint64_t{262144});
+    SysctlPackets netdev_max_backlog = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{250000});
+    SysctlPackets netdev_budget = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{600});
+    BusyPollUs busy_poll_us = ::fixy::mint_refined<busy_poll_us_bound>(std::uint32_t{0});
+    BusyPollUs busy_read_us = ::fixy::mint_refined<busy_poll_us_bound>(std::uint32_t{0});
     cntp::KernelCcName tcp_congestion{cntp::KernelCcName::from("bbr").value()};
-    TcpRtoMinUs tcp_rto_min_us{std::uint32_t{10000}};
+    TcpRtoMinUs tcp_rto_min_us = ::fixy::mint_refined<tcp_rto_min_us_bound>(std::uint32_t{10000});
     TcpMemoryTriple tcp_rmem{};
     TcpMemoryTriple tcp_wmem{};
     bool tcp_sack = true;
@@ -218,57 +205,41 @@ struct NicConfigPlan {
     bool allow_privileged_apply = false;
 };
 
-using DeclaredEthtoolConfig = safety::Tagged<EthtoolConfig, safety::source::NicConfig>;
-using DeclaredQdiscConfig = safety::Tagged<QdiscConfig, safety::source::NicConfig>;
-using DeclaredSysctlConfig = safety::Tagged<SysctlConfig, safety::source::NicConfig>;
-using DeclaredNicConfig = safety::Tagged<NicConfigPlan, safety::source::NicConfig>;
+using DeclaredEthtoolConfig = ::fixy::Tagged<EthtoolConfig, ::fixy::tags::source::NicConfig>;
+using DeclaredQdiscConfig = ::fixy::Tagged<QdiscConfig, ::fixy::tags::source::NicConfig>;
+using DeclaredSysctlConfig = ::fixy::Tagged<SysctlConfig, ::fixy::tags::source::NicConfig>;
+using DeclaredNicConfig = ::fixy::Tagged<NicConfigPlan, ::fixy::tags::source::NicConfig>;
 
 template <class Ctx>
-concept CtxFitsNicConfigMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsNicConfigMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 [[nodiscard]] constexpr std::expected<NicRingSize, NicConfigError> admit_ring_size(std::uint16_t size) noexcept {
-    if (size < 256u || size > 8192u || (size & (size - 1u)) != 0u) {
-        return std::unexpected(NicConfigError::InvalidRingSize);
-    }
-    return NicRingSize{size, typename NicRingSize::Trusted{}};
+    return ::fixy::admit_refined<ring_size_bound>(size, NicConfigError::InvalidRingSize);
 }
 
 [[nodiscard]] constexpr std::expected<NicQueueCount, NicConfigError> admit_queue_count(std::uint16_t count) noexcept {
-    if (count == 0u || count > 4096u) {
-        return std::unexpected(NicConfigError::InvalidQueueCount);
-    }
-    return NicQueueCount{count, typename NicQueueCount::Trusted{}};
+    return ::fixy::admit_refined<queue_count_bound>(count, NicConfigError::InvalidQueueCount);
 }
 
 [[nodiscard]] constexpr std::expected<RssTableSize, NicConfigError> admit_rss_table_size(std::uint16_t count) noexcept {
-    if (count == 0u || count > 4096u) {
-        return std::unexpected(NicConfigError::InvalidRssTableSize);
-    }
-    return RssTableSize{count, typename RssTableSize::Trusted{}};
+    return ::fixy::admit_refined<queue_count_bound>(count, NicConfigError::InvalidRssTableSize);
 }
 
 [[nodiscard]] constexpr std::expected<SysctlBytes, NicConfigError> admit_sysctl_bytes(std::uint64_t bytes) noexcept {
-    if (bytes == 0u || bytes > (1ull << 40u)) {
-        return std::unexpected(NicConfigError::InvalidSysctlBytes);
-    }
-    return SysctlBytes{bytes, typename SysctlBytes::Trusted{}};
+    return ::fixy::admit_refined<sysctl_bytes_bound>(bytes, NicConfigError::InvalidSysctlBytes);
 }
 
 [[nodiscard]] constexpr std::expected<BusyPollUs, NicConfigError> admit_busy_poll_us(std::uint32_t us) noexcept {
-    if (us > 1000000u) {
-        return std::unexpected(NicConfigError::InvalidBusyPollUs);
-    }
-    return BusyPollUs{us, typename BusyPollUs::Trusted{}};
+    return ::fixy::admit_refined<busy_poll_us_bound>(us, NicConfigError::InvalidBusyPollUs);
 }
 
 [[nodiscard]] constexpr std::expected<TcpRtoMinUs, NicConfigError> admit_tcp_rto_min_us(std::uint32_t us) noexcept {
-    if (us == 0u || us > 60000000u) {
-        return std::unexpected(NicConfigError::InvalidTcpRtoMinUs);
-    }
-    return TcpRtoMinUs{us, typename TcpRtoMinUs::Trusted{}};
+    return ::fixy::admit_refined<tcp_rto_min_us_bound>(us, NicConfigError::InvalidTcpRtoMinUs);
 }
 
-[[nodiscard]] constexpr bool tcp_memory_triple_ordered(TcpMemoryTriple triple) noexcept {
+[[nodiscard]] constexpr bool tcp_memory_triple_ordered(TcpMemoryTriple const& triple) noexcept {
     return triple.min.value() <= triple.pressure.value() && triple.pressure.value() <= triple.max.value();
 }
 
@@ -310,19 +281,33 @@ validate_sysctl_config(SysctlConfig const& config) noexcept {
     if (plan.identity.kind != CogKind::NicPort) {
         return std::unexpected(NicConfigError::NonNicCog);
     }
-    auto valid_ethtool = validate_ethtool_config(plan.ethtool);
-    if (!valid_ethtool.has_value()) {
-        return std::unexpected(valid_ethtool.error());
+    if (auto valid = validate_ethtool_config(plan.ethtool); !valid.has_value()) {
+        return valid;
     }
-    auto valid_qdisc = validate_qdisc_config(plan.qdisc);
-    if (!valid_qdisc.has_value()) {
-        return std::unexpected(valid_qdisc.error());
+    if (auto valid = validate_qdisc_config(plan.qdisc); !valid.has_value()) {
+        return valid;
     }
     if (!same_interface(plan.ethtool.interface, plan.qdisc.interface)) {
         return std::unexpected(NicConfigError::InterfaceMismatch);
     }
     return validate_sysctl_config(plan.sysctl);
 }
+
+namespace detail {
+
+// Each declaration in this header runs the validator of its
+// configuration before it writes the source tag. A configuration that
+// fails the check gets its error, not the tag.
+template <typename Config, auto Validate>
+[[nodiscard]] constexpr std::expected<::fixy::Tagged<Config, ::fixy::tags::source::NicConfig>, NicConfigError>
+declare_validated(Config const& config) noexcept {
+    if (auto valid = Validate(config); !valid.has_value()) {
+        return std::unexpected(valid.error());
+    }
+    return ::fixy::mint_tagged<::fixy::tags::source::NicConfig>(config);
+}
+
+}  // namespace detail
 
 template <class Ctx>
     requires CtxFitsNicConfigMint<Ctx>
@@ -331,35 +316,28 @@ mint_nic_config(Ctx const&, CogIdentity identity, cntp::NicInterfaceName interfa
                 QdiscConfig qdisc = {}, SysctlConfig sysctl = {}, bool allow_privileged_apply = false) noexcept {
     ethtool.interface = interface;
     qdisc.interface = interface;
-    NicConfigPlan plan{
+    return detail::declare_validated<NicConfigPlan, validate_nic_config>(NicConfigPlan{
         .identity = identity,
         .ethtool = ethtool,
         .qdisc = qdisc,
         .sysctl = sysctl,
         .allow_privileged_apply = allow_privileged_apply,
-    };
-    auto valid = validate_nic_config(plan);
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
-    return DeclaredNicConfig{plan};
+    });
 }
 
-[[nodiscard]] constexpr DeclaredEthtoolConfig declare_ethtool_config(EthtoolConfig config) noexcept {
-    return DeclaredEthtoolConfig{config};
+[[nodiscard]] constexpr std::expected<DeclaredEthtoolConfig, NicConfigError>
+declare_ethtool_config(EthtoolConfig const& config) noexcept {
+    return detail::declare_validated<EthtoolConfig, validate_ethtool_config>(config);
 }
 
-[[nodiscard]] constexpr DeclaredQdiscConfig declare_qdisc_config(QdiscConfig config) noexcept {
-    return DeclaredQdiscConfig{config};
+[[nodiscard]] constexpr std::expected<DeclaredQdiscConfig, NicConfigError>
+declare_qdisc_config(QdiscConfig const& config) noexcept {
+    return detail::declare_validated<QdiscConfig, validate_qdisc_config>(config);
 }
 
 [[nodiscard]] constexpr std::expected<DeclaredSysctlConfig, NicConfigError>
-declare_sysctl_config(SysctlConfig config) noexcept {
-    auto valid = validate_sysctl_config(config);
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
-    return DeclaredSysctlConfig{config};
+declare_sysctl_config(SysctlConfig const& config) noexcept {
+    return detail::declare_validated<SysctlConfig, validate_sysctl_config>(config);
 }
 
 [[nodiscard]] constexpr NicTxQdisc qdisc_to_audit_qdisc(QdiscKind kind) noexcept {
@@ -375,9 +353,8 @@ declare_sysctl_config(SysctlConfig config) noexcept {
     }
 }
 
-[[nodiscard]] constexpr safety::Bits<NicFeature>
-audit_features_from_offloads(safety::Bits<NicOffload> offloads) noexcept {
-    safety::Bits<NicFeature> out{};
+[[nodiscard]] constexpr ::fixy::Bits<NicFeature> audit_features_from_offloads(::fixy::Bits<NicOffload> offloads) noexcept {
+    ::fixy::Bits<NicFeature> out{};
     if (offloads.test(NicOffload::Tso)) out.set(NicFeature::Tso);
     if (offloads.test(NicOffload::Gso)) out.set(NicFeature::Gso);
     if (offloads.test(NicOffload::Gro)) out.set(NicFeature::Gro);
@@ -410,16 +387,20 @@ std::expected<DeclaredNicConfig, NicConfigError> query_current(CogIdentity ident
 
 static_assert(sizeof(NicRingSize) == sizeof(std::uint16_t));
 static_assert(sizeof(NicQueueCount) == sizeof(std::uint16_t));
-static_assert(sizeof(RssTableSize) == sizeof(std::uint16_t));
 static_assert(sizeof(SysctlBytes) == sizeof(std::uint64_t));
 static_assert(sizeof(BusyPollUs) == sizeof(std::uint32_t));
 static_assert(sizeof(TcpRtoMinUs) == sizeof(std::uint32_t));
 static_assert(sizeof(DeclaredNicConfig) == sizeof(NicConfigPlan));
-static_assert(CtxFitsNicConfigMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsNicConfigMint<effects::BgDrainCtx>);
-static_assert(std::is_trivially_copyable_v<RssConfig>);
-static_assert(std::is_trivially_copyable_v<EthtoolConfig>);
-static_assert(std::is_trivially_copyable_v<QdiscConfig>);
-static_assert(std::is_trivially_copyable_v<SysctlConfig>);
+static_assert(CtxFitsNicConfigMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsNicConfigMint<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsNicConfigMint<::fixy::HotFgCtx>);
+
+// A refined field keeps a configuration cheap to copy and free to
+// destroy. No byte copy builds a refined field, so a configuration is
+// not trivially copyable.
+static_assert(std::is_trivially_copy_constructible_v<EthtoolConfig> && std::is_trivially_destructible_v<EthtoolConfig>);
+static_assert(std::is_trivially_copy_constructible_v<QdiscConfig> && std::is_trivially_destructible_v<QdiscConfig>);
+static_assert(std::is_trivially_copy_constructible_v<SysctlConfig> && std::is_trivially_destructible_v<SysctlConfig>);
+static_assert(!std::is_trivially_copyable_v<SysctlConfig>);
 
 }  // namespace crucible::cog::nic

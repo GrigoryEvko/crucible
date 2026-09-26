@@ -8,45 +8,6 @@
 
 namespace crucible::cog::sriov {
 
-std::string_view sriov_error_name(SrIovError error) noexcept {
-    switch (error) {
-        case SrIovError::None:
-            return "None";
-        case SrIovError::ZeroCog:
-            return "ZeroCog";
-        case SrIovError::NonNicCog:
-            return "NonNicCog";
-        case SrIovError::MissingSrIovCapability:
-            return "MissingSrIovCapability";
-        case SrIovError::InvalidInterfaceName:
-            return "InvalidInterfaceName";
-        case SrIovError::InvalidVfCount:
-            return "InvalidVfCount";
-        case SrIovError::InvalidVfIndex:
-            return "InvalidVfIndex";
-        case SrIovError::InvalidMac:
-            return "InvalidMac";
-        case SrIovError::InvalidVlan:
-            return "InvalidVlan";
-        case SrIovError::InvalidRateLimit:
-            return "InvalidRateLimit";
-        case SrIovError::InvalidResourceLimit:
-            return "InvalidResourceLimit";
-        case SrIovError::VfIndexOutOfRange:
-            return "VfIndexOutOfRange";
-        case SrIovError::InsufficientHandleCapacity:
-            return "InsufficientHandleCapacity";
-        case SrIovError::PrivilegedApplyDeferred:
-            return "PrivilegedApplyDeferred";
-        case SrIovError::PrivilegedBackendUnavailable:
-            return "PrivilegedBackendUnavailable";
-        case SrIovError::QueryDeferred:
-            return "QueryDeferred";
-        default:
-            return "<unknown SrIovError>";
-    }
-}
-
 std::expected<std::span<VfHandle>, SrIovError> SrIovManager::enable(DeclaredSrIovPlan plan,
                                                                     std::span<VfHandle> out) noexcept {
     auto handles = materialize_vf_handles(plan, out);
@@ -59,13 +20,12 @@ std::expected<std::span<VfHandle>, SrIovError> SrIovManager::enable(DeclaredSrIo
     return std::unexpected(SrIovError::PrivilegedBackendUnavailable);
 }
 
+// The configuration needs no check: each of its fields is refined.  An
+// empty handle slot names no function, so it is refused here.
 std::expected<void, SrIovError> SrIovManager::configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept {
-    if (handle.identity.uuid.is_zero() || handle.parent_uuid.is_zero()) {
+    static_cast<void>(config);
+    if (handle.identity().uuid.is_zero() || handle.parent_uuid().is_zero()) {
         return std::unexpected(SrIovError::ZeroCog);
-    }
-    auto valid = validate_vf_config(config.value());
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
     }
     return std::unexpected(SrIovError::PrivilegedApplyDeferred);
 }

@@ -6938,36 +6938,55 @@ crucible_neg_compile_effects_test(neg_calibrate_hot_fg_ctx
   "constraints.*not satisfied"
     "CtxFitsCalibration")
 
-# GAPS-192 — cog/NicConfig.h ethtool/sysctl/tc-qdisc config substrate.
-#   * neg_nic_config_raw_apply: privileged apply requires tagged config.
-#   * neg_nic_config_ring_not_power_of_two: ring sizes are power-of-two
-#     values in [256, 8192].
-#   * neg_nic_config_mint_bg_ctx: config minting is Init-row work.
+# cog/NicConfig.h, the admission of NIC configuration intent.
+#   * neg_nic_config_raw_apply: a raw plan does not convert to the
+#     declared configuration that a privileged apply takes.
+#   * neg_nic_config_ring_not_power_of_two: the checked mint of a ring
+#     size stops the constant evaluation at 1000.
+#   * neg_nic_config_mint_bg_ctx, neg_nic_config_mint_hot_fg_ctx: the
+#     mint refuses a context whose row holds no Init.
 crucible_neg_compile_cog_test(neg_nic_config_raw_apply
-  "could not convert|no matching function"
-    "DeclaredNicConfig")
+    "could not convert .raw. from .crucible::cog::nic::NicConfigPlan."
+    "to .crucible::cog::nic::DeclaredNicConfig. \\{aka .fixy::Tagged<crucible::cog::nic::NicConfigPlan, fixy::tags::source::NicConfig>.\\}")
 crucible_neg_compile_cog_test(neg_nic_config_ring_not_power_of_two
-  "static assertion|contract|precondition|non-constant"
-    "NicRingSize|power_of_two")
+    "__builtin_trap\\(\\).* is not a constant expression"
+    "fixy::mint_refined<refined_algebra::AllOf<IsPowerOfTwo\\(\\), InRange<256, 8192>\\(\\)>\\(\\), short unsigned int>\\(1000\\)")
 crucible_neg_compile_effects_test(neg_nic_config_mint_bg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsNicConfigMint|Init")
+    "no matching function for call to .mint_nic_config\\(fixy::BgDrainCtx"
+    "required for the satisfaction of .CtxFitsNicConfigMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_nic_config_mint_hot_fg_ctx
+    "no matching function for call to .mint_nic_config\\(const fixy::HotFgCtx&"
+    "required for the satisfaction of .CtxFitsNicConfigMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# GAPS-147 — cog/SrIov.h SR-IOV / VF management substrate.
-#   * neg_sriov_raw_plan_enable: privileged enable requires tagged intent.
-#   * neg_sriov_zero_vfs: zero VFs are the disable state, not an enable plan.
-#   * neg_sriov_multicast_mac: VF MACs must be non-zero unicast addresses.
-#   * neg_sriov_mint_bg_ctx: SR-IOV plan minting is Init-row work.
+# cog/SrIov.h, the admission of a partition into virtual functions.
+#   * neg_sriov_raw_plan_enable: a raw plan does not convert to the
+#     declared plan that enable takes.
+#   * neg_sriov_zero_vfs: the checked mint of a count stops the constant
+#     evaluation at zero, the disabled state.
+#   * neg_sriov_multicast_mac: the checked mint of an address stops the
+#     constant evaluation at a multicast address.
+#   * neg_sriov_mint_bg_ctx, neg_sriov_mint_hot_fg_ctx: the mint refuses
+#     a context whose row holds no Init.
+#   * neg_sriov_vf_handle_forged: a handle is built only from a declared
+#     plan, so its constructor from a parent and an index is private.
 crucible_neg_compile_cog_test(neg_sriov_raw_plan_enable
-  "could not convert|no matching function"
-    "DeclaredSrIovPlan")
+    "could not convert .plan. from .crucible::cog::sriov::SrIovPlan."
+    "to .crucible::cog::sriov::DeclaredSrIovPlan. \\{aka .fixy::Tagged<crucible::cog::sriov::SrIovPlan, fixy::tags::source::SrIov>.\\}")
 crucible_neg_compile_cog_test(neg_sriov_zero_vfs
-    "contract|precondition|bounded|Bounded|VfCount|Refined")
+    "__builtin_trap\\(\\).* is not a constant expression"
+    "fixy::mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(0\\)")
 crucible_neg_compile_cog_test(neg_sriov_multicast_mac
-    "contract|precondition|vf_mac_valid|Refined|VfMacAddress")
+    "__builtin_trap\\(\\).* is not a constant expression"
+    "fixy::mint_refined<crucible::cog::sriov::IsAssignableVfMac\\(\\), crucible::cog::sriov::MacAddress>\\(crucible::cog::sriov::MacAddress\\{std::array<unsigned char, 6>.*\\{1, 0, 0, 0, 0, 1\\}")
 crucible_neg_compile_effects_test(neg_sriov_mint_bg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsSrIovMint|Init")
+    "no matching function for call to .mint_sriov_plan\\(fixy::BgDrainCtx"
+    "required for the satisfaction of .CtxFitsSrIovMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_sriov_mint_hot_fg_ctx
+    "no matching function for call to .mint_sriov_plan\\(const fixy::HotFgCtx&"
+    "required for the satisfaction of .CtxFitsSrIovMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_cog_test(neg_sriov_vf_handle_forged
+    ".constexpr crucible::cog::sriov::VfHandle::VfHandle\\(crucible::cog::CogIdentity, crucible::cog::sriov::VfIndex\\). is private within this context"
+    "cog/SrIov.h:[0-9]+:[0-9]+: note: declared private here")
 
 # GAPS-121 — cntp/Pacing.h fq/qdisc verification + SO_MAX_PACING_RATE.
 #   * neg_pacing_bbr_pfifo_config: BBR pacing config admits only fq/fq_codel.

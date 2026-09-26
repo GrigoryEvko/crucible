@@ -51,9 +51,5 @@ include/crucible/cntp/_wip/QuicTransport.h
 include/crucible/cntp/_wip/Sharp.h
 include/crucible/cntp/_wip/Wireguard.h
 
-# ── cog/ (2 files) ──────────────────────────────────────────────
-include/crucible/cog/NicConfig.h
-include/crucible/cog/SrIov.h
-
 # ── topology/ ──────────────────────────────────────────────────
 include/crucible/topology/Telemetry.h

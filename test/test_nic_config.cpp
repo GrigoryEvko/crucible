@@ -1,4 +1,7 @@
 #include <crucible/cog/NicConfig.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cassert>
 #include <cstdio>
@@ -16,16 +19,24 @@
 namespace cog = crucible::cog;
 namespace nic = crucible::cog::nic;
 namespace cntp = crucible::cntp;
-namespace eff = crucible::effects;
-namespace saf = crucible::safety;
+namespace eff = ::fixy;
 
 namespace {
+
+eff::ColdInitCtx init_ctx() { return eff::ColdInitCtx{::foundation::effects::testing::init()}; }
 
 cog::CogIdentity nic_identity() {
     cog::CogIdentity id{};
     id.uuid = cog::Uuid{0x192, 0xC0A6};
     id.kind = cog::CogKind::NicPort;
     return id;
+}
+
+// A configuration under the source tag that skipped its validator.  The
+// apply paths check again, and this is how a test reaches that check.
+template <typename Config>
+::fixy::Tagged<Config, ::fixy::tags::source::NicConfig> unvalidated_tag(Config const& config) {
+    return ::fixy::mint_tagged<::fixy::tags::source::NicConfig>(config);
 }
 
 void test_admission() {
@@ -49,6 +60,10 @@ void test_admission() {
     assert(!zero_queues.has_value());
     assert(zero_queues.error() == nic::NicConfigError::InvalidQueueCount);
 
+    auto rss = nic::admit_rss_table_size(4097);
+    assert(!rss.has_value());
+    assert(rss.error() == nic::NicConfigError::InvalidRssTableSize);
+
     auto busy = nic::admit_busy_poll_us(50);
     assert(busy.has_value());
     assert(busy->value() == 50);
@@ -56,6 +71,14 @@ void test_admission() {
     auto too_busy = nic::admit_busy_poll_us(1000001);
     assert(!too_busy.has_value());
     assert(too_busy.error() == nic::NicConfigError::InvalidBusyPollUs);
+
+    auto zero_bytes = nic::admit_sysctl_bytes(0);
+    assert(!zero_bytes.has_value());
+    assert(zero_bytes.error() == nic::NicConfigError::InvalidSysctlBytes);
+
+    auto zero_rto = nic::admit_tcp_rto_min_us(0);
+    assert(!zero_rto.has_value());
+    assert(zero_rto.error() == nic::NicConfigError::InvalidTcpRtoMinUs);
 
     std::printf("  test_admission: PASSED\n");
 }
@@ -68,7 +91,7 @@ void test_mint_and_apply_boundaries() {
     ethtool.tx_queues = *nic::admit_queue_count(16);
     ethtool.rx_queues = *nic::admit_queue_count(16);
     ethtool.combined_queues = *nic::admit_queue_count(16);
-    ethtool.offloads = saf::Bits<nic::NicOffload>{
+    ethtool.offloads = ::fixy::Bits<nic::NicOffload>{
         nic::NicOffload::Tso,
         nic::NicOffload::Gso,
         nic::NicOffload::Gro,
@@ -77,7 +100,7 @@ void test_mint_and_apply_boundaries() {
 
     nic::QdiscConfig qdisc{};
     qdisc.kind = nic::QdiscKind::FqCodel;
-    qdisc.max_quantum = nic::PositiveQdiscParam{std::uint32_t{16384}};
+    qdisc.max_quantum = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{16384});
 
     nic::SysctlConfig sysctl{};
     sysctl.busy_poll_us = *nic::admit_busy_poll_us(50);
@@ -85,7 +108,7 @@ void test_mint_and_apply_boundaries() {
     auto valid_sysctl = nic::validate_sysctl_config(sysctl);
     assert(valid_sysctl.has_value());
 
-    auto minted = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), *iface, ethtool, qdisc, sysctl);
+    auto minted = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool, qdisc, sysctl);
     assert(minted.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*minted)>, nic::DeclaredNicConfig>);
     assert(minted->value().identity.kind == cog::CogKind::NicPort);
@@ -98,15 +121,25 @@ void test_mint_and_apply_boundaries() {
     assert(!apply.has_value());
     assert(apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto ethtool_apply = nic::apply_ethtool(nic::declare_ethtool_config(minted->value().ethtool));
+    auto declared_ethtool = nic::declare_ethtool_config(minted->value().ethtool);
+    assert(declared_ethtool.has_value());
+    auto ethtool_apply = nic::apply_ethtool(*declared_ethtool);
     assert(!ethtool_apply.has_value());
     assert(ethtool_apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto qdisc_apply = nic::apply_qdisc(nic::declare_qdisc_config(minted->value().qdisc));
+    auto declared_qdisc = nic::declare_qdisc_config(minted->value().qdisc);
+    assert(declared_qdisc.has_value());
+    auto qdisc_apply = nic::apply_qdisc(*declared_qdisc);
     assert(!qdisc_apply.has_value());
     assert(qdisc_apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto privileged = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), *iface, ethtool, qdisc, sysctl, true);
+    auto declared_sysctl = nic::declare_sysctl_config(sysctl);
+    assert(declared_sysctl.has_value());
+    auto sysctl_apply = nic::apply_sysctl(*declared_sysctl);
+    assert(!sysctl_apply.has_value());
+    assert(sysctl_apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
+
+    auto privileged = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool, qdisc, sysctl, true);
     assert(privileged.has_value());
     auto privileged_apply = nic::apply_config(*privileged);
     assert(!privileged_apply.has_value());
@@ -119,13 +152,13 @@ void test_identity_and_sysctl_validation() {
     auto iface = cntp::NicInterfaceName::from("eth0");
     assert(iface.has_value());
 
-    auto zero = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, cog::CogIdentity{}, *iface);
+    auto zero = nic::mint_nic_config(init_ctx(), cog::CogIdentity{}, *iface);
     assert(!zero.has_value());
     assert(zero.error() == nic::NicConfigError::ZeroCog);
 
     auto gpu = nic_identity();
     gpu.kind = cog::CogKind::Gpu;
-    auto wrong_kind = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu, *iface);
+    auto wrong_kind = nic::mint_nic_config(init_ctx(), gpu, *iface);
     assert(!wrong_kind.has_value());
     assert(wrong_kind.error() == nic::NicConfigError::NonNicCog);
 
@@ -137,15 +170,28 @@ void test_identity_and_sysctl_validation() {
     assert(!declared.has_value());
     assert(declared.error() == nic::NicConfigError::InvalidTcpMemoryTriple);
 
-    auto empty_ethtool = nic::apply_ethtool(nic::declare_ethtool_config(nic::EthtoolConfig{}));
+    auto unordered_apply = nic::apply_sysctl(unvalidated_tag(invalid));
+    assert(!unordered_apply.has_value());
+    assert(unordered_apply.error() == nic::NicConfigError::InvalidTcpMemoryTriple);
+
+    auto empty_ethtool = nic::declare_ethtool_config(nic::EthtoolConfig{});
     assert(!empty_ethtool.has_value());
     assert(empty_ethtool.error() == nic::NicConfigError::InvalidInterfaceName);
+
+    auto empty_qdisc = nic::declare_qdisc_config(nic::QdiscConfig{});
+    assert(!empty_qdisc.has_value());
+    assert(empty_qdisc.error() == nic::NicConfigError::InvalidInterfaceName);
+
+    auto empty_ethtool_apply = nic::apply_ethtool(unvalidated_tag(nic::EthtoolConfig{}));
+    assert(!empty_ethtool_apply.has_value());
+    assert(empty_ethtool_apply.error() == nic::NicConfigError::InvalidInterfaceName);
 
     nic::NicConfigPlan mismatch{};
     mismatch.identity = nic_identity();
     mismatch.ethtool.interface = *iface;
     mismatch.qdisc.interface = cntp::NicInterfaceName::from("eth1").value();
-    auto mismatched_apply = nic::apply_config(nic::DeclaredNicConfig{mismatch});
+    assert(nic::validate_nic_config(mismatch).error() == nic::NicConfigError::InterfaceMismatch);
+    auto mismatched_apply = nic::apply_config(unvalidated_tag(mismatch));
     assert(!mismatched_apply.has_value());
     assert(mismatched_apply.error() == nic::NicConfigError::InterfaceMismatch);
 
@@ -184,22 +230,22 @@ void test_apply_paths_are_stubbed() {
     ethtool.rx_queues = *nic::admit_queue_count(8);
 
     // A configuration that does not ask for privileged work.
-    auto deferred = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), *iface, ethtool);
+    auto deferred = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool);
     assert(deferred.has_value());
     auto deferred_apply = nic::apply_config(*deferred);
     assert(!deferred_apply.has_value());
     assert(deferred_apply.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto deferred_ethtool = nic::apply_ethtool(nic::declare_ethtool_config(deferred->value().ethtool));
+    auto deferred_ethtool = nic::apply_ethtool(*nic::declare_ethtool_config(deferred->value().ethtool));
     assert(!deferred_ethtool.has_value());
     assert(deferred_ethtool.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
-    auto deferred_qdisc = nic::apply_qdisc(nic::declare_qdisc_config(deferred->value().qdisc));
+    auto deferred_qdisc = nic::apply_qdisc(*nic::declare_qdisc_config(deferred->value().qdisc));
     assert(!deferred_qdisc.has_value());
     assert(deferred_qdisc.error() == nic::NicConfigError::PrivilegedApplyDeferred);
 
     // One that does ask, and is told the backend is missing.
-    auto requested = nic::mint_nic_config(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity(), *iface, ethtool, {}, {}, true);
+    auto requested = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool, {}, {}, true);
     assert(requested.has_value());
     auto requested_apply = nic::apply_config(*requested);
     assert(!requested_apply.has_value());
@@ -215,11 +261,12 @@ void test_apply_paths_are_stubbed() {
 
 void test_audit_mapping() {
     assert(nic::qdisc_kind_name(nic::QdiscKind::Fq) == std::string_view{"fq"});
+    assert(nic::qdisc_kind_name(nic::QdiscKind::FqCodel) == std::string_view{"fq_codel"});
     assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::Fq) == cog::NicTxQdisc::Fq);
     assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::FqCodel) == cog::NicTxQdisc::FqCodel);
     assert(nic::qdisc_to_audit_qdisc(nic::QdiscKind::Prio) == cog::NicTxQdisc::Unknown);
 
-    saf::Bits<nic::NicOffload> offloads{
+    ::fixy::Bits<nic::NicOffload> offloads{
         nic::NicOffload::Tso,
         nic::NicOffload::Gro,
         nic::NicOffload::RxHash,
@@ -233,17 +280,32 @@ void test_audit_mapping() {
     std::printf("  test_audit_mapping: PASSED\n");
 }
 
+void test_enumerator_names() {
+    using ::foundation::reflect::enum_name;
+    assert(enum_name(nic::NicConfigError::QueryDeferred) == std::string_view{"QueryDeferred"});
+    assert(enum_name(nic::NicOffload::RxHash) == std::string_view{"RxHash"});
+    assert(enum_name(static_cast<nic::NicConfigError>(0xFF)) == std::string_view{"<unknown NicConfigError>"});
+
+    std::printf("  test_enumerator_names: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
     static_assert(sizeof(nic::NicRingSize) == sizeof(std::uint16_t));
     static_assert(sizeof(nic::DeclaredNicConfig) == sizeof(nic::NicConfigPlan));
-    static_assert(std::same_as<nic::DeclaredNicConfig::tag_type, saf::source::NicConfig>);
+    static_assert(std::same_as<nic::DeclaredNicConfig::tag_type, ::fixy::tags::source::NicConfig>);
     static_assert(nic::CtxFitsNicConfigMint<eff::ColdInitCtx>);
     static_assert(!nic::CtxFitsNicConfigMint<eff::BgDrainCtx>);
-    static_assert(std::is_trivially_copyable_v<nic::EthtoolConfig>);
-    static_assert(std::is_trivially_copyable_v<nic::QdiscConfig>);
-    static_assert(std::is_trivially_copyable_v<nic::SysctlConfig>);
+    static_assert(!nic::CtxFitsNicConfigMint<eff::HotFgCtx>);
+    static_assert(!nic::CtxFitsNicConfigMint<int>);
+    static_assert(!std::is_constructible_v<nic::NicRingSize, std::uint16_t>,
+                  "a ring size is reached only through its mint or its admission");
+    static_assert(!std::is_constructible_v<nic::DeclaredNicConfig, nic::NicConfigPlan>,
+                  "a declared configuration is reached only through a mint");
+    static_assert(std::is_trivially_copy_constructible_v<nic::EthtoolConfig>);
+    static_assert(std::is_trivially_copy_constructible_v<nic::QdiscConfig>);
+    static_assert(std::is_trivially_copy_constructible_v<nic::SysctlConfig>);
 
     // The same marker, checked at translation time, so that flipping
     // it without rewriting the runtime witness fails the build.
@@ -258,6 +320,7 @@ int main() {
     test_mint_and_apply_boundaries();
     test_identity_and_sysctl_validation();
     test_audit_mapping();
+    test_enumerator_names();
     test_apply_paths_are_stubbed();
     std::printf("test_nic_config: all PASSED\n");
     return 0;

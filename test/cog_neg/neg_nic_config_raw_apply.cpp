@@ -1,10 +1,13 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-192. Privileged NIC configuration apply requires
-// a DeclaredNicConfig minted by the Init-row factory; raw plans must not
-// cross the operator-policy boundary.
+// A privileged apply takes a declared configuration. A raw plan never
+// passed the mint or its validator, and it does not convert to one.
 
 #include <crucible/cog/NicConfig.h>
+
+// The apply path is a stub, and its deprecation is not the error under
+// test.
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace nic = crucible::cog::nic;
 

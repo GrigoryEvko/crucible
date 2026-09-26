@@ -81,7 +81,8 @@ void test_nic_apply_returns_privileged_deferred() {
     nic::EthtoolConfig ethtool{};
     ethtool.interface = cntp::NicInterfaceName::from("lo").value();
     auto declared = nic::declare_ethtool_config(ethtool);
-    auto applied = nic::apply_ethtool(declared);
+    assert(declared.has_value());
+    auto applied = nic::apply_ethtool(*declared);
     assert(!applied.has_value());
     assert(applied.error() == nic::NicConfigError::PrivilegedApplyDeferred);
     std::printf("  test_nic_apply_returns_privileged_deferred: PASSED\n");

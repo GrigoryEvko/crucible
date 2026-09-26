@@ -1,12 +1,11 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-147. SR-IOV plan minting is startup
-// configuration work and requires an Init-row context.
+// An SR-IOV plan is startup work. The mint admits a context whose row
+// holds Init, and the background drain row does not.
 
 #include <crucible/cog/SrIov.h>
 
 namespace cog = crucible::cog;
-namespace eff = crucible::effects;
 namespace sriov = crucible::cog::sriov;
 
 int main() {
@@ -16,6 +15,7 @@ int main() {
     cog::NicPortTargetCaps caps{};
     caps.features.set(cog::NicFeature::SrIov);
     auto iface = crucible::cntp::NicInterfaceName::from("eth0").value();
-    auto result = sriov::mint_sriov_plan(eff::BgDrainCtx{::crucible::effects::testing::bg()}, id, caps, iface, *sriov::admit_vf_count(1));
+    auto result = sriov::mint_sriov_plan(::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, id, caps, iface,
+                                         *sriov::admit_vf_count(1));
     return result.has_value() ? 0 : 1;
 }
