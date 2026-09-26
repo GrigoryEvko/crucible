@@ -28,6 +28,7 @@
 #include <crucible/ledger/probes/CacheTier.h>
 #include <crucible/ledger/probes/HugePage.h>
 #include <crucible/ledger/probes/VectorWidth.h>
+#include <foundation/reflect/EnumName.h>
 
 #include "bench_harness.h"
 
@@ -362,8 +363,8 @@ int main(int argc, char** argv) {
             continue;
         }
         const std::string_view name = ledger::verdict_id_name(record.id);
-        const std::string_view fault = ledger::evidence_fault_name(record.fault);
-        const std::string_view error = ledger::ledger_error_name(record.error);
+        const std::string_view fault = ::foundation::reflect::enum_name(record.fault);
+        const std::string_view error = ::foundation::reflect::enum_name(record.error);
         std::printf("  REFUSED   %.*s: %.*s (%.*s)\n", static_cast<int>(name.size()), name.data(),
                     static_cast<int>(fault.size()), fault.data(), static_cast<int>(error.size()), error.data());
         if (record.had_probe) {
@@ -390,7 +391,7 @@ int main(int argc, char** argv) {
 
     auto committed = ledger::commit_ledger(ctx, working);
     if (!committed.has_value()) {
-        const std::string_view reason = ledger::ledger_error_name(committed.error());
+        const std::string_view reason = ::foundation::reflect::enum_name(committed.error());
         std::fprintf(stderr, "crucible-hwprobe: commit failed: %.*s\n", static_cast<int>(reason.size()), reason.data());
         return 2;
     }

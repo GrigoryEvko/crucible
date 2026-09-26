@@ -110,6 +110,9 @@ enum class VerdictUnit : std::uint8_t {
     Bits = 5,
 };
 
+// The store writes this spelling, so it is a mapping to a file format and
+// not the enumerator's identifier. ::foundation::reflect::enum_name gives
+// the identifier of an enumerator whose name no file carries.
 [[nodiscard]] constexpr std::string_view verdict_unit_name(VerdictUnit unit) noexcept {
     switch (unit) {
         case VerdictUnit::Nanoseconds:
@@ -304,6 +307,7 @@ enum class Confidence : std::uint8_t {
     High = 2,
 };
 
+// The store writes this spelling, as it does the unit.
 [[nodiscard]] constexpr std::string_view confidence_name(Confidence confidence) noexcept {
     switch (confidence) {
         case Confidence::Unknown:
@@ -371,25 +375,6 @@ enum class EvidenceFault : std::uint8_t {
     RunToRunSpreadTooHigh = 5,
 };
 
-[[nodiscard]] constexpr std::string_view evidence_fault_name(EvidenceFault fault) noexcept {
-    switch (fault) {
-        case EvidenceFault::None:
-            return "none";
-        case EvidenceFault::TooFewSamples:
-            return "TooFewSamples";
-        case EvidenceFault::QuantilesOutOfOrder:
-            return "QuantilesOutOfOrder";
-        case EvidenceFault::ZeroMedian:
-            return "ZeroMedian";
-        case EvidenceFault::WithinRunCvTooHigh:
-            return "WithinRunCvTooHigh";
-        case EvidenceFault::RunToRunSpreadTooHigh:
-            return "RunToRunSpreadTooHigh";
-        default:
-            return "<unknown EvidenceFault>";
-    }
-}
-
 // Is the evidence internally sound, setting the host aside? Sound means
 // enough samples, quantiles in order, and both spreads inside their bars.
 [[nodiscard]] constexpr EvidenceFault audit_evidence(VerdictEvidence const& evidence) noexcept {
@@ -453,39 +438,6 @@ enum class LedgerError : std::uint8_t {
     // for a noise source on a machine that simply has one socket.
     NotApplicableOnThisHost = 12,
 };
-
-[[nodiscard]] constexpr std::string_view ledger_error_name(LedgerError error) noexcept {
-    switch (error) {
-        case LedgerError::None:
-            return "None";
-        case LedgerError::ConfidenceBelowBar:
-            return "ConfidenceBelowBar";
-        case LedgerError::UnknownVerdictId:
-            return "UnknownVerdictId";
-        case LedgerError::MalformedRecord:
-            return "MalformedRecord";
-        case LedgerError::FingerprintMismatch:
-            return "FingerprintMismatch";
-        case LedgerError::StorePathUnavailable:
-            return "StorePathUnavailable";
-        case LedgerError::StoreReadFailed:
-            return "StoreReadFailed";
-        case LedgerError::StoreWriteFailed:
-            return "StoreWriteFailed";
-        case LedgerError::StoreCommitFailed:
-            return "StoreCommitFailed";
-        case LedgerError::StoreFull:
-            return "StoreFull";
-        case LedgerError::DuplicateVerdict:
-            return "DuplicateVerdict";
-        case LedgerError::ClockUnavailable:
-            return "ClockUnavailable";
-        case LedgerError::NotApplicableOnThisHost:
-            return "NotApplicableOnThisHost";
-        default:
-            return "<unknown LedgerError>";
-    }
-}
 
 // A measured verdict value, marked as produced by this host's calibration.
 using CalibratedVerdictValue = ::fixy::Tagged<VerdictValue, ::fixy::tags::source::Calibrated>;

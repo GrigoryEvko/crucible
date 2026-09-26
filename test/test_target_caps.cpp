@@ -2,11 +2,12 @@
 // pins and layout pins it carries are never compiled under the project
 // warning flags until some translation unit pulls it in.
 //
-// Every name accessor below is driven with non-constant arguments, so a
-// broken switch arm shows up under runtime evaluation and not only when
-// the compiler folds the call.
+// Every enumerator name below is read with a non-constant argument, so a
+// broken lookup shows up under runtime evaluation and not only when the
+// compiler folds the call.
 
 #include <crucible/cog/TargetCaps.h>
+#include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
 
@@ -17,6 +18,7 @@
 #include <type_traits>
 
 namespace cog = crucible::cog;
+namespace fr = ::foundation::reflect;
 
 // Name the stored type, so a literal of another width does not deduce a
 // claim the field refuses.
@@ -30,65 +32,49 @@ static constexpr cog::CalibratedValue<T> calibrated(std::type_identity_t<T> valu
     return ::fixy::mint_tagged<::fixy::tags::source::Calibrated, T>(value);
 }
 
-static void test_link_layer_name_coverage() {
-    constexpr cog::LinkLayer layers[] = {
-        cog::LinkLayer::Ethernet, cog::LinkLayer::Infiniband, cog::LinkLayer::Roce,
-        cog::LinkLayer::NVLink,   cog::LinkLayer::Pcie,       cog::LinkLayer::Cxl,
-    };
-    static_assert(sizeof(layers) / sizeof(layers[0]) == cog::link_layer_count,
-                  "Manual layers[] table diverged from link_layer_count.");
-
-    for (cog::LinkLayer L : layers) {
-        volatile auto vL = L;
-        std::string_view name = cog::link_layer_name(static_cast<cog::LinkLayer>(vL));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown LinkLayer>"});
-    }
-    std::printf("  test_link_layer_name_coverage:        PASSED\n");
+// Each enumerator's name comes back through a volatile, so the lookup runs
+// at run time as well as in the constant folder.
+template <typename E>
+static void check_every_name_at_run_time() {
+    fr::for_each_enumerator<E>([](E value, std::string_view identifier) {
+        volatile E runtime_value = value;
+        const std::string_view name = fr::enum_name(static_cast<E>(runtime_value));
+        assert(name == identifier);
+        assert(name != fr::unknown_enum_sentinel<E>);
+    });
 }
 
-static void test_pcie_gen_name_coverage() {
-    constexpr cog::PcieGen gens[] = {
-        cog::PcieGen::None, cog::PcieGen::Gen1, cog::PcieGen::Gen2, cog::PcieGen::Gen3,
-        cog::PcieGen::Gen4, cog::PcieGen::Gen5, cog::PcieGen::Gen6,
-    };
-    static_assert(sizeof(gens) / sizeof(gens[0]) == cog::pcie_gen_count,
-                  "Manual gens[] table diverged from pcie_gen_count.");
+static void test_names_at_run_time() {
+    check_every_name_at_run_time<cog::LinkLayer>();
+    check_every_name_at_run_time<cog::PcieGen>();
+    check_every_name_at_run_time<cog::GpuFeature>();
+    check_every_name_at_run_time<cog::NicFeature>();
+    check_every_name_at_run_time<cog::SwitchFeature>();
+    check_every_name_at_run_time<cog::CpuFeature>();
+    check_every_name_at_run_time<cog::DramFeature>();
+    std::printf("  test_names_at_run_time:               PASSED\n");
+}
 
-    for (cog::PcieGen G : gens) {
-        volatile auto vG = G;
-        std::string_view name = cog::pcie_gen_name(static_cast<cog::PcieGen>(vG));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown PcieGen>"});
-
-        // The underlying value of each enumerator is the generation
-        // number itself, so Gen3 is 3.
-        volatile std::uint8_t expected = static_cast<std::uint8_t>(vG);
-        std::uint8_t actual = static_cast<std::uint8_t>(G);
-        assert(actual == expected);
-    }
-    std::printf("  test_pcie_gen_name_coverage:          PASSED\n");
+// The underlying value of each PCIe generation is the generation number,
+// so GenN holds N.
+static void test_pcie_gen_value_is_generation() {
+    fr::for_each_enumerator<cog::PcieGen>([](cog::PcieGen gen, std::string_view identifier) {
+        volatile auto runtime_value = static_cast<std::uint8_t>(gen);
+        const std::uint8_t value = runtime_value;
+        if (identifier == "None") {
+            assert(value == 0);
+        } else {
+            assert(identifier.size() == 4 && identifier.starts_with("Gen"));
+            assert(value == static_cast<std::uint8_t>(identifier[3] - '0'));
+        }
+    });
+    std::printf("  test_pcie_gen_value_is_generation:    PASSED\n");
 }
 
 static void test_gpu_feature_runtime() {
-    constexpr cog::GpuFeature flags[] = {
-        cog::GpuFeature::Tma,           cog::GpuFeature::ClusterLaunch,
-        cog::GpuFeature::Fp8,           cog::GpuFeature::Bf16,
-        cog::GpuFeature::Tf32,          cog::GpuFeature::NvlinkSharp,
-        cog::GpuFeature::GpuDirectRdma, cog::GpuFeature::GpuDirectStorage,
-        cog::GpuFeature::Mig,
-    };
-    for (cog::GpuFeature F : flags) {
-        volatile auto vF = F;
-        auto name = cog::gpu_feature_name(static_cast<cog::GpuFeature>(vF));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown GpuFeature>"});
-    }
-
     ::fixy::Bits<cog::GpuFeature> all_set{};
-    for (cog::GpuFeature F : flags)
-        all_set.set(F);
-    assert(all_set.popcount() == static_cast<int>(sizeof(flags) / sizeof(flags[0])));
+    fr::for_each_enumerator<cog::GpuFeature>([&](cog::GpuFeature flag, std::string_view) { all_set.set(flag); });
+    assert(all_set.popcount() == static_cast<int>(fr::enum_count<cog::GpuFeature>));
     assert(all_set.test(cog::GpuFeature::Tma));
     assert(all_set.test(cog::GpuFeature::Fp8));
 
@@ -101,74 +87,6 @@ static void test_gpu_feature_runtime() {
     assert(!nic_bits.test(cog::NicFeature::Roce));
 
     std::printf("  test_gpu_feature_runtime:             PASSED\n");
-}
-
-static void test_nic_feature_runtime() {
-    constexpr cog::NicFeature flags[] = {
-        cog::NicFeature::Tso,           cog::NicFeature::Gso,
-        cog::NicFeature::Gro,           cog::NicFeature::Lro,
-        cog::NicFeature::Rss,           cog::NicFeature::Roce,
-        cog::NicFeature::Iwarp,         cog::NicFeature::KtlsOffload,
-        cog::NicFeature::GpuDirectRdma, cog::NicFeature::XdpNative,
-        cog::NicFeature::XdpOffload,    cog::NicFeature::AfXdp,
-        cog::NicFeature::SrIov,         cog::NicFeature::Macsec,
-        cog::NicFeature::Ipsec,         cog::NicFeature::TimestampingHw,
-        cog::NicFeature::TcEbpf,        cog::NicFeature::Tcam,
-    };
-    for (cog::NicFeature F : flags) {
-        volatile auto vF = F;
-        auto name = cog::nic_feature_name(static_cast<cog::NicFeature>(vF));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown NicFeature>"});
-    }
-    std::printf("  test_nic_feature_runtime:             PASSED\n");
-}
-
-static void test_switch_feature_runtime() {
-    constexpr cog::SwitchFeature flags[] = {
-        cog::SwitchFeature::Sharp,      cog::SwitchFeature::P4,   cog::SwitchFeature::AdaptiveRouting,
-        cog::SwitchFeature::Ecn,        cog::SwitchFeature::Pfc,  cog::SwitchFeature::Tcam,
-        cog::SwitchFeature::PortMirror, cog::SwitchFeature::Doca,
-    };
-    for (cog::SwitchFeature F : flags) {
-        volatile auto vF = F;
-        auto name = cog::switch_feature_name(static_cast<cog::SwitchFeature>(vF));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown SwitchFeature>"});
-    }
-    std::printf("  test_switch_feature_runtime:          PASSED\n");
-}
-
-static void test_cpu_feature_runtime() {
-    constexpr cog::CpuFeature flags[] = {
-        cog::CpuFeature::Avx2,       cog::CpuFeature::Avx512,  cog::CpuFeature::Amx,      cog::CpuFeature::Vnni,
-        cog::CpuFeature::Bf16Cpu,    cog::CpuFeature::Fp16Cpu, cog::CpuFeature::Aes,      cog::CpuFeature::Sha,
-        cog::CpuFeature::Neon,       cog::CpuFeature::Sve,     cog::CpuFeature::Sve2,     cog::CpuFeature::Sme,
-        cog::CpuFeature::AmxBf16Arm, cog::CpuFeature::Mte,     cog::CpuFeature::PauthArm, cog::CpuFeature::Cet,
-    };
-    for (cog::CpuFeature F : flags) {
-        volatile auto vF = F;
-        auto name = cog::cpu_feature_name(static_cast<cog::CpuFeature>(vF));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown CpuFeature>"});
-    }
-    std::printf("  test_cpu_feature_runtime:             PASSED\n");
-}
-
-static void test_dram_feature_runtime() {
-    constexpr cog::DramFeature flags[] = {
-        cog::DramFeature::Ecc,
-        cog::DramFeature::OnDieEcc,
-        cog::DramFeature::PowerDownIdle,
-        cog::DramFeature::Hbm,
-    };
-    for (cog::DramFeature F : flags) {
-        volatile auto vF = F;
-        auto name = cog::dram_feature_name(static_cast<cog::DramFeature>(vF));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown DramFeature>"});
-    }
-    std::printf("  test_dram_feature_runtime:            PASSED\n");
 }
 
 static void test_gpu_target_caps_construction() {
@@ -314,20 +232,16 @@ static void test_caps_for_binding() {
 }
 
 int main() {
-    std::printf("test_target_caps: 11 groups\n");
-    test_link_layer_name_coverage();
-    test_pcie_gen_name_coverage();
+    std::printf("test_target_caps: 9 groups\n");
+    test_names_at_run_time();
+    test_pcie_gen_value_is_generation();
     test_gpu_feature_runtime();
-    test_nic_feature_runtime();
-    test_switch_feature_runtime();
-    test_cpu_feature_runtime();
-    test_dram_feature_runtime();
     test_gpu_target_caps_construction();
     test_nic_port_target_caps_construction();
     test_nvswitch_target_caps_construction();
     test_cpu_target_caps_construction();
     test_dram_target_caps_construction();
     test_caps_for_binding();
-    std::printf("test_target_caps: 11 groups, all passed\n");
+    std::printf("test_target_caps: 9 groups, all passed\n");
     return 0;
 }

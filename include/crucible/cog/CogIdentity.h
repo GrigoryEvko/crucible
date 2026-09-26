@@ -6,11 +6,10 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/reflect/EnumPins.h>
+#include <foundation/reflect/Hash.h>
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
-#include <meta>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -59,6 +58,9 @@ static_assert(std::is_standard_layout_v<Uuid>);
 // snapshot is meant to outlive the process that wrote it, so a renumber
 // would reinterpret a stored atom. A new atom takes the next free value
 // and extends its pin table in the same change.
+//
+// ::foundation::reflect::enum_name gives the name of an enumerator, and
+// ::foundation::reflect::enum_count the number of enumerators.
 enum class CogLevel : std::uint8_t {
     L0_Atomic = 0,
     L1_Component = 1,
@@ -69,31 +71,6 @@ enum class CogLevel : std::uint8_t {
     L6_Hall = 6,
     L7_Datacenter = 7,
 };
-
-inline constexpr std::size_t cog_level_count = std::meta::enumerators_of(^^CogLevel).size();
-
-[[nodiscard]] constexpr std::string_view cog_level_name(CogLevel L) noexcept {
-    switch (L) {
-        case CogLevel::L0_Atomic:
-            return "L0_Atomic";
-        case CogLevel::L1_Component:
-            return "L1_Component";
-        case CogLevel::L2_Board:
-            return "L2_Board";
-        case CogLevel::L3_Chassis:
-            return "L3_Chassis";
-        case CogLevel::L4_Rack:
-            return "L4_Rack";
-        case CogLevel::L5_Row:
-            return "L5_Row";
-        case CogLevel::L6_Hall:
-            return "L6_Hall";
-        case CogLevel::L7_Datacenter:
-            return "L7_Datacenter";
-        default:
-            return std::string_view{"<unknown CogLevel>"};
-    }
-}
 
 // What a Cog is. The groups below give each kind its level.
 enum class CogKind : std::uint8_t {
@@ -123,57 +100,6 @@ enum class CogKind : std::uint8_t {
     Datacenter = 20,
 };
 
-inline constexpr std::size_t cog_kind_count = std::meta::enumerators_of(^^CogKind).size();
-
-[[nodiscard]] constexpr std::string_view cog_kind_name(CogKind K) noexcept {
-    switch (K) {
-        case CogKind::Gpu:
-            return "Gpu";
-        case CogKind::NicPort:
-            return "NicPort";
-        case CogKind::CpuCore:
-            return "CpuCore";
-        case CogKind::DramChannel:
-            return "DramChannel";
-        case CogKind::NvmeNamespace:
-            return "NvmeNamespace";
-        case CogKind::NvSwitch:
-            return "NvSwitch";
-        case CogKind::OpticalTransceiver:
-            return "OpticalTransceiver";
-        case CogKind::PsuRail:
-            return "PsuRail";
-        case CogKind::PcieLaneGroup:
-            return "PcieLaneGroup";
-        case CogKind::BmcSensor:
-            return "BmcSensor";
-        case CogKind::GpuPackage:
-            return "GpuPackage";
-        case CogKind::CpuSocket:
-            return "CpuSocket";
-        case CogKind::NicCard:
-            return "NicCard";
-        case CogKind::NvmeDrive:
-            return "NvmeDrive";
-        case CogKind::RackPsu:
-            return "RackPsu";
-        case CogKind::PcieRoot:
-            return "PcieRoot";
-        case CogKind::Server:
-            return "Server";
-        case CogKind::Rack:
-            return "Rack";
-        case CogKind::Row:
-            return "Row";
-        case CogKind::Hall:
-            return "Hall";
-        case CogKind::Datacenter:
-            return "Datacenter";
-        default:
-            return std::string_view{"<unknown CogKind>"};
-    }
-}
-
 // What a Cog does, which is independent of where it sits. A GPU die
 // and a GPU package share a family and differ in level. A GPU die and
 // a NIC port share a level and differ in family.
@@ -190,29 +116,6 @@ enum class CogFamily : std::uint8_t {
     Sensor = 5,
     Container = 6,
 };
-
-inline constexpr std::size_t cog_family_count = std::meta::enumerators_of(^^CogFamily).size();
-
-[[nodiscard]] constexpr std::string_view cog_family_name(CogFamily F) noexcept {
-    switch (F) {
-        case CogFamily::Compute:
-            return "Compute";
-        case CogFamily::Network:
-            return "Network";
-        case CogFamily::Memory:
-            return "Memory";
-        case CogFamily::Bus:
-            return "Bus";
-        case CogFamily::Power:
-            return "Power";
-        case CogFamily::Sensor:
-            return "Sensor";
-        case CogFamily::Container:
-            return "Container";
-        default:
-            return std::string_view{"<unknown CogFamily>"};
-    }
-}
 
 // The primary template stays undefined, so a kind added without a
 // family mapping fails at the point of use and names itself.
@@ -369,11 +272,9 @@ static_assert(std::is_standard_layout_v<CogIdentity>, "CogIdentity must stay sta
 // new firmware hashes differently, so kernels compiled against the old
 // firmware's opcode latencies are not reused.
 //
-// The mixing step is written out here rather than taken from the
-// shared hash primitives, which would pull the wrapper-tag machinery
-// into this tree for six lines of arithmetic. It uses only exclusive
-// or, shift and multiply on 64-bit values, so the result is identical
-// on every platform.
+// The mixing step is the Murmur3 finalizer. It uses only exclusive or,
+// shift and multiply on 64-bit values, so the result is identical on
+// every platform.
 [[nodiscard]] constexpr std::uint64_t content_hash(CogIdentity const& c) noexcept {
     // A zero identifier is the "not yet discovered" sentinel. Hashing
     // one gives a value driven only by the revision fields, so two
@@ -385,52 +286,14 @@ static_assert(std::is_standard_layout_v<CogIdentity>, "CogIdentity must stay sta
     // during constant evaluation, which would let a rejection test
     // pass. The macro fires during constant evaluation as well.
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(c.uuid));
-    constexpr auto fmix = [](std::uint64_t h) constexpr noexcept {
-        h ^= h >> 33;
-        h *= 0xFF51AFD7ED558CCDULL;
-        h ^= h >> 33;
-        h *= 0xC4CEB9FE1A85EC53ULL;
-        h ^= h >> 33;
-        return h;
-    };
     std::uint64_t h = c.uuid.hi;
-    h = fmix(h ^ c.uuid.lo);
-    h = fmix(h ^ c.firmware_revision.value());
-    h = fmix(h ^ c.bios_revision.value());
+    h = ::foundation::reflect::fmix64(h ^ c.uuid.lo);
+    h = ::foundation::reflect::fmix64(h ^ c.firmware_revision.value());
+    h = ::foundation::reflect::fmix64(h ^ c.bios_revision.value());
     return h;
 }
 
 namespace detail::cog_identity_self_test {
-
-[[nodiscard]] consteval bool every_cog_level_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogLevel));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (cog_level_name([:en:]) == std::string_view{"<unknown CogLevel>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_cog_level_has_name(), "cog_level_name() is missing an arm, so one level reports the "
-                                          "'<unknown CogLevel>' sentinel in diagnostics.");
-
-[[nodiscard]] consteval bool every_cog_kind_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogKind));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (cog_kind_name([:en:]) == std::string_view{"<unknown CogKind>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_cog_kind_has_name(), "cog_kind_name() is missing an arm, so one kind reports the "
-                                         "'<unknown CogKind>' sentinel in diagnostics.");
 
 static_assert(std::is_same_v<std::underlying_type_t<CogLevel>, std::uint8_t>,
               "CogLevel must stay one byte wide. Widening it changes the layout of every "
@@ -482,21 +345,6 @@ static_assert(!IsMimicSubstrate<CogKind::Rack>);
 static_assert(!IsMimicSubstrate<CogKind::Row>);
 static_assert(!IsMimicSubstrate<CogKind::Hall>);
 static_assert(!IsMimicSubstrate<CogKind::Datacenter>);
-
-[[nodiscard]] consteval bool every_cog_family_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogFamily));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (cog_family_name([:en:]) == std::string_view{"<unknown CogFamily>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_cog_family_has_name(), "cog_family_name() is missing an arm, so one family reports "
-                                           "the '<unknown CogFamily>' sentinel in diagnostics.");
 
 static_assert(
     [] {

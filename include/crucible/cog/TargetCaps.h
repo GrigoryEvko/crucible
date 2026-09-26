@@ -9,9 +9,7 @@
 
 #include <array>
 #include <cstdint>
-#include <meta>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cog {
@@ -21,6 +19,9 @@ namespace crucible::cog {
 // hardware facts that are meant to outlive the process, so a renumber
 // would reinterpret a stored schema. New atoms take the next free value
 // or bit position and extend their pin table in the same change.
+//
+// ::foundation::reflect::enum_name gives the name of an enumerator, and
+// ::foundation::reflect::enum_count the number of enumerators.
 enum class LinkLayer : std::uint8_t {
     Ethernet = 0,
     Infiniband = 1,
@@ -29,26 +30,6 @@ enum class LinkLayer : std::uint8_t {
     Pcie = 4,
     Cxl = 5,
 };
-inline constexpr std::size_t link_layer_count = std::meta::enumerators_of(^^LinkLayer).size();
-
-[[nodiscard]] constexpr std::string_view link_layer_name(LinkLayer L) noexcept {
-    switch (L) {
-        case LinkLayer::Ethernet:
-            return "Ethernet";
-        case LinkLayer::Infiniband:
-            return "Infiniband";
-        case LinkLayer::Roce:
-            return "Roce";
-        case LinkLayer::NVLink:
-            return "NVLink";
-        case LinkLayer::Pcie:
-            return "Pcie";
-        case LinkLayer::Cxl:
-            return "Cxl";
-        default:
-            return std::string_view{"<unknown LinkLayer>"};
-    }
-}
 
 // The underlying value is the PCIe generation number itself, so
 // bandwidth-per-lane scaling reads it directly.
@@ -61,28 +42,6 @@ enum class PcieGen : std::uint8_t {
     Gen5 = 5,
     Gen6 = 6,
 };
-inline constexpr std::size_t pcie_gen_count = std::meta::enumerators_of(^^PcieGen).size();
-
-[[nodiscard]] constexpr std::string_view pcie_gen_name(PcieGen G) noexcept {
-    switch (G) {
-        case PcieGen::None:
-            return "None";
-        case PcieGen::Gen1:
-            return "Gen1";
-        case PcieGen::Gen2:
-            return "Gen2";
-        case PcieGen::Gen3:
-            return "Gen3";
-        case PcieGen::Gen4:
-            return "Gen4";
-        case PcieGen::Gen5:
-            return "Gen5";
-        case PcieGen::Gen6:
-            return "Gen6";
-        default:
-            return std::string_view{"<unknown PcieGen>"};
-    }
-}
 
 // A figure measured on this host rather than read from the vendor.
 template <typename T>
@@ -185,151 +144,6 @@ enum class DramFeature : std::uint8_t {
     PowerDownIdle = 1u << 2,
     Hbm = 1u << 3,  // HBM stack rather than DDR or LPDDR
 };
-
-[[nodiscard]] constexpr std::string_view gpu_feature_name(GpuFeature F) noexcept {
-    switch (F) {
-        case GpuFeature::Tma:
-            return "Tma";
-        case GpuFeature::ClusterLaunch:
-            return "ClusterLaunch";
-        case GpuFeature::Fp8:
-            return "Fp8";
-        case GpuFeature::Bf16:
-            return "Bf16";
-        case GpuFeature::Tf32:
-            return "Tf32";
-        case GpuFeature::NvlinkSharp:
-            return "NvlinkSharp";
-        case GpuFeature::GpuDirectRdma:
-            return "GpuDirectRdma";
-        case GpuFeature::GpuDirectStorage:
-            return "GpuDirectStorage";
-        case GpuFeature::Mig:
-            return "Mig";
-        default:
-            return std::string_view{"<unknown GpuFeature>"};
-    }
-}
-
-[[nodiscard]] constexpr std::string_view nic_feature_name(NicFeature F) noexcept {
-    switch (F) {
-        case NicFeature::Tso:
-            return "Tso";
-        case NicFeature::Gso:
-            return "Gso";
-        case NicFeature::Gro:
-            return "Gro";
-        case NicFeature::Lro:
-            return "Lro";
-        case NicFeature::Rss:
-            return "Rss";
-        case NicFeature::Roce:
-            return "Roce";
-        case NicFeature::Iwarp:
-            return "Iwarp";
-        case NicFeature::KtlsOffload:
-            return "KtlsOffload";
-        case NicFeature::GpuDirectRdma:
-            return "GpuDirectRdma";
-        case NicFeature::XdpNative:
-            return "XdpNative";
-        case NicFeature::XdpOffload:
-            return "XdpOffload";
-        case NicFeature::AfXdp:
-            return "AfXdp";
-        case NicFeature::SrIov:
-            return "SrIov";
-        case NicFeature::Macsec:
-            return "Macsec";
-        case NicFeature::Ipsec:
-            return "Ipsec";
-        case NicFeature::TimestampingHw:
-            return "TimestampingHw";
-        case NicFeature::TcEbpf:
-            return "TcEbpf";
-        case NicFeature::Tcam:
-            return "Tcam";
-        default:
-            return std::string_view{"<unknown NicFeature>"};
-    }
-}
-
-[[nodiscard]] constexpr std::string_view switch_feature_name(SwitchFeature F) noexcept {
-    switch (F) {
-        case SwitchFeature::Sharp:
-            return "Sharp";
-        case SwitchFeature::P4:
-            return "P4";
-        case SwitchFeature::AdaptiveRouting:
-            return "AdaptiveRouting";
-        case SwitchFeature::Ecn:
-            return "Ecn";
-        case SwitchFeature::Pfc:
-            return "Pfc";
-        case SwitchFeature::Tcam:
-            return "Tcam";
-        case SwitchFeature::PortMirror:
-            return "PortMirror";
-        case SwitchFeature::Doca:
-            return "Doca";
-        default:
-            return std::string_view{"<unknown SwitchFeature>"};
-    }
-}
-
-[[nodiscard]] constexpr std::string_view cpu_feature_name(CpuFeature F) noexcept {
-    switch (F) {
-        case CpuFeature::Avx2:
-            return "Avx2";
-        case CpuFeature::Avx512:
-            return "Avx512";
-        case CpuFeature::Amx:
-            return "Amx";
-        case CpuFeature::Vnni:
-            return "Vnni";
-        case CpuFeature::Bf16Cpu:
-            return "Bf16Cpu";
-        case CpuFeature::Fp16Cpu:
-            return "Fp16Cpu";
-        case CpuFeature::Aes:
-            return "Aes";
-        case CpuFeature::Sha:
-            return "Sha";
-        case CpuFeature::Neon:
-            return "Neon";
-        case CpuFeature::Sve:
-            return "Sve";
-        case CpuFeature::Sve2:
-            return "Sve2";
-        case CpuFeature::Sme:
-            return "Sme";
-        case CpuFeature::AmxBf16Arm:
-            return "AmxBf16Arm";
-        case CpuFeature::Mte:
-            return "Mte";
-        case CpuFeature::PauthArm:
-            return "PauthArm";
-        case CpuFeature::Cet:
-            return "Cet";
-        default:
-            return std::string_view{"<unknown CpuFeature>"};
-    }
-}
-
-[[nodiscard]] constexpr std::string_view dram_feature_name(DramFeature F) noexcept {
-    switch (F) {
-        case DramFeature::Ecc:
-            return "Ecc";
-        case DramFeature::OnDieEcc:
-            return "OnDieEcc";
-        case DramFeature::PowerDownIdle:
-            return "PowerDownIdle";
-        case DramFeature::Hbm:
-            return "Hbm";
-        default:
-            return std::string_view{"<unknown DramFeature>"};
-    }
-}
 
 // A count field defaults to zero, the sentinel for "not yet
 // discovered", so it carries no positivity refinement. Positivity is a
@@ -523,105 +337,6 @@ static_assert(NicPortTargetCaps{}.mtu_bytes.value() == 1500);
 static_assert(CpuCoreTargetCaps{}.simd_vector_lanes.value() == 8);
 static_assert(CpuSocketTargetCaps{}.numa_node_count.value() == 1);
 static_assert(DramChannelTargetCaps{}.channel_width_bits.value() == 64);
-
-[[nodiscard]] consteval bool every_link_layer_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^LinkLayer));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (link_layer_name([:en:]) == std::string_view{"<unknown LinkLayer>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_link_layer_has_name(), "link_layer_name() switch is missing an arm for at least one "
-                                           "LinkLayer atom.");
-
-[[nodiscard]] consteval bool every_pcie_gen_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^PcieGen));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (pcie_gen_name([:en:]) == std::string_view{"<unknown PcieGen>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_pcie_gen_has_name());
-
-[[nodiscard]] consteval bool every_gpu_feature_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^GpuFeature));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (gpu_feature_name([:en:]) == std::string_view{"<unknown GpuFeature>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_gpu_feature_has_name());
-
-[[nodiscard]] consteval bool every_nic_feature_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^NicFeature));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (nic_feature_name([:en:]) == std::string_view{"<unknown NicFeature>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_nic_feature_has_name());
-
-[[nodiscard]] consteval bool every_switch_feature_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SwitchFeature));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (switch_feature_name([:en:]) == std::string_view{"<unknown SwitchFeature>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_switch_feature_has_name());
-
-[[nodiscard]] consteval bool every_cpu_feature_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CpuFeature));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (cpu_feature_name([:en:]) == std::string_view{"<unknown CpuFeature>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_cpu_feature_has_name());
-
-[[nodiscard]] consteval bool every_dram_feature_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^DramFeature));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (dram_feature_name([:en:]) == std::string_view{"<unknown DramFeature>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_dram_feature_has_name());
 
 using ::foundation::reflect::enum_pin;
 using ::foundation::reflect::pin_enum;

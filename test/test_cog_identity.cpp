@@ -2,10 +2,11 @@
 // static_asserts are evaluated under the project warning and standard
 // flags only when a translation unit in the build graph pulls the
 // header in.  The other half is the runtime body, which drives the
-// constexpr accessors and content_hash with non-constant arguments so
-// they are not answered entirely by constant folding.
+// enumerator names and content_hash with non-constant arguments so they
+// are not answered entirely by constant folding.
 
 #include <crucible/cog/CogIdentity.h>
+#include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
 
@@ -13,64 +14,25 @@
 #include <string_view>
 
 namespace cog = crucible::cog;
+namespace fr = ::foundation::reflect;
 
-static void test_cog_level_name_coverage() {
-    constexpr cog::CogLevel levels[] = {
-        cog::CogLevel::L0_Atomic, cog::CogLevel::L1_Component, cog::CogLevel::L2_Board, cog::CogLevel::L3_Chassis,
-        cog::CogLevel::L4_Rack,   cog::CogLevel::L5_Row,       cog::CogLevel::L6_Hall,  cog::CogLevel::L7_Datacenter,
-    };
-
-    static_assert(sizeof(levels) / sizeof(levels[0]) == cog::cog_level_count,
-                  "Manual levels[] table diverged from cog_level_count — add the "
-                  "new atom to this table when extending the hierarchy.");
-
-    for (cog::CogLevel L : levels) {
-        // The volatile barrier stops the optimizer from folding the
-        // accessor away and answering from the in-header static_asserts.
-        volatile auto vL = L;
-        std::string_view name = cog::cog_level_name(static_cast<cog::CogLevel>(vL));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown CogLevel>"});
-    }
-    std::printf("  test_cog_level_name_coverage:        PASSED\n");
+// Each enumerator's name comes back through a volatile, so the lookup runs
+// at run time as well as in the constant folder.
+template <typename E>
+static void check_every_name_at_run_time() {
+    fr::for_each_enumerator<E>([](E value, std::string_view identifier) {
+        volatile E runtime_value = value;
+        const std::string_view name = fr::enum_name(static_cast<E>(runtime_value));
+        assert(name == identifier);
+        assert(name != fr::unknown_enum_sentinel<E>);
+    });
 }
 
-static void test_cog_kind_name_coverage() {
-    constexpr cog::CogKind kinds[] = {
-        cog::CogKind::Gpu,
-        cog::CogKind::NicPort,
-        cog::CogKind::CpuCore,
-        cog::CogKind::DramChannel,
-        cog::CogKind::NvmeNamespace,
-        cog::CogKind::NvSwitch,
-        cog::CogKind::OpticalTransceiver,
-        cog::CogKind::PsuRail,
-        cog::CogKind::PcieLaneGroup,
-        cog::CogKind::BmcSensor,
-        cog::CogKind::GpuPackage,
-        cog::CogKind::CpuSocket,
-        cog::CogKind::NicCard,
-        cog::CogKind::NvmeDrive,
-        cog::CogKind::RackPsu,
-        cog::CogKind::PcieRoot,
-        cog::CogKind::Server,
-        cog::CogKind::Rack,
-        cog::CogKind::Row,
-        cog::CogKind::Hall,
-        cog::CogKind::Datacenter,
-    };
-
-    static_assert(sizeof(kinds) / sizeof(kinds[0]) == cog::cog_kind_count,
-                  "Manual kinds[] table diverged from cog_kind_count — add the "
-                  "new atom to this table when extending the catalog.");
-
-    for (cog::CogKind K : kinds) {
-        volatile auto vK = K;
-        std::string_view name = cog::cog_kind_name(static_cast<cog::CogKind>(vK));
-        assert(!name.empty());
-        assert(name != std::string_view{"<unknown CogKind>"});
-    }
-    std::printf("  test_cog_kind_name_coverage:         PASSED\n");
+static void test_names_at_run_time() {
+    check_every_name_at_run_time<cog::CogLevel>();
+    check_every_name_at_run_time<cog::CogKind>();
+    check_every_name_at_run_time<cog::CogFamily>();
+    std::printf("  test_names_at_run_time:              PASSED\n");
 }
 
 static void test_uuid_layout() {
@@ -204,13 +166,12 @@ static void test_cog_identity_topology_links() {
 }
 
 int main() {
-    std::printf("test_cog_identity: 6 groups\n");
-    test_cog_level_name_coverage();
-    test_cog_kind_name_coverage();
+    std::printf("test_cog_identity: 5 groups\n");
+    test_names_at_run_time();
     test_uuid_layout();
     test_cog_identity_runtime();
     test_is_compute_kind_partitioning();
     test_cog_identity_topology_links();
-    std::printf("test_cog_identity: 6 groups, all passed\n");
+    std::printf("test_cog_identity: 5 groups, all passed\n");
     return 0;
 }

@@ -10,6 +10,7 @@
 // than a number it invented.
 
 #include <crucible/ledger/Ledger.h>
+#include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
 
@@ -701,7 +702,7 @@ void test_refusals_name_the_bar_they_missed() {
     // The evidence that missed is carried out, so the diagnostic can show
     // the number next to the bar it missed.
     assert(outcome.log[0].evidence.within_run_cv_ppm == 83440u);
-    assert(ledger::evidence_fault_name(outcome.log[0].fault) == "WithinRunCvTooHigh");
+    assert(::foundation::reflect::enum_name(outcome.log[0].fault) == "WithinRunCvTooHigh");
 
     // Nothing reached the ledger.
     assert(target.entries.empty());
