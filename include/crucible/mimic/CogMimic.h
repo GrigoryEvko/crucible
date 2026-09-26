@@ -6,15 +6,20 @@
 #include <fixy/Ctx.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Lifetime.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
 
+#include <array>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -108,44 +113,7 @@ concept HasCogMimicProjection = requires(cog::caps_for_t<K> const& caps) {
 
 template <cog::CogKind K>
     requires cog::IsMimicSubstrate<K> && cog::HasCaps<K> && cog::HasOpcodeTable<K> && detail::HasCogMimicProjection<K>
-struct CogMimic {
-    static constexpr cog::CogKind kind = K;
-    static constexpr cog::CogFamily family = cog::cog_family_v<K>;
-
-    using CapsType = cog::caps_for_t<K>;
-    using OpcodeTable = cog::OpcodeLatencyTable<K>;
-
-    // Borrowed. The storage holding the identity must outlive every carrier
-    // bound to it.
-    cog::CogIdentity const* identity = nullptr;
-
-    ::fixy::Tagged<CapsType, ::fixy::tags::source::Calibrated> calibrated_caps =
-        ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(CapsType{});
-
-    OpcodeTable opcode_latency_table{};
-
-    // The fold excludes firmware and BIOS revision. A binary built at one
-    // Cog still runs at a same-SKU Cog on a later firmware revision, so
-    // folding the revision in would split the cache for no gain.
-    [[nodiscard]] constexpr std::uint64_t target_caps_class_hash() const noexcept {
-        return detail::caps_class_projection<K>::fold(calibrated_caps.value());
-    }
-
-    // The identity hash covers firmware and BIOS revision, so this key
-    // rotates on firmware drift while the federation key stays stable.
-    [[nodiscard]] constexpr std::uint64_t cog_kernel_cache_key() const noexcept {
-        // A P2900 pre() clause is silently skipped at consteval when its
-        // predicate dereferences a pointer member. The macro form fires at
-        // consteval and at runtime.
-        CRUCIBLE_PRE(identity != nullptr);
-        CRUCIBLE_PRE(::foundation::decide::is_non_zero(identity->uuid));
-        return ::foundation::reflect::fmix64(target_caps_class_hash() ^ cog::content_hash(*identity));
-    }
-
-    [[nodiscard]] constexpr bool is_uncalibrated() const noexcept {
-        return identity == nullptr || opcode_latency_table.empty();
-    }
-};
+class CogMimic;
 
 // Minting is permitted at calibration time or during background
 // recalibration, so the context row must hold Init or Bg and nothing else
@@ -159,6 +127,95 @@ concept CtxFitsCogMimic =
                                             ::foundation::effects::row_type_of_t<Ctx>>())
     && cog::IsMimicSubstrate<K> && cog::HasCaps<K> && cog::HasOpcodeTable<K> && detail::HasCogMimicProjection<K>;
 
+// The one door to a CogMimic.  Declared here so that the class can name it
+// as the friend of its only constructor.  Defined after the class.
+template <cog::CogKind K, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsCogMimic<Ctx, K>
+[[nodiscard]] constexpr CogMimic<K> mint_cog_mimic(Ctx const& ctx, cog::CogIdentity const& identity,
+                                                   cog::caps_for_t<K> calibrated_caps,
+                                                   cog::OpcodeLatencyTable<K> opcodes) noexcept;
+
+// An identity bound to the caps and the opcode table that calibration
+// measured for it.  The constructor is private and mint_cog_mimic is its
+// one friend, so every CogMimic passed the context gate of the mint, and
+// no caller binds an identity to caps that no calibration produced.  There
+// is no default constructor, so no CogMimic is unbound.
+//
+// The two assignments are user-provided, so the class is not trivially
+// copyable and std::bit_cast cannot build one from bytes.  The annotation
+// refuses the checked lifetime start over bytes.  The copy and move
+// constructors stay trivial, so a minted value still travels in registers.
+template <cog::CogKind K>
+    requires cog::IsMimicSubstrate<K> && cog::HasCaps<K> && cog::HasOpcodeTable<K> && detail::HasCogMimicProjection<K>
+class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] CogMimic {
+public:
+    static constexpr cog::CogKind kind = K;
+    static constexpr cog::CogFamily family = cog::cog_family_v<K>;
+
+    using CapsType = cog::caps_for_t<K>;
+    using CalibratedCaps = ::fixy::Tagged<CapsType, ::fixy::tags::source::Calibrated>;
+    using OpcodeTable = cog::OpcodeLatencyTable<K>;
+
+    CogMimic() = delete("a CogMimic binds a calibrated identity; take one from mint_cog_mimic");
+    constexpr CogMimic(const CogMimic&) noexcept = default;
+    constexpr CogMimic(CogMimic&&) noexcept = default;
+
+    constexpr CogMimic& operator=(const CogMimic& other) noexcept {
+        identity_ = other.identity_;
+        calibrated_caps_ = other.calibrated_caps_;
+        opcode_latency_table_ = other.opcode_latency_table_;
+        return *this;
+    }
+    constexpr CogMimic& operator=(CogMimic&& other) noexcept {
+        identity_ = other.identity_;
+        calibrated_caps_ = std::move(other.calibrated_caps_);
+        opcode_latency_table_ = std::move(other.opcode_latency_table_);
+        return *this;
+    }
+
+    // Borrowed.  The storage that holds the identity must outlive every
+    // carrier bound to it.
+    [[nodiscard]] constexpr cog::CogIdentity const& identity() const noexcept { return *identity_; }
+    [[nodiscard]] constexpr CalibratedCaps const& calibrated_caps() const noexcept { return calibrated_caps_; }
+    [[nodiscard]] constexpr OpcodeTable const& opcode_latency_table() const noexcept { return opcode_latency_table_; }
+
+    // The fold excludes firmware and BIOS revision. A binary built at one
+    // Cog still runs at a same-SKU Cog on a later firmware revision, so
+    // folding the revision in would split the cache for no gain.
+    [[nodiscard]] constexpr std::uint64_t target_caps_class_hash() const noexcept {
+        return detail::caps_class_projection<K>::fold(calibrated_caps_.value());
+    }
+
+    // The identity hash covers firmware and BIOS revision, so this key
+    // rotates on firmware drift while the federation key stays stable.
+    [[nodiscard]] constexpr std::uint64_t cog_kernel_cache_key() const noexcept {
+        // The mint refused a zero uuid, but the owner of the identity can
+        // change it later.  A P2900 pre() clause is silently skipped at
+        // consteval when its predicate reads through a pointer member, and
+        // the macro form fires at consteval and at runtime.
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(identity_->uuid));
+        return ::foundation::reflect::fmix64(target_caps_class_hash() ^ cog::content_hash(*identity_));
+    }
+
+    // The identity is always bound, so an empty opcode table is the one
+    // mark of a CogMimic that calibration has not filled.
+    [[nodiscard]] constexpr bool is_uncalibrated() const noexcept { return opcode_latency_table_.empty(); }
+
+private:
+    constexpr CogMimic(cog::CogIdentity const& identity, CalibratedCaps calibrated_caps, OpcodeTable opcodes) noexcept
+        : identity_{&identity}, calibrated_caps_{std::move(calibrated_caps)}, opcode_latency_table_{std::move(opcodes)} {}
+
+    template <cog::CogKind Kind, ::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsCogMimic<Ctx, Kind>
+    friend constexpr CogMimic<Kind> mint_cog_mimic(Ctx const& ctx, cog::CogIdentity const& identity,
+                                                   cog::caps_for_t<Kind> calibrated_caps,
+                                                   cog::OpcodeLatencyTable<Kind> opcodes) noexcept;
+
+    cog::CogIdentity const* identity_;
+    CalibratedCaps calibrated_caps_;
+    OpcodeTable opcode_latency_table_;
+};
+
 // A P2900 pre() clause is silently skipped at consteval when its predicate
 // reads through a by-const-reference struct parameter. The macro form fires
 // at consteval and at runtime.
@@ -169,29 +226,72 @@ template <cog::CogKind K, ::foundation::effects::IsExecCtx Ctx>
                                                    cog::OpcodeLatencyTable<K> opcodes) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(identity.uuid));
     CRUCIBLE_PRE(identity.kind == K);
-    return CogMimic<K>{
-        &identity,
-        ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(std::move(calibrated_caps)),
-        std::move(opcodes),
-    };
+    return CogMimic<K>{identity, ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(std::move(calibrated_caps)),
+                       std::move(opcodes)};
 }
 
 namespace detail::cog_mimic_self_test {
 
-// Every Mimic substrate has caps, an opcode table and a projection, and
-// its family is the one the cog layer assigns.
-template <cog::CogKind K, cog::CogFamily Family>
-inline constexpr bool substrate_is_complete_v = cog::IsMimicSubstrate<K> && cog::HasCaps<K> && cog::HasOpcodeTable<K>
-                                             && HasCogMimicProjection<K> && CogMimic<K>::family == Family
-                                             && CogMimic<K>::kind == K
-                                             && std::is_trivially_destructible_v<CogMimic<K>>;
+// A kind has a CogMimic when it is a Mimic substrate with caps, an opcode
+// table and a projection.  A substrate may still lack caps or a table,
+// and then it has no carrier yet.
+template <cog::CogKind K>
+inline constexpr bool has_carrier_v =
+    cog::IsMimicSubstrate<K> && cog::HasCaps<K> && cog::HasOpcodeTable<K> && HasCogMimicProjection<K>;
 
-static_assert(substrate_is_complete_v<cog::CogKind::Gpu, cog::CogFamily::Compute>);
-static_assert(substrate_is_complete_v<cog::CogKind::CpuCore, cog::CogFamily::Compute>);
-static_assert(substrate_is_complete_v<cog::CogKind::CpuSocket, cog::CogFamily::Compute>);
-static_assert(substrate_is_complete_v<cog::CogKind::NicPort, cog::CogFamily::Network>);
-static_assert(substrate_is_complete_v<cog::CogKind::NvSwitch, cog::CogFamily::Network>);
-static_assert(substrate_is_complete_v<cog::CogKind::DramChannel, cog::CogFamily::Memory>);
+// The carrier comes only from the mint: there is no default constructor,
+// no constructor over the three parts that a caller can reach, no
+// aggregate form and no build from bytes.  A minted value still copies,
+// and its destruction stays trivial because it owns no heap.
+template <cog::CogKind K>
+inline constexpr bool carrier_is_closed_v =
+    CogMimic<K>::kind == K && CogMimic<K>::family == cog::cog_family_v<K>
+    && std::is_trivially_destructible_v<CogMimic<K>> && !std::is_default_constructible_v<CogMimic<K>>
+    && !std::is_aggregate_v<CogMimic<K>>
+    && !std::is_constructible_v<CogMimic<K>, cog::CogIdentity const&, typename CogMimic<K>::CalibratedCaps,
+                                typename CogMimic<K>::OpcodeTable>
+    && !std::is_trivially_copyable_v<CogMimic<K>> && !::foundation::lifetime::ImplicitLifetimeThroughout<CogMimic<K>>
+    && std::is_nothrow_copy_constructible_v<CogMimic<K>> && std::is_nothrow_copy_assignable_v<CogMimic<K>>;
+
+// The walk reads every CogKind.  A substrate that has caps and an opcode
+// table but no projection fails, because it would lose its carrier
+// without a word.  Each carrier must be closed, and the default caps of
+// two carriers must fold apart, because the kind seeds the high byte of
+// each fold.  Complexity: quadratic in the number of kinds.
+[[nodiscard]] consteval bool every_carrier_is_closed_and_apart() {
+    static constexpr auto kinds = std::define_static_array(std::meta::enumerators_of(^^cog::CogKind));
+    std::array<std::uint64_t, ::foundation::reflect::enum_count<cog::CogKind>> default_folds{};
+    std::size_t carrier_count = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto kind : kinds) {
+        constexpr cog::CogKind K = [:kind:];
+        if constexpr (cog::IsMimicSubstrate<K> && cog::HasCaps<K> && cog::HasOpcodeTable<K>) {
+            if (!HasCogMimicProjection<K>) return false;
+        }
+        if constexpr (has_carrier_v<K>) {
+            if (!carrier_is_closed_v<K>) return false;
+            default_folds[carrier_count++] = caps_class_projection<K>::fold(cog::caps_for_t<K>{});
+        }
+    }
+#pragma GCC diagnostic pop
+    for (std::size_t i = 0; i < carrier_count; ++i) {
+        for (std::size_t j = i + 1; j < carrier_count; ++j) {
+            if (default_folds[i] == default_folds[j]) return false;
+        }
+    }
+    return carrier_count != 0;
+}
+static_assert(every_carrier_is_closed_and_apart(),
+              "A Mimic substrate with caps and an opcode table lacks a projection, a carrier has an open door, or two "
+              "carriers collide on their default caps.  The federation cache would alias kernels across substrates.");
+
+static_assert(CogMimic<cog::CogKind::Gpu>::family == cog::CogFamily::Compute);
+static_assert(CogMimic<cog::CogKind::CpuCore>::family == cog::CogFamily::Compute);
+static_assert(CogMimic<cog::CogKind::CpuSocket>::family == cog::CogFamily::Compute);
+static_assert(CogMimic<cog::CogKind::NicPort>::family == cog::CogFamily::Network);
+static_assert(CogMimic<cog::CogKind::NvSwitch>::family == cog::CogFamily::Network);
+static_assert(CogMimic<cog::CogKind::DramChannel>::family == cog::CogFamily::Memory);
 
 static_assert(!cog::IsMimicSubstrate<cog::CogKind::PsuRail>);
 static_assert(!cog::IsMimicSubstrate<cog::CogKind::RackPsu>);
@@ -199,43 +299,6 @@ static_assert(!cog::IsMimicSubstrate<cog::CogKind::BmcSensor>);
 static_assert(!cog::IsMimicSubstrate<cog::CogKind::Datacenter>);
 static_assert(!cog::IsMimicSubstrate<cog::CogKind::Server>);
 static_assert(!cog::IsMimicSubstrate<cog::CogKind::Rack>);
-
-static_assert(
-    [] {
-        CogMimic<cog::CogKind::Gpu> m{};
-        return m.identity == nullptr && m.opcode_latency_table.empty() && m.is_uncalibrated();
-    }(),
-    "Default CogMimic<Gpu> must be uncalibrated and identity-unbound.");
-
-static_assert(
-    [] {
-        CogMimic<cog::CogKind::NicPort> a{};
-        CogMimic<cog::CogKind::NicPort> b{};
-        return a.is_uncalibrated() && a.target_caps_class_hash() == b.target_caps_class_hash();
-    }(),
-    "CogMimic<NicPort>::target_caps_class_hash diverged for identical default caps. DetSafe is violated.");
-
-static_assert(
-    [] {
-        std::uint64_t const hashes[] = {
-            CogMimic<cog::CogKind::Gpu>{}.target_caps_class_hash(),
-            CogMimic<cog::CogKind::CpuCore>{}.target_caps_class_hash(),
-            CogMimic<cog::CogKind::CpuSocket>{}.target_caps_class_hash(),
-            CogMimic<cog::CogKind::NicPort>{}.target_caps_class_hash(),
-            CogMimic<cog::CogKind::NvSwitch>{}.target_caps_class_hash(),
-            CogMimic<cog::CogKind::DramChannel>{}.target_caps_class_hash(),
-        };
-        for (std::size_t i = 0; i < std::size(hashes); ++i) {
-            for (std::size_t j = i + 1; j < std::size(hashes); ++j) {
-                if (hashes[i] == hashes[j]) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }(),
-    "Distinct CogKinds collided in target_caps_class_hash. The federation cache would alias kernels across "
-    "substrates.");
 
 static_assert(
     [] {
@@ -260,25 +323,6 @@ static_assert(
             != caps_class_projection<cog::CogKind::NicPort>::fold(ethernet);
     }(),
     "Link-layer drift collapsed in NIC target_caps_class_hash. IB and Ethernet kernels would silently alias.");
-
-static_assert(
-    [] {
-        cog::CogIdentity id_a{};
-        id_a.uuid = cog::Uuid{0xDEAD0001ULL, 0xCAFE0002ULL};
-        id_a.kind = cog::CogKind::Gpu;
-        id_a.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(1);
-
-        cog::CogIdentity id_b = id_a;
-        id_b.firmware_revision = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(2);
-
-        CogMimic<cog::CogKind::Gpu> a{};
-        a.identity = &id_a;
-        CogMimic<cog::CogKind::Gpu> b{};
-        b.identity = &id_b;
-        return a.cog_kernel_cache_key() != b.cog_kernel_cache_key()
-            && a.target_caps_class_hash() == b.target_caps_class_hash();
-    }(),
-    "Firmware drift must rotate cog_kernel_cache_key and must leave target_caps_class_hash stable.");
 
 // Minting admits a context that owns Init or Bg.  A foreground or test
 // context owns neither, and a type that is not a context never fits.

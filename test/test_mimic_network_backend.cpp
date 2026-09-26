@@ -4,6 +4,8 @@
 #include <crucible/mimic/_wip/intel/network/Backend.h>
 #include <crucible/mimic/_wip/mellanox/network/Backend.h>
 #include <crucible/mimic/_wip/nv/network/Backend.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cassert>
@@ -21,9 +23,8 @@ namespace {
 
 template <cog::CogKind Kind>
 crucible::mimic::CogMimic<Kind> mimic_for(cog::CogIdentity const& identity) {
-    crucible::mimic::CogMimic<Kind> out{};
-    out.identity = &identity;
-    return out;
+    return crucible::mimic::mint_cog_mimic<Kind>(::fixy::ColdInitCtx{::foundation::effects::testing::init()},
+                                                 identity, cog::caps_for_t<Kind>{}, cog::OpcodeLatencyTable<Kind>{});
 }
 
 template <cog::CogKind Kind>
@@ -197,18 +198,29 @@ void test_recipe_rejection() {
     std::printf("  test_recipe_rejection: PASSED\n");
 }
 
-void test_unbound_mimic_rejected() {
+void test_changed_identity_rejected() {
+    // The mint checks the identity once.  Its owner can still zero the uuid
+    // or change the kind afterwards, and the planner refuses either.
     auto p = peers();
     auto constraints = net::query_constraints(recipe(crucible::ReductionDeterminism::ORDERED),
                                               net::NetworkReductionLaws{.associative = true, .commutative = true});
-    crucible::mimic::CogMimic<cog::CogKind::CpuSocket> unbound{};
-    auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
-        unbound, ir::admit_ir001_node(all_reduce(p, net::NetworkCollectiveAlgorithm::Ring)), constraints);
+    auto cpu_identity = identity_for<cog::CogKind::CpuSocket>(cog::Uuid{0xCAFEULL, 5});
+    auto const cpu = mimic_for<cog::CogKind::CpuSocket>(cpu_identity);
 
-    assert(!planned.has_value());
-    assert(planned.error() == mb::NetworkBackendError::UnsupportedCogKind);
+    cpu_identity.uuid = cog::Uuid{};
+    auto zeroed = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
+        cpu, ir::admit_ir001_node(all_reduce(p, net::NetworkCollectiveAlgorithm::Ring)), constraints);
+    assert(!zeroed.has_value());
+    assert(zeroed.error() == mb::NetworkBackendError::UnsupportedCogKind);
 
-    std::printf("  test_unbound_mimic_rejected: PASSED\n");
+    cpu_identity.uuid = cog::Uuid{0xCAFEULL, 5};
+    cpu_identity.kind = cog::CogKind::CpuCore;
+    auto rekinded = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
+        cpu, ir::admit_ir001_node(all_reduce(p, net::NetworkCollectiveAlgorithm::Ring)), constraints);
+    assert(!rekinded.has_value());
+    assert(rekinded.error() == mb::NetworkBackendError::UnsupportedCogKind);
+
+    std::printf("  test_changed_identity_rejected: PASSED\n");
 }
 
 }  // namespace
@@ -220,7 +232,7 @@ int main() {
     test_gpu_stub_signals_unavailable();
     test_empty_content_hash_rejected_with_distinct_error();
     test_recipe_rejection();
-    test_unbound_mimic_rejected();
+    test_changed_identity_rejected();
     std::printf("test_mimic_network_backend: all PASSED\n");
     return 0;
 }

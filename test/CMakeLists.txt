@@ -4846,32 +4846,38 @@ crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
     "constraint|constraints.*not satisfied"
     "MaxFlows")
 
-# ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
+# mimic::CogMimic comes only from mint_cog_mimic.  Each fixture reaches
+# one gate:
 #
-# Two fixtures per the HS14 mandate, each demonstrating a distinct
-# mismatch class:
-#
-#   * #1 SUBSTRATE-FAMILY gate — IsMimicSubstrate refuses Power /
-#     Sensor / Container CogKind atoms (PsuRail / BmcSensor /
-#     Datacenter / ...) at the CtxFitsCogMimic requires-clause.
-#     Without this gate, a future GAPS-196 calibrate pass or
-#     GAPS-810 partition optimiser would silently bind a Mimic
-#     instance to a non-substrate Cog and produce either a deep
-#     substitution failure or a stub bound to a Cog with no
-#     emit-shape.
-#
-#   * #2 CTX-ROW gate — CtxFitsCogMimic refuses contexts whose
-#     effect row carries neither Effect::Init nor Effect::Bg.
-#     Without this gate, a Test-context worker (or a foreground
-#     hot-path call site) could mint a CogMimic instance bound to
-#     a transient arena, producing a dangling identity pointer at
-#     teardown.
+#   * non_substrate: CtxFitsCogMimic refuses a kind that is not a Mimic
+#     substrate, such as a power rail.
+#   * ctx_row_missing and mint_hot_fg_ctx: the mint refuses a context
+#     that owns neither Init nor Bg.
+#   * aggregate_build, private_constructor and default_construct: no
+#     constructor that a caller can reach binds an identity.
+#   * bit_cast: the class is not trivially copyable, so no CogMimic is
+#     built from bytes.
 crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
-    "constraint|constraints.*not satisfied"
-    "IsMimicSubstrate|CtxFitsCogMimic|PsuRail")
+    "no matching function for call to .allocate_cog_mimic_slot<crucible::cog::CogKind::PsuRail, fixy::ColdInitCtx>\\(\\)."
+    "required for the satisfaction of .IsMimicSubstrate<K>. \\[with K = crucible::cog::CogKind::PsuRail\\]")
 crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
-    "constraint|constraints.*not satisfied"
-    "CtxFitsCogMimic|row_subset|TestRunnerCtx")
+    "no matching function for call to .mint_cog_mimic<crucible::cog::CogKind::Gpu>\\(const fixy::TestRunnerCtx&,"
+    "required for the satisfaction of .CtxFitsCogMimic<Ctx, K>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test,")
+crucible_neg_compile_cog_test(neg_cog_mimic_mint_hot_fg_ctx
+    "no matching function for call to .mint_cog_mimic<crucible::cog::CogKind::Gpu>\\(const fixy::HotFgCtx&,"
+    "required for the satisfaction of .CtxFitsCogMimic<Ctx, K>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. K = crucible::cog::CogKind::Gpu\\]")
+crucible_neg_compile_cog_test(neg_cog_mimic_aggregate_build
+    "no matching function for call to .crucible::mimic::CogMimic<crucible::cog::CogKind::Gpu>::CogMimic\\(<brace-enclosed initializer list>\\)."
+    "no known conversion for argument 1 from .crucible::cog::CogIdentity\\*. to .const crucible::cog::CogIdentity&.")
+crucible_neg_compile_cog_test(neg_cog_mimic_private_constructor
+    "is private within this context"
+    ".constexpr crucible::mimic::CogMimic<K>::CogMimic\\(const crucible::cog::CogIdentity&, CalibratedCaps, OpcodeTable\\) \\[with crucible::cog::CogKind K = crucible::cog::CogKind::Gpu.")
+crucible_neg_compile_cog_test(neg_cog_mimic_default_construct
+    "use of deleted function .crucible::mimic::CogMimic<K>::CogMimic\\(\\) \\[with crucible::cog::CogKind K = crucible::cog::CogKind::Gpu\\]."
+    "a CogMimic binds a calibrated identity. take one from mint_cog_mimic")
+crucible_neg_compile_cog_test(neg_cog_mimic_bit_cast
+    "the expression .is_trivially_copyable_v<_To> \\[with _To = crucible::mimic::CogMimic<crucible::cog::CogKind::Gpu>\\]. evaluated to .false."
+    ".crucible::mimic::CogMimic<crucible::cog::CogKind::Gpu>. is not trivially copyable")
 
 # ─── topology::TopologyGraph ──────────────────────────────────────────
 #
@@ -9111,7 +9117,7 @@ crucible_neg_compile_test(neg_forge_comm_phase_wrong_lane
 #   * neg_mimic_network_backend_wrong_cog: vendor/cog compatibility is a
 #     compile-time gate.
 crucible_neg_compile_test(neg_mimic_network_backend_raw_node
-  "no matching function|could not convert|DeclaredIr001Node|Tagged|source::Ir001")
+  ".crucible::forge::ir001::Ir001Node<crucible::forge::ir001::Ir001OpKind::AllReduce, crucible::forge::ir001::CollectiveAttrs, foundation::effects::Row<> >. is not derived from .fixy::Tagged<Node, fixy::tags::source::Ir001>.")
 crucible_neg_compile_test(neg_mimic_network_backend_compute_node
   "static assertion failed|NetworkKernelNode|ir001_network_kernel_kind")
 crucible_neg_compile_test(neg_mimic_network_backend_cross_vendor

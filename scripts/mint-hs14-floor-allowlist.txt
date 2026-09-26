@@ -64,9 +64,6 @@ mint_wireguard_tunnel|include/crucible/cntp/_wip/Wireguard.h
 mint_nic_config|include/crucible/cog/NicConfig.h
 mint_sriov_plan|include/crucible/cog/SrIov.h
 
-# ── mimic ────────────────────────────────────────────────────────────
-mint_cog_mimic|include/crucible/mimic/CogMimic.h
-
 # ── observe ──────────────────────────────────────────────────────────
 mint_canopy_metrics_reader|include/crucible/observe/Metrics.h
 mint_keeper_metrics_reader|include/crucible/observe/Metrics.h

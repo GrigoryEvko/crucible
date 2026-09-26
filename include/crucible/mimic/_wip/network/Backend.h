@@ -217,7 +217,10 @@ plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> nod
     if (raw_node.content_hash.raw() == 0) {
         return std::unexpected(NetworkBackendError::EmptyContentHash);
     }
-    if (mimic.identity == nullptr || mimic.identity->uuid.is_zero() || mimic.identity->kind != Kind) {
+    // The mint refused a zero uuid and a kind other than Kind, but the owner
+    // of the identity can change it after the mint.
+    cog::CogIdentity const& identity = mimic.identity();
+    if (identity.uuid.is_zero() || identity.kind != Kind) {
         return std::unexpected(NetworkBackendError::UnsupportedCogKind);
     }
 

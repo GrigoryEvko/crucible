@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
 // A CogMimic is minted at calibration time (Init) or during background
-// recalibration (Bg), and CtxFitsCogMimic admits a context only when it
+// recalibration (Bg), and mint_cog_mimic admits a context only when it
 // owns one of the two.  A test runner context owns neither, so a fixture
 // worker cannot bind a CogMimic to an identity that lives only as long as
 // the fixture.  When that storage unwinds, a CogMimic still holding the
@@ -13,18 +13,17 @@
 
 #include <crucible/mimic/CogMimic.h>
 #include <fixy/Ctx.h>
-#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 namespace cog = crucible::cog;
 namespace mimic = crucible::mimic;
 
-template <::foundation::effects::IsExecCtx Ctx, cog::CogKind K>
-    requires mimic::CtxFitsCogMimic<Ctx, K>
-constexpr int prepare_cog_mimic_for_test() noexcept {
-    return 1;
+int main() {
+    const ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
+    cog::CogIdentity identity{};
+    identity.uuid = cog::Uuid{0x1ULL, 0x2ULL};
+    const auto forged = mimic::mint_cog_mimic<cog::CogKind::Gpu>(test_ctx, identity, cog::GpuTargetCaps{},
+                                                                 cog::OpcodeLatencyTable<cog::CogKind::Gpu>{});
+    (void)forged;
+    return 0;
 }
-
-static_assert(prepare_cog_mimic_for_test<::fixy::TestRunnerCtx, cog::CogKind::Gpu>() == 1,
-              "CtxFitsCogMimic must refuse a context that owns neither Init nor Bg.");
-
-int main() { return 0; }
