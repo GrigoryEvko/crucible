@@ -10760,8 +10760,9 @@ crucible_neg_compile_test(neg_session_resource_not_pinned
 # Tier 1 compiler firings — each has a distinct diagnostic.
 
 # [FRAMEWORK-CONTROLLED] Matches ScopedView's = delete("reason") string.
-crucible_neg_compile_test(neg_assignment
-  "ScopedView is single-binding; assignment hides state transitions")
+crucible_neg_compile_multi_test(neg_assignment
+  "use of deleted function .crucible::safety::ScopedView<Carrier, Tag>& crucible::safety::ScopedView<Carrier, Tag>::operator=\\(const crucible::safety::ScopedView<Carrier, Tag>&\\)"
+  "ScopedView is single-binding. assignment hides state transitions")
 
 # [GCC-WRAPPER-TEXT] Private-ctor access protection IS the mechanism;
 # converting would require exposing a constraint that defeats the
@@ -10776,8 +10777,9 @@ crucible_neg_compile_test(neg_default_construct
   "ScopedView default-construction is meaningless")
 
 # [FRAMEWORK-CONTROLLED] Matches another of ScopedView's = delete reasons.
-crucible_neg_compile_test(neg_heap_allocate
-  "ScopedView must live on the stack; heap allocation defeats")
+crucible_neg_compile_multi_test(neg_heap_allocate
+  "use of deleted function .static void\\* crucible::safety::ScopedView<Carrier, Tag>::operator new\\(std::size_t\\)"
+  "ScopedView must live on the stack. heap allocation defeats the lifetime contract")
 
 # State-discipline: SealedView cannot satisfy the MutableView parameter
 # of register_name / register_op — the only typed registration path
@@ -11928,8 +11930,9 @@ crucible_neg_compile_test(neg_permission_copy_attempt
 # slots, so the copy constructor is deleted with an explicit reason.
 crucible_neg_compile_test(neg_publish_slot_copy_attempt
     "publication slot identity cannot be copied")
-crucible_neg_compile_test(neg_vigil_copy_attempt
-    "Vigil owns the runtime organism; not copyable")
+crucible_neg_compile_multi_test(neg_vigil_copy_attempt
+    "use of deleted function .crucible::Vigil::Vigil\\(const crucible::Vigil&\\)."
+    "Vigil owns the runtime organism. not copyable")
 crucible_neg_compile_test(neg_vigil_mode_bridge_illegal_transition
     "VigilModeBridge_IllegalTransition|use of deleted function")
 crucible_neg_compile_test(neg_vigil_mode_bridge_branch_out_of_range
