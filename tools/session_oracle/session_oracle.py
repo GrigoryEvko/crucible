@@ -180,6 +180,16 @@ HAND_CASES: tuple[Case, ...] = (
          cite="the counterexample to Theorem 4.20 of Barwell, Hou, Yoshida and Zhou (LMCS 2025, arXiv "
               "2311.11851v6), where the en-route sender acts before its message arrives.  The value label and "
               "the branch label 0 stand for its labels a and b"),
+    Case("h7", GMsg(0, 1, "nat", GMsg(0, 1, "bool", GEnd())),
+         cite="on a bag, one sender sends one label with two payload sorts to one receiver.  The wire word is "
+              "the label alone, so the first receive can take the second message"),
+    Case("h8", GMsg(0, 2, "nat", GMsg(1, 2, "nat", GEnd())),
+         cite="on a bag, two senders send one label to one receiver, and the wire word does not carry the sender"),
+    Case("h9", GMsg(0, 1, "nat", GMsg(1, 0, "bool", GMsg(0, 1, "bool", GEnd()))),
+         cite="on a bag, one label twice to one receiver, where the second message is sent after the first is "
+              "received"),
+    Case("h10", GMsg(0, 1, "nat", GBranch(0, 1, (GEnd(),))),
+         cite="on a bag, two labels to one receiver with no order between the two messages"),
 )
 
 PAPER_OLD: tuple[Case, ...] = (
@@ -731,18 +741,29 @@ def _network_probe(g: Global) -> str:
     from probe import probe_header, show
     src = probe_header("multi", MULTI_ALIAS) + f"using G = {cpp_fixy_global(g)};\n"
     for network, enumerator in NETWORK_ENUMERATORS.items():
-        src += show(f"net_{network}",
-                    f"std::bool_constant<fs::implementable_on_v<G, fs::Network::{enumerator}>>")
+        src += show(f"net_{network}", "std::integral_constant<int, static_cast<int>("
+                    f"fs::network_refusal_v<G, fs::Network::{enumerator}>)>")
     return src
 
 
-def evaluate_network(rows: list[Row], env: Env) -> list[Row]:
-    """Measure implementable_on of fixy/session/Network.h for each well-formed multiparty case.
+def _network_refusal_of(spelling: str | None) -> str | None:
+    """Name the NetworkRefusal that a spelling std::integral_constant<int,N> holds, or return None."""
+    from emit import NETWORK_REFUSALS
+    prefix = "std::integral_constant<int,"
+    if spelling is None or not spelling.startswith(prefix) or not spelling.endswith(">"):
+        return None
+    index = int(spelling[len(prefix):-1])
+    return NETWORK_REFUSALS[index] if 0 <= index < len(NETWORK_REFUSALS) else None
 
-    A row pins fixy's verdict on one network, and the implementability
-    family (evaluate_sprout) compares that verdict with Sprout(A).  A probe
-    that stops the build stops the run, because a gate must answer.
-    O(cases × networks).
+
+def evaluate_network(rows: list[Row], env: Env) -> list[Row]:
+    """Measure network_refusal_v of fixy/session/Network.h for each well-formed multiparty case.
+
+    A row pins fixy's verdict on one network, None where implementable_on_v
+    admits the type and the reason of the refusal otherwise.  The
+    implementability family (evaluate_sprout) compares that verdict with
+    Sprout(A).  A probe that stops the build stops the run, because a gate
+    must answer.  O(cases × networks).
     """
     from emit import NETWORK_ENUMERATORS
     from model import read_global
@@ -755,7 +776,7 @@ def evaluate_network(rows: list[Row], env: Env) -> list[Row]:
         if m.rejection is not None:
             raise RuntimeError(f"fixy.network case {wf.case}: the probe stops the build ({m.rejection})")
         for network in NETWORK_ENUMERATORS:
-            verdict = _bool(m.values.get(f"net_{network}"))
+            verdict = _network_refusal_of(m.values.get(f"net_{network}"))
             if verdict is None:
                 raise RuntimeError(f"fixy.network case {wf.case}: no measurement on {network}: {m}")
             out.append(Row("fixy.network", wf.case, network, wf.global_text, "-", verdict, "agree", "", ""))
@@ -1402,12 +1423,15 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
     implementability of each well-formed case on per-pair FIFO queues, one
     FIFO mailbox for each receiver and one unordered bag for each receiver
     (sprout.py).  Fixy's verdict on a network is its fixy.network row:
-    implementable_on of fixy/session/Network.h.  Only the naive query
+    network_refusal_v of fixy/session/Network.h.  Only the naive query
     generator of Sprout(A) counts, because its opt generator admits a type
     that deadlocks on a bag.  A type that fixy admits and the naive
     generator refuses is a soundness defect, and it stops the run.  A type
     that fixy refuses and Sprout(A) admits is an incompleteness gap on the
-    shrink-only ledger of semantics.SHRINK_ONLY.  O(cases × networks).
+    shrink-only ledger of semantics.SHRINK_ONLY.  A bag refusal for a
+    repeated wire word has a class of its own on that ledger: the message
+    of Sprout(A) carries the sender and the payload sort, and fixy's wire
+    word carries the label alone.  O(cases × networks).
     """
     import sprout
     from model import read_global
@@ -1422,9 +1446,9 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
     for (wf, _), by_network in zip(cases, answers, strict=True):
         for network, answer in by_network.items():
             measured = ours_on.get((wf.case, network))
-            if measured not in ("true", "false"):
+            if measured is None:
                 raise RuntimeError(f"sprout.implementable case {wf.case}: no fixy.network row on {network}")
-            ours = "admits" if measured == "true" else "refuses"
+            ours = "admits" if measured == "None" else "refuses"
             verdict = str(answer["verdict"])
             naive = str(answer["modes"]["naive"])  # type: ignore[index]
             valid = list(answer["valid"])  # type: ignore[call-overload]
@@ -1450,6 +1474,13 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
             elif verdict in ("inconclusive", "no-tree"):
                 out.append(Row(*row, "gap", verdict,
                                f"Sprout(A) gives no verdict on the network {network} ({verdict})"))
+            elif ours == "refuses" and verdict == "implementable" and measured == "RepeatedWordOnBag":
+                out.append(Row(*row, "divergence", "bag-wire-word",
+                               "our wire is narrower than the model of Sprout(A), not unsound: implementable_on "
+                               "refuses two messages to one receiver with one label that no receive orders.  The "
+                               "wire word of a message is its label alone, so a receive on a bag cannot tell the "
+                               "two apart and can take the second first.  The message of Sprout(A) carries the "
+                               f"sender and the payload sort, and its model has no values ({cite})"))
             elif ours == "refuses" and verdict == "implementable":
                 out.append(Row(*row, "divergence", f"{network}-incomplete",
                                f"ours incomplete, not unsound: implementable_on refuses a type that an "

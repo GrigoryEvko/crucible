@@ -2640,9 +2640,11 @@ fixy_neg_compile_test(neg_sess_strip_peers_two_peers
   "local_peers_t<Local>::size\\) <= 1")
 
 # The network model of a carrier (fixy/session/Network.h).  A mailbox
-# refuses a receiver with two senders, a bag refuses a choice, and a
-# carrier that states no network, or states it with another type, is
-# refused.  A session mint refuses a local type that names two peers.
+# refuses a receiver with two senders.  A bag refuses a choice, and two
+# messages to one receiver with one label that no receive orders: two
+# payload types, two senders, or a stream.  A carrier that states no
+# network, or states it with another type, is refused.  A session mint
+# refuses a local type that names two peers.
 fixy_test(test_session_network)
 fixy_neg_compile_test(neg_sess_network_mailbox_two_senders
   "fixy::session::diagnostic \\[Network_Mailbox_Receiver_Has_Two_Senders\\]"
@@ -2656,6 +2658,15 @@ fixy_neg_compile_test(neg_sess_network_mailbox_loop
 fixy_neg_compile_test(neg_sess_network_bag_choice
   "fixy::session::diagnostic \\[Network_Bag_Choice\\]"
   "a later label of a choice can overtake an earlier one")
+fixy_neg_compile_test(neg_sess_network_bag_repeated_label_two_payloads
+  "fixy::session::diagnostic \\[Network_Bag_Repeated_Word\\]"
+  "types::X\\(int\\) from [a-z_:]+::R0 to [a-z_:]+::R1 and the message [a-z_:]+::X\\(double\\) from [a-z_:]+::R0 to [a-z_:]+::R1 go to one receiver with one word")
+fixy_neg_compile_test(neg_sess_network_bag_repeated_label_two_senders
+  "fixy::session::diagnostic \\[Network_Bag_Repeated_Word\\]"
+  "types::X\\(int\\) from [a-z_:]+::R0 to [a-z_:]+::R2 and the message [a-z_:]+::X\\(int\\) from [a-z_:]+::R1 to [a-z_:]+::R2 go to one receiver with one word")
+fixy_neg_compile_test(neg_sess_network_bag_repeated_label_stream
+  "fixy::session::diagnostic \\[Network_Bag_Repeated_Word\\]"
+  "types::X\\(int\\) from [a-z_:]+::R0 to [a-z_:]+::R1 and the message [a-z_:]+::X\\(int\\) from [a-z_:]+::R0 to [a-z_:]+::R1 go to one receiver with one word")
 fixy_neg_compile_test(neg_sess_network_carrier_undeclared
   "fixy::session::diagnostic \\[Carrier_Network_Undeclared\\]"
   "the carrier states no network model")

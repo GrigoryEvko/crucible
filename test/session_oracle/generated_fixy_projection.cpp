@@ -37,9 +37,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R2>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case r0 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r0 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::End> >,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > > > >, "session_oracle fixy.projection case r0 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r0 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r0 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r0 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r0 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r0 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r0 role p2pbox: agree");
 }  // namespace c_r0
 
 // branch(0,1,[msg(1,0,nat,branch(1,2,[msg(1,2,nat,msg(2,1,bool,end)),branch(1,2,[end,rec(msg(2,0,bool,end)),msg(1,0,bool,end)]),msg(1,2,nat,rec(msg(0,1,bool,var)))])),branch(1,2,[msg(1,0,nat,end),msg(1,0,bool,branch(2,1,[msg(1,0,bool,end),end,msg(2,1,bool,end)]))]),branch(0,1,[branch(1,2,[branch(0,1,[end,end,msg(1,0,nat,end)]),branch(2,0,[msg(2,0,bool,end),msg(1,0,nat,end)]),branch(0,1,[msg(0,1,nat,end),rec(msg(2,0,bool,end)),msg(1,2,nat,end)])]),branch(2,1,[rec(msg(1,2,nat,end)),end,rec(msg(1,0,bool,var))])])])
@@ -56,9 +56,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r1 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r1 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r1 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r1 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r1 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r1 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r1 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r1 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r1 role p2pbox: agree");
 }  // namespace c_r1
 
 // branch(0,1,[msg(2,0,bool,end),rec(msg(1,2,bool,var))])
@@ -69,9 +69,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest7 = fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::Continue> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest7 >, "session_oracle fixy.projection case r2 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r2 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r2 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r2 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r2 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r2 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r2 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r2 role p2pbox: agree");
 }  // namespace c_r2
 
 // msg(0,1,nat,msg(2,0,nat,branch(1,2,[rec(msg(2,1,bool,var)),msg(0,2,nat,end),msg(1,0,nat,end)])))
@@ -84,9 +84,9 @@ using session_oracle_nest9 = fs::Recv<fs::PeerMsg<session_oracle::R0, session_or
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest9 > >, "session_oracle fixy.projection case r3 role 1: agree");
 using session_oracle_nest10 = fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Continue> > >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest10 > >, "session_oracle fixy.projection case r3 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r3 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r3 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r3 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r3 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r3 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r3 role p2pbox: agree");
 }  // namespace c_r3
 
 // msg(0,2,bool,msg(2,0,bool,msg(2,1,bool,branch(0,1,[rec(msg(2,0,nat,var)),msg(2,0,bool,end)]))))
@@ -99,9 +99,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest13 = fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest13 >, "session_oracle fixy.projection case r4 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergePayloadMismatch> >, "session_oracle fixy.projection case r4 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r4 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r4 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r4 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r4 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r4 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r4 role p2pbox: agree");
 }  // namespace c_r4
 
 // msg(2,1,bool,end)
@@ -112,9 +112,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r5 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r5 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r5: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r5 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r5 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r5 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r5 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r5 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r5 role p2pbox: agree");
 }  // namespace c_r5
 
 // branch(0,1,[branch(2,1,[msg(2,1,nat,msg(0,2,bool,end)),branch(1,2,[msg(2,0,nat,end),msg(2,1,bool,end)])]),msg(1,0,nat,msg(2,0,nat,msg(1,2,nat,end)))])
@@ -128,9 +128,9 @@ using session_oracle_nest16 = fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv
 using session_oracle_nest17 = fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, session_oracle_nest16 >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest17 >, "session_oracle fixy.projection case r6 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r6 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r6 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r6 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r6 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r6 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r6 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r6 role p2pbox: agree");
 }  // namespace c_r6
 
 // msg(1,0,bool,end)
@@ -141,9 +141,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r7 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r7 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r7: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r7 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r7 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r7 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r7 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r7 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r7 role p2pbox: agree");
 }  // namespace c_r7
 
 // branch(1,0,[msg(0,1,nat,msg(1,0,nat,end)),msg(1,0,bool,msg(2,1,bool,end))])
@@ -155,9 +155,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 using session_oracle_nest19 = fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest19 >, "session_oracle fixy.projection case r8 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r8 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r8 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r8 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r8 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r8 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r8 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r8 role p2pbox: agree");
 }  // namespace c_r8
 
 // msg(1,0,nat,msg(2,0,bool,msg(0,2,nat,msg(1,2,nat,msg(2,1,nat,end)))))
@@ -170,9 +170,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected
 using session_oracle_nest21 = fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest21 >, "session_oracle fixy.projection case r9 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r9: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r9 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r9 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r9 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r9 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r9 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r9 role p2pbox: agree");
 }  // namespace c_r9
 
 // msg(1,2,nat,msg(2,0,nat,end))
@@ -183,9 +183,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case r10 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case r10 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r10: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r10 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r10 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r10 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r10 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r10 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r10 role p2pbox: agree");
 }  // namespace c_r10
 
 // msg(2,1,bool,branch(1,2,[msg(2,0,nat,end),msg(0,1,bool,end),msg(0,2,nat,end)]))
@@ -197,9 +197,9 @@ using session_oracle_nest22 = fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest22 >, "session_oracle fixy.projection case r11 role 1: agree");
 using session_oracle_nest23 = fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest23 >, "session_oracle fixy.projection case r11 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r11 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r11 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r11 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r11 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r11 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r11 role p2pbox: agree");
 }  // namespace c_r11
 
 // rec(branch(2,1,[msg(0,2,bool,msg(1,2,bool,end)),rec(msg(2,1,bool,var)),msg(0,1,bool,var)]))
@@ -212,9 +212,9 @@ using session_oracle_nest25 = fs::Loop<fs::Offer<fs::Sender<session_oracle::R2>,
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest25 > >, "session_oracle fixy.projection case r12 role 1: agree");
 using session_oracle_nest26 = fs::Loop<fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Continue> > >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::Continue> > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest26 > >, "session_oracle fixy.projection case r12 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r12 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r12 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r12 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r12 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r12 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r12 role p2pbox: agree");
 }  // namespace c_r12
 
 // msg(2,0,nat,branch(0,1,[msg(1,0,bool,rec(msg(2,1,bool,var))),msg(0,2,nat,msg(1,0,nat,msg(0,2,bool,end))),msg(0,1,nat,msg(2,1,nat,msg(1,2,bool,end)))]))
@@ -229,9 +229,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest31 = fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::Continue> > > >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest31 > >, "session_oracle fixy.projection case r13 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r13 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r13 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r13 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r13 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r13 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r13 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r13 role p2pbox: agree");
 }  // namespace c_r13
 
 // msg(1,2,bool,msg(0,2,nat,msg(0,2,bool,end)))
@@ -242,9 +242,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r14 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r14 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r14: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r14 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r14 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r14 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r14 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r14 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r14 role p2pbox: agree");
 }  // namespace c_r14
 
 // msg(1,2,bool,branch(2,0,[branch(1,0,[msg(1,0,nat,branch(2,0,[msg(2,1,nat,end),end,end])),msg(1,2,bool,msg(0,2,bool,msg(1,2,nat,end))),msg(0,2,nat,branch(2,1,[rec(msg(2,0,bool,end)),msg(0,2,bool,end),msg(1,0,nat,end)]))]),branch(0,2,[end,msg(2,0,bool,msg(0,2,nat,msg(2,0,nat,end))),msg(2,1,bool,branch(0,2,[rec(msg(2,0,bool,end)),rec(msg(0,2,bool,var)),rec(msg(0,2,nat,var))]))]),msg(2,0,nat,msg(0,1,nat,branch(0,1,[end,msg(0,1,nat,end)])))]))
@@ -261,9 +261,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r15 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r15 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r15 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r15 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r15 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r15 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r15 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r15 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r15 role p2pbox: agree");
 }  // namespace c_r15
 
 // msg(2,1,bool,branch(1,2,[branch(2,0,[rec(msg(0,2,nat,var)),msg(2,1,nat,end)]),msg(1,0,bool,msg(0,1,nat,end))]))
@@ -277,9 +277,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::sessi
 using session_oracle_nest41 = fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > > >;
 using session_oracle_nest42 = fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Offer<fs::Sender<session_oracle::R1>, session_oracle_nest41, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest42 >, "session_oracle fixy.projection case r16 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r16 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r16 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r16 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r16 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r16 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r16 role p2pbox: agree");
 }  // namespace c_r16
 
 // msg(0,2,bool,msg(1,2,bool,msg(0,2,bool,end)))
@@ -290,9 +290,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r17 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r17 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r17: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r17 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r17 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r17 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r17 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r17 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r17 role p2pbox: agree");
 }  // namespace c_r17
 
 // branch(1,0,[msg(0,2,nat,msg(1,0,nat,branch(1,2,[msg(1,0,nat,msg(2,1,bool,end)),msg(0,2,bool,rec(msg(0,2,bool,end))),branch(2,0,[msg(1,0,bool,end),rec(msg(1,2,bool,var))])]))),msg(1,0,bool,msg(1,0,bool,msg(1,0,nat,msg(0,2,nat,msg(2,0,bool,end)))))])
@@ -306,9 +306,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r18 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r18 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r18 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r18 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r18 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r18 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r18 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r18 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r18 role p2pbox: agree");
 }  // namespace c_r18
 
 // msg(1,2,nat,rec(msg(2,1,bool,end)))
@@ -319,9 +319,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Nat>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > > >, "session_oracle fixy.projection case r19 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > > >, "session_oracle fixy.projection case r19 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r19: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r19 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r19 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r19 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r19 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r19 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r19 role p2pbox: agree");
 }  // namespace c_r19
 
 // msg(1,0,nat,msg(2,0,bool,rec(branch(0,1,[branch(0,2,[var,msg(0,2,bool,var),msg(1,2,nat,end)]),rec(msg(2,1,bool,end)),branch(1,2,[msg(2,1,bool,var),rec(msg(2,0,bool,var))])]))))
@@ -333,9 +333,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r20 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r20 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r20 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r20 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r20 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r20 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r20 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r20 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r20 role p2pbox: agree");
 }  // namespace c_r20
 
 // branch(1,2,[msg(1,2,nat,msg(2,0,nat,msg(1,0,bool,msg(2,1,bool,end)))),branch(2,0,[branch(1,0,[msg(0,2,nat,branch(1,2,[end,msg(2,1,bool,end)])),branch(2,0,[rec(msg(1,2,bool,var)),msg(0,2,bool,rec(msg(1,0,bool,var))),msg(0,1,nat,end)]),end]),msg(1,0,nat,msg(0,2,nat,msg(1,2,nat,msg(1,0,bool,end)))),branch(0,1,[branch(0,2,[branch(0,1,[msg(1,2,nat,end),msg(2,0,bool,end)]),msg(1,2,bool,msg(0,1,nat,end)),msg(1,0,nat,msg(1,0,bool,end))]),msg(0,1,nat,msg(0,2,bool,msg(2,1,nat,end))),end])]),msg(2,0,nat,branch(0,2,[msg(2,1,bool,branch(1,0,[msg(1,0,bool,end),msg(0,2,bool,end)])),rec(msg(0,2,nat,rec(msg(0,1,bool,var))))]))])
@@ -356,9 +356,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r21 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r21 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r21 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r21 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r21 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r21 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r21 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r21 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r21 role p2pbox: agree");
 }  // namespace c_r21
 
 // branch(2,1,[branch(0,2,[msg(0,2,nat,end),branch(1,0,[msg(1,2,bool,msg(1,0,nat,end)),msg(2,0,nat,msg(1,2,nat,end)),branch(0,1,[end,msg(1,0,bool,end),msg(0,2,bool,end)])]),msg(0,1,nat,rec(msg(2,0,bool,var)))]),msg(2,0,bool,msg(0,1,nat,msg(2,1,nat,end)))])
@@ -371,9 +371,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r22 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r22 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r22 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r22 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r22 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r22 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r22 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r22 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r22 role p2pbox: agree");
 }  // namespace c_r22
 
 // msg(2,0,bool,branch(2,0,[rec(msg(1,2,nat,end)),msg(0,2,bool,msg(1,2,nat,msg(2,0,nat,msg(2,1,nat,end)))),end]))
@@ -388,9 +388,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::sessi
 using session_oracle_nest66 = fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > > > >;
 using session_oracle_nest67 = ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::End> >,session_oracle_nest66,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<2>,session_oracle::Unit>,fixy::session::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest67 >, "session_oracle fixy.projection case r23 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r23 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r23 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r23 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r23 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r23 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r23 role p2pbox: agree");
 }  // namespace c_r23
 
 // msg(0,1,bool,end)
@@ -401,9 +401,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r24 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r24 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r24: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r24 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r24 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r24 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r24 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r24 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r24 role p2pbox: agree");
 }  // namespace c_r24
 
 // msg(2,0,bool,branch(2,1,[msg(1,0,bool,branch(1,2,[branch(1,0,[msg(0,1,bool,end),msg(2,0,bool,end)]),msg(2,0,bool,msg(2,1,nat,end))])),msg(2,1,nat,msg(1,0,nat,branch(1,0,[msg(0,2,bool,end),msg(0,2,nat,end),msg(1,0,nat,end)])))]))
@@ -417,9 +417,9 @@ using session_oracle_nest70 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R2
 using session_oracle_nest71 = fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, session_oracle_nest70 > >, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, session_oracle_nest71 > > > >, "session_oracle fixy.projection case r25 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r25 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r25 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r25 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r25 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r25 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r25 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r25 role p2pbox: agree");
 }  // namespace c_r25
 
 // rec(msg(2,0,nat,var))
@@ -430,9 +430,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r26 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > >, "session_oracle fixy.projection case r26 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r26: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r26 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r26 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r26 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r26 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r26 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r26 role p2pbox: agree");
 }  // namespace c_r26
 
 // msg(2,0,bool,msg(0,1,bool,end))
@@ -443,9 +443,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r27 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r27 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r27: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r27 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r27 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r27 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r27 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r27 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r27 role p2pbox: agree");
 }  // namespace c_r27
 
 // msg(0,1,nat,msg(2,0,bool,end))
@@ -456,9 +456,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case r28 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r28 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r28: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r28 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r28 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r28 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r28 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r28 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r28 role p2pbox: agree");
 }  // namespace c_r28
 
 // msg(2,1,nat,msg(1,2,nat,end))
@@ -469,9 +469,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case r29 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case r29 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r29: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r29 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r29 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r29 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r29 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r29 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r29 role p2pbox: agree");
 }  // namespace c_r29
 
 // msg(1,0,bool,branch(1,0,[end,end,msg(2,1,bool,branch(1,0,[end,msg(2,0,bool,end),rec(msg(2,1,bool,var))]))]))
@@ -485,9 +485,9 @@ using session_oracle_nest74 = fs::Recv<fs::PeerMsg<session_oracle::R2, session_o
 using session_oracle_nest75 = fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, session_oracle_nest74 > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest75 >, "session_oracle fixy.projection case r30 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r30 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r30 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r30 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r30 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r30 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r30 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r30 role p2pbox: agree");
 }  // namespace c_r30
 
 // rec(msg(1,2,nat,msg(1,0,nat,msg(2,0,nat,var))))
@@ -499,9 +499,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >, "session_oracle fixy.projection case r31 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >, "session_oracle fixy.projection case r31 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r31: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r31 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r31 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r31 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r31 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r31 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r31 role p2pbox: agree");
 }  // namespace c_r31
 
 // branch(1,2,[branch(1,2,[end,msg(1,0,bool,branch(2,1,[msg(2,1,bool,end),msg(2,0,bool,end)])),branch(0,2,[msg(0,2,bool,rec(msg(0,1,bool,end))),end,rec(msg(0,1,bool,var))])]),end])
@@ -515,9 +515,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r32 role 1: agree");
 using session_oracle_nest80 = fixy::session::Offer<fixy::session::Sender<session_oracle::R1>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::End> >,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > > >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<2>,session_oracle::Unit>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<2>,session_oracle::Unit>,fixy::session::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R1>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,session_oracle_nest80 >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case r32 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r32 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r32 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r32 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r32 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r32 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r32 role p2pbox: agree");
 }  // namespace c_r32
 
 // msg(1,2,bool,msg(2,0,bool,msg(1,0,nat,msg(2,0,nat,branch(2,0,[rec(msg(0,2,nat,var)),msg(2,1,nat,end)])))))
@@ -531,9 +531,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r33 role 1: agree");
 using session_oracle_nest84 = fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, session_oracle_nest84 > > > >, "session_oracle fixy.projection case r33 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r33 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r33 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r33 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r33 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r33 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r33 role p2pbox: agree");
 }  // namespace c_r33
 
 // branch(2,1,[end,end])
@@ -544,9 +544,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case r34 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case r34 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r34: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r34 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r34 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r34 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case r34 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r34 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r34 role p2pbox: agree");
 }  // namespace c_r34
 
 // msg(0,2,bool,rec(msg(0,2,nat,var)))
@@ -557,9 +557,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r35 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >, "session_oracle fixy.projection case r35 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r35: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r35 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r35 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r35 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r35 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r35 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r35 role p2pbox: agree");
 }  // namespace c_r35
 
 // msg(0,2,bool,msg(1,2,nat,branch(0,1,[msg(0,1,nat,rec(msg(0,1,nat,end))),msg(0,1,bool,end),msg(1,2,bool,msg(0,2,bool,end))])))
@@ -573,9 +573,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 using session_oracle_nest88 = fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Nat>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<2>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,session_oracle_nest88 > >, "session_oracle fixy.projection case r36 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r36 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r36 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r36 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r36 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r36 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r36 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r36 role p2pbox: agree");
 }  // namespace c_r36
 
 // rec(branch(2,0,[msg(0,2,bool,var),msg(1,0,nat,var)]))
@@ -587,9 +587,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r37 role 1: agree");
 using session_oracle_nest90 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Continue> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest90 >, "session_oracle fixy.projection case r37 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r37 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r37 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r37 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r37 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r37 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r37 role p2pbox: agree");
 }  // namespace c_r37
 
 // branch(1,2,[branch(1,0,[msg(0,2,nat,end),msg(2,1,bool,end)]),branch(0,1,[msg(2,0,bool,end),msg(0,2,bool,end)]),rec(msg(0,2,nat,var))])
@@ -600,9 +600,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 using session_oracle_nest91 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<2>, session_oracle::Unit>, fs::End> >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest91 > >, "session_oracle fixy.projection case r38 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r38 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r38 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r38 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r38 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r38 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r38 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r38 role p2pbox: agree");
 }  // namespace c_r38
 
 // msg(0,1,bool,msg(1,0,nat,msg(1,2,bool,branch(2,1,[msg(2,0,nat,msg(1,0,bool,end)),msg(1,2,nat,msg(0,2,nat,end)),msg(1,2,nat,msg(0,1,bool,end))]))))
@@ -615,9 +615,9 @@ using session_oracle_nest93 = fs::Send<fs::PeerMsg<session_oracle::R2, session_o
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, session_oracle_nest93 > > > >, "session_oracle fixy.projection case r39 role 1: agree");
 using session_oracle_nest94 = fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest94 > >, "session_oracle fixy.projection case r39 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r39 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r39 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r39 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r39 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r39 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r39 role p2pbox: agree");
 }  // namespace c_r39
 
 // msg(1,0,nat,branch(1,0,[msg(2,0,nat,end),rec(msg(0,2,bool,var))]))
@@ -630,9 +630,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest97 = fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest97 >, "session_oracle fixy.projection case r40 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r40 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r40 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r40 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r40 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r40 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r40 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r40 role p2pbox: agree");
 }  // namespace c_r40
 
 // msg(1,0,bool,msg(2,0,bool,end))
@@ -643,9 +643,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r41 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r41 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r41: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r41 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r41 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r41 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r41 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r41 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r41 role p2pbox: agree");
 }  // namespace c_r41
 
 // branch(0,1,[branch(0,2,[msg(1,0,bool,end),rec(msg(1,2,nat,var))]),branch(2,0,[msg(0,2,nat,end),rec(msg(0,2,nat,var))])])
@@ -659,9 +659,9 @@ using session_oracle_nest101 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, session_oracle_nest101 > >, "session_oracle fixy.projection case r42 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r42 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r42 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r42 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r42 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r42 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r42 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r42 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r42 role p2pbox: agree");
 }  // namespace c_r42
 
 // msg(1,2,bool,msg(2,0,nat,msg(2,1,nat,branch(2,0,[msg(2,1,bool,msg(1,2,nat,end)),end,rec(msg(2,0,nat,var))]))))
@@ -674,9 +674,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r43 role 1: agree");
 using session_oracle_nest104 = fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, session_oracle_nest104 > > > >, "session_oracle fixy.projection case r43 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r43 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r43 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r43 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r43 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r43 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r43 role p2pbox: agree");
 }  // namespace c_r43
 
 // branch(1,0,[msg(1,2,nat,end),msg(1,0,bool,msg(0,2,bool,end)),msg(0,2,bool,msg(0,1,bool,end))])
@@ -687,9 +687,9 @@ using session_oracle_nest105 = fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sende
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracle_nest105 >, "session_oracle fixy.projection case r44 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r44 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r44 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r44 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r44 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r44 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r44 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r44 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r44 role p2pbox: agree");
 }  // namespace c_r44
 
 // rec(msg(1,0,nat,end))
@@ -700,9 +700,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > >, "session_oracle fixy.projection case r45 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::End> >, "session_oracle fixy.projection case r45 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r45: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r45 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r45 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r45 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r45 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r45 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r45 role p2pbox: agree");
 }  // namespace c_r45
 
 // branch(0,2,[end,msg(1,0,bool,rec(msg(0,2,nat,rec(msg(0,2,nat,var)))))])
@@ -715,9 +715,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r46 role 1: agree");
 using session_oracle_nest108 = fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Loop<fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Continue> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,session_oracle_nest108 > >, "session_oracle fixy.projection case r46 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r46 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r46 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r46 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r46 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r46 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r46 role p2pbox: agree");
 }  // namespace c_r46
 
 // msg(0,2,nat,msg(0,2,nat,branch(2,1,[msg(2,0,nat,end),rec(msg(0,2,nat,var))])))
@@ -729,9 +729,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case r47 role 1: agree");
 using session_oracle_nest110 = fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, session_oracle_nest110 > > >, "session_oracle fixy.projection case r47 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r47 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r47 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r47 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r47 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r47 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r47 role p2pbox: agree");
 }  // namespace c_r47
 
 // msg(2,1,nat,msg(0,2,nat,end))
@@ -742,9 +742,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case r48 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case r48 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r48: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r48 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r48 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r48 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r48 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r48 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r48 role p2pbox: agree");
 }  // namespace c_r48
 
 // msg(2,1,nat,branch(1,0,[branch(1,2,[end,msg(1,0,nat,end),end]),end]))
@@ -756,9 +756,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 using session_oracle_nest112 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, session_oracle_nest112 > > >, "session_oracle fixy.projection case r49 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r49 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r49 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r49 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r49 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r49 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r49 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r49 role p2pbox: agree");
 }  // namespace c_r49
 
 // msg(0,1,bool,msg(0,1,bool,branch(1,0,[rec(msg(1,0,bool,var)),msg(1,0,bool,end),msg(0,1,nat,end)])))
@@ -772,9 +772,9 @@ using session_oracle_nest115 = fs::Recv<fs::PeerMsg<session_oracle::R0, session_
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, session_oracle_nest115 > > >, "session_oracle fixy.projection case r51 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r51 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r51: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r51 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r51 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r51 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case r51 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r51 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r51 role p2pbox: agree");
 }  // namespace c_r51
 
 // branch(2,1,[msg(1,2,nat,end),msg(0,1,bool,end)])
@@ -784,9 +784,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r52 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r52 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case r52 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r52 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r52 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r52 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r52 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r52 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r52 role p2pbox: agree");
 }  // namespace c_r52
 
 // branch(1,2,[msg(2,1,nat,msg(2,1,nat,branch(2,1,[msg(0,1,nat,msg(2,1,nat,end)),msg(0,1,bool,msg(2,1,nat,end))]))),msg(0,2,bool,branch(1,0,[msg(0,1,nat,branch(2,0,[msg(2,1,nat,end),msg(1,2,nat,end)])),branch(2,1,[msg(1,2,bool,msg(0,2,bool,end)),branch(1,2,[msg(0,2,bool,end),msg(2,0,nat,end),msg(0,1,bool,end)]),branch(2,1,[msg(1,0,nat,end),msg(0,2,bool,end),rec(msg(2,0,nat,var))])]),branch(0,2,[msg(2,0,bool,msg(0,1,nat,end)),end])])),msg(2,0,bool,msg(2,1,bool,msg(1,2,bool,branch(2,0,[rec(msg(0,2,nat,end)),msg(1,2,nat,end),msg(0,1,nat,end)]))))])
@@ -804,9 +804,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergePayloadMismatch> >, "session_oracle fixy.projection case r53 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r53 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r53 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r53 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r53 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r53 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r53 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r53 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r53 role p2pbox: agree");
 }  // namespace c_r53
 
 // msg(2,1,nat,msg(1,2,bool,end))
@@ -817,9 +817,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, "session_oracle fixy.projection case r54 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, "session_oracle fixy.projection case r54 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r54: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r54 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r54 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r54 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r54 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r54 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r54 role p2pbox: agree");
 }  // namespace c_r54
 
 // rec(branch(0,1,[msg(2,1,nat,var),end]))
@@ -831,9 +831,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 using session_oracle_nest125 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Continue> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest125 >, "session_oracle fixy.projection case r55 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r55 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r55 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r55 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r55 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r55 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r55 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r55 role p2pbox: agree");
 }  // namespace c_r55
 
 // msg(2,1,nat,branch(0,2,[msg(2,1,nat,end),rec(msg(2,1,nat,end)),msg(0,1,nat,msg(1,2,bool,end))]))
@@ -845,9 +845,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r56 role 1: agree");
 using session_oracle_nest127 = ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::End> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::End> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<2>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest127 >, "session_oracle fixy.projection case r56 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r56 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r56 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r56 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r56 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r56 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r56 role p2pbox: agree");
 }  // namespace c_r56
 
 // msg(0,2,nat,rec(msg(1,0,nat,var)))
@@ -858,9 +858,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > >, "session_oracle fixy.projection case r57 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case r57 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r57: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r57 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r57 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r57 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r57 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r57 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r57 role p2pbox: agree");
 }  // namespace c_r57
 
 // branch(1,2,[msg(0,1,bool,msg(1,2,nat,end)),msg(2,0,bool,msg(2,0,nat,rec(msg(0,2,nat,var)))),msg(2,0,bool,msg(0,2,bool,msg(2,0,bool,end)))])
@@ -875,9 +875,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracl
 using session_oracle_nest131 = fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >;
 using session_oracle_nest132 = fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, session_oracle_nest131, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest132 > >, "session_oracle fixy.projection case r58 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r58 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r58 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r58 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r58 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r58 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r58 role p2pbox: agree");
 }  // namespace c_r58
 
 // msg(2,0,nat,msg(1,0,bool,msg(2,0,bool,end)))
@@ -888,9 +888,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r59 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, "session_oracle fixy.projection case r59 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r59: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r59 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r59 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r59 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r59 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r59 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r59 role p2pbox: agree");
 }  // namespace c_r59
 
 // msg(2,1,nat,msg(2,0,bool,branch(0,1,[rec(branch(1,0,[var,msg(2,1,bool,var),var])),msg(1,0,bool,msg(2,1,nat,end)),end])))
@@ -906,9 +906,9 @@ using session_oracle_nest137 = fs::Recv<fs::PeerMsg<session_oracle::R0, session_
 using session_oracle_nest138 = fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Offer<fs::Sender<session_oracle::R0>, session_oracle_nest137, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest138 > >, "session_oracle fixy.projection case r61 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r61 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r61 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r61 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r61 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r61 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r61 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r61 role p2pbox: agree");
 }  // namespace c_r61
 
 // msg(1,2,bool,msg(2,0,nat,branch(0,2,[rec(msg(2,0,bool,end)),msg(1,2,bool,msg(1,0,bool,end))])))
@@ -921,9 +921,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r62 role 1: agree");
 using session_oracle_nest141 = fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,session_oracle_nest141 > >, "session_oracle fixy.projection case r62 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r62 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r62 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r62 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r62 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r62 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r62 role p2pbox: agree");
 }  // namespace c_r62
 
 // msg(2,0,bool,branch(1,0,[msg(0,1,bool,end),msg(2,1,bool,end),msg(0,2,nat,end)]))
@@ -934,9 +934,9 @@ using session_oracle_nest142 = fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMs
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracle_nest142 >, "session_oracle fixy.projection case r63 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case r63 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r63 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r63 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r63 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r63 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r63 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r63 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r63 role p2pbox: agree");
 }  // namespace c_r63
 
 // msg(1,0,nat,branch(0,2,[msg(0,2,bool,end),msg(0,1,bool,end)]))
@@ -947,9 +947,9 @@ using session_oracle_nest143 = fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMs
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracle_nest143 >, "session_oracle fixy.projection case r64 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r64 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case r64 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r64 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r64 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r64 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r64 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r64 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r64 role p2pbox: agree");
 }  // namespace c_r64
 
 // rec(branch(0,1,[var,msg(1,0,nat,end)]))
@@ -962,9 +962,9 @@ using session_oracle_nest145 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest145 >, "session_oracle fixy.projection case r65 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r65 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r65: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r65 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r65 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r65 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case r65 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r65 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r65 role p2pbox: agree");
 }  // namespace c_r65
 
 // msg(1,2,bool,branch(0,1,[rec(msg(0,1,bool,end)),msg(0,2,bool,end),msg(0,2,bool,msg(0,1,nat,msg(0,2,nat,end)))]))
@@ -978,9 +978,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 using session_oracle_nest149 = ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Bool>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<2>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest149 >, "session_oracle fixy.projection case r66 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r66 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r66 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r66 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r66 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r66 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r66 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r66 role p2pbox: agree");
 }  // namespace c_r66
 
 // msg(0,2,nat,msg(2,1,nat,branch(1,0,[branch(1,0,[msg(1,0,nat,end),msg(1,2,nat,end),end]),msg(0,2,nat,msg(1,0,bool,end))])))
@@ -993,9 +993,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest152 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, session_oracle_nest152 > > >, "session_oracle fixy.projection case r67 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r67 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r67 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r67 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r67 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r67 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r67 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r67 role p2pbox: agree");
 }  // namespace c_r67
 
 // msg(1,0,nat,rec(msg(0,1,bool,rec(msg(1,0,nat,msg(0,2,bool,end))))))
@@ -1008,9 +1008,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > > > >, "session_oracle fixy.projection case r68 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > >, "session_oracle fixy.projection case r68 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r68: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r68 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r68 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r68 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r68 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r68 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r68 role p2pbox: agree");
 }  // namespace c_r68
 
 // msg(2,1,bool,msg(1,2,bool,branch(1,0,[end,msg(2,1,bool,msg(1,2,nat,end))])))
@@ -1022,9 +1022,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest156 = fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, session_oracle_nest156 > > >, "session_oracle fixy.projection case r69 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r69 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r69 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r69 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r69 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r69 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r69 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r69 role p2pbox: agree");
 }  // namespace c_r69
 
 // rec(msg(0,2,nat,end))
@@ -1035,9 +1035,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::End> >, "session_oracle fixy.projection case r70 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > >, "session_oracle fixy.projection case r70 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r70: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r70 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r70 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r70 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r70 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r70 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r70 role p2pbox: agree");
 }  // namespace c_r70
 
 // msg(2,0,nat,msg(1,2,nat,rec(msg(0,1,nat,var))))
@@ -1049,9 +1049,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >, "session_oracle fixy.projection case r72 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case r72 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r72: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r72 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r72 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r72 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r72 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r72 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r72 role p2pbox: agree");
 }  // namespace c_r72
 
 // msg(0,2,bool,msg(0,2,bool,msg(2,1,bool,end)))
@@ -1062,9 +1062,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r73 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r73 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r73: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r73 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r73 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r73 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r73 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r73 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r73 role p2pbox: agree");
 }  // namespace c_r73
 
 // rec(msg(2,0,bool,var))
@@ -1075,9 +1075,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r74 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Continue> > > >, "session_oracle fixy.projection case r74 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r74: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r74 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r74 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r74 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r74 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r74 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r74 role p2pbox: agree");
 }  // namespace c_r74
 
 // msg(0,2,nat,msg(0,2,nat,msg(2,1,bool,msg(0,2,bool,end))))
@@ -1090,9 +1090,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected
 using session_oracle_nest159 = fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest159 >, "session_oracle fixy.projection case r75 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r75: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r75 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r75 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r75 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r75 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r75 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r75 role p2pbox: agree");
 }  // namespace c_r75
 
 // msg(2,1,bool,branch(2,0,[branch(2,0,[msg(1,2,bool,msg(0,1,bool,end)),msg(0,1,nat,msg(2,1,bool,end))]),rec(branch(2,1,[msg(2,0,nat,end),msg(1,2,nat,var)]))]))
@@ -1106,9 +1106,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::sessi
 using session_oracle_nest162 = fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Loop<fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >;
 using session_oracle_nest163 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, session_oracle_nest162 >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, session_oracle_nest163 > > >, "session_oracle fixy.projection case r77 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r77 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r77 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r77 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r77 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r77 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r77 role p2pbox: agree");
 }  // namespace c_r77
 
 // branch(2,0,[msg(0,2,bool,end),msg(2,1,bool,end)])
@@ -1118,9 +1118,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case r78 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r78 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r78 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r78 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r78 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r78 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r78 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r78 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r78 role p2pbox: agree");
 }  // namespace c_r78
 
 // msg(1,0,bool,msg(1,2,bool,msg(1,0,nat,end)))
@@ -1131,9 +1131,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >, "session_oracle fixy.projection case r79 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r79 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r79: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r79 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r79 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r79 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r79 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r79 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r79 role p2pbox: agree");
 }  // namespace c_r79
 
 // msg(1,2,nat,branch(0,1,[msg(1,2,bool,end),msg(0,1,nat,end),msg(2,0,nat,end)]))
@@ -1144,9 +1144,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest164 = fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest164 >, "session_oracle fixy.projection case r80 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r80 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r80 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r80 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r80 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r80 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r80 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r80 role p2pbox: agree");
 }  // namespace c_r80
 
 // branch(0,2,[msg(0,1,nat,end),msg(1,2,nat,end),msg(2,1,bool,end)])
@@ -1156,9 +1156,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case r81 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r81 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r81 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r81 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r81 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r81 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r81 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r81 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r81 role p2pbox: agree");
 }  // namespace c_r81
 
 // msg(0,1,nat,msg(1,0,nat,end))
@@ -1169,9 +1169,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case r82 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r82 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r82: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r82 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r82 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r82 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r82 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r82 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r82 role p2pbox: agree");
 }  // namespace c_r82
 
 // rec(msg(2,0,nat,msg(1,0,bool,msg(1,0,nat,rec(msg(0,2,bool,end))))))
@@ -1184,9 +1184,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > > >, "session_oracle fixy.projection case r83 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > > >, "session_oracle fixy.projection case r83 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r83: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r83 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r83 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r83 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r83 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r83 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r83 role p2pbox: agree");
 }  // namespace c_r83
 
 // rec(branch(1,2,[var,msg(0,2,bool,msg(0,2,nat,var)),branch(1,2,[var,var])]))
@@ -1199,9 +1199,9 @@ using session_oracle_nest168 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Loop<session_oracle_nest168 > > >, "session_oracle fixy.projection case r85 role 1: agree");
 using session_oracle_nest169 = fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Continue>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Continue>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Loop<session_oracle_nest169 > > >, "session_oracle fixy.projection case r85 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r85 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r85 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r85 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r85 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r85 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r85 role p2pbox: agree");
 }  // namespace c_r85
 
 // msg(0,2,bool,msg(1,2,nat,end))
@@ -1212,9 +1212,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case r86 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case r86 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r86: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r86 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r86 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r86 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r86 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r86 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r86 role p2pbox: agree");
 }  // namespace c_r86
 
 // branch(0,2,[branch(0,1,[msg(0,1,bool,msg(0,2,bool,msg(0,2,bool,end))),branch(1,2,[branch(2,1,[rec(msg(2,1,nat,end)),msg(2,1,nat,end)]),msg(2,0,bool,msg(0,2,nat,end))])]),branch(1,0,[msg(2,1,bool,branch(0,2,[msg(0,2,bool,end),msg(2,1,nat,end)])),branch(2,0,[msg(2,1,bool,msg(0,1,bool,end)),branch(1,2,[rec(msg(2,1,bool,end)),msg(2,1,nat,end)])]),branch(0,1,[msg(1,0,nat,msg(2,1,bool,end)),branch(2,0,[msg(0,1,nat,end),msg(0,2,nat,end)])])])])
@@ -1231,9 +1231,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r87 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r87 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r87 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r87 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r87 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r87 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r87 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r87 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r87 role p2pbox: agree");
 }  // namespace c_r87
 
 // msg(1,0,bool,msg(2,1,bool,end))
@@ -1244,9 +1244,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, "session_oracle fixy.projection case r88 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case r88 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r88: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r88 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r88 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r88 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case r88 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r88 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r88 role p2pbox: agree");
 }  // namespace c_r88
 
 // rec(branch(0,1,[msg(2,1,nat,var),msg(0,1,bool,var),msg(0,2,bool,msg(1,2,nat,end))]))
@@ -1259,9 +1259,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 using session_oracle_nest179 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Continue> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Continue> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest179 >, "session_oracle fixy.projection case r89 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r89 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r89 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r89 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r89 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r89 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r89 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case r89 role p2pbox: agree");
 }  // namespace c_r89
 
 // msg(2,1,nat,rec(msg(0,2,bool,msg(0,1,nat,var))))
@@ -1273,9 +1273,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >, "session_oracle fixy.projection case r90 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Continue> > > > >, "session_oracle fixy.projection case r90 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r90: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r90 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r90 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r90 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r90 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r90 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r90 role p2pbox: agree");
 }  // namespace c_r90
 
 // msg(1,0,nat,branch(1,2,[msg(2,1,nat,msg(1,0,nat,end)),msg(2,0,bool,msg(1,0,nat,branch(1,2,[msg(1,0,nat,end),msg(0,1,bool,end),end])))]))
@@ -1290,9 +1290,9 @@ using session_oracle_nest184 = fs::Send<fs::PeerMsg<session_oracle::R0, session_
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest184 > >, "session_oracle fixy.projection case r91 role 1: agree");
 using session_oracle_nest185 = fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, session_oracle_nest185 > > >, "session_oracle fixy.projection case r91 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r91 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r91 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r91 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r91 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r91 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r91 role p2pbox: agree");
 }  // namespace c_r91
 
 // msg(0,1,nat,msg(0,2,nat,msg(1,2,nat,msg(0,1,bool,msg(1,2,bool,end)))))
@@ -1305,9 +1305,9 @@ using session_oracle_nest187 = fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMs
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest187 >, "session_oracle fixy.projection case r92 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r92 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r92: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r92 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r92 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r92 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r92 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case r92 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r92 role p2pbox: agree");
 }  // namespace c_r92
 
 // rec(msg(2,0,bool,msg(2,1,bool,msg(0,2,nat,var))))
@@ -1320,9 +1320,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected
 using session_oracle_nest189 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest189 >, "session_oracle fixy.projection case r93 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r93: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r93 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r93 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r93 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r93 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r93 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r93 role p2pbox: agree");
 }  // namespace c_r93
 
 // branch(0,1,[msg(1,2,nat,end),end,msg(1,0,bool,end)])
@@ -1332,9 +1332,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r94 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<2>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case r94 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r94 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r94 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r94 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r94 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r94 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r94 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r94 role p2pbox: agree");
 }  // namespace c_r94
 
 // branch(1,0,[msg(0,2,nat,msg(1,2,nat,msg(1,2,nat,msg(0,1,nat,end)))),branch(0,2,[branch(1,0,[branch(1,0,[msg(0,2,bool,end),end,end]),msg(0,2,nat,end)]),msg(0,2,nat,end),branch(1,2,[msg(2,0,bool,rec(msg(2,0,nat,var))),msg(2,0,bool,msg(2,1,nat,end))])]),end])
@@ -1348,9 +1348,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r95 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r95 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r95 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r95 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r95 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r95 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r95 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r95 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r95 role p2pbox: agree");
 }  // namespace c_r95
 
 // branch(0,1,[msg(1,2,nat,msg(0,2,nat,msg(1,2,bool,end))),msg(0,2,nat,branch(2,0,[branch(1,0,[msg(0,1,bool,end),msg(0,2,nat,end)]),msg(1,2,bool,msg(0,2,bool,end)),msg(2,1,nat,msg(1,2,nat,end))]))])
@@ -1363,9 +1363,9 @@ using session_oracle_nest196 = fs::Offer<fs::Sender<session_oracle::R2>, fs::Rec
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, session_oracle_nest196 > > > > >, "session_oracle fixy.projection case r96 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r96 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r96 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r96 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r96 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r96 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r96 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r96 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r96 role p2pbox: agree");
 }  // namespace c_r96
 
 // branch(0,1,[branch(0,1,[msg(2,1,bool,msg(1,2,bool,msg(2,0,nat,end))),msg(2,0,nat,msg(2,1,bool,msg(0,1,bool,msg(0,1,bool,end)))),msg(1,0,nat,rec(msg(1,2,bool,end)))]),msg(0,2,nat,msg(0,1,nat,rec(msg(1,2,bool,end)))),end])
@@ -1383,9 +1383,9 @@ using session_oracle_nest203 = fixy::session::Offer<fixy::session::Sender<sessio
 using session_oracle_nest204 = ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,session_oracle_nest203 >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<2>,session_oracle::Unit>,fixy::session::End> > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest204 >, "session_oracle fixy.projection case r97 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r97 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r97 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r97 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r97 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r97 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r97 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r97 role p2pbox: agree");
 }  // namespace c_r97
 
 // msg(1,0,nat,branch(1,0,[rec(msg(1,0,bool,var)),branch(1,0,[rec(msg(2,0,bool,var)),msg(2,0,bool,end)])]))
@@ -1400,9 +1400,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest209 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Continue> > >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, session_oracle_nest209 > > >, "session_oracle fixy.projection case r98 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case r98 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case r98 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case r98 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case r98 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r98 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r98 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case r98 role p2pbox: agree");
 }  // namespace c_r98
 
 // msg(0,1,bool,rec(msg(0,1,nat,var)))
@@ -1413,9 +1413,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >, "session_oracle fixy.projection case r99 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case r99 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case r99: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case r99 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case r99 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case r99 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case r99 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case r99 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case r99 role p2pbox: agree");
 }  // namespace c_r99
 
 // end
@@ -1426,9 +1426,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case a0 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case a0 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a0: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a0 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a0 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a0 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a0 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a0 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a0 role p2pbox: agree");
 }  // namespace c_a0
 
 // rec(var)
@@ -1445,9 +1445,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::End> >, "session_oracle fixy.projection case a2 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::End> >, "session_oracle fixy.projection case a2 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a2 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a2 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a2 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a2 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a2 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a2 role p2pbox: agree");
 }  // namespace c_a2
 
 // branch(1,0,[msg(2,1,nat,end),branch(1,0,[msg(0,2,bool,end),end])])
@@ -1459,9 +1459,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest211 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest211 > >, "session_oracle fixy.projection case a3 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a3 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a3 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a3 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a3 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a3 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a3 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a3 role p2pbox: agree");
 }  // namespace c_a3
 
 // msg(0,2,bool,msg(0,2,nat,branch(1,2,[])))
@@ -1478,9 +1478,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a5 role 1: agree");
 using session_oracle_nest212 = fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest212 >, "session_oracle fixy.projection case a5 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a5 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a5 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a5 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a5 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a5 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a5 role p2pbox: agree");
 }  // namespace c_a5
 
 // branch(0,1,[branch(0,1,[msg(1,2,bool,end),end])])
@@ -1492,9 +1492,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 using session_oracle_nest214 = fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest214 >, "session_oracle fixy.projection case a6 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a6 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a6 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a6 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a6 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a6 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a6 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a6 role p2pbox: agree");
 }  // namespace c_a6
 
 // branch(0,2,[end,end])
@@ -1505,9 +1505,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case a7 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case a7 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a7: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a7 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a7 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a7 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case a7 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a7 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a7 role p2pbox: agree");
 }  // namespace c_a7
 
 // rec(branch(0,1,[msg(1,2,nat,var),msg(0,1,nat,branch(2,1,[msg(0,1,bool,msg(1,2,bool,var)),var]))]))
@@ -1520,9 +1520,9 @@ using session_oracle_nest216 = fs::Recv<fs::PeerMsg<session_oracle::R0, session_
 using session_oracle_nest217 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Continue> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, session_oracle_nest216 > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest217 >, "session_oracle fixy.projection case a8 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a8 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a8 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a8 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a8 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a8 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a8 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a8 role p2pbox: agree");
 }  // namespace c_a8
 
 // msg(2,0,bool,msg(2,0,nat,branch(0,1,[])))
@@ -1554,9 +1554,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a12 role 1: agree");
 using session_oracle_nest221 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Continue> >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest221 >, "session_oracle fixy.projection case a12 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a12 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a12 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a12 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a12 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a12 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a12 role p2pbox: agree");
 }  // namespace c_a12
 
 // msg(1,2,nat,rec(branch(2,1,[msg(1,0,bool,branch(2,0,[msg(0,1,nat,var),end])),var,end])))
@@ -1568,9 +1568,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a13 role 1: agree");
 using session_oracle_nest223 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Continue>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<2>, session_oracle::Unit>, fs::End> >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Loop<session_oracle_nest223 > > > >, "session_oracle fixy.projection case a13 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a13 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a13 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a13 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a13 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a13 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a13 role p2pbox: agree");
 }  // namespace c_a13
 
 // msg(0,1,bool,branch(1,2,[msg(1,0,nat,branch(0,2,[msg(2,1,nat,end),end])),end]))
@@ -1582,9 +1582,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a14 role 1: agree");
 using session_oracle_nest225 = fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest225 > >, "session_oracle fixy.projection case a14 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a14 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a14 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a14 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a14 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a14 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a14 role p2pbox: agree");
 }  // namespace c_a14
 
 // msg(2,2,bool,branch(2,0,[end]))
@@ -1602,9 +1602,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a16 role 1: agree");
 using session_oracle_nest227 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Continue>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest227 >, "session_oracle fixy.projection case a16 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a16 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a16 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a16 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a16 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a16 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a16 role p2pbox: agree");
 }  // namespace c_a16
 
 // msg(2,0,bool,rec(branch(0,2,[msg(2,1,bool,end),end])))
@@ -1617,9 +1617,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a17 role 1: agree");
 using session_oracle_nest230 = ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::End> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest230 >, "session_oracle fixy.projection case a17 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a17 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a17 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a17 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a17 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a17 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a17 role p2pbox: agree");
 }  // namespace c_a17
 
 // rec(rec(var))
@@ -1635,9 +1635,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case a19 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a19 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case a19 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a19 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a19 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a19 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a19 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a19 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a19 role p2pbox: agree");
 }  // namespace c_a19
 
 // msg(2,0,nat,branch(1,0,[rec(branch(0,2,[msg(2,1,bool,end),var])),rec(rec(end))]))
@@ -1650,9 +1650,9 @@ using session_oracle_nest233 = ::fixy::session::Projected<fixy::session::OutQueu
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracle_nest233 >, "session_oracle fixy.projection case a20 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a20 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a20 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a20 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a20 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a20 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a20 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a20 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a20 role p2pbox: agree");
 }  // namespace c_a20
 
 // msg(1,0,nat,rec(msg(1,2,bool,msg(1,2,nat,end))))
@@ -1664,9 +1664,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Bool>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > > > >, "session_oracle fixy.projection case a21 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > > >, "session_oracle fixy.projection case a21 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a21: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a21 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a21 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a21 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case a21 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a21 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a21 role p2pbox: agree");
 }  // namespace c_a21
 
 // rec(branch(2,0,[msg(0,1,bool,var),var]))
@@ -1678,9 +1678,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a22 role 1: agree");
 using session_oracle_nest236 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Continue>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest236 >, "session_oracle fixy.projection case a22 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a22 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a22 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a22 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a22 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a22 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a22 role p2pbox: agree");
 }  // namespace c_a22
 
 // branch(2,0,[branch(1,2,[branch(2,0,[branch(1,0,[msg(0,2,bool,branch(0,1,[msg(1,0,nat,end),msg(0,1,bool,end)])),msg(0,1,bool,branch(0,1,[msg(1,2,nat,end),end]))])]),end,end])])
@@ -1695,9 +1695,9 @@ using session_oracle_nest240 = fs::Send<fs::PeerMsg<session_oracle::R0, session_
 using session_oracle_nest241 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, session_oracle_nest240 >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, session_oracle_nest241 >, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Label<2>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case a23 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a23 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a23 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a23 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a23 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a23 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a23 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a23 role p2pbox: agree");
 }  // namespace c_a23
 
 // msg(2,2,nat,rec(rec(msg(2,0,nat,msg(2,1,nat,var)))))
@@ -1717,9 +1717,9 @@ using session_oracle_nest244 = fs::Send<fs::PeerMsg<session_oracle::R2, session_
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest244 > >, "session_oracle fixy.projection case a25 role 1: agree");
 using session_oracle_nest245 = fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Loop<fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Continue> >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest245 > >, "session_oracle fixy.projection case a25 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a25 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a25 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a25 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a25 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a25 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a25 role p2pbox: agree");
 }  // namespace c_a25
 
 // rec(rec(msg(1,0,bool,rec(rec(branch(1,2,[msg(2,0,bool,var),var]))))))
@@ -1732,9 +1732,9 @@ using session_oracle_nest247 = fixy::session::Send<fixy::session::PeerMsg<sessio
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,session_oracle_nest247 > >, "session_oracle fixy.projection case a26 role 1: agree");
 using session_oracle_nest248 = ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Loop<fixy::session::Offer<fixy::session::Sender<session_oracle::R1>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::Continue> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest248 >, "session_oracle fixy.projection case a26 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a26 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a26 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a26 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a26 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a26 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a26 role p2pbox: agree");
 }  // namespace c_a26
 
 // rec(branch(0,1,[msg(1,2,bool,branch(0,1,[branch(2,0,[msg(0,1,nat,end),end]),msg(2,0,bool,msg(0,1,nat,end))])),branch(0,1,[var,rec(rec(var)),var])]))
@@ -1753,9 +1753,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 using session_oracle_nest251 = fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest251 >, "session_oracle fixy.projection case a29 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergePayloadMismatch> >, "session_oracle fixy.projection case a29 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a29 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a29 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a29 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a29 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a29 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a29 role p2pbox: agree");
 }  // namespace c_a29
 
 // branch(2,1,[msg(1,0,nat,branch(2,1,[rec(var)])),rec(msg(2,2,bool,rec(var)))])
@@ -1817,9 +1817,9 @@ using session_oracle_nest265 = fixy::session::Recv<fixy::session::PeerMsg<sessio
 using session_oracle_nest266 = fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End> > >,session_oracle_nest265 >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,session_oracle_nest266 > > > > >, "session_oracle fixy.projection case a36 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a36: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a36 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a36 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a36 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case a36 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case a36 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a36 role p2pbox: agree");
 }  // namespace c_a36
 
 // msg(0,2,nat,msg(2,2,nat,branch(1,2,[msg(2,0,nat,msg(2,0,bool,end)),branch(2,1,[end,end])])))
@@ -1837,9 +1837,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Loop<fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Nat>,fixy::session::Continue> > > >, "session_oracle fixy.projection case a38 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Loop<fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::Continue> > > >, "session_oracle fixy.projection case a38 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a38: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a38 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a38 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a38 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case a38 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a38 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a38 role p2pbox: agree");
 }  // namespace c_a38
 
 // branch(0,2,[msg(2,1,bool,msg(2,0,bool,rec(msg(2,2,nat,msg(2,1,bool,var))))),msg(1,0,bool,branch(1,2,[msg(2,0,nat,branch(2,1,[end,end])),msg(2,0,nat,end)]))])
@@ -1865,9 +1865,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case a41 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case a41 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a41: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a41 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a41 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a41 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a41 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a41 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a41 role p2pbox: agree");
 }  // namespace c_a41
 
 // msg(2,1,nat,end)
@@ -1878,9 +1878,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case a42 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case a42 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a42: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a42 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a42 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a42 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a42 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a42 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a42 role p2pbox: agree");
 }  // namespace c_a42
 
 // msg(2,1,nat,branch(1,2,[msg(2,0,nat,msg(1,2,nat,end)),branch(0,1,[end,end])]))
@@ -1893,9 +1893,9 @@ using session_oracle_nest272 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, session_oracle_nest272 > > >, "session_oracle fixy.projection case a43 role 1: agree");
 using session_oracle_nest273 = fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest273 > >, "session_oracle fixy.projection case a43 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a43 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a43 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a43 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a43 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a43 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a43 role p2pbox: agree");
 }  // namespace c_a43
 
 // msg(2,0,nat,branch(0,1,[branch(1,0,[msg(0,2,bool,branch(1,0,[msg(0,2,nat,end),end])),end]),msg(0,0,bool,branch(2,1,[msg(1,0,nat,end),end]))]))
@@ -1943,9 +1943,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected
 using session_oracle_nest286 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracle_nest286 >, "session_oracle fixy.projection case a48 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a48: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a48 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a48 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a48 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case a48 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a48 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a48 role p2pbox: agree");
 }  // namespace c_a48
 
 // msg(0,1,bool,end)
@@ -1956,9 +1956,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case a49 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case a49 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a49: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a49 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a49 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a49 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a49 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a49 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a49 role p2pbox: agree");
 }  // namespace c_a49
 
 // msg(2,1,bool,branch(2,1,[branch(0,1,[msg(1,2,nat,end),branch(1,0,[msg(0,2,bool,branch(2,1,[msg(1,0,nat,end),end])),msg(1,0,nat,branch(2,1,[msg(1,0,bool,end),end]))])]),msg(1,0,nat,branch(2,0,[branch(1,0,[rec(var),branch(1,0,[rec(end),msg(1,0,nat,end),msg(1,2,nat,end)])]),msg(1,2,nat,rec(msg(0,0,bool,var))),msg(2,2,bool,branch(1,0,[branch(0,2,[msg(2,1,bool,end),end]),branch(0,2,[])]))])),rec(branch(1,2,[msg(2,0,bool,var),branch(1,2,[msg(2,0,nat,end),var])]))]))
@@ -1983,9 +1983,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > >, "session_oracle fixy.projection case a51 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > >, "session_oracle fixy.projection case a51 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a51: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a51 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a51 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a51 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case a51 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a51 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a51 role p2pbox: agree");
 }  // namespace c_a51
 
 // msg(2,1,bool,rec(var))
@@ -2004,9 +2004,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 using session_oracle_nest297 = ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Loop<fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Continue>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest297 >, "session_oracle fixy.projection case a53 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a53 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a53 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a53 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a53 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a53 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a53 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a53 role p2pbox: agree");
 }  // namespace c_a53
 
 // msg(0,1,bool,branch(1,0,[msg(0,2,nat,branch(0,1,[msg(2,1,nat,rec(branch(1,2,[rec(var)]))),branch(0,1,[branch(2,0,[branch(2,0,[msg(0,1,bool,end),end]),msg(1,2,bool,rec(var)),msg(0,0,nat,msg(2,1,nat,end))])])])),rec(msg(1,1,bool,msg(2,2,bool,msg(1,0,bool,branch(0,2,[end,var])))))]))
@@ -2056,9 +2056,9 @@ using session_oracle_nest307 = fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sende
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracle_nest307 >, "session_oracle fixy.projection case a59 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergePayloadMismatch> >, "session_oracle fixy.projection case a59 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case a59 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a59 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a59 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a59 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a59 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a59 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a59 role p2pbox: agree");
 }  // namespace c_a59
 
 // rec(msg(2,1,nat,rec(branch(2,0,[msg(0,1,bool,end),branch(1,0,[msg(0,2,nat,end),end])]))))
@@ -2070,9 +2070,9 @@ using session_oracle_nest309 = fixy::session::Offer<fixy::session::Sender<sessio
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::Projected<fixy::session::OutQueue<>,session_oracle_nest309 > >, "session_oracle fixy.projection case a60 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a60 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a60 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a60 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a60 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a60 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a60 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a60 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a60 role p2pbox: agree");
 }  // namespace c_a60
 
 // msg(2,1,nat,msg(2,1,nat,branch(0,2,[msg(2,1,nat,end),end])))
@@ -2084,9 +2084,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a61 role 1: agree");
 using session_oracle_nest311 = fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest311 > >, "session_oracle fixy.projection case a61 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a61 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a61 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a61 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a61 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a61 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a61 role p2pbox: agree");
 }  // namespace c_a61
 
 // branch(0,2,[msg(1,2,nat,branch(0,1,[msg(1,2,bool,msg(0,1,nat,end)),msg(0,1,bool,end)])),msg(1,1,nat,branch(1,2,[msg(2,0,bool,msg(2,1,bool,end)),branch(0,1,[end,end])]))])
@@ -2105,9 +2105,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case a63 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case a63 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a63: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a63 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a63 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a63 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a63 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a63 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a63 role p2pbox: agree");
 }  // namespace c_a63
 
 // branch(1,2,[msg(2,0,nat,rec(rec(branch(1,2,[end])))),rec(branch(2,0,[branch(2,1,[var,end,end]),rec(end),branch(0,1,[var,end])]))])
@@ -2119,9 +2119,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a64 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a64 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a64 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a64 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a64 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a64 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a64 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a64 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a64 role p2pbox: agree");
 }  // namespace c_a64
 
 // rec(msg(2,0,bool,branch(1,2,[])))
@@ -2144,9 +2144,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case a67 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case a67 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a67: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a67 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a67 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a67 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a67 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a67 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a67 role p2pbox: agree");
 }  // namespace c_a67
 
 // branch(0,2,[msg(2,1,nat,msg(2,2,nat,branch(0,2,[msg(2,1,bool,msg(0,1,bool,end)),branch(1,2,[end])]))),branch(0,2,[branch(0,2,[msg(0,1,bool,msg(1,2,bool,end)),branch(0,2,[msg(2,1,nat,end),end])]),rec(msg(2,0,bool,branch(1,2,[msg(2,0,bool,end),end])))])])
@@ -2187,9 +2187,9 @@ using session_oracle_nest327 = fs::Recv<fs::PeerMsg<session_oracle::R0, session_
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, session_oracle_nest327 > > > >, "session_oracle fixy.projection case a71 role 1: agree");
 using session_oracle_nest328 = fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, session_oracle_nest328 > > >, "session_oracle fixy.projection case a71 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a71 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a71 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a71 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a71 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a71 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a71 role p2pbox: agree");
 }  // namespace c_a71
 
 // branch(2,0,[])
@@ -2233,9 +2233,9 @@ using session_oracle_nest337 = ::fixy::session::Projected<fixy::session::OutQueu
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest337 >, "session_oracle fixy.projection case a76 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::End> >, "session_oracle fixy.projection case a76 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a76: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a76 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a76 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a76 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case a76 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a76 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a76 role p2pbox: agree");
 }  // namespace c_a76
 
 // msg(2,0,nat,msg(1,0,bool,msg(0,0,nat,msg(2,0,bool,rec(end)))))
@@ -2287,9 +2287,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a82 role 1: agree");
 using session_oracle_nest349 = fixy::session::Loop<fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::Continue> >,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,session_oracle_nest349 > > >, "session_oracle fixy.projection case a82 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a82 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a82 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a82 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a82 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a82 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a82 role p2pbox: agree");
 }  // namespace c_a82
 
 // branch(1,0,[msg(0,2,nat,msg(2,0,nat,end)),msg(1,2,bool,end)])
@@ -2300,9 +2300,9 @@ using session_oracle_nest350 = fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sende
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracle_nest350 >, "session_oracle fixy.projection case a83 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case a83 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a83 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a83 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a83 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a83 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a83 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a83 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a83 role p2pbox: agree");
 }  // namespace c_a83
 
 // rec(rec(msg(2,0,nat,rec(rec(msg(0,2,nat,end))))))
@@ -2314,9 +2314,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::End> >, "session_oracle fixy.projection case a84 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > > >, "session_oracle fixy.projection case a84 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a84: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a84 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a84 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a84 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a84 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a84 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a84 role p2pbox: agree");
 }  // namespace c_a84
 
 // branch(2,0,[end])
@@ -2327,9 +2327,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case a85 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End> > >, "session_oracle fixy.projection case a85 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a85: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a85 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a85 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a85 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a85 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a85 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a85 role p2pbox: agree");
 }  // namespace c_a85
 
 // rec(rec(rec(msg(0,0,nat,rec(msg(2,0,bool,msg(0,1,nat,end)))))))
@@ -2347,9 +2347,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a87 role 1: agree");
 using session_oracle_nest353 = fs::Select<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > >, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, session_oracle_nest353 > >, "session_oracle fixy.projection case a87 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a87 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a87 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a87 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a87 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a87 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a87 role p2pbox: agree");
 }  // namespace c_a87
 
 // msg(0,2,bool,msg(1,0,bool,rec(end)))
@@ -2360,9 +2360,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > >, "session_oracle fixy.projection case a88 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > >, "session_oracle fixy.projection case a88 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a88: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a88 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a88 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a88 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a88 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a88 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a88 role p2pbox: agree");
 }  // namespace c_a88
 
 // rec(branch(0,1,[msg(1,2,bool,branch(1,2,[msg(2,0,bool,var),rec(branch(2,0,[msg(0,1,nat,end),var]))])),branch(0,1,[msg(0,2,nat,rec(branch(1,0,[]))),var])]))
@@ -2398,9 +2398,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a91 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a91 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a91 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a91 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a91 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a91 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a91 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a91 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case a91 role p2pbox: agree");
 }  // namespace c_a91
 
 // msg(1,2,nat,msg(2,2,bool,end))
@@ -2430,9 +2430,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case a95 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case a95 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a95: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a95 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a95 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a95 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a95 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a95 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a95 role p2pbox: agree");
 }  // namespace c_a95
 
 // branch(0,1,[msg(2,1,nat,end),branch(2,1,[branch(1,2,[msg(2,0,bool,branch(1,2,[end,branch(2,1,[msg(0,2,bool,end),branch(1,0,[end,end])])])),branch(1,2,[branch(2,1,[msg(1,0,nat,end),end]),branch(1,0,[rec(end),branch(1,2,[end])])])]),msg(1,1,nat,branch(2,0,[msg(0,1,nat,end),branch(1,2,[branch(2,1,[end,end]),end])]))])])
@@ -2464,9 +2464,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case a98 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R1>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case a98 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a98: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a98 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a98 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a98 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case a98 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a98 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a98 role p2pbox: agree");
 }  // namespace c_a98
 
 // branch(2,1,[msg(0,1,bool,rec(end)),branch(0,2,[msg(2,1,bool,branch(0,2,[rec(msg(0,1,bool,msg(1,0,nat,var)))]))])])
@@ -2480,9 +2480,9 @@ using session_oracle_nest380 = fixy::session::Recv<fixy::session::PeerMsg<sessio
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R2>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> >,session_oracle_nest380 > > >, "session_oracle fixy.projection case a99 role 1: agree");
 using session_oracle_nest381 = fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Bool>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End>,session_oracle_nest381 > > >, "session_oracle fixy.projection case a99 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a99 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a99 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a99 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a99 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a99 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a99 role p2pbox: agree");
 }  // namespace c_a99
 
 // msg(0,0,nat,msg(2,1,bool,end))
@@ -2527,9 +2527,9 @@ using session_oracle_nest385 = fs::Send<fs::PeerMsg<session_oracle::R0, session_
 using session_oracle_nest386 = fs::Projected<fs::OutQueue<>, fs::Select<session_oracle_nest385, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Loop<fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Continue> > > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest386 >, "session_oracle fixy.projection case a105 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case a105 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a105 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a105 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case a105 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a105 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a105 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case a105 role p2pbox: agree");
 }  // namespace c_a105
 
 // msg(0,2,nat,msg(1,0,bool,end))
@@ -2540,9 +2540,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > >, "session_oracle fixy.projection case a106 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case a106 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a106: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a106 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a106 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a106 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a106 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a106 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a106 role p2pbox: agree");
 }  // namespace c_a106
 
 // msg(1,1,bool,end)
@@ -2571,9 +2571,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > >, "session_oracle fixy.projection case a110 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > >, "session_oracle fixy.projection case a110 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a110: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a110 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a110 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a110 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a110 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a110 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a110 role p2pbox: agree");
 }  // namespace c_a110
 
 // msg(1,1,nat,end)
@@ -2590,9 +2590,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > >, "session_oracle fixy.projection case a112 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Bool>,fixy::session::End> > >, "session_oracle fixy.projection case a112 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a112: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a112 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case a112 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a112 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case a112 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case a112 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a112 role p2pbox: agree");
 }  // namespace c_a112
 
 // msg(1,0,bool,msg(1,0,nat,branch(1,0,[end,end])))
@@ -2606,9 +2606,9 @@ using session_oracle_nest389 = fs::Send<fs::PeerMsg<session_oracle::R0, session_
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest389 > >, "session_oracle fixy.projection case a113 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case a113 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a113: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case a113 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a113 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a113 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case a113 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a113 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a113 role p2pbox: agree");
 }  // namespace c_a113
 
 // rec(branch(2,1,[msg(1,0,nat,rec(var)),rec(msg(2,1,bool,end))]))
@@ -2625,9 +2625,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R2,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > >, "session_oracle fixy.projection case a115 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Send<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::End> > >, "session_oracle fixy.projection case a115 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case a115: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case a115 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case a115 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case a115 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case a115 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case a115 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case a115 role p2pbox: agree");
 }  // namespace c_a115
 
 // msg(1,0,bool,branch(1,2,[msg(2,0,bool,rec(var)),rec(end)]))
@@ -2659,9 +2659,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > >, "session_oracle fixy.projection case h0 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case h0 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h0: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case h0 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case h0 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case h0 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case h0 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h0 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h0 role p2pbox: agree");
 }  // namespace c_h0
 
 // msg(0,2,nat,rec(msg(0,1,nat,var)))
@@ -2672,9 +2672,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > >, "session_oracle fixy.projection case h1 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case h1 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h1: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case h1 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case h1 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case h1 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case h1 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h1 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h1 role p2pbox: agree");
 }  // namespace c_h1
 
 // rec(branch(0,1,[msg(1,2,bool,var),msg(1,2,bool,var)]))
@@ -2687,9 +2687,9 @@ using session_oracle_nest394 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest394 >, "session_oracle fixy.projection case h2 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Continue> > > >, "session_oracle fixy.projection case h2 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case h2 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case h2 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case h2 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case h2 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h2 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h2 role p2pbox: agree");
 }  // namespace c_h2
 
 // branch(0,1,[msg(0,2,nat,end),msg(1,2,nat,end)])
@@ -2699,9 +2699,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case h3 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >, "session_oracle fixy.projection case h3 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case h3 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case h3 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case h3 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case h3 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case h3 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case h3 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case h3 role p2pbox: agree");
 }  // namespace c_h3
 
 // branch(0,1,[rec(msg(0,1,nat,var)),end])
@@ -2714,9 +2714,9 @@ using session_oracle_nest396 = fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sende
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest396 >, "session_oracle fixy.projection case h4 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case h4 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h4: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case h4 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case h4 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case h4 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case h4 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h4 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h4 role p2pbox: agree");
 }  // namespace c_h4
 
 // branch(0,1,[branch(1,2,[msg(2,0,nat,end),msg(2,0,nat,end)]),branch(1,2,[msg(2,0,nat,end),msg(2,0,nat,end)])])
@@ -2728,9 +2728,9 @@ using session_oracle_nest397 = fs::Offer<fs::Sender<session_oracle::R0>, fs::Rec
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest397 > >, "session_oracle fixy.projection case h5 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >, "session_oracle fixy.projection case h5 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h5: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case h5 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case h5 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case h5 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case h5 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h5 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h5 role p2pbox: agree");
 }  // namespace c_h5
 
 // branch(0,1,[msg(0,2,nat,end),branch(0,2,[end])])
@@ -2742,10 +2742,62 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case h6 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case h6 role 2: divergence");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h6: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case h6 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case h6 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case h6 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case h6 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h6 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h6 role p2pbox: agree");
 }  // namespace c_h6
+
+// msg(0,1,nat,msg(0,1,bool,end))
+namespace c_h7 {
+using G = fg::Comm<session_oracle::R0, session_oracle::R1, fg::Branch<session_oracle::Val, session_oracle::Nat, fg::Comm<session_oracle::R0, session_oracle::R1, fg::Branch<session_oracle::Val, session_oracle::Bool, fg::End> > > >;
+static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.global_wf case h7: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, "session_oracle fixy.projection case h7 role 0: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > >, "session_oracle fixy.projection case h7 role 1: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case h7 role 2: agree");
+static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h7: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case h7 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h7 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h7 role p2pbox: agree");
+}  // namespace c_h7
+
+// msg(0,2,nat,msg(1,2,nat,end))
+namespace c_h8 {
+using G = fg::Comm<session_oracle::R0, session_oracle::R2, fg::Branch<session_oracle::Val, session_oracle::Nat, fg::Comm<session_oracle::R1, session_oracle::R2, fg::Branch<session_oracle::Val, session_oracle::Nat, fg::End> > > >;
+static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.global_wf case h8: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case h8 role 0: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case h8 role 1: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::End> > > >, "session_oracle fixy.projection case h8 role 2: agree");
+static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h8: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case h8 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::ReceiverHasTwoSenders, "session_oracle fixy.network case h8 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h8 role p2pbox: agree");
+}  // namespace c_h8
+
+// msg(0,1,nat,msg(1,0,bool,msg(0,1,bool,end)))
+namespace c_h9 {
+using G = fg::Comm<session_oracle::R0, session_oracle::R1, fg::Branch<session_oracle::Val, session_oracle::Nat, fg::Comm<session_oracle::R1, session_oracle::R0, fg::Branch<session_oracle::Val, session_oracle::Bool, fg::Comm<session_oracle::R0, session_oracle::R1, fg::Branch<session_oracle::Val, session_oracle::Bool, fg::End> > > > > >;
+static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.global_wf case h9: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case h9 role 0: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case h9 role 1: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case h9 role 2: agree");
+static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h9: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case h9 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h9 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h9 role p2pbox: agree");
+}  // namespace c_h9
+
+// msg(0,1,nat,branch(0,1,[end]))
+namespace c_h10 {
+using G = fg::Comm<session_oracle::R0, session_oracle::R1, fg::Branch<session_oracle::Val, session_oracle::Nat, fg::Comm<session_oracle::R0, session_oracle::R1, fg::Branch<session_oracle::Label<0>, session_oracle::Unit, fg::End> > > >;
+static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.global_wf case h10: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Val, session_oracle::Nat>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case h10 role 0: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case h10 role 1: agree");
+static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case h10 role 2: agree");
+static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case h10: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::None, "session_oracle fixy.network case h10 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case h10 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case h10 role p2pbox: agree");
+}  // namespace c_h10
 
 // branch(0,1,[msg(1,2,bool,end),msg(0,2,bool,end)])
 namespace c_p_ecoop25_eq1 {
@@ -2754,9 +2806,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case p_ecoop25_eq1 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case p_ecoop25_eq1 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case p_ecoop25_eq1 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case p_ecoop25_eq1 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case p_ecoop25_eq1 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case p_ecoop25_eq1 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case p_ecoop25_eq1 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case p_ecoop25_eq1 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case p_ecoop25_eq1 role p2pbox: agree");
 }  // namespace c_p_ecoop25_eq1
 
 // branch(0,1,[msg(1,2,bool,msg(0,2,nat,end)),msg(0,2,bool,msg(1,2,nat,end))])
@@ -2766,9 +2818,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> > > > >, "session_oracle fixy.projection case p_ecoop25_wire role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Bool>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >, "session_oracle fixy.projection case p_ecoop25_wire role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case p_ecoop25_wire role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case p_ecoop25_wire role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case p_ecoop25_wire role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case p_ecoop25_wire role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case p_ecoop25_wire role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case p_ecoop25_wire role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case p_ecoop25_wire role p2pbox: agree");
 }  // namespace c_p_ecoop25_wire
 
 // rec(branch(0,1,[var,msg(0,2,nat,end)]))
@@ -2780,9 +2832,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 using session_oracle_nest400 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Continue>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest400 >, "session_oracle fixy.projection case p_pmy25_ex12_g1 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case p_pmy25_ex12_g1 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case p_pmy25_ex12_g1 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case p_pmy25_ex12_g1 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case p_pmy25_ex12_g1 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g1 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g1 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g1 role p2pbox: agree");
 }  // namespace c_p_pmy25_ex12_g1
 
 // msg(0,1,nat,msg(3,2,nat,rec(branch(0,1,[var,msg(0,2,nat,end)]))))
@@ -2796,9 +2848,9 @@ using session_oracle_nest403 = fs::Recv<fs::PeerMsg<session_oracle::R0, session_
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest403 > >, "session_oracle fixy.projection case p_pmy25_ex12_g1_prefixed role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case p_pmy25_ex12_g1_prefixed role 2: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R3>, fs::Projected<fs::OutQueue<>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > >, "session_oracle fixy.projection case p_pmy25_ex12_g1_prefixed role 3: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case p_pmy25_ex12_g1_prefixed role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case p_pmy25_ex12_g1_prefixed role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case p_pmy25_ex12_g1_prefixed role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g1_prefixed role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g1_prefixed role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g1_prefixed role p2pbox: agree");
 }  // namespace c_p_pmy25_ex12_g1_prefixed
 
 // rec(branch(0,1,[var,msg(3,2,nat,end)]))
@@ -2811,9 +2863,9 @@ using session_oracle_nest405 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest405 >, "session_oracle fixy.projection case p_pmy25_ex12_g2 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case p_pmy25_ex12_g2 role 2: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R3>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case p_pmy25_ex12_g2 role 3: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case p_pmy25_ex12_g2 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case p_pmy25_ex12_g2 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case p_pmy25_ex12_g2 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g2 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g2 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g2 role p2pbox: agree");
 }  // namespace c_p_pmy25_ex12_g2
 
 // msg(0,1,nat,msg(3,2,nat,rec(branch(0,1,[var,msg(3,2,nat,end)]))))
@@ -2827,9 +2879,9 @@ using session_oracle_nest408 = fs::Recv<fs::PeerMsg<session_oracle::R0, session_
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest408 > >, "session_oracle fixy.projection case p_pmy25_ex12_g2_prefixed role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case p_pmy25_ex12_g2_prefixed role 2: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R3>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case p_pmy25_ex12_g2_prefixed role 3: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case p_pmy25_ex12_g2_prefixed role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case p_pmy25_ex12_g2_prefixed role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case p_pmy25_ex12_g2_prefixed role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g2_prefixed role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g2_prefixed role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::NotBalancedPlus, "session_oracle fixy.network case p_pmy25_ex12_g2_prefixed role p2pbox: agree");
 }  // namespace c_p_pmy25_ex12_g2_prefixed
 
 // rec(msg(0,1,nat,branch(2,3,[var,var])))
@@ -2843,9 +2895,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracl
 using session_oracle_nest410 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::Continue>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R3>, session_oracle_nest410 >, "session_oracle fixy.projection case p_tirore23_eq2 role 3: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case p_tirore23_eq2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case p_tirore23_eq2 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case p_tirore23_eq2 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case p_tirore23_eq2 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case p_tirore23_eq2 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case p_tirore23_eq2 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case p_tirore23_eq2 role p2pbox: agree");
 }  // namespace c_p_tirore23_eq2
 
 // msg(0,1,nat,rec(branch(2,3,[end,var])))
@@ -2859,9 +2911,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, session_oracl
 using session_oracle_nest412 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<fs::Sender<session_oracle::R2>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R2, session_oracle::Label<1>, session_oracle::Unit>, fs::Continue> > > >;
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R3>, session_oracle_nest412 >, "session_oracle fixy.projection case p_tirore23_eq3 role 3: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case p_tirore23_eq3: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case p_tirore23_eq3 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case p_tirore23_eq3 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case p_tirore23_eq3 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case p_tirore23_eq3 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case p_tirore23_eq3 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case p_tirore23_eq3 role p2pbox: agree");
 }  // namespace c_p_tirore23_eq3
 
 // branch(0,1,[])
@@ -2884,9 +2936,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Loop<fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::Continue> > > >, "session_oracle fixy.projection case m2 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case m2 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case m2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == true, "session_oracle fixy.network case m2 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case m2 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case m2 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RepeatedWordOnBag, "session_oracle fixy.network case m2 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case m2 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case m2 role p2pbox: agree");
 }  // namespace c_m2
 
 // branch(0,1,[end,branch(0,2,[end])])
@@ -2897,9 +2949,9 @@ using session_oracle_nest413 = fs::Projected<fs::OutQueue<>, fs::Select<fs::Send
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracle_nest413 >, "session_oracle fixy.projection case m3 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case m3 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case m3 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m3 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case m3 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case m3 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m3 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m3 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m3 role p2pbox: agree");
 }  // namespace c_m3
 
 // branch(0,1,[end,rec(end)])
@@ -2910,9 +2962,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case m4 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case m4 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case m4: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m4 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case m4 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case m4 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case m4 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case m4 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case m4 role p2pbox: agree");
 }  // namespace c_m4
 
 // branch(0,1,[msg(1,2,nat,end),end])
@@ -2922,9 +2974,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case m5 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case m5 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case m5 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m5 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case m5 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case m5 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m5 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m5 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m5 role p2pbox: agree");
 }  // namespace c_m5
 
 // branch(0,1,[rec(end),end])
@@ -2935,9 +2987,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, ::fixy::sessi
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<1>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case m6 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::End> >, "session_oracle fixy.projection case m6 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case m6: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m6 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case m6 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case m6 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case m6 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case m6 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case m6 role p2pbox: agree");
 }  // namespace c_m6
 
 // rec(branch(0,1,[var,end]))
@@ -2950,9 +3002,9 @@ using session_oracle_nest415 = fs::Projected<fs::OutQueue<>, fs::Loop<fs::Offer<
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest415 >, "session_oracle fixy.projection case m7 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::End> >, "session_oracle fixy.projection case m7 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case m7: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m7 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case m7 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case m7 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case m7 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case m7 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case m7 role p2pbox: agree");
 }  // namespace c_m7
 
 // branch(0,1,[msg(0,0,nat,end),rec(end)])
@@ -2970,9 +3022,9 @@ static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, session_oracl
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case m9 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R0>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Val,session_oracle::Nat>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R0,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case m9 role 2: divergence");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case m9: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m9 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case m9 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case m9 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case m9 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case m9 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case m9 role p2pbox: agree");
 }  // namespace c_m9
 
 // branch(0,1,[msg(0,2,nat,end),msg(1,2,nat,end)])
@@ -2982,9 +3034,9 @@ static_assert(fg::is_global_well_formed_v<G> == true, "session_oracle fixy.globa
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R0>, fs::Projected<fs::OutQueue<>, fs::Select<fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Send<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::End> > > >, "session_oracle fixy.projection case m10 role 0: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R0>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<0>, session_oracle::Unit>, fs::End>, fs::Recv<fs::PeerMsg<session_oracle::R0, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R2, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >, "session_oracle fixy.projection case m10 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::NotProjectable<fixy::session::projection_failure::MergeShapeMismatch> >, "session_oracle fixy.projection case m10 role 2: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m10 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == false, "session_oracle fixy.network case m10 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == false, "session_oracle fixy.network case m10 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m10 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m10 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::RoleNotProjectable, "session_oracle fixy.network case m10 role p2pbox: agree");
 }  // namespace c_m10
 
 // branch(0,1,[msg(1,2,nat,end),branch(1,2,[end])])
@@ -2996,9 +3048,9 @@ using session_oracle_nest417 = fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sende
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, session_oracle_nest417 >, "session_oracle fixy.projection case m11 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, ::fixy::session::Projected<fixy::session::OutQueue<>,fixy::session::Offer<fixy::session::Sender<session_oracle::R1>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Val,session_oracle::Nat>,fixy::session::End>,fixy::session::Recv<fixy::session::PeerMsg<session_oracle::R1,session_oracle::Label<0>,session_oracle::Unit>,fixy::session::End> > > >, "session_oracle fixy.projection case m11 role 2: divergence");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case m11: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m11 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case m11 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case m11 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case m11 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case m11 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case m11 role p2pbox: agree");
 }  // namespace c_m11
 
 // branch(0,1,[branch(1,2,[msg(2,0,nat,end),msg(2,0,nat,end)]),branch(1,2,[msg(2,0,nat,end),msg(2,0,nat,end)])])
@@ -3010,9 +3062,9 @@ using session_oracle_nest418 = fs::Offer<fs::Sender<session_oracle::R0>, fs::Rec
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R1>, fs::Projected<fs::OutQueue<>, session_oracle_nest418 > >, "session_oracle fixy.projection case m12 role 1: agree");
 static_assert(std::is_same_v<fs::project_t<G, session_oracle::R2>, fs::Projected<fs::OutQueue<>, fs::Offer<fs::Sender<session_oracle::R1>, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<0>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> >, fs::Recv<fs::PeerMsg<session_oracle::R1, session_oracle::Label<1>, session_oracle::Unit>, fs::Send<fs::PeerMsg<session_oracle::R0, session_oracle::Val, session_oracle::Nat>, fs::End> > > > >, "session_oracle fixy.projection case m12 role 2: agree");
 static_assert(fs::is_live_by_construction_v<G> == true, "session_oracle fixy.live case m12: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Bag> == false, "session_oracle fixy.network case m12 role bag: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::Mailbox> == true, "session_oracle fixy.network case m12 role mailbox: agree");
-static_assert(fs::implementable_on_v<G, fs::Network::PerPairFifo> == true, "session_oracle fixy.network case m12 role p2pbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Bag> == fs::NetworkRefusal::ChoiceOnBag, "session_oracle fixy.network case m12 role bag: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::Mailbox> == fs::NetworkRefusal::None, "session_oracle fixy.network case m12 role mailbox: agree");
+static_assert(fs::network_refusal_v<G, fs::Network::PerPairFifo> == fs::NetworkRefusal::None, "session_oracle fixy.network case m12 role p2pbox: agree");
 }  // namespace c_m12
 
 }  // namespace session_oracle::fixy_projection

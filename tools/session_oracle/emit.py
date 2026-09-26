@@ -64,8 +64,15 @@ MULTI_FAMILIES = ("fixy.global_wf", "fixy.projection", "fixy.live", "fixy.networ
 # The networks of the network family and of the implementability family
 # (sprout.py), and the enumerator of fixy::session::Network for each.  The
 # role of a fixy.network row is the network, and its ours column is
-# implementable_on_v of fixy/session/Network.h.
+# network_refusal_v of fixy/session/Network.h: None where implementable_on_v
+# admits the type, and otherwise the reason of the refusal.
 NETWORK_ENUMERATORS = {"p2pbox": "PerPairFifo", "mailbox": "Mailbox", "bag": "Bag"}
+# The enumerators of fixy::session::NetworkRefusal, in order.  The probe
+# reads a refusal as its number, and the emitted assertion names it, so a
+# change of the order in the header fails the emitted test.
+NETWORK_REFUSALS = ("None", "NotAReliableSet", "NotWellFormed", "RuntimeConstruct", "NotBalancedPlus",
+                    "RoleNotProjectable", "CrashStopOffPerPairFifo", "ReceiverHasTwoSenders", "ChoiceOnBag",
+                    "RepeatedWordOnBag")
 SUBTYPE_FAMILIES = ("fixy.subtype_sync", "fixy.subtype_async")
 # The capacity that the asynchronous subtyping rows use, in the probe, in
 # the run that decides them, and in the emitted assertion.  The relation
@@ -382,8 +389,10 @@ def emit_multi(rows: list[Row]) -> str:
                 network = NETWORK_ENUMERATORS.get(row.role)
                 if network is None:
                     raise GoldenError(f"fixy.network case {row.case}: {row.role!r} names no network")
-                out.append(f"static_assert(fs::implementable_on_v<G, fs::Network::{network}> == {row.ours}, "
-                           f"\"{msg}\");\n")
+                if row.ours not in NETWORK_REFUSALS:
+                    raise GoldenError(f"fixy.network case {row.case}: {row.ours!r} names no network refusal")
+                out.append(f"static_assert(fs::network_refusal_v<G, fs::Network::{network}> == "
+                           f"fs::NetworkRefusal::{row.ours}, \"{msg}\");\n")
             else:
                 if row.ours == "=":
                     expected = read_local(row.oracle)

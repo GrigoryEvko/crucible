@@ -12,7 +12,11 @@
 // Nothing else takes that head, so the receiver waits for ever.  On a
 // bag, a later label of a choice can overtake an earlier one.  The
 // receiver then takes the later branch, and the earlier message stays
-// in the bag with no receiver.
+// in the bag with no receiver.  A bag also mixes up two messages with
+// one label.  The wire word of a message is its label alone
+// (fixy/session/Protocol.h): the sender and the payload type are not on
+// the wire.  So a receive can take the second of two such messages
+// first, with a payload of another type or from another sender.
 //
 // ── The conditions ──────────────────────────────────────────────────
 //
@@ -39,14 +43,33 @@
 //     an implementation of G on per-pair FIFO also implements G on the
 //     mailbox (Definition 4.5).
 //
-//   - Bag.  No transmission of G has more than one branch.  Then G has one
-//     run, and on each pair (p, q) the receives of q follow the sends of p
-//     in the order of G.  A receive of a message m from a bag is possible
-//     exactly when the FIFO queue of the pair has m at its head: the bag
-//     holds m only when p sent the message that the order of G puts next.
-//     So the two networks enable the same transitions from each reachable
-//     configuration, and an implementation on one is an implementation on
-//     the other.
+//   - Bag.  A bag carrier gives a receive a message of its receiver whose
+//     wire word is the word that the receive expects.  G is admitted when
+//     no transmission of G has more than one branch, and when each two
+//     transmissions to one receiver with one wire word are ordered: the
+//     receive of the first happens before the send of the second.
+//     "Happens before" is the order of the events of the run of G: the
+//     events of one role in the order of G, and each send before its
+//     receive.
+//
+//     With no choice, G has one run.  Take a receive of q in that run, of
+//     the message m from p with the word w.  Each earlier message to q
+//     with the word w was received before, because the receives of q
+//     follow the order of G.  Each later message to q with the word w is
+//     sent after this receive, by the order condition.  So while q waits
+//     for m, the bag of q holds no other message with the word w, and the
+//     receive takes m exactly when p has sent it.  On per-pair FIFO the
+//     queue of (p, q) has m at its head exactly then, because q received
+//     each earlier message of p.  So the two networks enable the same
+//     transitions from each reachable configuration, and an
+//     implementation on one is an implementation on the other.
+//
+//     Two messages with one word and no order between them can both be in
+//     the bag.  The receive of the first can then take the second: a
+//     payload of another type, a message from another sender, or a later
+//     value of a stream.  So such a pair is refused, also when the two
+//     messages have the same sender and the same payload type: the bag
+//     loses the order of their values.
 //
 // A crash branch makes a transmission a choice, and Li and Wies model no
 // crash.  So a set of reliable roles other than EveryRoleReliable is
@@ -58,20 +81,32 @@
 // query generator of Sprout(A), the tool of Li and Wies.  A type that
 // this header admits and Sprout(A) refuses fails the oracle.  A type that
 // this header refuses and Sprout(A) admits is an incompleteness gap on a
-// ledger that can only shrink.
+// ledger that can only shrink.  The model of Sprout(A) is wider than our
+// wire on a bag: its message carries the sender and the payload type, and
+// our wire word does not.  So Sprout(A) admits two messages with one
+// label that our bag check refuses, and the oracle keeps those rows on a
+// ledger of their own.
 //
-// Complexity: the mailbox check is quadratic in the transmissions of G,
-// and the bag check is linear in them.  Both run at compile time.
+// Complexity: the mailbox check is quadratic in the transmissions of G.
+// The bag check is O(n² · r) for n transmissions in the run of G, with
+// the loop body counted twice, and r roles.  Both run at compile time.
 
 #include <fixy/session/Crash.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/NetworkModel.h>
 #include <fixy/session/Projection.h>
+#include <fixy/session/Protocol.h>
+#include <foundation/algebra/Transition.h>
 #include <foundation/contracts/Armed.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <meta>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace fixy::session {
 
@@ -94,6 +129,7 @@ enum class NetworkRefusal : std::uint8_t {
     CrashStopOffPerPairFifo,
     ReceiverHasTwoSenders,
     ChoiceOnBag,
+    RepeatedWordOnBag,
 };
 
 namespace detail::network {
@@ -144,22 +180,157 @@ struct transmission_walk<g::Comm<From, To, g::Branch<Ls, Ps, Cs>...>> {
         typename pair_concat<PairList<SenderReceiver<From, To>>, typename transmission_walk<Cs>::type...>::type;
 };
 
-// The most branches that one transmission of G has.
+// ── The run of a protocol on a bag ───────────────────────────────────
+//
+// The bag check reads G as one run: the transmissions before the loop
+// that the Var at its end binds, then the body of that loop.  A Var binds
+// the nearest Rec, and with no choice the nearest Rec is the last Rec on
+// the path.  A Rec that no Var binds runs its body once.
+
+// One transmission of the run: its roles, its label and payload, and the
+// wire word that its receive expects.
+struct hop {
+    std::meta::info from{};
+    std::meta::info to{};
+    std::meta::info label{};
+    std::meta::info payload{};
+    std::uint64_t word = 0;
+};
+
+// The transmissions of the run, with the loop body two times, or the
+// first choice on the path.
+struct run {
+    std::vector<hop> hops{};
+    bool has_choice = false;
+};
+
+enum class bag_fault : std::uint8_t {
+    none,
+    choice,
+    repeated_word,
+};
+
+// For a repeated word, first and second index the two transmissions in
+// the hops of the run.
+struct bag_verdict {
+    bag_fault fault = bag_fault::none;
+    std::size_t first = 0;
+    std::size_t second = 0;
+};
+
+// Declared and never defined.  A constant evaluation that calls it stops
+// the build, so a node that the bag walk does not read is a hard error,
+// as a node that a template walk does not know is.  The gates before the
+// bag check leave End, Var, Rec and a transmission only.
+void bag_walk_meets_an_unknown_node();
+
+// The wire word that the receive of a message expects: the word of the
+// keyed Recv that projection writes for the message.
+consteval std::uint64_t receive_word(std::meta::info from, std::meta::info label, std::meta::info payload) {
+    const std::meta::info message = std::meta::substitute(^^::fixy::session::PeerMsg, {from, label, payload});
+    const ::foundation::algebra::transition::wire_word word = ::foundation::algebra::transition::wire_word_of_step(
+        ::fixy::session::detail::protocol_registry,
+        std::meta::substitute(^^::fixy::session::Recv, {message, ^^::fixy::session::End}));
+    if (!word.is_wired) bag_walk_meets_an_unknown_node();
+    return word.value;
+}
+
+// Complexity: linear in the transmissions of the run.
+consteval run run_of(std::meta::info protocol) {
+    run result{};
+    std::size_t loop_start = 0;
+    std::meta::info node = std::meta::dealias(protocol);
+    for (;;) {
+        if (node == ^^g::End) return result;
+        if (node == ^^g::Var) {
+            // A pair of transmissions from iterations k and k + m, m > 1,
+            // is ordered when the pair from k and k + 1 is: the send in
+            // k + m comes after the send of the same transmission in
+            // k + 1, in the order of its sender.  So two copies of the
+            // body hold every pair that the check must read.
+            const std::vector<hop> body(result.hops.begin() + static_cast<std::ptrdiff_t>(loop_start),
+                                        result.hops.end());
+            result.hops.insert(result.hops.end(), body.begin(), body.end());
+            return result;
+        }
+        if (!std::meta::has_template_arguments(node)) bag_walk_meets_an_unknown_node();
+        const std::vector<std::meta::info> args = std::meta::template_arguments_of(node);
+        if (std::meta::template_of(node) == ^^g::Rec) {
+            loop_start = result.hops.size();
+            node = std::meta::dealias(args[0]);
+            continue;
+        }
+        if (std::meta::template_of(node) != ^^g::Comm || args.size() < 3) bag_walk_meets_an_unknown_node();
+        if (args.size() > 3) {
+            result.has_choice = true;
+            return result;
+        }
+        const std::meta::info branch = std::meta::dealias(args[2]);
+        if (!std::meta::has_template_arguments(branch) || std::meta::template_of(branch) != ^^g::Branch) {
+            bag_walk_meets_an_unknown_node();
+        }
+        const std::vector<std::meta::info> parts = std::meta::template_arguments_of(branch);
+        const std::meta::info from = std::meta::dealias(args[0]);
+        const std::meta::info to = std::meta::dealias(args[1]);
+        const std::meta::info label = std::meta::dealias(parts[0]);
+        const std::meta::info payload = std::meta::dealias(parts[1]);
+        result.hops.push_back(hop{from, to, label, payload, receive_word(from, label, payload)});
+        node = std::meta::dealias(parts[2]);
+    }
+}
+
+// The first pair of transmissions to one receiver with one wire word
+// whose order the run does not fix, or the first choice.  For each
+// transmission, the sweep keeps the roles whose later events come after
+// its receive: its receiver, and each role that then receives from such a
+// role.  A later transmission is ordered after the receive when its
+// sender is one of those roles.  Complexity: O(n² · r) for n hops and r
+// roles.
+consteval bag_verdict bag_verdict_of(std::meta::info protocol) {
+    const run walked = run_of(protocol);
+    if (walked.has_choice) return {bag_fault::choice};
+    const std::vector<hop>& hops = walked.hops;
+    for (std::size_t first = 0; first < hops.size(); ++first) {
+        std::vector<std::meta::info> informed{hops[first].to};
+        for (std::size_t second = first + 1; second < hops.size(); ++second) {
+            const hop& later = hops[second];
+            const bool is_after_receive = std::ranges::contains(informed, later.from);
+            if (!is_after_receive && later.to == hops[first].to && later.word == hops[first].word) {
+                return {bag_fault::repeated_word, first, second};
+            }
+            if (is_after_receive && !std::ranges::contains(informed, later.to)) informed.push_back(later.to);
+        }
+    }
+    return {};
+}
+
+consteval std::string hop_text(const hop& message) {
+    std::string text{std::meta::display_string_of(message.label)};
+    text += "(";
+    text += std::meta::display_string_of(message.payload);
+    text += ") from ";
+    text += std::meta::display_string_of(message.from);
+    text += " to ";
+    text += std::meta::display_string_of(message.to);
+    return text;
+}
+
 template <typename G>
-struct widest_choice_walk;
-template <>
-struct widest_choice_walk<g::End> : std::integral_constant<std::size_t, 0> {};
-template <>
-struct widest_choice_walk<g::Var> : std::integral_constant<std::size_t, 0> {};
-template <typename Body>
-struct widest_choice_walk<g::Rec<Body>> : widest_choice_walk<Body> {};
-template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
-struct widest_choice_walk<g::Comm<From, To, g::Branch<Ls, Ps, Cs>...>>
-    : std::integral_constant<std::size_t, [] {
-          std::size_t widest = sizeof...(Ls);
-          ((widest = widest_choice_walk<Cs>::value > widest ? widest_choice_walk<Cs>::value : widest), ...);
-          return widest;
-      }()> {};
+consteval std::string_view repeated_word_message() {
+    const bag_verdict verdict = bag_verdict_of(^^G);
+    const run walked = run_of(^^G);
+    std::string text =
+        "fixy::session::diagnostic [Network_Bag_Repeated_Word]: on a bag the wire word of a message is its label "
+        "alone, so a receive cannot tell two messages with one label apart.  The message ";
+    text += hop_text(walked.hops[verdict.first]);
+    text += " and the message ";
+    text += hop_text(walked.hops[verdict.second]);
+    text +=
+        " go to one receiver with one word, and no receive of the first happens before the send of the second.  "
+        "The receive of the first can take the second.  Give the two messages different labels, let the receiver "
+        "answer the first before the second is sent, or bind to a per-pair FIFO carrier.";
+    return std::define_static_string(text);
+}
 
 // True when no receiver of the list has two different senders.  The
 // primary answers false, so a list of another shape is refused.
@@ -197,7 +368,14 @@ consteval NetworkRefusal refusal_of() noexcept {
         return each_receiver_one_sender_v<typename transmission_walk<G>::type> ? NetworkRefusal::None
                                                                                : NetworkRefusal::ReceiverHasTwoSenders;
     } else {
-        return widest_choice_walk<G>::value <= 1 ? NetworkRefusal::None : NetworkRefusal::ChoiceOnBag;
+        constexpr bag_fault fault = bag_verdict_of(^^G).fault;
+        if constexpr (fault == bag_fault::choice) {
+            return NetworkRefusal::ChoiceOnBag;
+        } else if constexpr (fault == bag_fault::repeated_word) {
+            return NetworkRefusal::RepeatedWordOnBag;
+        } else {
+            return NetworkRefusal::None;
+        }
     }
 }
 
@@ -265,6 +443,9 @@ consteval void ensure_implementable_on() noexcept {
                       "fixy::session::diagnostic [Network_Bag_Choice]: on a bag a later label of a choice can overtake "
                       "an earlier one, so the receiver can take the wrong branch.  Bind a protocol with choices to a "
                       "per-pair FIFO carrier.");
+    } else if constexpr (refusal == NetworkRefusal::RepeatedWordOnBag) {
+        static_assert(detail::network::dependent_false_v<G, Reliable>,
+                      detail::network::repeated_word_message<G>());
     }
 }
 
@@ -296,8 +477,15 @@ using global::detail::witness::RoleB;
 struct RoleC {};
 struct LabelY {};
 
-// RoleA receives from RoleB and then from RoleC.
+// RoleA receives from RoleB and then from RoleC, with one label and no
+// order between the two sends.
 using TwoSenders = global::Msg<RoleB, RoleA, LabelX, int, global::Msg<RoleC, RoleA, LabelX, int, global::End>>;
+// RoleA receives from RoleB and then from RoleC, with two labels.
+using TwoLabels = global::Msg<RoleB, RoleA, LabelX, int, global::Msg<RoleC, RoleA, LabelY, int, global::End>>;
+// RoleA tells RoleC to send after it received from RoleB, so the receive
+// orders the two messages with one label.
+using Answered = global::Msg<RoleB, RoleA, LabelX, int,
+                             global::Msg<RoleA, RoleC, LabelY, int, global::Msg<RoleC, RoleA, LabelX, int, global::End>>>;
 // RoleA chooses, again and again, to go on or to stop.
 using LoopChoice = global::Rec<global::Comm<RoleA, RoleB, global::Branch<LabelX, int, global::Var>,
                                             global::Branch<LabelY, int, global::End>>>;
@@ -315,7 +503,9 @@ struct foundation::contracts::armed_cell<::fixy::session::is_implementable_on> {
                                           ::fixy::session::Network::PerPairFifo>,
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::OneMessage,
                                           ::fixy::session::Network::Mailbox>,
-        ::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoSenders,
+        ::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoLabels,
+                                          ::fixy::session::Network::Bag>,
+        ::fixy::session::Implementability<::fixy::session::detail::network::witness::Answered,
                                           ::fixy::session::Network::Bag>,
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::LoopChoice,
                                           ::fixy::session::Network::Mailbox>,
@@ -325,6 +515,8 @@ struct foundation::contracts::armed_cell<::fixy::session::is_implementable_on> {
         int,
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoSenders,
                                           ::fixy::session::Network::Mailbox>,
+        ::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoSenders,
+                                          ::fixy::session::Network::Bag>,
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::LoopChoice,
                                           ::fixy::session::Network::Bag>,
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::OneMessage,

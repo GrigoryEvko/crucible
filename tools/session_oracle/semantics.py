@@ -103,10 +103,12 @@ _CRASH_HELPER = (
 # Divergence classes on a shrink-only ledger: the most rows a run may give.
 # A run that gives more fails (check_ledger).  When a repair lowers the
 # count, lower the bound in the same commit.  At 0, delete the class when
-# no code gives it any more.  The three network classes stay at 0, because
-# evaluate_sprout of session_oracle.py gives a class for each network: a
-# global type that fixy refuses on that network and Sprout(A) admits.
-SHRINK_ONLY = {"p2pbox-incomplete": 44, "mailbox-incomplete": 0, "bag-incomplete": 13}
+# no code gives it any more.  The three incomplete network classes stay at
+# 0, because evaluate_sprout of session_oracle.py gives a class for each
+# network: a global type that fixy refuses on that network and Sprout(A)
+# admits.  bag-wire-word holds the bag refusals for a repeated wire word,
+# where the message of Sprout(A) tells apart what fixy's wire word cannot.
+SHRINK_ONLY = {"p2pbox-incomplete": 44, "mailbox-incomplete": 0, "bag-incomplete": 13, "bag-wire-word": 31}
 # The enumerators of fixy::session::config::CrashAssociationFault, in order.
 FAULTS = ("None", "NotWellAnnotated", "NotBalancedPlus", "CrashedRoleMismatch", "LiveRoleMismatch", "UnfinishedRole",
           "QueueMismatch")

@@ -2242,6 +2242,42 @@ static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Offer<pr:
 static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case h6: divergence");
 }  // namespace c_h6
 
+// msg(0,1,nat,msg(0,1,bool,end))
+namespace c_h7 {
+using G = pr::Transmission<session_oracle::R0, session_oracle::R1, session_oracle::Nat, pr::Transmission<session_oracle::R0, session_oracle::R1, session_oracle::Bool, pr::End_G> >;
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R0>, pr::Send<session_oracle::Nat, pr::Send<session_oracle::Bool, pr::End> > >, "session_oracle old.projection case h7 role 0: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Recv<session_oracle::Nat, pr::Recv<session_oracle::Bool, pr::End> > >, "session_oracle old.projection case h7 role 1: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R2>, pr::End>, "session_oracle old.projection case h7 role 2: agree");
+static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case h7: agree");
+}  // namespace c_h7
+
+// msg(0,2,nat,msg(1,2,nat,end))
+namespace c_h8 {
+using G = pr::Transmission<session_oracle::R0, session_oracle::R2, session_oracle::Nat, pr::Transmission<session_oracle::R1, session_oracle::R2, session_oracle::Nat, pr::End_G> >;
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R0>, pr::Send<session_oracle::Nat, pr::End> >, "session_oracle old.projection case h8 role 0: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Send<session_oracle::Nat, pr::End> >, "session_oracle old.projection case h8 role 1: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R2>, pr::Recv<session_oracle::Nat, pr::Recv<session_oracle::Nat, pr::End> > >, "session_oracle old.projection case h8 role 2: agree");
+static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case h8: agree");
+}  // namespace c_h8
+
+// msg(0,1,nat,msg(1,0,bool,msg(0,1,bool,end)))
+namespace c_h9 {
+using G = pr::Transmission<session_oracle::R0, session_oracle::R1, session_oracle::Nat, pr::Transmission<session_oracle::R1, session_oracle::R0, session_oracle::Bool, pr::Transmission<session_oracle::R0, session_oracle::R1, session_oracle::Bool, pr::End_G> > >;
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R0>, pr::Send<session_oracle::Nat, pr::Recv<session_oracle::Bool, pr::Send<session_oracle::Bool, pr::End> > > >, "session_oracle old.projection case h9 role 0: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Recv<session_oracle::Nat, pr::Send<session_oracle::Bool, pr::Recv<session_oracle::Bool, pr::End> > > >, "session_oracle old.projection case h9 role 1: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R2>, pr::End>, "session_oracle old.projection case h9 role 2: agree");
+static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case h9: agree");
+}  // namespace c_h9
+
+// msg(0,1,nat,branch(0,1,[end]))
+namespace c_h10 {
+using G = pr::Transmission<session_oracle::R0, session_oracle::R1, session_oracle::Nat, pr::Choice<session_oracle::R0, session_oracle::R1, pr::BranchG<session_oracle::Label<0>, pr::End_G> > >;
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R0>, pr::Send<session_oracle::Nat, pr::Select<pr::Send<session_oracle::Label<0>, pr::End> > > >, "session_oracle old.projection case h10 role 0: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R1>, pr::Recv<session_oracle::Nat, pr::Offer<pr::Recv<session_oracle::Label<0>, pr::End> > > >, "session_oracle old.projection case h10 role 1: agree");
+static_assert(std::is_same_v<pr::project_t<G, session_oracle::R2>, pr::End>, "session_oracle old.projection case h10 role 2: agree");
+static_assert(pr::is_global_well_formed_v<G> == true, "session_oracle old.well_formed case h10: agree");
+}  // namespace c_h10
+
 // branch(0,1,[msg(1,2,bool,end),msg(0,2,bool,end)])
 namespace c_p_ecoop25_eq1 {
 using G = pr::Choice<session_oracle::R0, session_oracle::R1, pr::BranchG<session_oracle::Label<0>, pr::Transmission<session_oracle::R1, session_oracle::R2, session_oracle::Bool, pr::End_G> >, pr::BranchG<session_oracle::Label<1>, pr::Transmission<session_oracle::R0, session_oracle::R2, session_oracle::Bool, pr::End_G> > >;

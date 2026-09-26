@@ -6,8 +6,13 @@
 // Each projects onto every role, so each is admitted on per-pair FIFO.
 // Twelve are refused on a mailbox, because a receiver has two senders.
 // Three are refused on a bag, because they hold a choice.  Each is also
-// checked on the network where Sprout(A) admits it, so a change that
-// refuses everything fails here too.
+// checked on another network, so a change that refuses everything fails
+// here too.
+//
+// Four of the twelve are refused on a bag too, where Sprout(A) admits
+// them: two messages go to one receiver with one label, and no receive
+// orders them.  Our wire word is the label alone, and the message of
+// Sprout(A) also carries the sender and the payload type.
 //
 // The file also checks the declaration of a carrier, and that a session
 // mint refuses a local type that names two peers.
@@ -101,13 +106,30 @@ static_assert(refused_on_bag_only_v<R65>);
 static_assert(refused_on_bag_only_v<TiroreEq3>);
 static_assert(refused_on_bag_only_v<M7>);
 
-// Where Sprout(A) admits them, the gate admits them too: the choice-free
-// mailbox types on a bag, and the bag types on a mailbox, where each
-// receiver has one sender.
-static_assert(s::implementable_on_v<R41, s::Network::Bag>);
-static_assert(s::implementable_on_v<R86, s::Network::Bag>);
-static_assert(s::implementable_on_v<R31, s::Network::Bag>);
-static_assert(s::implementable_on_v<A112, s::Network::Bag>);
+// A bag refuses two messages to one receiver with one label that no
+// receive orders.  R86 sends a Bool from R0 and then a Nat from R1 to R2,
+// so the first receive of R2 can take the Nat.  R41 and A112 send one
+// label from two senders to R0.  In R31, R1 and R2 each send to R0 in
+// each iteration, and R0 answers neither.
+template <typename G>
+inline constexpr bool refused_for_a_repeated_word_v =
+    s::implementable_on_v<G, s::Network::PerPairFifo>
+    && s::network_refusal_v<G, s::Network::Bag> == s::NetworkRefusal::RepeatedWordOnBag;
+
+static_assert(refused_for_a_repeated_word_v<R41>);
+static_assert(refused_for_a_repeated_word_v<R86>);
+static_assert(refused_for_a_repeated_word_v<R31>);
+static_assert(refused_for_a_repeated_word_v<A112>);
+
+// A bag admits one label twice when a receive orders the two messages,
+// and two labels with no order.  The branch of a choice with one arm has
+// the label Label<0>, not Val.
+using Answered = Msg<R0, R1, Nat, Msg<R1, R0, Bool, Msg<R0, R1, Bool, End>>>;
+using TwoLabels = Msg<R0, R1, Nat, Choice<R0, R1, Arm<0, End>>>;
+static_assert(s::implementable_on_v<Answered, s::Network::Bag>);
+static_assert(s::implementable_on_v<TwoLabels, s::Network::Bag>);
+
+// Where each receiver has one sender, a mailbox admits the bag types.
 static_assert(s::implementable_on_v<M7, s::Network::Mailbox>);
 static_assert(s::implementable_on_v<R65, s::Network::Mailbox>);
 static_assert(s::implementable_on_v<TiroreEq3, s::Network::Mailbox>);
@@ -163,7 +185,8 @@ static_assert(!s::has_session_network_v<CountedNotTyped>);
 static_assert(s::session_network_v<SharedMailbox> == s::Network::Mailbox);
 
 static_assert(s::CarrierImplements<R41, PairQueues>);
-static_assert(s::CarrierImplements<R41, SharedBag>);
+static_assert(!s::CarrierImplements<R41, SharedBag>);
+static_assert(s::CarrierImplements<Answered, SharedBag>);
 static_assert(!s::CarrierImplements<R41, SharedMailbox>);
 static_assert(s::CarrierImplements<M7, SharedMailbox>);
 static_assert(!s::CarrierImplements<M7, SharedBag>);
@@ -197,8 +220,9 @@ int main() {
     // sees.
     const bool mailbox_refuses_r41 = !s::implementable_on_v<t::R41, s::Network::Mailbox>;
     const bool bag_refuses_m7 = !s::implementable_on_v<t::M7, s::Network::Bag>;
+    const bool bag_refuses_r86 = !s::implementable_on_v<t::R86, s::Network::Bag>;
     const bool pair_queues_admit_r41 = s::CarrierImplements<t::R41, t::PairQueues>;
-    if (!mailbox_refuses_r41 || !bag_refuses_m7 || !pair_queues_admit_r41) {
+    if (!mailbox_refuses_r41 || !bag_refuses_m7 || !bag_refuses_r86 || !pair_queues_admit_r41) {
         std::fputs("test_session_network: a network verdict differs at run time\n", stderr);
         return 1;
     }
