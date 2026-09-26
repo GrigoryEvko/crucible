@@ -410,10 +410,14 @@ static constexpr uint32_t A_ITERS = 6;
 //      blocks there with more A regions queued behind it
 //   2. the test signals the reset and pushes family-B ops, which is what
 //      wakes the detect stage so it can consume the signal
-//   3. the test waits for the signal to clear, which is the detect stage
-//      saying it ran the reset
+//   3. the test waits for the reset epoch to advance, which the detect
+//      stage does as the last step of the reset
 //   4. the callback is released, and the queued A regions drain
 // A family-A region published after step 3 is the defect.
+//
+// Step 3 cannot wait for the flag instead.  The flag goes down when the
+// detect stage takes the signal, before the reset runs, so a publish that
+// the test releases then can still read the old epoch.
 static void test_audit_k_reset_drops_inflight_regions() {
     using namespace publish_rig;
 
@@ -443,6 +447,7 @@ static void test_audit_k_reset_drops_inflight_regions() {
     assert(published_before_reset == 1 && "the gate should hold the pipeline at the first publish");
 
     // The foreground's divergence handler does exactly this.
+    const uint32_t epoch_before_reset = bt.reset_epoch.get();
     bt.reset_requested.signal();
 
     // The detect stage only looks at the flag when a batch arrives, so the
@@ -451,10 +456,11 @@ static void test_audit_k_reset_drops_inflight_regions() {
         push(*ring, Gate::FAMILY_B, op);
 
     deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (bt.reset_requested.peek() && std::chrono::steady_clock::now() < deadline) {
+    while (bt.reset_epoch.get() == epoch_before_reset && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    assert(!bt.reset_requested.peek() && "detect stage never consumed the reset");
+    assert(bt.reset_epoch.get() != epoch_before_reset && "detect stage never ran the reset");
+    assert(!bt.reset_requested.peek() && "the reset ran, so the detect stage took the signal first");
 
     // Nothing can have published while the stage was parked, so the counter
     // is still where it was and the marker below cannot race a publish.
