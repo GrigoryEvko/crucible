@@ -22,19 +22,21 @@ THE RULE
     Each class or struct member whose declared type names Permission<...>,
     through a template argument too (std::optional<Permission<T>>), or
     through a type alias of the same file, carries `[[no_unique_address]]`.
-    A static member never qualifies.  A reference or a pointer member holds
-    no token of its own and is out of scope.  The one exemption is a
+    The mark is the standard attribute with no namespace.  GCC ignores
+    `[[msvc::no_unique_address]]`, so that spelling marks nothing.  A static
+    member never qualifies.  A reference or a pointer member holds no token
+    of its own and is out of scope.  The one exemption is a
     `// PERMISSION-STORAGE-OK: <reason>` comment on a line of the member
     declaration.  A marker that exempts nothing fails, so a dead marker
     cannot come to hide a later member.
 
 WHAT READS THE MEMBERS
     The parse tree of the pinned tree-sitter kit (scripts/tsast.py), over
-    include/ and src/.  The line scan it replaces missed a member with an
-    initializer, a member with two declarators, a member over two lines, an
-    array member and a member spelled through an alias.  The substrate
-    headers that define Permission are exempt.  A file that the parser
-    cannot read fails.
+    every C++ file of include/ and src/.  A member inside an arm of an `#if`
+    in a class body is a member of that class.  The substrate headers that
+    define Permission are exempt, and a file of tsast.UNPARSEABLE is not
+    C++ and is out of scope.  Any other file that the parser cannot read
+    fails.
 
 Usage
     check-permission-storage.py              scan the tree
@@ -66,6 +68,7 @@ SUBSTRATE = frozenset({"include/foundation/permissions/Permission.h", "include/c
 MARKER = "PERMISSION-STORAGE-OK"
 MARKER_WITH_REASON = re.compile(rf"{MARKER}:\s*\S")
 TEMPLATE = "Permission"
+PREPROC_ARMS = frozenset({"preproc_if", "preproc_ifdef", "preproc_else", "preproc_elif", "preproc_elifdef"})
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,25 @@ def permission_aliases(tree: tsast.Tree) -> set[str]:
     return aliases
 
 
+def in_class_body(member: tsast.Node) -> bool:
+    """Report whether a field declaration is a member of a class body, through each arm of an `#if` there."""
+    owner = member.parent
+    while owner is not None and owner.type in PREPROC_ARMS:
+        owner = owner.parent
+    return owner is not None and owner.type == "field_declaration_list"
+
+
+def standard_attributes(member: tsast.Node) -> set[str]:
+    """Return the names of the `[[...]]` attributes of a declaration that carry no namespace.
+
+    `[[msvc::no_unique_address]]` names the attribute of another compiler, which
+    GCC ignores, so a name with a namespace is left out.
+    """
+    return {named.text for declaration in member.children_of_type("attribute_declaration")
+            for attribute in declaration.children_of_type("attribute")
+            if attribute.child_by_field("prefix") is None and (named := attribute.child_by_field("name")) is not None}
+
+
 def check_tree(tree: tsast.Tree, rel: str) -> list[Finding]:
     """Return the unmarked members and the dead markers of one file."""
     findings: list[Finding] = []
@@ -125,7 +147,7 @@ def check_tree(tree: tsast.Tree, rel: str) -> list[Finding]:
             markers[comment.start[0]] = comment
     used: set[int] = set()
     for member in tree.find("field_declaration"):
-        if member.parent is None or member.parent.type != "field_declaration_list":
+        if not in_class_body(member):
             continue
         kind = member.child_by_field("type")
         # A nested class definition is a member declaration whose type is the
@@ -136,8 +158,7 @@ def check_tree(tree: tsast.Tree, rel: str) -> list[Finding]:
         declarators = [child for child in member.children if child.field == "declarator"]
         if declarators and all(child.type in ("reference_declarator", "pointer_declarator") for child in declarators):
             continue
-        marked = any("no_unique_address" in attribute.text
-                     for attribute in member.children_of_type("attribute_declaration"))
+        marked = "no_unique_address" in standard_attributes(member)
         is_static = any(child.type == "storage_class_specifier" and child.text == "static"
                         for child in member.children)
         rows = range(member.start[0], member.end[0] + 1)
@@ -166,7 +187,7 @@ def check_tree(tree: tsast.Tree, rel: str) -> list[Finding]:
 def scan(root: Path) -> list[Finding]:
     """Return every finding under include/ and src/ of the root.
 
-    Complexity: linear in the size of the files that name Permission.
+    Complexity: linear in the size of the files in scope.
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -176,17 +197,14 @@ def scan(root: Path) -> list[Finding]:
         base = root / top
         if base.is_dir():
             files += [path for path in sorted(base.rglob("*")) if path.suffix in SUFFIXES and path.is_file()
-                      and b"Permission" in path.read_bytes()]
+                      and path.relative_to(root).as_posix() not in tsast.UNPARSEABLE.keys() | SUBSTRATE]
     findings: list[Finding] = []
     for tree in tsast.parse(files, strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
-        if rel in SUBSTRATE:
-            continue
         if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                findings.append(Finding("parse", rel, 0, f"PERMISSION-STORAGE parse failure: {rel} — the parser "
-                                                         f"cannot read it, so its members are unknown.\n"
-                                                         f"  {tree.diagnostic}"))
+            findings.append(Finding("parse", rel, 0, f"PERMISSION-STORAGE parse failure: {rel} — the parser "
+                                                     f"cannot read it, so its members are unknown.\n"
+                                                     f"  {tree.diagnostic}"))
             continue
         findings += check_tree(tree, rel)
     return findings
@@ -258,7 +276,14 @@ def self_test() -> int:
         "// struct Commented { Permission<tag> in_comment_; };\n"                               # 28
         "struct Outer { struct Nested { Permission<tag> nested_bare_; } nested_; };\n"          # 29
         "struct Borrowing { Permission<tag>& borrowed_; Permission<tag>* pointed_; };\n"        # 30
-        "}\n"                                                                                   # 31
+        "struct MsvcMark { [[msvc::no_unique_address]] Permission<tag> msvc_; };\n"             # 31
+        "struct InsideIf {\n"                                                                   # 32
+        "#if PLANTED_ARM\n"                                                                     # 33
+        "    Permission<tag> in_arm_;\n"                                                        # 34
+        "#endif\n"                                                                              # 35
+        "};\n"                                                                                  # 36
+        "struct BothMarks { [[gnu::aligned(8), no_unique_address]] Permission<tag> both_; };\n"  # 37
+        "}\n"                                                                                   # 38
     )
 
     def captured(action) -> tuple[int, str]:
@@ -281,14 +306,17 @@ def self_test() -> int:
                             (12, "an array member"), (13, "a member through an alias"),
                             (14, "a Permission inside a template argument"),
                             (15, "a static member, marked or not"),
-                            (29, "a bare member of a nested class")):
+                            (29, "a bare member of a nested class"),
+                            (31, "a member marked with another compiler's attribute"),
+                            (34, "a member inside an #if arm of a class body")):
             expect(f"flagged: {label}", ("violation", line) in by_line, True)
         expect("a nested class definition is judged once, by its own members",
                sum(finding.line == 29 for finding in findings) == 1)
         for line, label in ((16, "a [[no_unique_address]] member"), (18, "an attribute on the line above"),
                             (21, "a member with a marker and its reason"), (26, "a SharedPermission member"),
                             (27, "a parameter and a local"), (28, "a member in a comment"),
-                            (30, "a reference member and a pointer member")):
+                            (30, "a reference member and a pointer member"),
+                            (37, "the standard mark beside an attribute with a namespace")):
             expect(f"not flagged: {label}", not any(line == finding.line and finding.kind == "violation"
                                                     for finding in findings))
         expect("a marker with no reason fails", ("marker", 23) in by_line, True)
@@ -308,8 +336,12 @@ def self_test() -> int:
         header.write_text("#pragma once\nstruct Handle { [[no_unique_address]] Permission<tag> perm_; };\n",
                           encoding="utf-8")
         expect("a clean tree exits 0", captured(lambda: run(root))[0] == 0)
+        rostered = root / next(iter(tsast.UNPARSEABLE))
+        rostered.parent.mkdir(parents=True, exist_ok=True)
+        rostered.write_text("struct Out { Permission<tag> out_; void f() { g(1) { } } };\n", encoding="utf-8")
+        expect("a file of the UNPARSEABLE roster is out of scope", captured(lambda: run(root))[0] == 0, True)
         (root / "src").mkdir()
-        (root / "src" / "broken.cpp").write_text("// Permission\nvoid f() { g(1) { } }\n", encoding="utf-8")
+        (root / "src" / "broken.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         code, report = captured(lambda: run(root))
         expect("a file the parser cannot read fails", code == 1 and "parse failure: src/broken.cpp" in report, True)
 
