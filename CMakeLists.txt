@@ -142,7 +142,8 @@ endif()
 # a function is cold, and an attribute that repeats the profile adds
 # nothing.
 #
-# crucible_perf does not link crucible_dialect and is not profiled.
+# crucible_perf links crucible_dialect through foundation, so the profile
+# covers it as it covers every other target.
 # ═══════════════════════════════════════════════════════════════
 set(CRUCIBLE_PGO "off" CACHE STRING "Profile-guided optimization: off, generate or use")
 set_property(CACHE CRUCIBLE_PGO PROPERTY STRINGS off generate use)
@@ -395,9 +396,9 @@ set_target_properties(foundation PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # crucible owns no contract handler of its own.  Every crucible header that
 # uses CRUCIBLE_PRE expands to the foundation failure arm, so crucible links
-# foundation for it and for `handle_contract_violation`.  This call comes
-# before the crucible_perf link below, so the consumer link order is
-# libcrucible.a, libfoundation.a, libcrucible_perf.a.
+# foundation for it and for `handle_contract_violation`.  crucible_perf links
+# foundation as well, so libfoundation.a also follows libcrucible_perf.a on a
+# consumer's link line.
 target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy INTERFACE)
@@ -764,69 +765,18 @@ if (CRUCIBLE_HAVE_BPF)
     ${_CRUCIBLE_PERF_SOURCES}
     ${_CRUCIBLE_BPF_EMBED_SOURCES})
   target_include_directories(crucible_perf PUBLIC include/)
-  target_link_libraries(crucible_perf PUBLIC PkgConfig::LIBBPF)
-  # crucible_perf is a DEPENDENCY of `crucible` (crucible PUBLIC-links
-  # crucible_perf below), not a dependent — so it does NOT inherit
-  # crucible's PUBLIC -freflection / -fcontracts options.  We need
-  # them ourselves because src/perf/SenseHub.cpp pulls
-  # safety/Mutation.h, which transitively reaches algebra/Graded.h's
-  # reflection-driven display_string_of() helper.
-  #
-  # CRUCIBLE_CONTRACT_IGNORE_OPTIONS below buys a clean LINK,
-  # not speed.  This is not a hot path and it is not in SECTION 6b's
-  # opt-out list; do not cite it as precedent for a performance
-  # exemption.  Under an evaluating semantic, every WriteOnce::set /
-  # .get contract emits a reference to `handle_contract_violation`.
-  # That symbol lives in foundation's `src/foundation/ContractHandler.cpp`,
-  # but crucible_perf is scanned AFTER foundation in the consumer link
-  # order (crucible.a, foundation.a, then crucible_perf.a; ld reads
-  # left-to-right and will not re-resolve foundation.a once it has
-  # moved past).  Ignoring
-  # contracts in this TU compiles them out entirely — the discipline
-  # still binds at the type-system level, because WriteOnce's
-  # nodiscard-set-once-or-burn semantics are a property of the type
-  # rather than of the check — and no runtime handler call is
-  # generated, so the link resolves.
-  target_compile_options(crucible_perf PRIVATE
-    -freflection
-    -fcontracts
-    # NOTE: under default `=enforce`, every WriteOnce::set / .get / etc.
-    # contract emits a reference to `handle_contract_violation`.  That
-    # symbol is defined in `src/foundation/ContractHandler.cpp` (compiled
-    # into libfoundation.a).  The consumer link order is `libcrucible.a
-    # libfoundation.a libcrucible_perf.a libbpf.so`; ld scans
-    # left-to-right and picks up only what the test exec directly
-    # references, so by the time it reaches libcrucible_perf.a an
-    # unreferenced handler object from libfoundation.a has been discarded.
-    #
-    # Two viable fixes:
-    #   (a) CRUCIBLE_CONTRACT_IGNORE_OPTIONS here — type-level
-    #       discipline (WriteOnce nodiscard/move semantics) survives;
-    #       runtime handler call is elided in this TU only.
-    #   (b) Force re-resolution at the binary link via `-u
-    #       handle_contract_violation` on every test executable that
-    #       links libcrucible_perf.a.
-    # We use (a) because it keeps the link line unchanged across ~40
-    # consumer test execs and the runtime-enforce property is already
-    # exercised in the main crucible TUs.
-    #
-    # The runtime arm of CRUCIBLE_PRE and CRUCIBLE_POST is a language
-    # contract clause, and it references the same handler.  The define in
-    # the list selects their ignore arm.  That arm keeps the consteval
-    # check and the [[assume]] hint, and it references no function.
-    ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS}
-  )
+  # crucible_perf links foundation, and foundation links crucible_dialect,
+  # so the perf sources compile under the dialect of every other target:
+  # the warning set, -Werror, the hardening flags, the FP floor and the
+  # contract semantic of the build.  The link also puts libfoundation.a
+  # after libcrucible_perf.a on every consumer's link line, so the
+  # contract handler that the perf contract clauses call resolves.  The
+  # generated BPF byte arrays compile with -w (cmake/CrucibleBpf.cmake).
+  target_link_libraries(crucible_perf PUBLIC PkgConfig::LIBBPF foundation)
   if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
     target_compile_definitions(crucible_perf PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
   endif()
-  # crucible_perf inherits crucible's PUBLIC -freflection/-fcontracts
-  # via the link below, but its sources don't NEED them — the loader
-  # is a thin C++ shim around the C libbpf API.  Belt-and-braces:
-  # opt out of -Werror (the embed .c file is xxd-generated bytes;
-  # libbpf headers are C and may trip strict warnings under C++26).
-  set_target_properties(crucible_perf PROPERTIES
-    CRUCIBLE_NO_WERROR TRUE
-    POSITION_INDEPENDENT_CODE ON)
+  set_target_properties(crucible_perf PROPERTIES POSITION_INDEPENDENT_CODE ON)
   # PUBLIC link so symbols transit to the final binary; consumers
   # that include <crucible/perf/SenseHub.h> get the loader symbols
   # at link time without an extra `target_link_libraries` call.
@@ -1035,8 +985,7 @@ endif()
 #
 # CRUCIBLE_VERIFY builds Release code with the contract families armed.
 # The P2900 clauses operate under `enforce`, and the preset removes NDEBUG,
-# which arms CRUCIBLE_PRE, CRUCIBLE_POST and CRUCIBLE_INVARIANT.  The TUs
-# of crucible_perf keep `ignore` for their link (refer to that block).  The
+# which arms CRUCIBLE_PRE, CRUCIBLE_POST and CRUCIBLE_INVARIANT.  The
 # build shows how the optimizer changes a checked program.
 option(CRUCIBLE_SANITIZE
   "Put ASan on every target and UBSan on the tests in a Debug build" ON)
@@ -1502,9 +1451,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       -Wanalyzer-undefined-behavior-strtok
     )
     target_compile_options(crucible_dialect INTERFACE ${CRUCIBLE_ANALYZER_FLAGS})
-    if(TARGET crucible_perf)
-      target_compile_options(crucible_perf PRIVATE ${CRUCIBLE_ANALYZER_FLAGS})
-    endif()
   endif()
 endif()
 
@@ -1811,9 +1757,9 @@ endif()
 # is an error when bench/ was never added, and bench/ is added only
 # under that option.  One consequence is worth stating plainly: with
 # the plain `release` preset (CRUCIBLE_BENCH=OFF) this block does
-# nothing, so every TU in that build evaluates its contracts — 2611 of
-# them on 2026-09-14.  The only `ignore` TUs left there are
-# crucible_perf's 43, which are exempt for link order, not for speed.
+# nothing, so every TU in that build evaluates its contracts.  The one
+# exception is the test_pre_post_cost sentinel, which measures the ignore
+# arm (test/CMakeLists.txt).
 if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)
   set(CRUCIBLE_CONTRACT_IGNORE_TUS
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_trace_ring.cpp     # TraceRing push/pop

@@ -5,7 +5,9 @@
 #include <unistd.h>
 #include <dirent.h>
 
+#include <array>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -53,12 +55,16 @@ namespace {
     return p;
 }
 
+[[nodiscard]] bool is_decimal_digit(char c) noexcept { return c >= '0' && c <= '9'; }
+
+[[nodiscard]] uint64_t decimal_value(char c) noexcept { return static_cast<uint64_t>(c - '0'); }
+
 [[nodiscard]] uint64_t parse_u64(const char** pp, const char* end) noexcept {
     const char* p = skip_ws(*pp, end);
     uint64_t v = 0;
     bool any = false;
-    while (p < end && *p >= '0' && *p <= '9') {
-        v = v * 10 + (uint64_t)(*p - '0');
+    while (p < end && is_decimal_digit(*p)) {
+        v = v * 10 + decimal_value(*p);
         ++p;
         any = true;
     }
@@ -66,39 +72,80 @@ namespace {
     return any ? v : 0;
 }
 
+// Reads the hex digits at *pp, the form in which /proc/net/softnet_stat and
+// /proc/net/tcp write their counters, and leaves *pp after the last digit.
+[[nodiscard]] uint64_t parse_hex_u64(const char** pp, const char* end) noexcept {
+    const char* p = *pp;
+    uint64_t v = 0;
+    for (; p < end; ++p) {
+        uint64_t digit = 0;
+        if (is_decimal_digit(*p)) {
+            digit = decimal_value(*p);
+        } else if (*p >= 'a' && *p <= 'f') {
+            digit = static_cast<uint64_t>(*p - 'a' + 10);
+        } else if (*p >= 'A' && *p <= 'F') {
+            digit = static_cast<uint64_t>(*p - 'A' + 10);
+        } else {
+            break;
+        }
+        v = (v << 4) | digit;
+    }
+    *pp = p;
+    return v;
+}
+
+// The first newline in [p, end), or null when the range holds none.
+[[nodiscard]] const char* find_newline(const char* p, const char* end) noexcept {
+    return static_cast<const char*>(std::memchr(p, '\n', static_cast<size_t>(end - p)));
+}
+
+[[nodiscard]] const char* find_str(const char* p, const char* end, const char* needle) noexcept {
+    const size_t nlen = std::strlen(needle);
+    if (nlen == 0 || static_cast<size_t>(end - p) < nlen) return end;
+    for (const char* q = p; q + nlen <= end; ++q) {
+        if (std::memcmp(q, needle, nlen) == 0) return q;
+    }
+    return end;
+}
+
+#ifdef CRUCIBLE_SENSE_HUB_EXTENDED
+// Reads a decimal with up to two fractional digits, such as a load average
+// or a pressure figure, as hundredths.
 [[nodiscard]] uint64_t parse_fixed_x100(const char** pp, const char* end) noexcept {
     const char* p = skip_ws(*pp, end);
     uint64_t whole = 0;
-    while (p < end && *p >= '0' && *p <= '9') {
-        whole = whole * 10 + (uint64_t)(*p - '0');
+    while (p < end && is_decimal_digit(*p)) {
+        whole = whole * 10 + decimal_value(*p);
         ++p;
     }
     uint64_t frac = 0;
     if (p < end && *p == '.') {
         ++p;
         int digits = 0;
-        while (p < end && *p >= '0' && *p <= '9' && digits < 2) {
-            frac = frac * 10 + (uint64_t)(*p - '0');
+        while (p < end && is_decimal_digit(*p) && digits < 2) {
+            frac = frac * 10 + decimal_value(*p);
             ++p;
             ++digits;
         }
         // A single fractional digit counts tenths, so scale it to hundredths.
         if (digits == 1) frac *= 10;
-        while (p < end && *p >= '0' && *p <= '9')
+        while (p < end && is_decimal_digit(*p))
             ++p;
     }
     *pp = p;
     return whole * 100 + frac;
 }
 
-[[nodiscard]] const char* find_str(const char* p, const char* end, const char* needle) noexcept {
-    const size_t nlen = std::strlen(needle);
-    if (nlen == 0 || (size_t)(end - p) < nlen) return end;
-    for (const char* q = p; q + nlen <= end; ++q) {
-        if (std::memcmp(q, needle, nlen) == 0) return q;
-    }
-    return end;
+// The number that follows `key` on its line, or zero when the text holds no
+// such key.
+[[nodiscard]] uint64_t value_after_key(const char* p, const char* end, const char* key) noexcept {
+    const char* hit = find_str(p, end, key);
+    if (hit == end) return 0;
+    const char* tok = hit + std::strlen(key);
+    const char* nl = find_newline(tok, end);
+    return parse_u64(&tok, nl != nullptr ? nl : end);
 }
+#endif
 
 }  // anonymous namespace
 
@@ -121,15 +168,17 @@ std::optional<ProcGauges> ProcGauges::init(::fixy::InitLoadCtx const&) noexcept 
     // afterwards is picked up only by a fresh init.
     DIR* sysblock = ::opendir("/sys/block");
     if (sysblock) {
-        struct dirent* de;
-        char path[256];
+        dirent* de = nullptr;
+        // The buffer holds the longest name that d_name can carry, so no
+        // path is ever cut short.
+        std::array<char, sizeof("/sys/block/") + sizeof(de->d_name) + sizeof("/stat")> path{};
         while ((de = ::readdir(sysblock)) != nullptr && p.num_block_devs_ < MAX_BLOCK_DEVS) {
             if (de->d_name[0] == '.' && (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0'))) {
                 continue;
             }
-            int n = std::snprintf(path, sizeof(path), "/sys/block/%s/stat", de->d_name);
-            if (n <= 0 || (size_t)n >= sizeof(path)) continue;
-            int fd = open_ro(path);
+            const int n = std::snprintf(path.data(), path.size(), "/sys/block/%s/stat", de->d_name);
+            if (n <= 0 || static_cast<size_t>(n) >= path.size()) continue;
+            int fd = open_ro(path.data());
             if (fd >= 0) {
                 p.fd_block_stats_[p.num_block_devs_++] = ScopedFd{fd};
             }
@@ -178,7 +227,7 @@ uint64_t ProcGauges::read_slab_total_bytes_() const noexcept {
     int header_skip = 2;
     uint64_t total = 0;
     while (p < end) {
-        const char* nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
+        const char* nl = find_newline(p, end);
         if (!nl) break;
         if (header_skip > 0) {
             --header_skip;
@@ -207,12 +256,12 @@ uint64_t ProcGauges::read_hardirq_total_count_() const noexcept {
     //   "  <N>:  <count_cpu0>  <count_cpu1>  ...  <handler_name>"
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
-    const char* nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
+    const char* nl = find_newline(p, end);
     if (!nl) return 0;
     p = nl + 1;
     uint64_t total = 0;
     while (p < end) {
-        nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
+        nl = find_newline(p, end);
         if (!nl) break;
         const char* tok = skip_ws(p, nl);
         while (tok < nl && *tok != ':')
@@ -239,19 +288,10 @@ uint64_t ProcGauges::read_napi_poll_total_() const noexcept {
     const char* end = scratch_.get() + n;
     uint64_t total = 0;
     while (p < end) {
-        const char* nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
+        const char* nl = find_newline(p, end);
         if (!nl) nl = end;
         const char* tok = skip_ws(p, nl);
-        uint64_t v = 0;
-        while (tok < nl
-               && ((*tok >= '0' && *tok <= '9') || (*tok >= 'a' && *tok <= 'f') || (*tok >= 'A' && *tok <= 'F'))) {
-            uint64_t d = (*tok >= '0' && *tok <= '9') ? (uint64_t)(*tok - '0')
-                       : (*tok >= 'a' && *tok <= 'f') ? (uint64_t)(*tok - 'a' + 10)
-                                                      : (uint64_t)(*tok - 'A' + 10);
-            v = (v << 4) | d;
-            ++tok;
-        }
-        total += v;
+        total += parse_hex_u64(&tok, nl);
         if (nl == end) break;
         p = nl + 1;
     }
@@ -269,7 +309,7 @@ uint64_t ProcGauges::read_skb_drop_reason_total_() const noexcept {
     const char* end = scratch_.get() + n;
     const char* ip_line = find_str(p, end, "Ip: ");
     if (ip_line == end) return 0;
-    const char* nl = (const char*)std::memchr(ip_line, '\n', (size_t)(end - ip_line));
+    const char* nl = find_newline(ip_line, end);
     if (!nl) return 0;
     const char* ip_values = find_str(nl + 1, end, "Ip: ");
     if (ip_values == end) return 0;
@@ -280,7 +320,7 @@ uint64_t ProcGauges::read_skb_drop_reason_total_() const noexcept {
     const char* tok = ip_values + 4;  // past "Ip: "
     uint64_t cols[16] = {};
     int idx = 0;
-    const char* line_end = (const char*)std::memchr(tok, '\n', (size_t)(end - tok));
+    const char* line_end = find_newline(tok, end);
     if (!line_end) line_end = end;
     while (tok < line_end && idx < 16) {
         cols[idx++] = parse_u64(&tok, line_end);
@@ -297,12 +337,12 @@ uint64_t ProcGauges::read_tcp_recv_buffer_max_() const noexcept {
     // The queue pair is one hex field of the form "XXXXXXXX:XXXXXXXX".
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
-    const char* nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
+    const char* nl = find_newline(p, end);
     if (!nl) return 0;
     p = nl + 1;
     uint64_t max_rx = 0;
     while (p < end) {
-        nl = (const char*)std::memchr(p, '\n', (size_t)(end - p));
+        nl = find_newline(p, end);
         if (!nl) break;
         // sl
         const char* tok = skip_ws(p, nl);
@@ -324,15 +364,7 @@ uint64_t ProcGauges::read_tcp_recv_buffer_max_() const noexcept {
             ++tok;
         if (tok < nl && *tok == ':') ++tok;
         // rx_queue
-        uint64_t rx = 0;
-        while (tok < nl
-               && ((*tok >= '0' && *tok <= '9') || (*tok >= 'a' && *tok <= 'f') || (*tok >= 'A' && *tok <= 'F'))) {
-            uint64_t d = (*tok >= '0' && *tok <= '9') ? (uint64_t)(*tok - '0')
-                       : (*tok >= 'a' && *tok <= 'f') ? (uint64_t)(*tok - 'a' + 10)
-                                                      : (uint64_t)(*tok - 'A' + 10);
-            rx = (rx << 4) | d;
-            ++tok;
-        }
+        const uint64_t rx = parse_hex_u64(&tok, nl);
         if (rx > max_rx) max_rx = rx;
         p = nl + 1;
     }
@@ -386,12 +418,7 @@ uint64_t ProcGauges::read_thp_split_total_() const noexcept {
     uint64_t total = 0;
     static constexpr const char* k_keys[] = {"thp_split_page ", "thp_split_pmd ", "thp_split_pud "};
     for (const char* key : k_keys) {
-        const char* hit = find_str(p, end, key);
-        if (hit == end) continue;
-        const char* tok = hit + std::strlen(key);
-        const char* nl = (const char*)std::memchr(tok, '\n', (size_t)(end - tok));
-        if (!nl) nl = end;
-        total += parse_u64(&tok, nl);
+        total += value_after_key(p, end, key);
     }
     return total;
 #else
@@ -408,22 +435,9 @@ uint64_t ProcGauges::read_numa_hit_ratio_x100_() const noexcept {
     if (n <= 0) return UNAVAILABLE;
     const char* p = scratch_.get();
     const char* end = scratch_.get() + n;
-    uint64_t hit = 0, miss = 0;
-    const char* h = find_str(p, end, "numa_hit ");
-    if (h != end) {
-        const char* tok = h + 9;
-        const char* nl = (const char*)std::memchr(tok, '\n', (size_t)(end - tok));
-        if (!nl) nl = end;
-        hit = parse_u64(&tok, nl);
-    }
-    const char* m = find_str(p, end, "numa_miss ");
-    if (m != end) {
-        const char* tok = m + 10;
-        const char* nl = (const char*)std::memchr(tok, '\n', (size_t)(end - tok));
-        if (!nl) nl = end;
-        miss = parse_u64(&tok, nl);
-    }
-    uint64_t denom = hit + miss;
+    const uint64_t hit = value_after_key(p, end, "numa_hit ");
+    const uint64_t miss = value_after_key(p, end, "numa_miss ");
+    const uint64_t denom = hit + miss;
     return denom == 0 ? 0 : (hit * 10000) / denom;
 }
 
@@ -437,12 +451,12 @@ uint64_t ProcGauges::read_tcp_established_current_() const noexcept {
     const char* end = scratch_.get() + n;
     const char* tcp_hdr = find_str(p, end, "Tcp: ");
     if (tcp_hdr == end) return 0;
-    const char* nl = (const char*)std::memchr(tcp_hdr, '\n', (size_t)(end - tcp_hdr));
+    const char* nl = find_newline(tcp_hdr, end);
     if (!nl) return 0;
     const char* tcp_val = find_str(nl + 1, end, "Tcp: ");
     if (tcp_val == end) return 0;
     const char* tok = tcp_val + 5;
-    const char* line_end = (const char*)std::memchr(tok, '\n', (size_t)(end - tok));
+    const char* line_end = find_newline(tok, end);
     if (!line_end) line_end = end;
     uint64_t v = 0;
     for (int i = 0; i <= 8; ++i) {
