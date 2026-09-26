@@ -8,7 +8,9 @@
 #            second build, BUILD_DIR-cmplog, with comparison logging, for
 #            the main instance.  It builds fuzz_HARNESS in both.
 # OUT_DIR    The afl-fuzz output directory.  The seeds go to OUT_DIR/seeds,
-#            and the harness scratch files go to OUT_DIR/tmp.
+#            and the harness scratch files go to OUT_DIR/tmp.  A harness that
+#            afl-fuzz kills leaves its scratch directory there, so the script
+#            removes OUT_DIR/tmp when it exits, however it exits.
 # HARNESS    A name from fuzz/boundary/harnesses, such as region.
 # CPU_LIST   The cores, such as 100-131 or 100-115,200-215.  One instance
 #            runs on each core.  The first is the main instance.  A list
@@ -30,6 +32,8 @@ usage() {
 
 build_dir=$1
 out_dir=$2
+# The exit trap removes OUT_DIR/tmp, so an empty OUT_DIR would name /tmp.
+[[ -n $out_dir ]] || { printf 'run-afl: OUT_DIR must not be empty\n' >&2; exit 2; }
 harness=$3
 cpu_list=$4
 seconds=$5
@@ -97,6 +101,7 @@ binary=$build_dir/fuzz/fuzz_$harness
 cmplog_binary=$build_dir-cmplog/fuzz/fuzz_$harness
 
 mkdir -p "$out_dir/tmp"
+trap 'rm -rf -- "$out_dir/tmp"' EXIT
 "$binary" --write-seeds="$out_dir/seeds"
 
 # ASan must abort and must not symbolize, so that afl-fuzz sees each crash.
