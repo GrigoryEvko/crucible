@@ -166,8 +166,8 @@ jobs:
 
       - name: refined/pre subsumption (self-test + scan)
         run: |
-          bash scripts/check-refined-pre-subsumption.sh --self-test
-          bash scripts/check-refined-pre-subsumption.sh
+          python3 scripts/check-refined-pre-subsumption.py --self-test
+          python3 scripts/check-refined-pre-subsumption.py
 
       - name: fixy discipline (self-test + scan)
         run: |

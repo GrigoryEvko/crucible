@@ -565,21 +565,19 @@ add_test(NAME contract_decide_cite_ratio
 set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
-# CONTRACT-120: Layer-C subsumption guard.  Catches double-enforcement
-# of a Refined<Pred, T> parameter via in-body CRUCIBLE_PRE that re-tests
-# the same predicate on the same parameter — the type-level proof
-# already discharges the predicate at construction.  See harness §10.1.
-# Self-test mode is wired separately so a regex regression (e.g. a
-# ripgrep upgrade altering backreference semantics) fails CI on its own
-# diagnostic rather than silently letting the production scan pass
-# because it never matches anything.
+# A Refined or SealedRefined parameter carries the proof of its predicate.
+# A precondition in the same function that cites the decide:: procedure of
+# that predicate on that parameter re-tests a proved fact, and the guard
+# refuses it.  The guard reads parameters, aliases, CRUCIBLE_PRE calls and
+# P2900 pre clauses from the parse tree.
 add_test(NAME refined_pre_subsumption_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.py
           --self-test)
 add_test(NAME refined_pre_subsumption
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.py)
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard;ast"
+  SKIP_RETURN_CODE 3)
 # FIXY-U-001 Phase F discipline gate (misc/16_05_2026_fixy.md §4
 # Phase F).  scripts/check-fixy-discipline.sh enforces the
 # greenfield rule: directories opted into CRUCIBLE_FIXY_ONLY must
