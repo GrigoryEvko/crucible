@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-214 fixture #2: received CRDT state must be admitted as
-// source::Gossiped before merge.  Raw state is not a merge boundary.
+// Received CRDT state must be admitted as gossiped state before a merge.
+// Raw state does not cross the merge boundary.
 
 #include <crucible/canopy/Crdt.h>
 

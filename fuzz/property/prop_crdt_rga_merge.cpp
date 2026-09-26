@@ -52,8 +52,6 @@ inline constexpr std::size_t kSlots = kIds + 1;  // index by id; slot 0 unused
 using Rga = cc::RgaList<std::uint32_t, std::uint32_t, 16>;
 using State = Rga::state_type;
 using Insert = Rga::insert_type;
-using LocalInsert = Rga::local_insert_type;
-using LocalErase = Rga::local_erase_type;
 
 // Per-id node model for the independent oracle.
 struct Node {
@@ -97,15 +95,15 @@ struct Spec {
     for (std::uint32_t id = 1; id <= kIds; ++id) {
         const CellSpec& c = cell(s, side, id);
         if (c.present == 0u) continue;
-        if (!rga.insert_after(LocalInsert{Insert{
+        if (!rga.insert_after(cc::admit_local_write(Insert{
                 .id = id,
                 .after = static_cast<std::uint32_t>(c.after),
                 .value = static_cast<std::uint32_t>(c.value),
-            }})) {
+            }))) {
             return State{};
         }
         if (c.tombstone != 0u) {
-            (void)rga.erase(LocalErase{id});
+            (void)rga.erase(cc::admit_local_write(id));
         }
     }
     return rga.state();

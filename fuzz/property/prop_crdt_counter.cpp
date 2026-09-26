@@ -170,7 +170,6 @@ struct LwwSpec {
 
 using GC = cc::GCounter<kReplicas>;
 using GCState = GC::state_type;
-using GCGossip = GC::gossiped_state_type;
 
 struct GCounts {
     std::array<std::uint64_t, kReplicas> v{};
@@ -221,7 +220,6 @@ struct GCSpec {
 
 using PC = cc::PNCounter<kReplicas>;
 using PCState = PC::state_type;
-using PCGossip = PC::gossiped_state_type;
 
 struct PCSpec {
     GCounts ap{}, an{};
@@ -306,7 +304,7 @@ int main(int argc, char** argv) {
             // value(): gossip-merge `a` into a fresh zero counter, so its
             // state becomes exactly `a`, then check the saturating sum.
             GC counter;
-            (void)counter.merge(GCGossip{a});
+            (void)counter.merge(cc::admit_gossiped(a));
             if (counter.value() != gc_sum(a)) return false;
             return true;
         });
@@ -331,7 +329,7 @@ int main(int argc, char** argv) {
             if (!(PC::merge(PC::merge(a, b), c) == PC::merge(a, PC::merge(b, c)))) return false;  // associativity
 
             PC counter;
-            (void)counter.merge(PCGossip{a});
+            (void)counter.merge(cc::admit_gossiped(a));
             if (counter.value() != pc_value_oracle(a)) return false;
             return true;
         });

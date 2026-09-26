@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-214 audit fixture: MVRegister canonicalizes concurrent versions
-// into byte-stable order.  The value type must therefore be totally
-// ordered when equal vector clocks carry different values.
+// An MV register sorts concurrent versions into one byte-stable order.
+// Two versions with equal vector clocks are ordered by value, so the value
+// type must be totally ordered.
 
 #include <crucible/canopy/Crdt.h>
 

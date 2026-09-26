@@ -3,12 +3,14 @@
 #include <crucible/Platform.h>
 #include <crucible/canopy/Hlc.h>
 #include <crucible/canopy/VectorClock.h>
-#include <crucible/safety/_FixedArray.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/FixedArray.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Pinned.h>
+#include <foundation/Saturate.h>
+#include <foundation/reflect/Hash.h>
 
-#include <bit>
 #include <compare>
 #include <concepts>
 #include <cstdint>
@@ -19,81 +21,103 @@
 
 namespace crucible::canopy {
 
+// A write this replica authored, and state that arrived by gossip.  The
+// two lanes are distinct types, so received state cannot pass for a
+// local write and neither can enter a replica as a bare value.
 template <typename T>
-using LocalWrite = safety::Tagged<T, safety::source::Local>;
+using LocalWrite = ::fixy::Tagged<T, ::fixy::tags::source::Local>;
 
 template <typename State>
-using GossipedState = safety::Tagged<State, safety::source::Gossiped>;
+using GossipedState = ::fixy::Tagged<State, ::fixy::tags::source::Gossiped>;
+
+// The two doors into the lanes.  Anything that arrives by gossip enters
+// through the second one: a CRDT state here, and a digest or a delta in
+// the anti-entropy layer above.
+template <typename T>
+[[nodiscard]] constexpr LocalWrite<T> admit_local_write(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    return ::fixy::mint_tagged<::fixy::tags::source::Local>(std::move(value));
+}
+
+template <typename T>
+[[nodiscard]] constexpr GossipedState<T> admit_gossiped(T received) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    return ::fixy::mint_tagged<::fixy::tags::source::Gossiped>(std::move(received));
+}
 
 template <std::size_t Capacity>
 concept CrdtCapacity = Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
 
 template <std::size_t Capacity>
     requires CrdtCapacity<Capacity>
-using CrdtIndex = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity - 1)>, std::uint16_t>;
+inline constexpr auto crdt_index_bound = ::fixy::bounded_above<static_cast<std::uint16_t>(Capacity - 1)>;
 
 template <std::size_t Capacity>
     requires CrdtCapacity<Capacity>
-using CrdtCount = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity)>, std::uint16_t>;
+inline constexpr auto crdt_count_bound = ::fixy::bounded_above<static_cast<std::uint16_t>(Capacity)>;
+
+template <std::size_t Capacity>
+    requires CrdtCapacity<Capacity>
+using CrdtIndex = ::fixy::Refined<crdt_index_bound<Capacity>, std::uint16_t>;
+
+template <std::size_t Capacity>
+    requires CrdtCapacity<Capacity>
+using CrdtCount = ::fixy::Refined<crdt_count_bound<Capacity>, std::uint16_t>;
 
 template <std::size_t MaxReplicas>
     requires CrdtCapacity<MaxReplicas>
 using ReplicaIndex = CrdtIndex<MaxReplicas>;
 
-using CounterAmount = safety::Refined<safety::positive, std::uint64_t>;
+using CounterAmount = ::fixy::Refined<::fixy::positive, std::uint64_t>;
 
 namespace detail {
 
-[[nodiscard]] constexpr std::uint64_t sat_add(std::uint64_t a, std::uint64_t b) noexcept {
-    const std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
-    return a > max - b ? max : a + b;
+// The state of a replica is well formed by construction, so its count
+// always satisfies the bound.  The checked mint also does a check of the
+// predicate.  A broken invariant then stops here, and it does not continue
+// as a false refinement.
+template <std::size_t Capacity>
+    requires CrdtCapacity<Capacity>
+[[nodiscard]] constexpr CrdtCount<Capacity> crdt_count(std::uint16_t live) noexcept {
+    return ::fixy::mint_refined<crdt_count_bound<Capacity>>(live);
 }
 
-// Open-addressing slot positions are part of the persisted CRDT state, so this
-// mix has to produce the same bits on every platform and every build.  A
-// standard library hash is implementation-defined and varies across versions,
-// so a state written by one process would probe different slots in another and
-// answer wrong.  Changing these constants invalidates every persisted state.
-[[nodiscard]] constexpr std::uint64_t crdt_fmix64(std::uint64_t k) noexcept {
-    k ^= k >> 33;
-    k *= 0xff51afd7ed558ccdULL;
-    k ^= k >> 33;
-    k *= 0xc4ceb9fe1a85ec53ULL;
-    k ^= k >> 33;
-    return k;
-}
-
+// The slot positions of the open-addressing table are part of the persisted
+// CRDT state.  The slot hash must give the same bits on every platform and in
+// every build.  A standard library hash is implementation-defined and can
+// change between versions.  A state that one process wrote would then probe
+// different slots in a different process and give an incorrect answer.  The
+// mix is the one fmix64 of the tree.  A change to it makes every persisted
+// state incorrect.
+//
+// The admitted set is closed: enums and integers, whose bits alone are the
+// value.  A pointer hashes an address, which differs between processes, so
+// two peers would place one value in different slots.  A floating-point value
+// breaks the probe: -0.0 and +0.0 compare equal but hash apart, and a NaN
+// never compares equal to itself, so the set would store it again on every
+// insert.
 template <typename T>
-[[nodiscard]] constexpr std::uint64_t stable_hash(T const& value) noexcept {
+concept HashableValue = std::integral<T> || std::is_enum_v<T>;
+
+template <HashableValue T>
+[[nodiscard]] constexpr std::uint64_t stable_hash(T value) noexcept {
     if constexpr (std::is_enum_v<T>) {
-        return crdt_fmix64(static_cast<std::uint64_t>(std::to_underlying(value)));
-    } else if constexpr (std::is_integral_v<T>) {
-        return crdt_fmix64(static_cast<std::uint64_t>(value));
-    } else if constexpr (std::is_floating_point_v<T>) {
-        if constexpr (sizeof(T) == 4) {
-            return crdt_fmix64(static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(value)));
-        } else {
-            static_assert(sizeof(T) == 8, "stable_hash<T> floating-point dispatch requires "
-                                          "a 4-byte or 8-byte T");
-            return crdt_fmix64(std::bit_cast<std::uint64_t>(value));
-        }
-    } else if constexpr (std::is_pointer_v<T>) {
-        return crdt_fmix64(std::bit_cast<std::uintptr_t>(value));
+        return ::foundation::reflect::fmix64(static_cast<std::uint64_t>(std::to_underlying(value)));
     } else {
-        static_assert(false, "stable_hash<T> requires T to be an enum, an integer, a "
-                             "floating-point type, or a pointer.  A class type supplies an "
-                             "explicit specialization that defines a cross-process-stable "
-                             "bit pattern.  A standard library hash is not used because its "
-                             "output varies across library versions and would silently "
-                             "corrupt CRDT convergence.");
+        return ::foundation::reflect::fmix64(static_cast<std::uint64_t>(value));
     }
 }
 
-template <typename T>
-concept HashableValue =
-    std::default_initializable<T> && std::copyable<T> && std::equality_comparable<T> && requires(T const& v) {
-        { stable_hash<T>(v) } -> std::convertible_to<std::size_t>;
-    };
+// A staged merge: the incoming state folds into a copy of the target, and
+// the target changes only when every step succeeded.  A refused merge
+// leaves the target as it was.
+template <typename State, typename MergeInto>
+[[nodiscard]] constexpr bool commit_merge(State& target, State const& incoming, MergeInto merge_into) {
+    State staged = target;
+    if (!merge_into(staged, incoming)) {
+        return false;
+    }
+    target = staged;
+    return true;
+}
 
 template <HashableValue T, std::size_t Capacity>
     requires CrdtCapacity<Capacity>
@@ -103,13 +127,11 @@ struct BoundedHashSetState {
         T value{};
     };
 
-    safety::FixedArray<Slot, Capacity> slots{};
+    ::fixy::FixedArray<Slot, Capacity> slots{};
     std::uint16_t count = 0;
 
-    [[nodiscard]] constexpr CrdtCount<Capacity> size() const noexcept {
-        return CrdtCount<Capacity>{count, typename CrdtCount<Capacity>::Trusted{}};
-    }
-
+    // The occupied slots always number at most Capacity, so a count that
+    // agrees with them is also in bound.
     [[nodiscard]] bool well_formed() const noexcept {
         std::size_t occupied = 0;
         for (std::size_t i = 0; i < Capacity; ++i) {
@@ -142,9 +164,7 @@ struct BoundedHashSetState {
             if (!slots[idx].occupied) {
                 // `>=`, not `==`: count is public, so a count already
                 // past Capacity would read as "not full" here and the
-                // ++ below would push it further out of range.  size()
-                // then mints a CrdtCount<Capacity> with Trusted{},
-                // handing a broken refinement to code that trusts it.
+                // ++ below would push it further out of range.
                 if (count >= Capacity) {
                     return false;
                 }
@@ -185,21 +205,28 @@ struct BoundedHashSetState {
 template <typename T, typename Id, std::size_t Capacity>
     requires CrdtCapacity<Capacity>
 struct BoundedTaggedState {
-    safety::FixedArray<T, Capacity> entries{};
+    ::fixy::FixedArray<T, Capacity> entries{};
     std::uint16_t count = 0;
-
-    [[nodiscard]] constexpr CrdtCount<Capacity> size() const noexcept {
-        return CrdtCount<Capacity>{count, typename CrdtCount<Capacity>::Trusted{}};
-    }
 
     [[nodiscard]] constexpr bool well_formed() const noexcept { return count <= Capacity; }
 };
+
+// The sum of the counts of the replicas.  The sum saturates at the maximum
+// and does not wrap.
+template <std::size_t MaxReplicas, typename Counts>
+[[nodiscard]] constexpr std::uint64_t saturating_total(Counts const& counts) noexcept {
+    std::uint64_t sum = 0;
+    for (std::size_t i = 0; i < MaxReplicas; ++i) {
+        sum = ::foundation::sat::add_sat(sum, counts[i]);
+    }
+    return sum;
+}
 
 }  // namespace detail
 
 template <typename T, std::size_t Capacity = 64>
     requires detail::HashableValue<T> && CrdtCapacity<Capacity>
-class GSet : public safety::Pinned<GSet<T, Capacity>> {
+class GSet : public ::foundation::Pinned<GSet<T, Capacity>> {
 public:
     using value_type = T;
     using state_type = detail::BoundedHashSetState<T, Capacity>;
@@ -209,42 +236,33 @@ public:
     [[nodiscard]] bool add(local_value_type value) { return state_.insert(value.value()); }
 
     [[nodiscard]] bool merge(gossiped_state_type const& other) {
-        state_type staged = state_;
-        if (!staged.merge(other.value())) {
-            return false;
-        }
-        state_ = staged;
-        return true;
+        return detail::commit_merge(state_, other.value(), merge_state_into_);
     }
 
-    [[nodiscard]] bool merge(GSet const& other) {
-        state_type staged = state_;
-        if (!staged.merge(other.state_)) {
-            return false;
-        }
-        state_ = staged;
-        return true;
-    }
+    [[nodiscard]] bool merge(GSet const& other) { return detail::commit_merge(state_, other.state_, merge_state_into_); }
 
     // `a` is the merge TARGET and arrives from the caller, so it is as
     // untrusted as `b`.  BoundedHashSetState::merge validates only `b`,
-    // which left every walk of `a` unguarded.  Both sides are checked
-    // here; on refusal the existing convention returns `a` unchanged.
+    // so both sides are checked here.  On refusal `a` comes back
+    // unchanged.
     [[nodiscard]] static state_type merge(state_type a, state_type const& b) {
-        if (!a.well_formed()) {
-            return a;
+        if (a.well_formed()) {
+            (void)detail::commit_merge(a, b, merge_state_into_);
         }
-        state_type staged = a;
-        return staged.merge(b) ? staged : a;
+        return a;
     }
 
     [[nodiscard]] state_type state() const { return state_; }
 
     [[nodiscard]] bool contains(T const& value) const { return state_.contains(value); }
 
-    [[nodiscard]] CrdtCount<Capacity> size() const noexcept { return state_.size(); }
+    [[nodiscard]] CrdtCount<Capacity> size() const noexcept { return detail::crdt_count<Capacity>(state_.count); }
 
 private:
+    [[nodiscard]] static bool merge_state_into_(state_type& target, state_type const& other) {
+        return target.merge(other);
+    }
+
     state_type state_{};
 };
 
@@ -264,7 +282,7 @@ struct OrSetEntry {
 template <typename T, typename TagId = std::uint64_t, std::size_t Capacity = 128>
     requires CrdtCapacity<Capacity> && std::default_initializable<T> && std::copyable<T> && std::equality_comparable<T>
           && std::default_initializable<TagId> && std::copyable<TagId> && std::equality_comparable<TagId>
-class OrSet : public safety::Pinned<OrSet<T, TagId, Capacity>> {
+class OrSet : public ::foundation::Pinned<OrSet<T, TagId, Capacity>> {
 public:
     using value_type = T;
     using tag_type = TagId;
@@ -277,7 +295,7 @@ public:
 
     [[nodiscard]] bool add(local_add_type add_op) {
         auto const& op = add_op.value();
-        return upsert_(entry_type{.value = op.value, .tag = op.tag});
+        return upsert_into_(state_, entry_type{.value = op.value, .tag = op.tag});
     }
 
     [[nodiscard]] bool remove(local_remove_type value) noexcept {
@@ -300,42 +318,27 @@ public:
     }
 
     [[nodiscard]] bool merge(gossiped_state_type const& other) {
-        state_type staged = state_;
-        if (!merge_state_into_(staged, other.value())) {
-            return false;
-        }
-        state_ = staged;
-        return true;
+        return detail::commit_merge(state_, other.value(), merge_state_into_);
     }
 
-    [[nodiscard]] bool merge(OrSet const& other) {
-        state_type staged = state_;
-        if (!merge_state_into_(staged, other.state_)) {
-            return false;
-        }
-        state_ = staged;
-        return true;
-    }
+    [[nodiscard]] bool merge(OrSet const& other) { return detail::commit_merge(state_, other.state_, merge_state_into_); }
 
     // `a` is the merge TARGET and arrives from the caller, so it is as
     // untrusted as `b`.  merge_state_into_ validates only `b`, so a
-    // caller-supplied `a` with count past Capacity was walked by find_
-    // (out-of-bounds read) and then written at entries[count]
-    // (out-of-bounds write).  On refusal the existing convention
-    // returns `a` unchanged.
+    // caller-supplied `a` with count past Capacity would be walked by
+    // find_ (out-of-bounds read) and then written at entries[count]
+    // (out-of-bounds write).  On refusal `a` comes back unchanged.
     [[nodiscard]] static state_type merge(state_type a, state_type const& b) {
-        if (!a.well_formed()) {
-            return a;
+        if (a.well_formed()) {
+            (void)detail::commit_merge(a, b, merge_state_into_);
         }
-        OrSet tmp{};
-        state_type staged = a;
-        return tmp.merge_state_into_(staged, b) ? staged : a;
+        return a;
     }
 
     [[nodiscard]] state_type state() const { return state_; }
 
 private:
-    [[nodiscard]] std::optional<std::uint16_t> find_(state_type const& state, T const& value, TagId const& tag) const {
+    [[nodiscard]] static std::optional<std::uint16_t> find_(state_type const& state, T const& value, TagId const& tag) {
         for (std::uint16_t i = 0; i < state.count; ++i) {
             auto const& e = state.entries[i];
             if (e.value == value && e.tag == tag) {
@@ -345,14 +348,14 @@ private:
         return std::nullopt;
     }
 
-    [[nodiscard]] bool upsert_into_(state_type& state, entry_type incoming) const {
+    [[nodiscard]] static bool upsert_into_(state_type& state, entry_type incoming) {
         if (auto idx = find_(state, incoming.value, incoming.tag)) {
             state.entries[*idx].removed = state.entries[*idx].removed || incoming.removed;
             return true;
         }
         // `>=`, not `==`: BoundedTaggedState::count is public, so a
-        // count already past Capacity read as "not full" here and the
-        // write below landed outside entries.
+        // count already past Capacity would read as "not full" here and
+        // the write below would land outside entries.
         if (state.count >= Capacity) {
             return false;
         }
@@ -361,9 +364,7 @@ private:
         return true;
     }
 
-    [[nodiscard]] bool upsert_(entry_type incoming) { return upsert_into_(state_, incoming); }
-
-    [[nodiscard]] bool merge_state_into_(state_type& target, state_type const& other) const {
+    [[nodiscard]] static bool merge_state_into_(state_type& target, state_type const& other) {
         if (!other.well_formed()) {
             return false;
         }
@@ -397,7 +398,7 @@ template <typename V, typename Clock>
     requires std::default_initializable<V> && std::copyable<V> && std::totally_ordered<V>
           && std::default_initializable<Clock> && std::copyable<Clock>
           && std::three_way_comparable<Clock, std::strong_ordering>
-class LwwRegister : public safety::Pinned<LwwRegister<V, Clock>> {
+class LwwRegister : public ::foundation::Pinned<LwwRegister<V, Clock>> {
 public:
     using value_type = V;
     using clock_type = Clock;
@@ -459,17 +460,41 @@ struct CounterUpdate {
     CounterAmount amount;
 };
 
+// The checked door for a counter update.  A replica outside the counter or
+// an amount of zero is refused here, before either becomes a refinement.
+template <std::size_t MaxReplicas>
+    requires CrdtCapacity<MaxReplicas>
+[[nodiscard]] constexpr std::optional<LocalWrite<CounterUpdate<MaxReplicas>>>
+admit_counter_update(std::uint16_t replica, std::uint64_t amount) noexcept {
+    if (replica >= MaxReplicas || amount == 0) {
+        return std::nullopt;
+    }
+    return admit_local_write(CounterUpdate<MaxReplicas>{
+        .replica = ::fixy::mint_refined<crdt_index_bound<MaxReplicas>>(replica),
+        .amount = ::fixy::mint_refined<::fixy::positive>(amount),
+    });
+}
+
 template <std::size_t MaxReplicas>
     requires CrdtCapacity<MaxReplicas>
 struct GCounterState {
-    safety::FixedArray<std::uint64_t, MaxReplicas> counts{};
+    ::fixy::FixedArray<std::uint64_t, MaxReplicas> counts{};
 
     [[nodiscard]] friend constexpr bool operator==(GCounterState const&, GCounterState const&) = default;
+
+    constexpr void add(CounterUpdate<MaxReplicas> const& update) noexcept {
+        auto& slot = counts[update.replica.value()];
+        slot = ::foundation::sat::add_sat(slot, update.amount.value());
+    }
+
+    [[nodiscard]] constexpr std::uint64_t total() const noexcept {
+        return detail::saturating_total<MaxReplicas>(counts);
+    }
 };
 
 template <std::size_t MaxReplicas>
     requires CrdtCapacity<MaxReplicas>
-class GCounter : public safety::Pinned<GCounter<MaxReplicas>> {
+class GCounter : public ::foundation::Pinned<GCounter<MaxReplicas>> {
 public:
     using state_type = GCounterState<MaxReplicas>;
     using update_type = CounterUpdate<MaxReplicas>;
@@ -477,9 +502,7 @@ public:
     using gossiped_state_type = GossipedState<state_type>;
 
     [[nodiscard]] bool increment(local_update_type update) noexcept {
-        auto const& op = update.value();
-        auto& slot = state_.counts[op.replica.value()];
-        slot = detail::sat_add(slot, op.amount.value());
+        state_.add(update.value());
         return true;
     }
 
@@ -504,13 +527,7 @@ public:
 
     [[nodiscard]] constexpr state_type state() const noexcept { return state_; }
 
-    [[nodiscard]] constexpr std::uint64_t value() const noexcept {
-        std::uint64_t sum = 0;
-        for (std::size_t i = 0; i < MaxReplicas; ++i) {
-            sum = detail::sat_add(sum, state_.counts[i]);
-        }
-        return sum;
-    }
+    [[nodiscard]] constexpr std::uint64_t value() const noexcept { return state_.total(); }
 
 private:
     state_type state_{};
@@ -527,7 +544,7 @@ struct PNCounterState {
 
 template <std::size_t MaxReplicas>
     requires CrdtCapacity<MaxReplicas>
-class PNCounter : public safety::Pinned<PNCounter<MaxReplicas>> {
+class PNCounter : public ::foundation::Pinned<PNCounter<MaxReplicas>> {
 public:
     using state_type = PNCounterState<MaxReplicas>;
     using update_type = CounterUpdate<MaxReplicas>;
@@ -535,16 +552,12 @@ public:
     using gossiped_state_type = GossipedState<state_type>;
 
     [[nodiscard]] bool increment(local_update_type update) noexcept {
-        auto const& op = update.value();
-        auto& slot = state_.positive.counts[op.replica.value()];
-        slot = detail::sat_add(slot, op.amount.value());
+        state_.positive.add(update.value());
         return true;
     }
 
     [[nodiscard]] bool decrement(local_update_type update) noexcept {
-        auto const& op = update.value();
-        auto& slot = state_.negative.counts[op.replica.value()];
-        slot = detail::sat_add(slot, op.amount.value());
+        state_.negative.add(update.value());
         return true;
     }
 
@@ -566,21 +579,9 @@ public:
 
     [[nodiscard]] constexpr state_type state() const noexcept { return state_; }
 
-    [[nodiscard]] constexpr std::uint64_t positive() const noexcept {
-        std::uint64_t sum = 0;
-        for (std::size_t i = 0; i < MaxReplicas; ++i) {
-            sum = detail::sat_add(sum, state_.positive.counts[i]);
-        }
-        return sum;
-    }
+    [[nodiscard]] constexpr std::uint64_t positive() const noexcept { return state_.positive.total(); }
 
-    [[nodiscard]] constexpr std::uint64_t negative() const noexcept {
-        std::uint64_t sum = 0;
-        for (std::size_t i = 0; i < MaxReplicas; ++i) {
-            sum = detail::sat_add(sum, state_.negative.counts[i]);
-        }
-        return sum;
-    }
+    [[nodiscard]] constexpr std::uint64_t negative() const noexcept { return state_.negative.total(); }
 
     [[nodiscard]] constexpr std::int64_t value() const noexcept {
         const std::uint64_t pos = positive();
@@ -611,59 +612,47 @@ template <typename V, std::size_t MaxVersions, std::size_t MaxNodes, typename Cl
 struct MVRegisterState {
     using version_type = MVRegisterVersion<V, MaxNodes, ClockTag>;
 
-    safety::FixedArray<version_type, MaxVersions> versions{};
+    ::fixy::FixedArray<version_type, MaxVersions> versions{};
     std::uint16_t count = 0;
+
+    [[nodiscard]] constexpr bool well_formed() const noexcept { return count <= MaxVersions; }
 };
 
 template <typename V, std::size_t MaxVersions = 16, std::size_t MaxNodes = 8, typename ClockTag = void>
     requires CrdtCapacity<MaxVersions> && CrdtCapacity<MaxNodes> && std::default_initializable<V> && std::copyable<V>
           && std::totally_ordered<V>
-class MVRegister : public safety::Pinned<MVRegister<V, MaxVersions, MaxNodes, ClockTag>> {
+class MVRegister : public ::foundation::Pinned<MVRegister<V, MaxVersions, MaxNodes, ClockTag>> {
 public:
     using version_type = MVRegisterVersion<V, MaxNodes, ClockTag>;
     using state_type = MVRegisterState<V, MaxVersions, MaxNodes, ClockTag>;
     using local_write_type = LocalWrite<version_type>;
     using gossiped_state_type = GossipedState<state_type>;
 
-    [[nodiscard]] bool assign(local_write_type version) { return insert_version_(version.value()); }
+    [[nodiscard]] bool assign(local_write_type version) { return insert_version_into_(state_, version.value()); }
 
     [[nodiscard]] bool merge(gossiped_state_type const& other) {
-        state_type staged = state_;
-        if (!merge_state_into_(staged, other.value())) {
-            return false;
-        }
-        state_ = staged;
-        return true;
+        return detail::commit_merge(state_, other.value(), merge_state_into_);
     }
 
     [[nodiscard]] bool merge(MVRegister const& other) {
-        state_type staged = state_;
-        if (!merge_state_into_(staged, other.state_)) {
-            return false;
-        }
-        state_ = staged;
-        return true;
+        return detail::commit_merge(state_, other.state_, merge_state_into_);
     }
 
     // `a` is the merge TARGET and arrives from the caller.
     // insert_version_into_ does gate `state.count > MaxVersions`, but
-    // only once it is reached — an empty `b` skips the loop entirely
-    // and returns a malformed `staged` to the caller.  Gate `a` up
-    // front so no malformed state leaves this function.
+    // only once it is reached: an empty `b` skips the loop entirely and
+    // would return a malformed state.  Gate `a` up front so no malformed
+    // state leaves this function.
     [[nodiscard]] static state_type merge(state_type a, state_type const& b) {
-        if (a.count > MaxVersions) {
-            return a;
+        if (a.well_formed()) {
+            (void)detail::commit_merge(a, b, merge_state_into_);
         }
-        MVRegister tmp{};
-        state_type staged = a;
-        return tmp.merge_state_into_(staged, b) ? staged : a;
+        return a;
     }
 
     [[nodiscard]] state_type state() const { return state_; }
 
-    [[nodiscard]] CrdtCount<MaxVersions> size() const noexcept {
-        return CrdtCount<MaxVersions>{state_.count, typename CrdtCount<MaxVersions>::Trusted{}};
-    }
+    [[nodiscard]] CrdtCount<MaxVersions> size() const noexcept { return detail::crdt_count<MaxVersions>(state_.count); }
 
 private:
     [[nodiscard]] static bool same_version_(version_type const& a, version_type const& b) {
@@ -703,11 +692,11 @@ private:
     }
 
     [[nodiscard]] static bool insert_version_into_(state_type& state, version_type incoming) {
-        if (state.count > MaxVersions) {
+        if (!state.well_formed()) {
             return false;
         }
         std::uint16_t out = 0;
-        safety::FixedArray<version_type, MaxVersions> kept{};
+        ::fixy::FixedArray<version_type, MaxVersions> kept{};
         for (std::uint16_t i = 0; i < state.count; ++i) {
             auto const& existing = state.versions[i];
             if (same_version_(existing, incoming)) {
@@ -721,9 +710,9 @@ private:
                 ++out;
             }
         }
-        // `>=`, not `==`: `out` is bounded by state.count today, but
-        // the equality form only holds while that stays true, and the
-        // write below is the one that would land outside `kept`.
+        // `>=`, not `==`: `out` is bounded by state.count today, but the
+        // equality form only holds while that stays true, and the write
+        // below is the one that would land outside `kept`.
         if (out >= MaxVersions) {
             return false;
         }
@@ -735,10 +724,8 @@ private:
         return true;
     }
 
-    [[nodiscard]] bool insert_version_(version_type incoming) { return insert_version_into_(state_, incoming); }
-
     [[nodiscard]] static bool merge_state_into_(state_type& target, state_type const& other) {
-        if (other.count > MaxVersions) {
+        if (!other.well_formed()) {
             return false;
         }
         for (std::uint16_t i = 0; i < other.count; ++i) {
@@ -770,14 +757,14 @@ struct RgaNode {
 template <typename T, std::size_t Capacity>
     requires CrdtCapacity<Capacity> && std::default_initializable<T> && std::copyable<T>
 struct RgaMaterialized {
-    safety::FixedArray<T, Capacity> values{};
+    ::fixy::FixedArray<T, Capacity> values{};
     std::uint16_t count = 0;
 };
 
 template <typename T, typename Id = std::uint64_t, std::size_t Capacity = 128>
     requires CrdtCapacity<Capacity> && std::default_initializable<T> && std::copyable<T> && std::totally_ordered<T>
           && std::default_initializable<Id> && std::copyable<Id> && std::totally_ordered<Id>
-class RgaList : public safety::Pinned<RgaList<T, Id, Capacity>> {
+class RgaList : public ::foundation::Pinned<RgaList<T, Id, Capacity>> {
 public:
     using value_type = T;
     using id_type = Id;
@@ -791,11 +778,11 @@ public:
 
     [[nodiscard]] bool insert_after(local_insert_type insert) {
         auto const& op = insert.value();
-        return upsert_(node_type{.id = op.id, .after = op.after, .value = op.value});
+        return upsert_into_(state_, node_type{.id = op.id, .after = op.after, .value = op.value});
     }
 
     [[nodiscard]] bool erase(local_erase_type id) noexcept {
-        if (auto idx = find_(id.value())) {
+        if (auto idx = find_in_(state_, id.value())) {
             state_.entries[*idx].tombstone = true;
             return true;
         }
@@ -803,43 +790,30 @@ public:
     }
 
     [[nodiscard]] bool merge(gossiped_state_type const& other) {
-        state_type staged = state_;
-        if (!merge_state_into_(staged, other.value())) {
-            return false;
-        }
-        state_ = staged;
-        return true;
+        return detail::commit_merge(state_, other.value(), merge_state_into_);
     }
 
     [[nodiscard]] bool merge(RgaList const& other) {
-        state_type staged = state_;
-        if (!merge_state_into_(staged, other.state_)) {
-            return false;
-        }
-        state_ = staged;
-        return true;
+        return detail::commit_merge(state_, other.state_, merge_state_into_);
     }
 
     // `a` is the merge TARGET and arrives from the caller, so it is as
     // untrusted as `b`.  merge_state_into_ validates only `b`, so a
-    // caller-supplied `a` with count past Capacity was walked by
+    // caller-supplied `a` with count past Capacity would be walked by
     // find_in_ (out-of-bounds read) and then written at entries[count]
-    // (out-of-bounds write).  On refusal the existing convention
-    // returns `a` unchanged.
+    // (out-of-bounds write).  On refusal `a` comes back unchanged.
     [[nodiscard]] static state_type merge(state_type a, state_type const& b) {
-        if (!a.well_formed()) {
-            return a;
+        if (a.well_formed()) {
+            (void)detail::commit_merge(a, b, merge_state_into_);
         }
-        RgaList tmp{};
-        state_type staged = a;
-        return tmp.merge_state_into_(staged, b) ? staged : a;
+        return a;
     }
 
     [[nodiscard]] state_type state() const { return state_; }
 
     [[nodiscard]] materialized_type materialize() const {
         materialized_type out{};
-        safety::FixedArray<bool, Capacity> visited{};
+        ::fixy::FixedArray<bool, Capacity> visited{};
         emit_after_(Id{}, visited, out);
         return out;
     }
@@ -853,8 +827,6 @@ private:
         }
         return std::nullopt;
     }
-
-    [[nodiscard]] std::optional<std::uint16_t> find_(Id const& id) const { return find_in_(state_, id); }
 
     [[nodiscard]] static bool upsert_into_(state_type& state, node_type incoming) {
         if (auto idx = find_in_(state, incoming.id)) {
@@ -871,8 +843,8 @@ private:
             return true;
         }
         // `>=`, not `==`: BoundedTaggedState::count is public, so a
-        // count already past Capacity read as "not full" here and the
-        // write below landed outside entries.
+        // count already past Capacity would read as "not full" here and
+        // the write below would land outside entries.
         if (state.count >= Capacity) {
             return false;
         }
@@ -880,8 +852,6 @@ private:
         ++state.count;
         return true;
     }
-
-    [[nodiscard]] bool upsert_(node_type incoming) { return upsert_into_(state_, incoming); }
 
     [[nodiscard]] static bool merge_state_into_(state_type& target, state_type const& other) {
         if (!other.well_formed()) {
@@ -895,7 +865,7 @@ private:
         return true;
     }
 
-    void emit_after_(Id const& parent, safety::FixedArray<bool, Capacity>& visited, materialized_type& out) const {
+    void emit_after_(Id const& parent, ::fixy::FixedArray<bool, Capacity>& visited, materialized_type& out) const {
         for (;;) {
             std::optional<std::uint16_t> next{};
             for (std::uint16_t i = 0; i < state_.count; ++i) {
@@ -929,7 +899,7 @@ concept Crdt = requires(C& c, C const& other, typename C::state_type state) {
     typename C::gossiped_state_type;
     { c.state() } -> std::same_as<typename C::state_type>;
     { c.merge(other) } -> std::same_as<bool>;
-    { c.merge(typename C::gossiped_state_type{state}) } -> std::same_as<bool>;
+    { c.merge(admit_gossiped(state)) } -> std::same_as<bool>;
     { C::merge(c.state(), other.state()) } -> std::same_as<typename C::state_type>;
 };
 

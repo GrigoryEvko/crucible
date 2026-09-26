@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-214 fixture #4: LWW registers need a total-order clock.  A
-// vector-clock snapshot is partially ordered and can report unordered
-// concurrent events, so it is rejected at the type boundary.
+// An LWW register needs a total-order clock.  A vector-clock snapshot is
+// partially ordered and can report concurrent events as unordered, so it
+// is refused at the type boundary.
 
 #include <crucible/canopy/Crdt.h>
 

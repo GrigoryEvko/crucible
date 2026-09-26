@@ -65,7 +65,6 @@ using Entry = cc::ScuttlebuttVersionEntry;
 using Digest = cc::ScuttlebuttDigest<kPeers, kKeys>;
 using GDelta = cc::GossipedScuttlebuttDelta<GCState>;
 using GDigest = cc::GossipedScuttlebuttDigest<kPeers, kKeys>;
-using LKey = cc::LocalScuttlebuttKey;
 using Peer = cc::SwimPeer;
 
 [[nodiscard]] Uuid peer_uuid(std::uint32_t p) noexcept {
@@ -118,7 +117,7 @@ int main(int argc, char** argv) {
 
             GC gc{};
             for (std::uint32_t k = 0; k < kKeys; ++k) {
-                if (!sync.register_state<GC>(LKey{make_key(k)}, gc).has_value()) {
+                if (!sync.register_state<GC>(cc::admit_local_write(make_key(k)), gc).has_value()) {
                     return false;
                 }
             }

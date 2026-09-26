@@ -164,17 +164,17 @@ admit_scuttlebutt_key(std::string_view key) noexcept {
     if (key.size() > static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())) {
         return std::unexpected(ScuttlebuttError::KeyTooLong);
     }
-    return LocalScuttlebuttKey{ScuttlebuttKey{
+    return admit_local_write(ScuttlebuttKey{
         .hash = detail::fnv1a64(key),
         .length = static_cast<std::uint16_t>(key.size()),
-    }};
+    });
 }
 
 template <typename C>
 concept ScuttlebuttCrdt = requires(C& crdt, C const& const_crdt, typename C::state_type state) {
     typename C::state_type;
     { const_crdt.state() } -> std::same_as<typename C::state_type>;
-    { crdt.merge(GossipedState<typename C::state_type>{state}) } -> std::same_as<bool>;
+    { crdt.merge(admit_gossiped(state)) } -> std::same_as<bool>;
 } && std::copyable<typename C::state_type>;
 
 struct ScuttlebuttVersionEntry {
@@ -514,7 +514,7 @@ public:
         if (incoming.version <= local_version) {
             return false;
         }
-        if (!state.merge(GossipedState<typename C::state_type>{incoming.state})) {
+        if (!state.merge(admit_gossiped(incoming.state))) {
             return std::unexpected(ScuttlebuttError::MergeRejected);
         }
         local_version = incoming.version;

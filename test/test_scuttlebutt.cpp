@@ -54,7 +54,7 @@ int main() {
     assert(b.register_state(key, set_b).has_value());
     assert(a.key_count() == 1);
 
-    assert(set_a.add(cc::LocalWrite<std::uint64_t>{42}));
+    assert(set_a.add(cc::admit_local_write(std::uint64_t{42})));
     auto published = a.publish_local_change(key, set_a);
     assert(published.has_value());
     assert(a.publish_count() == 1);
@@ -95,10 +95,10 @@ int main() {
     assert(!wrong_type.has_value());
     assert(wrong_type.error() == cc::ScuttlebuttError::TypeMismatch);
 
-    assert(reg_a.assign(cc::LocalWrite<Reg::write_type>{Reg::write_type{
+    assert(reg_a.assign(cc::admit_local_write(Reg::write_type{
         .value = 99,
         .clock = cc::HlcTimestamp{.physical_ns = 1000, .counter = 1},
-    }}));
+    })));
     auto reg_delta = a.publish_local_change(reg_key, reg_a);
     assert(reg_delta.has_value());
 

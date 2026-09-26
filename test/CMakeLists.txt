@@ -6559,25 +6559,45 @@ crucible_neg_compile_effects_test(neg_vector_clock_mint_test_context
 crucible_neg_compile_test(neg_vector_clock_cross_n_snapshot
   "cannot convert|no matching function|could not convert|VectorClockSnapshot")
 
-# GAPS-214 — canopy/Crdt.h state-based CRDT substrate.
-#   * neg_crdt_gset_raw_add: local updates require source::Local.
-#   * neg_crdt_merge_raw_state: received state requires source::Gossiped.
-#   * neg_crdt_merge_local_state: source::Local state cannot substitute
-#     for source::Gossiped state at merge.
-#   * neg_crdt_lww_partial_clock: LWW clocks must be total-order clocks,
-#     not vector clocks with unordered concurrency.
-#   * neg_crdt_mv_register_unordered_value: MV-register values must be
-#     totally ordered so concurrent versions have byte-stable order.
-crucible_neg_compile_test(neg_crdt_gset_raw_add
-  "cannot convert|no matching function|could not convert|Tagged|Local")
-crucible_neg_compile_test(neg_crdt_merge_raw_state
-  "cannot convert|no matching function|could not convert|Gossiped|state_type")
-crucible_neg_compile_test(neg_crdt_merge_local_state
-  "cannot convert|no matching function|could not convert|Local|Gossiped")
-crucible_neg_compile_test(neg_crdt_lww_partial_clock
-  "constraints not satisfied|three_way_comparable|strong_ordering|partial_ordering")
-crucible_neg_compile_test(neg_crdt_mv_register_unordered_value
-  "constraints not satisfied|totally_ordered|three_way_comparable|operator<")
+# canopy/Crdt.h, the state-based CRDT substrate.
+#   * neg_crdt_gset_raw_add: a local write is a LocalWrite, and a raw value
+#     does not convert to one.
+#   * neg_crdt_merge_raw_state: a merge takes received state only as
+#     gossiped state, and raw state matches no merge.
+#   * neg_crdt_merge_local_state: state from the local door is not
+#     gossiped state at a merge.
+#   * neg_crdt_lww_partial_clock: an LWW clock must be totally ordered, and
+#     a vector-clock snapshot is not.
+#   * neg_crdt_mv_register_unordered_value: an MV-register value must be
+#     totally ordered, so that concurrent versions sort in one order.
+#   * neg_crdt_gset_floating_value and neg_crdt_gset_pointer_value: the slot
+#     hash admits only enums and integers.
+#   * neg_crdt_counter_update_raw_fields: raw integers do not build a
+#     counter update, because its replica and its amount are refinements.
+crucible_neg_compile_multi_test(neg_crdt_gset_raw_add
+  "cannot convert .int. to"
+  "fixy::Tagged<int, fixy::tags::source::Local>")
+crucible_neg_compile_multi_test(neg_crdt_merge_raw_state
+  "no matching function for call to .crucible::canopy::GSet<int, 8>::merge"
+  "merge\\(crucible::canopy::detail::BoundedHashSetState<int, 8>&\\)")
+crucible_neg_compile_multi_test(neg_crdt_merge_local_state
+  "no matching function for call to .crucible::canopy::GSet<int, 8>::merge"
+  "BoundedHashSetState<int, 8>, fixy::tags::source::Local>&\\)")
+crucible_neg_compile_multi_test(neg_crdt_lww_partial_clock
+  "template constraint failure for .template<class V, class Clock>"
+  "three_way_comparable<Clock, std::strong_ordering>. \\[with Clock = crucible::canopy::VectorClockSnapshot<4, void>\\]")
+crucible_neg_compile_multi_test(neg_crdt_mv_register_unordered_value
+  "template constraint failure for .template<class V, long unsigned int MaxVersions"
+  "totally_ordered<V>. \\[with V = EqualityOnlyPayload\\]")
+crucible_neg_compile_multi_test(neg_crdt_gset_floating_value
+  "template constraint failure for .template<class T, long unsigned int Capacity>"
+  "HashableValue<T>. \\[with T = double\\]")
+crucible_neg_compile_multi_test(neg_crdt_gset_pointer_value
+  "template constraint failure for .template<class T, long unsigned int Capacity>"
+  "HashableValue<T>. \\[with T = int\\*\\]")
+crucible_neg_compile_multi_test(neg_crdt_counter_update_raw_fields
+  "could not convert .9. from .int. to"
+  "fixy::Refinement<fixy::BoundedAbove<3>\\(\\), short unsigned int, false>")
 
 # GAPS-114 — canopy/Swim.h bounded SWIM membership substrate.
 #   * neg_swim_zero_max_peers: MaxPeers=0 is rejected structurally.

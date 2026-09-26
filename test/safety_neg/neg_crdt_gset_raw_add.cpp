@@ -1,7 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-214 fixture #1: local CRDT writes must carry source::Local.
-// Raw values cannot enter the mutation boundary.
+// A local CRDT write must arrive as a LocalWrite, which only
+// admit_local_write builds.  A raw value cannot enter the mutation
+// boundary.
 
 #include <crucible/canopy/Crdt.h>
 

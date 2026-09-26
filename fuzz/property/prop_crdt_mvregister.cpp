@@ -63,7 +63,6 @@ inline constexpr std::size_t kMaxVersions = 16;
 using MV = cc::MVRegister<std::uint32_t, kMaxVersions, kNodes>;
 using State = MV::state_type;
 using Version = MV::version_type;
-using LocalV = MV::local_write_type;
 
 // ─── independent happens-before / equality (from dense entries) ────
 
@@ -192,7 +191,7 @@ struct VerSet {
         for (std::size_t n = 0; n < kNodes; ++n) {
             v.clock.entries[n] = rng.next_below(3u);
         }
-        (void)reg.assign(LocalV{v});  // canonicalises into the antichain
+        (void)reg.assign(cc::admit_local_write(v));  // canonicalises into the antichain
     }
     return reg.state();
 }

@@ -53,8 +53,6 @@ inline constexpr std::uint32_t kMaxNodes = 8;
 
 using Rga = cc::RgaList<std::uint32_t, std::uint32_t, kCapacity>;
 using Insert = Rga::insert_type;
-using LocalInsert = Rga::local_insert_type;
-using LocalErase = Rga::local_erase_type;
 
 struct NodeSpec {
     std::uint32_t after = 0;  // 0 = root, else a prior node's id
@@ -165,17 +163,17 @@ int main(int argc, char** argv) {
             Rga rga;
             // Insert in id order (i → id i+1); `after` always already present.
             for (std::uint32_t i = 0; i < spec.count; ++i) {
-                if (!rga.insert_after(LocalInsert{Insert{
+                if (!rga.insert_after(cc::admit_local_write(Insert{
                         .id = i + 1u,
                         .after = spec.nodes[i].after,
                         .value = spec.nodes[i].value,
-                    }})) {
+                    }))) {
                     return false;
                 }
             }
             for (std::uint32_t i = 0; i < spec.count; ++i) {
                 if (spec.nodes[i].tombstone != 0u) {
-                    if (!rga.erase(LocalErase{i + 1u})) return false;
+                    if (!rga.erase(cc::admit_local_write(i + 1u))) return false;
                 }
             }
 

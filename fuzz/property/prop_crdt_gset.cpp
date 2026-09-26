@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
 
             // Build faithfulness + size == popcount (spec.a is exactly the
             // 32-bit universe, so popcount(spec.a) is the element count).
-            if (a.size().value() != std::popcount(spec.a)) return false;
+            if (!a.well_formed() || a.count != static_cast<std::uint16_t>(std::popcount(spec.a))) return false;
             for (std::uint32_t i = 0; i < kUniverse; ++i) {
                 if (a.contains(i) != (((spec.a >> i) & 1u) != 0u)) return false;
             }
