@@ -538,7 +538,7 @@ template <typename T>
                 || !governor || *governor > 1u) {
                 return std::unexpected(LedgerError::MalformedRecord);
             }
-            ledger.competence.defects = safety::Bits<CompetenceDefect>::from_raw(*defects);
+            ledger.competence.defects = ::fixy::Bits<CompetenceDefect>::from_raw(*defects);
             ledger.competence.isolated_core_count = *isolated;
             ledger.competence.online_sibling_count = *siblings;
             ledger.competence.load_average_milli = *load;

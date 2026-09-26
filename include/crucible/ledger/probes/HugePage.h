@@ -62,6 +62,7 @@
 // anything.
 
 #include <crucible/ledger/ProbeSupport.h>
+#include <fixy/concurrent/Topology.h>
 
 #include <algorithm>
 #include <bit>
@@ -285,7 +286,7 @@ inline MeasurementMemo<HugePageMeasurement> g_memo{};
         return result;
     }
 
-    if (!concurrent::Topology::instance().hugepage_2mb_available()) {
+    if (!::fixy::concurrent::Topology::instance().hugepage_2mb_available()) {
         // The kernel has transparent hugepages switched off entirely, so
         // there is no advice to give and nothing to compare. Not a
         // refusal: the host has answered.

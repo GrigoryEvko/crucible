@@ -53,8 +53,9 @@
 // builds contracts at `observe` and the violation handler is [[noreturn]] —
 // and is there as a second line, not as the first.
 
-#include <crucible/concurrent/_WorkingSet.h>
 #include <crucible/ledger/ProbeSupport.h>
+#include <fixy/concurrent/Topology.h>
+#include <fixy/concurrent/WorkingSet.h>
 
 #if defined(__x86_64__) || defined(__i386__)
 #include <immintrin.h>
@@ -90,7 +91,7 @@ inline constexpr std::size_t kMaxStreamBytes = 512ull * 1024ull * 1024ull;
 inline constexpr std::size_t kStreamCacheMultiple = 8;
 
 [[nodiscard]] inline std::size_t stream_bytes_for_host() noexcept {
-    const std::size_t last_level = concurrent::Topology::instance().l3_total_bytes();
+    const std::size_t last_level = ::fixy::concurrent::Topology::instance().l3_total_bytes();
     const std::size_t wanted = last_level * kStreamCacheMultiple;
     return std::clamp(wanted, kMinStreamBytes, kMaxStreamBytes);
 }
@@ -422,10 +423,10 @@ static_assert(kNarrowWidthBits < kWideWidthBits);
 
 // The compute buffer must fit the smallest L1d this tree supports, or the
 // compute-bound shape is not compute-bound on that host.
-static_assert(kComputeBytes < concurrent::conservative_l1d_per_core);
+static_assert(kComputeBytes < ::fixy::concurrent::conservative_l1d_per_core);
 
 // The streaming buffer must be past any plausible last-level cache.
-static_assert(kMinStreamBytes > concurrent::conservative_l3_total);
+static_assert(kMinStreamBytes > ::fixy::concurrent::conservative_l3_total);
 static_assert(kMinStreamBytes <= kMaxStreamBytes);
 
 }  // namespace vector_width_detail::self_test

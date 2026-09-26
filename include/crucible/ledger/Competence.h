@@ -22,9 +22,9 @@
 // would leave the runtime with nothing; refusing to *trust* leaves it with
 // the conservative path, which is always available.
 
-#include <crucible/concurrent/_Topology.h>
 #include <crucible/ledger/HostFingerprint.h>
-#include <crucible/safety/_Bits.h>
+#include <fixy/Bits.h>
+#include <fixy/concurrent/Topology.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -105,7 +105,7 @@ inline constexpr std::uint32_t kLoadBudgetPercentOfCpus = 50;
 inline constexpr std::int32_t kMaxPerfEventParanoid = 2;
 
 struct CompetenceReport {
-    safety::Bits<CompetenceDefect> defects{};
+    ::fixy::Bits<CompetenceDefect> defects{};
 
     // The facts behind the defects, kept so an operator reading the ledger
     // can see how far off the host was rather than only that it was off.
@@ -179,13 +179,13 @@ namespace competence_detail {
 // The set of CPUs the kernel currently has online, as a sorted list.
 [[nodiscard]] inline std::vector<int> read_online_cpus() noexcept {
     fingerprint_detail::SmallFileBuffer buffer{};
-    return concurrent::topology_detail::parse_cpu_list_(
+    return ::fixy::concurrent::topology_detail::parse_cpu_list_(
         fingerprint_detail::read_small_file("/sys/devices/system/cpu/online", buffer));
 }
 
 [[nodiscard]] inline std::vector<int> read_isolated_cpus() noexcept {
     fingerprint_detail::SmallFileBuffer buffer{};
-    return concurrent::topology_detail::parse_cpu_list_(
+    return ::fixy::concurrent::topology_detail::parse_cpu_list_(
         fingerprint_detail::read_small_file("/sys/devices/system/cpu/isolated", buffer));
 }
 
@@ -242,7 +242,7 @@ namespace competence_detail {
         std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", isolated_cpu);
         fingerprint_detail::SmallFileBuffer buffer{};
         const std::vector<int> siblings =
-            concurrent::topology_detail::parse_cpu_list_(fingerprint_detail::read_small_file(path, buffer));
+            ::fixy::concurrent::topology_detail::parse_cpu_list_(fingerprint_detail::read_small_file(path, buffer));
         for (const int sibling : siblings) {
             if (sibling == isolated_cpu) {
                 continue;
@@ -281,9 +281,9 @@ namespace competence_detail {
 // Derives the defect word from facts already in hand. Split out from the
 // probe so a test can hand it a synthetic host and get a deterministic
 // answer without touching sysfs.
-[[nodiscard]] constexpr safety::Bits<CompetenceDefect> derive_defects(CompetenceReport const& facts,
+[[nodiscard]] constexpr ::fixy::Bits<CompetenceDefect> derive_defects(CompetenceReport const& facts,
                                                                       bool was_topology_probed) noexcept {
-    safety::Bits<CompetenceDefect> defects{};
+    ::fixy::Bits<CompetenceDefect> defects{};
 
     if (facts.isolated_core_count == 0u) {
         defects.set(CompetenceDefect::NoIsolatedCores);
@@ -324,7 +324,7 @@ namespace competence_detail {
 }
 
 [[nodiscard]] inline CompetenceReport probe_competence() noexcept {
-    const concurrent::Topology::Snapshot topology = concurrent::Topology::instance().snapshot();
+    const ::fixy::concurrent::Topology::Snapshot topology = ::fixy::concurrent::Topology::instance().snapshot();
     const std::vector<int> isolated = competence_detail::read_isolated_cpus();
     const std::vector<int> online = competence_detail::read_online_cpus();
 
@@ -343,7 +343,7 @@ namespace competence_detail {
     report.scaling_min_freq_khz = facts.scaling_min_freq_khz;
     report.scaling_max_freq_khz = facts.scaling_max_freq_khz;
 
-    report.defects = derive_defects(report, topology.source == concurrent::Topology::Source::Sysfs);
+    report.defects = derive_defects(report, topology.source == ::fixy::concurrent::Topology::Source::Sysfs);
     return report;
 }
 

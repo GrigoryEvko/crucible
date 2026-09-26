@@ -58,8 +58,8 @@
 // helper-thread entry does fire in Release, since Release evaluates
 // contracts at `observe` and the handler does not return.
 
-#include <crucible/concurrent/_Topology.h>
 #include <crucible/ledger/ProbeSupport.h>
+#include <fixy/concurrent/Topology.h>
 
 #include <algorithm>
 #include <atomic>
@@ -93,7 +93,7 @@ inline constexpr std::size_t kSweepMaxCeilingBytes = 256ull * 1024ull * 1024ull;
 inline constexpr std::size_t kMaxSweepPoints = 64;
 
 [[nodiscard]] inline std::size_t sweep_ceiling_bytes() noexcept {
-    const std::size_t last_level = concurrent::Topology::instance().l3_total_bytes();
+    const std::size_t last_level = ::fixy::concurrent::Topology::instance().l3_total_bytes();
     return std::clamp(last_level * kSweepCeilingMultipleOfL3, kSweepMinCeilingBytes, kSweepMaxCeilingBytes);
 }
 
@@ -263,7 +263,7 @@ private:
     if (!chosen.empty()) {
         return chosen;
     }
-    for (std::span<const int> group : concurrent::Topology::instance().l3_groups()) {
+    for (std::span<const int> group : ::fixy::concurrent::Topology::instance().l3_groups()) {
         const bool holds_measuring_cpu = std::find(group.begin(), group.end(), measuring_cpu) != group.end();
         if (!holds_measuring_cpu) {
             continue;
@@ -284,7 +284,7 @@ private:
 // A CPU on a different NUMA node from `measuring_cpu`, or -1 when the host
 // has one node or the topology could not say.
 [[nodiscard]] inline int remote_node_cpu_for(int measuring_cpu) noexcept {
-    concurrent::Topology const& topology = concurrent::Topology::instance();
+    ::fixy::concurrent::Topology const& topology = ::fixy::concurrent::Topology::instance();
     const int node_count = static_cast<int>(topology.numa_nodes());
     if (node_count < 2) {
         return -1;
