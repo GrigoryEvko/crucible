@@ -673,6 +673,29 @@ template <auto FnPtr>
 inline constexpr std::uint64_t stable_function_id =
     detail::hash_name(detail::checked_stable_name<std::remove_pointer_t<decltype(FnPtr)>>());
 
+// This hashes the printed name of the function that the pointer names.
+// It tells apart two functions of one signature, which share one
+// stable_function_id.  The name is read only when the function has a
+// stable identity, so a static invoker of a closure and a function with
+// internal linkage have no name id.
+
+namespace detail {
+
+template <auto FnPtr>
+[[nodiscard]] consteval std::uint64_t checked_function_name_hash() {
+    static_assert(function_has_stable_identity_v<FnPtr>,
+                  "stable_function_name_id: the function has no stable identity.  A static invoker of a closure "
+                  "or a function with internal linkage prints a name that differs between translation units.  "
+                  "Name a function with external linkage.");
+    return hash_name(std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
+}
+
+}  // namespace detail
+
+template <auto FnPtr>
+    requires std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>
+inline constexpr std::uint64_t stable_function_name_id = detail::checked_function_name_hash<FnPtr>();
+
 namespace detail::stable_name_self_test {
 
 static_assert(!stable_name_of<int>.empty());
@@ -741,7 +764,14 @@ inline void f2(float) noexcept {}
 inline int f3(int) noexcept { return 0; }
 inline void f4(int, int) noexcept {}
 inline void f5(int, float) noexcept {}
+inline void f1_twin(int) noexcept {}
 }  // namespace fn_test
+
+// Two functions of one signature share the type id and differ by name.
+static_assert(stable_function_id<&fn_test::f1> == stable_function_id<&fn_test::f1_twin>);
+static_assert(stable_function_name_id<&fn_test::f1> != stable_function_name_id<&fn_test::f1_twin>);
+static_assert(stable_function_name_id<&fn_test::f1> == stable_function_name_id<&fn_test::f1>);
+static_assert(stable_function_name_id<&fn_test::f0> != 0);
 
 static_assert(stable_function_id<&fn_test::f0> != stable_function_id<&fn_test::f1>);
 static_assert(stable_function_id<&fn_test::f1> != stable_function_id<&fn_test::f2>);
