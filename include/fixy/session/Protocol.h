@@ -37,10 +37,11 @@
 // representation, so nothing here depends on the abandonment policy.
 // The handle and that policy are in fixy/session/Handle.h.
 //
-// The EpochCtx context wrapper of the ported source is not here.  It
-// reads EpochLattice and GenerationLattice, which foundation does not
-// carry yet.  The LoopCtx traits keep their indirection, so EpochCtx is
-// one specialization of each when those lattices land.
+// The EpochCtx context wrapper of the ported source is not here.  No
+// production file uses it, so the port drops it.  The lattices that it
+// reads are in foundation: foundation/algebra/lattices/StrongCounterLattice.h
+// holds EpochLattice and GenerationLattice.  The LoopCtx traits keep their
+// indirection, so a context wrapper is one specialization of each.
 
 #include <foundation/algebra/Transition.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
@@ -349,11 +350,10 @@ consteval bool head_is(std::meta::info shape) {
 
 // ── Loop context ─────────────────────────────────────────────────────
 //
-// The traits indirection has one inhabitant while EpochCtx is absent:
-// a LoopCtx is its own inner context.  It stays because the context
-// axis is an extension point.  A wrapper that carries admission facts
-// beside the loop specializes these three, and each Continue resolution
-// stays correct.
+// The traits indirection has one inhabitant: a LoopCtx is its own inner
+// context.  It stays because the context axis is an extension point.  A
+// wrapper that carries admission facts beside the loop specializes these
+// three, and each Continue resolution stays correct.
 
 template <typename LoopCtx>
 struct session_loop_ctx_traits {
