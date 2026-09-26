@@ -23,13 +23,13 @@
 #include <crucible/ledger/RefreshDaemon.h>
 
 namespace ledger = crucible::ledger;
-namespace effects = crucible::effects;
+namespace fe = ::foundation::effects;
 
-static_assert(effects::CtxOwnsCapability<effects::BgCompileCtx, effects::Effect::Bg>,
+static_assert(fe::CtxOwnsCapability<::fixy::BgCompileCtx, fe::Effect::Bg>,
               "premise: the compile context really is a background context");
-static_assert(!ledger::CtxFitsRefreshDaemon<effects::BgCompileCtx>, "premise: it does not claim effects::Block");
+static_assert(!ledger::CtxFitsRefreshDaemon<::fixy::BgCompileCtx>, "premise: it does not claim the Block effect");
 
-constexpr effects::BgCompileCtx g_compile_ctx{::crucible::effects::testing::bg()};
+constexpr ::fixy::BgCompileCtx g_compile_ctx{fe::testing::bg()};
 
 // The line under test.  Being a background context does not by itself
 // permit waiting on a disk.

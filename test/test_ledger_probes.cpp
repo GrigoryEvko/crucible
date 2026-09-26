@@ -430,7 +430,7 @@ void test_backoff_grows_only_when_nothing_was_admitted() {
 }
 
 void test_daemon_publishes_a_view_a_reader_can_use() {
-    constexpr ledger::LedgerIoCtx ctx{::crucible::effects::testing::bg()};
+    constexpr ledger::LedgerIoCtx ctx{::foundation::effects::testing::bg()};
     ledger::RefreshDaemonConfig config{};
     config.wanted = kStubWanted;
     config.registry = kStubRegistry;
@@ -473,7 +473,7 @@ void test_daemon_publishes_a_view_a_reader_can_use() {
 }
 
 void test_daemon_thread_starts_and_stops() {
-    constexpr ledger::LedgerIoCtx ctx{::crucible::effects::testing::bg()};
+    constexpr ledger::LedgerIoCtx ctx{::foundation::effects::testing::bg()};
     ledger::RefreshDaemonConfig config{};
     config.wanted = kStubWanted;
     config.registry = kStubRegistry;

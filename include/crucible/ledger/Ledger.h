@@ -149,7 +149,7 @@ private:
 // kernel, and constexpr would lie about the cost. §XXI allows that for an
 // allocating mint, and the marker on the signature line is how the
 // scanner is told so.
-template <effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
 [[nodiscard]] inline LedgerView mint_ledger_view(  // MINT-PATTERN-OK: allocating
     Ctx const& ctx, HostFingerprint fingerprint) noexcept {
@@ -169,7 +169,7 @@ template <effects::IsExecCtx Ctx>
 
 // The fingerprint-probing overload. Same carve-out: it reads sysfs and
 // then a file.
-template <effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
 [[nodiscard]] inline LedgerView mint_ledger_view(  // MINT-PATTERN-OK: allocating
     Ctx const& ctx) noexcept {

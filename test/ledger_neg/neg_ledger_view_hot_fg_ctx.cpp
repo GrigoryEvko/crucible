@@ -22,13 +22,13 @@
 #include <crucible/ledger/Ledger.h>
 
 namespace ledger = crucible::ledger;
-namespace effects = crucible::effects;
+namespace fe = ::foundation::effects;
 
 // The premise, asserted so the fixture fails for the stated reason and
 // not because HotFgCtx changed shape underneath it.
-static_assert(!ledger::CtxFitsLedgerStore<effects::HotFgCtx>, "premise: a foreground context claims no capability");
+static_assert(!ledger::CtxFitsLedgerStore<::fixy::HotFgCtx>, "premise: a foreground context claims no capability");
 
-constexpr effects::HotFgCtx g_hot_ctx{};
+constexpr ::fixy::HotFgCtx g_hot_ctx = fe::testing::ForegroundWitness::fg();
 
 // The line under test.  A hot-path context cannot mint a ledger view.
 ledger::LedgerView g_view = ledger::mint_ledger_view(g_hot_ctx, ledger::HostFingerprint{});

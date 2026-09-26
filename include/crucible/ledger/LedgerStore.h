@@ -10,15 +10,10 @@
 // Writes are tmp-then-fsync-then-rename. A reader therefore sees either the
 // whole previous ledger or the whole new one, never a half-written line.
 //
-// The descriptor work goes through crucible::safety (handles/_FileHandle.h),
-// whose syscall sites are already covered by the capability allowlist.
-// fixy::fs offers a higher-level version of the same dance and would have
-// been the tidier dependency, but it is under active rewrite and currently
-// does not compile; a cache mechanism should not be hostage to another
-// subsystem's edit cycle. The one syscall this header issues directly is
-// fsync, which has no typed wrapper in the tree; it carries an inline
-// capability marker rather than a shared-allowlist entry, which is the
-// sanctioned form for a site inside a Ctx-gated boundary.
+// The descriptor work goes through fixy::fs: mint_file opens, read_full,
+// write_full and file_size move the bytes, sync flushes, and every one of
+// them takes the same context this header's entry points take.  This header
+// issues no syscall of its own.
 //
 // Not Cipher. Cipher is 1,263 lines of event-sourced, tiered, federated
 // state whose store path has no production caller, and the brief for this
@@ -39,15 +34,15 @@
 // scripts/check-detsafe-ledger.py asserts no ledger symbol is reachable
 // from content_hash, merkle_hash or the memory plan.
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/handles/_FileHandle.h>
 #include <crucible/ledger/Competence.h>
 #include <crucible/ledger/HostFingerprint.h>
 #include <crucible/ledger/Verdict.h>
-#include <crucible/safety/_Path.h>
-#include <crucible/safety/sanitize/_PathTraversal.h>
+#include <fixy/Ctx.h>
+#include <fixy/Path.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <fixy/os/Fs.h>
+#include <foundation/effects/Ctx.h>
 
 #include <unistd.h>
 
@@ -81,41 +76,27 @@ namespace crucible::ledger {
 // inconvenient — the read genuinely blocks, and pretending otherwise is how
 // a startup path acquires a disk stall nobody budgeted for.
 
-using LedgerIoCtx = effects::ExecCtx<
-    effects::Bg, effects::ctx_numa::Spread, effects::ctx_alloc::Heap, effects::ctx_heat::Cold, effects::ctx_resid::DRAM,
-    effects::Row<effects::Effect::Bg, effects::Effect::Alloc, effects::Effect::IO, effects::Effect::Block>>;
+// The background load row: Bg, Alloc, IO and Block.  A tool builds one from
+// the background door, foundation::effects::host::BackgroundOwner, and the
+// door's call sites are listed in scripts/ctx-bg-door-allowlist.txt.
+using LedgerIoCtx = ::fixy::BgLoadCtx;
 
 static_assert(sizeof(LedgerIoCtx) == 1, "an execution context must stay a tag");
 
-// The key that builds the background source of a LedgerIoCtx, and the door
-// that takes it.  The key has a private constructor, so only a friend of the
-// key builds one.  A tool that runs the store names these two through this
-// header, and it names the old substrate nowhere of its own.
-using LedgerIoKey = effects::detail::ctx_mint::bg_key;
-using effects::mint_bg_context;
-
 // Every store entry point takes a context admitting both IO and Block,
-// because every one of them opens a file and waits on a disk.
-//
-// Written through CtxOwnsAllOf rather than as a hand-rolled conjunction of
-// row_contains_v: the named lift costs the same and makes the shape of the
-// authorization recognizable at a glance, which is the discipline
-// check-row-contains-discipline.py enforces.
-//
-// Spelled here rather than borrowed from fixy::fs::CtxAdmitsIoBlock so the
-// ledger keeps building while that tree is mid-rewrite. The two are the
-// same pair of conjuncts, and re-pointing this at fixy::fs once it is
-// green again is a one-line change.
+// because every one of them opens a file and waits on a disk.  That is the
+// gate of every fixy::fs call the store makes, so the store states it once
+// under its own name.
 template <class Ctx>
-concept CtxFitsLedgerStore = effects::CtxOwnsAllOf<Ctx, effects::Effect::IO, effects::Effect::Block>;
+concept CtxFitsLedgerStore = ::fixy::fs::CtxAdmitsFs<Ctx>;
 
 static_assert(CtxFitsLedgerStore<LedgerIoCtx>);
-static_assert(CtxFitsLedgerStore<effects::TestRunnerCtx>);
+static_assert(CtxFitsLedgerStore<::fixy::TestRunnerCtx>);
 // A foreground context claims nothing, so it cannot open a file.
-static_assert(!CtxFitsLedgerStore<effects::HotFgCtx>);
+static_assert(!CtxFitsLedgerStore<::fixy::HotFgCtx>);
 // An initialization context claims IO but not Block, so it cannot wait on
 // one either.
-static_assert(!CtxFitsLedgerStore<effects::ColdInitCtx>);
+static_assert(!CtxFitsLedgerStore<::fixy::ColdInitCtx>);
 
 // ── Bounds ────────────────────────────────────────────────────────────
 
@@ -202,8 +183,15 @@ namespace store_detail {
 // The cache root, tainted with its environment provenance so the sanitizer
 // has something to launder. An operator who exports XDG_CACHE_HOME=../..
 // gets a rejected path rather than a ledger written outside the cache.
-[[nodiscard]] inline std::expected<safety::Path<safety::source::Sanitized>, LedgerError>
-sanitized_cache_root() noexcept {
+using SanitizedPath = ::fixy::Path<::fixy::tags::source::Sanitized>;
+
+// Marks a path built from the environment, which the sanitizer then
+// launders.  FromEnvPath names a source, so mint_tagged admits it.
+[[nodiscard]] inline ::fixy::Path<::fixy::tags::source::FromEnvPath> from_env(std::filesystem::path path) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::FromEnvPath>(std::move(path));
+}
+
+[[nodiscard]] inline std::expected<SanitizedPath, LedgerError> sanitized_cache_root() noexcept {
     const char* xdg_cache_home = std::getenv("XDG_CACHE_HOME");
     const char* home = std::getenv("HOME");
 
@@ -218,9 +206,8 @@ sanitized_cache_root() noexcept {
     root /= "crucible";
     root /= "hwledger";
 
-    safety::Path<safety::source::FromEnvPath> tainted{std::move(root)};
-    auto sanitized =
-        safety::sanitize::path_traversal::sanitize_path_no_dotdot<safety::source::FromEnvPath>(std::move(tainted));
+    auto sanitized = ::fixy::sanitize::path_traversal::sanitize_path_no_dotdot<::fixy::tags::source::FromEnvPath>(
+        from_env(std::move(root)));
     if (!sanitized.has_value()) {
         return std::unexpected(LedgerError::StorePathUnavailable);
     }
@@ -248,16 +235,14 @@ sanitized_cache_root() noexcept {
     return name;
 }
 
-[[nodiscard]] inline std::expected<safety::Path<safety::source::Sanitized>, LedgerError>
-under_cache_root(std::string_view leaf) noexcept {
+[[nodiscard]] inline std::expected<SanitizedPath, LedgerError> under_cache_root(std::string_view leaf) noexcept {
     auto root = sanitized_cache_root();
     if (!root.has_value()) {
         return std::unexpected(root.error());
     }
     std::filesystem::path full = root->value() / std::filesystem::path{leaf};
-    safety::Path<safety::source::FromEnvPath> tainted{std::move(full)};
-    auto sanitized =
-        safety::sanitize::path_traversal::sanitize_path_no_dotdot<safety::source::FromEnvPath>(std::move(tainted));
+    auto sanitized = ::fixy::sanitize::path_traversal::sanitize_path_no_dotdot<::fixy::tags::source::FromEnvPath>(
+        from_env(std::move(full)));
     if (!sanitized.has_value()) {
         return std::unexpected(LedgerError::StorePathUnavailable);
     }
@@ -266,7 +251,7 @@ under_cache_root(std::string_view leaf) noexcept {
 
 }  // namespace store_detail
 
-[[nodiscard]] inline std::expected<safety::Path<safety::source::Sanitized>, LedgerError>
+[[nodiscard]] inline std::expected<store_detail::SanitizedPath, LedgerError>
 ledger_path_for(HostFingerprint fingerprint) noexcept {
     const std::array<char, 64> name = store_detail::ledger_filename(fingerprint);
     return store_detail::under_cache_root(std::string_view{name.data()});
@@ -632,55 +617,26 @@ template <typename T>
 
 // ── Load and commit ───────────────────────────────────────────────────
 
-namespace store_detail {
-
-// The one direct syscall in this header. fsync has no typed wrapper in the
-// tree, and the alternative — skipping it — would let the rename publish a
-// filename whose contents are still in page cache, so a crash leaves the
-// target pointing at a truncated or empty inode. That is strictly worse
-// than pointing at the previous ledger, which is what the whole
-// tmp-then-rename shape exists to guarantee.
-[[nodiscard]] inline bool flush_descriptor(safety::FileHandle const& file) noexcept {
-    if (!file.is_open()) {
-        return false;
-    }
-    // The capability proof for the call below: the only caller is
-    // commit_ledger, whose requires-clause is CtxFitsLedgerStore<Ctx> —
-    // effects::IO plus effects::Block, checked at the type level and
-    // witnessed by the static_asserts above that reject HotFgCtx (no
-    // capability at all) and ColdInitCtx (IO but not Block).
-    while (true) {
-        const int outcome = ::fsync(file.get());  // SYSCALL-CAP-OK: see the proof above
-        if (outcome == 0) {
-            return true;
-        }
-        if (errno == EINTR) {
-            continue;
-        }
-        return false;
-    }
-}
-
-}  // namespace store_detail
-
 // Reading a file invokes the kernel, so this cannot be constexpr and is
 // not marked so.
-template <effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
-[[nodiscard]] inline std::expected<Ledger, LedgerError> load_ledger(Ctx const& /* ctx */,
+[[nodiscard]] inline std::expected<Ledger, LedgerError> load_ledger(Ctx const& ctx,
                                                                     HostFingerprint fingerprint) noexcept {
     auto path = ledger_path_for(fingerprint);
     if (!path.has_value()) {
         return std::unexpected(path.error());
     }
 
-    auto opened = safety::open_read(path->value().c_str());
+    auto opened = ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*path));
     if (!opened.has_value()) {
         return std::unexpected(LedgerError::StoreReadFailed);
     }
 
-    safety::FileHandle const& file = *opened;
-    auto size = safety::file_size(file);
+    // The descriptor closes when `file` leaves scope, which discharges the
+    // linear handle the mint returned.
+    const ::fixy::fs::OwnedFd file = std::move(*opened).consume();
+    auto size = ::fixy::fs::file_size(ctx, file);
     if (!size.has_value() || *size < 0) {
         return std::unexpected(LedgerError::StoreReadFailed);
     }
@@ -690,7 +646,8 @@ template <effects::IsExecCtx Ctx>
     }
 
     std::string buffer(byte_count, '\0');
-    auto filled = safety::read_full(file, std::as_writable_bytes(std::span<char>{buffer.data(), buffer.size()}));
+    auto filled =
+        ::fixy::fs::read_full(ctx, file, std::as_writable_bytes(std::span<char>{buffer.data(), buffer.size()}));
     if (!filled.has_value()) {
         return std::unexpected(LedgerError::StoreReadFailed);
     }
@@ -710,10 +667,9 @@ template <effects::IsExecCtx Ctx>
 }
 
 // Writing a file invokes the kernel, so this cannot be constexpr.
-template <effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
-[[nodiscard]] inline std::expected<void, LedgerError> commit_ledger(Ctx const& /* ctx */,
-                                                                    Ledger const& ledger) noexcept {
+[[nodiscard]] inline std::expected<void, LedgerError> commit_ledger(Ctx const& ctx, Ledger const& ledger) noexcept {
     if (!ledger.fingerprint.is_complete()) {
         return std::unexpected(LedgerError::FingerprintMismatch);
     }
@@ -741,35 +697,36 @@ template <effects::IsExecCtx Ctx>
     const std::string body = serialize_ledger(ledger);
 
     {
-        auto opened = safety::open_write_truncate(temp_path->value().c_str(), 0644);
+        auto opened = ::fixy::fs::mint_durable_truncate_file(ctx, *temp_path, 0644);
         if (!opened.has_value()) {
             return std::unexpected(LedgerError::StoreWriteFailed);
         }
-        safety::FileHandle const& file = *opened;
-        auto written = safety::write_full(file, std::as_bytes(std::span<const char>{body.data(), body.size()}));
+        const ::fixy::fs::OwnedFd file = std::move(*opened).consume();
+        auto written =
+            ::fixy::fs::write_full(ctx, file, std::as_bytes(std::span<const char>{body.data(), body.size()}));
         if (!written.has_value()) {
             return std::unexpected(LedgerError::StoreWriteFailed);
         }
         // The sync happens while the descriptor is open, and the rename
         // happens after the sync. Reversing them would let a crash publish
-        // the target name over an inode whose data never reached disk.
-        if (!store_detail::flush_descriptor(file)) {
+        // the target name over an inode whose data never reached disk,
+        // which is strictly worse than the previous ledger that the whole
+        // tmp-then-rename shape exists to keep.
+        if (!::fixy::fs::sync<::fixy::fs::sync_op::Fsync>(ctx, file).has_value()) {
             return std::unexpected(LedgerError::StoreWriteFailed);
         }
     }
 
-    // std::filesystem::rename with an error_code is rename(2) underneath and
-    // does not throw. Both paths sit in the same directory, so the rename is
-    // within one filesystem and is therefore atomic.
+    // Both paths sit in the same directory, so the rename is within one
+    // filesystem and is therefore atomic.
     //
     // The parent directory is deliberately NOT synced afterwards. That sync
     // buys durability of the rename across a power cut, and this is a cache:
     // the cost of losing the last commit is one remeasure. Paying a second
     // fsync on every write to avoid that is the wrong trade for a mechanism
     // whose stated constraint is lightweight.
-    std::error_code renamed{};
-    std::filesystem::rename(temp_path->value(), target_path->value(), renamed);
-    if (renamed) {
+    auto renamed = ::fixy::fs::commit_atomic<::fixy::fs::atomicity::Rename>(ctx, *temp_path, *target_path);
+    if (!renamed.has_value()) {
         // Leaving the temporary behind on a failed rename would accumulate
         // one file per failed commit, so it goes even though the commit did
         // not.

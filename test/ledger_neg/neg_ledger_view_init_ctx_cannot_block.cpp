@@ -27,16 +27,16 @@
 #include <crucible/ledger/Ledger.h>
 
 namespace ledger = crucible::ledger;
-namespace effects = crucible::effects;
+namespace fe = ::foundation::effects;
 
 // The premises, asserted so the fixture fails for the stated reason.
 // Unlike the foreground context, this one DOES admit IO — only Block is
 // missing, which is what makes it a distinct mismatch class.
-static_assert(effects::row_contains_v<effects::row_type_of_t<effects::ColdInitCtx>, effects::Effect::IO>,
+static_assert(fe::CtxOwnsAllOf<::fixy::ColdInitCtx, fe::Effect::IO>,
               "premise: an initialization context may touch the kernel");
-static_assert(!effects::row_contains_v<effects::row_type_of_t<effects::ColdInitCtx>, effects::Effect::Block>,
+static_assert(!fe::CtxOwnsAllOf<::fixy::ColdInitCtx, fe::Effect::Block>,
               "premise: an initialization context may not park");
-static_assert(!ledger::CtxFitsLedgerStore<effects::ColdInitCtx>, "premise: the store needs both IO and Block");
+static_assert(!ledger::CtxFitsLedgerStore<::fixy::ColdInitCtx>, "premise: the store needs both IO and Block");
 
 // The background context, which differs only by admitting Block, is
 // accepted. Without this the fixture could pass because the concept
@@ -44,7 +44,7 @@ static_assert(!ledger::CtxFitsLedgerStore<effects::ColdInitCtx>, "premise: the s
 static_assert(ledger::CtxFitsLedgerStore<ledger::LedgerIoCtx>,
               "control: a background context admits both and is accepted");
 
-constexpr effects::ColdInitCtx g_init_ctx{::crucible::effects::testing::init()};
+constexpr ::fixy::ColdInitCtx g_init_ctx{fe::testing::init()};
 
 // The line under test.  Claiming IO is not enough; the read blocks.
 ledger::LedgerView g_view = ledger::mint_ledger_view(g_init_ctx, ledger::HostFingerprint{});

@@ -23,18 +23,18 @@
 #include <crucible/ledger/RefreshDaemon.h>
 
 namespace ledger = crucible::ledger;
-namespace effects = crucible::effects;
+namespace fe = ::foundation::effects;
 
 // The premises, asserted so the fixture fails for the stated reason and
 // not because TestRunnerCtx changed shape underneath it.  The first says
 // this context really can work the store; the second says it really
 // cannot claim the background effect.
-static_assert(ledger::CtxFitsLedgerStore<effects::TestRunnerCtx>,
+static_assert(ledger::CtxFitsLedgerStore<::fixy::TestRunnerCtx>,
               "premise: a fixture context can read and write the ledger file");
-static_assert(!ledger::CtxFitsRefreshDaemon<effects::TestRunnerCtx>,
-              "premise: a fixture context does not claim effects::Bg");
+static_assert(!ledger::CtxFitsRefreshDaemon<::fixy::TestRunnerCtx>,
+              "premise: a fixture context does not claim the Bg effect");
 
-constexpr effects::TestRunnerCtx g_test_ctx{::crucible::effects::testing::test()};
+constexpr ::fixy::TestRunnerCtx g_test_ctx{fe::testing::test()};
 
 // The line under test.  Reading a ledger is not the same permission as
 // running a thread that refreshes one.

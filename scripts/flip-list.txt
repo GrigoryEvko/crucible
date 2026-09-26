@@ -132,9 +132,6 @@ include/crucible/cog/SrIov.h
 include/crucible/forge/Ir001/Comm.h
 include/crucible/forge/_wip/Phases/Comm.h
 include/crucible/ledger/HostFingerprint.h
-include/crucible/ledger/Ledger.h
-include/crucible/ledger/LedgerStore.h
-include/crucible/ledger/RefreshDaemon.h
 include/crucible/mimic/CogMimic.h
 include/crucible/mimic/Semaphore.h
 include/crucible/mimic/_wip/network/Backend.h

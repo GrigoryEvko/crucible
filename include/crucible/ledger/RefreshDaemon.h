@@ -76,14 +76,15 @@ namespace crucible::ledger {
 
 template <class Ctx>
 concept CtxFitsRefreshDaemon =
-    effects::CtxOwnsAllOf<Ctx, effects::Effect::IO, effects::Effect::Block, effects::Effect::Bg>;
+    ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block,
+                                        ::foundation::effects::Effect::Bg>;
 
 static_assert(CtxFitsRefreshDaemon<LedgerIoCtx>);
-static_assert(!CtxFitsRefreshDaemon<effects::HotFgCtx>, "a foreground context claims nothing and cannot refresh");
-static_assert(!CtxFitsRefreshDaemon<effects::ColdInitCtx>, "initialization claims IO but not Block");
-static_assert(!CtxFitsRefreshDaemon<effects::TestRunnerCtx>,
+static_assert(!CtxFitsRefreshDaemon<::fixy::HotFgCtx>, "a foreground context claims nothing and cannot refresh");
+static_assert(!CtxFitsRefreshDaemon<::fixy::ColdInitCtx>, "initialization claims IO but not Block");
+static_assert(!CtxFitsRefreshDaemon<::fixy::TestRunnerCtx>,
               "a fixture context claims IO and Block but not Bg, so it cannot stand in for a background thread");
-static_assert(!CtxFitsRefreshDaemon<effects::BgCompileCtx>, "the compile context claims Bg and IO but not Block");
+static_assert(!CtxFitsRefreshDaemon<::fixy::BgCompileCtx>, "the compile context claims Bg and IO but not Block");
 
 // ── The schedule ──────────────────────────────────────────────────────
 
@@ -229,8 +230,8 @@ public:
     // The daemon keeps the background context that its mint hands to it.  The
     // commit in run_one_cycle acts under that context, so the daemon never
     // holds more authority than the caller that started it.
-    RefreshDaemon(effects::Bg const& bg, RefreshDaemonConfig config, HostFacts facts, HostFingerprint fingerprint,
-                  Ledger seed) noexcept
+    RefreshDaemon(::foundation::effects::Bg const& bg, RefreshDaemonConfig config, HostFacts facts,
+                  HostFingerprint fingerprint, Ledger seed) noexcept
         : bg_{bg}, config_{config}, facts_{facts}, fingerprint_{fingerprint}, working_{std::move(seed)} {
         publish_(working_);
     }
@@ -385,7 +386,7 @@ private:
 
     // No default member initializer: the only source of a background
     // context is the one the constructor receives.
-    [[no_unique_address]] effects::Bg bg_;
+    [[no_unique_address]] ::foundation::effects::Bg bg_;
     RefreshDaemonConfig config_{};
     HostFacts facts_{};
     HostFingerprint fingerprint_{};
@@ -415,7 +416,7 @@ private:
 // by-value return would have to move it. §XXI allows an allocating mint to
 // drop constexpr, and the marker on the signature line is how the scanner
 // is told so.
-template <effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsRefreshDaemon<Ctx>
 [[nodiscard]] inline std::unique_ptr<RefreshDaemon> mint_refresh_daemon(  // MINT-PATTERN-OK: allocating
     Ctx const& ctx, RefreshDaemonConfig config) noexcept

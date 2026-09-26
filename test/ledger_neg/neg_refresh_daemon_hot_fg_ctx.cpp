@@ -21,11 +21,11 @@
 #include <crucible/ledger/RefreshDaemon.h>
 
 namespace ledger = crucible::ledger;
-namespace effects = crucible::effects;
+namespace fe = ::foundation::effects;
 
-static_assert(!ledger::CtxFitsRefreshDaemon<effects::HotFgCtx>, "premise: a foreground context claims nothing");
+static_assert(!ledger::CtxFitsRefreshDaemon<::fixy::HotFgCtx>, "premise: a foreground context claims nothing");
 
-constexpr effects::HotFgCtx g_hot_ctx{};
+constexpr ::fixy::HotFgCtx g_hot_ctx = fe::testing::ForegroundWitness::fg();
 
 // The line under test.  The hot path consults the ledger; it does not
 // refresh it.

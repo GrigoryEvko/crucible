@@ -18,3 +18,4 @@
 # test/, bench/ and fuzz/ are not scanned.  The test door serves them.
 
 include/foundation/effects/Effect.h namespace-scope x3 — declares the owner, makes it a friend of the background key, and defines it with its door.  This is the definition site.
+tools/crucible_hwprobe.cpp main — the one-shot hardware probe runs no dispatch thread, so its main thread is its only thread, and the ledger store it drives reads and writes a file and waits on the disk.
