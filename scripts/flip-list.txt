@@ -46,7 +46,6 @@ bench/bench_dispatch.cpp
 bench/bench_merkle_dag.cpp
 bench/bench_phases.cpp
 bench/bench_record_leaf.cpp
-bench/bench_region_cache.cpp
 bench/bench_serialize.cpp
 fuzz/boundary/old_tree.h
 fuzz/property/prop_callsite_table_dedup.cpp
@@ -54,7 +53,6 @@ include/crucible/BackgroundThread.h
 include/crucible/CallSiteTable.h
 include/crucible/Cipher.h
 include/crucible/CostModel.h
-include/crucible/RegionCache.h
 include/crucible/Serialize.h
 include/crucible/SwissTable.h
 include/crucible/TraceLoader.h

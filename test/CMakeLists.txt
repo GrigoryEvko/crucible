@@ -7374,16 +7374,17 @@ crucible_neg_compile_test(neg_device_capability_raw_assignment
 crucible_neg_compile_test(neg_device_capability_cross_source_assignment
   "no match|cannot convert|no viable|could not convert|Tagged|source")
 
-# ─── WRAP-RegionCache-2 #987 neg-compile tests ──────────────────────
-#
-# RegionCache::ops_[CAP] migrates from raw `const TraceEntry*` array to
-# `safety::Tagged<const TraceEntry*, source::RegionOps>[CAP]`.  Two
-# fixtures per HS14 (BYPASS + LAUNDERING), mirroring the WRAP-CCtx-2
-# / WRAP-BgThread-4 Tagged-half discipline.
-crucible_neg_compile_test(neg_region_ops_ptr_raw_assignment
-  "no match|cannot convert|no viable|could not convert|explicit|constructor")
-crucible_neg_compile_test(neg_region_ops_ptr_cross_source_assignment
-  "no match|cannot convert|no viable|could not convert|Tagged|source")
+# RegionCache::ops_ holds fixy::Tagged<const TraceEntry*, source::RegionOps>.
+#   * neg_region_ops_ptr_raw_assignment: a raw pointer does not convert,
+#     because the constructor from the value is private.
+#   * neg_region_ops_ptr_cross_source_assignment: a pointer under the Arena
+#     tag does not convert, because no retag edge joins the two tags.
+crucible_neg_compile_multi_test(neg_region_ops_ptr_raw_assignment
+  "neg_region_ops_ptr_raw_assignment.cpp:29:20: error: conversion from .const crucible::FakeTraceEntry\\*. to non-scalar type"
+  "\\{aka .fixy::Tagged<const crucible::FakeTraceEntry\\*, fixy::tags::source::RegionOps>.\\} requested")
+crucible_neg_compile_multi_test(neg_region_ops_ptr_cross_source_assignment
+  "neg_region_ops_ptr_cross_source_assignment.cpp:28:26: error: conversion from"
+  ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::RegionOps>. requested")
 
 # ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
 #

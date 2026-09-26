@@ -11,11 +11,11 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
+#include <memory>
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/RegionCache.h>
+#include <foundation/effects/Effect.h>
 
 #include "bench_harness.h"
 
@@ -33,22 +33,23 @@ constexpr uint32_t NUM_OPS = 128;
 constexpr uint32_t NUM_REGIONS = 10;
 
 struct TestFixture {
-    effects::Test test = effects::testing::test();
+    ::foundation::effects::Test test = ::foundation::effects::testing::test();
     Arena arena{1 << 20};
     RegionNode* regions[NUM_REGIONS]{};
     MemoryPlan* plans[NUM_REGIONS]{};
 
     TestFixture() {
         for (uint32_t r = 0; r < NUM_REGIONS; r++) {
-            auto* ops = arena.alloc_array<TraceEntry>(test.alloc, NUM_OPS);
-            std::memset(ops, 0, NUM_OPS * sizeof(TraceEntry));
+            // The arena returns storage only, so each object starts its
+            // lifetime here with its member initializers.
+            auto* ops = arena.alloc_array_nonzero<TraceEntry>(test.alloc, NUM_OPS);
+            std::uninitialized_value_construct_n(ops, NUM_OPS);
             for (uint32_t i = 0; i < NUM_OPS; i++) {
                 ops[i].schema_hash = SchemaHash{0x1000 + r * 0x100 + i};
                 ops[i].shape_hash = ShapeHash{0x2000 + r * 0x100 + i};
             }
 
-            plans[r] = arena.alloc_obj<MemoryPlan>(test.alloc);
-            std::memset(plans[r], 0, sizeof(MemoryPlan));
+            plans[r] = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
 
             regions[r] = make_region(test.alloc, arena, ops, NUM_OPS);
             regions[r]->plan = plans[r];

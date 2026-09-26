@@ -11,12 +11,13 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
-#include <crucible/safety/_Cyclic.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Tagged.h>
-#include <crucible/safety/_WeakRef.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Cyclic.h>
+#include <fixy/Mutation.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
-#include <cassert>
+#include <array>
 #include <cstdint>
 
 #ifndef CRUCIBLE_NO_THREAD_SAFETY
@@ -58,10 +59,11 @@ struct RegionCache {
 
         const uint32_t slot = head_.index();
         // The slot type stays nullable so an empty or evicted slot remains
-        // representable, even though this particular write is non-null.
-        regions_[slot] = safety::WeakRef<const RegionNode>::from_raw(region);
+        // representable.  This write binds the region itself, which the
+        // check above proved non-null.
+        regions_[slot] = ::fixy::WeakRef<const RegionNode>{*region};
         content_hashes_[slot] = hash;
-        ops_[slot] = OpsPtr{region->ops};
+        ops_[slot] = ::fixy::mint_tagged<::fixy::tags::source::RegionOps, const TraceEntry*>(region->ops);
         // The op count, and nothing else. It used to be written as
         // `region->plan ? region->num_ops : 0`, which overloaded it with a
         // second meaning: a planless region was stored with a count of zero
@@ -133,33 +135,26 @@ private:
     // A slot holds a region the graph owns and this cache does not. The slot
     // type makes that explicit and keeps the identity read behind an accessor
     // that can report an empty slot.
-    safety::WeakRef<const RegionNode> regions_[CAP]{};
-    ContentHash content_hashes_[CAP]{};
+    std::array<::fixy::WeakRef<const RegionNode>, CAP> regions_{};
+    std::array<ContentHash, CAP> content_hashes_{};
     // The tag records that the pointer was taken out of a region at the
     // moment it was inserted here.
-    using OpsPtr = ::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>;
-    OpsPtr ops_[CAP]{};
-    uint32_t num_ops_[CAP]{};
+    using OpsPtr = ::fixy::Tagged<const TraceEntry*, ::fixy::tags::source::RegionOps>;
+    std::array<OpsPtr, CAP> ops_{};
+    std::array<uint32_t, CAP> num_ops_{};
 
     // A free-running counter. index() is the next slot to write and
     // index_back(i) is the i-th most recently written one.
-    safety::Cyclic<uint32_t, CAP> head_{};
-    safety::BoundedMonotonic<uint32_t, CAP> count_{uint32_t{0}};
+    ::fixy::Cyclic<uint32_t, CAP> head_{};
+    ::fixy::BoundedMonotonic<uint32_t, CAP> count_ = ::fixy::mint_bounded_monotonic<uint32_t, CAP>(0u);
+
+    // The wrappers add no storage, so each slot array keeps the layout of
+    // the raw array it replaces and each counter the layout of a uint32_t.
+    static_assert(sizeof(OpsPtr) == sizeof(const TraceEntry*) && alignof(OpsPtr) == alignof(const TraceEntry*));
+    static_assert(sizeof(regions_) == CAP * sizeof(const RegionNode*));
+    static_assert(sizeof(ops_) == CAP * sizeof(const TraceEntry*));
+    static_assert(sizeof(head_) == sizeof(uint32_t));
+    static_assert(sizeof(count_) == sizeof(uint32_t));
 };
-
-static_assert(sizeof(::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>)
-                  == sizeof(const TraceEntry*),
-              "Tagged<const TraceEntry*, source::RegionOps> must preserve pointer size");
-static_assert(alignof(::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>)
-                  == alignof(const TraceEntry*),
-              "Tagged<const TraceEntry*, source::RegionOps> must preserve pointer alignment");
-static_assert(sizeof(safety::WeakRef<const RegionNode>[RegionCache::CAP])
-                  == RegionCache::CAP * sizeof(const RegionNode*),
-              "WeakRef cache-slot array must stay layout-identical to raw pointers");
-
-static_assert(sizeof(safety::Cyclic<uint32_t, RegionCache::CAP>) == sizeof(uint32_t),
-              "Cyclic ring cursor must stay layout-identical to a raw uint32_t");
-static_assert(sizeof(safety::BoundedMonotonic<uint32_t, RegionCache::CAP>) == sizeof(uint32_t),
-              "BoundedMonotonic fill counter must stay layout-identical to a raw uint32_t");
 
 }  // namespace crucible
