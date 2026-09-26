@@ -4,9 +4,10 @@
 
 namespace mb = crucible::mimic::_wip::network;
 
-void require_nv(mb::DeclaredNetworkKernel<mb::NetworkBackendVendor::Nv>) {}
+static void require_nv(mb::DeclaredNetworkKernel<mb::NetworkBackendVendor::Nv>) {}
 
 int main() {
-    mb::DeclaredNetworkKernel<mb::NetworkBackendVendor::Am> am{mb::NetworkKernelArtifact{}};
+    const mb::DeclaredNetworkKernel<mb::NetworkBackendVendor::Am> am =
+        ::fixy::mint_tagged<mb::wip_source::AmNetwork>(mb::NetworkKernelArtifact{});
     require_nv(am);
 }

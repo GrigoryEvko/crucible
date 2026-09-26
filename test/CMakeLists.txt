@@ -9114,7 +9114,7 @@ crucible_neg_compile_test(neg_mimic_network_backend_raw_node
 crucible_neg_compile_test(neg_mimic_network_backend_compute_node
   "static assertion failed|NetworkKernelNode|ir001_network_kernel_kind")
 crucible_neg_compile_test(neg_mimic_network_backend_cross_vendor
-  "could not convert|no known conversion|AmNetwork|NvNetwork|Tagged")
+  "could not convert .am. from .Tagged<\\[\\.\\.\\.\\],crucible::mimic::_wip::network::wip_source::AmNetwork>. to .Tagged<\\[\\.\\.\\.\\],crucible::mimic::_wip::network::wip_source::NvNetwork>.")
 crucible_neg_compile_test(neg_mimic_network_backend_wrong_cog
   "static assertion failed|BackendAcceptsCog|Mellanox|Gpu")
 

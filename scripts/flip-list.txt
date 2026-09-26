@@ -86,7 +86,6 @@ include/crucible/cog/NicConfig.h
 include/crucible/cog/SrIov.h
 include/crucible/ledger/HostFingerprint.h
 include/crucible/mimic/Semaphore.h
-include/crucible/mimic/_wip/network/Backend.h
 include/crucible/topology/CongestionTelemetry.h
 include/crucible/topology/CongestionTelemetryWorker.h
 include/crucible/topology/Discovery.h

@@ -62,9 +62,6 @@ include/crucible/cntp/_wip/Wireguard.h
 include/crucible/cog/NicConfig.h
 include/crucible/cog/SrIov.h
 
-# ── mimic/ (2 files: 1 stable + 1 _wip) ─────────────────────────
-include/crucible/mimic/_wip/network/Backend.h
-
 # ── topology/ ──────────────────────────────────────────────────
 include/crucible/topology/CongestionTelemetry.h
 include/crucible/topology/Discovery.h

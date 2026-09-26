@@ -4,8 +4,10 @@
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/mimic/CogMimic.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <foundation/reflect/EnumName.h>
 
+#include <concepts>
 #include <cstdint>
 #include <expected>
 #include <string_view>
@@ -92,23 +94,10 @@ enum class NetworkBackendError : std::uint8_t {
     }
 }
 
+// The enumerator identifier, or "<unknown NetworkBackendError>" for a
+// value that no enumerator holds.
 [[nodiscard]] constexpr std::string_view network_backend_error_name(NetworkBackendError error) noexcept {
-    switch (error) {
-        case NetworkBackendError::None:
-            return "None";
-        case NetworkBackendError::BackendUnavailable:
-            return "BackendUnavailable";
-        case NetworkBackendError::UnsupportedCogKind:
-            return "UnsupportedCogKind";
-        case NetworkBackendError::UnsupportedOperation:
-            return "UnsupportedOperation";
-        case NetworkBackendError::RecipeForbidsAlgorithm:
-            return "RecipeForbidsAlgorithm";
-        case NetworkBackendError::EmptyContentHash:
-            return "EmptyContentHash";
-        default:
-            return "<unknown NetworkBackendError>";
-    }
+    return ::foundation::reflect::enum_name(error);
 }
 
 template <NetworkBackendVendor Vendor>
@@ -203,7 +192,7 @@ struct NetworkKernelArtifact {
 static_assert(std::is_trivially_copyable_v<NetworkKernelArtifact>);
 
 template <NetworkBackendVendor Vendor>
-using DeclaredNetworkKernel = safety::Tagged<NetworkKernelArtifact, typename NetworkBackendTraits<Vendor>::source>;
+using DeclaredNetworkKernel = ::fixy::Tagged<NetworkKernelArtifact, typename NetworkBackendTraits<Vendor>::source>;
 
 template <NetworkBackendVendor Vendor, class Kernel>
 concept NetworkKernelFor = std::same_as<Kernel, DeclaredNetworkKernel<Vendor>>;
@@ -250,7 +239,7 @@ plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> nod
         }
     }
 
-    DeclaredNetworkKernel<Vendor> artifact{NetworkKernelArtifact{
+    auto artifact = ::fixy::mint_tagged<typename NetworkBackendTraits<Vendor>::source>(NetworkKernelArtifact{
         .vendor = Vendor,
         .artifact_kind = NetworkBackendTraits<Vendor>::artifact_kind,
         .op_kind = Node::kind,
@@ -268,7 +257,7 @@ plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> nod
         .cog_kernel_cache_key = mimic.cog_kernel_cache_key(),
         .estimated_descriptor_bytes = static_cast<std::uint32_t>(64U + 16U * participants),
         .participants = participants,
-    }};
+    });
 
     // The content_hash check above makes this branch unreachable. It stays
     // because callers rely on a planned artifact carrying a non-zero
