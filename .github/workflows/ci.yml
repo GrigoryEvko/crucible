@@ -105,7 +105,7 @@ jobs:
           bash scripts/install-tree-sitter.sh --self-test
           bash scripts/install-tree-sitter.sh
 
-      # Non-blocking for now, matching the aarch64, bench and vessel-dispatch
+      # Non-blocking for now, matching the aarch64 and vessel-dispatch
       # convention: flip `continue-on-error` off once a run confirms the
       # runner's clang-format agrees with this tree.
       #
@@ -553,8 +553,8 @@ jobs:
     needs: [guards, patched-gcc]
     runs-on: ubuntu-24.04
     container: fedora:44
-    # Non-blocking while this leg proves out, matching the aarch64 and bench
-    # legs above. Flip to blocking once it has been green for a few runs. The
+    # Non-blocking while this leg proves out, matching the aarch64 legs
+    # above. Flip to blocking once it has been green for a few runs. The
     # step-level `::error::` annotations below fire either way, so a failure is
     # visible in the run summary rather than only in the log.
     continue-on-error: true
@@ -697,13 +697,8 @@ jobs:
   bench:
     name: bench (compile gate, x86_64)
     needs: [guards, patched-gcc]
-    # Non-blocking until the bench/ tree is modernized against current production
-    # APIs. The bench preset was never CI-built, so ~13 bench TUs drifted across
-    # safety-wrapper migrations: TensorDimArray::Slot now takes TensorDim (not int),
-    # and RecipeFlags is safety::Bits. Same posture as the aarch64 legs — the job still
-    # runs and reports for observability, but its red doesn't gate the run while the
-    # modernization is in flight. Flip back to blocking once all bench TUs compile.
-    continue-on-error: true
+    # Blocking: every bench target compiles under the bench preset, so a red
+    # build here is a regression in a bench or in an API that a bench uses.
     runs-on: ubuntu-24.04
     container: fedora:44
     env:
