@@ -41,7 +41,9 @@ struct OrderedOddParticipantRecipe {
 void test_names_and_layout() {
     static_assert(sizeof(net::NetworkChunkCount) == sizeof(std::uint8_t));
     static_assert(sizeof(net::DeclaredNetworkRecipeConstraints) == sizeof(net::NetworkRecipeConstraints));
-    static_assert(std::is_trivially_copyable_v<net::NetworkRecipeConstraints>);
+    static_assert(std::is_trivially_copy_constructible_v<net::NetworkRecipeConstraints>);
+    static_assert(!std::is_trivially_copyable_v<net::NetworkRecipeConstraints>,
+                  "the refined chunk count keeps a byte copy from building the constraints");
 
     assert(net::network_recipe_error_name(net::NetworkRecipeError::InvalidChunkCount)
            == std::string_view{"InvalidChunkCount"});

@@ -160,7 +160,6 @@ include/crucible/cog/SrIov.h
 include/crucible/cog/TargetCaps.h
 include/crucible/forge/Ir001/Comm.h
 include/crucible/forge/_wip/Phases/Comm.h
-include/crucible/forge/recipes/Network.h
 include/crucible/ledger/Competence.h
 include/crucible/ledger/HostFingerprint.h
 include/crucible/ledger/Ledger.h

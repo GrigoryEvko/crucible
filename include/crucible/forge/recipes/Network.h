@@ -2,9 +2,9 @@
 
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 #include <cstdint>
 #include <concepts>
@@ -41,8 +41,9 @@ enum class NetworkEquivalenceClass : std::uint8_t {
     ByteIdentical,
 };
 
-using NetworkChunkCount = safety::Bounded<std::uint8_t{1}, kNetworkRecipeMaxChunks, std::uint8_t>;
-using NetworkParticipantCount = safety::Positive<std::uint16_t>;
+inline constexpr auto kNetworkChunkRange = ::fixy::in_range<std::uint8_t{1}, kNetworkRecipeMaxChunks>;
+using NetworkChunkCount = ::fixy::Refined<kNetworkChunkRange, std::uint8_t>;
+using NetworkParticipantCount = ::fixy::Positive<std::uint16_t>;
 
 struct NetworkRecipeConstraints {
     bool ring_eligible = true;
@@ -53,7 +54,7 @@ struct NetworkRecipeConstraints {
     bool lossy_compression_allowed = false;
     bool quantization_allowed = false;
     bool fec_allowed = true;
-    NetworkChunkCount max_chunk_count{kNetworkRecipeMaxChunks, typename NetworkChunkCount::Trusted{}};
+    NetworkChunkCount max_chunk_count = ::fixy::mint_refined<kNetworkChunkRange>(kNetworkRecipeMaxChunks);
     NetworkEquivalenceClass equivalence = NetworkEquivalenceClass::OrderedTolerance;
 };
 
@@ -63,7 +64,7 @@ struct NetworkReductionLaws {
 };
 
 using DeclaredNetworkRecipeConstraints =
-    safety::Tagged<NetworkRecipeConstraints, safety::source::NetworkRecipeRegistry>;
+    ::fixy::Tagged<NetworkRecipeConstraints, ::fixy::tags::source::NetworkRecipeRegistry>;
 
 [[nodiscard]] std::string_view network_recipe_error_name(NetworkRecipeError error) noexcept;
 
@@ -81,7 +82,7 @@ admit_network_chunk_count(std::uint8_t count) noexcept {
     if (count == 0u || count > kNetworkRecipeMaxChunks) {
         return std::unexpected(NetworkRecipeError::InvalidChunkCount);
     }
-    return NetworkChunkCount{count, typename NetworkChunkCount::Trusted{}};
+    return ::fixy::mint_refined<kNetworkChunkRange>(count);
 }
 
 [[nodiscard]] constexpr std::expected<NetworkParticipantCount, NetworkRecipeError>
@@ -89,7 +90,7 @@ admit_network_participant_count(std::uint16_t count) noexcept {
     if (count == 0u) {
         return std::unexpected(NetworkRecipeError::EmptyParticipantSet);
     }
-    return NetworkParticipantCount{count, typename NetworkParticipantCount::Trusted{}};
+    return ::fixy::mint_refined<::fixy::positive>(count);
 }
 
 [[nodiscard]] constexpr NetworkEquivalenceClass equivalence_class_for(ReductionDeterminism determinism) noexcept {
@@ -119,9 +120,9 @@ admit_network_participant_count(std::uint16_t count) noexcept {
         recipe.determinism == ReductionDeterminism::UNORDERED || recipe.determinism == ReductionDeterminism::ORDERED;
     constraints.quantization_allowed = constraints.lossy_compression_allowed;
     if (recipe.determinism == ReductionDeterminism::BITEXACT_STRICT) {
-        constraints.max_chunk_count = NetworkChunkCount{std::uint8_t{1}, typename NetworkChunkCount::Trusted{}};
+        constraints.max_chunk_count = ::fixy::mint_refined<kNetworkChunkRange>(std::uint8_t{1});
     }
-    return DeclaredNetworkRecipeConstraints{constraints};
+    return ::fixy::mint_tagged<::fixy::tags::source::NetworkRecipeRegistry>(constraints);
 }
 
 [[nodiscard]] constexpr DeclaredNetworkRecipeConstraints query_constraints(NumericalRecipe const& recipe) noexcept {
@@ -227,6 +228,10 @@ struct FecProtectedAlgorithm {
 
 static_assert(sizeof(NetworkChunkCount) == sizeof(std::uint8_t));
 static_assert(sizeof(DeclaredNetworkRecipeConstraints) == sizeof(NetworkRecipeConstraints));
-static_assert(std::is_trivially_copyable_v<NetworkRecipeConstraints>);
+// The chunk count is refined, so no byte route builds the constraints.  The
+// copy and the destruction stay trivial, so the value still passes in
+// registers.
+static_assert(std::is_trivially_copy_constructible_v<NetworkRecipeConstraints>
+              && std::is_trivially_destructible_v<NetworkRecipeConstraints>);
 
 }  // namespace crucible::forge::recipes
