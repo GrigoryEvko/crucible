@@ -4672,6 +4672,9 @@ crucible_neg_compile_warden_test(neg_hot_region_registry_mint_bg_ctx
 crucible_neg_compile_warden_test(neg_hot_region_registry_mint_hot_fg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
+crucible_neg_compile_warden_test(neg_hot_region_registry_handle_direct_ctor
+    "HotRegionRegistryHandle::HotRegionRegistryHandle\\(\\). is private within this context"
+    "declared private here")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_bg_ctx
     "no matching function for call to .mint_deadline_watchdog\\(fixy::BgLoadCtx, std::nullptr_t, crucible::warden::Policy&\\)."
     "required for the satisfaction of .CtxFitsDeadlineWatchdogMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")

@@ -11,10 +11,10 @@
 // Registration is safe from any thread, and belongs to construction
 // and teardown rather than to a hot path.
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Pinned.h>
+#include <fixy/Ctx.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <atomic>
@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <inplace_vector>
+#include <type_traits>
 
 namespace crucible::warden {
 
@@ -183,10 +184,21 @@ inline void unregister_hot_region(void* addr) noexcept { HotRegionRegistry::inst
 // routed through the handle as well, so that every path to the
 // registry looks the same.
 
-class HotRegionRegistryHandle final : public ::crucible::safety::Pinned<HotRegionRegistryHandle> {
-public:
+template <class Ctx>
+concept CtxFitsHotRegionRegistryMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+
+class HotRegionRegistryHandle final : public ::foundation::Pinned<HotRegionRegistryHandle> {
+    // The constructor is private, so the mint below is the only way to
+    // hold a handle, and the handle proves what the mint checked.
     HotRegionRegistryHandle() noexcept = default;
 
+    template <::foundation::effects::IsExecCtx FriendCtx>
+        requires CtxFitsHotRegionRegistryMint<FriendCtx>
+    friend constexpr HotRegionRegistryHandle mint_hot_region_registry_handle(FriendCtx const&) noexcept;
+
+public:
     void register_region(void* addr, size_t len, bool huge_hint = false, const char* label = "") const noexcept {
         HotRegionRegistry::instance().register_region(addr, len, huge_hint, label);
     }
@@ -203,18 +215,16 @@ public:
 static_assert(sizeof(HotRegionRegistryHandle) == 1, "HotRegionRegistryHandle must be the 1-byte authorization token; "
                                                     "the underlying registry state lives in the Pinned singleton.");
 
-template <class Ctx>
-concept CtxFitsHotRegionRegistryMint =
-    effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
-
-template <effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHotRegionRegistryMint<Ctx>
 [[nodiscard]] constexpr HotRegionRegistryHandle mint_hot_region_registry_handle(Ctx const&) noexcept {
     return HotRegionRegistryHandle{};
 }
 
-static_assert(CtxFitsHotRegionRegistryMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsHotRegionRegistryMint<effects::BgDrainCtx>);
-static_assert(!CtxFitsHotRegionRegistryMint<effects::HotFgCtx>);
+static_assert(CtxFitsHotRegionRegistryMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsHotRegionRegistryMint<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsHotRegionRegistryMint<::fixy::HotFgCtx>);
+static_assert(!std::is_default_constructible_v<HotRegionRegistryHandle>,
+              "A handle built without the mint would carry an authorization nobody checked.");
 
 }  // namespace crucible::warden

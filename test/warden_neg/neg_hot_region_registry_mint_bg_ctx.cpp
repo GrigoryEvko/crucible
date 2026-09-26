@@ -1,16 +1,15 @@
-// FIXY-U-084 HS14 neg-compile fixture (3 of 6).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_hot_region_registry_handle rejects BgDrainCtx.  Registering
-// new hot regions is an Init-row act (the registry table backs
-// Hardening::apply()'s mlock2 / MADV_HUGEPAGE walk).  Bg drain
-// contexts must not register / unregister regions — that would race
-// against an in-flight apply() and is also a structural confusion
-// of the cold init-time setup with steady-state drain work.
+// mint_hot_region_registry_handle refuses the background drain context.
+// Registering a hot region is init work: the table backs the lock and
+// huge-page walk of Hardening::apply().  A drain context that registered
+// or withdrew a region would race an apply() in progress.
 
 #include <crucible/warden/Registry.h>
 
 int main() {
-    auto handle = crucible::warden::mint_hot_region_registry_handle(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()});
+    ::fixy::BgDrainCtx const bg{::foundation::effects::testing::bg()};
+    auto handle = crucible::warden::mint_hot_region_registry_handle(bg);
     (void)handle;
     return 0;
 }

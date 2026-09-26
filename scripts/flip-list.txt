@@ -204,7 +204,6 @@ include/crucible/warden/CpuTopology.h
 include/crucible/warden/DeadlineWatchdog.h
 include/crucible/warden/Hardening.h
 include/crucible/warden/Quarantine.h
-include/crucible/warden/Registry.h
 src/_DiagRuntime.cpp
 src/cntp/CongestionControl.cpp
 src/cntp/Pacing.cpp

@@ -1,10 +1,9 @@
-// FIXY-U-084 HS14 strengthening fixture (8 of 9).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Demonstrates the SECOND mismatch class for mint_hot_region_registry_
-// handle: a raw struct fails `IsExecCtx<Ctx>` BEFORE the row check is
-// ever attempted (concept &&-short-circuits on the first false).  This
-// proves the gate rejects not just "wrong-row ExecCtx instantiations"
-// but also "non-ExecCtx types entirely".
+// mint_hot_region_registry_handle refuses a type that is not an
+// execution context at all.  IsExecCtx<Ctx> fails before the row check
+// is attempted, so the gate refuses more than a context with the wrong
+// row.
 
 #include <crucible/warden/Registry.h>
 
