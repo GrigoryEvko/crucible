@@ -227,8 +227,8 @@ jobs:
 
       - name: stub-vs-live discipline (self-test + scan)
         run: |
-          bash scripts/check-stub-discipline.sh --self-test
-          bash scripts/check-stub-discipline.sh
+          python3 scripts/check-stub-discipline.py --self-test
+          python3 scripts/check-stub-discipline.py
 
       - name: lock-free sibling-assert discipline (self-test + scan)
         run: |

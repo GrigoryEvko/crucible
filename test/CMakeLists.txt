@@ -1061,21 +1061,23 @@ add_test(NAME isx_parity
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-isx-parity.sh)
 set_tests_properties(isx_parity isx_parity_self_test PROPERTIES
     LABELS "ci_guard")
-# The stub discipline.  scripts/check-stub-discipline.sh pairs every honesty
-# marker (`inline constexpr bool *_implemented = false` or `*_attached =
-# false`) with a `[[deprecated("CRUCIBLE_STUB:")]]` attribute in the same
-# header, in the two directions, over every tree under include/.  Without the
-# pair, a stub surface looks live and fails only at runtime, or code has no
-# constant to test the stub by.  With the pair, each call site gets a
-# -Wdeprecated-declarations warning at compile time.  The self-test plants an
-# unpaired marker and an unmarked deprecation, and the scan must catch each.
+# The stub discipline.  scripts/check-stub-discipline.py reads the parse tree
+# of every header under include/ and pairs each honesty marker (a constexpr
+# bool *_implemented, *_attached or *_ready that is false, at namespace scope
+# or as a static member) with a `[[deprecated("CRUCIBLE_STUB:")]]` attribute
+# in the same header, in the two directions.  Without the pair, a stub surface
+# looks live and fails only at runtime, or code has no constant to test the
+# stub by.  With the pair, each call site gets a -Wdeprecated-declarations
+# warning at compile time.  A comment or a string that holds the same text is
+# neither a marker nor a deprecation.  Exit 3 when the kit is absent reports a
+# skip.
 add_test(NAME stub_discipline_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.sh
-          --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.py --self-test)
 add_test(NAME stub_discipline
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.py)
 set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
 # The lock-free discipline of the cross-thread atomics (CLAUDE.md §IX).
 # scripts/check-lock-free-asserts.py reads each std::atomic, atomic_ref and
 # standard atomic alias of canopy, cntp, topology and warden from the parse

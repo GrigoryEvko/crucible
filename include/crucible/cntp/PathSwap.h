@@ -278,10 +278,14 @@ public:
     // Detaching `current` drops whatever is still buffered on the old path:
     // the kernel TX queue, the NIC ring, in-flight datagrams, the application
     // send window.  Nothing is replayed, resent or handed over.  A receiver
-    // must tolerate that loss or sit behind its own idempotency layer.
+    // must tolerate that loss or sit behind its own idempotency layer.  The
+    // deprecation makes each call site acknowledge the loss at compile time,
+    // and data_migration_implemented above is the constant to test it by.
     template <class Ctx, typename Proto, typename OldResource, typename LoopCtx, typename NewResource>
         requires CtxFitsPathSwapTransition<Ctx> && PathSwapSessionResource<NewResource>
-    [[nodiscard]] auto commit_sender(Ctx const&, safety::proto::SessionHandle<Proto, OldResource, LoopCtx>&& current,
+    [[nodiscard, deprecated("CRUCIBLE_STUB: commit_sender migrates no in-flight data. "
+                            "The bytes buffered on the old path are dropped.")]]
+    auto commit_sender(Ctx const&, safety::proto::SessionHandle<Proto, OldResource, LoopCtx>&& current,
                                      NewResource&& new_resource, std::uint64_t now_ns) noexcept
         -> std::expected<safety::proto::SessionHandle<Proto, NewResource, LoopCtx>, SwapError> {
         if (auto live = check_live(now_ns); !live.has_value()) {

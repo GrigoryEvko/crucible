@@ -7,6 +7,12 @@
 #include <thread>
 #include <type_traits>
 
+// commit_sender carries a [[deprecated("CRUCIBLE_STUB:...")]] attribute,
+// because it migrates no in-flight data.  This file calls it on purpose to pin
+// that loss, so the warning is suppressed for this file alone.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cntp = crucible::cntp;
 namespace proto = crucible::safety::proto;
 
@@ -303,3 +309,5 @@ int main() {
     std::printf("test_cntp_path_swap: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop
