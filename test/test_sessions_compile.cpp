@@ -26,7 +26,18 @@
 #include <crucible/sessions/_SessionSubtype.h>
 #include <crucible/sessions/_SessionSubtypeReason.h>
 #include <crucible/sessions/_SessionView.h>
-#include <crucible/sessions/Sessions.h>
+#include <crucible/sessions/_FederationProtocol.h>
+#include <crucible/sessions/_SessionGrade.h>
+#include <crucible/sessions/_SpscSession.h>
+#include <crucible/sessions/_MpmcChannelSession.h>
+#include <crucible/sessions/_ChainEdgeSession.h>
+#include <crucible/sessions/_AsyncPipelineSession.h>
+#include <crucible/sessions/_SwmrSession.h>
+#include <crucible/sessions/_SnapshotSession.h>
+#include <crucible/sessions/_ChaseLevDequeSession.h>
+#include <crucible/sessions/_ShardedGridSession.h>
+#include <crucible/sessions/_CalendarGridSession.h>
+#include <crucible/sessions/_ShardedCalendarGridSession.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -78,7 +89,6 @@ void test_session_mint_compile() { crucible::safety::proto::runtime_smoke_test_s
 void test_session_subtype_compile() {}
 void test_session_subtype_reason_compile() {}
 void test_session_view_compile() {}
-void test_sessions_umbrella() {}
 
 }  // namespace
 
@@ -106,7 +116,6 @@ int main() {
     run_test("test_session_subtype_compile", test_session_subtype_compile);
     run_test("test_session_subtype_reason_compile", test_session_subtype_reason_compile);
     run_test("test_session_view_compile", test_session_view_compile);
-    run_test("test_sessions_umbrella", test_sessions_umbrella);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

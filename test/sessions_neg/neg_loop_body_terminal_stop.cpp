@@ -1,10 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-A2-020: HS14 floor for the Loop<B> well-formedness check at
-// include/crucible/sessions/Session.h.
+// HS14 floor for the Loop<B> well-formedness check at
+// include/crucible/sessions/_Session.h.
 //
 // `Stop` (the ungraded alias of `Stop_g<CrashClass::Abort>`) is a
-// terminal state per `is_terminal_state` (SessionCrash.h, GAPS-063).
+// terminal state per `is_terminal_state` (_SessionCrash.h).
 // Therefore `Loop<Stop>` is ill-formed by the same rule that rejects
 // `Loop<End>`: the loop can never reach a Continue, the iteration
 // counter cannot advance, and the construct is semantically

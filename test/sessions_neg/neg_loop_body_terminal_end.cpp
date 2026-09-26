@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// fixy-A2-020: HS14 floor for the Loop<B> well-formedness check at
-// include/crucible/sessions/Session.h.
+// HS14 floor for the Loop<B> well-formedness check at
+// include/crucible/sessions/_Session.h.
 //
 // `Loop<B>` is structurally ill-formed when B itself is a terminal
 // state — End / Stop / Stop_g<C> / VendorPinned<V, terminal> — because

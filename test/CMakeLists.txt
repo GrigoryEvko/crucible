@@ -1219,10 +1219,6 @@ endif()
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
-# fixy-A2-015 sentinel: <crucible/sessions/Sessions.h> umbrella must
-# expose mint_permissioned_session, payload_row_t, and the
-# MpmcChannelSession surface.  Pre-fix this TU fails to compile.
-crucible_test(test_sessions_umbrella_surface)
 crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
 crucible_test(test_effects_ctx_forge_attacks)
@@ -2891,9 +2887,9 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_missing_proof
     "cannot bind|no matching function"
     "mint_federation_admittance")
 
-# FIXY-AUDIT-D8 — mint_session_handle HS14 floor.
+# mint_session_handle HS14 floor.
 #
-# `mint_session_handle<Proto>(resource)` (sessions/Session.h §2252)
+# `mint_session_handle<Proto>(resource)` (sessions/_Session.h)
 # ships three internal static_asserts: (1) is_well_formed_v<Proto>,
 # (2) !is_empty_choice_v<Proto>, (3) SessionResource<Resource>.
 # Fixtures exercise (1) and (3) — the two most common author errors.
@@ -3875,9 +3871,9 @@ crucible_neg_compile_session_test(neg_crashwatched_stop_class_mismatch
     "static assertion failed|constraints.*not satisfied|no matching function|has no member named"
     "CrashWatched_StopClass_Mismatch")
 
-# fixy-A2-020: HS14 floor for the new `!is_terminal_state<B>` conjunct
+# HS14 floor for the `!is_terminal_state<B>` conjunct
 # in the is_well_formed<Loop<B>, LoopCtx> specialization at
-# include/crucible/sessions/Session.h.  Together these two fixtures
+# include/crucible/sessions/_Session.h.  Together these two fixtures
 # witness the rejection of `Loop<End>` and `Loop<Stop>` — both
 # semantically equivalent to their terminal body, neither containing
 # a reachable Continue.
