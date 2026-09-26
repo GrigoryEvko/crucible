@@ -1045,7 +1045,7 @@ def namespace_path(node: Node, *, skip_inline: bool = False) -> tuple[str, ...]:
                 segments.append("")
         elif name.type == "namespace_identifier":
             if not (skip_inline and "inline" in owner.gap_tokens()):
-                segments.append(name.text)
+                segments.append(_leaf_text(name))
         else:
             # `namespace a::inline b` marks one segment of a nested name inline.
             is_inline = False
@@ -1138,7 +1138,7 @@ def namespace_aliases(tree: Tree) -> list[NamespaceAlias]:
         parts = qualified_parts(targets[0])
         if parts is None:
             continue
-        found.append(NamespaceAlias(name.text, parts[1], _scope_of(node), node, parts[0]))
+        found.append(NamespaceAlias(_leaf_text(name), parts[1], _scope_of(node), node, parts[0]))
     return found
 
 
@@ -1291,7 +1291,7 @@ def number_value(node: Node) -> int | None:
     """
     if node.type != "number_literal":
         return None
-    text = node.text.replace("'", "")
+    text = _leaf_text(node).replace("'", "")
     text = _INTEGER_SUFFIX.sub("", text)
     try:
         if text[:2] in ("0x", "0X"):
@@ -1335,14 +1335,15 @@ def _attributes_of(holder: Node) -> Iterator[Attribute]:
         for attribute in holder.children_of_type("attribute"):
             using_namespace = attribute.child_by_field("namespace")
             if using_namespace is not None:
-                shared = using_namespace.text
+                shared = _leaf_text(using_namespace)
             prefix = attribute.child_by_field("prefix")
             name = attribute.child_by_field("name")
             if name is None:
                 continue
             lists = attribute.children_of_type("argument_list")
             arguments = non_comment_children(lists[0]) if lists else []
-            yield Attribute(prefix.text if prefix is not None else shared, name.text, arguments, attribute)
+            yield Attribute(_leaf_text(prefix) if prefix is not None else shared, _leaf_text(name), arguments,
+                            attribute)
     elif holder.type == "attribute_specifier":
         for argument_list in holder.children_of_type("argument_list"):
             for item in non_comment_children(argument_list):
@@ -1864,7 +1865,7 @@ def _declarations_of(item: Node, ns: tuple[str, ...]) -> Iterator[Declaration]:
         return
     if kind == "namespace_alias_definition":
         name_node = item.child_by_field("name")
-        yield Declaration(ns, "" if name_node is None else name_node.text, "namespace_alias", False, item)
+        yield Declaration(ns, "" if name_node is None else _leaf_text(name_node), "namespace_alias", False, item)
         return
     if kind == "using_declaration" and "namespace" not in item.gap_tokens():
         for child in non_comment_children(item):
@@ -3029,6 +3030,19 @@ def _self_test_macros(check: Callable[..., None], parse_text: Callable[[str, str
         "qualified_parts and leaf_name join a splice inside a leaf name",
         len(spliced_decl) == 1 and qualified_parts(spliced_decl[0]) == (False, ("crucible", "ledger", "entry"))
         and leaf_name(spliced_decl[0]) == "entry",
+    )
+
+    spliced_ns = parse_text(
+        "splicens.cpp",
+        "namespace cru\\\ncible { namespace ali\\\nas = ::cru\\\ncible; [[gn\\\nu::ho\\\nt]] int value; }\n",
+    )
+    spliced_value = next((node for node in spliced_ns.find("identifier") if node.text == "value"), None)
+    spliced_alias = namespace_aliases(spliced_ns)
+    check(
+        "namespace_path, namespace_aliases and attributes join a splice inside a name",
+        spliced_value is not None and namespace_path(spliced_value) == ("crucible",)
+        and [(alias.name, alias.target) for alias in spliced_alias] == [("alias", ("crucible",))]
+        and [attribute.qualified for attribute in attributes(spliced_ns)] == ["gnu::hot"],
     )
 
     rows_tree = parse_text(
