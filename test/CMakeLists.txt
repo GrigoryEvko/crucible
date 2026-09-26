@@ -1061,15 +1061,14 @@ add_test(NAME isx_parity
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-isx-parity.sh)
 set_tests_properties(isx_parity isx_parity_self_test PROPERTIES
     LABELS "ci_guard")
-# FIXY-U-087 stub-vs-live deprecation discipline (fixy-A5-001 / A5-002 / A5-025
-# / A5-042).  scripts/check-stub-discipline.sh pairs every honesty marker
-# (`inline constexpr bool *_implemented = false` / `*_attached = false`) with a
-# matching `[[deprecated("CRUCIBLE_STUB:")]]` attribute in the SAME header.
-# Without the pair, a stub surface looks live and only fails at runtime
-# (BackendUnavailable / Deferred sentinels); WITH the pair, every production
-# call site emits a -Wdeprecated-declarations warning at compile time.
-# Self-test plants an honesty-marker-without-deprecation header and verifies
-# the scan catches it.
+# The stub discipline.  scripts/check-stub-discipline.sh pairs every honesty
+# marker (`inline constexpr bool *_implemented = false` or `*_attached =
+# false`) with a `[[deprecated("CRUCIBLE_STUB:")]]` attribute in the same
+# header, in the two directions, over every tree under include/.  Without the
+# pair, a stub surface looks live and fails only at runtime, or code has no
+# constant to test the stub by.  With the pair, each call site gets a
+# -Wdeprecated-declarations warning at compile time.  The self-test plants an
+# unpaired marker and an unmarked deprecation, and the scan must catch each.
 add_test(NAME stub_discipline_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.sh
           --self-test)

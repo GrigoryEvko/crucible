@@ -15,6 +15,9 @@ SenseHubV2::SenseHubV2(SenseHubV2&&) noexcept = default;
 SenseHubV2& SenseHubV2::operator=(SenseHubV2&&) noexcept = default;
 SenseHubV2::~SenseHubV2() noexcept = default;
 
+// The stub load.  sense_hub_v2_implemented is false, and the header gives
+// load a CRUCIBLE_STUB deprecation.  The hub stays unavailable until the
+// loader opens the v2 object.
 std::optional<SenseHubV2> SenseHubV2::load(::fixy::InitLoadCtx const&) noexcept { return std::nullopt; }
 
 v2::CounterSnapshot SenseHubV2::read_counters() const noexcept { return v2::CounterSnapshot{}; }

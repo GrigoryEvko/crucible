@@ -19,20 +19,27 @@
 #       member stubs) suppress the warning with
 #       `#pragma GCC diagnostic push/ignored "-Wdeprecated-declarations"/pop`.
 #
-# Pair contract enforced by this guard:
+# Pair contract enforced by this guard, in both directions:
 #
-#       file ships `*_implemented = false` ⇒
+#       file ships `*_implemented = false` ⇔
 #       same file ships at least one `[[deprecated("CRUCIBLE_STUB:` attribute
 #
 # A header that ships an honesty marker WITHOUT a deprecated attribute
 # is a "silent stub" — surface looks live, returns sentinel at runtime,
 # but production callers cannot grep / cannot see at compile time that
-# they are touching a stub.  The pair invariant is what makes both
-# layers (runtime sentinel + compile-time visibility) discoverable.
+# they are touching a stub.  A header that ships the deprecation without
+# the marker gives code no constant to test, so a test cannot pin the
+# stub and a caller cannot branch on it.  The pair invariant is what
+# makes both layers (runtime sentinel + compile-time visibility)
+# discoverable.
+#
+# The scan covers every tree under include/, because a stub moves with
+# its header when the header moves to a new tree.
 #
 # Exit status:
 #   0 — clean (every honesty marker paired with at least one CRUCIBLE_STUB
-#       deprecation in the same header)
+#       deprecation in the same header, and every such deprecation with a
+#       marker)
 #   1 — at least one pair-invariant violation
 #   2 — bad invocation / missing dependency
 
@@ -49,47 +56,53 @@ Usage:
   check-stub-discipline.sh --self-test  # plant a violation, verify catch
   check-stub-discipline.sh -h | --help  # usage
 
-Pair invariant:
+Pair invariant, in both directions, over every tree under include/:
   Every header that declares
     inline constexpr bool *_implemented = false;
   or
     inline constexpr bool *_attached    = false;
   MUST also ship at least one
     [[deprecated("CRUCIBLE_STUB:...
-  attribute in the same header.
+  attribute in the same header, and every header with such an attribute
+  MUST declare such a marker.
 USAGE
 }
 
+readonly MARKER_RE='inline[[:space:]]+constexpr[[:space:]]+bool[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*_(implemented|attached|ready)[[:space:]]*=[[:space:]]*false'
+readonly DEPRECATION_FIXED='deprecated("CRUCIBLE_STUB:'
+
 scan() {
     local rc=0
-    local hdrs
-    hdrs=$(grep -rln -E 'inline[[:space:]]+constexpr[[:space:]]+bool[[:space:]]+[a-zA-Z_]+_(implemented|attached|ready)[[:space:]]*=[[:space:]]*false' \
-        "$root/include/crucible/" 2>/dev/null || true)
+    local marked deprecated
+    marked=$(grep -rln -E "$MARKER_RE" "$root/include/" 2>/dev/null || true)
+    deprecated=$(grep -rlnF "$DEPRECATION_FIXED" "$root/include/" 2>/dev/null || true)
 
-    if [[ -z "$hdrs" ]]; then
+    if [[ -z "$marked" && -z "$deprecated" ]]; then
         printf '%s: no honesty markers found — nothing to enforce\n' \
             "check-stub-discipline.sh" >&2
         return 0
     fi
 
+    local hdr line
     while IFS= read -r hdr; do
         [[ -z "$hdr" ]] && continue
-        # The honesty-marker locator is the first matching line; report it.
-        local marker_line
-        marker_line=$(grep -n -E 'inline[[:space:]]+constexpr[[:space:]]+bool[[:space:]]+[a-zA-Z_]+_(implemented|attached|ready)[[:space:]]*=[[:space:]]*false' \
-            "$hdr" | head -1 || true)
-
-        # Skip blank-marker false matches (defensive).
-        [[ -z "$marker_line" ]] && continue
-
-        # Look for ANY paired CRUCIBLE_STUB deprecation in the same header.
-        if ! grep -q 'deprecated("CRUCIBLE_STUB:' "$hdr"; then
-            local rel="${hdr#$root/}"
+        if ! grep -qF "$DEPRECATION_FIXED" "$hdr"; then
+            line=$(grep -n -E "$MARKER_RE" "$hdr" | head -1 || true)
             printf '%s:%s: pair-invariant violation — honesty marker without [[deprecated("CRUCIBLE_STUB:...")]] attribute on any function in this header\n' \
-                "$rel" "${marker_line%%:*}" >&2
+                "${hdr#"$root"/}" "${line%%:*}" >&2
             rc=1
         fi
-    done <<< "$hdrs"
+    done <<< "$marked"
+
+    while IFS= read -r hdr; do
+        [[ -z "$hdr" ]] && continue
+        if ! grep -qE "$MARKER_RE" "$hdr"; then
+            line=$(grep -nF "$DEPRECATION_FIXED" "$hdr" | head -1 || true)
+            printf '%s:%s: pair-invariant violation — [[deprecated("CRUCIBLE_STUB:...")]] attribute without an honesty marker (inline constexpr bool *_implemented = false) in this header\n' \
+                "${hdr#"$root"/}" "${line%%:*}" >&2
+            rc=1
+        fi
+    done <<< "$deprecated"
 
     if [[ $rc -eq 0 ]]; then
         printf 'check-stub-discipline.sh: PASS (all honesty markers paired)\n'
@@ -174,9 +187,67 @@ EOF
         fail "expected exactly 1 violation, got $violation_count"
         return 1
     fi
+    rm -f "$tmp/include/crucible/test/Stub.h"
+
+    # Arm four, the reverse violation: a CRUCIBLE_STUB deprecation with no
+    # honesty marker, so code has no constant to test the stub by.
+    cat > "$tmp/include/crucible/test/Unmarked.h" <<'EOF'
+#pragma once
+namespace crucible::test_stub {
+[[deprecated("CRUCIBLE_STUB: the data plane is not wired yet")]]
+void connect_unmarked() noexcept;
+}
+EOF
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 1 ]]; then
+        fail "planted deprecation-without-marker reported $rc, want 1"
+        return 1
+    fi
+    grep -qF 'include/crucible/test/Unmarked.h' "$out" || { fail "the unmarked header was not named"; return 1; }
+    violation_count=$(grep -c 'pair-invariant violation' "$out" || true)
+    if [[ "$violation_count" -ne 1 ]]; then
+        fail "expected exactly 1 violation for the unmarked header, got $violation_count"
+        return 1
+    fi
+    rm -f "$tmp/include/crucible/test/Unmarked.h"
+
+    # Arm five, a tree other than include/crucible/.  A paired header there
+    # passes, and an unpaired one is caught, so the scan reaches a header
+    # that moved to a new tree.
+    mkdir -p "$tmp/include/fixy"
+    cat > "$tmp/include/fixy/PairedMoved.h" <<'EOF'
+#pragma once
+namespace fixy::test_stub {
+inline constexpr bool backend_v2_attached = false;
+[[deprecated("CRUCIBLE_STUB: the backend is not wired yet")]]
+void attach_paired() noexcept;
+}
+EOF
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        fail "a paired header under include/fixy/ reported $rc, want 0"
+        return 1
+    fi
+    cat > "$tmp/include/fixy/Moved.h" <<'EOF'
+#pragma once
+namespace fixy::test_stub {
+inline constexpr bool backend_implemented = false;
+void attach_moved() noexcept;
+}
+EOF
+    rc=0; scan >/dev/null 2>"$out" || rc=$?
+    if [[ "$rc" -ne 1 ]]; then
+        fail "an unpaired marker under include/fixy/ reported $rc, want 1"
+        return 1
+    fi
+    grep -qF 'include/fixy/Moved.h' "$out" || { fail "the unpaired header under include/fixy/ was not named"; return 1; }
+    if grep -qF 'include/fixy/PairedMoved.h' "$out"; then
+        fail "a paired header under include/fixy/ was flagged"
+        return 1
+    fi
 
     root="$saved_root"
-    printf 'check-stub-discipline: self-test passed — a paired marker and a header without one pass, exactly one unpaired marker is caught.\n' >&2
+    printf 'check-stub-discipline: self-test passed — paired markers and a header without one pass, an unpaired marker and an unmarked deprecation are each caught, in include/crucible/ and in include/fixy/.\n' >&2
 }
 
 case "${1:-}" in

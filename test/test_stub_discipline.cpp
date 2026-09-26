@@ -16,6 +16,7 @@
 #include <crucible/cntp/Tcam.h>
 #include <crucible/cog/NicConfig.h>
 #include <crucible/cog/SrIov.h>
+#include <crucible/perf/SenseHubV2.h>
 
 #include "test_assert.h"
 
@@ -48,6 +49,13 @@ static_assert(crucible::cntp::tcam::vendor_backend_attached == false,
               "vendor_backend_attached flipped to true. Rewrite the live-tier "
               "test for this surface and remove the deprecation from "
               "force_tcam_backend_boundary in lockstep.");
+
+// The v2 hub has no call below.  Its stub load is compiled only when
+// CRUCIBLE_SENSE_HUB_V2 is on, so the pin is the constant alone.
+static_assert(crucible::perf::sense_hub_v2_implemented == false,
+              "sense_hub_v2_implemented flipped to true. Write the live-tier "
+              "test for the v2 hub and remove the deprecation from "
+              "SenseHubV2::load and mint_sense_hub_v2 in lockstep.");
 
 namespace {
 
