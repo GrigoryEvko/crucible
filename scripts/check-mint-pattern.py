@@ -75,7 +75,8 @@ there cannot be repaired, and they go with the old tree.  The inventory
 generator excludes them too.
 
 A FILE THE PARSER CANNOT READ FAILS.  Its mints are unknown, so a clean verdict
-over it would be a guess.  `tsast.UNPARSEABLE` names the files that are not C++.
+over it would be a guess.  The surface comes from `tsast.cpp_files`, which
+leaves out the files that `tsast.UNPARSEABLE` names, because they are not C++.
 
 EXIT CODES
     0  every mint meets the five axes, or one stated mechanism exempts it
@@ -449,7 +450,7 @@ def run(files: list[Path], allowlist: Path, frozen: tuple[str, ...]) -> int:
 
     def on_tree(tree: tsast.Tree, sites: list[mintmodel.Mint]) -> None:
         """Record a parse failure and the dangling markers of one file."""
-        if tree.diagnostic is not None and str(tree.path) not in tsast.UNPARSEABLE:
+        if tree.diagnostic is not None:
             findings.append(Finding(
                 "parse", str(tree.path), "",
                 f"MINT-PATTERN parse failure: {tree.path} — the parser cannot read this file, so its mints "

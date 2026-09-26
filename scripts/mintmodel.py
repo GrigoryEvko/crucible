@@ -37,7 +37,6 @@ agree.
 
 from __future__ import annotations
 
-import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -187,22 +186,22 @@ def _is_borrow_projection(site: tsast.Node) -> bool:
     if len(returns) != 1:
         return False
     called = [c for c in returns[0].descendants("template_function", "identifier")
-              if c.text.split("<")[0].rsplit("::", 1)[-1] == "mint_view"]
+              if tsast.leaf_name(c) == "mint_view"]
     if not called:
         return False
     # The carrier must be the mint's OWN object.  A free function that delegates
     # to `mint_view` with a PARAMETER carrier can legitimately be a compile-time
     # factory, so the projection claim needs `*this` rather than the delegation
     # alone.  Without this, the rule also matches mint_linear_view and
-    # mint_session_view, which are not projections of their own state.
+    # mint_session_view, which are not projections of their own state.  The
+    # `this` is a node of the arguments, so a member named `this_carrier_` is
+    # no `this`.
     for call in returns[0].descendants("call_expression"):
         function = call.child_by_field("function")
-        if function is None:
-            continue
-        if function.text.split("<")[0].rsplit("::", 1)[-1] != "mint_view":
+        if function is None or tsast.leaf_name(function) != "mint_view":
             continue
         arguments = call.child_by_field("arguments")
-        if arguments is not None and "this" in arguments.text:
+        if arguments is not None and next(arguments.descendants("this"), None) is not None:
             return True
     return False
 
@@ -418,26 +417,52 @@ def _constraint_candidates(site: tsast.Node) -> dict[str, str]:
         named = param.child_by_field("declarator")
         if kind is None or named is None:
             continue
-        found[named.text] = kind.text.strip().split("::")[-1]
+        # The leaf of a type-constraint drops its template arguments, so
+        # `Fits<Dir> S` names the concept `Fits`, which the roster can hold.
+        concept = tsast.leaf_name(kind)
+        parameter = tsast.leaf_name(named)
+        if concept is not None and parameter is not None:
+            found[parameter] = concept
     return found
 
 
-def _clause_text(site: tsast.Node, declarator: tsast.Node) -> str:
-    """Return the text of every `requires` clause that reaches a site.
+def _clauses(site: tsast.Node, declarator: tsast.Node) -> list[tsast.Node]:
+    """Return every `requires` clause that reaches a site.
 
     Args:
         site: The declaration or definition node
         declarator: The function declarator of the mint
 
     Returns:
-        The clauses joined by a space, or the empty string when there are none
+        The requires_clause nodes, from the declarator, the site and the template
     """
-    parts = [c.text for c in declarator.children_of_type("requires_clause")]
-    parts += [c.text for c in site.children_of_type("requires_clause")]
+    found = declarator.children_of_type("requires_clause") + site.children_of_type("requires_clause")
     owner = site.parent
     if owner is not None and owner.type == "template_declaration":
-        parts += [c.text for c in owner.children_of_type("requires_clause")]
-    return " ".join(parts)
+        found += owner.children_of_type("requires_clause")
+    return found
+
+
+def _is_chain_head(node: tsast.Node) -> bool:
+    """Report whether a name node is the first segment of its qualified name.
+
+    `Ctx` is the head of `Ctx` and of `Ctx::row_type`.  It is not the head of
+    `other::Ctx`, and not of `other::Ctx::row_type`, because both name a member
+    of `other`.
+
+    Args:
+        node: An identifier node of any kind
+
+    Returns:
+        True when no scope stands before the node in its qualified name
+    """
+    current = node
+    while current.parent is not None and current.parent.type == "qualified_identifier":
+        parent = current.parent
+        if current.field == "name" and parent.child_by_field("scope") is not None:
+            return False
+        current = parent
+    return True
 
 
 def _ctx_token(declarator: tsast.Node) -> str | None:
@@ -456,7 +481,7 @@ def _ctx_token(declarator: tsast.Node) -> str | None:
     if first is None:
         return None
     kind = first.child_by_field("type")
-    return kind.text.strip().split("::")[-1] if kind is not None else None
+    return tsast.leaf_name(kind) if kind is not None else None
 
 
 def _ctx_gated(site: tsast.Node, declarator: tsast.Node, token: str | None) -> bool:
@@ -472,7 +497,11 @@ def _ctx_gated(site: tsast.Node, declarator: tsast.Node, token: str | None) -> b
     `mint_writer_session` constrains its channel surface and takes any context at
     all, and 24 session mints share that shape.
 
-    Complexity: O(n) in the clause length, from one word-boundary search.
+    A clause names the context through a name node that is the head of its
+    qualified name.  So a comment that mentions `Ctx`, and a member such as
+    `other::Ctx`, gate nothing.
+
+    Complexity: O(n) in the node count of the clauses.
 
     Args:
         site: The declaration or definition node
@@ -487,10 +516,11 @@ def _ctx_gated(site: tsast.Node, declarator: tsast.Node, token: str | None) -> b
     for name, concept in _constraint_candidates(site).items():
         if name == token and concept != CTX_SHAPE_CONCEPT:
             return True
-    text = _clause_text(site, declarator)
-    if not text:
-        return False
-    return re.search(rf"\b{re.escape(token)}\b", text) is not None
+    for clause in _clauses(site, declarator):
+        for node in clause.descendants("identifier", "type_identifier", "namespace_identifier"):
+            if node.text == token and _is_chain_head(node):
+                return True
+    return False
 
 
 def _ctx_parameter_names(site: tsast.Node) -> frozenset[str]:
@@ -518,9 +548,35 @@ def _ctx_parameter_names(site: tsast.Node) -> frozenset[str]:
             named = param.child_by_field("declarator")
             if kind is None or named is None:
                 continue
-            if kind.text.split("::")[-1] == "IsExecCtx":
-                names.add(named.text)
+            parameter = tsast.leaf_name(named)
+            if tsast.leaf_name(kind) == CTX_SHAPE_CONCEPT and parameter is not None:
+                names.add(parameter)
     return frozenset(names)
+
+
+_REFERENCE_DECLARATORS = ("reference_declarator", "abstract_reference_declarator")
+
+
+def _is_const_lvalue_reference(param: tsast.Node) -> bool:
+    """Report whether a parameter is declared `T const&` or `const T&`.
+
+    The `const` is a type_qualifier child of the parameter, and the `&` is the
+    first token of its reference declarator.  So `T&& ctx` is no lvalue
+    reference, and a comment that says `const` qualifies nothing.
+
+    Args:
+        param: A parameter_declaration node
+
+    Returns:
+        True when the parameter is a reference to const, not an rvalue reference
+    """
+    is_const = any(child.text == "const" for child in param.children_of_type("type_qualifier"))
+    declarator = param.child_by_field("declarator")
+    while declarator is not None and declarator.type == "attributed_declarator":
+        declarator = next((child for child in declarator.children if child.type in _REFERENCE_DECLARATORS), None)
+    if declarator is None or declarator.type not in _REFERENCE_DECLARATORS:
+        return False
+    return is_const and declarator.tokens()[:1] == ["&"]
 
 
 def _shape(site: tsast.Node, declarator: tsast.Node, owner: str | None, static_member: bool) -> str:
@@ -559,10 +615,9 @@ def _shape(site: tsast.Node, declarator: tsast.Node, owner: str | None, static_m
     # mention one: `SessionHandle<Proto, Resource, LoopCtx>` holds "Ctx" as a
     # substring of `LoopCtx`, and a substring test reads six token mints as
     # ctx-bound.
-    whole = first.text
-    if "&" not in whole or "const" not in whole:
+    if not _is_const_lvalue_reference(first):
         return "token"
-    named = kind.text.strip().split("::")[-1]
+    named = tsast.leaf_name(kind)
     if named in _ctx_parameter_names(site) or named == "Ctx":
         return "ctx"
     return "token"
@@ -575,13 +630,35 @@ _PARAMETER_TYPES = (
 )
 
 
+def _is_word_token(text: str) -> bool:
+    """Report whether a token is a name, a keyword or a number."""
+    return text[:1].isalnum() or text[:1] == "_"
+
+
+def _joined(tokens: list[str]) -> str:
+    """Join tokens as tsast.spelled joins them: one space between two word tokens only.
+
+    Args:
+        tokens: Token texts in order
+
+    Returns:
+        The canonical spelling
+    """
+    parts: list[str] = []
+    for text in tokens:
+        if parts and _is_word_token(parts[-1][-1:]) and _is_word_token(text):
+            parts.append(" ")
+        parts.append(text)
+    return "".join(parts)
+
+
 def _signature(declarator: tsast.Node) -> str:
     """Return the parameter types of a function declarator, with no names.
 
     A forward declaration may name its parameters differently from the
     definition, or not at all, so the parameter names and any default value are
-    removed.  Whitespace is normalized so a line wrap cannot split one function
-    into two.
+    removed.  The types are spelled from their tokens, so a line wrap or a
+    comment inside a type cannot split one function into two.
 
     Args:
         declarator: The function declarator of the mint
@@ -596,19 +673,20 @@ def _signature(declarator: tsast.Node) -> str:
     for param in params.children:
         if param.type not in _PARAMETER_TYPES:
             continue
-        text = param.text
-        default = param.child_by_field("default_value")
-        if default is not None:
-            text = text[: text.rfind(default.text)].rstrip().removesuffix("=")
         named = param.child_by_field("declarator")
+        names: set[int] = set()
         if named is not None:
-            names = [named] if named.type == "identifier" else list(named.descendants("identifier"))
-            for ident in names:
-                cut = text.rfind(ident.text)
-                if cut >= 0:
-                    text = text[:cut] + text[cut + len(ident.text):]
-        text = re.sub(r"\s+", " ", text).strip()
-        parts.append(re.sub(r"\s*([&*<>,:()\[\]])\s*", r"\1", text))
+            idents = [named] if named.type == "identifier" else list(named.descendants("identifier"))
+            names = {ident.index for ident in idents}
+
+        def dropped(node: tsast.Node, names: set[int] = names) -> bool:
+            """Say whether a child is a comment, the default value or a parameter name."""
+            return tsast.is_comment(node) or node.field == "default_value" or node.index in names
+
+        tokens = param.tokens(skip=dropped)
+        if param.child_by_field("default_value") is not None and tokens[-1:] == ["="]:
+            tokens.pop()
+        parts.append(_joined(tokens))
     return "(" + ",".join(parts) + ")"
 
 
@@ -640,10 +718,9 @@ def _owner_of(site: tsast.Node) -> str | None:
 def _namespace_of(node: tsast.Node) -> str:
     """Return the enclosing namespace of a node, as `a::b::c`.
 
-    A `namespace_definition` names itself either with a single `identifier` or
-    with a `nested_namespace_specifier` whose text already reads `a::b::c`, so
-    the walk collects the name fields outward and joins them.  An anonymous
-    namespace contributes nothing.
+    The segments come from tsast.namespace_path, so a comment inside a nested
+    name and the `inline` of one segment are not part of the path.  An
+    anonymous namespace contributes nothing.
 
     Args:
         node: Any node inside the namespace
@@ -651,25 +728,23 @@ def _namespace_of(node: tsast.Node) -> str:
     Returns:
         The namespace path, or the empty string at global scope
     """
-    parts: list[str] = []
-    owner = node.ancestor_of_type("namespace_definition")
-    while owner is not None:
-        named = owner.child_by_field("name")
-        if named is not None:
-            parts.append(named.text)
-        owner = owner.ancestor_of_type("namespace_definition")
-    return "::".join(reversed(parts))
+    return "::".join(part for part in tsast.namespace_path(node) if part)
 
 
 def reexports(paths: list[Path] | None = None) -> dict[str, tuple[str, int]]:
     """Return every fixy re-export, keyed by the qualified name it names.
 
-    A re-export is a `using_declaration` whose one child is a
-    `qualified_identifier`.  The key is that qualified name verbatim, so a
-    lookup matches the mint the using actually names.  A bare-name key cannot:
-    a re-export `using ::crucible::mint_vigil_mode_bridge;` names the
-    overload in namespace `crucible`, not the one in
-    `crucible::vigil_mode` that the inventory pairs it with.
+    A re-export is a using-declaration whose last name starts with `mint_`.
+    The key is the full name it names, from `::`, so a lookup matches the mint
+    the using actually names.  A bare-name key cannot: a re-export
+    `using ::crucible::mint_vigil_mode_bridge;` names the overload in
+    namespace `crucible`, not the one in `crucible::vigil_mode` that the
+    inventory pairs it with.
+
+    A re-export may name its target through a namespace alias of the file.
+    `fixy/Time.h` writes `namespace sf = ::crucible::safety;` and then
+    `using sf::mint_clock_source;`, so the alias resolves before the lookup.
+    An alias of one segment resolves as well as a nested one.
 
     Args:
         paths: The files to scan, or None to scan include/crucible/fixy
@@ -680,29 +755,12 @@ def reexports(paths: list[Path] | None = None) -> dict[str, tuple[str, int]]:
     files = tsast.cpp_files("include/crucible/fixy") if paths is None else paths
     found: dict[str, tuple[str, int]] = {}
     for tree in tsast.parse(sorted(files), strict=False):
-        # A re-export may name its target through a namespace alias, so collect
-        # the aliases of the file first.  `fixy/Time.h` writes
-        # `namespace sf = ::crucible::safety;` and then `using sf::mint_clock_source;`,
-        # and a lookup that demands the full spelling misses it.
-        alias: dict[str, str] = {}
-        for definition in tree.find("namespace_alias_definition"):
-            named = definition.child_by_field("name")
-            target = next(iter(definition.children_of_type("nested_namespace_specifier")), None)
-            if named is not None and target is not None:
-                alias[named.text] = target.text
-        for using in tree.find("using_declaration"):
-            named = next(iter(using.children_of_type("qualified_identifier")), None)
-            if named is None:
+        aliases = tsast.namespace_aliases(tree)
+        for using in tsast.using_names(tree):
+            if using.kind != "declaration" or not using.target or not using.target[-1].startswith("mint_"):
                 continue
-            key = named.text
-            if not key.rsplit("::", 1)[-1].startswith("mint_"):
-                continue
-            head, _, rest = key.partition("::")
-            if head in alias:
-                key = f"{alias[head]}::{rest}"
-            elif not key.startswith("::"):
-                key = f"::{key}"
-            found.setdefault(key, (str(tree.path), using.line))
+            parts = tsast.resolve_namespace(using.target, using.node, aliases, is_global=using.is_global)
+            found.setdefault("::" + "::".join(parts), (str(tree.path), using.node.line))
     return found
 
 
@@ -1206,7 +1264,45 @@ template <typename T>
 // An attribute whose argument mentions nodiscard is not nodiscard.
 [[deprecated("use the nodiscard overload")]] constexpr Thing mint_deprecated_only(Thing) noexcept { return {}; }
 
+// A type-constraint with template arguments names its concept.
+template <typename, typename> concept ArgConcept = true;
+template <ArgConcept<int> S>
+[[nodiscard]] constexpr Thing mint_arg_concept(S) noexcept { return {}; }
+
+// A comment that says const qualifies nothing, and an rvalue reference is no
+// `Ctx const&`, so neither is a ctx-bound mint.
+template <IsExecCtx Ctx>
+    requires CtxFitsProbe<Ctx>
+[[nodiscard]] constexpr Thing mint_mutable_ctx(Ctx& /*const*/ ctx) noexcept { return {}; }
+template <IsExecCtx Ctx>
+    requires CtxFitsProbe<Ctx>
+[[nodiscard]] constexpr Thing mint_rvalue_ctx(Ctx const&& ctx) noexcept { return {}; }
+
+// A clause that names Ctx only in a comment or as a member of another scope
+// does not gate the context.
+namespace other { struct Ctx {}; }
+template <Surface S, IsExecCtx Ctx>
+    requires FitsCtx<S, other::Ctx> /* Ctx */
+[[nodiscard]] constexpr Thing mint_scoped_ctx_name(Ctx const&) noexcept { return {}; }
+
+// A member named like `this` is no `this`, so the body is no borrow projection.
+struct Carrier {
+    int this_carrier_ = 0;
+    [[nodiscard]] Thing mint_named_this() const noexcept { return mint_view(this_carrier_); }
+};
+
+// A comment inside a parameter type does not split one function into two.
+[[nodiscard]] Thing mint_split_sig(Thing /*first*/ const&) noexcept;
+Thing mint_split_sig(Thing const& value) noexcept { return value; }
+
 }  // namespace probe
+
+namespace probe_outer /* a comment */ ::inline probe_v2 {
+[[nodiscard]] constexpr Thing mint_in_nested(Thing) noexcept { return {}; }
+}
+
+namespace pr = probe;
+using pr::mint_token;
 """
     with tempfile.TemporaryDirectory() as work:
         path = Path(work) / "fixture.cpp"
@@ -1218,14 +1314,53 @@ template <typename T>
         check(
             "finds exactly the live mint names",
             sorted(by_name) == [
-                "mint_allocating", "mint_bare", "mint_below_one_line", "mint_compliant",
-                "mint_ctx_in_clause", "mint_ctx_in_parameter", "mint_declared_first",
-                "mint_deprecated_only", "mint_from_image", "mint_long_clause", "mint_member",
-                "mint_one_line", "mint_param_constrained", "mint_plain_ctx", "mint_pointer",
-                "mint_raw_string_trap", "mint_reference", "mint_shape_only", "mint_sized",
-                "mint_string_marker", "mint_surface_only", "mint_templated_member", "mint_token",
-                "mint_trailing_marker",
+                "mint_allocating", "mint_arg_concept", "mint_bare", "mint_below_one_line",
+                "mint_compliant", "mint_ctx_in_clause", "mint_ctx_in_parameter", "mint_declared_first",
+                "mint_deprecated_only", "mint_from_image", "mint_in_nested", "mint_long_clause",
+                "mint_member", "mint_mutable_ctx", "mint_named_this", "mint_one_line",
+                "mint_param_constrained", "mint_plain_ctx", "mint_pointer", "mint_raw_string_trap",
+                "mint_reference", "mint_rvalue_ctx", "mint_scoped_ctx_name", "mint_shape_only",
+                "mint_sized", "mint_split_sig", "mint_string_marker", "mint_surface_only",
+                "mint_templated_member", "mint_token", "mint_trailing_marker",
             ],
+        )
+        arg_concept = by_name.get("mint_arg_concept")
+        check(
+            "a type-constraint with template arguments names its concept",
+            arg_concept is not None and arg_concept.constraint_concepts == frozenset({"ArgConcept"}),
+        )
+        check(
+            "a comment that says const and an rvalue reference make no ctx-bound mint",
+            all(by_name.get(name) is not None and by_name[name].shape == "token"
+                for name in ("mint_mutable_ctx", "mint_rvalue_ctx")),
+            True,
+        )
+        scoped = by_name.get("mint_scoped_ctx_name")
+        check(
+            "a clause that names Ctx in a comment or under another scope does not gate the context",
+            scoped is not None and scoped.shape == "ctx" and not scoped.ctx_gated,
+            True,
+        )
+        named_this = by_name.get("mint_named_this")
+        check(
+            "a member named like this is no this, so the body is no borrow projection",
+            named_this is not None and not named_this.borrow_projection,
+            True,
+        )
+        split = [m for m in mints if m.name == "mint_split_sig"]
+        check(
+            "a comment inside a parameter type keeps one function one row",
+            len(split) == 1 and split[0].nodiscard and split[0].signature == "(Thing const&)",
+        )
+        nested = by_name.get("mint_in_nested")
+        check(
+            "a comment and an inline segment in a nested namespace name stay out of the namespace",
+            nested is not None and nested.namespace == "probe_outer::probe_v2",
+        )
+        check(
+            "a re-export through an alias of one segment resolves to the full name",
+            reexports([path]) == {"::probe::mint_token": (str(path),
+                                                          fixture.splitlines().index("using pr::mint_token;") + 1)},
         )
         trap = by_name.get("mint_raw_string_trap")
         check(
