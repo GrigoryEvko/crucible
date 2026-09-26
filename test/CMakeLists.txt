@@ -702,6 +702,19 @@ add_test(NAME git_isolation
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-git-isolation.py)
 set_tests_properties(git_isolation git_isolation_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
+# No script reads C++ source as text.  scripts/guard-engines.txt gives the
+# engine of each script under scripts/, test/, tools/mutation/ and the
+# session oracle emitter, and scripts/check-guard-engines.py holds each row
+# to the code: no regex or string method on the text of a tsast node, no
+# grep, rg, awk or sed over C++ in a shell script, and no cxx_lex.  It reads
+# shell with the pinned ast-grep, and exit 3 when that binary is absent
+# reports a skip.
+add_test(NAME guard_engines_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-guard-engines.py --self-test)
+add_test(NAME guard_engines
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-guard-engines.py)
+set_tests_properties(guard_engines guard_engines_self_test PROPERTIES
+    LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # A spelling of a branded type that names no brand is the erased
 # identity.  scripts/check-brand-drain.py reads those spellings from the
 # parse tree, and scripts/brand-drain.txt holds one count per file.  A

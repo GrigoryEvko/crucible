@@ -1,0 +1,82 @@
+# The engine of each script, which scripts/check-guard-engines.py holds to the code.
+#
+# One row for each script:  path | engine[,engine...] | the input that is not C++ source
+#
+# An engine is how the script decides a fact.  tsast is the parse tree of
+# scripts/tsast.py, and preprocessor is the store of scripts/preprocessed.py.
+# compiler, json, cmake-api (the CMake file API), python-ast, ast-grep-bash and
+# git are the other engines.  text is input that is not C++ source, such as an
+# allowlist or compiler output.  A text row must name that input in the third
+# cell.  none marks a script that decides no fact.  kit marks a module that
+# implements an engine, and the code rules do not read it.
+
+scripts/audit-decide-cite-ratio.py | tsast,git | the history of Decide.h
+scripts/audit-pre-callsite-count.py | tsast,json | the contract baseline scripts/contracts-baseline.json
+scripts/check-allowlist-keys.sh | text | the keys of the allowlists, and the paths in the Markdown guidance
+scripts/check-atom-roster-joined.sh | compiler,text | the diagnostics of the sentinel compile
+scripts/check-banned-calls.py | tsast,text | the allowlist rows and scripts/fixy-only-paths.txt
+scripts/check-brand-drain.py | tsast,text | the ledger scripts/brand-drain.txt
+scripts/check-ci-guard-labels.py | json | the test list of ctest --show-only=json-v1
+scripts/check-clang-format.sh | text | the diagnostics of clang-format and the file list of fd
+scripts/check-ct-disassembly.py | tsast,compiler,text | the objdump disassembly of the compiled wrappers
+scripts/check-ctx-init-door.py | tsast,text | the rows of the two door allowlists
+scripts/check-ctx-testing-boundary.py | tsast,text | the allowlist rows
+scripts/check-derived-pins.py | tsast,text | scripts/frozen-paths.txt and the allowlist rows
+scripts/check-detail-namespace.py | tsast,text | the allowlist rows
+scripts/check-detsafe-ledger.py | tsast |
+scripts/check-escape-doors.py | tsast,text | the rows of the escape-door ledger
+scripts/check-federation-admission.py | tsast,preprocessor,json | the compile database
+scripts/check-fixy-clean-headers.py | tsast,text | the registry scripts/fixy-clean-headers.txt
+scripts/check-fixy-dim-prose.py | tsast |
+scripts/check-fixy-discipline.py | tsast,text | scripts/fixy-only-paths.txt and the allowlist rows
+scripts/check-fixy-grant-namespace-purity.py | tsast |
+scripts/check-fixy-hw-discipline.py | tsast |
+scripts/check-flip-list.py | tsast,text | scripts/flip-list.txt and scripts/frozen-paths.txt
+scripts/check-frozen-tree.py | tsast,preprocessor,compiler,git,json,text | the frozen lists, the ledgers and the -E -dD output of the compiler
+scripts/check-fullness-guard.py | tsast,text | the allowlist rows
+scripts/check-git-isolation.py | python-ast,ast-grep-bash,json |
+scripts/check-guard-engines.py | python-ast,ast-grep-bash,json,text | the rows of this roster
+scripts/check-host-owners.py | tsast,text | the roster scripts/host-owner-roster.txt
+scripts/check-isx-parity.py | tsast |
+scripts/check-layer-boundary.py | tsast |
+scripts/check-lifetime-twin.py | tsast |
+scripts/check-lock-free-asserts.py | tsast |
+scripts/check-mint-pattern.py | tsast,text | the allowlist rows and scripts/frozen-paths.txt
+scripts/check-no-combine-ids-duplicate.py | tsast |
+scripts/check-no-coordination-refs.py | tsast,text | the lines of shell, CMake, YAML and data files, and the tokens of Python files
+scripts/check-no-ffast-math.py | tsast,json,cmake-api,text | the compile database, CMakePresets.json and the allowlist rows
+scripts/check-no-raw-array-member.py | tsast,text | the allowlist rows
+scripts/check-no-throw-no-rtti.sh | compiler,text | the nm symbol lists of the built artifacts
+scripts/check-no-unchecked-access.py | tsast,preprocessor,json,text | the allowlist rows
+scripts/check-parse-clean.py | tsast |
+scripts/check-permission-storage.py | tsast |
+scripts/check-port-completeness.py | tsast,compiler,text | the -dD -E output, the output of the reflection sentinels, and the drop and fold lists
+scripts/check-proof-routes.py | tsast,preprocessor,json,text | the witness roster, the allowlist rows and the proof names of test_forgeable_proofs
+scripts/check-refined-pre-subsumption.py | tsast |
+scripts/check-row-contains-discipline.py | tsast,text | scripts/frozen-paths.txt
+scripts/check-splits-orphan.py | tsast |
+scripts/check-start-lifetime.py | tsast,preprocessor,json,text | the allowlist rows and scripts/frozen-paths.txt
+scripts/check-stub-discipline.py | tsast |
+scripts/check-syscall-capability.py | tsast,text | the allowlist rows and their reasons
+scripts/check-syscall-grant-coverage.py | tsast |
+scripts/check-trait-injection.py | tsast |
+scripts/check-use-after-move.py | tsast,text | the allowlist rows
+scripts/check-vessel-acceptance.py | compiler,json,text | CMakeCache.txt, the output of check-flip-list.py --scan and the output of the torch probe
+scripts/check-witness-roster.py | tsast,json,compiler,text | the witness roster rows and the compiler diagnostics of its fixtures
+scripts/decide_catalog.py | tsast |
+scripts/gen-aten-op-table.py | tsast,python-ast,text | native_functions.yaml through a YAML parser, and each schema string through torchgen
+scripts/gen-mint-inventory.py | tsast,text | misc/mint-inventory.md and the HS14 floor allowlist
+scripts/install-ast-grep.sh | text,json | the release checksum, the version line and the matches of its fixture
+scripts/install-tree-sitter.sh | text | the release checksum, the kit manifest and the parse of its fixture
+scripts/mintmodel.py | tsast |
+scripts/pgo-bootstrap.sh | cmake-api,git |
+scripts/preprocessed.py | kit |
+scripts/refresh-derived.sh | json,git | the compile database
+scripts/session-oracle.sh | git,text | the switch list that opam prints
+scripts/throwaway_repo.py | git |
+scripts/tsast.py | kit |
+test/guard_attacks/test_use_after_move_attacks.py | tsast |
+test/neg_compile_driver.py | compiler,json,text | the compile database and the diagnostics of the compiler
+tools/mutation/gates.py | tsast |
+tools/mutation/run.py | tsast,cmake-api,json,compiler,text | the compile database, the file API reply, the compiler and test output, and the exemption rows
+tools/session_oracle/emit.py | text | the rows of the golden CSV and the type spellings in them

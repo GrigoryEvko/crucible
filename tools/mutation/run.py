@@ -58,6 +58,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gates as gate_finder  # noqa: E402
+import tsast  # noqa: E402  (gates puts scripts/ on the path)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INVALID_EXEMPTIONS = Path(__file__).resolve().parent / "invalid-exemptions.txt"
@@ -350,7 +351,6 @@ def _spelled_names(sources: list[str], cache: dict[str, frozenset[str]]) -> None
     does not count.  An operator name is kept in the canonical spelling of
     tsast.spelled, which is the spelling of the gate entity: `operator new[]`.
     Complexity: one kit run over the sources that the cache does not hold."""
-    tsast = gate_finder.tsast
     fresh = sorted({source for source in sources if source not in cache})
     readable = [source for source in fresh if Path(source).is_file()]
     for source in set(fresh) - set(readable):
@@ -778,7 +778,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         ]
         try:
             outcomes = run_header("include/planted.h", tmp, candidates, 2, 100, 100, probe_argv=base)
-        except gate_finder.tsast.KitMissing as missing:
+        except tsast.KitMissing as missing:
             print(f"mutation selftest: SKIP, {missing}", file=sys.stderr)
             return 3
         verdicts = {(o.kind, o.entity): o.status for o in outcomes}

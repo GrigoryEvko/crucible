@@ -23,6 +23,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+
+import tsast  # noqa: E402  (the path insert above has to come first)
+
 LEDGER: dict[str, str] = {
     "evade_move_through_callee":
         "steal takes Token& and moves inside its body.  The call site does not say std::move, "
@@ -65,7 +69,7 @@ def load_guard(root: Path):
 
 def scan(guard, path: Path) -> tuple[list, list[str]]:
     """Walk one file with the guard, and return its findings and its function names."""
-    tree = next(guard.tsast.parse([path], strict=False))
+    tree = next(tsast.parse([path], strict=False))
     walk = guard.Walk(tree, str(CORPUS))
     names = [walk.function_name(function) for function in tree.find("function_definition")]
     return walk.run(), names
@@ -81,7 +85,7 @@ def main(argv: list[str]) -> int:
             copy = Path(tmp) / CORPUS.name
             copy.write_text((root / CORPUS).read_text(encoding="utf-8") + CONTROL, encoding="utf-8")
             control_findings, _ = scan(guard, copy)
-    except guard.tsast.KitMissing as exc:
+    except tsast.KitMissing as exc:
         print(f"test_use_after_move_attacks: {exc}", file=sys.stderr)
         return 3
     functions = [name for name in names if name.startswith(EVASION_PREFIX)]

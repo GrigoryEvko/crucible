@@ -204,6 +204,14 @@ jobs:
           python3 scripts/check-git-isolation.py --self-test
           python3 scripts/check-git-isolation.py
 
+      # scripts/guard-engines.txt gives the engine of each script, and the
+      # guard holds each row to the code, so no script reads C++ as text.
+      # It reads shell with the pinned ast-grep that a step above installs.
+      - name: every script names its engine and reads no C++ as text (self-test + scan)
+        run: |
+          python3 scripts/check-guard-engines.py --self-test
+          python3 scripts/check-guard-engines.py
+
       - name: erased brand spellings only decrease (self-test + scan)
         run: |
           python3 scripts/check-brand-drain.py --self-test
@@ -485,7 +493,8 @@ jobs:
       - name: Install the pinned tree-sitter C++ kit
         run: bash scripts/install-tree-sitter.sh
 
-      # The git isolation guard reads shell scripts with the pinned ast-grep.
+      # The git isolation guard and the guard-engines guard read shell scripts
+      # with the pinned ast-grep.
       - name: Install the pinned ast-grep
         run: bash scripts/install-ast-grep.sh
 
