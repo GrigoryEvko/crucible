@@ -5,8 +5,7 @@
 // repeats exactly, stays finite, and still produces a normal distribution.
 
 #include <crucible/Philox.h>
-#include <crucible/algebra/lattices/_FpModeLattice.h>
-#include <crucible/fixy/fp/_Polynomial.h>
+#include <fixy/Bands.h>
 
 #include <bit>
 #include <cmath>
@@ -15,8 +14,6 @@
 #include <cstdlib>
 #include <utility>
 
-namespace cwrap = crucible::fixy::wrap;
-
 namespace {
 
 using crucible::Philox;
@@ -24,15 +21,12 @@ using crucible::Philox;
 // The two entry points sit at different determinism tiers.  Asserting it
 // here means a change that swaps them stops the build rather than quietly
 // moving every sampler onto the platform-dependent path.
-static_assert(decltype(Philox::box_muller_det(0u, 0u))::tier == cwrap::DetSafeTier_v::MonotonicClockRead,
+static_assert(::fixy::band_tier_v<decltype(Philox::box_muller_det(0u, 0u))> == ::fixy::DetSafeTier_v::MonotonicClockRead,
               "box_muller_det must stay at the clock-read tier, the library path");
 
-static_assert(decltype(Philox::box_muller_polynomial_det(0u, 0u))::tier == cwrap::DetSafeTier_v::PhiloxRng,
+static_assert(::fixy::band_tier_v<decltype(Philox::box_muller_polynomial_det(0u, 0u))> == ::fixy::DetSafeTier_v::PhiloxRng,
               "box_muller_polynomial_det must stay at the generator tier, the "
               "polynomial path");
-
-static_assert(static_cast<int>(crucible::algebra::lattices::FpLibmPolicy::Polynomial) == 6,
-              "the polynomial policy must keep ordinal 6");
 
 constexpr std::uint64_t pair_bits(std::pair<float, float> p) noexcept {
     const auto a = static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(p.first));
@@ -141,15 +135,12 @@ void test_statistical_sanity() {
     }
 }
 
-void test_header_smoke() { crucible::fixy::fp::runtime_smoke_test(); }
-
 }  // namespace
 
 int main() {
     test_bit_determinism();
     test_finite_output();
     test_statistical_sanity();
-    test_header_smoke();
     std::printf("box_muller_polynomial: PASS\n");
     return 0;
 }

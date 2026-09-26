@@ -225,7 +225,7 @@ crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrap
 crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog F101-F105 — FP-mode cross-axis rules
 crucible_test(test_fixy_v_093_fp_canonicalize)  # FIXY-V-093 fixy::fp::canonicalize — merkle-hash-safe FP canonicalization
 crucible_test(test_fixy_v_094_fp_strict_floor)  # FIXY-V-094 crucible_fp_strict INTERFACE floor — compile-def + runtime witness
-crucible_test(test_fixy_v_095_box_muller_polynomial)  # FIXY-V-095 Philox::box_muller_polynomial_det runtime witness + tier wiring
+crucible_test(test_philox_box_muller_polynomial)  # Philox::box_muller_polynomial_det runtime witness and tier
 crucible_test(test_fixy_v_096_welford_variance)  # FIXY-V-096 bench_harness Welford-on-double variance — type-shape + ill-conditioned stability witness
 target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
@@ -2629,28 +2629,22 @@ crucible_neg_compile_fixy_test(neg_fixy_canonicalize_wrong_rounding_mode
     "static assertion failed"
     "RoundingMode::RN|round-to-nearest")
 
-# FIXY-V-095 — HS14 floor for Philox::box_muller_det downgrade +
-# box_muller_polynomial_det creation.  Two fixtures pin orthogonal
-# corners of the (source-tier × gate-tier) lattice grid:
-#   1. cipher_fence — SOURCE is libm path (MonotonicClockRead), GATE
-#      is at PhiloxRng (Cipher write-fence).  Rejects because the
-#      source tier is strictly weaker than the boundary.  This is
-#      the load-bearing rejection that prevents libm sin/cos/log
-#      bit-instability from defeating cross-vendor replay.
-#   2. wrong_tier_consume — SOURCE is polynomial path (PhiloxRng),
-#      GATE is at Pure (strictly stronger than PhiloxRng).  Rejects
-#      because the gate demands fully-pure-function semantics the
-#      polynomial path cannot provide (still FP transcendentals).
-#      This pins the tier-upgrade boundary EXACTLY at PhiloxRng.
-# Both fixtures exercise the same DetSafe::satisfies<RequiredTier>
-# subsumption mechanism but at orthogonal lattice corners — HS14's
-# "distinct mismatch classes" floor is met.
-crucible_neg_compile_fixy_test(neg_fixy_v_095_box_muller_det_cipher_fence
+# The two Box-Muller tiers of Philox, each refused at the gate above it.
+# Two fixtures pin orthogonal corners of the (source tier, gate tier)
+# grid:
+#   1. cipher_fence — the source is the library path (MonotonicClockRead)
+#      and the gate is the Cipher write fence (PhiloxRng).  The source is
+#      below the fence, so library sin/cos/log cannot reach a replay log.
+#   2. wrong_tier_consume — the source is the polynomial path (PhiloxRng)
+#      and the gate demands Pure.  The gate is above the source, which
+#      pins the polynomial path exactly at PhiloxRng.
+# Each pins the refused gate, the tier it demands and the source band.
+crucible_neg_compile_fixy_test(neg_philox_box_muller_det_cipher_fence
     "constraints.*not satisfied"
-    "admissible_at_cipher_fence|satisfies")
-crucible_neg_compile_fixy_test(neg_fixy_v_095_box_muller_polynomial_det_wrong_tier_consume
+    "admissible_at_cipher_fence<.*At<foundation::algebra::lattices::DetSafeTier::MonotonicClockRead>")
+crucible_neg_compile_fixy_test(neg_philox_box_muller_polynomial_det_wrong_tier_consume
     "constraints.*not satisfied"
-    "requires_pure_tier|satisfies")
+    "requires_pure_tier<.*At<foundation::algebra::lattices::DetSafeTier::PhiloxRng>")
 
 # fixy-A4-018 — §XXI Universal-Mint-Pattern enforcement.  fixy::fn's
 # value ctor is private; only the three canonical mint factories
@@ -8470,15 +8464,18 @@ crucible_neg_compile_test(neg_det_safe_at_cross_tier_mixing
 crucible_neg_compile_test(neg_det_safe_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
-# ─── WRAP-Philox-4 op_key DetSafe gate neg-compiles (2 fixtures) ────
+# ─── Philox op_key DetSafe gate neg-compiles (2 fixtures) ───────────
 #
 # The raw per-op key derivation API is not public.  Production callers
 # must route through op_key_det(), carrying DetSafe<Pure> provenance
-# until the boundary that explicitly unwraps the key bytes.
-crucible_neg_compile_test(neg_philox_raw_op_key
-  "op_key|no member|private|not a member")
-crucible_neg_compile_test(neg_philox_op_key_det_raw_uint64
-  "cannot convert|no viable|conversion from|DetSafe")
+# until the boundary that explicitly unwraps the key bytes.  One fixture
+# names the raw function, the other takes the band as a bare uint64_t.
+crucible_neg_compile_multi_test(neg_philox_raw_op_key
+  "is not a member of"
+  ".op_key. is not a member of .crucible::Philox.")
+crucible_neg_compile_multi_test(neg_philox_op_key_det_raw_uint64
+  "cannot convert"
+  "cannot convert .crucible::Philox::DetSafePureKey.*to .uint64_t.")
 
 # ─── FOUND-G21 HotPath wrapper neg-compiles (6 fixtures: 4+2) ────────
 #

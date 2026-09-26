@@ -8,10 +8,11 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/fixy/fp/_Polynomial.h>
+#include <fixy/Bands.h>
+#include <fixy/fp/Polynomial.h>
 
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <utility>
@@ -71,18 +72,14 @@ struct Philox {
     // The multiplier is 2^-32, which carries the whole uint32 range onto
     // [0, 1). One IEEE 754 multiplication is bit-stable everywhere, so both
     // conversions keep the tier of the value they are given.
-    [[nodiscard]] static constexpr float to_uniform(uint32_t x) {
-        return static_cast<float>(x) * 2.3283064365386963e-10f;
-    }
+    [[nodiscard]] static constexpr float to_uniform(uint32_t x) { return static_cast<float>(x) * kTwoToMinus32f_; }
 
-    [[nodiscard]] static constexpr double to_uniform_d(uint32_t x) {
-        return static_cast<double>(x) * 2.3283064365386963e-10;
-    }
+    [[nodiscard]] static constexpr double to_uniform_d(uint32_t x) { return static_cast<double>(x) * kTwoToMinus32_; }
 
     [[nodiscard]] static std::pair<float, float> box_muller(uint32_t u1_raw, uint32_t u2_raw) {
         // The bias to (0, 1] is what keeps a zero input out of log().
-        float u1 = (static_cast<float>(u1_raw) + 1.0f) * 2.3283064365386963e-10f;
-        float u2 = (static_cast<float>(u2_raw) + 1.0f) * 2.3283064365386963e-10f;
+        float u1 = (static_cast<float>(u1_raw) + 1.0f) * kTwoToMinus32f_;
+        float u2 = (static_cast<float>(u2_raw) + 1.0f) * kTwoToMinus32f_;
 
         float r = std::sqrt(-2.0f * std::log(u1));
         float theta = 6.2831853071795864f * u2;  // 2π
@@ -90,39 +87,36 @@ struct Philox {
         return {r * std::cos(theta), r * std::sin(theta)};
     }
 
-    using DetSafePhiloxCtr = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, Ctr>;
-    using DetSafePhiloxFloat = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, float>;
-    using DetSafePhiloxDouble = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, double>;
-    using DetSafeMonoClockFloatPair =
-        crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::MonotonicClockRead, std::pair<float, float>>;
-    using DetSafePhiloxFloatPair =
-        crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, std::pair<float, float>>;
-    using DetSafePureKey = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::Pure, uint64_t>;
+    using DetSafePhiloxCtr = ::fixy::det_safe::PhiloxRng<Ctr>;
+    using DetSafePhiloxFloat = ::fixy::det_safe::PhiloxRng<float>;
+    using DetSafePhiloxDouble = ::fixy::det_safe::PhiloxRng<double>;
+    using DetSafeMonoClockFloatPair = ::fixy::det_safe::MonoClock<std::pair<float, float>>;
+    using DetSafePhiloxFloatPair = ::fixy::det_safe::PhiloxRng<std::pair<float, float>>;
+    using DetSafePureKey = ::fixy::det_safe::Pure<uint64_t>;
 
     [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(Ctr ctr, Key key) {
-        return DetSafePhiloxCtr{generate(ctr, key)};
+        return DetSafePhiloxCtr{generate(ctr, key), {}};
     }
 
     [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(uint64_t offset, uint64_t key) {
-        return DetSafePhiloxCtr{generate(offset, key)};
+        return DetSafePhiloxCtr{generate(offset, key), {}};
     }
 
     // Taking the key as a tier-carrying type lets a caller chain a key
     // straight in. The alternative, peeking the key out first, discards the
     // very promise this overload checks.
-    template <crucible::fixy::wrap::DetSafeTier_v KeyTier>
-        requires(crucible::fixy::wrap::DetSafeLattice::leq(crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, KeyTier))
-    [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(uint64_t offset,
-                                                                 crucible::fixy::wrap::DetSafe<KeyTier, uint64_t> key) {
-        return DetSafePhiloxCtr{generate(offset, std::move(key).consume())};
+    template <::fixy::DetSafeTier_v KeyTier>
+        requires(::fixy::DetSafeLattice::leq(::fixy::DetSafeTier_v::PhiloxRng, KeyTier))
+    [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(uint64_t offset, ::fixy::DetSafe<KeyTier, uint64_t> key) {
+        return DetSafePhiloxCtr{generate(offset, std::move(key).consume()), {}};
     }
 
     [[nodiscard]] static constexpr DetSafePhiloxFloat to_uniform_det(uint32_t x) {
-        return DetSafePhiloxFloat{to_uniform(x)};
+        return DetSafePhiloxFloat{to_uniform(x), {}};
     }
 
     [[nodiscard]] static constexpr DetSafePhiloxDouble to_uniform_d_det(uint32_t x) {
-        return DetSafePhiloxDouble{to_uniform_d(x)};
+        return DetSafePhiloxDouble{to_uniform_d(x), {}};
     }
 
     // The bytes are Philox-derived, but the transform reaches sin, cos and
@@ -130,22 +124,26 @@ struct Philox {
     // units in the last place across implementations. The tier says so: this
     // result replays on the machine that produced it and nowhere else.
     [[nodiscard]] static DetSafeMonoClockFloatPair box_muller_det(uint32_t u1_raw, uint32_t u2_raw) {
-        return DetSafeMonoClockFloatPair{box_muller(u1_raw, u2_raw)};
+        return DetSafeMonoClockFloatPair{box_muller(u1_raw, u2_raw), {}};
     }
 
     // Same transform with in-tree polynomial sin, cos and log and a correctly
     // rounded square root. No platform math library, so the result is
     // bit-identical everywhere and carries the stronger tier.
     [[nodiscard]] static DetSafePhiloxFloatPair box_muller_polynomial_det(uint32_t u1_raw, uint32_t u2_raw) {
-        return DetSafePhiloxFloatPair{crucible::fixy::fp::box_muller_polynomial(u1_raw, u2_raw)};
+        return DetSafePhiloxFloatPair{::fixy::fp::box_muller_polynomial(u1_raw, u2_raw), {}};
     }
 
     [[nodiscard]] static constexpr DetSafePureKey op_key_det(uint64_t master_counter, uint32_t op_index,
                                                              ContentHash content_hash) {
-        return DetSafePureKey{op_key_bytes_(master_counter, op_index, content_hash)};
+        return DetSafePureKey{op_key_bytes_(master_counter, op_index, content_hash), {}};
     }
 
 private:
+    // 2^-32, exact in both formats.
+    static constexpr float kTwoToMinus32f_ = 0x1p-32f;
+    static constexpr double kTwoToMinus32_ = 0x1p-32;
+
     [[nodiscard]] static constexpr uint32_t mulhi_(uint32_t a, uint32_t b) {
         return static_cast<uint32_t>((static_cast<uint64_t>(a) * static_cast<uint64_t>(b)) >> 32);
     }
@@ -171,5 +169,10 @@ private:
         return h;
     }
 };
+
+// The hexadecimal 2^-32 has the same bits as the decimal literal the
+// conversions used before, so no stream changes.
+static_assert(std::bit_cast<std::uint32_t>(Philox::to_uniform(1u)) == std::bit_cast<std::uint32_t>(2.3283064365386963e-10f));
+static_assert(std::bit_cast<std::uint64_t>(Philox::to_uniform_d(1u)) == std::bit_cast<std::uint64_t>(2.3283064365386963e-10));
 
 }  // namespace crucible

@@ -1,16 +1,18 @@
 #include <crucible/Philox.h>
-#include <crucible/safety/_DetSafe.h>
+#include <fixy/Bands.h>
 
 #include "test_assert.h"
 
-#include <cmath>
-#include <cstdio>
+#include <bit>
 #include <cstdint>
+#include <cstdio>
 #include <utility>
 
 using namespace crucible;
-using safety::DetSafe;
-using safety::DetSafeTier_v;
+using ::fixy::band_tier_v;
+using ::fixy::DetSafe;
+using ::fixy::DetSafeTier_v;
+using ::fixy::satisfies_v;
 
 [[nodiscard]] static constexpr uint64_t reference_fnv_mix(uint64_t h, uint64_t v) noexcept {
     for (int i = 0; i < 8; ++i) {
@@ -48,14 +50,7 @@ static void test_generate_det_bit_equal_to_raw() {
 
     for (const auto& ctr : ctrs) {
         for (const auto& key : keys) {
-            const auto raw = Philox::generate(ctr, key);
-            const auto pinned = Philox::generate_det(ctr, key);
-            const auto pinned_unwrapped = pinned.peek();
-
-            assert(raw[0] == pinned_unwrapped[0]);
-            assert(raw[1] == pinned_unwrapped[1]);
-            assert(raw[2] == pinned_unwrapped[2]);
-            assert(raw[3] == pinned_unwrapped[3]);
+            assert(Philox::generate(ctr, key) == Philox::generate_det(ctr, key).peek());
         }
     }
 
@@ -64,13 +59,7 @@ static void test_generate_det_bit_equal_to_raw() {
 
     for (uint64_t offset : offsets) {
         for (uint64_t key : key64s) {
-            const auto raw = Philox::generate(offset, key);
-            const auto pinned = Philox::generate_det(offset, key);
-            const auto pu = pinned.peek();
-            assert(raw[0] == pu[0]);
-            assert(raw[1] == pu[1]);
-            assert(raw[2] == pu[2]);
-            assert(raw[3] == pu[3]);
+            assert(Philox::generate(offset, key) == Philox::generate_det(offset, key).peek());
         }
     }
 }
@@ -82,16 +71,12 @@ static void test_to_uniform_det_bit_equal() {
         0u, 1u, 0xFFFFFFFFu, 0x80000000u, 0x7FFFFFFFu, 0xDEADBEEFu, 0xCAFEBABEu, 0x55AA55AAu,
     };
     for (uint32_t x : samples) {
-        const float raw_f = Philox::to_uniform(x);
-        const float pinned_f = Philox::to_uniform_det(x).peek();
         // Compare the bytes, not the values.  A determinism claim is a
         // claim about bits, and two floats can compare equal without
         // carrying the same bit pattern.
-        assert(std::bit_cast<uint32_t>(raw_f) == std::bit_cast<uint32_t>(pinned_f));
-
-        const double raw_d = Philox::to_uniform_d(x);
-        const double pinned_d = Philox::to_uniform_d_det(x).peek();
-        assert(std::bit_cast<uint64_t>(raw_d) == std::bit_cast<uint64_t>(pinned_d));
+        assert(std::bit_cast<uint32_t>(Philox::to_uniform(x)) == std::bit_cast<uint32_t>(Philox::to_uniform_det(x).peek()));
+        assert(std::bit_cast<uint64_t>(Philox::to_uniform_d(x))
+               == std::bit_cast<uint64_t>(Philox::to_uniform_d_det(x).peek()));
     }
 }
 
@@ -125,39 +110,37 @@ static void test_op_key_det_bit_equal() {
     for (uint64_t m : masters) {
         for (uint32_t op : op_indices) {
             for (auto ch : content_hashes) {
-                const uint64_t raw = reference_op_key(m, op, ch);
-                const uint64_t pinned = Philox::op_key_det(m, op, ch).peek();
-                assert(raw == pinned);
+                assert(reference_op_key(m, op, ch) == Philox::op_key_det(m, op, ch).peek());
             }
         }
     }
 }
 
-static_assert(decltype(Philox::generate_det(Philox::Ctr{}, Philox::Key{}))::tier == DetSafeTier_v::PhiloxRng,
+static_assert(band_tier_v<decltype(Philox::generate_det(Philox::Ctr{}, Philox::Key{}))> == DetSafeTier_v::PhiloxRng,
               "Philox::generate_det((Ctr, Key)) MUST return DetSafe<PhiloxRng, Ctr>.");
 
-static_assert(decltype(Philox::generate_det(uint64_t{0}, uint64_t{0}))::tier == DetSafeTier_v::PhiloxRng,
+static_assert(band_tier_v<decltype(Philox::generate_det(uint64_t{0}, uint64_t{0}))> == DetSafeTier_v::PhiloxRng,
               "Philox::generate_det((uint64, uint64)) MUST return DetSafe<PhiloxRng, Ctr>.");
 
-static_assert(decltype(Philox::to_uniform_det(0u))::tier == DetSafeTier_v::PhiloxRng,
+static_assert(band_tier_v<decltype(Philox::to_uniform_det(0u))> == DetSafeTier_v::PhiloxRng,
               "Philox::to_uniform_det MUST return DetSafe<PhiloxRng, float>.");
 
-static_assert(decltype(Philox::to_uniform_d_det(0u))::tier == DetSafeTier_v::PhiloxRng,
+static_assert(band_tier_v<decltype(Philox::to_uniform_d_det(0u))> == DetSafeTier_v::PhiloxRng,
               "Philox::to_uniform_d_det MUST return DetSafe<PhiloxRng, double>.");
 
-static_assert(decltype(Philox::box_muller_det(0u, 0u))::tier == DetSafeTier_v::MonotonicClockRead,
+static_assert(band_tier_v<decltype(Philox::box_muller_det(0u, 0u))> == DetSafeTier_v::MonotonicClockRead,
               "Philox::box_muller_det MUST return DetSafe<MonotonicClockRead, "
               "pair<float,float>> — the C library transcendentals (sin/cos/log) "
               "drift by 1-3 ULPs between implementations, so the bytes are NOT "
               "cross-platform bit-equal.");
 
-static_assert(decltype(Philox::box_muller_polynomial_det(0u, 0u))::tier == DetSafeTier_v::PhiloxRng,
+static_assert(band_tier_v<decltype(Philox::box_muller_polynomial_det(0u, 0u))> == DetSafeTier_v::PhiloxRng,
               "Philox::box_muller_polynomial_det MUST return DetSafe<PhiloxRng, "
               "pair<float,float>> — it uses IEEE 754 polynomial sin/cos/log and a "
               "correctly-rounded square root, so its bytes are cross-platform "
               "bit-equal.");
 
-static_assert(decltype(Philox::op_key_det(0ull, 0u, ContentHash{0}))::tier == DetSafeTier_v::Pure,
+static_assert(band_tier_v<decltype(Philox::op_key_det(0ull, 0u, ContentHash{0}))> == DetSafeTier_v::Pure,
               "Philox::op_key_det MUST return DetSafe<Pure, uint64_t> — its inputs "
               "(master_counter, op_index, content_hash) are all Pure-tier scalars, "
               "so the bit-mix output is itself Pure.  Without this, the chain "
@@ -167,7 +150,7 @@ static_assert(decltype(Philox::op_key_det(0ull, 0u, ContentHash{0}))::tier == De
 // The concept below stands in for the fence a persisted-state writer
 // puts in front of every value it records.
 template <typename W>
-concept admissible_at_cipher_fence = W::template satisfies<DetSafeTier_v::PhiloxRng>;
+concept admissible_at_cipher_fence = satisfies_v<W, DetSafeTier_v::PhiloxRng>;
 
 static_assert(admissible_at_cipher_fence<decltype(Philox::generate_det(uint64_t{0}, uint64_t{0}))>,
               "generate_det's PhiloxRng-pinned result MUST pass the Cipher write-"
@@ -232,25 +215,20 @@ static void test_chain_composition() {
     const auto key_pure = Philox::op_key_det(
         /*master=*/0xCAFEBABEDEADBEEFull,
         /*op_index=*/42u, ContentHash{0xDEADBEEFCAFEBABEull});
-    static_assert(decltype(key_pure)::tier == DetSafeTier_v::Pure);
+    static_assert(band_tier_v<decltype(key_pure)> == DetSafeTier_v::Pure);
 
     // Pure sits above PhiloxRng, so it satisfies it.
-    static_assert(decltype(key_pure)::satisfies<DetSafeTier_v::PhiloxRng>);
+    static_assert(satisfies_v<decltype(key_pure), DetSafeTier_v::PhiloxRng>);
 
     // A caller that reaches the primitive overload has to peek the
     // bytes out first, which drops the tier.
     const uint64_t key_bytes = key_pure.peek();
     const auto rng = Philox::generate_det(/*offset=*/0u, key_bytes);
-    static_assert(decltype(rng)::tier == DetSafeTier_v::PhiloxRng);
+    static_assert(band_tier_v<decltype(rng)> == DetSafeTier_v::PhiloxRng);
 
     const uint64_t key_bytes_raw = reference_op_key(0xCAFEBABEDEADBEEFull, 42u, ContentHash{0xDEADBEEFCAFEBABEull});
     assert(key_bytes == key_bytes_raw);
-
-    const auto rng_raw = Philox::generate(uint64_t{0}, key_bytes_raw);
-    assert(rng.peek()[0] == rng_raw[0]);
-    assert(rng.peek()[1] == rng_raw[1]);
-    assert(rng.peek()[2] == rng_raw[2]);
-    assert(rng.peek()[3] == rng_raw[3]);
+    assert(rng.peek() == Philox::generate(uint64_t{0}, key_bytes_raw));
 }
 
 // Every wrapper here is constexpr-callable, and these variables force
@@ -258,16 +236,16 @@ static void test_chain_composition() {
 // library transcendentals it calls are not constexpr.
 
 inline constexpr auto kCheckGenerateDetConstexpr = Philox::generate_det(uint64_t{1}, uint64_t{2});
-static_assert(kCheckGenerateDetConstexpr.tier == DetSafeTier_v::PhiloxRng);
+static_assert(band_tier_v<decltype(kCheckGenerateDetConstexpr)> == DetSafeTier_v::PhiloxRng);
 
 inline constexpr auto kCheckUniformDetConstexpr = Philox::to_uniform_det(0xDEADBEEFu);
-static_assert(kCheckUniformDetConstexpr.tier == DetSafeTier_v::PhiloxRng);
+static_assert(band_tier_v<decltype(kCheckUniformDetConstexpr)> == DetSafeTier_v::PhiloxRng);
 
 inline constexpr auto kCheckUniformDDetConstexpr = Philox::to_uniform_d_det(0xDEADBEEFu);
-static_assert(kCheckUniformDDetConstexpr.tier == DetSafeTier_v::PhiloxRng);
+static_assert(band_tier_v<decltype(kCheckUniformDDetConstexpr)> == DetSafeTier_v::PhiloxRng);
 
 inline constexpr auto kCheckOpKeyDetConstexpr = Philox::op_key_det(0ull, 0u, ContentHash{0});
-static_assert(kCheckOpKeyDetConstexpr.tier == DetSafeTier_v::Pure);
+static_assert(band_tier_v<decltype(kCheckOpKeyDetConstexpr)> == DetSafeTier_v::Pure);
 
 // The tier checks above say nothing about the wrapped type, so a
 // refactor that keeps the tier and changes the inner type slips past
@@ -346,14 +324,14 @@ static_assert(!std::is_same_v<decltype(Philox::op_key_det(0ull, 0u, ContentHash{
 
 // A Pure result satisfies every tier below it, down to the weakest.
 using OpKeyResult = decltype(Philox::op_key_det(0ull, 0u, ContentHash{0}));
-static_assert(OpKeyResult::satisfies<DetSafeTier_v::Pure>,
+static_assert(satisfies_v<OpKeyResult, DetSafeTier_v::Pure>,
               "op_key_det's Pure result MUST satisfy Pure (reflexivity at top).");
-static_assert(OpKeyResult::satisfies<DetSafeTier_v::PhiloxRng>);
-static_assert(OpKeyResult::satisfies<DetSafeTier_v::MonotonicClockRead>);
-static_assert(OpKeyResult::satisfies<DetSafeTier_v::WallClockRead>);
-static_assert(OpKeyResult::satisfies<DetSafeTier_v::EntropyRead>);
-static_assert(OpKeyResult::satisfies<DetSafeTier_v::FilesystemMtime>);
-static_assert(OpKeyResult::satisfies<DetSafeTier_v::NonDeterministicSyscall>,
+static_assert(satisfies_v<OpKeyResult, DetSafeTier_v::PhiloxRng>);
+static_assert(satisfies_v<OpKeyResult, DetSafeTier_v::MonotonicClockRead>);
+static_assert(satisfies_v<OpKeyResult, DetSafeTier_v::WallClockRead>);
+static_assert(satisfies_v<OpKeyResult, DetSafeTier_v::EntropyRead>);
+static_assert(satisfies_v<OpKeyResult, DetSafeTier_v::FilesystemMtime>);
+static_assert(satisfies_v<OpKeyResult, DetSafeTier_v::NonDeterministicSyscall>,
               "op_key_det's Pure result MUST satisfy NDS (the bottom of the chain). "
               "Pure-tier bytes are admissible at every consumer including the "
               "weakest one.");
@@ -361,22 +339,19 @@ static_assert(OpKeyResult::satisfies<DetSafeTier_v::NonDeterministicSyscall>,
 // A PhiloxRng result satisfies its own tier and everything weaker,
 // and stops there.
 using GenResult = decltype(Philox::generate_det(uint64_t{0}, uint64_t{0}));
-static_assert(GenResult::satisfies<DetSafeTier_v::PhiloxRng>);
-static_assert(GenResult::satisfies<DetSafeTier_v::MonotonicClockRead>);
-static_assert(GenResult::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
-static_assert(!GenResult::satisfies<DetSafeTier_v::Pure>,
+static_assert(satisfies_v<GenResult, DetSafeTier_v::PhiloxRng>);
+static_assert(satisfies_v<GenResult, DetSafeTier_v::MonotonicClockRead>);
+static_assert(satisfies_v<GenResult, DetSafeTier_v::NonDeterministicSyscall>);
+static_assert(!satisfies_v<GenResult, DetSafeTier_v::Pure>,
               "generate_det's PhiloxRng result MUST NOT satisfy Pure — claiming "
               "Pure would mean the bytes are pure-from-declared-inputs (no PRNG "
               "state observable), which is FALSE for Philox output.  This is the "
               "reflexive load-bearing rejection: a future refactor to relax UP "
               "(forbidden) would break this assertion.");
 
-using UniformResult = decltype(Philox::to_uniform_det(0u));
-static_assert(!UniformResult::satisfies<DetSafeTier_v::Pure>);
-using UniformDResult = decltype(Philox::to_uniform_d_det(0u));
-static_assert(!UniformDResult::satisfies<DetSafeTier_v::Pure>);
-using BoxMullerResult = decltype(Philox::box_muller_det(0u, 0u));
-static_assert(!BoxMullerResult::satisfies<DetSafeTier_v::Pure>);
+static_assert(!satisfies_v<decltype(Philox::to_uniform_det(0u)), DetSafeTier_v::Pure>);
+static_assert(!satisfies_v<decltype(Philox::to_uniform_d_det(0u)), DetSafeTier_v::Pure>);
+static_assert(!satisfies_v<decltype(Philox::box_muller_det(0u, 0u)), DetSafeTier_v::Pure>);
 
 // A caller emptying the wrapper into a destination buffer must not
 // pay for a copy on the way out.
@@ -389,11 +364,7 @@ static void test_move_semantics_through_wrapper() {
                   "DetSafe::consume() && MUST return T by value (move).");
 
     Philox::Ctr extracted = std::move(rng).consume();
-    const auto raw = Philox::generate(uint64_t{1}, uint64_t{2});
-    assert(extracted[0] == raw[0]);
-    assert(extracted[1] == raw[1]);
-    assert(extracted[2] == raw[2]);
-    assert(extracted[3] == raw[3]);
+    assert(extracted == Philox::generate(uint64_t{1}, uint64_t{2}));
 
     auto key_pure = Philox::op_key_det(0xCAFEull, 7u, ContentHash{0xBEEFull});
     uint64_t key_extracted = std::move(key_pure).consume();
@@ -405,14 +376,15 @@ static void test_move_semantics_through_wrapper() {
 // too weak to be admitted is then a compile error rather than a silent
 // pass.
 
-static_assert(std::is_same_v<decltype(Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::Pure, uint64_t>{0ull})),
-                             Philox::DetSafePhiloxCtr>,
-              "generate_det(uint64, DetSafe<Pure, uint64>) MUST return "
-              "DetSafePhiloxCtr.  The Pure key satisfies the PhiloxRng-or-stronger "
-              "requires-clause.");
+static_assert(
+    std::is_same_v<decltype(Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::Pure, uint64_t>{0ull, {}})),
+                   Philox::DetSafePhiloxCtr>,
+    "generate_det(uint64, DetSafe<Pure, uint64>) MUST return "
+    "DetSafePhiloxCtr.  The Pure key satisfies the PhiloxRng-or-stronger "
+    "requires-clause.");
 
 static_assert(
-    std::is_same_v<decltype(Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>{0ull})),
+    std::is_same_v<decltype(Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>{0ull, {}})),
                    Philox::DetSafePhiloxCtr>,
     "generate_det(uint64, DetSafe<PhiloxRng, uint64>) MUST return "
     "DetSafePhiloxCtr.  PhiloxRng key satisfies the gate at the boundary.");
@@ -437,8 +409,8 @@ static_assert(!can_compose_chain<DetSafeTier_v::FilesystemMtime>);
 static_assert(!can_compose_chain<DetSafeTier_v::NonDeterministicSyscall>);
 
 inline constexpr auto kChainConstexpr =
-    Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::Pure, uint64_t>{42ull});
-static_assert(kChainConstexpr.tier == DetSafeTier_v::PhiloxRng);
+    Philox::generate_det(uint64_t{0}, DetSafe<DetSafeTier_v::Pure, uint64_t>{42ull, {}});
+static_assert(band_tier_v<decltype(kChainConstexpr)> == DetSafeTier_v::PhiloxRng);
 
 // Passing the key wrapped buys compile-time checking and nothing
 // else.  The bytes it produces are the bytes the peeked form
@@ -449,28 +421,14 @@ static void test_typed_chain_bit_equal_to_peek_chain() {
     constexpr uint64_t offset = 0x1234567890ABCDEFull;
     constexpr uint64_t key_raw = 0xDEADBEEFCAFEBABEull;
 
-    auto key_form1 = DetSafe<DetSafeTier_v::Pure, uint64_t>{key_raw};
-    auto rng_form1 = Philox::generate_det(offset, key_form1.peek());
+    const auto key_form1 = DetSafe<DetSafeTier_v::Pure, uint64_t>{key_raw, {}};
+    const auto rng_form1 = Philox::generate_det(offset, key_form1.peek());
+    const auto rng_form2 = Philox::generate_det(offset, DetSafe<DetSafeTier_v::Pure, uint64_t>{key_raw, {}});
+    const auto rng_form3 = Philox::generate_det(offset, DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>{key_raw, {}});
 
-    auto rng_form2 = Philox::generate_det(offset, DetSafe<DetSafeTier_v::Pure, uint64_t>{key_raw});
-
-    auto rng_form3 = Philox::generate_det(offset, DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>{key_raw});
-
-    assert(rng_form1.peek()[0] == rng_form2.peek()[0]);
-    assert(rng_form1.peek()[1] == rng_form2.peek()[1]);
-    assert(rng_form1.peek()[2] == rng_form2.peek()[2]);
-    assert(rng_form1.peek()[3] == rng_form2.peek()[3]);
-
-    assert(rng_form1.peek()[0] == rng_form3.peek()[0]);
-    assert(rng_form1.peek()[1] == rng_form3.peek()[1]);
-    assert(rng_form1.peek()[2] == rng_form3.peek()[2]);
-    assert(rng_form1.peek()[3] == rng_form3.peek()[3]);
-
-    auto raw = Philox::generate(offset, key_raw);
-    assert(rng_form1.peek()[0] == raw[0]);
-    assert(rng_form1.peek()[1] == raw[1]);
-    assert(rng_form1.peek()[2] == raw[2]);
-    assert(rng_form1.peek()[3] == raw[3]);
+    assert(rng_form1.peek() == rng_form2.peek());
+    assert(rng_form1.peek() == rng_form3.peek());
+    assert(rng_form1.peek() == Philox::generate(offset, key_raw));
 }
 
 // The same chain again, with the wrapped-key overload in place of the
@@ -480,21 +438,17 @@ static void test_e2e_typed_chain() {
     std::printf("  end-to-end typed chain: op_key_det → relax → generate_det...\n");
 
     auto key_pure = Philox::op_key_det(0xCAFEBABEDEADBEEFull, 42u, ContentHash{0xDEADBEEFCAFEBABEull});
-    static_assert(decltype(key_pure)::tier == DetSafeTier_v::Pure);
+    static_assert(band_tier_v<decltype(key_pure)> == DetSafeTier_v::Pure);
 
     // Relaxing keeps the bytes and weakens only the promise.
-    auto key_philox = std::move(key_pure).relax<DetSafeTier_v::PhiloxRng>();
-    static_assert(decltype(key_philox)::tier == DetSafeTier_v::PhiloxRng);
+    auto key_philox = ::fixy::relax<DetSafeTier_v::PhiloxRng>(std::move(key_pure));
+    static_assert(band_tier_v<decltype(key_philox)> == DetSafeTier_v::PhiloxRng);
 
-    auto rng = Philox::generate_det(/*offset=*/0u, std::move(key_philox));
-    static_assert(decltype(rng)::tier == DetSafeTier_v::PhiloxRng);
+    const auto rng = Philox::generate_det(/*offset=*/0u, std::move(key_philox));
+    static_assert(band_tier_v<decltype(rng)> == DetSafeTier_v::PhiloxRng);
 
     const uint64_t key_bytes_raw = reference_op_key(0xCAFEBABEDEADBEEFull, 42u, ContentHash{0xDEADBEEFCAFEBABEull});
-    auto rng_raw = Philox::generate(uint64_t{0}, key_bytes_raw);
-    assert(rng.peek()[0] == rng_raw[0]);
-    assert(rng.peek()[1] == rng_raw[1]);
-    assert(rng.peek()[2] == rng_raw[2]);
-    assert(rng.peek()[3] == rng_raw[3]);
+    assert(rng.peek() == Philox::generate(uint64_t{0}, key_bytes_raw));
 }
 
 int main() {
