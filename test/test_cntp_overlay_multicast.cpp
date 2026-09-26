@@ -1,4 +1,5 @@
 #include <crucible/cntp/OverlayMulticast.h>
+#include <fixy/Ctx.h>
 
 #include "test_assert.h"
 
@@ -11,8 +12,8 @@
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
-namespace saf = crucible::safety;
+namespace fe = ::foundation::effects;
+namespace source = ::fixy::tags::source;
 
 namespace {
 
@@ -46,15 +47,20 @@ void test_admission() {
     assert(!cntp::admit_overlay_fanout(0).has_value());
     assert(!cntp::admit_overlay_fanout(17).has_value());
 
+    assert(cntp::admit_overlay_payload_bytes(64).has_value());
+    assert(cntp::admit_overlay_payload_bytes(0).error() == cntp::OverlayMulticastError::InvalidPayloadLimit);
+    assert(cntp::overlay_multicast_error_name(cntp::OverlayMulticastError::InvalidPayloadLimit)
+           == std::string_view{"InvalidPayloadLimit"});
+
     cog::CogIdentity zero{};
     assert(!cntp::admit_overlay_peer(zero).has_value());
-    static_assert(std::same_as<cntp::DeclaredOverlayPeer::tag_type, saf::source::OverlayMulticast>);
+    static_assert(std::same_as<cntp::DeclaredOverlayPeer::tag_type, source::OverlayMulticast>);
 
     std::printf("  test_admission: PASSED\n");
 }
 
 void test_routes_and_message_plan() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
     auto local = overlay_peer(1);
     std::array peers{overlay_peer(3), overlay_peer(4), overlay_peer(5)};
     auto stripes = cntp::admit_overlay_stripe_count(4);
@@ -68,7 +74,7 @@ void test_routes_and_message_plan() {
         .stripe_count = *stripes,
         .recovery_threshold = *threshold,
         .fanout = *fanout,
-        .max_payload_bytes = cntp::OverlayPayloadBytes{64U},
+        .max_payload_bytes = cntp::admit_overlay_payload_bytes(64U).value(),
         .use_fec_per_stripe = true,
     };
     auto plan =
@@ -111,7 +117,7 @@ void test_routes_and_message_plan() {
 }
 
 void test_peer_mutation_errors() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
     auto local = overlay_peer(10);
     auto other = overlay_peer(11);
     std::array peers{other};
@@ -125,7 +131,7 @@ void test_peer_mutation_errors() {
         .stripe_count = *stripes,
         .recovery_threshold = *threshold,
         .fanout = *fanout,
-        .max_payload_bytes = cntp::OverlayPayloadBytes{64U},
+        .max_payload_bytes = cntp::admit_overlay_payload_bytes(64U).value(),
         .use_fec_per_stripe = true,
     };
     auto plan =
@@ -149,8 +155,10 @@ int main() {
     static_assert(sizeof(cntp::DeclaredOverlayPeer) == sizeof(cntp::OverlayPeerRef));
     static_assert(cntp::OverlayMulticastShape<4, 8, 2>);
     static_assert(!cntp::OverlayMulticastShape<0, 8, 2>);
-    static_assert(cntp::CtxFitsOverlayMulticastMint<effects::ColdInitCtx>);
-    static_assert(!cntp::CtxFitsOverlayMulticastMint<effects::BgDrainCtx>);
+    static_assert(cntp::CtxFitsOverlayMulticastMint<::fixy::ColdInitCtx>);
+    static_assert(!cntp::CtxFitsOverlayMulticastMint<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsOverlayMulticastMint<::fixy::HotFgCtx>);
+    static_assert(!std::is_constructible_v<cntp::OverlayMulticastPlan<4, 8, 2>, cntp::DeclaredOverlayPeer>);
 
     std::printf("test_cntp_overlay_multicast:\n");
     test_admission();

@@ -7234,20 +7234,28 @@ crucible_neg_compile_multi_test(neg_gossip_multicast_zero_neighbors
   "no matching function for call to .mint_gossip_multicast_plan<4, 0>"
   "required for the satisfaction of .GossipNeighborShape<MaxNeighbors>. .with MaxNeighbors = 0.")
 
-# GAPS-139 — cntp/OverlayMulticast.h application-layer route substrate.
+# cntp/OverlayMulticast.h application-layer route substrate.
 #   * neg_overlay_multicast_mint_bg_ctx: only Init-row contexts mint plans.
 #   * neg_overlay_multicast_raw_peer: raw peer refs cannot seed a plan.
 #   * neg_overlay_multicast_zero_stripes: zero-stripe route tables rejected.
 #   * neg_overlay_multicast_cross_tag_peer: externally tagged peer refs cannot
 #     seed an overlay route plan.
-crucible_neg_compile_test(neg_overlay_multicast_mint_bg_ctx
-  "constraints not satisfied|CtxFitsOverlayMulticastMint|Init|Bg")
-crucible_neg_compile_test(neg_overlay_multicast_raw_peer
-  "cannot convert|could not convert|DeclaredOverlayPeer|Tagged")
-crucible_neg_compile_test(neg_overlay_multicast_zero_stripes
-  "constraints not satisfied|OverlayMulticastShape|MaxStripes")
-crucible_neg_compile_test(neg_overlay_multicast_cross_tag_peer
-  "no matching function|cannot convert|could not convert|Tagged")
+#   * neg_overlay_multicast_private_ctor: the mint is the one door to a plan.
+crucible_neg_compile_multi_test(neg_overlay_multicast_mint_bg_ctx
+  "no matching function for call to .mint_overlay_multicast<4, 4, 2>\\(fixy::BgDrainCtx&"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>.")
+crucible_neg_compile_multi_test(neg_overlay_multicast_raw_peer
+  "no matching function for call to .mint_overlay_multicast<4, 4, 2>\\(fixy::ColdInitCtx&, crucible::cntp::OverlayPeerRef&\\)"
+  "cannot convert .raw. \\(type .crucible::cntp::OverlayPeerRef.\\) to type .crucible::cntp::DeclaredOverlayPeer.")
+crucible_neg_compile_multi_test(neg_overlay_multicast_zero_stripes
+  "no matching function for call to .mint_overlay_multicast<4, 0, 2>\\(fixy::ColdInitCtx&"
+  "required for the satisfaction of .OverlayMulticastShape<MaxPeers, MaxStripes, MaxFanout>. .with MaxPeers = 4; MaxStripes = 0; MaxFanout = 2.")
+crucible_neg_compile_multi_test(neg_overlay_multicast_cross_tag_peer
+  "no matching function for call to .mint_overlay_multicast<4, 4, 2>\\(fixy::ColdInitCtx&, fixy::Tagged<crucible::cntp::OverlayPeerRef, fixy::tags::source::External>&\\)"
+  "cannot convert .external. \\(type .fixy::Tagged<crucible::cntp::OverlayPeerRef, fixy::tags::source::External>.\\) to type .crucible::cntp::DeclaredOverlayPeer.")
+crucible_neg_compile_multi_test(neg_overlay_multicast_private_ctor
+  "OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>::OverlayMulticastPlan\\(crucible::cntp::DeclaredOverlayPeer"
+  "is private within this context")
 
 # GAPS-117 — cntp/Fec.h GF(256) systematic Reed-Solomon primitive.
 #   * neg_fec_zero_k / neg_fec_zero_m: shard counts must be positive.

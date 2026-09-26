@@ -1,8 +1,9 @@
 #include <crucible/cntp/OverlayMulticast.h>
+#include <fixy/Ctx.h>
 
 int main() {
-    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
     auto peer = crucible::cntp::admit_overlay_peer(crucible::cog::CogIdentity{.uuid = crucible::cog::Uuid{1, 1}});
-    auto plan = crucible::cntp::mint_overlay_multicast<4, 4, 2>(bg, *peer);
+    auto plan = crucible::cntp::mint_overlay_multicast<4, 4, 2>(bg, peer.value());
     return static_cast<int>(plan.peer_count());
 }
