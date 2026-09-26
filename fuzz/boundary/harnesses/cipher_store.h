@@ -84,7 +84,7 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 
     Arena arena;
     if (object_hash != 0) {
-        auto loaded = cipher.load_content_addressed(view, old_tree::test_alloc(), ContentHash{object_hash}, arena);
+        auto loaded = cipher.load_content_addressed(view, test_alloc(),ContentHash{object_hash}, arena);
         if (const RegionNode* region = loaded.get(); region != nullptr) {
             CRUCIBLE_FUZZ_CLAIM("cipher_store", region->content_hash == ContentHash{object_hash});
             claim_region_trusted("cipher_store", *region);

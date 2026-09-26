@@ -8,7 +8,6 @@
 // loads to the same region.
 
 #include "../harness.h"
-#include "../old_tree.h"
 #include "tensor_meta_claims.h"
 
 #include <crucible/Arena.h>
@@ -51,7 +50,7 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
 // A region the way the recorder builds one: two operations with one input
 // and one output each, and with a plan of two slots when with_plan is set.
 [[nodiscard]] inline RegionNode* build_seed_region(Arena& arena, bool with_plan) {
-    const auto alloc = old_tree::test_alloc();
+    const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
     auto* ops = arena.alloc_array<TraceEntry>(alloc, kOps);
     std::uninitialized_value_construct_n(ops, kOps);
@@ -147,7 +146,7 @@ inline void run_region(std::span<const std::uint8_t> bytes) {
     if (bytes.size() > kMaxInputBytes) bytes = bytes.first(kMaxInputBytes);
 
     Arena arena;
-    const auto alloc = old_tree::test_alloc();
+    const auto alloc = test_alloc();
     RegionNode* region = deserialize_region(alloc, bytes, arena).value();
     if (region == nullptr) return;
     claim_region_trusted("region", *region);

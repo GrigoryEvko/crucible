@@ -7,21 +7,25 @@
 // payload.
 
 #include "../harness.h"
-#include "../old_tree.h"
 
 #include <crucible/cipher/FederationProtocol.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <vector>
 
 namespace crucible::fuzz::boundary {
 
+// The atom count of this build's effect universe, which is what a receiver
+// states when it reads a federation entry.
+inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundation::effects::effect_count);
+
 [[nodiscard]] inline Seeds seeds_federation() {
     namespace fed = ::crucible::cipher::federation;
     Seeds seeds;
     for (std::string_view payload : {std::string_view{}, std::string_view{"payload bytes"}}) {
         std::vector<std::uint8_t> seed;
-        append_raw(seed, old_tree::kReceiverAtomCount);
+        append_raw(seed, kReceiverAtomCount);
         std::vector<std::uint8_t> entry(fed::FEDERATION_HEADER_BYTES + payload.size());
         const auto body = text_bytes(payload);
         const auto written =
@@ -55,7 +59,7 @@ inline void run_federation(std::span<const std::uint8_t> bytes) {
     const auto written = fed::serialize_federation_entry(std::span<std::uint8_t>{out}, key, view->payload);
     CRUCIBLE_FUZZ_CLAIM("federation", written.has_value());
     auto again = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>{out.data(), *written},
-                                                             old_tree::kReceiverAtomCount);
+                                                             kReceiverAtomCount);
     CRUCIBLE_FUZZ_CLAIM("federation", again.has_value());
     CRUCIBLE_FUZZ_CLAIM("federation", again->header.content_hash == view->header.content_hash);
     CRUCIBLE_FUZZ_CLAIM("federation", again->header.row_hash == view->header.row_hash);

@@ -6,7 +6,6 @@
 // target), and which writes back to an image that loads to the same branch.
 
 #include "../harness.h"
-#include "../old_tree.h"
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
@@ -20,7 +19,7 @@ namespace crucible::fuzz::boundary {
 // The image of a branch whose arms hold the given values, in that order.
 [[nodiscard]] inline std::vector<std::uint8_t> branch_image(std::span<const std::int64_t> values) {
     Arena arena;
-    const auto alloc = old_tree::test_alloc();
+    const auto alloc = test_alloc();
     const auto arms = static_cast<std::uint32_t>(values.size());
     auto* branch = ::new (arena.alloc_obj<BranchNode>(alloc)) BranchNode{};
     branch->kind = TraceNodeKind::BRANCH;
@@ -57,7 +56,7 @@ inline void run_branch(std::span<const std::uint8_t> bytes) {
     if (bytes.size() > kMaxInputBytes) bytes = bytes.first(kMaxInputBytes);
 
     Arena arena;
-    const auto alloc = old_tree::test_alloc();
+    const auto alloc = test_alloc();
     BranchNode* branch = deserialize_branch(alloc, bytes, arena, nullptr);
     if (branch == nullptr) return;
     CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms <= CDAG_MAX_BRANCH_ARMS);
