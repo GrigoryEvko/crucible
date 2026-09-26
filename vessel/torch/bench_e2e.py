@@ -236,7 +236,9 @@ def build_workload(kind: str):
 
     Returns:
         The model to attach, the optimizer or None, and the callable that
-        performs one iteration
+        performs one iteration.  The callable returns the tensor that the
+        iteration produces.  The timed loops discard it, and
+        test_replay_equivalence.py compares it
 
     Raises:
         ValueError: If the workload is not one this file defines
@@ -253,9 +255,9 @@ def build_workload(kind: str):
         left = torch.ones(elements, dtype=torch.float32)
         right = torch.ones(elements, dtype=torch.float32)
 
-        def add_step() -> None:
+        def add_step() -> torch.Tensor:
             """One elementwise add."""
-            left + right
+            return left + right
 
         return nn.Identity(), None, add_step
 
@@ -270,10 +272,10 @@ def build_workload(kind: str):
     if kind == "mlp_infer":
         model.eval()
 
-        def infer_step() -> None:
+        def infer_step() -> torch.Tensor:
             """One forward pass, no autograd."""
             with torch.no_grad():
-                model(inputs)
+                return model(inputs)
 
         return model, None, infer_step
 
@@ -282,11 +284,13 @@ def build_workload(kind: str):
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         loss_fn = nn.MSELoss()
 
-        def train_step() -> None:
+        def train_step() -> torch.Tensor:
             """One forward pass, backward pass and optimizer step."""
             optimizer.zero_grad(set_to_none=True)
-            loss_fn(model(inputs), target).backward()
+            loss = loss_fn(model(inputs), target)
+            loss.backward()
             optimizer.step()
+            return loss
 
         return model, optimizer, train_step
 

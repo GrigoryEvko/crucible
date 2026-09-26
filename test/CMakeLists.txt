@@ -15007,6 +15007,64 @@ set_tests_properties(flip_list flip_list_self_test PROPERTIES
     LABELS "ci_guard;stage-C")
 set_tests_properties(flip_list flip_list_self_test PROPERTIES SKIP_RETURN_CODE 3)
 
+# vessel_acceptance is the acceptance gate of the PyTorch vessel under
+# vessel/torch.  scripts/check-vessel-acceptance.py builds the vessel targets
+# and accepts the vessel of this build only when the vessel compiles against a
+# PyTorch with DispatchKey::Crucible at -Werror, no vessel source names the old
+# substrate, each vessel/torch/test_*.py exits 0, and replay gives the bytes of
+# PyTorch alone.  The self-test needs no PyTorch, so it is a guard of every
+# build.
+#
+# A build that cannot operate the gate does not get a test that passes or
+# skips.  It gets vessel_acceptance_unavailable, which ctest shows as
+# "Not Run (Disabled)" with the others that did not run.  A build that must
+# operate the gate sets CRUCIBLE_REQUIRE_VESSEL, and the configure step then
+# stops with the reason.  CRUCIBLE_VESSEL_PYTHON is the interpreter of the
+# PyTorch that TORCH_DIR names.  The default is the interpreter of the
+# virtual environment that holds TORCH_DIR, when one exists.
+add_test(NAME vessel_acceptance_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-vessel-acceptance.py --self-test)
+set_tests_properties(vessel_acceptance_self_test PROPERTIES LABELS "ci_guard")
+option(CRUCIBLE_REQUIRE_VESSEL
+  "Fail the configure step when the build cannot operate the vessel acceptance gate" OFF)
+set(_vessel_gate_blocker "")
+if(NOT TARGET crucible_dispatch)
+  set(_vessel_gate_blocker
+    "the build has no crucible_dispatch target, because TORCH_DIR names no PyTorch tree with torch/include")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" AND (CRUCIBLE_SANITIZE OR CRUCIBLE_TSAN))
+  set(_vessel_gate_blocker
+    "the vessel libraries of this build carry a sanitizer runtime, and Python loads only a library without one")
+elseif(NOT CRUCIBLE_WERROR)
+  set(_vessel_gate_blocker "the build sets CRUCIBLE_WERROR to OFF, and the gate accepts only a -Werror build")
+endif()
+if(_vessel_gate_blocker)
+  if(CRUCIBLE_REQUIRE_VESSEL)
+    message(FATAL_ERROR "vessel_acceptance: ${_vessel_gate_blocker}.  Set CRUCIBLE_REQUIRE_VESSEL=OFF, or "
+                        "configure a build of the release or bench preset with -DTORCH_DIR=<the PyTorch fork>.")
+  endif()
+  message(STATUS "vessel_acceptance: ${_vessel_gate_blocker}, so the gate is registered as disabled")
+  # The ci_guard label puts the disabled entry in the list of tests that did
+  # not run when `ctest -L ci_guard` operates, so the pre-merge gate shows it.
+  add_test(NAME vessel_acceptance_unavailable COMMAND ${CMAKE_COMMAND} -E false)
+  set_tests_properties(vessel_acceptance_unavailable PROPERTIES DISABLED TRUE LABELS "ci_guard;vessel")
+else()
+  get_filename_component(_vessel_venv_python "${TORCH_DIR}/../../../bin/python" ABSOLUTE)
+  if(EXISTS "${_vessel_venv_python}")
+    set(_vessel_default_python "${_vessel_venv_python}")
+  else()
+    set(_vessel_default_python "python3")
+  endif()
+  set(CRUCIBLE_VESSEL_PYTHON "${_vessel_default_python}" CACHE FILEPATH
+    "The interpreter of the PyTorch that TORCH_DIR names, for the vessel acceptance gate")
+  add_test(NAME vessel_acceptance
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-vessel-acceptance.py
+            --build-dir ${CMAKE_BINARY_DIR} --torch-dir ${TORCH_DIR} --python ${CRUCIBLE_VESSEL_PYTHON})
+  # The gate builds the vessel targets in this build directory, so no other
+  # test operates beside it.  It invokes a script, so it carries ci_guard, and
+  # `ctest -L ci_guard` operates it in a build that has the vessel.
+  set_tests_properties(vessel_acceptance PROPERTIES LABELS "ci_guard;vessel" TIMEOUT 3600 RUN_SERIAL TRUE)
+endif()
+
 # allowlist_keys runs over every scripts/*allowlist*.txt and holds the one
 # property none of the owning guards can hold once it breaks: the path half
 # of each key names a file that exists.  When a port underscores a header
