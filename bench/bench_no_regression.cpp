@@ -1,18 +1,26 @@
-// AdaptiveScheduler no-regression bench.
+// No-regression bench for the cache-tier rule.
 //
-// This is the first SEPLOG-E1 gate for the cache-tier rule:
 // L1/L2 workloads must stay on the inline path, while L3/DRAM
-// workloads must route through the scheduler without losing to the
-// sequential baseline.  The "forced" baseline intentionally models
-// naive per-call thread fanout: it spawns workers for every iteration
-// regardless of the working set, which is the overhead the scheduler
-// is meant to avoid.
+// workloads must go parallel without losing to the sequential
+// baseline.  The "rule" arm asks fixy::concurrent::ParallelismRule for
+// a decision and runs the work through fixy::spawn::mint_parallel_for
+// at the factor of that decision.  The "forced" baseline intentionally
+// models naive per-call thread fanout: it spawns workers for every
+// iteration regardless of the working set, which is the overhead the
+// rule is meant to avoid.
 
-#include <crucible/concurrent/_AdaptiveScheduler.h>
+#include <fixy/OwnedRegion.h>
+#include <fixy/concurrent/ParallelismRule.h>
+#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Spawn.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <charconv>
 #include <cstddef>
@@ -25,10 +33,26 @@
 #include <thread>
 #include <vector>
 
-namespace cc = crucible::concurrent;
-namespace cs = crucible::concurrent::scheduler;
+namespace fc = ::fixy::concurrent;
+namespace eff = ::foundation::effects;
+namespace perm = ::foundation::permissions;
+
+// The permission over the piece table that the rule arm splits into
+// shards.
+struct PieceTableWhole {
+    using permission_row = eff::Row<>;
+};
 
 namespace {
+
+// mint_parallel_for starts one thread per shard, so its context owns Bg.
+using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
+
+// The work divides into this many pieces, the top of the factor ladder
+// of fixy/concurrent/ParallelismRule.h.  Each factor of the ladder
+// divides it, so every shard of mint_parallel_for runs the same number
+// of pieces.
+constexpr std::size_t kPieces = 16;
 
 constexpr std::size_t KiB = 1024;
 constexpr std::size_t MiB = 1024 * KiB;
@@ -46,7 +70,7 @@ enum class WorkloadKind : std::uint8_t {
 
 enum class Strategy : std::uint8_t {
     Sequential,
-    Adaptive,
+    Rule,
     ForcedParallel,
 };
 
@@ -59,8 +83,8 @@ struct Range {
     switch (s) {
         case Strategy::Sequential:
             return "sequential";
-        case Strategy::Adaptive:
-            return "adaptive";
+        case Strategy::Rule:
+            return "rule";
         case Strategy::ForcedParallel:
             return "forced_parallel";
         default:
@@ -91,7 +115,7 @@ struct Range {
 struct Workload {
     const char* name = "";
     WorkloadKind kind = WorkloadKind::L1ArraySum;
-    cc::WorkBudget budget{};
+    fc::WorkBudget budget{};
     std::size_t units = 0;
     std::size_t forced_workers = 1;
 
@@ -176,7 +200,7 @@ private:
     Workload w{};
     w.name = "L1d.array_sum.16KiB";
     w.kind = WorkloadKind::L1ArraySum;
-    w.budget = cc::WorkBudget{
+    w.budget = fc::WorkBudget{
         .read_bytes = 16 * KiB,
         .write_bytes = 16 * KiB,
         .item_count = (16 * KiB) / sizeof(std::uint64_t),
@@ -195,7 +219,7 @@ private:
     Workload w{};
     w.name = "L2.matrix_multiply.512KB";
     w.kind = WorkloadKind::L2MatrixMultiply;
-    w.budget = cc::WorkBudget{
+    w.budget = fc::WorkBudget{
         .read_bytes = 2 * n * n * sizeof(double),
         .write_bytes = n * n * sizeof(double),
         .item_count = n * n,
@@ -220,7 +244,7 @@ private:
     Workload w{};
     w.name = "L3.graph_traversal.16MiB";
     w.kind = WorkloadKind::L3GraphTraversal;
-    w.budget = cc::WorkBudget{
+    w.budget = fc::WorkBudget{
         .read_bytes = bytes,
         .write_bytes = 0,
         .item_count = entries,
@@ -240,7 +264,7 @@ private:
     Workload w{};
     w.name = "DRAM.stream_fold.1GiB";
     w.kind = WorkloadKind::DramStreamFold;
-    w.budget = cc::WorkBudget{
+    w.budget = fc::WorkBudget{
         .read_bytes = bytes,
         .write_bytes = 0,
         .item_count = bytes / 64,
@@ -256,13 +280,63 @@ private:
 
 void run_sequential(Workload& w, std::atomic<std::uint64_t>& sink) noexcept { w.run_range(Range{0, w.units}, sink); }
 
-void run_adaptive(cc::Pool<cs::LocalityAware>& pool, Workload& w, std::atomic<std::uint64_t>& sink) {
-    const cc::WorkloadProfile profile = cc::WorkloadProfile::from_budget(w.budget, pool.worker_count());
-    const auto result = cc::dispatch_with_workload(pool, profile, [&](cc::WorkShard shard) {
-        const Range r = split_range(w.units, shard.index, shard.count);
-        w.run_range(r, sink);
+// The piece table that the rule arm splits.  Element i names piece i
+// of the work, and a shard runs the pieces of its slice.
+using PieceTable = std::array<std::uint32_t, kPieces>;
+
+[[nodiscard]] PieceTable make_piece_table() noexcept {
+    PieceTable table{};
+    for (std::uint32_t piece = 0; piece < kPieces; ++piece) {
+        table[piece] = piece;
+    }
+    return table;
+}
+
+// Runs the work as Shards shards, one thread for each shard when Shards
+// is more than one, and on the calling thread when it is one.
+template <std::size_t Shards>
+void run_rule_shards(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces) noexcept {
+    static_assert(kPieces % Shards == 0, "every shard must run the same number of pieces");
+    const BgCtx ctx{eff::testing::bg()};
+    auto region = ::fixy::OwnedRegion<std::uint32_t, PieceTableWhole>::wrap(
+        pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
+    auto whole = ::fixy::spawn::mint_parallel_for<Shards>(ctx, std::move(region), [&w, &sink](auto& shard) noexcept {
+        for (const std::uint32_t piece : shard) {
+            w.run_range(split_range(w.units, piece, kPieces), sink);
+        }
     });
-    if (result.queued) pool.wait_idle();
+    (void)whole;
+}
+
+[[noreturn]] CRUCIBLE_COLD void stop_on_unknown_factor(std::size_t factor) noexcept {
+    std::fprintf(stderr, "bench_no_regression: the parallelism rule gave the factor %zu, which is not on its ladder\n",
+                 factor);
+    std::abort();
+}
+
+// Asks the rule for a decision on each call, as a caller of the rule
+// does, and runs the work at the factor of that decision.
+void run_rule(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces) noexcept {
+    const fc::ParallelismDecision dec = fc::ParallelismRule::recommend(w.budget);
+    switch (dec.factor) {
+        case 1:
+            run_rule_shards<1>(w, sink, pieces);
+            return;
+        case 2:
+            run_rule_shards<2>(w, sink, pieces);
+            return;
+        case 4:
+            run_rule_shards<4>(w, sink, pieces);
+            return;
+        case 8:
+            run_rule_shards<8>(w, sink, pieces);
+            return;
+        case 16:
+            run_rule_shards<16>(w, sink, pieces);
+            return;
+        default:
+            stop_on_unknown_factor(dec.factor);
+    }
 }
 
 void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
@@ -276,8 +350,8 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
     }
 }
 
-[[nodiscard]] bench::Report measure_once(std::string name, Strategy strategy, Workload& w,
-                                         cc::Pool<cs::LocalityAware>& pool, std::size_t samples) {
+[[nodiscard]] bench::Report measure_once(std::string name, Strategy strategy, Workload& w, PieceTable& pieces,
+                                         std::size_t samples) {
     std::atomic<std::uint64_t> sink{0};
     bench::Run run{std::move(name)};
     if (const int core = bench::env_core(); core >= 0) {
@@ -289,8 +363,8 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
             case Strategy::Sequential:
                 run_sequential(w, sink);
                 break;
-            case Strategy::Adaptive:
-                run_adaptive(pool, w, sink);
+            case Strategy::Rule:
+                run_rule(w, sink, pieces);
                 break;
             case Strategy::ForcedParallel:
                 run_forced_parallel(w, sink);
@@ -302,12 +376,12 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
     });
 }
 
-[[nodiscard]] bench::Report measure_stable(std::string name, Strategy strategy, Workload& w,
-                                           cc::Pool<cs::LocalityAware>& pool, std::size_t samples) {
+[[nodiscard]] bench::Report measure_stable(std::string name, Strategy strategy, Workload& w, PieceTable& pieces,
+                                           std::size_t samples) {
     bench::Report best;
     double best_cv = std::numeric_limits<double>::infinity();
     for (int attempt = 0; attempt < 3; ++attempt) {
-        bench::Report current = measure_once(name, strategy, w, pool, samples);
+        bench::Report current = measure_once(name, strategy, w, pieces, samples);
         if (!current.noisy(0.05)) return current;
         if (current.pct.cv < best_cv) {
             best_cv = current.pct.cv;
@@ -319,11 +393,11 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
 
 struct Trio {
     bench::Report sequential;
-    bench::Report adaptive;
+    bench::Report rule;
     bench::Report forced;
 };
 
-[[nodiscard]] Trio run_workload(Workload& w, cc::Pool<cs::LocalityAware>& pool, std::size_t samples) {
+[[nodiscard]] Trio run_workload(Workload& w, PieceTable& pieces, std::size_t samples) {
     auto make_name = [&](Strategy s) {
         std::string name{"no_regression."};
         name += w.name;
@@ -332,9 +406,9 @@ struct Trio {
         return name;
     };
     return Trio{
-        .sequential = measure_stable(make_name(Strategy::Sequential), Strategy::Sequential, w, pool, samples),
-        .adaptive = measure_stable(make_name(Strategy::Adaptive), Strategy::Adaptive, w, pool, samples),
-        .forced = measure_stable(make_name(Strategy::ForcedParallel), Strategy::ForcedParallel, w, pool, samples),
+        .sequential = measure_stable(make_name(Strategy::Sequential), Strategy::Sequential, w, pieces, samples),
+        .rule = measure_stable(make_name(Strategy::Rule), Strategy::Rule, w, pieces, samples),
+        .forced = measure_stable(make_name(Strategy::ForcedParallel), Strategy::ForcedParallel, w, pieces, samples),
     };
 }
 
@@ -346,22 +420,21 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const auto& topo = cc::Topology::instance();
+    const auto& topo = fc::Topology::instance();
     const std::size_t default_forced_workers =
         std::max<std::size_t>(2, std::min<std::size_t>(1024, topo.process_cpu_count() * 32));
     const std::size_t forced_workers = env_usize("CRUCIBLE_NO_REGRESSION_FORCED_WORKERS", default_forced_workers);
-    const std::size_t pool_workers = std::max<std::size_t>(2, std::min<std::size_t>(16, topo.process_cpu_count()));
     const std::size_t samples = std::max<std::size_t>(10, env_usize("CRUCIBLE_NO_REGRESSION_SAMPLES", 12));
 
-    std::printf("=== adaptive_scheduler no-regression ===\n");
-    std::printf("  samples=%zu forced_workers=%zu pool_workers=%zu\n", samples, forced_workers, pool_workers);
+    std::printf("=== parallelism rule no-regression ===\n");
+    std::printf("  samples=%zu forced_workers=%zu pieces=%zu\n", samples, forced_workers, kPieces);
     std::printf("  gates: small tiers forced>=sequential/1.05, "
-                "adaptive<=forced*1.05, and inline overhead<=5%% or %.0fns\n",
+                "rule<=forced*1.05, and inline overhead<=5%% or %.0fns\n",
                 kInlineAbsoluteToleranceNs);
-    std::printf("         large tiers adaptive<=sequential*1.05 and "
-                "adaptive<=forced*0.50\n\n");
+    std::printf("         large tiers rule<=sequential*1.05 and "
+                "rule<=forced*0.50\n\n");
 
-    cc::Pool<cs::LocalityAware> pool{cc::CoreCount{pool_workers}};
+    PieceTable pieces = make_piece_table();
 
     std::vector<Workload> workloads;
     workloads.reserve(4);
@@ -377,9 +450,9 @@ int main() {
     std::printf("=== measuring ===\n");
     for (std::size_t i = 0; i < workloads.size(); ++i) {
         Workload& w = workloads[i];
-        Trio trio = run_workload(w, pool, samples);
+        Trio trio = run_workload(w, pieces, samples);
         reports.push_back(std::move(trio.sequential));
-        reports.push_back(std::move(trio.adaptive));
+        reports.push_back(std::move(trio.rule));
         reports.push_back(std::move(trio.forced));
     }
 
@@ -388,17 +461,17 @@ int main() {
     std::printf("\n=== no-regression gates ===\n");
     for (std::size_t i = 0; i < workloads.size(); ++i) {
         const bench::Report& seq = reports[i * 3 + 0];
-        const bench::Report& adp = reports[i * 3 + 1];
+        const bench::Report& rul = reports[i * 3 + 1];
         const bench::Report& frc = reports[i * 3 + 2];
         const Workload& w = workloads[i];
         const double seq_p50 = seq.pct.p50;
-        const double adp_p50 = adp.pct.p50;
+        const double rul_p50 = rul.pct.p50;
         const double frc_p50 = frc.pct.p50;
-        const auto dec = cc::ParallelismRule::recommend(w.budget);
+        const auto dec = fc::ParallelismRule::recommend(w.budget);
         std::printf("  %-26s tier=%u rule=%s factor=%zu "
-                    "adaptive/seq=%.3fx adaptive/forced=%.3fx\n",
+                    "rule/seq=%.3fx rule/forced=%.3fx\n",
                     w.name, static_cast<unsigned>(dec.tier), dec.is_parallel() ? "parallel" : "sequential", dec.factor,
-                    ratio(adp_p50, seq_p50), ratio(adp_p50, frc_p50));
+                    ratio(rul_p50, seq_p50), ratio(rul_p50, frc_p50));
 
         const bool small = w.kind == WorkloadKind::L1ArraySum || w.kind == WorkloadKind::L2MatrixMultiply;
         if (small && dec.is_parallel()) {
@@ -410,14 +483,14 @@ int main() {
             ++failures;
         }
 
-        const bool noisy = seq.noisy(0.05) || adp.noisy(0.05) || frc.noisy(0.05);
+        const bool noisy = seq.noisy(0.05) || rul.noisy(0.05) || frc.noisy(0.05);
         if (noisy) {
             if (seq.noisy(0.05)) {
                 std::printf("  INVALID %-26s sequential cv=%.1f%% > 5%%\n", w.name, seq.pct.cv * 100.0);
                 ++failures;
             }
-            if (adp.noisy(0.05)) {
-                std::printf("  INVALID %-26s adaptive cv=%.1f%% > 5%%\n", w.name, adp.pct.cv * 100.0);
+            if (rul.noisy(0.05)) {
+                std::printf("  INVALID %-26s rule cv=%.1f%% > 5%%\n", w.name, rul.pct.cv * 100.0);
                 ++failures;
             }
             if (frc.noisy(0.05)) {
@@ -433,37 +506,30 @@ int main() {
                             ratio(frc_p50, seq_p50));
                 ++failures;
             }
-            if (adp_p50 > frc_p50 * kGateTolerance) {
-                std::printf("  FAIL %-26s adaptive slower than forced by >5%%: %.3fx\n", w.name,
-                            ratio(adp_p50, frc_p50));
+            if (rul_p50 > frc_p50 * kGateTolerance) {
+                std::printf("  FAIL %-26s rule slower than forced by >5%%: %.3fx\n", w.name, ratio(rul_p50, frc_p50));
                 ++failures;
             }
-            if (adp_p50 > seq_p50 * kGateTolerance && (adp_p50 - seq_p50) > kInlineAbsoluteToleranceNs) {
-                std::printf("  FAIL %-26s adaptive inline overhead exceeded budget: %.3fx\n", w.name,
-                            ratio(adp_p50, seq_p50));
+            if (rul_p50 > seq_p50 * kGateTolerance && (rul_p50 - seq_p50) > kInlineAbsoluteToleranceNs) {
+                std::printf("  FAIL %-26s rule inline overhead exceeded budget: %.3fx\n", w.name,
+                            ratio(rul_p50, seq_p50));
                 ++failures;
             }
         } else {
-            if (adp_p50 > seq_p50 * kGateTolerance) {
-                std::printf("  FAIL %-26s adaptive regressed vs sequential: %.3fx\n", w.name, ratio(adp_p50, seq_p50));
+            if (rul_p50 > seq_p50 * kGateTolerance) {
+                std::printf("  FAIL %-26s rule regressed vs sequential: %.3fx\n", w.name, ratio(rul_p50, seq_p50));
                 ++failures;
             }
-            if (adp_p50 > frc_p50 * 0.50) {
-                std::printf("  FAIL %-26s adaptive did not beat forced by 2x: %.3fx\n", w.name,
-                            ratio(adp_p50, frc_p50));
+            if (rul_p50 > frc_p50 * 0.50) {
+                std::printf("  FAIL %-26s rule did not beat forced by 2x: %.3fx\n", w.name, ratio(rul_p50, frc_p50));
                 ++failures;
             }
         }
     }
 
-    if (pool.failed() != 0) {
-        std::printf("  FAIL pool recorded failed jobs=%llu\n", static_cast<unsigned long long>(pool.failed()));
-        ++failures;
-    }
-
     std::printf("\n=== verdict ===\n");
     if (failures == 0) {
-        std::printf("  PASS - AdaptiveScheduler cache-tier routing stayed within gates.\n");
+        std::printf("  PASS - the parallelism rule stayed within the cache-tier gates.\n");
     } else {
         std::printf("  FAIL - %d no-regression gate(s) failed.\n", failures);
     }
