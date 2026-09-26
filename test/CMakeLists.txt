@@ -540,20 +540,6 @@ add_test(NAME escape_doors
 set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
-# fixy-A2-014: regression guard for the SessionPersistence.h include-lift.
-# Probes `g++ -H` to verify the bridge header does not transitively pull
-# Cipher.h / MerkleDag.h / Arena.h / FederationProtocol.h / etc.  Without
-# this guard, a future edit re-adding the heavy include would silently
-# reverse the build-time-cost reduction.
-add_test(NAME session_persistence_include_audit_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-session-persistence-include-audit.sh
-          --self-test)
-add_test(NAME session_persistence_include_audit
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-session-persistence-include-audit.sh)
-set_tests_properties(session_persistence_include_audit
-                     session_persistence_include_audit_self_test PROPERTIES
-  ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
-  LABELS "ci_guard;fixy-A2-014")
 # CONTRACT-131: contracts-infra adoption regression guard.  --check
 # diffs the live tree against a committed baseline snapshot; counter
 # increases are silent (adoption growth is good), counter decreases
@@ -1961,7 +1947,6 @@ crucible_test(test_registration_seal_race
 # the payload-hash opt-in via default_payload_hash_fn specialisation,
 # and Offer branch dispatch capture.
 crucible_test(test_session_event_log)
-crucible_test(test_session_persistence)
 
 # CTPayload + ct::eq for crypto-payload sessions (#409, SAFEINT-C20).
 # CTPayload<T> raises constant-time-comparison discipline to the API
@@ -2290,18 +2275,15 @@ function(crucible_neg_compile_topology_test name)
     LABELS "topology_neg")
 endfunction()
 
-# fixy-A2-016 — HS14 floor for the six bridges/* mint factories that
-# previously had zero negative-compile coverage:
+# HS14 floor for the four bridges/* mint factories:
 #   mint_recording_session(SessionHandle, ...)
 #   mint_recording_session(CrashWatchedHandle, ...)
 #   mint_recording_endpoint(Endpoint&&, ...)
 #   mint_crash_watched_endpoint<PeerTag>(Endpoint&&, ...)
-#   mint_persisted_session(ctx, cipher, view, resource, ...)
-#   mint_persisted_session(ctx, SessionHandle, cipher, view, ...)
 # Each factory's requires-clause / parameter-shape gate is witnessed
 # by ≥2 fixtures probing distinct mismatch classes (non-handle input,
 # wrong companion-type, missing template arg, deleted overload via
-# `= delete("reason")`, ctx-row admission failure).
+# `= delete("reason")`).
 function(crucible_neg_compile_bridges_test name)
   set(expected_diags ${ARGN})
   crucible_neg_require_two_regexes(bridges_neg ${name} ${expected_diags})
@@ -12537,47 +12519,6 @@ crucible_neg_compile_session_test(neg_mint_channel_requires_ctx
     "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
     "mint_channel<Proto>\\(resource_a, resource_b\\) is removed")
 
-crucible_neg_compile_session_test(neg_persisted_session_hot_ctx
-    "constraints.*not satisfied|template constraint failure|associated constraints"
-    "CtxAdmits")
-
-crucible_neg_compile_session_test(neg_persisted_session_no_ctx
-    "use of deleted function"
-    "PersistedSession_CtxRequired")
-
-# fixy-A2-025: PSH detach is no longer deleted — it forwards to inner.detach,
-# records SessionEvent::detach, and flushes the audit log.  The surviving
-# discipline (rvalue-only, typed Reason required) is pinned by the two
-# fixy-A2-025 fixtures below.
-
-crucible_neg_compile_session_test(neg_psh_detach_bare_no_reason
-    "use of deleted function|no matching function|no previous declaration|static assertion failed|constraints.*not satisfied|is private within this context|has no member named"
-    "DetachReason_Required|matching function")
-
-crucible_neg_compile_session_test(neg_psh_detach_untyped_reason
-    "constraint"
-    "DetachReason|requires")
-
-crucible_neg_compile_session_test(neg_persisted_session_no_open_view
-    "use of deleted function"
-    "PersistedSession_OpenViewRequired")
-
-# fixy-A2-006 — PSH overloads of mint_recording_session / mint_persisted_session.
-# (Phase 1 deferral witnesses neg_recording_session_psh_delegate_unsupported +
-# neg_recording_session_psh_accept_unsupported retired in FIXY-U-123 — Phase 2
-# specializations shipped via fixy-A2-006b/c/d/e (tasks #1716/#1717/#1718/#1719);
-# the primary template's incomplete-type hole is sealed and positive coverage
-# at the four Delegate/Accept/EpochedDelegate/EpochedAccept specializations
-# lives in the RecordingPermissionedSessionHandle.h sentinel block.)
-
-crucible_neg_compile_session_test(neg_persisted_session_psh_hot_ctx
-    "constraints.*not satisfied|template constraint failure|associated constraints"
-    "CtxAdmits")
-
-crucible_neg_compile_session_test(neg_persisted_session_psh_no_open_view
-    "use of deleted function"
-    "PersistedSession_OpenViewRequired")
-
 # fixy-M-17 — HS14 floor for mint_session_view<Tag>(handle).
 # Two fixtures × distinct mismatch classes: #1 wrong protocol position
 # (handle at Send, request AtRecv); #2 unrecognized position tag
@@ -14594,18 +14535,6 @@ crucible_neg_compile_bridges_test(neg_mint_crash_watched_endpoint_non_endpoint
 crucible_neg_compile_bridges_test(neg_mint_crash_watched_endpoint_missing_peer_tag
     "no matching function for call to|couldn't infer|could not deduce"
     "mint_crash_watched_endpoint|PeerTag")
-crucible_neg_compile_bridges_test(neg_mint_persisted_session_ctx_required
-    "use of deleted function"
-    "PersistedSession_CtxRequired")
-crucible_neg_compile_bridges_test(neg_mint_persisted_session_ctx_row_insufficient
-    "constraints.*not satisfied|no matching function"
-    "CtxAdmits")
-crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_open_view_required
-    "use of deleted function"
-    "PersistedSession_OpenViewRequired")
-crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_ctx_row_insufficient
-    "constraints.*not satisfied|no matching function"
-    "CtxAdmits")
 
 # fixy-A2-006b — HS14 floor for the Delegate<DelegatedSession<P, IPS>, K>
 # specialization on RecordingPermissionedSessionHandle.  The class spec

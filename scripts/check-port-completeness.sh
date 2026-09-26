@@ -282,10 +282,6 @@ cxx_for_drops=""
 # STALE, so one name swapped for another reports both halves.  The list
 # shrinks in the same commit as the port that gives a type its carrier.
 uncarried_pinned_default="
-crucible/bridges/_SessionPersistence.h:mint_persisted_session
-crucible/bridges/_SessionPersistence.h:PersistedSessionHandle
-crucible/bridges/_SessionPersistence.h:SessionPersistencePolicy
-crucible/bridges/_SessionPersistence.h:SessionPersistenceState
 crucible/effects/_Capabilities.h:HwProbeEntry
 crucible/safety/diag/_RowHashFold.h:Consistency
 crucible/safety/diag/_RowHashFold.h:JoinPolicy
