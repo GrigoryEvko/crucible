@@ -1,243 +1,132 @@
-// PermissionedSessionHandle zero-cost validation bench.
+// The permission set of a session handle is a type, not a member.
 //
-// Closes FOUND-C15 — the empirical witness for the load-bearing
-// claim that wrapping `SessionHandle<Proto, Resource, LoopCtx>` as
-// `PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>` adds
-// no per-operation cost in the EMITTED MACHINE CODE.
+// fixy/session/Handle.h has one handle type, and the permission set is one
+// of its template arguments.  A handle whose set holds a permission must
+// cost the same for each operation as a handle whose set is empty, and the
+// context-bound mint must build the same handle as the bare mint.
 //
-// ─── Two-tier evidence ─────────────────────────────────────────────
+// Two tiers of evidence:
 //
-// TIER A — STRUCTURAL (load-bearing):
+//   Structural (the claim): the static_asserts in main.  The handle with a
+//   permission has the size of the handle with the empty set, so the set
+//   takes no storage, and the context-bound mint returns the type of the
+//   bare mint.  The set moves at compile time only.
 //
-//   1. sizeof(PSH<P, PS, R, L>) == sizeof(SessionHandle<P, R, L>)
-//      — asserted at file scope below.  EBO collapses both PS and the
-//      tracker.  Verified at compile time.
+//   Timed (informational): two pairs, each on one protocol and one
+//   Resource.  At the sub-nanosecond scale the layout of the two measured
+//   bodies can move the numbers by a cycle, so the program exits 0 and the
+//   numbers are for inspection.
 //
-//   2. The hot-path send/close compile to BYTE-IDENTICAL machine code
-//      vs bare SessionHandle.  Verified by `objdump`-on-`-O3` build:
-//      both bare and PSH versions of the loop body emit:
-//          movq g_counter(%rip), %rax
-//          addq $1, %rax
-//          movq %rax, g_counter(%rip)
-//          movq %rax, h(%rip)
-//          ret
-//      Identical 4-instruction sequence — zero machine-code overhead.
-//      (Reproduce with: `g++ -O3 -DNDEBUG -S` on a noinline function
-//      doing `auto h2 = std::move(h).send(++c, t); h = std::move(h2);`.)
-//
-// TIER B — TIMED MEASUREMENT (informational only):
-//
-//   The bench numbers below are reported but NOT used as the
-//   pass/fail criterion.  Empirically, the bench shows a stable
-//   ~0.2 ns / ~30 % Δp50 delta in favour of bare SessionHandle.
-//   This is a BENCH-HARNESS MICROARCHITECTURAL ARTIFACT at sub-
-//   nanosecond scale — likely lambda-capture / stack-frame layout
-//   differences between the bare and PSH measurement-loop bodies
-//   that perturb branch prediction / instruction-cache behaviour
-//   in the rdtsc bracket.  At 1-cycle resolution, the bench cannot
-//   distinguish "1 extra cycle of real work" from "1 cycle of
-//   bench-harness layout noise" — but Tier A's asm proof shows
-//   there is no extra real work.
-//
-//   The verdict below is therefore "INFORMATIONAL" rather than
-//   pass/fail.  Tier A is the load-bearing claim; Tier B is the
-//   sanity-check that PSH stays in the same order of magnitude as
-//   bare (it does — sub-nanosecond per op for both).
-//
-// ─── Methodology (Tier B) ───────────────────────────────────────────
-//   1. Pair each PSH op (send / close) against its bare SessionHandle
-//      counterpart on the SAME Proto and SAME Resource.
-//   2. bench::run measures with rdtsc bracketing; bench::compare emits
-//      Mann-Whitney U + Δp50 / Δp99 / Δμ.
-//   3. Print numbers for inspection; exit 0 (the asm proof in Tier A
-//      is what gates the claim).
-//
-// ─── Notes on scope ─────────────────────────────────────────────────
-//   * Single-threaded.  Multi-thread crash-transport bench (FOUND-C13)
-//     is a separate artifact.
-//   * Uses Loop<Send<int, Continue>> for the send hot-path so each
-//     iteration's returned handle has the same type as the loop
-//     entry — supports tight `h = std::move(h2)` reassignment loops.
-//   * detach(detach_reason::TestInstrumentation{}) at end of each Run
-//     — Loop without exit branch is the documented infinite-loop
-//     pattern requiring explicit detach.
-//
-// The zero-cost claim from `misc/27_04_csl_permission_session_wiring.md`
-// §13 (machine-code-parity), validated structurally in
-// PermissionedSession.h's smoke block via
-// `static_assert(sizeof(PSH<P, PS, R>) == sizeof(SessionHandle<P, R>))`.
-// This bench is the runtime witness:
-//
-//   * The PermSet template parameter is empty + EBO-collapsible to 0.
-//   * SessionHandleBase's tracker is empty in release + EBO-collapsible.
-//   * compute_perm_set_after_send_t / _after_recv_t resolve at compile
-//     time — zero runtime work.
-//   * step_to_next_permissioned's if-constexpr branches resolve at
-//     compile time.
-//   * close()'s `static_assert(perm_set_equal_v<PS, EmptyPermSet>)`
-//     fires at compile time only; release-mode close() is the same
-//     resource move as bare SessionHandle::close.
-//
-// Methodology (mirrors bench_permissioned_zero_cost.cpp):
-//   1. Pair each PSH op (send / close) against its bare SessionHandle
-//      counterpart on the SAME Proto and SAME Resource.
-//   2. bench::run measures with rdtsc bracketing; bench::compare emits
-//      Mann-Whitney U + Δp50 / Δp99 / Δμ.
-//   3. PASS = each pair is statistically [indistinguishable] OR shows
-//      ≤ 5 % Δp99.  FAIL = any pair shows [REGRESS] flag at > 5 % Δp99.
-//
-// Notes on scope:
-//   * Single-threaded.  Multi-thread crash-transport bench (FOUND-C13)
-//     is a separate artifact.
-//   * Uses Loop<Send<int, Continue>> for the send hot-path so each
-//     iteration's returned handle has the same type as the loop
-//     entry — supports tight `h = std::move(h2)` reassignment loops.
-//   * detach(detach_reason::TestInstrumentation{}) at end of each Run
-//     — Loop without exit branch is the documented infinite-loop
-//     pattern requiring explicit detach.
+// Single-threaded.  Loop<Send<Item, Continue>> lands each send on the loop
+// head again, so the measured body can assign the next handle back to the
+// same variable.  The loop has no exit branch, so each run ends with a typed
+// detach.
 
-#include <cstdint>
-#include <cstdio>
+#include <fixy/session/Entry.h>
+#include <fixy/session/Handle.h>
 
-#include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/_PermissionedSession.h>
-#include <crucible/sessions/_Session.h>
-#include <crucible/sessions/_SessionMint.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
 
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <type_traits>
+#include <utility>
+
 namespace {
+
+namespace s = ::fixy::session;
+namespace perm = ::foundation::permissions;
 
 using Item = std::uint64_t;
 
-// FakeChannel — value-type Resource so each handle owns its own copy
-// and the bench's hot-path send/recv mutates handle-local state, not
-// shared external state.  Mirrors test_permissioned_session_handle.cpp.
+// A value Resource, so each handle owns its own copy and a send writes
+// handle-local state.
 struct FakeChannel {
     Item last = 0;
 };
 
-[[gnu::cold]]
-void send_item(FakeChannel& ch, Item v) noexcept {
-    ch.last = v;
-}
+// The region whose permission the second handle of each pair holds.
+struct BenchRegion {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
-// ── Hot-path send loop body ───────────────────────────────────────
-//
-// Loop<Send<Item, Continue>> means each send returns a handle whose
-// type is identical to the loop-body entry — so the bench can
-// `h = std::move(h2)` to keep iterating without retyping.
+constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
-using SendLoopProto =
-    crucible::safety::proto::Loop<crucible::safety::proto::Send<Item, crucible::safety::proto::Continue>>;
+// The trying write: it always has room.
+constexpr auto send_item = [](FakeChannel& channel, Item& value) noexcept {
+    channel.last = value;
+    return true;
+};
 
-constexpr ::crucible::effects::HotFgCtx kSessionCtx{};
+using SendLoop = s::Loop<s::Send<Item, s::Continue>>;
 
-// ─────────────────────────────────────────────────────────────────────
-// Pair 1 — bare SessionHandle.send vs PSH.send (Loop<Send<int, Continue>>)
-// ─────────────────────────────────────────────────────────────────────
+using EmptySetLoopHandle = decltype(s::mint_session_handle<SendLoop>(std::declval<FakeChannel>()));
+using PermittedLoopHandle = decltype(s::mint_permissioned_session<SendLoop>(
+                                         kForeground, std::declval<FakeChannel>(),
+                                         perm::mint_permission_root<BenchRegion>())
+                                         .first);
+using BareEndHandle = decltype(s::mint_session_handle<s::End>(std::declval<FakeChannel>()));
+using CtxEndHandle = decltype(s::mint_session<s::End>(kForeground, std::declval<FakeChannel>()));
 
-bench::Report bare_send() {
-    using namespace crucible::safety::proto;
-    auto h = mint_session_handle<SendLoopProto>(FakeChannel{});
-    Item i = 0;
-    auto report = bench::run("bare SessionHandle.send (Loop<Send<int, Continue>>)", [&] {
-        auto h2 = std::move(h).send(++i, send_item);
-        h = std::move(h2);
-    });
-    // Loop has no exit branch — explicit detach.  Without this the
-    // debug-mode SessionHandleBase destructor would abort.
-    std::move(h).detach(detach_reason::TestInstrumentation{});
+static_assert(sizeof(PermittedLoopHandle) == sizeof(EmptySetLoopHandle),
+              "a permission set must take no storage in the handle");
+static_assert(std::is_same_v<CtxEndHandle, BareEndHandle>,
+              "the context-bound mint must build the handle of the bare mint");
+
+// Sends Item after Item through the handle, and detaches it at the end.
+template <typename Handle>
+[[nodiscard]] bench::Report send_loop(const char* name, Handle handle) {
+    Item item = 0;
+    auto report = bench::run(name, [&] { handle = std::move(handle).send(++item, send_item); });
+    std::move(handle).detach(s::detach_reason::TestInstrumentation{});
     return report;
 }
 
-bench::Report psh_send() {
-    using namespace crucible::safety::proto;
-    auto h = mint_permissioned_session<SendLoopProto>(kSessionCtx, FakeChannel{});
-    Item i = 0;
-    auto report = bench::run("PermissionedSessionHandle.send (Loop<Send<int, Continue>>)", [&] {
-        auto h2 = std::move(h).send(++i, send_item);
-        h = std::move(h2);
-    });
-    std::move(h).detach(detach_reason::TestInstrumentation{});
+[[nodiscard]] bench::Report empty_set_send() {
+    return send_loop("send, empty permission set (Loop<Send<Item, Continue>>)",
+                     s::mint_session_handle<SendLoop>(FakeChannel{}));
+}
+
+[[nodiscard]] bench::Report permitted_send() {
+    auto [head, hold] =
+        s::mint_permissioned_session<SendLoop>(kForeground, FakeChannel{}, perm::mint_permission_root<BenchRegion>());
+    auto report = send_loop("send, one permission in the set (Loop<Send<Item, Continue>>)", std::move(head));
+    auto [token] = std::move(hold).into_permissions();
+    bench::do_not_optimize(token);
     return report;
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Pair 2 — bare SessionHandle.close vs PSH.close (one-shot End)
-// ─────────────────────────────────────────────────────────────────────
-//
-// close() consumes the handle and returns the Resource by move.  Bench
-// constructs a fresh handle inside the timed region so each iteration
-// has something to close.  Both bare and PSH pay the construct + close
-// cost; the comparison cancels out construction.
-
-bench::Report bare_close() {
-    using namespace crucible::safety::proto;
-    auto report = bench::run("bare SessionHandle.close (End)", [&] {
-        auto h = mint_session_handle<End>(FakeChannel{});
-        auto out = std::move(h).close();
-        bench::do_not_optimize(out);
+// close() consumes the handle and gives back the Resource, so each
+// iteration mints a fresh handle.  The two arms pay the same mint.
+[[nodiscard]] bench::Report bare_close() {
+    return bench::run("close, bare mint (End)", [] {
+        auto channel = s::mint_session_handle<s::End>(FakeChannel{}).close();
+        bench::do_not_optimize(channel);
     });
-    return report;
 }
 
-bench::Report psh_close() {
-    using namespace crucible::safety::proto;
-    auto report = bench::run("PermissionedSessionHandle.close (End, EmptyPermSet)", [&] {
-        auto h = mint_permissioned_session<End>(kSessionCtx, FakeChannel{});
-        auto out = std::move(h).close();
-        bench::do_not_optimize(out);
+[[nodiscard]] bench::Report ctx_close() {
+    return bench::run("close, context-bound mint (End)", [] {
+        auto channel = s::mint_session<s::End>(kForeground, FakeChannel{}).close();
+        bench::do_not_optimize(channel);
     });
-    return report;
 }
 
 }  // namespace
 
-int main(int argc, char** argv) {
-    const char* json = (argc > 1) ? argv[1] : nullptr;
-
-    // ── Compile-time witnesses (fired at bench startup; fail to link
-    //     if PSH ever grows a non-zero member) ───────────────────────
-    using namespace crucible::safety::proto;
-    static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, FakeChannel>)
-                      == sizeof(SessionHandle<End, FakeChannel>),
-                  "PSH<End> sizeof must equal bare SessionHandle<End>");
-    static_assert(sizeof(PermissionedSessionHandle<Send<Item, End>, EmptyPermSet, FakeChannel>)
-                      == sizeof(SessionHandle<Send<Item, End>, FakeChannel>),
-                  "PSH<Send<>> sizeof must equal bare SessionHandle<Send<>>");
-
-    bench::Report reports[] = {
-        bare_send(),
-        psh_send(),
-        bare_close(),
-        psh_close(),
-    };
-
+int main() {
+    std::array reports{empty_set_send(), permitted_send(), bare_close(), ctx_close()};
     bench::emit_reports_text(reports);
 
-    std::printf("\n=== PSH zero-cost claim — pair deltas ===\n");
-    bench::Compare cmps[] = {
-        bench::compare(reports[0], reports[1]),
-        bench::compare(reports[2], reports[3]),
-    };
-    for (const auto& c : cmps)
-        c.print_text(stdout);
+    std::printf("\n=== permission set and context-bound mint: pair deltas ===\n");
+    const std::array compares{bench::compare(reports[0], reports[1]), bench::compare(reports[2], reports[3])};
+    bench::emit_compares(compares);
 
-    std::printf("\n=== verdict (TIER B — informational) ===\n");
-    std::printf("  PSH zero-cost claim is gated by TIER A (asm-identical\n");
-    std::printf("  + sizeof-equal, asserted at compile time + verified\n");
-    std::printf("  via objdump).  TIER B (timed measurement) is reported\n");
-    std::printf("  for inspection only — at sub-ns scale the bench\n");
-    std::printf("  harness's lambda-capture / stack-frame layout\n");
-    std::printf("  microarchitectural artifacts dominate any real\n");
-    std::printf("  per-op cost difference (which the asm proof shows\n");
-    std::printf("  is zero).  See the file-header diagnosis.\n");
-    std::printf("\n");
-    std::printf("  Numbers above are observational.  Both bare and PSH\n");
-    std::printf("  perform sub-nanosecond per op on this machine; the\n");
-    std::printf("  delta is bench-noise, not framework overhead.\n");
-
-    if (json) bench::emit_reports_json(reports, json);
-    return 0;  // TIER A gates the claim; TIER B is informational.
+    std::printf("\n  The static_asserts carry the claim.  The timed pairs are for inspection only.\n");
+    bench::emit_reports_json(reports, bench::env_json());
+    return 0;
 }
