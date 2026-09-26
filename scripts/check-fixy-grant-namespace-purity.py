@@ -161,7 +161,7 @@ def violations_in(tree: tsast.Tree) -> list[tuple[int, str]]:
 
 def acknowledged(tree: tsast.Tree) -> bool:
     """Report whether a comment node of the file holds the acknowledgement words."""
-    return any(ACK in node.text for node in tree.find("comment"))
+    return any(ACK in tsast.prose_text(node) for node in tree.find("comment"))
 
 
 def candidate_files(root: Path) -> list[str]:

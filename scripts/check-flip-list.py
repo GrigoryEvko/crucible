@@ -184,8 +184,13 @@ def resolves_old(parts: tuple[str, ...], is_global: bool, at: tsast.Node, aliase
 
 
 def include_is_old(path: tsast.Node) -> bool:
-    """Return True when an include path names crucible/N/... or the frozen umbrella."""
-    inner = path.text.strip()[1:-1].strip()
+    """Return True when an include path names crucible/N/... or the frozen umbrella.
+
+    A path that a macro names, as `#include HEADER`, is no literal and names nothing here.
+    """
+    if path.type not in ("string_literal", "system_lib_string"):
+        return False
+    inner = tsast.prose_text(path).strip()[1:-1].strip()
     return inner == UMBRELLA or any(inner.startswith(f"crucible/{name}/") for name in OLD_NAMES)
 
 
@@ -199,7 +204,7 @@ def macro_names_old(tree: tsast.Tree) -> bool:
         if not values:
             continue
         tokens = tsast.pp_tokens(tree.slice(values[0].start, values[-1].end), values[0].start[0])
-        if any(token.kind == "string" and any(p.search(token.text) for p in IN_LITERAL) for token in tokens):
+        if any(token.kind == "string" and any(p.search(tsast.lexeme(token)) for p in IN_LITERAL) for token in tokens):
             return True
         for is_global, parts, _row in tsast.token_qualified_names(tokens):
             if is_old_namespace(parts) or (not is_global and len(parts) >= 2 and parts[0] in OLD_NO_FIXY):
@@ -215,7 +220,8 @@ def names_old(tree: tsast.Tree) -> bool:
     if any(include_is_old(path) for node in tree.find("preproc_include")
            if (path := node.child_by_field("path")) is not None):
         return True
-    if any(p.search(node.text) for node in tree.find("string_content", "raw_string_content") for p in IN_LITERAL):
+    if any(p.search(tsast.prose_text(node)) for node in tree.find("string_content", "raw_string_content")
+           for p in IN_LITERAL):
         return True
     for node in tree.find("namespace_definition"):
         body = node.child_by_field("body")

@@ -164,9 +164,9 @@ ENTRY = re.compile(r"^(?P<key>.*?)(?: x(?P<count>[1-9][0-9]*))?$")
 NAME_LEAVES = ("identifier", "field_identifier", "type_identifier", "namespace_identifier")
 # The nodes whose name field is a leaf and whose arguments field is its template argument list.
 TEMPLATE_IDS = frozenset({"template_function", "template_method", "template_type"})
-# The directive of a #include that the kit reads as an unknown directive,
-# for example one with a comment between # and include.
-DIRECTIVES = frozenset({"#", "%:"})
+# The tokens of the directive of a #include that the kit reads as an unknown
+# directive, for example one with a comment between # and include.
+DIRECTIVES = frozenset({("#",), ("%:",)})
 # The tokens that end a template argument list read from tokens.
 STATEMENT_END = frozenset({";", "{", "}"})
 
@@ -317,13 +317,13 @@ def include_targets(tree: tsast.Tree) -> list[tuple[str, str]]:
     for node in tree.find("preproc_include"):
         path = node.child_by_field("path")
         if path is not None and path.type == "string_literal":
-            found.append(('"', path.text.strip()[1:-1]))
+            found.append(('"', tsast.prose_text(path).strip()[1:-1]))
         elif path is not None and path.type == "system_lib_string":
-            found.append(("<", path.text.strip()[1:-1]))
+            found.append(("<", tsast.prose_text(path).strip()[1:-1]))
     for node in tree.find("preproc_call"):
         directive = node.child_by_field("directive")
         argument = node.child_by_field("argument")
-        if directive is None or argument is None or directive.text.strip() not in DIRECTIVES:
+        if directive is None or argument is None or tuple(directive.tokens()) not in DIRECTIVES:
             continue
         tokens = tsast.pp_tokens(argument.text)
         if len(tokens) < 2 or tokens[0].text != "include":

@@ -330,7 +330,9 @@ def _has_qualifier(site: tsast.Node, *words: str) -> bool:
     """Report whether a specifier on this site is one of the given words.
 
     `constexpr` and `consteval` both parse as a `type_qualifier` child of the
-    definition, so the test reads the child text rather than the node type.
+    definition, so the test reads the tokens of the child rather than the node
+    type.  A child counts when it is exactly one of the words, so
+    `alignas(64)` is no match.
 
     Args:
         site: The declaration or definition node
@@ -339,9 +341,9 @@ def _has_qualifier(site: tsast.Node, *words: str) -> bool:
     Returns:
         True when a qualifier or storage-class child matches
     """
-    want = frozenset(words)
+    want = frozenset((word,) for word in words)
     kinds = ("type_qualifier", "storage_class_specifier")
-    return any(child.text.strip() in want for child in site.children_of_type(*kinds))
+    return any(tuple(child.tokens()) in want for child in site.children_of_type(*kinds))
 
 
 def _has_requires(site: tsast.Node, declarator: tsast.Node) -> bool:
@@ -856,12 +858,12 @@ def declaration_start(site: tsast.Node) -> int:
 
 
 def line_comment_rows(tree: tsast.Tree) -> dict[int, str]:
-    """Return each row that holds a `//` comment node and nothing before it.
+    """Return each row that holds a `//` comment node and no code.
 
     The rows come from the comment nodes of the parse, so a line of a raw
     string or a string literal that starts with `//` is no comment row.  A
-    comment row is one whose comment node is the first token of the row: only
-    white space stands before the node on that row.
+    comment row holds comments and no code: tsast.site_key() of the row is
+    empty.
 
     Complexity: linear in the number of comment nodes.
 
@@ -873,9 +875,9 @@ def line_comment_rows(tree: tsast.Tree) -> dict[int, str]:
     """
     rows: dict[int, str] = {}
     for comment in tree.find("comment"):
-        text = comment.text
-        row, column = comment.start
-        if text.startswith("//") and not tree.slice((row, 0), (row, column)).strip():
+        text = tsast.prose_text(comment)
+        row = comment.start[0]
+        if text.startswith("//") and tsast.site_key(tree, row) == "":
             rows[row] = text
     return rows
 
@@ -898,7 +900,7 @@ def marker_rows(tree: tsast.Tree, needle: str) -> set[int]:
     """
     rows: set[int] = set()
     for comment in tree.find("comment"):
-        text = comment.text
+        text = tsast.prose_text(comment)
         at = text.find(needle)
         while at >= 0:
             rows.add(comment.start[0] + text.count("\n", 0, at))
