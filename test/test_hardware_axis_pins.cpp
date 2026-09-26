@@ -5,6 +5,12 @@
 // barrier strength.  This file compiles the headers under the project
 // warning flags, so their own static_asserts run, and it pins the atoms
 // that the active build selects.
+//
+// The rows below hold each hardware-axis block to the axes it states.
+// scripts/check-fixy-hw-discipline.py reads them from the parse tree, and
+// every `*_hw` namespace under include/ and src/ needs a row here.
+
+#include "fixy/hw_axis_pins.h"
 
 #include <crucible/SwissTable.h>
 #include <crucible/TraceRing.h>
@@ -21,6 +27,18 @@
 #include <cstdint>
 #include <optional>
 #include <type_traits>
+
+// The control-byte probe is emitted for the ISA that the preprocessor
+// selects, and it issues the instruction class of that ISA.
+static_assert(hw_axis_pins::pinned<^^::crucible::detail::swiss_hw, ::fixy::Axis::SimdIsa,
+                                   ::fixy::Axis::HwInstruction>);
+
+// The append issues a prefetch, and the hot path bounds its instruction class.
+static_assert(hw_axis_pins::pinned<^^::crucible::tracering_hw, ::fixy::Axis::HwInstruction>);
+
+// The two seq_cst fences of the deque are the strength that its correctness
+// needs.
+static_assert(hw_axis_pins::pinned<^^::fixy::concurrent::chaselev_hw, ::fixy::Axis::BarrierStrength>);
 
 namespace {
 

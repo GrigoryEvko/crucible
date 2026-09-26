@@ -670,14 +670,13 @@ add_test(NAME banned_calls
 set_tests_properties(banned_calls banned_calls_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# The hardware-axis presence gate.  scripts/check-fixy-hw-discipline.py
-# reads the parse tree of the three sites (SwissTable swiss_hw, TraceRing
-# tracering_hw, ChaseLevDeque chaselev_hw).  Each site keeps its
-# block, and the block pins the atom of each axis that its row lists.  The
-# C++ build proves each pin correct.  Every `*_hw` namespace under include/
-# and src/ needs a row.  The self-test plants each evasion that the text
-# search of the old guard passed.  Exit 3 when the kit is absent reports a
-# skip.
+# The hardware-axis gate has two halves.  test_hardware_axis_pins.cpp holds
+# one row for each block, and the compiler walks the block by reflection:
+# the row fails when an axis of the row has no atom alias, or an atom alias
+# has an axis that the row does not list.  scripts/check-fixy-hw-discipline.py
+# reads the rows from the parse tree and requires a row for every `*_hw`
+# namespace under include/ and src/, with its block outside every
+# preprocessor conditional.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME fixy_hw_discipline_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.py
           --self-test)

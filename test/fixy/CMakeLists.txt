@@ -209,6 +209,19 @@ fixy_neg_compile_test(neg_mutation_write_once_not_movable
 # ── The atom catalog ──────────────────────────────────────────────────
 fixy_test(test_atom)
 
+# The row check of the hardware-axis blocks (test/fixy/hw_axis_pins.h).
+# Each fixture plants a block and a row that disagree, and the report
+# names exactly the axis that disagrees.
+fixy_neg_compile_test(neg_hw_pins_listed_axis_without_atom
+  "static assertion failed: the hardware-axis block planted::site_hw holds no atom alias of the listed axis SimdIsa\\.  Restore the alias"
+  "hw_axis_pins::pinned_row<\\^\\^planted::site_hw, fixy::Axis::SimdIsa, fixy::Axis::HwInstruction>::report")
+fixy_neg_compile_test(neg_hw_pins_atom_on_unlisted_axis
+  "static assertion failed: the hardware-axis block planted::site_hw holds an atom alias of the unlisted axis BarrierStrength\\.  Add the axis to its row\\."
+  "hw_axis_pins::pinned_row<\\^\\^planted::site_hw, fixy::Axis::HwInstruction>::report")
+fixy_neg_compile_test(neg_hw_pins_row_without_axis
+  "static assertion failed: the row of the hardware-axis block planted::site_hw lists no axis, so it states nothing\\."
+  "hw_axis_pins::pinned_row<\\^\\^planted::site_hw>::report")
+
 # register_bits_v names a width only for an ISA with a fixed register
 # width.  SVE is scalable and Portable names no register, so the
 # constraint refuses both.
