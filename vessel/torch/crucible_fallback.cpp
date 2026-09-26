@@ -39,9 +39,50 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <meta>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace {
+
+// =====================================================================
+// The dispatch-key layout that the PyTorch fork patch must produce
+//
+// The dispatcher gives the highest priority to the highest functionality
+// key.  Crucible must therefore sit directly before EndOfFunctionalityKeys: a
+// key that upstream appends after it demotes the recorder, and the build still
+// succeeds and the fallback still fires, only later.  The patch also deletes
+// DeferredInit and gives its slot to Crucible, so the functionality-key budget
+// stays the same.  The compiler reads the patched enum here, so a re-indented
+// header or an explicit enumerator value cannot hide a change.
+// =====================================================================
+
+static_assert(std::to_underlying(c10::DispatchKey::Crucible) + 1
+                  == std::to_underlying(c10::DispatchKey::EndOfFunctionalityKeys),
+              "DispatchKey::Crucible is not the last functionality key: upstream added a key after it, so the "
+              "recorder no longer has the top dispatch priority.  Move Crucible in "
+              "patches/pytorch-crucible-integration.patch.");
+
+// True when c10::DispatchKey declares an enumerator with this name.
+consteval bool dispatch_key_has_enumerator(std::string_view name) {
+    for (std::meta::info key : std::meta::enumerators_of(^^c10::DispatchKey)) {
+        if (std::meta::identifier_of(key) == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The positive control: a lookup that never finds a name would pass the next
+// assertion for the wrong reason.
+static_assert(dispatch_key_has_enumerator("Crucible") && dispatch_key_has_enumerator("EndOfFunctionalityKeys"),
+              "the enumerator lookup over c10::DispatchKey finds no known key, so it proves nothing");
+
+static_assert(!dispatch_key_has_enumerator("DeferredInit"),
+              "DispatchKey::DeferredInit survived the patch: the removal hunk did not apply, so Crucible widened "
+              "the key budget instead of reusing the dead slot.  Repair "
+              "patches/pytorch-crucible-integration.patch.");
 
 // =====================================================================
 // The bridge this path shares with the unboxed kernels
