@@ -16,8 +16,8 @@
 #include <string>
 #include <vector>
 
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/ExprPool.h>
+#include <foundation/effects/Effect.h>
 
 #include "bench_harness.h"
 
@@ -25,10 +25,12 @@ using namespace crucible;
 
 namespace {
 
+namespace eff = ::foundation::effects;
+
 constexpr uint16_t NUM_FLAGS = ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
 
 // ADD(ADD(... ADD(x, y) ..., z_i) ..., z_j) to a given depth.
-const Expr* build_deep_tree(effects::Alloc a, ExprPool& pool, int depth) {
+const Expr* build_deep_tree(eff::Alloc a, ExprPool& pool, int depth) {
     const Expr* x = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
     const Expr* y = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
     const Expr* node = pool.add(a, x, y);
@@ -40,7 +42,7 @@ const Expr* build_deep_tree(effects::Alloc a, ExprPool& pool, int depth) {
     return node;
 }
 
-void populate_pool(effects::Alloc a, ExprPool& pool, int n, std::vector<const Expr*>& out) {
+void populate_pool(eff::Alloc a, ExprPool& pool, int n, std::vector<const Expr*>& out) {
     out.assign(static_cast<size_t>(n), nullptr);
     for (int i = 0; i < n; ++i) {
         out[static_cast<size_t>(i)] = pool.integer(a, static_cast<int64_t>(i) + 1000);
@@ -57,7 +59,7 @@ int main() {
 
     std::printf("=== expr_pool ===\n  target: intern() cache hit ≤ 10 ns median\n\n");
 
-    auto t = effects::testing::test();
+    auto t = eff::testing::test();
     const auto a = t.alloc;
 
     // ── Pre-bench diagnostic: hash-table load factor after 10 k entries.

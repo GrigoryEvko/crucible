@@ -20,15 +20,15 @@
 #include <cstdio>
 #include <vector>
 
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/ExprPool.h>
 #include <crucible/Graph.h>
+#include <foundation/effects/Effect.h>
 
 #include "bench_harness.h"
 
 using namespace crucible;
 
-static const auto BG = effects::testing::bg();
+static const auto BG = ::foundation::effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
 // Build a pointwise chain of length N: x → op0 → op1 → ... → op(N-1).
