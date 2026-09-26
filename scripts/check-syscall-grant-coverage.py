@@ -23,9 +23,13 @@ WHAT COUNTS AS ISSUING A SYSTEM CALL
       * A `syscall(SYS_<name>, ...)` outside a `_sys` helper.  Inside a
         helper, the SYS_ number must name the helper's own system call, or
         the helper is a violation.
-      * The same shapes in a macro body, read as text after the lexer
-        blanks comments and literals.
-    A comment and a string literal name nothing.
+      * The same shapes in a macro body.  The body is parsed on its own
+        (tsast.macro_bodies), with every fragment joined, so a block comment
+        inside it cannot cut a member call away from its object.  A body
+        that the parser cannot read is read from its preprocessing tokens:
+        a name that `.`, `->` or `X::` does not precede counts.
+    A comment and a string literal name nothing.  A name is compared as the
+    lexer spells it, after the line splices of phase 2.
 
 WHAT COUNTS AS A GRANT
     Each name of the catalog in the type of the alias
@@ -49,19 +53,17 @@ import os
 import re
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, splice  # noqa: E402
 
 HEADER = "include/crucible/warden/Hardening.h"
 CATALOG = "include/fixy/atoms/Syscall.h"
 TUPLE = "hardening_syscall_atoms"
 HELPER_SUFFIX = "_sys"
-WORD = re.compile(r"(?:(?P<scope>[A-Za-z_]\w*)?\s*(?P<access>::|\.|->)\s*)?\b(?P<word>[A-Za-z_]\w*)")
 
 
 class Unreadable(Exception):
@@ -123,57 +125,85 @@ def helper_of(node: tsast.Node) -> str | None:
     return None
 
 
-def issued(tree: tsast.Tree, names: frozenset[str]) -> tuple[set[str], list[str]]:
-    """Derive the system calls that one parsed header issues.
+def call_of(word: str, names: frozenset[str]) -> str | None:
+    """Return the system call that a name stands for: itself, a `_sys` helper, or a SYS_ number, or None."""
+    if word in names:
+        return word
+    if word.endswith(HELPER_SUFFIX) and word[: -len(HELPER_SUFFIX)] in names:
+        return word[: -len(HELPER_SUFFIX)]
+    if word.startswith("SYS_") and word[4:] in names:
+        return word[4:]
+    return None
 
-    Complexity: linear in the number of nodes of the header.
+
+def root_issued(root: tsast.Node, names: frozenset[str], problems: list[str],
+                line_of: Callable[[tsast.Node], int]) -> set[str]:
+    """Derive the system calls that the identifiers under the root of a file or a macro body issue.
+
+    Complexity: linear in the number of nodes under the root.
+
+    Args:
+        root: The root node
+        names: The catalog names
+        problems: Each wrong helper is appended here
+        line_of: The one-based file line of a node under the root
 
     Returns:
-        The system call names, and each wrong helper
+        The system call names
     """
     found: set[str] = set()
-    problems: list[str] = []
-    for node in tree.find("identifier"):
-        text = node.text
+    for node in root.descendants("identifier"):
         if node.field == "declarator" or (node.parent is not None and node.parent.type == "enumerator"):
             continue
         if scopes_of(node):
             continue
-        if text in names:
-            found.add(text)
-        elif text.endswith(HELPER_SUFFIX) and text[: -len(HELPER_SUFFIX)] in names:
-            found.add(text[: -len(HELPER_SUFFIX)])
-        elif text.startswith("SYS_") and text[4:] in names:
-            helper = helper_of(node)
-            if helper is None:
-                found.add(text[4:])
-            elif helper[: -len(HELPER_SUFFIX)] != text[4:]:
-                problems.append(f"{HEADER}:{node.line}: the helper {helper} issues {text}, which is not its own "
-                                f"system call.")
-    for body in tree.find("preproc_arg"):
-        found.update(lexical_issued(body.text, names))
-    return found, problems
+        text = tsast.spelled(node)
+        call = call_of(text, names)
+        if call is None:
+            continue
+        helper = helper_of(node) if text.startswith("SYS_") else None
+        if helper is None:
+            found.add(call)
+        elif helper[: -len(HELPER_SUFFIX)] != call:
+            problems.append(f"{HEADER}:{line_of(node)}: the helper {helper} issues {text}, which is not its own "
+                            f"system call.")
+    return found
 
 
-def lexical_issued(text: str, names: frozenset[str]) -> Iterator[str]:
-    """Yield each system call that raw text names, after the lexer blanks it.
+def token_issued(tokens: list[tsast.Token], names: frozenset[str]) -> Iterator[str]:
+    """Yield each system call that the tokens of a macro body that did not parse name.
 
-    A word after `.` or `->` is a member, and a word after `X::` is
+    A name after `.` or `->` is a member, and a name after `X::` is
     qualified by something other than the global namespace, so neither
     counts.
     """
-    joined, _ = splice(text)
-    code, _ = blank(joined, blank_literals=True)
-    for match in WORD.finditer(code):
-        if match.group("access") in (".", "->") or match.group("scope") is not None:
+    for index, token in enumerate(tokens):
+        if token.kind != "identifier":
             continue
-        word = match.group("word")
-        if word in names:
-            yield word
-        elif word.endswith(HELPER_SUFFIX) and word[: -len(HELPER_SUFFIX)] in names:
-            yield word[: -len(HELPER_SUFFIX)]
-        elif word.startswith("SYS_") and word[4:] in names:
-            yield word[4:]
+        before = tokens[index - 1].text if index >= 1 else ""
+        if before in (".", "->") or (before == "::" and index >= 2 and tokens[index - 2].kind == "identifier"):
+            continue
+        call = call_of(token.text, names)
+        if call is not None:
+            yield call
+
+
+def issued(tree: tsast.Tree, names: frozenset[str]) -> tuple[set[str], list[str]]:
+    """Derive the system calls that one parsed header issues, in its code and in its macro bodies.
+
+    Complexity: linear in the number of nodes of the header and of its macro bodies.
+
+    Returns:
+        The system call names, and each wrong helper
+    """
+    problems: list[str] = []
+    found = root_issued(tree.root, names, problems, lambda node: node.line)
+    for body in tsast.macro_bodies([tree]):
+        if body.is_parsed:
+            found |= root_issued(body.root, names, problems, lambda node, body=body: body.origin(node)[0] + 1)
+        else:
+            found.update(token_issued(tsast.pp_tokens(body.text, body.first_row), names))
+    return found, problems
 
 
 def granted(tree: tsast.Tree, names: frozenset[str]) -> set[str]:
@@ -296,6 +326,9 @@ def self_test() -> int:
             ("(void)::syscall(SYS_ptrace, 0);", "ptrace", "a direct syscall number"),
             ("(void)ptrace_sys(0);", "ptrace", "a helper call"),
             ("#define LOCK(a) ::mlock(a, 1)\n", "mlock", "a macro body"),
+            ("#define PASTE(a) ::mlock(a##_p, 1)\n", "mlock", "a macro body that pastes tokens, read from its tokens"),
+            ("(void)::sched_\\\ngetaffinity(0, 0, nullptr);", "sched_getaffinity",
+             "a name that a line splice cuts in two"),
         ):
             code, report = run(header(calls))
             expect(f"caught, issued but not granted: {label}",
@@ -303,6 +336,8 @@ def self_test() -> int:
         for calls, label in (("file.close();", "a member call"), ("pipe->close();", "a member call through ->"),
                              ("(void)other::close(0);", "a name qualified by another namespace"),
                              ("#define SHUT(f) (f).close()\n", "a member call in a macro body"),
+                             ("#define SHUT2(f) (f)-> /* c */ \\\n    close()\n",
+                              "a member call in a macro body that a block comment splits"),
                              ("int close = 0;", "the name of a declaration")):
             expect(f"not counted: {label}", run(header(calls))[0] == 0, True)
         expect("counted: a use of a local with a catalog name, which fails loud rather than quiet",

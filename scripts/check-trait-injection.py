@@ -41,15 +41,20 @@ FAMILY C: FAIL-CLOSED NAMESPACES
 
 WHAT READS THE SITES
     The parse tree of the pinned tree-sitter kit (scripts/tsast.py), over each
-    C and C++ file that git lists and that names a relation.  A specialization
-    is a template declaration whose class names a template-id of the relation,
-    written plain or qualified (`struct ::crucible::safety::retag_policy<...>`).
-    A reopening is a namespace definition whose last name is the relation
+    C++ file that git lists and whose text names a relation.  The name test
+    removes each line splice first, so a splice cannot hide a name, and a name
+    is compared as the lexer spells it.  A specialization is a template
+    declaration whose class names a template-id of the relation, written
+    plain or qualified (`struct ::crucible::safety::retag_policy<...>`).  A
+    reopening is a namespace definition whose last name is the relation
     namespace.  A comment, a string, a raw string and a prose ledger hold no
-    node.  A macro body is one preproc_arg of raw text, and a file in
-    tsast.UNPARSEABLE has no tree, so the guard reads those with the patterns
-    of the old text scan, over text with the comments and the literals
-    blanked.  A file that the parser cannot read fails.
+    node.  A macro body is parsed on its own (tsast.macro_bodies), with every
+    fragment joined, so a block comment inside it does not split a head.  A
+    body that the parser cannot read is read from its preprocessing tokens: a
+    `struct` or `class` head of a relation with `<` after it, a `namespace`
+    head of a relation namespace with `{` after it, and the machine macro
+    with `(` after it.  The files of tsast.UNPARSEABLE are not C++ and are
+    out of scope.  Any other file that the parser cannot read fails.
 
 WHAT IT CANNOT SEE
     A name that a macro of another file forms, such as `#define R retag_policy`
@@ -83,23 +88,21 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402  (the path insert above has to come first)
-import tsast  # noqa: E402
+import tsast  # noqa: E402  (the path insert above has to come first)
 
-SOURCE_SUFFIXES = frozenset({".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".inl", ".ipp", ".tpp",
-                             ".tcc", ".inc", ".ixx", ".cppm"})
 EXCLUDED_DIRS = ("build", "cmake-build-", "third_party", "external", "vendor", ".git", ".tools")
+LINE_SPLICE = re.compile(rb"\\\r?\n")
 SUBSTRATE_PATHS = ("include/crucible/algebra/*", "include/foundation/algebra/*", "include/fixy/*",
                    "include/crucible/safety/*", "include/crucible/permissions/*", "include/crucible/handles/*",
                    "test/test_concept_cheat_probe.cpp", "test/fixy/test_cheat_probe.cpp",
                    "test/fixy/neg/neg_cheat_graded_modality_injection.cpp")
 MACHINE_MACRO = "CRUCIBLE_ALLOW_MACHINE_TRANSITION"
-SPEC = r"template\s*<[^{};]*>\s*(?:struct|class)\s+(?:\[\[[^\]]*\]\]\s*|alignas\s*\([^)]*\)\s*)*(?:::)?(?:\w+::)*"
 
 
 @dataclass(frozen=True)
@@ -135,21 +138,6 @@ NAMES = {name: relation for relation in RELATIONS for name in relation.names}
 BY_LABEL = {relation.label: relation for relation in RELATIONS}
 
 
-def text_patterns() -> list[tuple[str, re.Pattern[str]]]:
-    """Return the pattern of each relation for text that has no tree: a macro body or an unparseable file."""
-    patterns = []
-    for relation in RELATIONS:
-        names = "|".join(relation.names)
-        if relation.kind == "specialization":
-            patterns.append((relation.label, re.compile(rf"{SPEC}(?:{names})\s*<")))
-        else:
-            patterns.append((relation.label, re.compile(rf"\bnamespace\s+(?:\w+::)*(?:{names})\s*\{{")))
-    for macro, label in MACRO_OF.items():
-        patterns.append((label, re.compile(rf"\b{macro}\s*\(")))
-    return patterns
-
-
-TEXT_PATTERNS = text_patterns()
 NEEDLES = tuple(name.encode() for name in [*NAMES, *MACRO_OF])
 
 
@@ -164,10 +152,11 @@ class Site:
 
 
 def listed_files(root: Path) -> list[str]:
-    """Return the C and C++ files under the root that name a relation, relative to the root.
+    """Return the C++ files under the root whose text names a relation, relative to the root.
 
     Git lists the files of a work tree, which keeps build trees out.  Outside
-    a work tree the walk skips each build, vendor and tool directory.
+    a work tree the walk skips each build, vendor and tool directory.  The
+    name test reads the bytes with each line splice removed.
     """
     try:
         out = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
@@ -181,8 +170,8 @@ def listed_files(root: Path) -> list[str]:
     found = []
     for path in sorted(candidates):
         full = root / path
-        if Path(path).suffix in SOURCE_SUFFIXES and full.is_file():
-            data = full.read_bytes()
+        if tsast.is_in_cpp_scope(path) and full.is_file():
+            data = LINE_SPLICE.sub(b"", full.read_bytes())
             if any(needle in data for needle in NEEDLES):
                 found.append(path)
     return found
@@ -203,43 +192,84 @@ def template_name(node: tsast.Node) -> str | None:
     if node.type != "template_type":
         return None
     named = node.child_by_field("name")
-    return named.text if named is not None else None
+    return tsast.spelled(named) if named is not None else None
 
 
-def tree_sites(tree: tsast.Tree, path: str) -> list[Site]:
-    """Return the sites that the parse tree of one file holds."""
+def root_sites(root: tsast.Node, path: str, line_of: Callable[[tsast.Node], int]) -> list[Site]:
+    """Return the sites under the root of a file or of a macro body.
+
+    Args:
+        root: The root node
+        path: The repo-relative path of the file that holds the root
+        line_of: The one-based file line of a node under the root
+    """
     sites: list[Site] = []
-    for node in tree.find("template_declaration"):
+    for node in root.descendants("template_declaration"):
         for head in node.children_of_type("class_specifier", "struct_specifier", "union_specifier"):
             named = head.child_by_field("name")
             name = template_name(named) if named is not None else None
             relation = NAMES.get(name or "")
             if relation is not None and relation.kind == "specialization":
-                sites.append(Site(relation.label, path, node.line, node.text.splitlines()[0].strip()))
-    for node in tree.find("namespace_definition"):
+                sites.append(Site(relation.label, path, line_of(node), node.text.splitlines()[0].strip()))
+    for node in root.descendants("namespace_definition"):
         named = node.child_by_field("name")
         if named is None:
             continue
-        parts = [part.text for part in named.descendants("namespace_identifier")] \
-            if named.type == "nested_namespace_specifier" else [named.text]
-        relation = NAMES.get(parts[-1])
+        parts = [tsast.spelled(part) for part in named.descendants("namespace_identifier")] \
+            if named.type == "nested_namespace_specifier" else [tsast.spelled(named)]
+        relation = NAMES.get(parts[-1]) if parts else None
         if relation is not None and relation.kind == "reopening":
-            sites.append(Site(relation.label, path, node.line, node.text.splitlines()[0].strip()))
-    for node in tree.find("macro_invocation", "call_expression"):
+            sites.append(Site(relation.label, path, line_of(node), node.text.splitlines()[0].strip()))
+    for node in root.descendants("macro_invocation", "call_expression"):
         callee = node.child_by_field("name") or node.child_by_field("function")
-        if callee is not None and callee.text in MACRO_OF:
-            sites.append(Site(MACRO_OF[callee.text], path, node.line, node.text.splitlines()[0].strip()))
+        name = tsast.spelled(callee) if callee is not None else ""
+        if name in MACRO_OF:
+            sites.append(Site(MACRO_OF[name], path, line_of(node), node.text.splitlines()[0].strip()))
     return sites
 
 
-def text_sites(text: str, path: str, first_line: int) -> list[Site]:
-    """Return the sites of text that has no tree, read with the patterns of the old text scan."""
-    blanked, _ = cxx_lex.blank(text, blank_literals=True)
-    sites = []
-    for label, pattern in TEXT_PATTERNS:
-        for match in pattern.finditer(blanked):
-            line = first_line + blanked.count("\n", 0, match.start())
-            sites.append(Site(label, path, line, match.group(0).split("\n")[0].strip()))
+def head_name(tokens: list[tsast.Token], index: int) -> tuple[str, str]:
+    """Return the last name of the class or namespace head that starts at a token, and the token after it.
+
+    Attribute groups `[[...]]` and `alignas(...)` before the name are skipped,
+    and the name may be qualified.
+    """
+    count = len(tokens)
+    while index < count and tokens[index].text in ("[", "alignas"):
+        closer = "]" if tokens[index].text == "[" else ")"
+        depth = 0
+        while index < count:
+            depth += tokens[index].text in ("[", "(")
+            depth -= tokens[index].text in ("]", ")")
+            index += 1
+            if depth == 0 and tokens[index - 1].text == closer:
+                break
+    name = ""
+    while index < count and (tokens[index].text == "::" or tokens[index].kind == "identifier"):
+        if tokens[index].kind == "identifier":
+            name = tokens[index].text
+        index += 1
+    return name, tokens[index].text if index < count else ""
+
+
+def token_sites(body: tsast.MacroBody, path: str) -> list[Site]:
+    """Return the sites of a macro body that did not parse, read from its preprocessing tokens."""
+    lines = body.define.tree.source.decode("utf-8", "replace").split("\n")
+    tokens = tsast.pp_tokens(body.text, body.first_row)
+    sites: list[Site] = []
+    for index, token in enumerate(tokens):
+        after = tokens[index + 1].text if index + 1 < len(tokens) else ""
+        label = None
+        if token.text in MACRO_OF and after == "(":
+            label = MACRO_OF[token.text]
+        elif token.text in ("struct", "class", "namespace"):
+            name, follower = head_name(tokens, index + 1)
+            relation = NAMES.get(name)
+            kind, opener = ("reopening", "{") if token.text == "namespace" else ("specialization", "<")
+            if relation is not None and relation.kind == kind and follower == opener:
+                label = relation.label
+        if label is not None:
+            sites.append(Site(label, path, token.row + 1, lines[token.row].strip()))
     return sites
 
 
@@ -254,18 +284,21 @@ def scan(root: Path) -> tuple[list[Site], list[str]]:
     files = listed_files(root)
     sites: list[Site] = []
     unread: list[str] = []
+    trees: list[tsast.Tree] = []
     for tree in tsast.parse([root / path for path in files], strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            if rel in tsast.UNPARSEABLE:
-                sites += text_sites(tree.source.decode("utf-8", "replace"), rel, 1)
-            else:
-                unread.append(f"trait_guard: {rel} does not parse, so the relations it may specialize are unknown."
-                              f"\n  {tree.diagnostic}")
+            unread.append(f"trait_guard: {rel} does not parse, so the relations it may specialize are unknown."
+                          f"\n  {tree.diagnostic}")
             continue
-        sites += tree_sites(tree, rel)
-        for body in tree.find("preproc_arg"):
-            sites += text_sites(body.text, rel, body.line)
+        trees.append(tree)
+        sites += root_sites(tree.root, rel, lambda node: node.line)
+    for body in tsast.macro_bodies(trees):
+        rel = Path(body.define.tree.path).relative_to(root).as_posix()
+        if body.is_parsed:
+            sites += root_sites(body.root, rel, lambda node, body=body: body.origin(node)[0] + 1)
+        else:
+            sites += token_sites(body, rel)
     forged = sorted({site for site in sites if not authored(BY_LABEL[site.label], site.path)},
                     key=lambda site: (site.path, site.line, site.label))
     return forged, unread
@@ -365,6 +398,15 @@ def self_test() -> int:
         "src/planted/macro.cpp": (
             "#define FORGE(T) template <> struct retag_policy<T, trust::Verified> : std::true_type {}\n"
             "#define MENTION retag_policy is named here, and nothing is specialized\n"),
+        "src/planted/split.cpp": (
+            "#define FORGE2(T) template <> /* why */ \\\n"
+            "  struct retag_policy<T, trust::Verified> : std::true_type {};\n"),
+        "src/planted/spliced.cpp": (
+            "namespace crucible::safety {\n"
+            "template <>\n"
+            "struct retag_\\\n"
+            "policy<A, B> : std::true_type {};\n"
+            "}\n"),
     }
     expected = {
         ("substrate", "src/planted/trait.cpp", 2),
@@ -382,6 +424,8 @@ def self_test() -> int:
         ("admitted_transitions", "src/planted/transitions.cpp", 1),
         ("admitted_implications", "src/planted/implications.cpp", 1),
         ("retag_policy", "src/planted/macro.cpp", 1),
+        ("retag_policy", "src/planted/split.cpp", 1),
+        ("retag_policy", "src/planted/spliced.cpp", 2),
     }
     exempt = {
         "include/crucible/algebra/planted.h": (
@@ -451,11 +495,16 @@ def self_test() -> int:
             os.chdir(previous)
         expect("the report from inside the build tree equals the report from the root", from_build == (code, report))
 
-        (root / "src" / "planted" / "broken.cpp").write_text("void f() { g(1) { } } // retag_policy\n",
+        rostered = root / next(iter(tsast.UNPARSEABLE))
+        rostered.parent.mkdir(parents=True, exist_ok=True)
+        rostered.write_text("void f() { g(1) { } } // retag_policy\n", encoding="utf-8")
+        code, report = captured(lambda: run(root))
+        expect("a file of the UNPARSEABLE roster is out of scope", "does not parse" not in report, True)
+        (root / "src" / "planted" / "broken.cpp").write_text("void f() { g(1) { } } // retag_\\\npolicy\n",
                                                             encoding="utf-8")
         code, report = captured(lambda: run(root))
-        expect("a file the parser cannot read fails", code == 1 and "src/planted/broken.cpp does not parse" in report,
-               True)
+        expect("a file the parser cannot read fails, and a splice does not hide its relation name",
+               code == 1 and "src/planted/broken.cpp does not parse" in report, True)
         for rel in [*planted, "src/planted/broken.cpp"]:
             (root / rel).unlink()
         expect("a tree with only authored edges exits 0", captured(lambda: run(root))[0] == 0)

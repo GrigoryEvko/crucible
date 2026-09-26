@@ -38,12 +38,17 @@ WHAT COUNTS AS A FULLNESS TEST
     This is a heuristic: a private counter that two methods write can still
     pass its bound, and the guard does not see it.
 
-WHAT THE PARSER CANNOT READ
-    A macro body is raw text.  The guard blanks its comments and literals
-    with scripts/cxx_lex.py and matches the same shapes as text.  A file in
-    tsast.UNPARSEABLE gets the same scan over its whole text, and a parse
-    error in any other file is a violation.  The text scan does not know a
-    constant context, so a static_assert in a macro body counts.
+MACRO BODIES
+    A macro body is parsed on its own (tsast.macro_bodies), with every
+    fragment joined, and the guard reads the same shapes in its tree, so a
+    comment inside the body does not hide a comparison and a static_assert
+    in it is a constant context.  A body that the parser cannot read, such
+    as one that pastes tokens with ##, is read from its preprocessing
+    tokens: a counter chain right before `==` and a bound name or a bound
+    call right after it, or a bound name right before `==` and a counter
+    chain right after it.  The token reader does not know a constant
+    context.  The files of tsast.UNPARSEABLE are not C++ and are out of
+    scope.  A parse error in any other file is a violation.
 
 EXEMPTIONS
     `// FULLNESS-OK: <reason>` on a line of the comparison, or on a line of
@@ -74,20 +79,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 
 ROOTS = ("include", "src", "vessel")
-SUFFIXES = (".h", ".hpp", ".cpp", ".cc", ".inl", ".ipp")
 EXCLUDED_COMPONENTS = frozenset({"third_party", "external", "vendor"})
 ALLOWLIST = "scripts/fullness-guard-allowlist.txt"
 BOUND_NAME = re.compile(r"(?:[Cc]apacity|max_\w+|MAX_\w+|Max[A-Z]\w*)")
 BOUND_CALLS = frozenset({"size", "capacity", "max_size"})
 MARKER = re.compile(r"FULLNESS-OK:\s*\S")
-_COUNTER = r"(?:\(\s*[A-Za-z_]\w*\s*\)|[A-Za-z_]\w*)(?:\s*(?:\.|->)\s*[A-Za-z_]\w*)*"
-_BOUND_NAME = r"(?:\w+\s*::\s*)*(?:[Cc]apacity|max_\w+|MAX_\w+|Max[A-Z]\w*)\b(?!\s*\()"
-_BOUND_CALL = _COUNTER + r"\s*(?:\.|->)\s*(?:size|capacity|max_size)\s*\(\s*\)"
-LEXICAL_FORWARD = re.compile(rf"(?<![\w.>:])(?P<counter>{_COUNTER})\s*==\s*(?:{_BOUND_NAME}|{_BOUND_CALL})")
-LEXICAL_REVERSED = re.compile(rf"(?<![\w.>:]){_BOUND_NAME}\s*==\s*(?P<counter>{_COUNTER})(?![\w(.]|\s*->)")
+MEMBER_ACCESS = (".", "->")
 SEPARATOR = " — "
 # The nodes whose last line still belongs to the comparison, for a marker.
 STATEMENTS = ("condition_clause", "expression_statement", "return_statement", "declaration",
@@ -126,7 +125,7 @@ def unwrap(node: tsast.Node | None) -> tsast.Node | None:
             node = inner[0] if len(inner) == 1 else None
         elif node.type == "call_expression" and (callee := node.child_by_field("function")) is not None \
                 and callee.type == "template_function" \
-                and (named := callee.child_by_field("name")) is not None and named.text == "static_cast":
+                and (named := callee.child_by_field("name")) is not None and tsast.spelled(named) == "static_cast":
             arguments = node.child_by_field("arguments")
             inner = [child for child in arguments.children if child.type != "comment"] if arguments else []
             node = inner[0] if len(inner) == 1 else None
@@ -156,7 +155,7 @@ def counter_is_protected(node: tsast.Node) -> bool:
     while node is not None and node.type == "subscript_expression":
         node = unwrap(node.child_by_field("argument"))
     last = final_segment(node) if node is not None else None
-    return last is not None and last.text.endswith("_")
+    return last is not None and tsast.spelled(last).endswith("_")
 
 
 def is_bound_name(node: tsast.Node | None) -> bool:
@@ -165,7 +164,7 @@ def is_bound_name(node: tsast.Node | None) -> bool:
     if node is None or node.type not in ("identifier", "qualified_identifier", "field_expression"):
         return False
     last = final_segment(node)
-    return last is not None and BOUND_NAME.fullmatch(last.text) is not None
+    return last is not None and BOUND_NAME.fullmatch(tsast.spelled(last)) is not None
 
 
 def is_bound_call(node: tsast.Node | None) -> bool:
@@ -179,7 +178,7 @@ def is_bound_call(node: tsast.Node | None) -> bool:
             or [child for child in arguments.children if child.type != "comment"]:
         return False
     last = final_segment(callee)
-    return last is not None and last.text in BOUND_CALLS and is_counter(callee.child_by_field("argument"))
+    return last is not None and tsast.spelled(last) in BOUND_CALLS and is_counter(callee.child_by_field("argument"))
 
 
 def is_constant_context(node: tsast.Node) -> bool:
@@ -205,39 +204,106 @@ def marker_rows(node: tsast.Node) -> range:
     return range(node.start[0], last + 1)
 
 
-def fullness_sites(tree: tsast.Tree) -> Iterator[tsast.Node]:
-    """Yield each unexempted `==` fullness test of a parsed file.
+def fullness_nodes(root: tsast.Node) -> Iterator[tsast.Node]:
+    """Yield each `==` fullness test under the root of a file or of a macro body, before any exemption.
 
-    Complexity: linear in the number of nodes of the file.
+    Complexity: linear in the number of nodes under the root.
     """
-    comments: dict[int, list[str]] = {}
-    for node in tree.find("comment"):
-        comments.setdefault(node.start[0], []).append(node.text)
-    for node in tree.find("binary_expression"):
+    for node in root.descendants("binary_expression"):
         left, right = node.child_by_field("left"), node.child_by_field("right")
-        if left is None or right is None or tree.slice(left.end, right.start).strip() != "==":
+        if left is None or right is None or tsast.operator_of(node) != "==":
             continue
         is_forward = is_counter(left) and not counter_is_protected(left) \
             and (is_bound_name(right) or is_bound_call(right))
         is_reversed = is_counter(right) and not counter_is_protected(right) and is_bound_name(left)
-        if (is_forward or is_reversed) and not is_constant_context(node) \
-                and not any(MARKER.search(text) for row in marker_rows(node) for text in comments.get(row, ())):
+        if (is_forward or is_reversed) and not is_constant_context(node):
             yield node
 
 
-def lexical_rows(text: str) -> Iterator[int]:
-    """Yield the zero-based row of each `==` fullness test in raw text, for a macro body or an unparseable file.
+def counter_before(tokens: list[tsast.Token], index: int) -> int | None:
+    """Return the index of the first token of a counter chain that ends right before a token, or None.
 
-    The lexer blanks comments and literals first.  The shapes are the ones
-    the parse tree reads, spelled as text, with the counter on the left of
-    a bound name or a bound call, or on the right of a bound name.
+    A chain is `name`, `(name)`, and then `.name` or `->name` any number of
+    times.  A chain that a name, `::`, `.` or `->` precedes is part of a
+    larger expression and does not count.
     """
-    joined, joins = splice(text)
-    code, _ = blank(joined, blank_literals=True)
-    for pattern in (LEXICAL_FORWARD, LEXICAL_REVERSED):
-        for match in pattern.finditer(code):
-            if not match.group("counter").rsplit(".", 1)[-1].rsplit(">", 1)[-1].endswith("_"):
-                yield line_of(joined, joins, match.start("counter")) - 1
+    cursor = index - 1
+    if cursor < 0 or tokens[cursor].kind != "identifier":
+        return None
+    while cursor >= 2 and tokens[cursor - 1].text in MEMBER_ACCESS and tokens[cursor - 2].kind == "identifier":
+        cursor -= 2
+    if cursor >= 3 and tokens[cursor - 1].text in MEMBER_ACCESS and tokens[cursor - 2].text == ")" \
+            and tokens[cursor - 3].kind == "identifier" and cursor >= 4 and tokens[cursor - 4].text == "(":
+        cursor -= 4
+    before = tokens[cursor - 1] if cursor >= 1 else None
+    if before is not None and (before.kind == "identifier" or before.text in ("::", *MEMBER_ACCESS)):
+        return None
+    return cursor
+
+
+def counter_after(tokens: list[tsast.Token], index: int) -> int | None:
+    """Return the index of the last token of a counter chain that starts at a token, or None.
+
+    A chain that a call, `.`, `->` or a name follows is part of a larger
+    expression and does not count.
+    """
+    cursor = index
+    if cursor < len(tokens) and tokens[cursor].text == "(" and cursor + 2 < len(tokens) \
+            and tokens[cursor + 1].kind == "identifier" and tokens[cursor + 2].text == ")":
+        cursor += 2
+    elif cursor >= len(tokens) or tokens[cursor].kind != "identifier":
+        return None
+    while cursor + 2 < len(tokens) and tokens[cursor + 1].text in MEMBER_ACCESS \
+            and tokens[cursor + 2].kind == "identifier":
+        cursor += 2
+    after = tokens[cursor + 1] if cursor + 1 < len(tokens) else None
+    if after is not None and (after.kind == "identifier" or after.text in ("(", *MEMBER_ACCESS)):
+        return None
+    return cursor
+
+
+def bound_after(tokens: list[tsast.Token], index: int) -> bool:
+    """Say whether a bound name or a bound call starts at a token."""
+    cursor = index
+    while cursor + 2 < len(tokens) and tokens[cursor].kind == "identifier" and tokens[cursor + 1].text == "::":
+        cursor += 2
+    if cursor < len(tokens) and tokens[cursor].kind == "identifier" and BOUND_NAME.fullmatch(tokens[cursor].text) \
+            and (cursor + 1 >= len(tokens) or tokens[cursor + 1].text != "("):
+        return True
+    cursor = index
+    while cursor + 2 < len(tokens) and tokens[cursor].kind == "identifier" \
+            and tokens[cursor + 1].text in MEMBER_ACCESS:
+        cursor += 2
+    return (cursor >= index + 2 and cursor + 2 < len(tokens) and tokens[cursor].text in BOUND_CALLS
+            and tokens[cursor + 1].text == "(" and tokens[cursor + 2].text == ")")
+
+
+def bound_before(tokens: list[tsast.Token], index: int) -> bool:
+    """Say whether a bound name ends right before a token, with no member access before it."""
+    cursor = index - 1
+    if cursor < 0 or tokens[cursor].kind != "identifier" or not BOUND_NAME.fullmatch(tokens[cursor].text):
+        return False
+    while cursor >= 2 and tokens[cursor - 1].text == "::" and tokens[cursor - 2].kind == "identifier":
+        cursor -= 2
+    return cursor == 0 or tokens[cursor - 1].text not in MEMBER_ACCESS
+
+
+def token_rows(tokens: list[tsast.Token]) -> Iterator[int]:
+    """Yield the row of each `==` fullness test in the tokens of a macro body that did not parse.
+
+    The row is the row of the counter.  A counter whose last name ends in
+    `_` is protected, as in the tree.
+    """
+    for index, token in enumerate(tokens):
+        if token.text != "==":
+            continue
+        start = counter_before(tokens, index)
+        if start is not None and not tokens[index - 1].text.endswith("_") and bound_after(tokens, index + 1):
+            yield tokens[start].row
+            continue
+        end = counter_after(tokens, index + 1)
+        if end is not None and not tokens[end].text.endswith("_") and bound_before(tokens, index):
+            yield tokens[index + 1].row
 
 
 def scope_files(root: Path) -> list[Path]:
@@ -247,9 +313,9 @@ def scope_files(root: Path) -> list[Path]:
         base = root / top
         if base.is_dir():
             for path in base.rglob("*"):
-                parts = path.relative_to(root).parts[:-1]
-                if path.is_file() and path.suffix in SUFFIXES \
-                        and not any(part in EXCLUDED_COMPONENTS or part.startswith("build") for part in parts):
+                rel = path.relative_to(root)
+                if path.is_file() and tsast.is_in_cpp_scope(rel) \
+                        and not any(part in EXCLUDED_COMPONENTS or part.startswith("build") for part in rel.parts[:-1]):
                     found.append(path)
     return sorted(found)
 
@@ -262,25 +328,33 @@ def scan(root: Path) -> tuple[list[Site], list[str]]:
     Returns:
         The sites, and each file the parser cannot read
     """
-    sites: list[Site] = []
     failures: list[str] = []
+    trees: list[tsast.Tree] = []
+    rows: dict[str, set[int]] = {}
+    marks: dict[str, set[int]] = {}
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
-        source = tree.source.decode("utf-8", "replace")
-        if tree.diagnostic is not None and rel not in tsast.UNPARSEABLE:
+        if tree.diagnostic is not None:
             failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
-        rows: set[int] = set()
-        lines = source.split("\n")
-        if tree.diagnostic is not None:
-            rows.update(row for row in lexical_rows(source) if not MARKER.search(lines[row]))
+        trees.append(tree)
+        marks[rel] = {node.start[0] for node in tree.find("comment") if MARKER.search(node.text)}
+        rows[rel] = {node.start[0] for node in fullness_nodes(tree.root)
+                     if not any(row in marks[rel] for row in marker_rows(node))}
+    for body in tsast.macro_bodies(trees):
+        rel = Path(body.define.tree.path).relative_to(root).as_posix()
+        # A marker on any row of the definition exempts the tests of its body.
+        if any(row in marks[rel] for row in range(body.define.start[0], body.define.end[0] + 1)):
+            continue
+        if body.is_parsed:
+            rows[rel].update(body.origin(node)[0] for node in fullness_nodes(body.root))
         else:
-            rows.update(node.start[0] for node in fullness_sites(tree))
-            marked = {node.start[0] for node in tree.find("comment") if MARKER.search(node.text)}
-            for body in tree.find("preproc_arg"):
-                rows.update(body.start[0] + row for row in lexical_rows(body.text)
-                            if body.start[0] + row not in marked)
-        sites.extend(Site(rel, row + 1, lines[row].strip()) for row in sorted(rows))
+            rows[rel].update(token_rows(tsast.pp_tokens(body.text, body.first_row)))
+    sites: list[Site] = []
+    for tree in trees:
+        rel = Path(tree.path).relative_to(root).as_posix()
+        lines = tree.source.decode("utf-8", "replace").split("\n")
+        sites.extend(Site(rel, row + 1, lines[row].strip()) for row in sorted(rows[rel]))
     return sites, failures
 
 
@@ -394,6 +468,7 @@ def self_test() -> int:
         ("    consteval bool y() { return count == Capacity; }", False, "a consteval function"),
         ("    bool z() { return lhs == Capacity && rhs == Capacity; }", True, "two sites on one line"),
         ("    bool v() { return allowed == Capacity; }", False, "an allowlisted site"),
+        ("    bool aa(T& s) { return s.count /* n */ == Capacity; }", True, "a comment before the operator"),
         ("};", None, ""),
         ("#define FULL_IN_MACRO(s) ((s).count == Capacity)", True, "a macro body"),
         ("#define REVERSED_IN_MACRO(s) (Traits::MaxItems == (s)->n)", True, "a bound name first in a macro body"),
@@ -403,6 +478,17 @@ def self_test() -> int:
         ("#define MARKED_IN_MACRO(s) (s.count == Capacity)  // FULLNESS-OK: fixture", False,
          "a marked macro body"),
         ('#define TEXT_IN_MACRO "count == Capacity"', False, "a string literal in a macro body"),
+        ("#define SUBSCRIPT_IN_MACRO(s) ((s).counts[i] == Capacity)", True, "a subscript counter in a macro body"),
+        ("#define CAST_IN_MACRO(s) (static_cast<int>(s.count) == MAX_SLOTS)", True,
+         "a static_cast counter in a macro body"),
+        ("#define ASSERT_IN_MACRO(s) static_assert((s).count == Capacity)", False, "a static_assert in a macro body"),
+        ("#define COMMENT_IN_MACRO(s) ((s).count /* n */ == \\", True,
+         "a macro body that a comment and a line splice cut"),
+        ("    Capacity)", None, ""),
+        ("#define PASTE_IN_MACRO(s) (s.count##_x == Capacity)", True,
+         "a macro body that pastes tokens, read from its tokens"),
+        ("#define PASTE_PRIVATE(s) (s.count##_ == Capacity)", False,
+         "a protected counter in a macro body that pastes tokens"),
     ]
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -465,16 +551,15 @@ def self_test() -> int:
         code, report = captured(root)
         expect("a duplicate row exits 2", code == 2 and "on two rows" in report)
         allow.write_text(f"{allowed_key} — a planted not-found sentinel\n", encoding="utf-8")
+        rostered = root / next(iter(tsast.UNPARSEABLE))
+        rostered.parent.mkdir(parents=True, exist_ok=True)
+        rostered.write_text("void f() { g(1) { } }\nbool s() { return count == Capacity; }\n", encoding="utf-8")
+        sites, broken = scan(root)
+        expect("a file of the UNPARSEABLE roster is out of scope",
+               not broken and not any(site.path == rostered.relative_to(root).as_posix() for site in sites), True)
         soup = "include/crucible/planted/Soup.h"
         (root / soup).write_text("void f() { g(1) { } }\nbool s() { return count == Capacity; }\n",
                                  encoding="utf-8")
-        tsast.UNPARSEABLE[soup] = "a planted file that the parser cannot read"
-        try:
-            sites, broken = scan(root)
-        finally:
-            del tsast.UNPARSEABLE[soup]
-        expect("caught: a site in a listed unparseable file, by the text scan",
-               any(site.path == soup and site.line == 2 for site in sites) and not broken)
         expect("a file the parser cannot read fails the check", captured(root)[0] == 1)
     if failures:
         print(f"check-fullness-guard --self-test: FAILED — {len(failures)} case(s) did not hold")
