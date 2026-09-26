@@ -46,7 +46,6 @@ bench/bench_concurrent_queues.cpp
 bench/bench_content_hash.cpp
 bench/bench_dispatch.cpp
 bench/bench_merkle_dag.cpp
-bench/bench_observe_metrics_swmr.cpp
 bench/bench_perf_loader.cpp
 bench/bench_permissioned_session_handle.cpp
 bench/bench_permissioned_zero_cost.cpp
@@ -135,7 +134,6 @@ include/crucible/ledger/HostFingerprint.h
 include/crucible/mimic/CogMimic.h
 include/crucible/mimic/Semaphore.h
 include/crucible/mimic/_wip/network/Backend.h
-include/crucible/observe/Metrics.h
 include/crucible/observe/SdcDetect.h
 include/crucible/observe/SyntheticProbe.h
 include/crucible/perf/LockContention.h

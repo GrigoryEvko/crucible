@@ -154,9 +154,9 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | - | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_sdc_detector` | `include/crucible/observe/SdcDetect.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
 

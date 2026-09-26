@@ -1,6 +1,7 @@
 #include <crucible/observe/Metrics.h>
 #include <crucible/observe/Observation.h>
-#include <crucible/permissions/_Permission.h>
+#include <foundation/Brand.h>
+#include <foundation/permissions/Permission.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -11,7 +12,13 @@
 namespace {
 
 namespace observe = ::crucible::observe;
-namespace safety = ::crucible::safety;
+namespace perm = ::foundation::permissions;
+
+// One call site mints every reader root of the channel type, so every
+// channel of the type carries the brand of that one site.
+[[nodiscard]] auto metrics_reader_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsReaderTag>(); }
+
+using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(metrics_reader_root())>>;
 
 int total_passed = 0;
 int total_failed = 0;
@@ -62,16 +69,16 @@ bool near(double a, double b) noexcept {
 void test_metric_payload_is_snapshot_safe() {
     static_assert(std::is_trivially_copyable_v<observe::RuntimeMetrics>);
     static_assert(std::is_trivially_destructible_v<observe::RuntimeMetrics>);
-    static_assert(::crucible::concurrent::SnapshotValue<observe::RuntimeMetricsSample>);
+    static_assert(::fixy::concurrent::SnapshotValue<observe::RuntimeMetricsSample>);
     static_assert(sizeof(observe::RuntimeMetricsSample) <= 256);
     CRUCIBLE_REQUIRE(true);
 }
 
 void test_writer_publish_keeper_and_canopy_readers() {
     auto initial = observe::fresh_metrics_sample(make_metrics(0.0));
-    observe::RuntimeMetricsChannel channel{initial};
+    Channel channel{metrics_reader_root(), initial};
 
-    auto writer_perm = safety::mint_permission_root<observe::RuntimeMetricsWriterTag>();
+    auto writer_perm = perm::mint_permission_root<observe::RuntimeMetricsWriterTag>();
     auto writer = observe::mint_metrics_writer(channel, std::move(writer_perm));
 
     auto keeper = observe::mint_keeper_metrics_reader(channel);
@@ -94,7 +101,7 @@ void test_writer_publish_keeper_and_canopy_readers() {
 }
 
 void test_exclusive_drain_waits_for_readers() {
-    observe::RuntimeMetricsChannel channel{observe::fresh_metrics_sample(make_metrics(0.0))};
+    Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(make_metrics(0.0))};
 
     auto reader = observe::mint_keeper_metrics_reader(channel);
     CRUCIBLE_REQUIRE(reader.has_value());

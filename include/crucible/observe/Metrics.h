@@ -3,12 +3,18 @@
 // The payload is fixed-size and trivially copyable so a snapshot can be
 // published by value. A growable or span-backed payload would need heap
 // ownership or leave the reader holding a borrow.
+//
+// The channel is a template over the brand of its reader root.  The site
+// that builds a channel mints that root and names its brand in the channel
+// type, so the readers of one channel cannot present a share of another.
 
-#include <crucible/concurrent/_AtomicSnapshot.h>
-#include <crucible/effects/_Computation.h>
-#include <crucible/permissions/_Permission.h>
-#include <crucible/safety/_Stale.h>
-#include <crucible/sessions/_SwmrSession.h>
+#include <fixy/Stale.h>
+#include <fixy/concurrent/AtomicSnapshot.h>
+#include <fixy/concurrent/SwmrSession.h>
+#include <foundation/Brand.h>
+#include <foundation/effects/Computation.h>
+#include <foundation/effects/Row.h>
+#include <foundation/permissions/Permission.h>
 
 #include <array>
 #include <cstddef>
@@ -19,8 +25,14 @@
 
 namespace crucible::observe {
 
-struct RuntimeMetricsWriterTag {};
-struct RuntimeMetricsReaderTag {};
+// The channel lives in process memory, so neither role incurs an effect
+// through it and each tag declares the empty row.
+struct RuntimeMetricsWriterTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct RuntimeMetricsReaderTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
 struct RuntimeMetrics {
     double meb_lambda_max = 0.0;
@@ -35,18 +47,21 @@ struct RuntimeMetrics {
     std::array<double, 16> delta_g{};
 };
 
-using RuntimeMetricsSample = ::crucible::safety::Stale<RuntimeMetrics>;
+using RuntimeMetricsSample = ::fixy::Stale<RuntimeMetrics>;
 using RuntimeMetricsComputation =
-    ::crucible::effects::Computation<::crucible::effects::Row<::crucible::effects::Effect::Bg>, RuntimeMetrics>;
-using RuntimeMetricsChannel =
-    ::crucible::safety::proto::swmr_session::SwmrSession<RuntimeMetricsSample, RuntimeMetricsWriterTag,
-                                                         RuntimeMetricsReaderTag>;
-using RuntimeMetricsWriter = typename RuntimeMetricsChannel::WriterHandle;
-using RuntimeMetricsReader = typename RuntimeMetricsChannel::ReaderHandle;
+    ::foundation::effects::Computation<::foundation::effects::Row<::foundation::effects::Effect::Bg>, RuntimeMetrics>;
+
+template <::foundation::brand::IsBrand ReaderBrand>
+using RuntimeMetricsChannel = ::fixy::concurrent::swmr_session::SwmrSession<RuntimeMetricsSample, RuntimeMetricsWriterTag,
+                                                                            RuntimeMetricsReaderTag, ReaderBrand>;
+template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
+using RuntimeMetricsWriter = typename RuntimeMetricsChannel<ReaderBrand>::template WriterHandle<WriterBrand>;
+template <::foundation::brand::IsBrand ReaderBrand>
+using RuntimeMetricsReader = typename RuntimeMetricsChannel<ReaderBrand>::ReaderHandle;
 
 static_assert(std::is_trivially_copyable_v<RuntimeMetrics>);
 static_assert(std::is_trivially_destructible_v<RuntimeMetrics>);
-static_assert(::crucible::concurrent::SnapshotValue<RuntimeMetricsSample>);
+static_assert(::fixy::concurrent::SnapshotValue<RuntimeMetricsSample>);
 
 [[nodiscard]] inline RuntimeMetricsSample fresh_metrics_sample(RuntimeMetrics metrics) noexcept {
     return RuntimeMetricsSample::fresh(metrics);
@@ -56,11 +71,12 @@ static_assert(::crucible::concurrent::SnapshotValue<RuntimeMetricsSample>);
     return RuntimeMetricsSample::at(metrics, staleness);
 }
 
-[[nodiscard]] inline RuntimeMetricsWriter
-mint_metrics_writer(RuntimeMetricsChannel& channel,
-                    ::crucible::safety::Permission<RuntimeMetricsWriterTag>&& permission) noexcept {
-    return ::crucible::safety::proto::swmr_session::mint_swmr_writer<RuntimeMetricsChannel>(channel,
-                                                                                            std::move(permission));
+template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
+[[nodiscard]] constexpr RuntimeMetricsWriter<ReaderBrand, WriterBrand>
+mint_metrics_writer(RuntimeMetricsChannel<ReaderBrand>& channel,
+                    ::foundation::permissions::Permission<RuntimeMetricsWriterTag, WriterBrand>&& permission) noexcept {
+    return ::fixy::concurrent::swmr_session::mint_swmr_writer<RuntimeMetricsChannel<ReaderBrand>>(channel,
+                                                                                                  std::move(permission));
 }
 
 // Two consumers read this channel. The Keeper acts on a sample: it
@@ -75,13 +91,14 @@ mint_metrics_writer(RuntimeMetricsChannel& channel,
 // hold the same share, so the wrapper adds no state and no work; what
 // it adds is that KeeperMetricsReader and CanopyMetricsReader are
 // distinct types and do not convert.
-template <typename Role>
+template <typename Role, ::foundation::brand::IsBrand ReaderBrand>
 class RuntimeMetricsRoleReader final {
 public:
     using role_type = Role;
     using value_type = RuntimeMetricsSample;
 
-    explicit RuntimeMetricsRoleReader(RuntimeMetricsReader&& handle) noexcept : handle_{std::move(handle)} {}
+    explicit RuntimeMetricsRoleReader(RuntimeMetricsReader<ReaderBrand>&& handle) noexcept
+        : handle_{std::move(handle)} {}
 
     RuntimeMetricsRoleReader(RuntimeMetricsRoleReader const&) =
         delete("a metrics reader owns one SharedPermissionPool share");
@@ -96,35 +113,45 @@ public:
     [[nodiscard]] std::uint64_t version() const noexcept { return handle_.version(); }
 
 private:
-    RuntimeMetricsReader handle_;
+    RuntimeMetricsReader<ReaderBrand> handle_;
 };
 
 struct KeeperMetricsRole {};
 struct CanopyMetricsRole {};
 
-using KeeperMetricsReader = RuntimeMetricsRoleReader<KeeperMetricsRole>;
-using CanopyMetricsReader = RuntimeMetricsRoleReader<CanopyMetricsRole>;
+template <::foundation::brand::IsBrand ReaderBrand>
+using KeeperMetricsReader = RuntimeMetricsRoleReader<KeeperMetricsRole, ReaderBrand>;
+template <::foundation::brand::IsBrand ReaderBrand>
+using CanopyMetricsReader = RuntimeMetricsRoleReader<CanopyMetricsRole, ReaderBrand>;
+
+namespace detail::metrics_self_test {
+
+struct probe_brand {};
 
 // The whole point of the split: neither role converts to the other, so
-// the two mint names below now differ in what they hand back.
-static_assert(!std::is_same_v<KeeperMetricsReader, CanopyMetricsReader>);
-static_assert(!std::is_convertible_v<KeeperMetricsReader, CanopyMetricsReader>);
-static_assert(!std::is_convertible_v<CanopyMetricsReader, KeeperMetricsReader>);
-static_assert(sizeof(KeeperMetricsReader) == sizeof(RuntimeMetricsReader),
+// the two mint names below differ in what they hand back.
+static_assert(!std::is_same_v<KeeperMetricsReader<probe_brand>, CanopyMetricsReader<probe_brand>>);
+static_assert(!std::is_convertible_v<KeeperMetricsReader<probe_brand>, CanopyMetricsReader<probe_brand>>);
+static_assert(!std::is_convertible_v<CanopyMetricsReader<probe_brand>, KeeperMetricsReader<probe_brand>>);
+static_assert(sizeof(KeeperMetricsReader<probe_brand>) == sizeof(RuntimeMetricsReader<probe_brand>),
               "the role is a type-level marker; it must not cost a byte.");
 
-[[nodiscard]] inline std::optional<KeeperMetricsReader>
-mint_keeper_metrics_reader(RuntimeMetricsChannel& channel) noexcept {
-    auto handle = ::crucible::safety::proto::swmr_session::mint_swmr_reader<RuntimeMetricsChannel>(channel);
+}  // namespace detail::metrics_self_test
+
+template <::foundation::brand::IsBrand ReaderBrand>
+[[nodiscard]] std::optional<KeeperMetricsReader<ReaderBrand>>
+mint_keeper_metrics_reader(RuntimeMetricsChannel<ReaderBrand>& channel) noexcept {
+    auto handle = ::fixy::concurrent::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand>>(channel);
     if (!handle) return std::nullopt;
-    return KeeperMetricsReader{std::move(*handle)};
+    return KeeperMetricsReader<ReaderBrand>{std::move(*handle)};
 }
 
-[[nodiscard]] inline std::optional<CanopyMetricsReader>
-mint_canopy_metrics_reader(RuntimeMetricsChannel& channel) noexcept {
-    auto handle = ::crucible::safety::proto::swmr_session::mint_swmr_reader<RuntimeMetricsChannel>(channel);
+template <::foundation::brand::IsBrand ReaderBrand>
+[[nodiscard]] std::optional<CanopyMetricsReader<ReaderBrand>>
+mint_canopy_metrics_reader(RuntimeMetricsChannel<ReaderBrand>& channel) noexcept {
+    auto handle = ::fixy::concurrent::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand>>(channel);
     if (!handle) return std::nullopt;
-    return CanopyMetricsReader{std::move(*handle)};
+    return CanopyMetricsReader<ReaderBrand>{std::move(*handle)};
 }
 
 }  // namespace crucible::observe

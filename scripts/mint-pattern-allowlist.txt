@@ -176,7 +176,6 @@ include/fixy/concurrent/SwmrSession.h:mint_swmr_reader:constexpr-ok
 # ── observe/ + perf/ eBPF / perf-event allocating mints ──────────────
 include/crucible/observe/Metrics.h:mint_canopy_metrics_reader:constexpr-ok
 include/crucible/observe/Metrics.h:mint_keeper_metrics_reader:constexpr-ok
-include/crucible/observe/Metrics.h:mint_metrics_writer:constexpr-ok
 include/crucible/observe/SdcDetect.h:mint_sdc_detector:constexpr-ok
 include/crucible/observe/SyntheticProbe.h:mint_synthetic_probes:constexpr-ok
 

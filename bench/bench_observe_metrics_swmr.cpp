@@ -1,5 +1,6 @@
-#include <crucible/permissions/_Permission.h>
 #include <crucible/observe/Metrics.h>
+#include <foundation/Brand.h>
+#include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
 
@@ -8,15 +9,20 @@
 #include <utility>
 
 namespace observe = ::crucible::observe;
-namespace safety = ::crucible::safety;
+namespace perm = ::foundation::permissions;
+
+namespace {
+[[nodiscard]] auto metrics_reader_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsReaderTag>(); }
+using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(metrics_reader_root())>>;
+}  // namespace
 
 int main() {
     observe::RuntimeMetrics metrics{};
     metrics.delta_g_count = 1;
     metrics.delta_g[0] = 1.0;
 
-    observe::RuntimeMetricsChannel channel{observe::fresh_metrics_sample(metrics)};
-    auto writer_perm = safety::mint_permission_root<observe::RuntimeMetricsWriterTag>();
+    Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(metrics)};
+    auto writer_perm = perm::mint_permission_root<observe::RuntimeMetricsWriterTag>();
     auto writer = observe::mint_metrics_writer(channel, std::move(writer_perm));
     auto reader = observe::mint_keeper_metrics_reader(channel);
     if (!reader) {

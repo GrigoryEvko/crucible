@@ -5,13 +5,22 @@
 // cannot become the writer of the metrics channel.
 
 #include <crucible/observe/Metrics.h>
-#include <crucible/permissions/_Permission.h>
+#include <foundation/Brand.h>
+#include <foundation/permissions/Permission.h>
 
 #include <utility>
 
+namespace {
+[[nodiscard]] auto reader_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<crucible::observe::RuntimeMetricsReaderTag>();
+}
+}  // namespace
+
 int main() {
-    crucible::observe::RuntimeMetricsChannel channel;
-    auto reader_permission = crucible::safety::mint_permission_root<crucible::observe::RuntimeMetricsReaderTag>();
+    crucible::observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(reader_root())>> channel{
+        reader_root()};
+    auto reader_permission =
+        ::foundation::permissions::mint_permission_root<crucible::observe::RuntimeMetricsReaderTag>();
     auto writer = crucible::observe::mint_metrics_writer(channel, std::move(reader_permission));
     (void)writer;
     return 0;
