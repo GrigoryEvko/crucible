@@ -25,7 +25,6 @@ include/fixy/concurrent/PermissionedMpscChannel.h	6
 include/fixy/concurrent/PermissionedSpscChannel.h	8
 include/fixy/os/Mmap.h	1
 include/fixy/os/NumaPlacement.h	1
-include/fixy/os/SpinLock.h	4
 include/fixy/session/Handle.h	2
 include/fixy/session/Payload.h	24
 include/foundation/effects/Computation.h	3

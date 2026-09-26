@@ -709,7 +709,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::canonical_order, kMachinery},
     {^^::fixy::canonical_order::layer, "the names of the layers of the canonical wrapper order: a position is read "
                                        "from each name at compile time, and none of them is a value"},
-    {^^::fixy::spin::spinlock_size_probe_, "a layout probe for a static assertion"},
+    {^^::fixy::spin::gate_size_probe_, "a layout probe for a static assertion"},
     {^^::fixy::federation, "the words, the handshake and the replay window of the federation door, and the tag of "
                            "the local cipher: runtime values and a tag that carry no grade; the peer token that the "
                            "door admits is the carrier, and it folds"},
@@ -961,8 +961,8 @@ inline constexpr CarrierWitness kCarriers[] = {
      ^^::fixy::handle::LazyEstablishedChannel<::fixy::session::End, LazyChannelWire>},
 
     {^^::fixy::sched::SchedPriority, ^^::fixy::sched::SchedPriority<0>},
-    {^^::fixy::spin::SpinLock, ^^::fixy::spin::SpinLock<PureRegionTag>},
-    {^^::fixy::spin::SpinGuard, ^^::fixy::spin::SpinGuard<PureRegionTag>},
+    {^^::fixy::spin::Gate, ^^::fixy::spin::SpinLock<PureRegionTag>},
+    {^^::fixy::spin::GateGuard, ^^::fixy::spin::SpinGuard<PureRegionTag>},
     {^^::fixy::cipher::durable::CipherDurableHandle,
      ^^::fixy::cipher::durable::CipherDurableHandle<::fixy::cipher::durable::warm_writer_stance>},
 };
@@ -1311,6 +1311,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::fp::ReduceResult, kPayload},
 
     {^^::fixy::spin::UnwitnessedSpinLock, kDescriptor},
+    {^^::fixy::spin::UnwitnessedBlockingLock, kDescriptor},
     {^^::fixy::time::ClockReader, kFactory},
     {^^::fixy::time::TscReader, kFactory},
     {^^::fixy::time::PtpClockReader, kFactory},
