@@ -164,7 +164,6 @@ include/crucible/mimic/CogMimic.h
 include/crucible/mimic/Semaphore.h
 include/crucible/mimic/_wip/network/Backend.h
 include/crucible/observe/Metrics.h
-include/crucible/observe/Observation.h
 include/crucible/observe/SdcDetect.h
 include/crucible/observe/SyntheticProbe.h
 include/crucible/perf/LockContention.h
