@@ -1443,7 +1443,6 @@ file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/two_tree/every_substrate_heade
 crucible_test(test_two_tree_coexistence)
 target_include_directories(test_two_tree_coexistence PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/two_tree)
 
-crucible_test(test_diag_runtime)
 crucible_test(test_diag_json_emitter)
 crucible_test(test_vessel_api_typed)
 crucible_test(test_graded_wrapper_gate)

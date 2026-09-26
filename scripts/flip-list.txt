@@ -137,7 +137,6 @@ include/crucible/topology/Telemetry.h
 include/crucible/topology/TopologyGraph.h
 include/crucible/warden/DeadlineWatchdog.h
 include/crucible/warden/Quarantine.h
-src/_DiagRuntime.cpp
 src/cntp/RoceConfig.cpp
 src/cog/NicOffloadAudit.cpp
 src/cog/NumaNic.cpp
