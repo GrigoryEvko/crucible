@@ -1,8 +1,10 @@
 #pragma once
 
 #include <crucible/Types.h>
-#include <crucible/fixy/_Source.h>
-#include <crucible/fixy/Wrap.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 #include <cstdint>
 #include <string>
@@ -17,21 +19,23 @@ struct CallSiteTable {
     // A line number of zero is the unset marker, so the bound is at least
     // zero rather than strictly positive. A negative value can only come from
     // corrupted data.
-    using Lineno = ::crucible::fixy::wrap::NonNegative<int32_t>;
+    using Lineno = ::fixy::NonNegative<int32_t>;
 
-    // Whatever tag a string arrived under, it is stored under this one. A
-    // reader therefore cannot hand a stored string back to something that
-    // wants an unvalidated one, and the two tags do not convert.
-    using SanitizedName = ::crucible::fixy::wrap::Tagged<std::string, ::crucible::fixy::tags::source::Sanitized>;
+    // The table keeps one copy of each name for each hash, whichever caller
+    // wrote it first, so a stored name claims Interned and neither tag of its
+    // caller.  Nothing here sanitizes a name, so a stored name does not claim
+    // Sanitized.  No retag leaves Interned, so a reader cannot hand a stored
+    // name back to something that wants an External or an internal name.
+    using InternedName = ::fixy::Tagged<std::string, ::fixy::tags::source::Interned>;
 
     struct Entry {
         CallsiteHash hash;
-        SanitizedName filename;
-        SanitizedName funcname;
-        Lineno lineno{int32_t{0}};
+        InternedName filename;
+        InternedName funcname;
+        Lineno lineno = ::fixy::mint_refined<::fixy::non_negative>(int32_t{0});
     };
 
-    ::crucible::fixy::wrap::AppendOnly<Entry> entries;
+    ::fixy::AppendOnly<Entry> entries = ::fixy::mint_append_only<Entry>();
 
     // An open-addressed set of the hashes seen so far. A zero hash marks an
     // empty slot.
@@ -54,7 +58,7 @@ struct CallSiteTable {
 
     // The parameter type carries the not-the-empty-marker invariant, so the
     // body below needs no check of its own.
-    using NonZeroHash = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::non_zero, CallsiteHash>;
+    using NonZeroHash = ::fixy::NonZero<CallsiteHash>;
 
     void insert(NonZeroHash hash_nz, std::string filename, std::string funcname, int32_t lineno) {
         const CallsiteHash hash = hash_nz.value();
@@ -64,10 +68,11 @@ struct CallSiteTable {
             auto& h = seen[(idx + p) & SET_MASK];
             if (h == CallsiteHash{}) {
                 h = hash;
-                // This is where the line number is checked: the wrapper's
-                // construction is the guard.
-                entries.emplace(hash, SanitizedName{std::move(filename)}, SanitizedName{std::move(funcname)},
-                                Lineno{lineno});
+                // This is where the line number is checked: the checked mint
+                // of the wrapper is the guard.
+                entries.emplace(hash, ::fixy::mint_tagged<::fixy::tags::source::Interned>(std::move(filename)),
+                                ::fixy::mint_tagged<::fixy::tags::source::Interned>(std::move(funcname)),
+                                ::fixy::mint_refined<::fixy::non_negative>(lineno));
                 return;
             }
         }
@@ -77,8 +82,8 @@ struct CallSiteTable {
     // ever prints these strings in diagnostics and never opens them as paths
     // or passes them to a shell, so the tag records where a string came from
     // rather than gating what may be done with it.
-    using ExternalName = ::crucible::fixy::wrap::Tagged<std::string, ::crucible::fixy::tags::source::External>;
-    using InternalName = ::crucible::fixy::wrap::Tagged<std::string, ::crucible::fixy::tags::source::FromInternal>;
+    using ExternalName = ::fixy::Tagged<std::string, ::fixy::tags::source::External>;
+    using InternalName = ::fixy::Tagged<std::string, ::fixy::tags::source::FromInternal>;
 
     void insert(NonZeroHash hash_nz, ExternalName filename, ExternalName funcname, int32_t lineno) {
         insert(hash_nz, std::move(filename).into(), std::move(funcname).into(), lineno);

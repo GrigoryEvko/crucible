@@ -5927,36 +5927,36 @@ crucible_neg_compile_multi_test(neg_iter_det_match_pos_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<4>\\(\\), unsigned char>\\(255\\)")
 
-# WRAP-CallSite-2 (#880) — CallSiteTable::Lineno = NonNegative<int32_t>
-# = Refined<non_negative, int32_t>; constructing Lineno{< 0} in
-# constexpr context drives the non_negative(v) pre-clause through
-# constant evaluation.  Two fixtures per HS14:
-#   * _negative — boundary edge (-1 = 0 - 1), catches off-by-one drift
-#     ("positive" instead of "non_negative", admits -1 if comparison
-#     becomes "x > -1").
-#   * _int_min — wide miss (INT32_MIN), catches "lost sign-bit" where
-#     unsigned counter narrows to int32_t and predicate is too narrow
-#     (e.g., `x != -1` instead of `x >= 0`).
-crucible_neg_compile_test(neg_call_site_lineno_negative
-  "contract|non_negative|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_call_site_lineno_int_min
-  "contract|non_negative|not a constant|non-constant|constexpr")
+# CallSiteTable::Lineno is fixy::NonNegative<int32_t>, and the checked
+# mint is its only door.  The two fixtures give the mint -1, the largest
+# refused value, and the smallest int32_t.  The second regex names the
+# mint, its predicate and the refused value.
+crucible_neg_compile_multi_test(neg_call_site_lineno_negative
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsNonNegative\\(\\), int>\\(-1\\)")
+crucible_neg_compile_multi_test(neg_call_site_lineno_int_min
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsNonNegative\\(\\), int>\\(std::numeric_limits<int>::min\\(\\)\\)")
 
-# WRAP-CallSite-3 (#881) — CallSiteTable::Entry::filename / funcname
-# migrated from raw std::string to safety::Tagged<std::string,
-# source::Sanitized>.  Two HS14 fixtures cover the soundness gate's
-# two directions:
-#   * neg_call_site_filename_raw_string — WRITE-side gate (Tagged's
-#     `explicit Tagged(T)` ctor rejects aggregate-init from a raw
-#     std::string).
-#   * neg_call_site_filename_external_passback — READ-side gate
-#     (Tagged<T,Sanitized> does not implicitly convert to
-#     Tagged<T,External>; the trust-elevation is one-way through
-#     insert()).
-crucible_neg_compile_test(neg_call_site_filename_raw_string
-  "no match for|cannot convert|no viable|could not convert|narrowing|Tagged|explicit")
-crucible_neg_compile_test(neg_call_site_filename_external_passback
-  "no match for|cannot convert|no viable|could not convert|Tagged|External|Sanitized")
+# CallSiteTable::Entry stores its filename and funcname as InternedName,
+# a fixy::Tagged<std::string, source::Interned>.  The table keeps one copy
+# for each hash and runs no sanitizer, so a stored name claims neither the
+# tag of its caller nor Sanitized.  Three fixtures:
+#   * _filename_raw_string: an Entry cannot hold a raw std::string, since
+#     the constructor of Tagged is private and mint_tagged is its door.
+#   * _filename_external_passback: a stored name does not convert to an
+#     External name.
+#   * _interned_name_to_sanitized: no retag edge leaves Interned, so a
+#     stored name, which can hold External bytes, never becomes Sanitized.
+crucible_neg_compile_multi_test(neg_call_site_filename_raw_string
+  "could not convert .* to .crucible::CallSiteTable::InternedName. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::Interned>.\\}"
+  "fixy/Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
+crucible_neg_compile_multi_test(neg_call_site_filename_external_passback
+  "invalid initialization of reference of type .const ExternalName&. .*from expression of type .const crucible::CallSiteTable::InternedName."
+  "in passing argument 1 of .void wants_external_only\\(const ExternalName&\\).")
+crucible_neg_compile_multi_test(neg_call_site_interned_name_to_sanitized
+  "no matching function for call to .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::Interned>::retag<fixy::tags::source::Sanitized>\\(\\)."
+  "required for the satisfaction of .RetagAllowed<Tag, NewTag>. \\[with Tag = fixy::tags::source::Interned. NewTag = fixy::tags::source::Sanitized\\]")
 
 # IterationDetector::SignatureLen is the fixy BoundedMonotonic<uint32_t,
 # K = 5>.  Its constructor, reached only through mint_bounded_monotonic,

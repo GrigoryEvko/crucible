@@ -37,11 +37,11 @@
 //      table must never "remember" it.
 //
 //   7. Tagged-string discipline — inserts go through ExternalName, the
-//      source::External Tagged<std::string> overload, mirroring the
-//      production path where Python frame metadata arrives untrusted.
-//      Compiles only if the overload resolution picks the Tagged form;
-//      a regression that drops or breaks the overload would surface
-//      here as a build failure rather than silent truncation.
+//      source::External Tagged<std::string> overload, which is the path
+//      for frame metadata that arrives untrusted from Python.  It compiles
+//      only if overload resolution picks the tagged form.  The entry keeps
+//      the bytes under source::Interned, never under Sanitized, because
+//      the table runs no sanitizer.
 //
 // Bug classes caught:
 //
@@ -55,9 +55,9 @@
 //     emplaced on dedup — any of these would desync with seen[]).
 //   - Dedup-on-hash vs dedup-on-payload confusion (the table is keyed
 //     on hash; same hash + different file/func/line must still dedupe).
-//   - Refined<non_zero, CallsiteHash> contract regressions: zero
-//     sentinel slipping through the compat overload into the typed
-//     insert path.  UBSan + the Refined pre() would fire immediately.
+//   - Refined<non_zero, CallsiteHash> regressions: a zero sentinel that
+//     reaches the insert path.  The checked mint of NonZeroHash is the
+//     only door, and its precondition fires on zero.
 //
 // Strategy:
 //   - Per iteration, generate 48 (hash, filename, funcname, lineno)
@@ -83,7 +83,9 @@
 
 #include <crucible/CallSiteTable.h>
 #include <crucible/Types.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 #include <array>
 #include <cstdint>
@@ -178,18 +180,17 @@ int main(int argc, char** argv) {
 
             // ── Insert phase, via the source::External Tagged overload.
             //
-            // Production callers (Vessel FFI) pass ExternalName because
-            // Python frame metadata is untrusted.  Exercising the same
-            // path here catches overload-resolution regressions that
-            // would otherwise silently fall through to the untagged
-            // insert.  The NonZeroHash Refined construction fires
-            // a contract on zero — our generator has excluded zero,
-            // so this is a no-op at runtime on the happy path.
+            // Python frame metadata is untrusted, so it arrives as an
+            // ExternalName.  Going through that path here catches an
+            // overload-resolution regression that falls through to the
+            // untagged insert.  The checked mint of NonZeroHash fires on
+            // zero, and the generator excludes zero, so it never fires
+            // here.
             for (unsigned i = 0; i < b.count; ++i) {
                 const CallsiteHash h{b.recs[i].hash_raw};
-                CallSiteTable::NonZeroHash nz{h};
-                CallSiteTable::ExternalName fn{b.recs[i].filename};
-                CallSiteTable::ExternalName gn{b.recs[i].funcname};
+                CallSiteTable::NonZeroHash nz = ::fixy::mint_refined<::fixy::non_zero>(h);
+                CallSiteTable::ExternalName fn = ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].filename);
+                CallSiteTable::ExternalName gn = ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].funcname);
                 t.insert(std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno);
             }
 
@@ -219,9 +220,9 @@ int main(int argc, char** argv) {
             //    whole purpose is dedup.
             for (unsigned i = 0; i < b.count; ++i) {
                 const CallsiteHash h{b.recs[i].hash_raw};
-                CallSiteTable::NonZeroHash nz{h};
-                CallSiteTable::ExternalName fn{std::string{"OVERWRITTEN"}};
-                CallSiteTable::ExternalName gn{std::string{"ATTEMPT"}};
+                CallSiteTable::NonZeroHash nz = ::fixy::mint_refined<::fixy::non_zero>(h);
+                CallSiteTable::ExternalName fn = ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"OVERWRITTEN"});
+                CallSiteTable::ExternalName gn = ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"ATTEMPT"});
                 t.insert(std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno + 777);
             }
             if (t.size() != b.count) return false;
@@ -233,16 +234,11 @@ int main(int argc, char** argv) {
             }
 
             // Property (sentinel rejection): has(CallsiteHash{}) is
-            // always false.  The legacy bare-CallsiteHash compat
-            // overload that tolerated a zero argument by early-return
-            // was removed in production (cleanup 7844f8c4); the only
-            // surviving insert paths take NonZeroHash, whose Refined
-            // <non_zero, CallsiteHash> ctor fires the contract on a
-            // zero raw.  The zero sentinel therefore cannot reach any
-            // insert path by construction — the strongest form of the
-            // invariant.  We assert the read-side guarantee both before
-            // and after the dedup phase: the table never "remembers"
-            // the empty-slot marker, and size() is unchanged.
+            // always false.  Every insert path takes a NonZeroHash, and
+            // its checked mint fires on a zero raw, so the zero sentinel
+            // cannot reach an insert path.  The read side holds after
+            // the dedup phase too: the table never remembers the
+            // empty-slot marker, and size() does not change.
             if (t.has(CallsiteHash{})) return false;
             if (t.size() != b.count) return false;
 

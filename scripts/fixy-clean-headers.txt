@@ -44,6 +44,7 @@
 #     permission mints move to the new tree.
 #
 include/crucible/CKernel.h
+include/crucible/CallSiteTable.h
 include/crucible/Cipher.h
 include/crucible/CostModel.h
 include/crucible/DimHash.h
