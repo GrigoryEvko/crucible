@@ -339,11 +339,6 @@ jobs:
           python3 scripts/check-derived-pins.py --self-test
           python3 scripts/check-derived-pins.py
 
-      - name: syscall allowlist prose (self-test + scan)
-        run: |
-          bash scripts/check-syscall-allowlist-prose.sh --self-test
-          bash scripts/check-syscall-allowlist-prose.sh
-
       - name: flip list of old-substrate consumers (self-test + scan)
         run: |
           python3 scripts/check-flip-list.py --self-test

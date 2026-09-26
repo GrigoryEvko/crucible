@@ -896,7 +896,9 @@ set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
 # `// SYSCALL-CAP-OK: <reason>` comment in its statement or an entry in
 # scripts/syscall-capability-allowlist.txt with its effects::* capability
 # claim.  scripts/check-syscall-capability.py reads the calls from the
-# parse tree, and an entry that matches no live call is stale.  Exit 3
+# parse tree, and an entry that matches no live call is stale.  The guard
+# also holds the prose of each entry to its sites: the syscall, the
+# constants the file spells, and the function that holds each call.  Exit 3
 # when the kit is absent reports a skip.
 add_test(NAME syscall_capability_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.py
@@ -14950,10 +14952,6 @@ crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_hot_fg_reject
 #                    `layers` CI job checks out full history and enforces.
 #   derived_pins   — a cardinality static_assert must have a derived
 #                    operand; a literal pinned to itself cannot fire.
-#
-# syscall_allowlist_prose is the companion of syscall_capability: it holds
-# each allowlist sentence to the code the entry names.  It existed without
-# a runner; it runs here now.
 add_test(NAME layer_boundary_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.py --self-test)
 add_test(NAME layer_boundary
@@ -14979,12 +14977,6 @@ add_test(NAME derived_pins
 set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
     LABELS "ci_guard;stage-A1"
     SKIP_RETURN_CODE 3)
-add_test(NAME syscall_allowlist_prose_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-allowlist-prose.sh --self-test)
-add_test(NAME syscall_allowlist_prose
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-allowlist-prose.sh)
-set_tests_properties(syscall_allowlist_prose syscall_allowlist_prose_self_test PROPERTIES
-    LABELS "ci_guard;stage-A1")
 
 # flip_list holds the drain of the old substrate's consumers.  Every file
 # under the scan roots that names the frozen tree is on scripts/flip-list.txt,

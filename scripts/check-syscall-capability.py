@@ -6,11 +6,28 @@ code (include/, src/ and vessel/) either carries a `// SYSCALL-CAP-OK: <reason>`
 comment in its statement or has an entry in
 scripts/syscall-capability-allowlist.txt.  Each entry is
 
-    path:<call text>  — <effects::* capability claim>
+    path:<call text>  — <effects::* capability claim> via <function> (<note>)
 
-where <call text> is the line that holds the syscall name, cut at its first
-`//` and trimmed.  The key is the content of the line, so an edit above the
+where <call text> is the line that holds the syscall name, with each comment
+node on it removed, trimmed (tsast.site_key).  A `//` inside a string literal
+stays in the key.  The key is the content of the line, so an edit above the
 call does not move it.  An entry that matches no live site is stale.
+
+THE PROSE
+    The text after the em dash is the audit surface, so the guard holds it
+    to the code of the sites that the key names:
+      * (B) It names a syscall that one of the sites calls.  For
+        `::syscall(SYS_x, ...)` that is x, read from the call node, so the
+        number can sit on a later line than the key.
+      * (C) Each SHOUTING_SNAKE word in it is an identifier node or a macro
+        token of that file.  A word that only a comment holds does not count.
+      * (D) It has a `via <name>` clause, with more names joined by `and`.
+        Each site sits in a function whose namespaces, classes and name end
+        with one of the names, and each name holds a site.  Template
+        arguments in a name are ignored.  A macro body counts as a function
+        named after the macro.
+    The guard does not judge the effects::* claim itself.  That needs the
+    type system.
 
 THE SITES
     The guard reads the parse tree of the pinned tree-sitter kit.  A site is
@@ -33,8 +50,9 @@ Usage:
   check-syscall-capability.py --emit-keys  print a template entry for each unlisted site
   check-syscall-capability.py --self-test  plant each shape and prove the verdicts
 
-Exit 0 clean, 1 on a violation or a parse failure, 2 on a stale entry, a
-usage error or a failed self-test, 3 when the kit is not installed.
+Exit 0 clean, 1 on a violation, a false prose or a parse failure, 2 on a
+stale entry, a dead marker, a usage error or a failed self-test, 3 when the
+kit is not installed.
 """
 
 from __future__ import annotations
@@ -92,16 +110,31 @@ LEXICAL = re.compile(r"(?<![A-Za-z_0-9])::\s*(?P<global>[A-Za-z_]\w*)\s*\("
 # The statements that bound where a marker comment counts.
 STATEMENTS = frozenset({"expression_statement", "return_statement", "declaration", "field_declaration",
                         "condition_clause", "init_statement", "for_range_loop", "throw_statement"})
+# The node types whose text is one name, for the SHOUTING_SNAKE check.
+NAME_LEAVES = ("identifier", "field_identifier", "type_identifier", "namespace_identifier",
+               "statement_identifier")
+SHOUT = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
+# One part of a C++ name as prose writes it: an operator, a destructor or a
+# name, then an optional template argument list with one level of nesting.
+_PART = r"(?:operator\s*(?:\(\)|\[\]|[^\s\w(]+)|~?[A-Za-z_]\w*)(?:\s*<[^<>]*(?:<[^<>]*>[^<>]*)*>)?"
+_NAME = rf"(?:::)?{_PART}(?:::{_PART})*"
+VIA = re.compile(rf"\bvia\s+({_NAME}(?:\s+and\s+{_NAME})*)")
+TEMPLATE_ARGUMENTS = re.compile(r"<[^<>]*>")
 
 
 @dataclass(frozen=True)
 class Site:
-    """One syscall call."""
+    """The syscall calls on one line.
+
+    holders holds, for each call, the namespaces, the classes and the name
+    parts of the function that holds it, or () for a call in no function.
+    """
 
     path: str
     line: int
     key: str
     names: frozenset[str]
+    holders: frozenset[tuple[str, ...]]
 
 
 def in_scope(rel: Path) -> bool:
@@ -167,22 +200,27 @@ def lexical_names(text: str) -> list[tuple[int, str]]:
     return found
 
 
-def key_of(lines: list[bytes], comments: list[tsast.Node], row: int) -> str:
-    """Return the content key of one row: its text with each comment node on it removed, trimmed.
+def holder_of(node: tsast.Node) -> tuple[str, ...]:
+    """Return the namespaces, classes and name parts of the function that holds a node.
 
-    A `//` inside a string literal is text, not a comment, so it stays in the
-    key.  Columns are byte offsets, as the parser reports them.
+    An anonymous namespace has no name that prose can write, so it is left
+    out.  A node in no function gives ().
     """
-    line = lines[row]
-    cuts = sorted((comment.start[1] if comment.start[0] == row else 0,
-                   comment.end[1] if comment.end[0] == row else len(line))
-                  for comment in comments if comment.start[0] <= row <= comment.end[0])
-    kept, position = bytearray(), 0
-    for first, last in cuts:
-        kept += line[position:max(position, first)]
-        position = max(position, last)
-    kept += line[position:]
-    return kept.decode("utf-8", "replace").strip()
+    function = tsast.enclosing_function(node)
+    if function is None:
+        return ()
+    return tuple(part for part in tsast.namespace_path(node) if part) + function
+
+
+def file_words(tree: tsast.Tree) -> frozenset[str]:
+    """Return each name that a file spells in code: the name nodes and the identifier tokens of its macro bodies.
+
+    Complexity: linear in the size of the file.
+    """
+    words = {node.text for node in tree.find(*NAME_LEAVES)}
+    for body in tree.find("preproc_arg"):
+        words.update(token.text for token in tsast.pp_tokens(body.text) if token.kind == "identifier")
+    return frozenset(words)
 
 
 def syscall_numbers(call: tsast.Node) -> set[str]:
@@ -201,7 +239,21 @@ class Marker:
     line: int
 
 
-def scan(root: Path) -> tuple[list[Site], list[str], list[Marker]]:
+@dataclass
+class Scan:
+    """What one scan finds.
+
+    words maps each file that holds an unmarked site to file_words() of it,
+    for the prose check.
+    """
+
+    sites: list[Site]
+    failures: list[str]
+    dead: list[Marker]
+    words: dict[str, frozenset[str]]
+
+
+def scan(root: Path) -> Scan:
     """Find every unmarked syscall site and every dead marker under a scan root.
 
     Complexity: linear in the total size of the files in scope.
@@ -210,19 +262,19 @@ def scan(root: Path) -> tuple[list[Site], list[str], list[Marker]]:
         root: The scan root
 
     Returns:
-        The unmarked sites, each parse failure, and each marker that exempts no site
+        The unmarked sites, each parse failure, each marker that exempts no
+        site, and the names that each file with a site spells
     """
-    sites: list[Site] = []
-    failures: list[str] = []
-    dead: list[Marker] = []
+    found = Scan([], [], [], {})
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
+            found.failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
-        # row -> syscall names, and row -> the rows its marker may sit on
+        # row -> syscall names, row -> the rows its marker may sit on, row -> the holders of its calls
         hits: dict[int, set[str]] = {}
         spans: dict[int, list[tuple[int, int]]] = {}
+        holders: dict[int, set[tuple[str, ...]]] = {}
         for call in tree.find("call_expression"):
             name = callee_name(call)
             if name is None:
@@ -234,40 +286,107 @@ def scan(root: Path) -> tuple[list[Site], list[str], list[Marker]]:
             else:
                 hits.setdefault(row, set()).add(name)
             spans.setdefault(row, []).append(statement_rows(call))
+            holders.setdefault(row, set()).add(holder_of(call))
         for body in tree.find("preproc_arg"):
+            macro = body.parent.child_by_field("name") if body.parent is not None else None
             for row, name in lexical_names(body.text):
                 hits.setdefault(body.start[0] + row, set()).add(name)
                 spans.setdefault(body.start[0] + row, []).append((body.start[0], body.end[0]))
-        comments = list(tree.find("comment"))
-        lines = tree.source.split(b"\n")
+                holders.setdefault(body.start[0] + row, set()).add(() if macro is None else (macro.text,))
         markers: dict[int, list[tsast.Node]] = {}
-        for comment in comments:
+        for comment in tree.find("comment"):
             if MARKER_WORD in comment.text:
                 markers.setdefault(comment.start[0], []).append(comment)
         used: set[int] = set()
+        before = len(found.sites)
         for row in sorted(hits):
             covering = [comment for first, last in spans[row] for probe in range(first, last + 1)
                         for comment in markers.get(probe, ())]
             used.update(comment.index for comment in covering)
             if not any(MARKER.search(comment.text) for comment in covering):
-                sites.append(Site(rel, row + 1, f"{rel}:{key_of(lines, comments, row)}", frozenset(hits[row])))
-        dead.extend(Marker(rel, comment.line) for row in sorted(markers) for comment in markers[row]
-                    if comment.index not in used)
-    return sites, failures, dead
+                found.sites.append(Site(rel, row + 1, f"{rel}:{tsast.site_key(tree, row)}", frozenset(hits[row]),
+                                        frozenset(holders[row])))
+        found.dead.extend(Marker(rel, comment.line) for row in sorted(markers) for comment in markers[row]
+                          if comment.index not in used)
+        if len(found.sites) > before:
+            found.words[rel] = file_words(tree)
+    return found
 
 
-def allowlist_keys(path: Path) -> list[str]:
-    """Return the key of each allowlist entry: the text before the em dash, trimmed."""
+def allowlist_entries(path: Path) -> list[tuple[str, str]]:
+    """Return (key, prose) for each allowlist entry: the text before the first em dash, trimmed, and the rest."""
     if not path.is_file():
         return []
-    keys = []
+    entries = []
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith("#"):
-            key = stripped.split("—", 1)[0].rstrip()
-            if key:
-                keys.append(key)
-    return keys
+            key, _, prose = stripped.partition("—")
+            if key.rstrip():
+                entries.append((key.rstrip(), prose.strip()))
+    return entries
+
+
+def via_names(prose: str) -> list[tuple[str, ...]]:
+    """Return the parts of each name that a `via` clause of the prose gives, template arguments removed."""
+    names = []
+    for clause in VIA.finditer(prose):
+        for spelled in re.split(r"\s+and\s+", clause.group(1)):
+            bare = spelled
+            while TEMPLATE_ARGUMENTS.search(bare):
+                bare = TEMPLATE_ARGUMENTS.sub("", bare)
+            names.append(tuple(part for part in "".join(bare.split()).split("::") if part))
+    return names
+
+
+def ends_with(holder: tuple[str, ...], name: tuple[str, ...]) -> bool:
+    """Say whether the parts of a holder end with the parts of a name."""
+    return 0 < len(name) <= len(holder) and holder[-len(name):] == name
+
+
+def prose_findings(entries: list[tuple[str, str]], found: Scan) -> list[str]:
+    """Hold the prose of each live entry to the sites its key names.
+
+    Complexity: O(E * S) for E entries and S sites of one key, both small.
+
+    Args:
+        entries: The (key, prose) pairs of the allowlist
+        found: The scan
+
+    Returns:
+        One line for each false statement.  A stale entry gives none: the
+        stale check reports it.
+    """
+    by_key: dict[str, list[Site]] = {}
+    for site in found.sites:
+        by_key.setdefault(site.key, []).append(site)
+    findings: list[str] = []
+    for key, prose in entries:
+        live = by_key.get(key)
+        if not live:
+            continue
+        path = live[0].path
+        called = set().union(*(site.names for site in live)) - {"syscall"}
+        if called and not any(re.search(rf"(?<![A-Za-z_0-9]){re.escape(name)}", prose) for name in called):
+            findings.append(f"{key} — the prose names no syscall that the line calls ({' '.join(sorted(called))})")
+        spelled = found.words.get(path, frozenset())
+        for word in sorted(set(SHOUT.findall(prose))):
+            if word not in spelled:
+                findings.append(f"{key} — the prose names {word}, which is no identifier and no macro token "
+                                f"in {path}")
+        named = via_names(prose)
+        if not named:
+            findings.append(f"{key} — the prose has no `via <function>` clause")
+            continue
+        holders = {holder for site in live for holder in site.holders}
+        for holder in sorted(holders):
+            if not any(ends_with(holder, name) for name in named):
+                findings.append(f"{key} — the call in {'::'.join(holder) or 'no function'} is named by no via "
+                                "clause")
+        for name in named:
+            if not any(ends_with(holder, name) for holder in holders):
+                findings.append(f"{key} — via {'::'.join(name)} holds no site that has this key")
+    return findings
 
 
 def check(root: Path, emit: bool = False) -> int:
@@ -278,12 +397,14 @@ def check(root: Path, emit: bool = False) -> int:
         emit: True to print templates instead of a verdict
 
     Returns:
-        0 clean, 1 on a violation or a parse failure, 2 on a stale entry
+        0 clean, 1 on a violation, a false prose or a parse failure, 2 on a
+        stale entry or a dead marker
     """
-    sites, failures, dead = scan(root)
-    keys = allowlist_keys(root / ALLOWLIST)
+    found = scan(root)
+    entries = allowlist_entries(root / ALLOWLIST)
+    keys = [key for key, _ in entries]
     admitted = set(keys)
-    unlisted = [site for site in sites if site.key not in admitted]
+    unlisted = [site for site in found.sites if site.key not in admitted]
     if emit:
         names: dict[str, set[str]] = {}
         for site in unlisted:
@@ -291,29 +412,37 @@ def check(root: Path, emit: bool = False) -> int:
         for key, called in sorted(names.items()):
             print(f"{key}  — effects::? via ? ({' '.join(sorted(called))})")
         return 0
-    for failure in failures:
+    for failure in found.failures:
         print(f"SYSCALL-CAP parse failure: {failure}", file=sys.stderr)
     for site in unlisted:
         print(f"SYSCALL-CAP violation: {site.path}:{site.line} — bare Linux syscall site missing effects::* "
               f"capability admission.  Allowlist key: {site.key}", file=sys.stderr)
-    if unlisted or failures:
+    if unlisted or found.failures:
         print(f"check-syscall-capability: {len(unlisted)} site(s) with no marker and no entry.  Route the call "
               "through a §XXI mint, mark its statement with `// SYSCALL-CAP-OK: <reason>`, or add the printed key "
-              f"to {ALLOWLIST} followed by `  — <effects::* capability claim>`.  --emit-keys prints templates.",
-              file=sys.stderr)
+              f"to {ALLOWLIST} followed by `  — <effects::* capability claim> via <function> (<note>)`.  "
+              "--emit-keys prints templates.", file=sys.stderr)
         return 1
-    live = {site.key for site in sites}
+    findings = prose_findings(entries, found)
+    for finding in findings:
+        print(f"SYSCALL-CAP prose: {finding}", file=sys.stderr)
+    if findings:
+        print(f"check-syscall-capability: {len(findings)} false statement(s) in {ALLOWLIST}.  Make the prose "
+              "name the syscall that the line calls, only constants that the file spells in code, and the "
+              "function that holds each call.", file=sys.stderr)
+        return 1
+    live = {site.key for site in found.sites}
     stale = [key for key in keys if key not in live]
     for key in stale:
         print(f"SYSCALL-CAP stale: {key} — no live syscall call with this text in the file; remove the entry.",
               file=sys.stderr)
-    for marker in dead:
+    for marker in found.dead:
         print(f"SYSCALL-CAP dead marker: {marker.path}:{marker.line} — the {MARKER_WORD} comment sits on no "
               f"syscall site, so it exempts nothing.  Delete it.", file=sys.stderr)
-    if stale or dead:
+    if stale or found.dead:
         return 2
-    print("check-syscall-capability: clean — each syscall site is marked or listed, and no entry is stale.",
-          file=sys.stderr)
+    print("check-syscall-capability: clean — each syscall site is marked or listed, each entry's prose agrees "
+          "with its sites, and no entry is stale.", file=sys.stderr)
     return 0
 
 
@@ -384,8 +513,9 @@ def self_test() -> int:
         (root / "src/test/Out.cpp").write_text("int f() { return ::socket(11, 0, 0); }\n", encoding="utf-8")
         allow = root / ALLOWLIST
         allow.write_text("# fixture\nsrc/planted/Sys.cpp:inline int admitted() { return ::socket(2, 0, 0); }  "
-                         "— effects::Init proof (fixture)\n", encoding="utf-8")
-        sites, broken, dead = scan(root)
+                         "— effects::Init via admitted (socket, fixture)\n", encoding="utf-8")
+        found = scan(root)
+        sites, broken, dead = found.sites, found.failures, found.dead
         lines = {site.line for site in sites if site.path == "src/planted/Sys.cpp"}
         for line, label in ((2, "a global-scope call"), (9, "an unqualified kernel-only call"),
                             (10, "a call whose name and arguments span lines"), (12, "a raw syscall"),
@@ -439,7 +569,7 @@ def self_test() -> int:
         expect("the report from / equals the report from the scan root", captured(Path("/")) == captured(root))
         source.write_text("\n\ninline int drift() { return ::socket(1, 0, 0); }\n", encoding="utf-8")
         allow.write_text("# fixture\nsrc/planted/Sys.cpp:inline int drift() { return ::socket(1, 0, 0); }  "
-                         "— effects::Init proof (fixture)\n", encoding="utf-8")
+                         "— effects::Init via drift (socket, fixture)\n", encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()):
             expect("a content key survives a line shift", check(root) == 0)
         allow.write_text(allow.read_text() + "src/planted/Sys.cpp:return ::socket(99, 0, 0);  — stale\n",
@@ -449,6 +579,91 @@ def self_test() -> int:
         (root / "src/planted/Broken.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()):
             expect("a file the parser cannot read fails the check", check(root) == 1, True)
+
+    prose_file = "src/planted/Prose.cpp"
+    prose_fixture = (
+        "namespace crucible::planted {\n"
+        "struct PlantedSock final {\n"
+        "    int other() noexcept { return 0; }  // TCP_ONLY_IN_COMMENT\n"
+        "    int apply(int fd) noexcept {\n"
+        "        return ::setsockopt(fd, 6, TCP_PLANTED_OPT, nullptr, 0);\n"
+        "    }\n"
+        "};\n"
+        "inline long split_raw(int fd) noexcept {\n"
+        "    return ::syscall(\n"
+        "        SYS_mlock2, fd, 0, 0);\n"
+        "}\n"
+        "template <int Source> struct Reader final {\n"
+        "    long read() noexcept { return ::syscall(SYS_gettid); }\n"
+        "};\n"
+        "struct Handle final {\n"
+        "    int fd_ = -1;\n"
+        "    ~Handle() { (void)::close(fd_); }\n"
+        "    Handle& operator=(Handle&&) noexcept { (void)::close(fd_); return *this; }\n"
+        "};\n"
+        "inline void first(int fd) noexcept {\n"
+        "    (void)::close(fd);\n"
+        "}\n"
+        "inline void second(int fd) noexcept {\n"
+        "    (void)::close(fd);\n"
+        "}\n"
+        "#define PLANTED_FLAG_WORD PLANTED_MACRO_ONLY\n"
+        "}\n"
+    )
+    setsockopt_key = f"{prose_file}:return ::setsockopt(fd, 6, TCP_PLANTED_OPT, nullptr, 0);"
+    split_key = f"{prose_file}:return ::syscall("
+    twice_key = f"{prose_file}:(void)::close(fd);"
+    honest = {
+        setsockopt_key: "effects::IO via PlantedSock::apply (TCP_PLANTED_OPT setsockopt)",
+        split_key: "effects::Init via split_raw (mlock2 through the raw syscall)",
+        f"{prose_file}:long read() noexcept {{ return ::syscall(SYS_gettid); }}":
+            "effects::Bg via Reader<Source>::read (gettid)",
+        f"{prose_file}:~Handle() {{ (void)::close(fd_); }}": "effects::IO via Handle::~Handle (close on drop)",
+        f"{prose_file}:Handle& operator=(Handle&&) noexcept {{ (void)::close(fd_); return *this; }}":
+            "effects::IO via Handle::operator= (close the old fd)",
+        twice_key: "effects::IO via first and planted::second (close, two sites, one key)",
+    }
+    rotten = (
+        ("the honest prose passes: templates, a destructor, an operator and two holders", {}, 0, ""),
+        ("a prose that names no syscall of the line is rot",
+         {setsockopt_key: "effects::IO via PlantedSock::apply (ctx-bound)"}, 1, "names no syscall"),
+        ("a SYS_ number on the line after the key is read",
+         {split_key: "effects::Init via split_raw (raw syscall)"}, 1, "names no syscall that the line calls (mlock2)"),
+        ("a constant that the file does not spell is rot",
+         {setsockopt_key: "effects::IO via PlantedSock::apply (TCP_QUICKACK setsockopt)"}, 1, "TCP_QUICKACK"),
+        ("a constant that only a comment spells is rot",
+         {setsockopt_key: "effects::IO via PlantedSock::apply (TCP_ONLY_IN_COMMENT setsockopt)"}, 1,
+         "TCP_ONLY_IN_COMMENT"),
+        ("a constant that a macro body spells counts",
+         {setsockopt_key: "effects::IO via PlantedSock::apply (TCP_PLANTED_OPT PLANTED_MACRO_ONLY setsockopt)"},
+         0, ""),
+        ("a qualified via name that does not hold the call is rot",
+         {setsockopt_key: "effects::IO via PlantedSock::other (TCP_PLANTED_OPT setsockopt)"}, 1,
+         "via PlantedSock::other holds no site"),
+        ("a bare via name that does not hold the call is rot",
+         {setsockopt_key: "effects::IO via other (TCP_PLANTED_OPT setsockopt)"}, 1,
+         "crucible::planted::PlantedSock::apply is named by no via clause"),
+        ("a via name of a class alone is not the function that holds the call",
+         {setsockopt_key: "effects::IO via PlantedSock (TCP_PLANTED_OPT setsockopt)"}, 1, "holds no site"),
+        ("a prose with no via clause is rot",
+         {setsockopt_key: "effects::IO (TCP_PLANTED_OPT setsockopt)"}, 1, "no `via <function>` clause"),
+        ("a key with two holders needs both names",
+         {twice_key: "effects::IO via first (close)"}, 1, "crucible::planted::second is named by no via clause"),
+        ("a via name that holds no site of the key is rot",
+         {twice_key: "effects::IO via first and second and third (close)"}, 1, "via third holds no site"),
+    )
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        (root / "src/planted").mkdir(parents=True)
+        (root / "scripts").mkdir()
+        (root / prose_file).write_text(prose_fixture, encoding="utf-8")
+        for label, changes, want, needle in rotten:
+            rows = {**honest, **changes}
+            (root / ALLOWLIST).write_text("# fixture\n" + "".join(f"{key}  — {text}\n" for key, text in rows.items()),
+                                          encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as report:
+                code = check(root)
+            expect(f"prose: {label}", code == want and needle in report.getvalue(), want != 0)
     if failures:
         print(f"check-syscall-capability --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

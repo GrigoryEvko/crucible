@@ -16,14 +16,13 @@
 # A site covered by an in-statement `// SYSCALL-CAP-OK:` marker is exempted
 # by that marker and is deliberately absent here.
 #
-# The prose after the em dash is the audit surface.  check-syscall-capability.py
-# only asks whether a key exists, so an entry whose sentence is false still
-# reports clean — a green-and-wrong audit.  scripts/check-syscall-allowlist-prose.sh
-# holds each sentence to the code at the line it names: the syscall the line
-# invokes must be named, every SHOUTING_SNAKE constant in the prose must exist
-# in that file, and every `via Ns::member` name must exist in that file.  Run it
-# after any edit here.  Write what the line actually does, not what the
-# surrounding subsystem does.
+# The prose after the em dash is the audit surface, and check-syscall-capability.py
+# holds it to the sites that the key names.  The prose must name a syscall that
+# the line calls.  Each SHOUTING_SNAKE word in it must be an identifier or a macro
+# token of that file, not only a comment.  Its `via <function>` clause must name
+# the function that holds each call: the namespaces and classes are optional,
+# and more names are joined by `and`.  Write what the line actually does, not
+# what the surrounding subsystem does.
 
 include/crucible/Cipher.h:const int dfd = ::open(root.c_str(), O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_CLOEXEC);  — effects::Init via Cipher::open (root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
 include/crucible/Cipher.h:const ssize_t n = ::read(hf.get(), buf, sizeof(buf));  — effects::IO via Cipher::open (read HEAD file content at startup)
@@ -32,7 +31,7 @@ include/crucible/Cipher.h:rrc = ::renameat(parent_dirfd, tmp_relpath.c_str(), pa
 include/foundation/Platform.h:int fd = ::open("/proc/self/status", O_RDONLY | O_CLOEXEC);  — effects::Init via foundation::detail::is_debugger_present (open /proc/self/status to read TracerPid on an assertion failure)
 include/foundation/Platform.h:ssize_t n = ::read(fd, buf, sizeof(buf) - 1);  — effects::Init via foundation::detail::is_debugger_present (read /proc/self/status)
 include/foundation/Platform.h:::close(fd);  — effects::Init via foundation::detail::is_debugger_present (close /proc/self/status)
-include/crucible/concurrent/_AdaptiveScheduler.h:if (::sched_setaffinity(0, sizeof(set), &set) == 0) {  — effects::Init via NumaThreadPool worker pinning (sched_setaffinity, surfaced by the unqualified-call branch)
+include/crucible/concurrent/_AdaptiveScheduler.h:if (::sched_setaffinity(0, sizeof(set), &set) == 0) {  — effects::Init via Pool<Policy>::pin_worker_ (sched_setaffinity pins one pool worker to its core)
 include/crucible/concurrent/_Topology.h:if (::sched_getaffinity(0, sizeof(mask), &mask) == 0) {  — effects::Init via probe_process_cpu_count_ (sched_getaffinity, surfaced by the unqualified-call branch); the header was underscored by 517a43a6 and this is the same site under its superseded name
 include/fixy/concurrent/Topology.h:if (::sched_getaffinity(0, sizeof(mask), &mask) == 0) {  — effects::Init via probe_process_cpu_count_ (sched_getaffinity, surfaced by the unqualified-call branch), the ported copy of the entry above
 include/crucible/fixy/_Io.h:::munmap(sqes_, sqes_size_);  — effects::IO via IoUringRing::release_ (munmap SQEs, RAII, cap inherited)
@@ -60,10 +59,10 @@ include/crucible/ledger/LedgerStore.h:static_cast<unsigned long long>(fingerprin
 include/crucible/perf/detail/BpfLoader.h:return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::getpid()));  — effects::Init via current_tgid (getpid reads the thread-group id that the BPF loader writes into its filter at load time)
 include/crucible/safety/_OwnedMmap.h:::munmap(addr_, len_);  — effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign)
 include/fixy/OwnedMmap.h:::munmap(addr_, len_);  — effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign, ported copy of the entry above)
-include/fixy/OwnedMmap.h:void* const address = ::mmap(nullptr, length, protection, flags, fd, offset);  — effects::IO+Block via fixy::mmap::mint_mmap and mint_mmap_anon, whose CtxFitsMmapMint gate folds the atom pack into an effect row and demands the calling context admit it (fixy/os/Mmap.h).  The call sits here rather than in that gate on purpose: OwnedMmap's constructor over an address is private, and this is its only caller, so a region exists only over an address the kernel returned.  Putting the map call in Mmap.h would need a token or a friendship to reach the constructor, and every such token is forgeable by whatever its friend list reaches.  Reachable without a context, like the munmap above it and like fixy::detail::pin_calling_thread; reaching it mints no false claim, because what it hands back is what ::mmap returned.
+include/fixy/OwnedMmap.h:void* const address = ::mmap(nullptr, length, protection, flags, fd, offset);  — effects::IO+Block via OwnedMmap::map_region.  Its callers are fixy::mmap::mint_mmap and mint_mmap_anon, whose CtxFitsMmapMint gate folds the atom pack into an effect row and demands the calling context admit it (fixy/os/Mmap.h).  The call sits here rather than in that gate on purpose: OwnedMmap's constructor over an address is private, and this is its only caller, so a region exists only over an address the kernel returned.  Putting the map call in Mmap.h would need a token or a friendship to reach the constructor, and every such token is forgeable by whatever its friend list reaches.  Reachable without a context, like the munmap above it and like fixy::detail::pin_calling_thread; reaching it mints no false claim, because what it hands back is what ::mmap returned.
 include/crucible/warden/CpuTopology.h:if (::sched_getaffinity(0, sizeof(set), &set) == 0) {  — effects::Init via allowed_cpus_fallback (sched_getaffinity, the fallback taken when procfs is unreadable)
 include/crucible/warden/CpuTopology.h:if (::access(path, F_OK) == 0) return n;  — effects::Init via numa_node_of (access on /sys/devices/system/cpu/cpuN/nodeM to find which node link exists)
-include/crucible/warden/DeadlineWatchdog.h:if (::clock_gettime(CLOCK_BOOTTIME, &ts) != 0) [[unlikely]] {  — effects::Bg via watchdog verdict path (clock_gettime CLOCK_BOOTTIME, ClockSource<Boot>-tagged)
+include/crucible/warden/DeadlineWatchdog.h:if (::clock_gettime(CLOCK_BOOTTIME, &ts) != 0) [[unlikely]] {  — effects::Bg via DeadlineWatchdog::observe (clock_gettime CLOCK_BOOTTIME on the verdict path, ClockSource<Boot>-tagged)
 include/crucible/warden/Hardening.h:return static_cast<int>(::syscall(SYS_sched_setattr, pid, attr, flags));  — effects::Init via sched_setattr_sys (raw syscall SYS_sched_setattr; the only caller is Hardening::apply, which is ctx-bound through mint_hardening)
 include/crucible/warden/Hardening.h:return static_cast<int>(::syscall(SYS_sched_getattr, pid, attr, size, flags));  — effects::Init via sched_getattr_sys (raw syscall SYS_sched_getattr; reads the prior scheduling attributes so AppliedPolicy can restore them)
 include/crucible/warden/Hardening.h:return static_cast<int>(::syscall(SYS_mlock2, addr, len, flags));  — effects::Init via mlock2_sys (raw syscall SYS_mlock2)
@@ -80,12 +79,12 @@ src/cntp/CongestionControl.cpp:const auto nread = ::read(fd.get(), buffer.data()
 src/cntp/CongestionControl.cpp:::setsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), static_cast<socklen_t>(name.size() + 1u));  — effects::IO via set_cc_for_socket (setsockopt TCP_CONGESTION)
 src/cntp/CongestionControl.cpp:const int rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), &len);  — effects::IO via query_cc_selection_for_socket (getsockopt TCP_CONGESTION)
 src/cntp/IncastControl.cpp:const int rc = ::setsockopt(fd.value(), IPPROTO_TCP, TCP_RTO_MIN_US, &value, static_cast<socklen_t>(sizeof(value)));  — effects::IO via set_socket_rto_min_usec (setsockopt TCP_RTO_MIN_US)
-src/cntp/Pacing.cpp:if (::bind(nl.get(), static_cast<sockaddr const*>(static_cast<void const*>(&bind_addr)),  — effects::IO via query_active_qdisc (bind nl_pid=0 kernel-assigned PID)
-src/cntp/Pacing.cpp:if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, static_cast<socklen_t>(sizeof(rcv_timeout)))  — effects::IO via query_active_qdisc (setsockopt SO_RCVTIMEO bounded recv)
-src/cntp/Pacing.cpp:const auto sent = ::send(nl.get(), &request, sizeof(request), 0);  — effects::IO via query_active_qdisc (NETLINK send RTM_GETQDISC dump)
-src/cntp/Pacing.cpp:const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0);  — effects::IO+Block via query_active_qdisc (NETLINK recv, SO_RCVTIMEO-bounded)
+src/cntp/Pacing.cpp:if (::bind(nl.get(), static_cast<sockaddr const*>(static_cast<void const*>(&bind_addr)),  — effects::IO via detail::query_active_qdisc_over (bind nl_pid=0 kernel-assigned PID)
+src/cntp/Pacing.cpp:if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, static_cast<socklen_t>(sizeof(rcv_timeout)))  — effects::IO via detail::query_active_qdisc_over (setsockopt SO_RCVTIMEO bounded recv)
+src/cntp/Pacing.cpp:const auto sent = ::send(nl.get(), &request, sizeof(request), 0);  — effects::IO via detail::query_active_qdisc_over (NETLINK send RTM_GETQDISC dump)
+src/cntp/Pacing.cpp:const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0);  — effects::IO+Block via detail::query_active_qdisc_over (NETLINK recv, SO_RCVTIMEO-bounded)
 src/cntp/Pacing.cpp:::setsockopt(fd.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &value, static_cast<socklen_t>(sizeof(value)));  — effects::IO via set_socket_pacing_rate (setsockopt SO_MAX_PACING_RATE)
-src/fixy/_Fs.cpp:const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  — effects::IO via open_dirfd → do_open_dirfd_impl (O_DIRECTORY|O_NOFOLLOW dirfd open)
+src/fixy/_Fs.cpp:const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  — effects::IO via do_open_dirfd_impl, the body of open_dirfd (O_DIRECTORY|O_NOFOLLOW dirfd open)
 src/fixy/_Fs.cpp:rc = ::renameat2(AT_FDCWD, tmp, AT_FDCWD, target, RENAME_NOREPLACE);  — effects::IO via do_commit_atomic_impl (renameat2 with RENAME_NOREPLACE; the sole caller is commit_atomic<Atomicity> behind its CtxFitsCommitAtomic gate)
 src/perf/PmuSample.cpp:return ::syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags);  — effects::Init via perf_event_open_syscall (raw SYS_perf_event_open)
 src/perf/ProcGauges.cpp:r = ::close(fd_);  — effects::Bg via ScopedFd::close_ (close on RAII drop)
@@ -93,8 +92,8 @@ src/perf/ProcGauges.cpp:fd = ::open(path, O_RDONLY | O_CLOEXEC);  — effects::B
 src/perf/ProcGauges.cpp:r = ::pread(fd, buf, n - 1, 0);  — effects::Bg via pread_full (pread /proc gauge, EINTR-retried)
 src/perf/ProcGauges.cpp:n = ::pread(fd, buf, sizeof(buf) - 1, 0);  — effects::Bg via ProcGauges::read_block_queue_depth_max_ and ProcGauges::read_pressure_avg10_x100_ (pread one /proc or block-stats gauge; two sites, one key)
 src/perf/ProcGauges.cpp:n = ::pread(fd_loadavg_.raw(), buf, sizeof(buf) - 1, 0);  — effects::Bg via ProcGauges::read_loadavg_x100_ (pread /proc/loadavg)
-src/topology/CongestionTelemetry.cpp:const int tcp_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_INFO, &info, &info_len);  — effects::IO via CongestionTelemetry::harvest_socket (getsockopt TCP_INFO)
-src/topology/CongestionTelemetry.cpp:const int cc_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CC_INFO, &cc_info, &cc_len);  — effects::IO via CongestionTelemetry::harvest_socket (getsockopt TCP_CC_INFO)
+src/topology/CongestionTelemetry.cpp:const int tcp_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_INFO, &info, &info_len);  — effects::IO via topology::harvest_socket (getsockopt TCP_INFO)
+src/topology/CongestionTelemetry.cpp:const int cc_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CC_INFO, &cc_info, &cc_len);  — effects::IO via topology::harvest_socket (getsockopt TCP_CC_INFO)
 src/topology/Ptp.cpp:::setsockopt(socket.value(), SOL_SOCKET, SO_TIMESTAMPING, &flags, static_cast<socklen_t>(sizeof(flags)));  — effects::IO via enable_socket_timestamping (setsockopt SO_TIMESTAMPING)
 src/topology/Ptp.cpp:const int rc = ::ioctl(control_socket.value(), SIOCSHWTSTAMP, &request);  — effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded)
 src/topology/Ptp.cpp:const auto nread = ::recvmsg(socket.value(), &msg, MSG_DONTWAIT);  — effects::IO via recv_with_hw_timestamp (recvmsg MSG_DONTWAIT + SCM_TIMESTAMPING)
