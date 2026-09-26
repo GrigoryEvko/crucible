@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_fractional_lattice.cpp — arithmetic-correctness fuzzer for
-// FractionalLattice::add / mul (algebra/lattices/FractionalLattice.h).
+// FractionalLattice::add / mul (foundation/algebra/lattices/FractionalLattice.h).
 //
 // FractionalLattice is the ℚ∩[0,1] semiring backing SharedPermission
 // <Tag> (CSL fractional permissions, O'Hearn 2007 / Boyland 2003).  Its
@@ -11,7 +11,7 @@
 // hid a real bug: add cast its __int128 numerator sum to int64 BEFORE
 // gcd-reducing, so a well-formed pair at the inclusive MAX_SAFE_MAGNITUDE
 // bound (2^31/2^31 + 2^31/2^31, numerator sum 2^63) wrapped to INT64_MIN
-// and hit std::gcd UB (fixed by simplify_wide in 17a26f7d).  This fuzzer
+// and hit std::gcd UB (simplify_wide now reduces in the wide type first).  This fuzzer
 // is the regression net that sparse coverage lacked.
 //
 // The oracle is an INDEPENDENT __int128 cross-multiplication: rather
@@ -40,15 +40,15 @@
 
 #include "property_runner.h"
 
-#include <crucible/algebra/lattices/_FractionalLattice.h>
+#include <foundation/algebra/lattices/FractionalLattice.h>
 
 #include <array>
 #include <cstdint>
 
 namespace {
 
-using crucible::algebra::lattices::Rational;
-using crucible::algebra::lattices::FractionalLattice;
+using ::foundation::algebra::lattices::Rational;
+using ::foundation::algebra::lattices::FractionalLattice;
 using crucible::fuzz::prop::Rng;
 using W = Rational::wide_signed;  // __int128
 
