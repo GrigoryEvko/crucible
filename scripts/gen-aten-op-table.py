@@ -38,19 +38,40 @@ is checked to appear verbatim as a `schema_str`. That check is the third
 of three independent agreements this table rests on; the other two are in
 record_kernel.h.
 
+WHAT READS EACH INPUT
+
+Each input has a real parser, and the generator uses it:
+
+    the ATen/ops/*_ops.h headers   the pinned tree-sitter kit (scripts/tsast.py)
+    each schema_str                torchgen's own FunctionSchema.parse
+    native_functions.yaml          a YAML parser
+    torch/version.py               the Python ast module
+
+torchgen comes from the site-packages directory that --torch-dir names, so
+the schema grammar is the grammar of the fork that built the wheel.  A
+header the kit cannot read stops the generator, because an operator struct
+that the parse does not see would be a missing row.
+
 Usage:
     gen-aten-op-table.py --torch-dir DIR [--pytorch-src DIR] [-o FILE]
-    gen-aten-op-table.py --check      # regenerate and diff, for CI
+    gen-aten-op-table.py --torch-dir DIR --check   # regenerate and diff
+    gen-aten-op-table.py --torch-dir DIR --self-test
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
-import re
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import tsast  # noqa: E402  (the path insert above has to come first)
 
 # ---------------------------------------------------------------------
 # The schema hash.
@@ -207,16 +228,14 @@ def ckernel_for(base_name: str) -> str:
 # ---------------------------------------------------------------------
 # Reading the generated op headers.
 
-_STRUCT_RE = re.compile(
-    r"struct TORCH_API (?P<struct>\w+) \{(?P<body>.*?)\n\};", re.S
-)
-_NAME_RE = re.compile(r'static constexpr const char\* name = "(?P<v>[^"]*)";')
-_OVERLOAD_RE = re.compile(
-    r'static constexpr const char\* overload_name = "(?P<v>[^"]*)";'
-)
-_SCHEMA_RE = re.compile(
-    r'static constexpr const char\* schema_str = "(?P<v>.*?)";\n'
-)
+# The namespace that holds every generated operator struct.
+OPS_NAMESPACE = ("at", "_ops")
+# The three string members that each operator struct carries.
+STRING_MEMBERS = ("name", "overload_name", "schema_str")
+# The two static member functions that make a struct an operator.
+FUNCTION_MEMBERS = frozenset({"call", "redispatch"})
+# The declarator kinds that stand between a member name and its declaration.
+_WRAPPERS = frozenset({"pointer_declarator", "reference_declarator", "function_declarator"})
 
 
 @dataclass(frozen=True)
@@ -235,180 +254,209 @@ class Op:
     ckernel: str
 
 
-def split_top_level(text: str, sep: str = ",") -> list[str]:
-    """Split on `sep` at bracket depth zero, honouring quotes and escapes.
+def load_schema_model(torch_dir: Path) -> ModuleType:
+    """Return torchgen's model module from the site-packages of the fork.
 
-    Two things in the schema grammar defeat a plain split. A default value
-    may be a bracketed list holding a comma, as in `int[] dim=[-2,-1]`.
-    And `_test_string_default` carries backslash-escaped quotes around a
-    comma, which desynchronises a splitter that tracks quotes but not
-    escapes. Both are real entries in the fork, not hypotheticals.
+    Args:
+        torch_dir: The site-packages directory that holds torch and torchgen
+
+    Returns:
+        The `torchgen.model` module, whose FunctionSchema.parse is the grammar
+        that generated every schema_str
+
+    Raises:
+        SystemExit: If that directory holds no torchgen, or a different
+            torchgen shadows it
     """
-    parts: list[str] = []
-    depth = 0
-    quote: str | None = None
-    escaped = False
-    current: list[str] = []
-    for ch in text:
-        if escaped:
-            current.append(ch)
-            escaped = False
-            continue
-        if ch == "\\":
-            current.append(ch)
-            escaped = True
-            continue
-        if quote is not None:
-            current.append(ch)
-            if ch == quote:
-                quote = None
-            continue
-        if ch in "\"'":
-            quote = ch
-            current.append(ch)
-            continue
-        if ch in "([":
-            depth += 1
-        elif ch in ")]":
-            depth -= 1
-        if ch == sep and depth == 0:
-            parts.append("".join(current))
-            current = []
-            continue
-        current.append(ch)
-    parts.append("".join(current))
-    return [p.strip() for p in parts if p.strip()]
+    model_file = torch_dir / "torchgen" / "model.py"
+    if not model_file.is_file():
+        raise SystemExit(f"no torchgen under {torch_dir}. The schema grammar must come from the fork "
+                         f"that built the wheel, so point --torch-dir at its site-packages.")
+    sys.path.insert(0, str(torch_dir))
+    import torchgen.model as model  # noqa: PLC0415  (the path insert above decides which one loads)
+    if Path(model.__file__).resolve() != model_file.resolve():
+        raise SystemExit(f"torchgen loads from {model.__file__}, not from {torch_dir}. "
+                         f"Remove the other torchgen from the path.")
+    return model
 
 
-def argument_list_of(schema_str: str) -> list[str]:
-    """The arguments of a schema string, as raw `type name[=default]` text.
+def schema_facts(schema_text: str, model: ModuleType) -> tuple[int, int, int, bool]:
+    """Return the arity, the two masks and the mutation flag of one schema.
 
-    The return arrow is not a delimiter. Fourteen entries in the fork
-    annotate a parameter `Tensor(a -> *)`, which puts a literal arrow
-    inside the argument list, so the arguments are taken by matching the
-    opening parenthesis instead of by splitting on the arrow.
+    The facts come from torchgen's own parse of the schema, so the argument
+    positions are the positions torchgen gave to `call`.  An argument whose
+    type is tensor-like and list-like is a tensor list, for example
+    `Tensor?[]` and `Tensor[]`.  A tensor-like argument that is no list is a
+    tensor, for example `Tensor?` and `Tensor(a!)`.  The mutation flag is the
+    schema's own `is_mutable`, which is true when an argument carries a write
+    annotation, as `c10::FunctionSchema::is_mutable()` asks at run time.
+
+    Args:
+        schema_text: One schema string, with its C escapes already removed
+        model: The torchgen model module from `load_schema_model`
+
+    Returns:
+        (arity, tensor_arg_mask, tensor_list_mask, is_mutable)
     """
-    open_at = schema_str.index("(")
-    depth = 0
-    close_at = -1
-    for i in range(open_at, len(schema_str)):
-        ch = schema_str[i]
-        if ch in "([":
-            depth += 1
-        elif ch in ")]":
-            depth -= 1
-            if depth == 0:
-                close_at = i
-                break
-    if close_at < 0:
-        raise ValueError(f"unbalanced parentheses in schema: {schema_str!r}")
-    inner = schema_str[open_at + 1 : close_at]
-    # `*` is the keyword-only separator. It is a bare token with no type
-    # and no name, and it occupies no argument position.
-    return [a for a in split_top_level(inner) if a != "*"]
-
-
-_ANNOTATION_RE = re.compile(r"\([^)]*\)")
-
-
-def classify_argument(arg: str) -> str:
-    """"tensor", "tensor_list", or "other" for one schema argument.
-
-    The optional marker binds to whatever precedes it, and both bindings
-    occur in the fork: `Tensor?[]` is a list of optional tensors, while
-    `float[]?` is an optional list. So the marker is stripped in place
-    rather than normalised away, and the brackets decide the answer.
-    """
-    type_text = arg.split("=", 1)[0].strip()
-    # Drop the argument name: it is the last whitespace-separated token.
-    parts = type_text.rsplit(" ", 1)
-    type_only = parts[0].strip() if len(parts) == 2 else type_text
-    # Drop an alias annotation such as (a), (a!) or (a -> *).
-    type_only = _ANNOTATION_RE.sub("", type_only).strip()
-    type_only = type_only.replace("?", "")
-    if not type_only.startswith("Tensor"):
-        return "other"
-    return "tensor_list" if "[" in type_only else "tensor"
-
-
-def is_mutable_of(schema_str: str) -> bool:
-    """True when some argument of this schema writes through an alias.
-
-    This is the value `c10::FunctionSchema::is_mutable()` computes, which
-    the boxed fallback reads to set the IS_MUTABLE op flag. That function
-    asks whether any argument carries alias information marked write
-    (ATen/core/function_schema.h:383-389), and an argument is marked write
-    exactly when its alias annotation carries `!`: `Tensor(a!) self` for an
-    in-place operator, `Tensor(a!) out` for an out= variant, `Tensor(a!)[]
-    self` for a foreach variant.
-
-    The default value is removed before the search. An annotation only ever
-    occurs in the type, so nothing after `=` can carry the marker, and a
-    string default that happened to hold `!` would otherwise read as one.
-
-    Verified against the parser itself: over the 3765 `aten::` schemas the
-    built fork registers, this function and `FunctionSchema::is_mutable()`
-    agree on every one.
-    """
-    return any("!" in arg.split("=", 1)[0] for arg in argument_list_of(schema_str))
-
-
-def masks_of(schema_str: str) -> tuple[int, int, int]:
-    """(arity, tensor_arg_mask, tensor_list_mask) for one schema string."""
-    args = argument_list_of(schema_str)
+    parsed = model.FunctionSchema.parse(schema_text)
+    arguments = parsed.arguments.flat_all
     tensor_mask = 0
     list_mask = 0
-    for index, arg in enumerate(args):
-        kind = classify_argument(arg)
-        if kind == "tensor":
-            tensor_mask |= 1 << index
-        elif kind == "tensor_list":
+    for index, argument in enumerate(arguments):
+        if not argument.type.is_tensor_like():
+            continue
+        if argument.type.is_list_like() is not None:
             list_mask |= 1 << index
-    return len(args), tensor_mask, list_mask
+        else:
+            tensor_mask |= 1 << index
+    return len(arguments), tensor_mask, list_mask, parsed.is_mutable
 
 
-def read_ops(ops_dir: Path) -> list[Op]:
-    """Every operator struct that carries both a call and a redispatch."""
+def enclosing_namespaces(node: tsast.Node) -> tuple[str, ...]:
+    """Return the names of the namespaces that enclose a node, outermost first.
+
+    Args:
+        node: A node of a parsed ops header
+
+    Returns:
+        One entry for each namespace level, with an anonymous namespace as ""
+    """
+    parts: list[str] = []
+    owner = node.ancestor_of_type("namespace_definition")
+    while owner is not None:
+        named = owner.child_by_field("name")
+        leaves = [] if named is None else (
+            [named.text] if named.type == "namespace_identifier"
+            else [leaf.text for leaf in named.children_of_type("namespace_identifier")])
+        parts[:0] = leaves or [""]
+        owner = owner.ancestor_of_type("namespace_definition")
+    return tuple(parts)
+
+
+def member_name(field: tsast.Node) -> tuple[str, bool] | None:
+    """Return the name that a member declaration declares, and whether it is a function.
+
+    Args:
+        field: A field_declaration node of a struct body
+
+    Returns:
+        (name, is_function), or None when the declarator names no field
+    """
+    declarator = field.child_by_field("declarator")
+    is_function = False
+    while declarator is not None and declarator.type in _WRAPPERS:
+        is_function = is_function or declarator.type == "function_declarator"
+        declarator = declarator.child_by_field("declarator")
+    if declarator is None or declarator.type != "field_identifier":
+        return None
+    return declarator.text, is_function
+
+
+def string_value(literal: tsast.Node) -> str:
+    """Return the value of a C string literal node, with its escapes resolved.
+
+    Only `_test_string_default` needs the escapes resolved, but it needs them.
+
+    Args:
+        literal: A string_literal node with no prefix
+
+    Returns:
+        The characters the literal denotes
+    """
+    return literal.text[1:-1].encode().decode("unicode_escape")
+
+
+def ops_of_tree(tree: tsast.Tree, model: ModuleType) -> list[Op]:
+    """Return every operator struct of one parsed header, in source order.
+
+    An operator struct sits in namespace `at::_ops` and declares the static
+    member functions `call` and `redispatch`.  Its `name`, `overload_name`
+    and `schema_str` members are string literals.  A comment names nothing,
+    so a commented-out member cannot stand in for the real one.
+
+    Args:
+        tree: One parsed ATen/ops header
+        model: The torchgen model module
+
+    Returns:
+        One Op for each operator struct
+
+    Raises:
+        SystemExit: If an operator struct lacks one of the three strings, or
+            has more arguments than a mask can address
+    """
+    header = Path(tree.path).name
     ops: list[Op] = []
-    for header in sorted(ops_dir.glob("*_ops.h")):
-        text = header.read_text(encoding="utf-8")
-        for match in _STRUCT_RE.finditer(text):
-            body = match.group("body")
-            if " call(" not in body or " redispatch(" not in body:
+    for struct in tree.find("struct_specifier"):
+        named = struct.child_by_field("name")
+        body = struct.child_by_field("body")
+        if named is None or body is None or enclosing_namespaces(struct) != OPS_NAMESPACE:
+            continue
+        strings: dict[str, str] = {}
+        functions: set[str] = set()
+        for field in body.children_of_type("field_declaration"):
+            member = member_name(field)
+            if member is None:
                 continue
-            name_m = _NAME_RE.search(body)
-            overload_m = _OVERLOAD_RE.search(body)
-            schema_m = _SCHEMA_RE.search(body)
-            if not (name_m and overload_m and schema_m):
-                raise SystemExit(
-                    f"{header.name}: struct {match.group('struct')} is missing "
-                    f"a name, overload_name or schema_str member. The generated "
-                    f"header shape changed; update _STRUCT_RE and its siblings."
-                )
-            # schema_str is a C string literal. Only _test_string_default
-            # needs the unescaping, but it needs it.
-            schema_text = schema_m.group("v").encode().decode("unicode_escape")
-            arity, tensor_mask, list_mask = masks_of(schema_text)
-            if arity > 32:
-                raise SystemExit(
-                    f"{name_m.group('v')}.{overload_m.group('v')} has {arity} "
-                    f"arguments, past the 32 a uint32_t mask can address. Widen "
-                    f"OpEntry's mask fields to uint64_t and this check with them."
-                )
-            ops.append(
-                Op(
-                    struct=match.group("struct"),
-                    header=header.name,
-                    name=name_m.group("v"),
-                    overload=overload_m.group("v"),
-                    schema_str=schema_text,
-                    arity=arity,
-                    tensor_arg_mask=tensor_mask,
-                    tensor_list_mask=list_mask,
-                    is_mutable=is_mutable_of(schema_text),
-                    ckernel=ckernel_for(name_m.group("v")),
-                )
+            name, is_function = member
+            if is_function:
+                functions.add(name)
+                continue
+            value = field.child_by_field("default_value")
+            if name in STRING_MEMBERS and value is not None and value.type == "string_literal":
+                strings[name] = string_value(value)
+        if not FUNCTION_MEMBERS <= functions:
+            continue
+        missing = [member for member in STRING_MEMBERS if member not in strings]
+        if missing:
+            raise SystemExit(
+                f"{header}: struct {named.text} declares call and redispatch but no string "
+                f"member {', '.join(missing)}. The generated header shape changed."
             )
+        schema_text = strings["schema_str"]
+        arity, tensor_mask, list_mask, mutable = schema_facts(schema_text, model)
+        if arity > 32:
+            raise SystemExit(
+                f"{strings['name']}.{strings['overload_name']} has {arity} "
+                f"arguments, past the 32 a uint32_t mask can address. Widen "
+                f"OpEntry's mask fields to uint64_t and this check with them."
+            )
+        ops.append(Op(
+            struct=named.text,
+            header=header,
+            name=strings["name"],
+            overload=strings["overload_name"],
+            schema_str=schema_text,
+            arity=arity,
+            tensor_arg_mask=tensor_mask,
+            tensor_list_mask=list_mask,
+            is_mutable=mutable,
+            ckernel=ckernel_for(strings["name"]),
+        ))
+    return ops
+
+
+def read_ops(ops_dir: Path, model: ModuleType) -> list[Op]:
+    """Return every operator struct of the ops headers, header by header in sorted order.
+
+    Complexity: linear in the total size of the headers, from one kit parse.
+
+    Args:
+        ops_dir: The ATen/ops directory of the wheel
+        model: The torchgen model module
+
+    Returns:
+        Every operator, in header order and then in source order
+
+    Raises:
+        SystemExit: If a header does not parse, or no operator struct exists
+    """
+    ops: list[Op] = []
+    for tree in tsast.parse(sorted(ops_dir.glob("*_ops.h")), strict=False):
+        if tree.diagnostic is not None:
+            raise SystemExit(f"{tree.path}: the kit cannot parse this header, so its operator structs "
+                             f"are unknown.\n  {tree.diagnostic}")
+        ops += ops_of_tree(tree, model)
     if not ops:
         raise SystemExit(f"no operator structs found under {ops_dir}")
     return ops
@@ -417,7 +465,25 @@ def read_ops(ops_dir: Path) -> list[Op]:
 # ---------------------------------------------------------------------
 # The yaml, read for provenance and for the cross-check.
 
-_FUNC_RE = re.compile(r"^- func: (?P<v>.+)$", re.M)
+
+def yaml_funcs(raw: bytes) -> list[str]:
+    """Return the `func:` value of each entry of native_functions.yaml, in order.
+
+    Args:
+        raw: The bytes of the yaml file
+
+    Returns:
+        One schema string for each entry that carries a func key
+
+    Raises:
+        SystemExit: If the file is not a list of entries
+    """
+    import yaml  # noqa: PLC0415  (only the generator run needs the parser)
+
+    entries = yaml.load(raw, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
+    if not isinstance(entries, list):
+        raise SystemExit("native_functions.yaml is not a list of entries.")
+    return [entry["func"] for entry in entries if isinstance(entry, dict) and isinstance(entry.get("func"), str)]
 
 
 def read_yaml_facts(yaml_path: Path, ops: list[Op]) -> tuple[str, int, int]:
@@ -429,7 +495,7 @@ def read_yaml_facts(yaml_path: Path, ops: list[Op]) -> tuple[str, int, int]:
     """
     raw = yaml_path.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
-    funcs = [m.group("v").strip() for m in _FUNC_RE.finditer(raw.decode("utf-8"))]
+    funcs = yaml_funcs(raw)
     known = {op.schema_str for op in ops}
     missing = [f for f in funcs if f not in known]
     if missing:
@@ -549,16 +615,185 @@ def emit(ops: list[Op], yaml_sha256: str, yaml_entries: int, torch_version: str)
 
 
 def torch_version_of(torch_dir: Path) -> str:
+    """Return the `__version__` string that torch/version.py assigns.
+
+    The Python ast reads the module, so a docstring or a comment that
+    mentions `__version__` cannot stand in for the assignment.
+
+    Args:
+        torch_dir: The site-packages directory that holds torch
+
+    Returns:
+        The version string, or "unknown" when the file or the assignment is absent
+    """
     version_py = torch_dir / "torch" / "version.py"
     if not version_py.exists():
         return "unknown"
-    for line in version_py.read_text(encoding="utf-8").splitlines():
-        if line.startswith("__version__"):
-            return line.split("=", 1)[1].strip().strip("'\"")
+    module = ast.parse(version_py.read_text(encoding="utf-8"))
+    for statement in module.body:
+        if isinstance(statement, ast.Assign):
+            targets = statement.targets
+        elif isinstance(statement, ast.AnnAssign):
+            targets = [statement.target]
+        else:
+            continue
+        named = any(isinstance(target, ast.Name) and target.id == "__version__" for target in targets)
+        if named and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
+            return statement.value.value
     return "unknown"
 
 
+SELF_TEST_HEADER = r'''#pragma once
+namespace at {
+namespace _ops {
+
+struct TORCH_API add_Tensor {
+  using schema = at::Tensor (const at::Tensor &, const at::Tensor &, const at::Scalar &);
+  // static constexpr const char* name = "aten::commented_out";
+  static constexpr const char* name = "aten::add";
+  static constexpr const char* overload_name = "Tensor";
+  static constexpr const char* schema_str = "add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor";
+  static at::Tensor call(const at::Tensor & self, const at::Tensor & other, const at::Scalar & alpha);
+  static at::Tensor redispatch(c10::DispatchKeySet ks, const at::Tensor & self, const at::Tensor & other, const at::Scalar & alpha);
+};
+
+struct TORCH_API index_put_out {
+  static constexpr const char* name = "aten::index_put";
+  static constexpr const char* overload_name = "out";
+  static constexpr const char* schema_str = "index_put.out(Tensor self, Tensor?[] indices, Tensor values, bool accumulate=False, *, Tensor(a!) out) -> Tensor(a!)";
+  static at::Tensor & call(const at::Tensor & self, const c10::List<::std::optional<at::Tensor>> & indices, const at::Tensor & values, bool accumulate, at::Tensor & out);
+  static at::Tensor & redispatch(c10::DispatchKeySet ks, const at::Tensor & self, const c10::List<::std::optional<at::Tensor>> & indices, const at::Tensor & values, bool accumulate, at::Tensor & out);
+};
+
+struct TORCH_API chunk {
+  static constexpr const char* name = "aten::chunk";
+  static constexpr const char* overload_name = "";
+  static constexpr const char* schema_str = "chunk(Tensor(a -> *) self, int chunks, int dim=0) -> Tensor(a)[]";
+  static ::std::vector<at::Tensor> call(const at::Tensor & self, int64_t chunks, int64_t dim);
+  static ::std::vector<at::Tensor> redispatch(c10::DispatchKeySet ks, const at::Tensor & self, int64_t chunks, int64_t dim);
+};
+
+struct TORCH_API _test_string_default {
+  static constexpr const char* name = "aten::_test_string_default";
+  static constexpr const char* overload_name = "";
+  static constexpr const char* schema_str = "_test_string_default(Tensor dummy, str a=\"\\\"'\\\\\", str b='\"\\'\\\\') -> Tensor";
+  static at::Tensor call(const at::Tensor & dummy, c10::string_view a, c10::string_view b);
+  static at::Tensor redispatch(c10::DispatchKeySet ks, const at::Tensor & dummy, c10::string_view a, c10::string_view b);
+};
+
+struct TORCH_API no_redispatch {
+  static constexpr const char* name = "aten::no_redispatch";
+  static constexpr const char* overload_name = "";
+  static constexpr const char* schema_str = "no_redispatch(Tensor self) -> Tensor";
+  static at::Tensor call(const at::Tensor & self);
+};
+
+}  // namespace _ops
+}  // namespace at
+
+namespace other {
+struct TORCH_API outside_ops {
+  static constexpr const char* name = "aten::outside_ops";
+  static constexpr const char* overload_name = "";
+  static constexpr const char* schema_str = "outside_ops(Tensor self) -> Tensor";
+  static at::Tensor call(const at::Tensor & self);
+  static at::Tensor redispatch(c10::DispatchKeySet ks, const at::Tensor & self);
+};
+}  // namespace other
+'''
+
+SELF_TEST_YAML = '''\
+# - func: in_a_comment(Tensor self) -> Tensor
+- func: add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor
+  variants: function, method
+- func: "chunk(Tensor(a -> *) self, int chunks, int dim=0) -> Tensor(a)[]"
+'''
+
+SELF_TEST_VERSION = '''\
+"""The version.
+
+__version__ = 'from-the-docstring'
+"""
+__version__: str = '9.9.9'
+'''
+
+
+def self_test(torch_dir: Path) -> int:
+    """Plant an ops header, a yaml and a version module, and check each reader.
+
+    Args:
+        torch_dir: The site-packages directory that holds torchgen
+
+    Returns:
+        0 when every case holds, 2 otherwise
+    """
+    failures: list[str] = []
+    negatives = 0
+
+    def expect(name: str, ok: bool, negative: bool = False) -> None:
+        """Record one case result and print it."""
+        nonlocal negatives
+        negatives += negative
+        print(f"  {'ok  ' if ok else 'FAIL'} {name}")
+        if not ok:
+            failures.append(name)
+
+    print("gen-aten-op-table --self-test")
+    model = load_schema_model(torch_dir)
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        ops_dir = root / "ops"
+        ops_dir.mkdir()
+        (ops_dir / "planted_ops.h").write_text(SELF_TEST_HEADER, encoding="utf-8")
+        ops = {op.struct: op for op in read_ops(ops_dir, model)}
+        expect("reads the four operator structs of at::_ops, in source order",
+               list(ops) == ["add_Tensor", "index_put_out", "chunk", "_test_string_default"])
+        add = ops.get("add_Tensor")
+        expect("a commented-out member does not stand in for the real one",
+               add is not None and add.name == "aten::add", True)
+        expect("a keyword-only argument keeps its position and is no tensor",
+               add is not None and (add.arity, add.tensor_arg_mask, add.tensor_list_mask) == (3, 0b011, 0))
+        put = ops.get("index_put_out")
+        expect("a list of optional tensors is a tensor list, and a written out= argument is mutable",
+               put is not None and (put.arity, put.tensor_arg_mask, put.tensor_list_mask, put.is_mutable)
+               == (5, 0b10101, 0b00010, True))
+        chunk = ops.get("chunk")
+        expect("an arrow inside an alias annotation is not the return arrow",
+               chunk is not None and (chunk.arity, chunk.tensor_arg_mask, chunk.is_mutable) == (3, 0b001, False))
+        escaped = ops.get("_test_string_default")
+        expect("the C escapes of a schema string are resolved before the parse",
+               escaped is not None and escaped.arity == 3 and escaped.schema_str.startswith('_test_string_default(Tensor dummy, str a="'))
+        expect("a struct with no redispatch is no operator", "no_redispatch" not in ops, True)
+        expect("a struct outside at::_ops is no operator", "outside_ops" not in ops, True)
+        expect("a yaml comment names no func, and a quoted func is read unquoted",
+               yaml_funcs(SELF_TEST_YAML.encode()) == [
+                   "add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor",
+                   "chunk(Tensor(a -> *) self, int chunks, int dim=0) -> Tensor(a)[]"], True)
+        (root / "torch").mkdir()
+        (root / "torch" / "version.py").write_text(SELF_TEST_VERSION, encoding="utf-8")
+        expect("the version comes from the assignment, not from a docstring line",
+               torch_version_of(root) == "9.9.9", True)
+        (ops_dir / "broken_ops.h").write_text("namespace at { namespace _ops { void f() { g(1) { } } } }\n",
+                                             encoding="utf-8")
+        try:
+            read_ops(ops_dir, model)
+            refused = False
+        except SystemExit:
+            refused = True
+        expect("a header the kit cannot parse stops the generator", refused, True)
+    if failures:
+        print(f"gen-aten-op-table --self-test: FAILED — {len(failures)} case(s) did not hold")
+        return 2
+    print(f"gen-aten-op-table --self-test: every case passes, {negatives} of them negative controls.")
+    return 0
+
+
 def main() -> int:
+    """Parse the arguments and run one mode.
+
+    Returns:
+        The exit code
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--torch-dir",
@@ -586,8 +821,31 @@ def main() -> int:
         action="store_true",
         help="regenerate and compare with the file on disk; exit 1 on drift",
     )
+    ap.add_argument(
+        "--self-test",
+        action="store_true",
+        help="check each reader against planted inputs; needs torchgen from --torch-dir",
+    )
     args = ap.parse_args()
+    try:
+        if args.self_test:
+            return self_test(args.torch_dir)
+        return generate(args)
+    except tsast.KitMissing as exc:
+        print(f"gen-aten-op-table: {exc}", file=sys.stderr)
+        return 3
 
+
+def generate(args: argparse.Namespace) -> int:
+    """Read the fork, emit the table, and write it or compare it.
+
+    Args:
+        args: The parsed command line
+
+    Returns:
+        0 on success, 1 when --check finds drift
+    """
+    model = load_schema_model(args.torch_dir)
     ops_dir = args.torch_dir / "torch" / "include" / "ATen" / "ops"
     if not ops_dir.is_dir():
         raise SystemExit(f"no ATen/ops directory under {args.torch_dir}")
@@ -597,7 +855,7 @@ def main() -> int:
     if not yaml_path.is_file():
         raise SystemExit(f"no native_functions.yaml at {yaml_path}")
 
-    ops = read_ops(ops_dir)
+    ops = read_ops(ops_dir, model)
     digest, entries, matched = read_yaml_facts(yaml_path, ops)
     text = emit(ops, digest, entries, torch_version_of(args.torch_dir))
 
