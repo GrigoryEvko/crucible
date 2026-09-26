@@ -10426,35 +10426,32 @@ crucible_neg_compile_multi_test(neg_tracering_drain_pure_io_block
 crucible_neg_compile_multi_test(neg_tracering_drain_pure_full_row
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
 
-# Vigil::dispatch_op_pure<CallerRow> requires IsPure<CallerRow>.  Each
-# fixture names a caller row that holds one effect or more.  The first
-# regex pins the refused call, the second pins the gate and the row.
-set(VIGIL_PURE_CALL "no matching function for call to .crucible::Vigil::dispatch_op_pure<")
-set(VIGIL_PURE_GATE "required for the satisfaction of .IsPure<CallerRow>. \\[with CallerRow = foundation::effects::Row<")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_alloc
-  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Alloc> >\\("
-  "${VIGIL_PURE_GATE}foundation::effects::Effect::Alloc>\\]")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_io
-  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::IO> >\\("
-  "${VIGIL_PURE_GATE}foundation::effects::Effect::IO>\\]")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_block
-  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Block> >\\("
-  "${VIGIL_PURE_GATE}foundation::effects::Effect::Block>\\]")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_bg
-  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Bg> >\\("
-  "${VIGIL_PURE_GATE}foundation::effects::Effect::Bg>\\]")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_init
-  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Init> >\\("
-  "${VIGIL_PURE_GATE}foundation::effects::Effect::Init>\\]")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_test
-  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Test> >\\("
-  "${VIGIL_PURE_GATE}foundation::effects::Effect::Test>\\]")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_io_block
-  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\("
-  "${VIGIL_PURE_GATE}foundation::effects::Effect::IO, foundation::effects::Effect::Block>\\]")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_full_row
-  "${VIGIL_PURE_CALL}fixy::AllRow>\\("
-  "${VIGIL_PURE_GATE}foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Bg, foundation::effects::Effect::Init, foundation::effects::Effect::Test>\\]")
+# Vigil::dispatch_op_pure takes crucible::VigilFgCtx, the context of the
+# Vigil's producer claim.  Each fixture passes another context, or none.
+# The first regex pins the refused context or call, and the second pins the
+# parameter that refuses it.
+set(VIGIL_PURE_TO "to .const crucible::VigilFgCtx&.")
+set(VIGIL_PURE_PARAM
+  "initializing argument 1 of .crucible::DispatchResult crucible::Vigil::dispatch_op_pure\\(const crucible::VigilFgCtx&, ")
+set(VIGIL_PURE_ROW_TAIL "foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_unbranded_ctx
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. ${VIGIL_PURE_TO}"
+  "${VIGIL_PURE_PARAM}")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_other_brand
+  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. ${VIGIL_PURE_TO}"
+  "${VIGIL_PURE_PARAM}")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_bg_ctx
+  "cannot convert .const fixy::BgLoadCtx. \\{aka .const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, ${VIGIL_PURE_ROW_TAIL}.\\} ${VIGIL_PURE_TO}"
+  "${VIGIL_PURE_PARAM}")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_init_ctx
+  "cannot convert .const fixy::InitLoadCtx. \\{aka .const foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, ${VIGIL_PURE_ROW_TAIL}.\\} ${VIGIL_PURE_TO}"
+  "${VIGIL_PURE_PARAM}")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_test_ctx
+  "cannot convert .const fixy::TestRunnerCtx. \\{aka .const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, ${VIGIL_PURE_ROW_TAIL}.\\} ${VIGIL_PURE_TO}"
+  "${VIGIL_PURE_PARAM}")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_no_ctx
+  "no matching function for call to .crucible::Vigil::dispatch_op_pure\\(fixy::Tagged<const crucible::TraceRing::Entry\\*, fixy::tags::vessel_trust::Validated>, crucible::TensorMeta\\*, int\\)."
+  "crucible::Vigil::dispatch_op_pure\\(const crucible::VigilFgCtx&, crucible::TraceRing::ValidatedEntryPtr, ")
 
 # BackgroundThread::run_in_row(ctx) requires CtxAdmits<Ctx, Row<Bg,
 # Alloc, IO, Block>>.  Each fixture hands in a context whose row lacks

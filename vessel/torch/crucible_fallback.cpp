@@ -491,15 +491,10 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     if (!validated) [[unlikely]]
         return;
 
-    // dispatch_op_pure<>(): the row-typed facade pinning the
-    // PyTorch fallback handler as a `Pure` caller — the ATen dispatcher
-    // hands control here on the foreground producer thread, with no I/O,
-    // Block, Bg, Init, Test, or Alloc effect in scope.  Migrating from
-    // dispatch_op() to dispatch_op_pure<>() is zero-cost at runtime
-    // (thin forwarder, default CallerRow = Row<>) and gives the
-    // compile-time guarantee that this foreground hot path cannot
-    // silently drift into a non-Pure context.
-    (void)vigil->dispatch_op_pure(*validated, inline_metas, counts.total(), scope_hash);
+    // The check above confirmed that this thread can take the producer
+    // claim.  dispatch_op_pure takes the context of that claim, so this call
+    // compiles only with that context.
+    (void)vigil->dispatch_op_pure(vigil->mint_producer_context(), *validated, inline_metas, counts.total(), scope_hash);
 }
 
 // =====================================================================

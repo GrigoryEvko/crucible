@@ -39,7 +39,6 @@
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Policy.h>
-#include <fixy/Aliases.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -281,15 +280,16 @@ public:
     // allocates, blocks, performs I/O, or needs an init, test or background
     // context, so the effect row is empty.
     //
-    // This facade pins that at the type level by demanding an empty caller
-    // row.  What it catches: an eager fallback path, an init-time helper, a
-    // background pumping helper or a test fixture that reaches the
-    // foreground recording site by mistake.  The row mismatch fires at
-    // compile time, before the ring head can advance.
-    template <typename CallerRow = ::foundation::effects::Row<>>
-        requires ::fixy::IsPure<CallerRow>
+    // This entry asks for the context of this Vigil's producer claim, which
+    // only mint_producer_context gives.  That context has the empty row and
+    // the brand of the Vigil.  An init helper, a background helper or a test
+    // fixture holds a different context, so its call does not compile.
+    //
+    // The context proves the claim at the time of the mint.  A reference to
+    // it can still reach another thread, so dispatch_op checks the thread
+    // again before the ring head can advance.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
-    dispatch_op_pure(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
+    dispatch_op_pure(VigilFgCtx const&, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
                      ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
         return dispatch_op(ve, metas, n_metas, scope_hash, callsite_hash);
     }

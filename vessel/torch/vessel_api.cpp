@@ -145,14 +145,13 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
         crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
     if (!validated) return CrucibleDispatchResult{};
 
-    // dispatch_op_pure<>(): the row-typed facade pinning this
-    // FFI extern "C" entry as a `Pure` caller — i.e. no I/O / Block / Bg
-    // / Init / Test / Alloc context.  Migrating the call from dispatch_op
-    // to dispatch_op_pure<>() (default CallerRow = Row<>) is zero-cost at
-    // runtime (thin forwarder under -O3) and gives the compile-time
-    // guarantee that the foreground extern "C" boundary cannot drift
-    // into a non-Pure context without the row mismatch firing.
-    auto result = vigil_typed.value()->dispatch_op_pure(*validated, metas_typed.value(), n_metas);
+    // dispatch_op_pure takes the context of the Vigil's producer claim.  The
+    // mint claims the calling thread, or ends the process when another
+    // thread holds the claim, which is the same gate that dispatch_op has.
+    // This entry asks no is_producer_thread question, so that gate is its
+    // only guard.
+    crucible::Vigil* const vigil = vigil_typed.value();
+    auto result = vigil->dispatch_op_pure(vigil->mint_producer_context(), *validated, metas_typed.value(), n_metas);
 
     CrucibleDispatchResult cr{};
     cr.action = static_cast<uint8_t>(result.action);
@@ -209,9 +208,9 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
         crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
     if (!validated) return CrucibleDispatchResult{};
 
-    // dispatch_op_pure<>() — row-typed facade; see the
-    // sister site in crucible_dispatch_op for the rationale.
-    auto result = vigil_typed.value()->dispatch_op_pure(*validated, metas_typed.value(), n_metas);
+    // The producer claim gates this entry as it gates crucible_dispatch_op.
+    crucible::Vigil* const vigil = vigil_typed.value();
+    auto result = vigil->dispatch_op_pure(vigil->mint_producer_context(), *validated, metas_typed.value(), n_metas);
 
     CrucibleDispatchResult cr{};
     cr.action = static_cast<uint8_t>(result.action);

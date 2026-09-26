@@ -997,12 +997,12 @@ void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHa
 
     RecordingBinding binding = ::fixy::mint_fn_for<::fixy::role::PureLinear>(std::move(validated));
 
-    // dispatch_op_pure rather than dispatch_op: the facade demands an empty
-    // caller row, which catches a kernel reached from an init, background or
-    // test context instead of from the foreground. The default CallerRow is
-    // the empty row and costs nothing.
-    (void)vigil->dispatch_op_pure(std::move(binding).value(), recording.metas.data(), recording.counts.total(),
-                                  scope_hash);
+    // dispatch_op_pure rather than dispatch_op: it takes the context of the
+    // Vigil's producer claim. recording_vigil confirmed that this thread can
+    // take the claim. A kernel reached from an init, background or test
+    // context has no such context, so its call does not compile.
+    (void)vigil->dispatch_op_pure(vigil->mint_producer_context(), std::move(binding).value(), recording.metas.data(),
+                                  recording.counts.total(), scope_hash);
 }
 
 // =====================================================================

@@ -4,7 +4,8 @@
 // stage and the assertions say which one.
 
 #include <crucible/Vigil.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include "test_abort_probe.h"
@@ -305,35 +306,46 @@ static void test_dispatch_pool_bounds() {
     std::printf("  test_dispatch_pool_bounds: PASSED\n");
 }
 
-// dispatch_op_pure carries an effect row in its template parameter and
-// must otherwise behave exactly like dispatch_op.  The row is erased
-// before it reaches the state machine, so every caller row has to reach
-// the same result on every leg.
-namespace eff = ::fixy;
+// dispatch_op_pure takes the context of the Vigil's producer claim and must
+// otherwise behave exactly like dispatch_op.  The context is not read past
+// the call, so every leg has to reach the result that dispatch_op reaches.
+//
+// True when a call of dispatch_op_pure with a context of type Ctx compiles.
+template <class Ctx>
+concept can_dispatch_pure_with = requires(Vigil& vigil, Ctx const& ctx, TraceRing::ValidatedEntryPtr entry) {
+    vigil.dispatch_op_pure(ctx, entry, nullptr, 0u);
+};
 
-static void test_dispatch_pure_FOUND_I19() {
-    // Default row, explicit empty row, and each pure alias.
+namespace {
+struct Stranger {};
+}  // namespace
+
+// Only the context of a Vigil's producer claim passes.  The unbranded
+// foreground context has the empty row too, so its refusal shows that the
+// brand, and not the row alone, is what the entry asks for.
+static_assert(can_dispatch_pure_with<VigilFgCtx>);
+static_assert(!can_dispatch_pure_with<::fixy::HotFgCtx>);
+static_assert(!can_dispatch_pure_with<decltype(::foundation::effects::testing::foreground<Stranger>())>);
+static_assert(!can_dispatch_pure_with<::fixy::BgLoadCtx>);
+static_assert(!can_dispatch_pure_with<::fixy::BgDrainCtx>);
+static_assert(!can_dispatch_pure_with<::fixy::InitLoadCtx>);
+static_assert(!can_dispatch_pure_with<::fixy::TestRunnerCtx>);
+
+static void test_dispatch_pure_matches_dispatch_op() {
+    // A fresh context for each call, and one context for several calls.
     {
         Vigil vigil;
         auto d0 = make_op(0, 0);
-        auto r0 = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d0.entry), d0.metas, d0.n_metas);
+        auto r0 = vigil.dispatch_op_pure(vigil.mint_producer_context(),
+                                         crucible::test::certify_synthetic_entry(d0.entry), d0.metas, d0.n_metas);
         assert(r0.action == DispatchResult::Action::RECORD);
 
-        auto d1 = make_op(0, 1);
-        auto r1 = vigil.dispatch_op_pure<eff::Row<>>(crucible::test::certify_synthetic_entry(d1.entry), d1.metas, d1.n_metas);
-        assert(r1.action == DispatchResult::Action::RECORD);
-
-        auto d2 = make_op(0, 2);
-        auto r2 = vigil.dispatch_op_pure<eff::PureRow>(crucible::test::certify_synthetic_entry(d2.entry), d2.metas, d2.n_metas);
-        assert(r2.action == DispatchResult::Action::RECORD);
-
-        auto d3 = make_op(0, 3);
-        auto r3 = vigil.dispatch_op_pure<eff::TotRow>(crucible::test::certify_synthetic_entry(d3.entry), d3.metas, d3.n_metas);
-        assert(r3.action == DispatchResult::Action::RECORD);
-
-        auto d4 = make_op(0, 4);
-        auto r4 = vigil.dispatch_op_pure<eff::GhostRow>(crucible::test::certify_synthetic_entry(d4.entry), d4.metas, d4.n_metas);
-        assert(r4.action == DispatchResult::Action::RECORD);
+        const VigilFgCtx fg = vigil.mint_producer_context();
+        for (uint32_t i = 1; i < 5; ++i) {
+            auto d = make_op(0, i);
+            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::RECORD);
+        }
     }
 
     // Alternating the two entry points must not perturb ring order.
@@ -345,7 +357,8 @@ static void test_dispatch_pure_FOUND_I19() {
             if (i % 2 == 0) {
                 r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             } else {
-                r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+                r = vigil.dispatch_op_pure(vigil.mint_producer_context(),
+                                           crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             }
             assert(r.action == DispatchResult::Action::RECORD);
         }
@@ -358,48 +371,34 @@ static void test_dispatch_pure_FOUND_I19() {
         feed_trigger(vigil, 2);
         flush_and_wait_region_published(vigil);
 
+        const VigilFgCtx fg = vigil.mint_producer_context();
         for (uint32_t i = 0; i < K; ++i) {
             auto d = make_op(3, i);
-            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::RECORD && "alignment via _pure should still RECORD");
         }
         assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K _pure aligns");
 
         for (uint32_t i = K; i < NUM_OPS; ++i) {
             auto d = make_op(3, i);
-            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(4, i);
-            auto r = vigil.dispatch_op_pure<eff::PureRow>(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }
 
-    static_assert(eff::IsPure<eff::Row<>>);
-    static_assert(eff::IsPure<eff::PureRow>);
-    static_assert(eff::IsPure<eff::TotRow>);
-    static_assert(eff::IsPure<eff::GhostRow>);
-    static_assert(!eff::IsPure<eff::DivRow>);
-    static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
-    static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
-    static_assert(!eff::IsPure<eff::Row<eff::Effect::Alloc>>);
-    static_assert(!eff::IsPure<eff::Row<eff::Effect::Init>>);
-    static_assert(!eff::IsPure<eff::Row<eff::Effect::Test>>);
-    static_assert(!eff::IsPure<eff::AllRow>);
-    static_assert(!eff::IsPure<eff::Row<eff::Effect::IO, eff::Effect::Block>>);
-
-    std::printf("  test_dispatch_pure_FOUND_I19: PASSED\n");
+    std::printf("  test_dispatch_pure_matches_dispatch_op: PASSED\n");
 }
 
 // The legs the test above does not reach: divergence, recovery after
-// divergence, and the aliases other than PureRow on a compiled
-// iteration.  Covering only PureRow on the compiled leg would let a
-// regression that special-cased one alias pass, because the other
-// aliases are exercised on the record leg alone.
-static void test_dispatch_pure_FOUND_I19_AUDIT() {
+// divergence, and a context minted while recording that the compiled
+// iterations still take.
+static void test_dispatch_pure_divergence_and_recovery() {
     // Divergence.
     {
         Vigil vigil;
@@ -409,9 +408,10 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         flush_and_wait_region_published(vigil);
         align_and_activate(vigil, 3);
 
+        const VigilFgCtx fg = vigil.mint_producer_context();
         for (uint32_t i = 0; i < 3; ++i) {
             auto d = make_op(4, i);
-            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
             assert(r.status == ReplayStatus::MATCH);
         }
@@ -426,14 +426,14 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         bad_metas[0] = make_meta(fake_ptr(4, 2));
         bad_metas[1] = make_meta(fake_ptr(4, 3));
 
-        auto rdiv = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(bad_entry), bad_metas, 2);
+        auto rdiv = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(bad_entry), bad_metas, 2);
         assert(rdiv.action == DispatchResult::Action::RECORD);
         assert(rdiv.status == ReplayStatus::DIVERGED);
         assert(vigil.diverged_count() == 1);
         assert(!vigil.context().is_compiled());
 
         auto d = make_op(4, 4);
-        auto r2 = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r2 = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r2.action == DispatchResult::Action::RECORD);
     }
 
@@ -453,7 +453,8 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         bad.num_outputs = 1;
         TensorMeta bad_meta = make_meta(fake_ptr(99, 0));
 
-        auto rdiv = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
+        const VigilFgCtx fg = vigil.mint_producer_context();
+        auto rdiv = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
         assert(rdiv.action == DispatchResult::Action::RECORD);
         assert(rdiv.status == ReplayStatus::DIVERGED);
         assert(!vigil.context().is_compiled());
@@ -471,51 +472,47 @@ static void test_dispatch_pure_FOUND_I19_AUDIT() {
         // driven through the wrapper as well.
         for (uint32_t i = 0; i < K; ++i) {
             auto d = make_op(17, i);
-            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::RECORD);
         }
         assert(vigil.context().is_compiled());
 
         for (uint32_t i = K; i < NUM_OPS; ++i) {
             auto d = make_op(17, i);
-            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(18, i);
-            auto r = vigil.dispatch_op_pure(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }
 
-    // The remaining aliases on a compiled iteration.
+    // A context minted before the first op, while the Vigil records, still
+    // serves the compiled iterations after the region activates.
     {
         Vigil vigil;
+        const VigilFgCtx fg = vigil.mint_producer_context();
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
         flush_and_wait_region_published(vigil);
         align_and_activate(vigil, 3);
 
-        for (uint32_t i = 0; i < NUM_OPS; ++i) {
-            auto d = make_op(4, i);
-            auto r = vigil.dispatch_op_pure<eff::TotRow>(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
-            assert(r.status == ReplayStatus::MATCH || r.status == ReplayStatus::COMPLETE);
-        }
-
-        for (uint32_t i = 0; i < NUM_OPS; ++i) {
-            auto d = make_op(5, i);
-            auto r = vigil.dispatch_op_pure<eff::GhostRow>(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
-            assert(r.status == ReplayStatus::MATCH || r.status == ReplayStatus::COMPLETE);
+        for (uint32_t iter = 4; iter < 6; ++iter) {
+            for (uint32_t i = 0; i < NUM_OPS; ++i) {
+                auto d = make_op(iter, i);
+                auto r =
+                    vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+                assert(r.action == DispatchResult::Action::COMPILED);
+                assert(r.status == ReplayStatus::MATCH || r.status == ReplayStatus::COMPLETE);
+            }
         }
     }
 
-    std::printf("  test_dispatch_pure_FOUND_I19_AUDIT: "
-                "(audit-A diverged + audit-B recovery + "
-                "audit-C alias×COMPILED) PASSED\n");
+    std::printf("  test_dispatch_pure_divergence_and_recovery: PASSED\n");
 }
 
 // The recording ring is single-producer. Two threads calling dispatch_op
@@ -648,8 +645,8 @@ int main() {
     test_dispatch_recovery();
     test_dispatch_data_flow();
     test_dispatch_pool_bounds();
-    test_dispatch_pure_FOUND_I19();
-    test_dispatch_pure_FOUND_I19_AUDIT();
+    test_dispatch_pure_matches_dispatch_op();
+    test_dispatch_pure_divergence_and_recovery();
     std::printf("test_vigil_dispatch: all tests passed\n");
     return 0;
 }
