@@ -43,8 +43,10 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     target_link_libraries(crucible_dispatch PRIVATE crucible fixy)
 
     # register.cpp instantiates a kernel for each of the 3110 operators in one
-    # translation unit. Measured on the development host: 2 minutes 35 seconds
-    # and 11.1 GB of peak resident set. The pool has depth one, so a -j24 build
+    # translation unit. The cost changes with the load of the host. On 2026-09-26,
+    # on a loaded host, the Release build of this file used about 10 minutes and
+    # 21 GB of peak resident set. The Debug build with ASan used more than 14
+    # minutes and 25 GB. The pool has depth one, so a -j24 build
     # cannot schedule this beside another copy of itself and exhaust the
     # machine. Ninja is the only generator that honours a pool; every other one
     # ignores the property, which loses the limit but not the build.

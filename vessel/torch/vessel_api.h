@@ -54,11 +54,13 @@ extern "C" {
 #endif
 
 // Exception transparency for the C ABI boundary.  Every extern "C"
-// function is noexcept: throwing across a C ABI is UB, and the project
-// builds with -fno-exceptions anyway, so the annotation is both
-// documentation and a guarantee that GCC elides any unwind machinery
-// for these thunks.  The macro collapses to empty under a C compiler
-// because `noexcept` is C++-only syntax.
+// function is noexcept, because a throw across a C ABI is undefined
+// behavior.  If a callee of a thunk throws, the noexcept specification
+// calls std::terminate before the exception goes across the boundary.
+// The build has no -fno-exceptions.  Nothing in the tree throws, and
+// scripts/check-no-throw-no-rtti.sh does that check on the crucible and
+// foundation artifacts, but not on this library.  The macro is empty
+// under a C compiler, because `noexcept` is C++-only syntax.
 #ifdef __cplusplus
 #define CRUCIBLE_VESSEL_NOEXCEPT noexcept
 #else
@@ -159,7 +161,9 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandl
 
 // ── Control ──────────────────────────────────────────────────────────
 
-// Spin-wait until TraceRing is drained (1s timeout).
+// Waits in a spin loop until the background thread completes the work for
+// each ring entry that exists at the call.  That work includes the build and
+// the publication of a region.  The call has no timeout.
 CRUCIBLE_VESSEL_API void crucible_flush(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Query mode: 1 while the Vigil replays a region, 0 while it records.  A
