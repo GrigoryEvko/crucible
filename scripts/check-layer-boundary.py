@@ -188,9 +188,14 @@ def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str],
     """
     for node in tree.find("preproc_include"):
         path = node.child_by_field("path")
-        spelled = path.text.strip() if path is not None else ""
-        if path is not None and path.type == "identifier":
-            spelled = macros.get(path.text, "")
+        if path is None:
+            continue
+        if path.type in ("string_literal", "system_lib_string"):
+            spelled = tsast.prose_text(path).strip()
+        else:
+            # The path is a macro name or a call of a function-like macro.
+            # Only an object-like macro of this file can resolve it.
+            spelled = macros.get(tsast.lexeme(path), "") if path.type == "identifier" else ""
             if not spelled.startswith(("<", '"')):
                 yield node.start[0], "?", "a computed include that no object-like macro of this file resolves"
                 continue
@@ -226,6 +231,28 @@ def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str],
     for node in tree.find("namespace_alias_definition"):
         if node.index not in read_aliases:
             yield node.start[0], "?", "a namespace alias whose target the guard cannot read"
+
+
+def header_of(body: tsast.MacroBody) -> str:
+    """Return the include path that an object-like macro expands to, with its delimiters.
+
+    The preprocessor reads an `#include MACRO` as the tokens of the body.  One
+    string literal is a quoted path.  A `<` first and a `>` last is an angle
+    path, and its spelling is the tokens joined.  A comment in the body gives
+    no token.
+
+    Args:
+        body: The body of one object-like macro
+
+    Returns:
+        The path with its delimiters, or "" when the body is no include path
+    """
+    tokens = tsast.pp_tokens(body.text, body.first_row)
+    if len(tokens) == 1 and tokens[0].kind == "string":
+        return tsast.lexeme(tokens[0])
+    if len(tokens) >= 2 and tsast.lexeme(tokens[0]) == "<" and tsast.lexeme(tokens[-1]) == ">":
+        return "".join(tsast.lexeme(token) for token in tokens)
+    return ""
 
 
 def macro_roots(body: tsast.MacroBody, roots: frozenset[str]) -> Iterator[tuple[int, str]]:
@@ -268,7 +295,7 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
         layer = layer_of(rel)
         above = roots - ALLOWED[layer]
         own = bodies.get(id(tree), [])
-        macros = {body.name: body.text.strip() for body in own if not body.params
+        macros = {body.name: header_of(body) for body in own if not body.params
                   and body.define.type == "preproc_def"}
         hits: set[tuple[int, str, str]] = set()
         hits.update(hit for hit in named_roots(root, rel, tree, roots, macros) if hit[1] in above or hit[1] == "?")
@@ -337,6 +364,7 @@ def self_test() -> int:
         ("#define HEADER <crucible/Arena.h>", True, "a macro body that names a higher root"),
         ("#include HEADER", True, "a computed include through a macro of the file"),
         ("#include OTHER_HEADER", True, "a computed include that the file cannot resolve"),
+        ("#include MAKE_HEADER(Arena)", True, "a computed include through a function-like macro"),
         ("#include <foundation/Platform.h>", False, "an include of the own layer"),
         ("#include <vector>", False, "a system header"),
         ('#include "Sibling.h"', False, "a quoted include of a sibling"),

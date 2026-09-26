@@ -154,14 +154,9 @@ NsPath = tuple[str, ...]
 Written = tuple[bool, NsPath]
 
 
-def joined(parts: tuple[str, ...]) -> NsPath:
-    """Return name parts with each line splice inside them removed, as translation phase 2 does."""
-    return tuple("".join(token.text for token in tsast.pp_tokens(part)) if "\\" in part else part for part in parts)
-
-
 def enclosing_of(node: tsast.Node) -> NsPath:
     """Return the namespaces around a node, outermost first, an inline namespace left out."""
-    return joined(tsast.namespace_path(node, skip_inline=True))
+    return tsast.namespace_path(node, skip_inline=True)
 
 
 def outermost_qualified(tree: tsast.Tree) -> Iterator[tsast.Node]:
@@ -201,11 +196,11 @@ class NameTables:
     def add(self, tree: tsast.Tree) -> None:
         """Record the aliases and the using-directive targets of one parsed file."""
         for alias in tsast.namespace_aliases(tree):
-            self.written_aliases.setdefault(joined((alias.name,))[0], []).append(
-                ((alias.is_global, joined(alias.target)), enclosing_of(alias.node)))
+            self.written_aliases.setdefault(alias.name, []).append(
+                ((alias.is_global, alias.target), enclosing_of(alias.node)))
         for using in tsast.using_names(tree):
             if using.is_directive:
-                self.written_directives.append(((using.is_global, joined(using.target)), enclosing_of(using.node)))
+                self.written_directives.append(((using.is_global, using.target), enclosing_of(using.node)))
 
     def seal(self) -> None:
         """Resolve every alias to a fixpoint, then every directive target."""
@@ -258,7 +253,7 @@ def ledger_names(tree: tsast.Tree, tables: NameTables, roots: frozenset[str]) ->
     """
     for node in outermost_qualified(tree):
         written = tsast.qualified_parts(node)
-        parts = joined(written[1]) if written is not None else ()
+        parts = written[1] if written is not None else ()
         if len(parts) > 1 and reaches_ledger((written[0], parts[:-1]), enclosing_of(node), tables, roots):
             yield node.start[0], "a qualified name"
     for node in tree.find("namespace_definition"):
@@ -266,10 +261,10 @@ def ledger_names(tree: tsast.Tree, tables: NameTables, roots: frozenset[str]) ->
         if body is not None and is_ledger_namespace(enclosing_of(body), roots):
             yield node.start[0], "a namespace definition"
     for using in tsast.using_names(tree):
-        if reaches_ledger((using.is_global, joined(using.target)), enclosing_of(using.node), tables, roots):
+        if reaches_ledger((using.is_global, using.target), enclosing_of(using.node), tables, roots):
             yield using.node.start[0], "a using-directive or a using-declaration"
     for alias in tsast.namespace_aliases(tree):
-        if reaches_ledger((alias.is_global, joined(alias.target)), enclosing_of(alias.node), tables, roots):
+        if reaches_ledger((alias.is_global, alias.target), enclosing_of(alias.node), tables, roots):
             yield alias.node.start[0], "a namespace alias"
 
 
@@ -294,18 +289,23 @@ def includes_of(root: Path, rel: str, tree: tsast.Tree) -> Iterator[tuple[str | 
     for node in tree.find("preproc_def"):
         named = node.child_by_field("name")
         if named is not None:
-            macros[named.text] = "".join(token.text for token in macro_tokens(tree, node))
+            macros[tsast.lexeme(named)] = "".join(tsast.lexeme(token) for token in macro_tokens(tree, node))
     for node in tree.find("preproc_include"):
         path = node.child_by_field("path")
-        spelled = path.text.strip() if path is not None else ""
-        if path is not None and path.type == "identifier":
-            spelled = path.text
+        if path is None:
+            continue
+        if path.type in ("string_literal", "system_lib_string"):
+            spelled = tsast.prose_text(path).strip()
+        else:
+            # The path is a macro name or a call of a function-like macro.
+            # Only object-like macros of this file can resolve it.
+            spelled = tsast.lexeme(path) if path.type == "identifier" else ""
             for _step in range(8):
                 if spelled not in macros:
                     break
                 spelled = macros[spelled]
             if not spelled.startswith(("<", '"')):
-                yield None, node.start[0], f"#include {path.text}"
+                yield None, node.start[0], f"#include {tsast.excerpt(path)}"
                 continue
         yield resolve_include(root, rel, spelled), node.start[0], spelled
 
@@ -513,6 +513,8 @@ def self_test() -> int:
                                                     "#define LEDGER_HEADER LEDGER_PATH\n#include LEDGER_HEADER\n",
         "include/crucible/planted/ComputedClean.h": "#pragma once\n#define SIBLING_HEADER \"Sibling.h\"\n"
                                                     "#include SIBLING_HEADER\n",
+        "include/crucible/planted/ComputedCall.h": "#pragma once\n#define LEDGER_OF(name) <crucible/ledger/name.h>\n"
+                                                   "#include LEDGER_OF(Verdict)\n",
         "include/fixy/ledger/New.h": "#pragma once\n",
         "include/crucible/planted/NewTree.h": "#pragma once\n#include <fixy/ledger/New.h>\n",
         "include/crucible/planted/Broken.h": "#pragma once\nvoid f() { g(1) { } }\n",
@@ -570,6 +572,7 @@ def self_test() -> int:
                             ("SplicedDefinition", "a namespace definition with a line splice inside its name"),
                             ("InlineNested", "a nested ledger namespace name with an inline part"),
                             ("ComputedComment", "a computed include whose macro holds a comment"),
+                            ("ComputedCall", "a computed include through a function-like macro"),
                             ("NewTree", "a ledger directory of another project root"),
                             ("Reaches", "a closure file that the parser cannot read")):
             expect(f"caught: {label}", bool(verdict(name)))
