@@ -3961,73 +3961,33 @@ fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_extras_engage_atomic_w
 # ── The witness roster: one fixture per closed line ──────────────────
 #
 # scripts/witness-roster.txt names every type that attests to a fact it
-# cannot see, and scripts/check-witness-roster.py --gen writes
-# neg/neg_witness_<slug>_direct_construction.cpp for each closed line.
-# This loop reads the same roster and registers each fixture with the
-# two regexes the roster implies: the refusal reason it states, and the
-# refused constructor as the compiler prints it — with parentheses,
-# which a brace-spelled fixture never contains, so the source cannot
-# satisfy its own gate.  The slug and the base name are derived here
-# exactly as the generator derives them; the guard's self-test checks
-# that ctest registers precisely the fixtures on disk.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  ${CMAKE_SOURCE_DIR}/scripts/witness-roster.txt)
-file(STRINGS ${CMAKE_SOURCE_DIR}/scripts/witness-roster.txt _witness_lines)
-foreach(_witness_line IN LISTS _witness_lines)
-  string(STRIP "${_witness_line}" _witness_line)
-  if(_witness_line STREQUAL "" OR _witness_line MATCHES "^#")
-    continue()
-  endif()
-  string(REPLACE "|" ";" _witness_fields "${_witness_line}")
-  list(LENGTH _witness_fields _witness_field_count)
-  if(NOT _witness_field_count EQUAL 5)
-    message(FATAL_ERROR
-      "scripts/witness-roster.txt: expected 5 fields separated by '|', "
-      "got ${_witness_field_count}: ${_witness_line}")
-  endif()
-  list(GET _witness_fields 0 _witness_type)
-  list(GET _witness_fields 3 _witness_reason)
-  list(GET _witness_fields 4 _witness_status)
-  string(STRIP "${_witness_type}" _witness_type)
-  string(STRIP "${_witness_reason}" _witness_reason)
-  string(STRIP "${_witness_status}" _witness_status)
-  if(NOT _witness_status STREQUAL "closed")
-    continue()
-  endif()
-  # The same derivation as the generator's qualify(): strip every
-  # template argument list, innermost first, and drop the root
-  # namespace.  fixy::Secret<int> -> Secret, and the compiler prints
-  # `Secret(` when it refuses the constructor;
-  # fixy::concurrent::PermissionedMpscChannel<int, 8>::ProducerHandle
-  # -> concurrent_permissionedmpscchannel_producerhandle, which keeps
-  # the two channels' handles apart.
-  set(_witness_stripped "${_witness_type}")
-  set(_witness_previous "")
-  while(NOT _witness_stripped STREQUAL _witness_previous)
-    set(_witness_previous "${_witness_stripped}")
-    string(REGEX REPLACE "<[^<>]*>" "" _witness_stripped "${_witness_stripped}")
-  endwhile()
-  string(REGEX REPLACE "^(fixy|foundation)::" "" _witness_stripped "${_witness_stripped}")
-  string(REGEX REPLACE "^.*::" "" _witness_base "${_witness_stripped}")
-  string(TOLOWER "${_witness_stripped}" _witness_slug)
-  string(REGEX REPLACE "[^a-z0-9]+" "_" _witness_slug "${_witness_slug}")
-  string(REGEX REPLACE "^_+" "" _witness_slug "${_witness_slug}")
-  string(REGEX REPLACE "_+$" "" _witness_slug "${_witness_slug}")
-  if(_witness_reason STREQUAL "private")
-    set(_witness_why "is private within this context")
-  elseif(_witness_reason STREQUAL "deleted")
-    set(_witness_why "use of deleted function")
-  elseif(_witness_reason STREQUAL "no-match")
-    set(_witness_why "no matching function for call")
-  else()
-    message(FATAL_ERROR
-      "scripts/witness-roster.txt: a closed entry's reason must be "
-      "private, deleted or no-match; got '${_witness_reason}' on: ${_witness_line}")
-  endif()
-  fixy_neg_compile_test(neg_witness_${_witness_slug}_direct_construction
-    "${_witness_why}"
-    "\\b${_witness_base}\\(")
-endforeach()
+# cannot see.  scripts/check-witness-roster.py --gen writes
+# neg/neg_witness_<slug>_direct_construction.cpp for each closed line,
+# and it writes neg/witness-fixtures.json with one record per fixture:
+# the test name, the refusal reason, and the refused constructor as the
+# compiler prints it, with parentheses, which a brace-spelled fixture
+# never contains, so the source cannot satisfy its own gate.  This loop
+# reads that manifest, so the slug and the regexes have one
+# implementation, in the generator.  --check refuses a manifest that the
+# roster does not produce, and the guard's self-test checks that ctest
+# registers precisely the fixtures on disk.
+set(_witness_manifest ${CMAKE_CURRENT_SOURCE_DIR}/neg/witness-fixtures.json)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_witness_manifest})
+file(READ ${_witness_manifest} _witness_json)
+string(JSON _witness_count ERROR_VARIABLE _witness_error LENGTH "${_witness_json}" fixtures)
+if(_witness_error)
+  message(FATAL_ERROR "${_witness_manifest}: ${_witness_error}.  "
+    "Run scripts/check-witness-roster.py --gen.")
+endif()
+if(_witness_count GREATER 0)
+  math(EXPR _witness_last "${_witness_count} - 1")
+  foreach(_witness_index RANGE ${_witness_last})
+    string(JSON _witness_name GET "${_witness_json}" fixtures ${_witness_index} name)
+    string(JSON _witness_why GET "${_witness_json}" fixtures ${_witness_index} reason)
+    string(JSON _witness_constructor GET "${_witness_json}" fixtures ${_witness_index} constructor)
+    fixy_neg_compile_test(${_witness_name} "${_witness_why}" "${_witness_constructor}")
+  endforeach()
+endif()
 
 # ── The cross-wrapper harness and the cheat probe ─────────────────────
 #

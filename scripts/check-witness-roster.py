@@ -31,11 +31,14 @@ THE ROSTER
                 fixture.
 
     From each closed entry, --gen writes
-    test/fixy/neg/neg_witness_<slug>_direct_construction.cpp.  The fixtures
-    are committed, and --check compares them with what the roster produces,
-    so a roster edit with no regeneration is drift.  test/fixy/CMakeLists.txt
-    reads the roster too and registers one negative-compile test for each
-    closed entry.
+    test/fixy/neg/neg_witness_<slug>_direct_construction.cpp, and it writes
+    the manifest test/fixy/neg/witness-fixtures.json: one record for each
+    fixture, with its test name and its two required regexes.  The fixtures
+    and the manifest are committed, and --check compares them with what the
+    roster produces, so a roster edit with no regeneration is drift.
+    test/fixy/CMakeLists.txt reads the manifest with string(JSON) and
+    registers one negative-compile test for each record, so the slug and the
+    regexes have one implementation, here.
 
 THE WALK
     Every class and struct in include/fixy and include/foundation that
@@ -108,6 +111,7 @@ FIXTURE_DIR = REPO / "test" / "fixy" / "neg"
 INCLUDE = REPO / "include"
 WALK_ROOTS = ("fixy", "foundation")
 FIXTURE_GLOB = "neg_witness_*_direct_construction.cpp"
+MANIFEST_NAME = "witness-fixtures.json"
 REASONS = {
     "private": "is private within this context",
     "deleted": "use of deleted function",
@@ -209,6 +213,20 @@ def slug(type_: str) -> str:
 def fixture_name(type_: str) -> str:
     """Return the file name of the fixture of a type."""
     return f"neg_witness_{slug(type_)}_direct_construction.cpp"
+
+
+def manifest_text(entries: list[Entry]) -> str:
+    """Return the manifest that the closed entries produce, the input of test/fixy/CMakeLists.txt.
+
+    One record for each closed entry, sorted by test name: the test name,
+    the refusal reason, and the constructor as the compiler prints it.
+    """
+    records = sorted(({"name": fixture_name(entry.type_).removesuffix(".cpp"),
+                       "reason": REASONS[entry.reason],
+                       "constructor": rf"\b{re.escape(base_name(entry.type_))}\("}
+                      for entry in entries if entry.status == "closed"), key=lambda record: record["name"])
+    return json.dumps({"generator": "scripts/check-witness-roster.py --gen", "fixtures": records},
+                      indent=2) + "\n"
 
 
 def render(entry: Entry) -> str:
@@ -447,7 +465,8 @@ def generate(entries: list[Entry], fixture_dir: Path) -> int:
     for stale in fixture_dir.glob(FIXTURE_GLOB):
         if stale.name not in wanted:
             stale.unlink()
-    print(f"check-witness-roster: wrote {len(wanted)} fixture(s) to {fixture_dir}")
+    (fixture_dir / MANIFEST_NAME).write_text(manifest_text(entries), encoding="utf-8")
+    print(f"check-witness-roster: wrote {len(wanted)} fixture(s) and {MANIFEST_NAME} to {fixture_dir}")
     return 0
 
 
@@ -484,6 +503,10 @@ def check(entries: list[Entry], fixture_dir: Path, roots: list[Path]) -> int:
         if stray.name not in seen:
             failures.append(f"STRAY: {stray.name} has no roster line.  Run --gen, which removes it, or add the "
                             f"entry.")
+    manifest = fixture_dir / MANIFEST_NAME
+    if not manifest.is_file() or manifest.read_text(encoding="utf-8") != manifest_text(entries):
+        failures.append(f"DRIFT: {MANIFEST_NAME} is missing or differs from what the roster produces, so ctest "
+                        f"registers another fixture set.  Run --gen and commit the result.")
     if failures:
         print("\n".join(failures))
         print(f"\ncheck-witness-roster: {len(failures)} failure(s).")
@@ -728,6 +751,15 @@ def self_test() -> int:
         captured(lambda: generate(planted_entries, neg))
         fixture = neg / "neg_witness_planted_open_direct_construction.cpp"
         expect("--gen writes the planted fixture", fixture.is_file())
+        manifest = json.loads((neg / MANIFEST_NAME).read_text(encoding="utf-8"))
+        expect("--gen writes one manifest record with the name and both regexes of the fixture",
+               manifest["fixtures"] == [{"name": "neg_witness_planted_open_direct_construction",
+                                         "reason": "is private within this context",
+                                         "constructor": r"\bOpen\("}])
+        (neg / MANIFEST_NAME).write_text("{}\n", encoding="utf-8")
+        code, report = captured(lambda: check(planted_entries, neg, [scratch / "inc" / "fixy"]))
+        expect("an edited manifest is drift", code == 1 and f"DRIFT: {MANIFEST_NAME}" in report, True)
+        captured(lambda: generate(planted_entries, neg))
         (neg / "neg_witness_gone_direct_construction.cpp").write_text("// stray\n", encoding="utf-8")
         code, report = captured(lambda: check(planted_entries, neg, [scratch / "inc" / "fixy"]))
         expect("a stray fixture fails --check", code == 1 and "STRAY: neg_witness_gone" in report, True)

@@ -1,0 +1,505 @@
+{
+  "generator": "scripts/check-witness-roster.py --gen",
+  "fixtures": [
+    {
+      "name": "neg_witness_algebra_grade_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bgrade_key\\("
+    },
+    {
+      "name": "neg_witness_algebra_graded_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bGraded\\("
+    },
+    {
+      "name": "neg_witness_algebra_lattices_happensbeforelattice_element_type_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\belement_type\\("
+    },
+    {
+      "name": "neg_witness_algebra_lattices_strongcounterlattice_element_type_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\belement_type\\("
+    },
+    {
+      "name": "neg_witness_appendonly_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bAppendOnly\\("
+    },
+    {
+      "name": "neg_witness_atomicmonotonic_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bAtomicMonotonic\\("
+    },
+    {
+      "name": "neg_witness_borrowed_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBorrowed\\("
+    },
+    {
+      "name": "neg_witness_borrowedref_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBorrowedRef\\("
+    },
+    {
+      "name": "neg_witness_boundedmonotonic_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBoundedMonotonic\\("
+    },
+    {
+      "name": "neg_witness_budgetauthority_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBudgetAuthority\\("
+    },
+    {
+      "name": "neg_witness_budgetstamp_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBudgetStamp\\("
+    },
+    {
+      "name": "neg_witness_cipher_durable_cipherdurablehandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCipherDurableHandle\\("
+    },
+    {
+      "name": "neg_witness_clocksource_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bClockSource\\("
+    },
+    {
+      "name": "neg_witness_concurrent_endpoint_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bEndpoint\\("
+    },
+    {
+      "name": "neg_witness_concurrent_endpointdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bEndpointDoor\\("
+    },
+    {
+      "name": "neg_witness_concurrent_mpmcstage_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bMpmcStage\\("
+    },
+    {
+      "name": "neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bConsumerHandle\\("
+    },
+    {
+      "name": "neg_witness_concurrent_permissionedmpscchannel_producerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bProducerHandle\\("
+    },
+    {
+      "name": "neg_witness_concurrent_permissionedspscchannel_consumerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bConsumerHandle\\("
+    },
+    {
+      "name": "neg_witness_concurrent_permissionedspscchannel_producerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bProducerHandle\\("
+    },
+    {
+      "name": "neg_witness_concurrent_pipeline_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bPipeline\\("
+    },
+    {
+      "name": "neg_witness_concurrent_pipelinedag_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bPipelineDag\\("
+    },
+    {
+      "name": "neg_witness_concurrent_stage_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bStage\\("
+    },
+    {
+      "name": "neg_witness_concurrent_stageendpointdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bStageEndpointDoor\\("
+    },
+    {
+      "name": "neg_witness_concurrent_swmr_session_swmrsession_readerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bReaderHandle\\("
+    },
+    {
+      "name": "neg_witness_concurrent_swmr_session_swmrsession_writerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWriterHandle\\("
+    },
+    {
+      "name": "neg_witness_concurrent_swmrstage_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSwmrStage\\("
+    },
+    {
+      "name": "neg_witness_cpupinned_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCpuPinned\\("
+    },
+    {
+      "name": "neg_witness_disjoint_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bDisjoint\\("
+    },
+    {
+      "name": "neg_witness_effects_bg_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBg\\("
+    },
+    {
+      "name": "neg_witness_effects_cap_mint_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bcap_mint_key\\("
+    },
+    {
+      "name": "neg_witness_effects_capability_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bCapability\\("
+    },
+    {
+      "name": "neg_witness_effects_ctx_cap_brandedfg_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bBrandedFg\\("
+    },
+    {
+      "name": "neg_witness_effects_ctx_cap_fg_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bFg\\("
+    },
+    {
+      "name": "neg_witness_effects_detail_contextbase_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bContextBase\\("
+    },
+    {
+      "name": "neg_witness_effects_detail_ctx_mint_bg_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bbg_key\\("
+    },
+    {
+      "name": "neg_witness_effects_detail_ctx_mint_fg_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bfg_key\\("
+    },
+    {
+      "name": "neg_witness_effects_detail_ctx_mint_init_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\binit_key\\("
+    },
+    {
+      "name": "neg_witness_effects_detail_ctx_mint_test_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\btest_key\\("
+    },
+    {
+      "name": "neg_witness_effects_execctx_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bExecCtx\\("
+    },
+    {
+      "name": "neg_witness_effects_host_producerclaim_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bProducerClaim\\("
+    },
+    {
+      "name": "neg_witness_effects_init_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bInit\\("
+    },
+    {
+      "name": "neg_witness_effects_test_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bTest\\("
+    },
+    {
+      "name": "neg_witness_fn_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bfn\\("
+    },
+    {
+      "name": "neg_witness_fs_dirfd_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bDirfd\\("
+    },
+    {
+      "name": "neg_witness_fs_ownedfd_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bOwnedFd\\("
+    },
+    {
+      "name": "neg_witness_io_iouringring_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bIoUringRing\\("
+    },
+    {
+      "name": "neg_witness_machine_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bMachine\\("
+    },
+    {
+      "name": "neg_witness_monotonic_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bMonotonic\\("
+    },
+    {
+      "name": "neg_witness_numaplacement_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bNumaPlacement\\("
+    },
+    {
+      "name": "neg_witness_orderedappendonly_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bOrderedAppendOnly\\("
+    },
+    {
+      "name": "neg_witness_ownedfile_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bOwnedFile\\("
+    },
+    {
+      "name": "neg_witness_ownedmmap_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bOwnedMmap\\("
+    },
+    {
+      "name": "neg_witness_ownedregion_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bOwnedRegion\\("
+    },
+    {
+      "name": "neg_witness_permissions_federation_admission_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bfederation_admission_key\\("
+    },
+    {
+      "name": "neg_witness_permissions_lentpermission_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bLentPermission\\("
+    },
+    {
+      "name": "neg_witness_permissions_perm_mint_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bperm_mint_key\\("
+    },
+    {
+      "name": "neg_witness_permissions_permission_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bPermission\\("
+    },
+    {
+      "name": "neg_witness_permissions_permissionforkrunner_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bPermissionForkRunner\\("
+    },
+    {
+      "name": "neg_witness_permissions_readloan_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bReadLoan\\("
+    },
+    {
+      "name": "neg_witness_permissions_readview_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bReadView\\("
+    },
+    {
+      "name": "neg_witness_permissions_sharedpermission_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSharedPermission\\("
+    },
+    {
+      "name": "neg_witness_permissions_sharedpermissionguard_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSharedPermissionGuard\\("
+    },
+    {
+      "name": "neg_witness_permissions_sharedpermissionpool_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bSharedPermissionPool\\("
+    },
+    {
+      "name": "neg_witness_permissions_writeview_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWriteView\\("
+    },
+    {
+      "name": "neg_witness_qtt_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bQtt\\("
+    },
+    {
+      "name": "neg_witness_refinement_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bRefinement\\("
+    },
+    {
+      "name": "neg_witness_scopedview_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bScopedView\\("
+    },
+    {
+      "name": "neg_witness_secret_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSecret\\("
+    },
+    {
+      "name": "neg_witness_session_checkpointdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bCheckpointDoor\\("
+    },
+    {
+      "name": "neg_witness_session_checkpointhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCheckpointHandle\\("
+    },
+    {
+      "name": "neg_witness_session_crashreporter_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCrashReporter\\("
+    },
+    {
+      "name": "neg_witness_session_crashsessiondoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bCrashSessionDoor\\("
+    },
+    {
+      "name": "neg_witness_session_crashwatched_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCrashWatched\\("
+    },
+    {
+      "name": "neg_witness_session_delegatedsession_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bDelegatedSession\\("
+    },
+    {
+      "name": "neg_witness_session_delegationdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bDelegationDoor\\("
+    },
+    {
+      "name": "neg_witness_session_delegationkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bDelegationKey\\("
+    },
+    {
+      "name": "neg_witness_session_detail_handle_core_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bhandle_core\\("
+    },
+    {
+      "name": "neg_witness_session_handlefactory_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bHandleFactory\\("
+    },
+    {
+      "name": "neg_witness_session_handlekey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bHandleKey\\("
+    },
+    {
+      "name": "neg_witness_session_permhold_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bPermHold\\("
+    },
+    {
+      "name": "neg_witness_session_recorded_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRecorded\\("
+    },
+    {
+      "name": "neg_witness_session_recordingdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bRecordingDoor\\("
+    },
+    {
+      "name": "neg_witness_session_sessionevent_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSessionEvent\\("
+    },
+    {
+      "name": "neg_witness_session_sessionfrommachine_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSessionFromMachine\\("
+    },
+    {
+      "name": "neg_witness_session_sessionhandle_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bSessionHandle\\("
+    },
+    {
+      "name": "neg_witness_session_sessionmintdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bSessionMintDoor\\("
+    },
+    {
+      "name": "neg_witness_session_sessionopenkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSessionOpenKey\\("
+    },
+    {
+      "name": "neg_witness_sharedread_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSharedRead\\("
+    },
+    {
+      "name": "neg_witness_sharedregion_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bSharedRegion\\("
+    },
+    {
+      "name": "neg_witness_spawn_parallelforrunner_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bParallelForRunner\\("
+    },
+    {
+      "name": "neg_witness_tagged_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bTagged\\("
+    },
+    {
+      "name": "neg_witness_threadnamed_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bThreadNamed\\("
+    },
+    {
+      "name": "neg_witness_time_clockreader_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bClockReader\\("
+    },
+    {
+      "name": "neg_witness_time_ptpclockreader_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bPtpClockReader\\("
+    },
+    {
+      "name": "neg_witness_versionsource_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bVersionSource\\("
+    },
+    {
+      "name": "neg_witness_versionstamp_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bVersionStamp\\("
+    },
+    {
+      "name": "neg_witness_witnessed_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWitnessed\\("
+    },
+    {
+      "name": "neg_witness_writeonce_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWriteOnce\\("
+    },
+    {
+      "name": "neg_witness_writeoncenonnull_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bWriteOnceNonNull\\("
+    }
+  ]
+}
