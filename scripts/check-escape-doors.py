@@ -130,6 +130,16 @@ def function_declarator(node: tsast.Node) -> tuple[tsast.Node | None, bool]:
     return None, False
 
 
+def is_decltype_auto(kind: tsast.Node | None) -> bool:
+    """Report whether a type node is `decltype(auto)`: a placeholder whose decltype holds the auto keyword.
+
+    A comment inside the parentheses is a node of its own, so it changes
+    nothing."""
+    if kind is None or kind.type != "placeholder_type_specifier":
+        return False
+    return any(inner.type == "decltype" and inner.children_of_type("auto") for inner in kind.children)
+
+
 def returns_raw(node: tsast.Node, declarator: tsast.Node, wrapped: bool) -> bool:
     """Report whether a function returns a reference or a raw pointer, or may through decltype(auto)."""
     if wrapped:
@@ -139,10 +149,9 @@ def returns_raw(node: tsast.Node, declarator: tsast.Node, wrapped: bool) -> bool
             outer = descriptor.child_by_field("declarator")
             if outer is not None and outer.type in ("abstract_reference_declarator", "abstract_pointer_declarator"):
                 return True
-            if "decltype(auto)" in descriptor.text.replace(" ", ""):
+            if is_decltype_auto(descriptor.child_by_field("type")):
                 return True
-    kind = node.child_by_field("type")
-    return kind is not None and kind.text.replace(" ", "") == "decltype(auto)"
+    return is_decltype_auto(node.child_by_field("type"))
 
 
 def access_of(node: tsast.Node) -> str:
@@ -169,7 +178,13 @@ def classify(name_node: tsast.Node) -> tuple[str, str] | None:
         return name_node.text.replace(" ", ""), "accessor"
     if name_node.type in ("destructor_name", "qualified_identifier"):
         return None
-    name = name_node.text.split("<", 1)[0].strip()
+    # A template-id names its template in its name field; the arguments
+    # after it are no part of the name.
+    if name_node.type in ("template_function", "template_method"):
+        name_node = name_node.child_by_field("name")
+        if name_node is None:
+            return None
+    name = name_node.text
     if not name or name.endswith("_"):
         return None
     if name.startswith("mint_"):
@@ -351,6 +366,8 @@ def self_test() -> int:
         "    /* a block comment between the return type and the name */\n"
         "    wrapped_steal() noexcept { return value_; }\n"
         "    decltype(auto) deduced_steal() noexcept { return (value_); }\n"
+        "    auto commented_deduced() noexcept -> decltype(/* deduced */ auto) { return (value_); }\n"
+        "    decltype(value_) by_decltype() noexcept { return value_; }\n"
         "    operator int&() noexcept { return value_; }\n"
         "    int* data() noexcept { return &value_; }\n"
         "    int& operator*() noexcept { return value_; }\n"
@@ -370,8 +387,8 @@ def self_test() -> int:
         "// int* in_a_comment(int* p) noexcept;\n"
         "}  // namespace planted\n"
     )
-    bare_expected = {"steal_the_pointer", "trailing_steal", "wrapped_steal", "deduced_steal", "operator int&",
-                     "hidden_friend", "free_steal", "template_steal"}
+    bare_expected = {"steal_the_pointer", "trailing_steal", "wrapped_steal", "deduced_steal", "commented_deduced",
+                     "operator int&", "hidden_friend", "free_steal", "template_steal"}
     with tempfile.TemporaryDirectory() as work:
         root = Path(work) / "inc"
         (root / "planted").mkdir(parents=True)
@@ -384,7 +401,8 @@ def self_test() -> int:
         for name, klass in (("data", "accessor"), ("operator*", "accessor"), ("operator=", "accessor"),
                             ("release", "hatch")):
             expect(f"{name} is {klass}", by_name.get(name) == klass)
-        for name in ("internal_", "deleted_door", "by_value", "private_steal", "out_of_class", "in_a_comment"):
+        for name in ("internal_", "deleted_door", "by_value", "by_decltype", "private_steal", "out_of_class",
+                     "in_a_comment"):
             expect(f"no door: {name}", name not in by_name, True)
 
         ledger = Path(work) / "ledger.txt"
@@ -436,7 +454,7 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     """Run one mode."""
     try:
-        if argv in ([], ["--quiet"]):
+        if argv == []:
             return check(ROOTS, LEDGER)
         if argv == ["--refresh"]:
             return refresh(ROOTS, LEDGER)
@@ -454,7 +472,7 @@ def main(argv: list[str]) -> int:
     except LedgerError as exc:
         print(f"check-escape-doors: {exc}", file=sys.stderr)
         return 2
-    print("usage: check-escape-doors.py [--quiet | --list | --refresh | --self-test]", file=sys.stderr)
+    print("usage: check-escape-doors.py [--list | --refresh | --self-test]", file=sys.stderr)
     return 2
 
 

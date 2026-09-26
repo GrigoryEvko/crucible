@@ -532,7 +532,7 @@ set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
 add_test(NAME escape_doors_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.py --self-test)
 add_test(NAME escape_doors
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.py --quiet)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.py)
 set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
