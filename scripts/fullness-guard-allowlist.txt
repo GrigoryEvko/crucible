@@ -24,12 +24,9 @@
 #                              same idiom is also at two sites that spell
 #                              it `!= MaxPeers`, which the guard does not
 #                              read.
-#   observe/SdcDetect.h        the linear search over cogs_ can return a
-#                              CogSlot.
 #   observe/SyntheticProbe.h   find_peer() can return a PeerSlot.  One row
 #                              holds two sites with the same text.
 
 include/crucible/topology/Pingmesh.h:if (src == MaxPeers || dst == MaxPeers) { — not-found sentinel. find_peer() returns MaxPeers on a miss, and the code checks both operands before it indexes peers_.
-include/crucible/observe/SdcDetect.h:if (index == cogs_.size()) { — not-found sentinel. `index` comes from a linear search over cogs_, and it equals cogs_.size() only on a miss.
 include/crucible/observe/SyntheticProbe.h:if (peer_index == peers_.size() || !peers_[peer_index].enabled_kinds.test(kind)) { — not-found sentinel. find_peer() returns peers_.size() on a miss, and `||` stops before peers_[peer_index].
 include/crucible/observe/SyntheticProbe.h:if (peer_index == peers_.size() || !peers_[peer_index].enabled_kinds.test(outcome.kind)) { — not-found sentinel, the same shape as the row above.

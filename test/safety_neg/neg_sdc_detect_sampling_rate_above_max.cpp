@@ -1,15 +1,21 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #5 for GAPS-180. Sampling rate is parts-per-million, so
-// values above 1,000,000 cannot cross the SdcConfig boundary.
+// The sampling rate is in parts per million.  The door into
+// SdcSamplingRatePpm must refuse 1,000,001, the value immediately above
+// the closed range, so that no rate above 100% crosses the SdcConfig
+// boundary.
+//
+// Expected diagnostic: the in_range precondition of mint_refined fails in
+// a constant expression.
 
 #include <crucible/observe/SdcDetect.h>
 
 namespace observe = crucible::observe;
 
-constexpr observe::SdcSamplingRatePpm bad_rate{1000001};
-
 int main() {
+    constexpr observe::SdcSamplingRatePpm bad_rate =
+        ::fixy::mint_refined<observe::SdcSamplingRatePpm::predicate_type{}, observe::SdcSamplingRatePpm::value_type>(
+            1000001u);
     (void)bad_rate;
     return 0;
 }

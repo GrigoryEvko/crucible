@@ -2,7 +2,7 @@
 
 namespace crucible::observe {
 
-static_assert(CtxFitsSdcMint<effects::ColdInitCtx>);
-static_assert(CtxFitsSdcRun<effects::BgDrainCtx>);
+static_assert(CtxFitsSdcMint<::fixy::ColdInitCtx>);
+static_assert(CtxFitsSdcRun<::fixy::BgDrainCtx>);
 
 }  // namespace crucible::observe

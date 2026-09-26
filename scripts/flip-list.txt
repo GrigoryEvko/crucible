@@ -119,7 +119,6 @@ include/crucible/ledger/HostFingerprint.h
 include/crucible/mimic/CogMimic.h
 include/crucible/mimic/Semaphore.h
 include/crucible/mimic/_wip/network/Backend.h
-include/crucible/observe/SdcDetect.h
 include/crucible/perf/WorkloadProfiler.h
 include/crucible/topology/AsymmetricFailure.h
 include/crucible/topology/CongestionTelemetry.h
@@ -135,5 +134,4 @@ include/crucible/warden/Quarantine.h
 src/cntp/RoceConfig.cpp
 src/cog/NicOffloadAudit.cpp
 src/cog/NumaNic.cpp
-src/observe/SdcDetect.cpp
 src/topology/Ptp.cpp

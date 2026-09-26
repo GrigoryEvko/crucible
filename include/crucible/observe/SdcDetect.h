@@ -3,14 +3,16 @@
 // SDC is silent data corruption.
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/Observation.h>
-#include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Pinned.h>
+#include <foundation/Saturate.h>
+#include <foundation/diag/Catalog.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <array>
 #include <cmath>
@@ -19,6 +21,7 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -27,28 +30,17 @@
 
 namespace crucible::observe {
 
-using PositiveSdcReplicaCount = safety::Positive<std::uint8_t>;
-using SdcSamplingRatePpm = safety::Refined<safety::in_range<1u, 1000000u>, std::uint32_t>;
-using PositiveSdcMismatchThreshold = safety::Positive<std::uint16_t>;
+using PositiveSdcReplicaCount = ::fixy::Positive<std::uint8_t>;
+using SdcSamplingRatePpm = ::fixy::Refined<::fixy::in_range<1u, 1000000u>, std::uint32_t>;
+using PositiveSdcMismatchThreshold = ::fixy::Positive<std::uint16_t>;
 
 template <typename T>
-using SdcVerified = safety::Tagged<T, safety::source::SdcVerified>;
+using SdcVerified = ::fixy::Tagged<T, ::fixy::tags::source::SdcVerified>;
 
 enum class SdcComparisonStrategy : std::uint8_t {
     BitwiseEqual = 0,
     ArithmeticTolerance = 1,
 };
-
-[[nodiscard]] constexpr std::string_view sdc_comparison_strategy_name(SdcComparisonStrategy strategy) noexcept {
-    switch (strategy) {
-        case SdcComparisonStrategy::BitwiseEqual:
-            return "BitwiseEqual";
-        case SdcComparisonStrategy::ArithmeticTolerance:
-            return "ArithmeticTolerance";
-        default:
-            return "<unknown SdcComparisonStrategy>";
-    }
-}
 
 enum class SdcEventKind : std::uint8_t {
     Verified = 0,
@@ -56,20 +48,7 @@ enum class SdcEventKind : std::uint8_t {
     InsufficientReplicas = 2,
 };
 
-[[nodiscard]] constexpr std::string_view sdc_event_kind_name(SdcEventKind kind) noexcept {
-    switch (kind) {
-        case SdcEventKind::Verified:
-            return "Verified";
-        case SdcEventKind::Mismatch:
-            return "Mismatch";
-        case SdcEventKind::InsufficientReplicas:
-            return "InsufficientReplicas";
-        default:
-            return "<unknown SdcEventKind>";
-    }
-}
-
-struct SdcMismatch : safety::diag::tag_base {
+struct SdcMismatch : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "SdcMismatch";
     static constexpr std::string_view description = "Redundant execution produced non-equivalent results.";
     static constexpr std::string_view remediation = "Retry the operation and route repeated mismatches into Warden "
@@ -77,9 +56,9 @@ struct SdcMismatch : safety::diag::tag_base {
 };
 
 struct SdcConfig {
-    PositiveSdcReplicaCount redundancy_factor{std::uint8_t{2}};
-    SdcSamplingRatePpm sampling_rate_ppm{std::uint32_t{10000}};
-    PositiveSdcMismatchThreshold suspect_after_mismatches{std::uint16_t{3}};
+    PositiveSdcReplicaCount redundancy_factor = ::fixy::mint_refined<::fixy::positive>(std::uint8_t{2});
+    SdcSamplingRatePpm sampling_rate_ppm = ::fixy::mint_refined<::fixy::in_range<1u, 1000000u>>(std::uint32_t{10000});
+    PositiveSdcMismatchThreshold suspect_after_mismatches = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3});
     SdcComparisonStrategy strategy = SdcComparisonStrategy::BitwiseEqual;
     std::uint64_t tolerance_units = 0;
     std::uint32_t metric_id_base = 0x53440000u;
@@ -98,14 +77,21 @@ struct SdcEvent {
     cog::Uuid comparison_cog{};
 };
 
-static_assert(std::is_trivially_copyable_v<SdcConfig>);
+// A refined field keeps no byte route into it, so the config is not
+// trivially copyable.  Its copies stay trivial, so a config still passes
+// by value in registers.
+static_assert(std::is_trivially_copy_constructible_v<SdcConfig> && std::is_trivially_destructible_v<SdcConfig>);
 static_assert(std::is_trivially_copyable_v<SdcEvent>);
 
 template <class Ctx>
-concept CtxFitsSdcMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsSdcMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 template <class Ctx>
-concept CtxFitsSdcRun = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
+concept CtxFitsSdcRun =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
 namespace detail {
 
@@ -166,9 +152,21 @@ template <typename T>
 }  // namespace detail
 
 template <std::size_t MaxCogs, std::size_t MaxEvents>
-class SdcDetector : public safety::Pinned<SdcDetector<MaxCogs, MaxEvents>> {
+class SdcDetector;
+
+// The only door into a detector.  An Init-row context mints it; a
+// background worker may then run checks on it.
+template <class Ctx, std::size_t MaxCogs, std::size_t MaxEvents>
+    requires CtxFitsSdcMint<Ctx>
+[[nodiscard]] constexpr SdcDetector<MaxCogs, MaxEvents> mint_sdc_detector(Ctx const&, SdcConfig config = {}) noexcept;
+
+template <std::size_t MaxCogs, std::size_t MaxEvents>
+class SdcDetector : public ::foundation::Pinned<SdcDetector<MaxCogs, MaxEvents>> {
     static_assert(MaxCogs > 0, "SdcDetector requires at least one Cog slot.");
     static_assert(MaxEvents > 0, "SdcDetector requires an event ring.");
+    // An event names a slot and a replica count in 16 bits.
+    static_assert(MaxCogs <= std::numeric_limits<std::uint16_t>::max(),
+                  "SdcDetector slot indices and replica counts must fit the 16-bit event fields.");
 
 public:
     static constexpr std::size_t max_cogs = MaxCogs;
@@ -188,13 +186,28 @@ private:
     std::size_t event_cursor_ = 0;
     std::size_t active_cogs_ = 0;
 
-    [[nodiscard]] std::size_t find_cog(cog::CogIdentity const& cog) const noexcept {
-        for (std::size_t i = 0; i < cogs_.size(); ++i) {
-            if (cogs_[i].active && cogs_[i].cog.uuid == cog.uuid) {
-                return i;
+    template <class Ctx, std::size_t Cogs, std::size_t Events>
+        requires CtxFitsSdcMint<Ctx>
+    friend constexpr SdcDetector<Cogs, Events> mint_sdc_detector(Ctx const&, SdcConfig config) noexcept;
+
+    constexpr explicit SdcDetector(SdcConfig config) noexcept : config_{config} {}
+
+    // The slot of an active Cog with this identity, or nullptr.
+    [[nodiscard]] constexpr CogSlot const* find_cog(cog::CogIdentity const& cog) const noexcept {
+        for (CogSlot const& slot : cogs_) {
+            if (slot.active && slot.cog.uuid == cog.uuid) {
+                return std::addressof(slot);
             }
         }
-        return cogs_.size();
+        return nullptr;
+    }
+
+    // Every event carries the strategy and tolerance it was judged under.
+    [[nodiscard]] constexpr SdcEvent make_event(SdcEventKind kind, std::size_t compared_replicas) const noexcept {
+        return SdcEvent{.kind = kind,
+                        .strategy = config_.strategy,
+                        .compared_replicas = static_cast<std::uint16_t>(compared_replicas),
+                        .tolerance_units = config_.tolerance_units};
     }
 
     [[nodiscard]] SdcEvent record_event(SdcEvent event) noexcept {
@@ -205,8 +218,6 @@ private:
     }
 
 public:
-    explicit SdcDetector(SdcConfig config = {}) noexcept : config_{config} {}
-
     [[nodiscard]] SdcConfig config() const noexcept { return config_; }
 
     [[nodiscard]] std::span<const CogSlot, MaxCogs> cogs() const noexcept {
@@ -225,7 +236,7 @@ public:
     }
 
     [[nodiscard]] bool register_cog(cog::CogIdentity cog) noexcept {
-        if (cog.uuid.is_zero() || find_cog(cog) != cogs_.size()) {
+        if (cog.uuid.is_zero() || find_cog(cog) != nullptr) {
             return false;
         }
         if (active_cogs_ >= cogs_.size()) {
@@ -247,12 +258,7 @@ public:
 
         std::size_t const required = config_.redundancy_factor.value();
         if (active_cogs_ < required) {
-            SdcEvent event{};
-            event.kind = SdcEventKind::InsufficientReplicas;
-            event.strategy = config_.strategy;
-            event.compared_replicas = static_cast<std::uint16_t>(active_cogs_);
-            event.tolerance_units = config_.tolerance_units;
-            return std::unexpected(record_event(event));
+            return std::unexpected(record_event(make_event(SdcEventKind::InsufficientReplicas, active_cogs_)));
         }
 
         Work& body = work;
@@ -262,39 +268,29 @@ public:
             if (!detail::equivalent(primary, replica, config_.strategy, config_.tolerance_units)) {
                 auto& primary_slot = cogs_[0];
                 auto& comparison_slot = cogs_[i];
-                ++primary_slot.mismatch_count;
-                ++comparison_slot.mismatch_count;
+                // A count that wrapped to zero would clear a suspect Cog.
+                primary_slot.mismatch_count = ::foundation::sat::add_sat(primary_slot.mismatch_count, std::uint16_t{1});
+                comparison_slot.mismatch_count =
+                    ::foundation::sat::add_sat(comparison_slot.mismatch_count, std::uint16_t{1});
 
-                SdcEvent event{};
-                event.kind = SdcEventKind::Mismatch;
-                event.strategy = config_.strategy;
-                event.primary_slot = 0;
+                SdcEvent event = make_event(SdcEventKind::Mismatch, i + 1u);
                 event.comparison_slot = static_cast<std::uint16_t>(i);
-                event.compared_replicas = static_cast<std::uint16_t>(i + 1u);
                 event.mismatch_count = comparison_slot.mismatch_count;
-                event.tolerance_units = config_.tolerance_units;
                 event.primary_cog = primary_slot.cog.uuid;
                 event.comparison_cog = comparison_slot.cog.uuid;
                 return std::unexpected(record_event(event));
             }
         }
 
-        SdcEvent event{};
-        event.kind = SdcEventKind::Verified;
-        event.strategy = config_.strategy;
-        event.compared_replicas = static_cast<std::uint16_t>(required);
-        event.tolerance_units = config_.tolerance_units;
+        SdcEvent event = make_event(SdcEventKind::Verified, required);
         event.primary_cog = cogs_[0].cog.uuid;
         (void)record_event(event);
-        return SdcVerified<Result>{primary};
+        return ::fixy::mint_tagged<::fixy::tags::source::SdcVerified>(primary);
     }
 
     [[nodiscard]] bool should_quarantine(cog::CogIdentity const& cog) const noexcept {
-        std::size_t const index = find_cog(cog);
-        if (index == cogs_.size()) {
-            return false;
-        }
-        return cogs_[index].mismatch_count >= config_.suspect_after_mismatches.value();
+        CogSlot const* const slot = find_cog(cog);
+        return slot != nullptr && slot->mismatch_count >= config_.suspect_after_mismatches.value();
     }
 
     [[nodiscard]] bool publish_latest(ObservationSnapshot& sink) const noexcept {
@@ -312,13 +308,14 @@ public:
 
 template <class Ctx, std::size_t MaxCogs, std::size_t MaxEvents>
     requires CtxFitsSdcMint<Ctx>
-[[nodiscard]] SdcDetector<MaxCogs, MaxEvents> mint_sdc_detector(Ctx const&, SdcConfig config = {}) noexcept {
+[[nodiscard]] constexpr SdcDetector<MaxCogs, MaxEvents> mint_sdc_detector(Ctx const&, SdcConfig config) noexcept {
     return SdcDetector<MaxCogs, MaxEvents>{config};
 }
 
-static_assert(CtxFitsSdcMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsSdcMint<effects::BgDrainCtx>);
-static_assert(CtxFitsSdcRun<effects::BgDrainCtx>);
-static_assert(!CtxFitsSdcRun<effects::HotFgCtx>);
+static_assert(CtxFitsSdcMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsSdcMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsSdcRun<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsSdcRun<::fixy::HotFgCtx>);
+static_assert(!std::is_constructible_v<SdcDetector<1, 1>, SdcConfig>);
 
 }  // namespace crucible::observe

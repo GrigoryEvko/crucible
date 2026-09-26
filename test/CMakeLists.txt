@@ -6484,28 +6484,34 @@ crucible_neg_compile_test(neg_synthetic_probe_record_fg_ctx
 crucible_neg_compile_test(neg_synthetic_probe_raw_kind_mask
   "cannot convert|no matching function|could not convert|Bits|TransportProbeKind")
 
-# GAPS-180 — observe/SdcDetect.h keeps redundant-compute evidence typed:
+# observe/SdcDetect.h keeps redundant-compute evidence typed:
 #   * neg_sdc_detect_mint_bg_ctx — only Init-row contexts mint detectors.
 #   * neg_sdc_detect_run_hot_ctx — hot foreground contexts cannot mutate
 #     bounded SDC event state.
 #   * neg_sdc_detect_raw_result_as_verified — raw results cannot stand in
-#     for source::SdcVerified values.
+#     for tags::source::SdcVerified values.
 #   * neg_sdc_detect_cross_tag_result — external provenance cannot stand
-#     in for source::SdcVerified values.
+#     in for tags::source::SdcVerified values.
 #   * neg_sdc_detect_sampling_rate_above_max — ppm rates above 100% cannot
 #     cross the SdcConfig boundary.
+#   * neg_sdc_detect_direct_construct — a detector is built only through
+#     mint_sdc_detector, so its constructor is private.
 crucible_neg_compile_effects_test(neg_sdc_detect_mint_bg_ctx
   "constraint|constraints.*not satisfied"
-    "CtxFitsSdcMint|Init|Bg")
+    "CtxFitsSdcMint")
 crucible_neg_compile_effects_test(neg_sdc_detect_run_hot_ctx
   "constraint|constraints.*not satisfied"
-    "CtxFitsSdcRun|HotFgCtx|Bg")
+    "CtxFitsSdcRun")
 crucible_neg_compile_test(neg_sdc_detect_raw_result_as_verified
-  "cannot convert|no matching function|could not convert|Tagged|SdcVerified")
+  "could not convert .42. from .uint64_t.*SdcVerified")
 crucible_neg_compile_test(neg_sdc_detect_cross_tag_result
-  "cannot convert|no matching function|could not convert|Tagged|External|SdcVerified")
-crucible_neg_compile_test(neg_sdc_detect_sampling_rate_above_max
-  "contract|violation|in_range|Refined|SdcSamplingRatePpm")
+  "could not convert .raw. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::SdcVerified>")
+crucible_neg_compile_multi_test(neg_sdc_detect_sampling_rate_above_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<InRange<1, 1000000>\\(\\), unsigned int>\\(1000001\\)")
+crucible_neg_compile_multi_test(neg_sdc_detect_direct_construct
+  "is private within this context"
+  "SdcDetector<MaxCogs, MaxEvents>::SdcDetector\\(crucible::observe::SdcConfig\\)")
 
 # canopy/Hlc.h, the hybrid logical clock.
 #   * neg_hlc_raw_timestamp_to_tagged: a raw HlcTimestamp does not

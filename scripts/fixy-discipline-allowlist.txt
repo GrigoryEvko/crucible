@@ -75,9 +75,6 @@ include/crucible/forge/_wip/Phases/Comm.h
 include/crucible/mimic/CogMimic.h
 include/crucible/mimic/_wip/network/Backend.h
 
-# ── observe/ (1 file) ───────────────────────────────────────────
-include/crucible/observe/SdcDetect.h
-
 # ── topology/ (8 files) ─────────────────────────────────────────
 include/crucible/topology/AsymmetricFailure.h
 include/crucible/topology/CongestionTelemetry.h
