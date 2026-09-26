@@ -41,10 +41,12 @@ THE ENGINES
                   a string that only names an option holds no such node.
 
 SCOPE
-    Sources under include/, src/, vessel/ and tools/.  Compile-database
-    entries of a file under test/, bench/, examples/ or fuzz/ are out of
-    scope, and so is a target that a CMakeLists.txt in such a directory
-    declares: a bench that wants fast-math does not link crucible.
+    Sources under include/, src/, vessel/, tools/, test/, bench/, examples/
+    and fuzz/, the compile-database entries of those files, and the link
+    line of each target.  A test or a bench links crucible, and a fast-math
+    option on its link line links crtfastmath.o, which runs the determinism
+    tests under flush-to-zero.  A file or a target in a vendored tree
+    (third_party, external or vendor) or in a build tree is out of scope.
 
 EXEMPTIONS
     `// NO-FFAST-MATH-OK: <reason>` on the row of an override exempts it.
@@ -74,8 +76,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
 REPO_ROOT = tsast.REPO_ROOT
-SOURCE_ROOTS = ("include", "src", "vessel", "tools")
-EXEMPT_COMPONENTS = frozenset({"test", "bench", "examples", "fuzz", "third_party", "external", "vendor"})
+SOURCE_ROOTS = ("include", "src", "vessel", "tools", "test", "bench", "examples", "fuzz")
+EXEMPT_COMPONENTS = frozenset({"third_party", "external", "vendor"})
 ALLOWLIST = "scripts/no-ffast-math-allowlist.txt"
 MARKER = "NO-FFAST-MATH-OK"
 PRESETS = "CMakePresets.json"
@@ -111,7 +113,7 @@ def is_under(path: Path, root: Path) -> bool:
 
 
 def is_exempt(path: Path, root: Path) -> bool:
-    """Return True when a file under ROOT lies in an exempt directory (test, bench, a build tree and so on)."""
+    """Return True when a file under ROOT lies in a vendored tree or in a build tree."""
     rel = path.resolve().relative_to(root.resolve())
     return any(part in EXEMPT_COMPONENTS or part.startswith("build") for part in rel.parts[:-1])
 
@@ -176,8 +178,7 @@ def codemodel_targets(build_dir: Path) -> tuple[Path, list[Path]] | str:
     indexes = sorted(reply.glob("index-*.json"))
     if not indexes:
         return (f"{reply}: the build has no reply of the CMake file API, so no link flag was read. The root "
-                f"CMakeLists.txt asks for the codemodel with cmake_file_api, which needs CMake 3.27 or a "
-                f"subsequent version. Configure the build again with such a CMake")
+                f"CMakeLists.txt asks for the codemodel with cmake_file_api. Configure the build again")
     try:
         index = json.loads(indexes[-1].read_text(encoding="utf-8"))
         codemodel_file = next(item["jsonFile"] for item in index.get("objects", [])
@@ -506,11 +507,18 @@ target_link_options(planted_app PRIVATE $<$<CONFIG:Debug>:-funsafe-math-optimiza
 add_library(planted_shared SHARED src/b.cpp)
 target_link_libraries(planted_shared PRIVATE -ffp-contract=fast)
 add_subdirectory(test)
+add_subdirectory(third_party)
 """
 
 PLANTED_TEST_CMAKE = """\
 add_executable(planted_test_app main.cpp)
 target_link_options(planted_test_app PRIVATE -fassociative-math)
+"""
+
+PLANTED_VENDOR_CMAKE = """\
+add_executable(planted_vendor_app main.cpp)
+target_compile_options(planted_vendor_app PRIVATE -fno-signed-zeros)
+target_link_options(planted_vendor_app PRIVATE -fno-signed-zeros)
 """
 
 PLANTED_PRESETS = {
@@ -543,9 +551,13 @@ def self_test(cmake: str, cxx: str) -> int:
         planted = root / "include" / "crucible" / "planted" / "Fast.h"
         planted.parent.mkdir(parents=True)
         planted.write_text(PLANTED_SOURCE, encoding="utf-8")
-        (root / "include" / "crucible" / "test").mkdir()
-        (root / "include" / "crucible" / "test" / "Out.h").write_text(
+        (root / "include" / "crucible" / "third_party").mkdir()
+        (root / "include" / "crucible" / "third_party" / "Out.h").write_text(
             '[[gnu::optimize("fast-math")]] inline double out_of_scope(double a) { return a; }\n', encoding="utf-8")
+        in_test = root / "test" / "fixture" / "Planted.h"
+        in_test.parent.mkdir(parents=True)
+        in_test.write_text('[[gnu::optimize("fast-math")]] inline double in_test(double a) { return a; }\n',
+                           encoding="utf-8")
         (root / "scripts").mkdir()
         (root / "scripts" / "no-ffast-math-allowlist.txt").write_text(
             "include/crucible/planted/Fast.h:[[gnu::optimize(\"fast-math\")]] inline double admitted(double a) "
@@ -559,8 +571,11 @@ def self_test(cmake: str, cxx: str) -> int:
                 expect("row 15: an allowlisted override is live, so the allowlist can admit it", row in rows)
                 continue
             expect(f"row {row}: {'reported' if must_report else 'not reported'}", (row in rows) == must_report)
-        expect("an override under a test/ directory is out of scope",
-               not any("test/Out.h" in violation.where for violation in found))
+        expect("an override in a vendored tree is out of scope",
+               not any("third_party/Out.h" in violation.where for violation in found))
+        expect("an override under test/ is reported",
+               any(violation.where == "test/fixture/Planted.h:1" for violation in found))
+        in_test.unlink()
 
         (root / "CMakePresets.json").write_text(json.dumps(PLANTED_PRESETS), encoding="utf-8")
         preset_found, _ = preset_violations(root)
@@ -570,14 +585,16 @@ def self_test(cmake: str, cxx: str) -> int:
         expect("-fno-fast-math in a preset is not reported", "-fno-fast-math" not in shown)
 
         (root / "CMakeLists.txt").write_text(PLANTED_CMAKE, encoding="utf-8")
-        (root / "src").mkdir()
-        (root / "test").mkdir()
+        for directory in ("src", "test", "third_party"):
+            (root / directory).mkdir(exist_ok=True)
         for rel, text in (("src/a.cpp", "int planted_a() { return 0; }\n"),
                           ("src/b.cpp", "int planted_b() { return 0; }\n"),
                           ("src/main.cpp", "int main() { return 0; }\n"),
                           ("test/t.cpp", "int planted_t() { return 0; }\n"),
                           ("test/main.cpp", "int main() { return 0; }\n"),
-                          ("test/CMakeLists.txt", PLANTED_TEST_CMAKE)):
+                          ("test/CMakeLists.txt", PLANTED_TEST_CMAKE),
+                          ("third_party/main.cpp", "int main() { return 0; }\n"),
+                          ("third_party/CMakeLists.txt", PLANTED_VENDOR_CMAKE)):
             (root / rel).write_text(text, encoding="utf-8")
         build = Path(work) / "build"
         configured = subprocess.run([cmake, "-S", str(root), "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug",
@@ -591,7 +608,8 @@ def self_test(cmake: str, cxx: str) -> int:
             expect("a flag inside a generator expression is reported", "-ffast-math on 1 file(s): src/a.cpp" in shown)
             expect("-Ofast is reported", "-Ofast on 1 file(s): src/a.cpp" in shown)
             expect("a flag in a CMake bracket comment is not reported", "-fassociative-math" not in shown)
-            expect("a flag on a file under test/ is out of scope", "-freciprocal-math" not in shown)
+            expect("a flag on a file under test/ is reported", "-freciprocal-math on 1 file(s): test/t.cpp" in shown)
+            expect("a flag on a file of a vendored tree is out of scope", "third_party/" not in shown)
 
             link_found, link_lost = link_violations(build, root)
             linked = " ".join(violation.what for violation in link_found)
@@ -602,8 +620,9 @@ def self_test(cmake: str, cxx: str) -> int:
                    "-ffp-contract=fast on the link line of 1 target(s): planted_shared" in linked)
             expect("a link option in a CMake bracket comment is not reported", "-ffinite-math-only" not in linked)
             expect("a flag that only a variable names is not reported", "-fno-signed-zeros" not in linked)
-            expect("a link option of a target declared under test/ is out of scope",
-                   "-fassociative-math" not in linked)
+            expect("a link option of a target declared under test/ is reported",
+                   "-fassociative-math on the link line of 1 target(s): planted_test_app" in linked)
+            expect("a link option of a target in a vendored tree is out of scope", "planted_vendor_app" not in linked)
             expect("a compile option is not a link option", "-Ofast" not in linked)
 
             reply = build / ".cmake" / "api" / "v1" / "reply"
