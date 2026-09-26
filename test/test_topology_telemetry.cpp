@@ -30,17 +30,15 @@ static cog::CogIdentity nic() {
 static topology::TcpInfoSnapshot tcp_sample(std::uint64_t bps, std::uint64_t rtt_us, std::uint32_t in_flight) {
     topology::CongestionSample state{
         .algorithm = cntp::CcAlgorithm::Bbr3,
-        .btl_bw_bps = topology::PositiveBandwidthBps{bps, typename topology::PositiveBandwidthBps::Trusted{}},
-        .rt_prop_us = topology::PositiveMicroseconds{rtt_us, typename topology::PositiveMicroseconds::Trusted{}},
-        .cwnd_bytes =
-            topology::PositiveWindowBytes{std::uint32_t{1}, typename topology::PositiveWindowBytes::Trusted{}},
-        .ssthresh_bytes =
-            topology::PositiveWindowBytes{std::uint32_t{1}, typename topology::PositiveWindowBytes::Trusted{}},
+        .btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(bps),
+        .rt_prop_us = ::fixy::mint_refined<::fixy::positive>(rtt_us),
+        .cwnd_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1}),
+        .ssthresh_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1}),
         .in_flight_bytes = in_flight,
         .mode = topology::CongestionMode::BbrProbeBw,
         .has_bbr = true,
     };
-    return topology::TcpInfoSnapshot{state};
+    return ::fixy::mint_tagged<::fixy::tags::source::TcpInfo>(state);
 }
 
 static void test_name_coverage() {

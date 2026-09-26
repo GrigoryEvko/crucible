@@ -94,12 +94,13 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
     return mode_severity(lhs) > mode_severity(rhs);
 }
 
+// The two decoders below mint each refined field from positive_or_one_*,
+// which maps zero to one, so the checked mint never fires.
 [[nodiscard]] constexpr BbrFields decode_bbr(tcp_bbr_info const& info) noexcept {
     const std::uint64_t bw = (static_cast<std::uint64_t>(info.bbr_bw_hi) << 32u) | info.bbr_bw_lo;
     return BbrFields{
-        .btl_bw_bps = PositiveBandwidthBps{positive_or_one_u64(bw), typename PositiveBandwidthBps::Trusted{}},
-        .rt_prop_us =
-            PositiveMicroseconds{positive_or_one_u32(info.bbr_min_rtt), typename PositiveMicroseconds::Trusted{}},
+        .btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(positive_or_one_u64(bw)),
+        .rt_prop_us = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{positive_or_one_u32(info.bbr_min_rtt)}),
         .pacing_gain_q8 = info.bbr_pacing_gain,
         .cwnd_gain_q8 = info.bbr_cwnd_gain,
     };
@@ -131,11 +132,10 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
 
     CongestionSample state{
         .algorithm = algorithm,
-        .btl_bw_bps = PositiveBandwidthBps{delivery_rate, typename PositiveBandwidthBps::Trusted{}},
-        .rt_prop_us = PositiveMicroseconds{rtt, typename PositiveMicroseconds::Trusted{}},
-        .cwnd_bytes = PositiveWindowBytes{positive_or_one_u32(cwnd_bytes), typename PositiveWindowBytes::Trusted{}},
-        .ssthresh_bytes =
-            PositiveWindowBytes{positive_or_one_u32(ssthresh_bytes), typename PositiveWindowBytes::Trusted{}},
+        .btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(delivery_rate),
+        .rt_prop_us = ::fixy::mint_refined<::fixy::positive>(rtt),
+        .cwnd_bytes = ::fixy::mint_refined<::fixy::positive>(positive_or_one_u32(cwnd_bytes)),
+        .ssthresh_bytes = ::fixy::mint_refined<::fixy::positive>(positive_or_one_u32(ssthresh_bytes)),
         .retrans_count = info.tcpi_total_retrans,
         .lost_count = info.tcpi_lost,
         .in_flight_bytes = in_flight,
@@ -183,56 +183,6 @@ void finalize_aggregate(CongestionAggregate& aggregate, RttHistogram& rtt_hist, 
 
 }  // namespace
 
-std::string_view congestion_mode_name(CongestionMode mode) noexcept {
-    switch (mode) {
-        case CongestionMode::Open:
-            return "Open";
-        case CongestionMode::Disorder:
-            return "Disorder";
-        case CongestionMode::Cwr:
-            return "Cwr";
-        case CongestionMode::Recovery:
-            return "Recovery";
-        case CongestionMode::Loss:
-            return "Loss";
-        case CongestionMode::BbrStartup:
-            return "BbrStartup";
-        case CongestionMode::BbrDrain:
-            return "BbrDrain";
-        case CongestionMode::BbrProbeBw:
-            return "BbrProbeBw";
-        case CongestionMode::BbrProbeRtt:
-            return "BbrProbeRtt";
-        case CongestionMode::Unknown:
-            return "Unknown";
-        default:
-            return "<unknown CongestionMode>";
-    }
-}
-
-std::string_view telemetry_error_name(TelemetryError error) noexcept {
-    switch (error) {
-        case TelemetryError::InvalidSocketFd:
-            return "InvalidSocketFd";
-        case TelemetryError::InvalidNicCog:
-            return "InvalidNicCog";
-        case TelemetryError::GetTcpInfoFailed:
-            return "GetTcpInfoFailed";
-        case TelemetryError::GetCcInfoFailed:
-            return "GetCcInfoFailed";
-        case TelemetryError::EmptySampleSet:
-            return "EmptySampleSet";
-        case TelemetryError::TooManyLinks:
-            return "TooManyLinks";
-        case TelemetryError::LinkNotStarted:
-            return "LinkNotStarted";
-        case TelemetryError::DeadlineOverflow:
-            return "DeadlineOverflow";
-        default:
-            return "<unknown TelemetryError>";
-    }
-}
-
 std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd) noexcept {
     tcp_info info{};
     socklen_t info_len = sizeof(info);
@@ -272,7 +222,7 @@ std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd)
         }
     }
 
-    return TcpInfoSnapshot{state};
+    return ::fixy::mint_tagged<::fixy::tags::source::TcpInfo>(state);
 }
 
 CongestionAggregate aggregate_congestion(cog::CogIdentity const& nic,

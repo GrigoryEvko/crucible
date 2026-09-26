@@ -63,7 +63,6 @@ include/crucible/cog/NicConfig.h
 include/crucible/cog/SrIov.h
 
 # ── topology/ ──────────────────────────────────────────────────
-include/crucible/topology/CongestionTelemetry.h
 include/crucible/topology/Pingmesh.h
 include/crucible/topology/Ptp.h
 include/crucible/topology/Telemetry.h

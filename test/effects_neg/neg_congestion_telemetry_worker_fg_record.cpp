@@ -1,17 +1,19 @@
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// Recording congestion telemetry is background work.  The foreground
+// hot-path context cannot update a per-link slot.  A foreground context is
+// built only from the producer claim, so the refused call names it in an
+// unevaluated operand.
+
 #include <crucible/topology/CongestionTelemetryWorker.h>
-#include <crucible/topology/CongestionTelemetry.h>
 
 #include <array>
 #include <span>
-
-// GAPS-123 fixture #3: congestion telemetry recording is Bg-row work.
-// Foreground hot-path contexts may not update per-link telemetry slots.
+#include <utility>
 
 int main() {
     namespace topology = crucible::topology;
-    namespace topology = crucible::topology;
-    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    crucible::effects::HotFgCtx fg{};
+    ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     crucible::cog::CogIdentity nic{};
     nic.kind = crucible::cog::CogKind::NicPort;
 
@@ -19,8 +21,9 @@ int main() {
     std::array nics{nic};
     auto started = worker.start(init, std::span{nics});
     (void)started;
-    std::array samples{topology::TcpInfoSnapshot{topology::CongestionSample{}}};
-    auto recorded = worker.record_link(fg, nic, std::span{samples}, 1);
-    (void)recorded;
-    return 0;
+    std::array<topology::TcpInfoSnapshot, 1> samples{};
+    return sizeof(worker.record_link(std::declval<::fixy::HotFgCtx const&>(), nic,
+                                     std::span<const topology::TcpInfoSnapshot>{samples}, 1)) == 0
+               ? 1
+               : 0;
 }

@@ -1,8 +1,11 @@
 #include <crucible/topology/CongestionTelemetryWorker.h>
 #include <crucible/topology/CongestionTelemetry.h>
+#include <foundation/reflect/EnumName.h>
+
+#include "test_assert.h"
 
 #include <array>
-#include <cassert>
+#include <concepts>
 #include <cstdio>
 #include <span>
 #include <string_view>
@@ -13,10 +16,9 @@
 
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
+namespace eff = ::fixy;
 namespace observe = crucible::observe;
 namespace topology = crucible::topology;
-namespace safety = crucible::safety;
 
 namespace {
 
@@ -67,12 +69,10 @@ cog::CogIdentity gpu(std::uint64_t lo) {
 topology::CongestionSample state(std::uint64_t bw, std::uint64_t rtt, topology::CongestionMode mode) {
     topology::CongestionSample s{};
     s.algorithm = cntp::CcAlgorithm::Bbr3;
-    s.btl_bw_bps = topology::PositiveBandwidthBps{bw, typename topology::PositiveBandwidthBps::Trusted{}};
-    s.rt_prop_us = topology::PositiveMicroseconds{rtt, typename topology::PositiveMicroseconds::Trusted{}};
-    s.cwnd_bytes =
-        topology::PositiveWindowBytes{std::uint32_t{65536}, typename topology::PositiveWindowBytes::Trusted{}};
-    s.ssthresh_bytes =
-        topology::PositiveWindowBytes{std::uint32_t{131072}, typename topology::PositiveWindowBytes::Trusted{}};
+    s.btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(bw);
+    s.rt_prop_us = ::fixy::mint_refined<::fixy::positive>(rtt);
+    s.cwnd_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{65536});
+    s.ssthresh_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{131072});
     s.in_flight_bytes = 32768;
     s.mode = mode;
     s.has_bbr = true;
@@ -81,21 +81,25 @@ topology::CongestionSample state(std::uint64_t bw, std::uint64_t rtt, topology::
     return s;
 }
 
+// The test stands in for the kernel, so it names the TCP_INFO source
+// itself.  harvest_socket is the only producer in the library.
 topology::TcpInfoSnapshot sample(std::uint64_t bw, std::uint64_t rtt, topology::CongestionMode mode) {
-    auto tagged = topology::tag_tcp_info_for_test(state(bw, rtt, mode));
-    assert(tagged.has_value());
-    return *tagged;
+    return ::fixy::mint_tagged<::fixy::tags::source::TcpInfo>(state(bw, rtt, mode));
 }
 
+// The log spelling of both enums comes from reflection.
 void test_names_and_admission() {
-    assert(topology::congestion_mode_name(topology::CongestionMode::BbrDrain) == std::string_view{"BbrDrain"});
-    assert(topology::telemetry_error_name(topology::TelemetryError::InvalidNicCog)
-           == std::string_view{"InvalidNicCog"});
+    static_assert(::foundation::reflect::enum_name(topology::CongestionMode::BbrDrain) == "BbrDrain");
+    static_assert(::foundation::reflect::enum_name(topology::TelemetryError::InvalidNicCog) == "InvalidNicCog");
+    volatile auto mode = topology::CongestionMode::BbrProbeRtt;
+    assert(::foundation::reflect::enum_name(static_cast<topology::CongestionMode>(mode))
+           == std::string_view{"BbrProbeRtt"});
     auto zero = topology::admit_sample_period_ns(0);
     assert(!zero.has_value());
     assert(zero.error() == topology::TelemetryError::DeadlineOverflow);
     auto period = topology::admit_sample_period_ns(1000);
     assert(period.has_value());
+    assert(period->value() == 1000);
     std::printf("  test_names_and_admission: PASSED\n");
 }
 
@@ -115,8 +119,7 @@ void test_aggregate_and_drift() {
     assert(aggregate.mean_btl_bw_bps == 725000000);
     assert(aggregate.worst_mode == topology::CongestionMode::Loss);
 
-    auto baseline =
-        topology::PositiveBandwidthBps{std::uint64_t{1200000000}, typename topology::PositiveBandwidthBps::Trusted{}};
+    auto baseline = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1200000000});
     auto drift = topology::detect_congestion_drift(aggregate, baseline,
                                                    topology::CongestionDriftPolicy{
                                                        .bandwidth_drop_ppm = 100000,
@@ -128,8 +131,8 @@ void test_aggregate_and_drift() {
 }
 
 void test_worker_recording() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    eff::ColdInitCtx init{::foundation::effects::testing::init()};
+    eff::BgDrainCtx bg{::foundation::effects::testing::bg()};
     auto worker = topology::mint_congestion_telemetry_worker<2, 8>(init);
 
     std::array nics{nic(10), nic(11)};
@@ -220,12 +223,16 @@ void test_aggregate_finalize_guard() {
 
 int main() {
     static_assert(sizeof(topology::TcpInfoSnapshot) == sizeof(topology::CongestionSample));
-    static_assert(topology::CtxFitsCongestionTelemetryStart<effects::ColdInitCtx>);
-    static_assert(!topology::CtxFitsCongestionTelemetryStart<effects::BgDrainCtx>);
-    static_assert(topology::CtxFitsCongestionTelemetryHarvest<effects::BgDrainCtx>);
-    static_assert(!topology::CtxFitsCongestionTelemetryHarvest<effects::HotFgCtx>);
-    static_assert(std::same_as<topology::TcpInfoSnapshot::tag_type, safety::source::TcpInfo>);
-    static_assert(std::is_trivially_copyable_v<topology::CongestionSample>);
+    static_assert(topology::CtxFitsCongestionTelemetryStart<eff::ColdInitCtx>);
+    static_assert(!topology::CtxFitsCongestionTelemetryStart<eff::BgDrainCtx>);
+    static_assert(topology::CtxFitsCongestionTelemetryHarvest<eff::BgDrainCtx>);
+    static_assert(!topology::CtxFitsCongestionTelemetryHarvest<eff::HotFgCtx>);
+    static_assert(std::same_as<topology::TcpInfoSnapshot::tag_type, ::fixy::tags::source::TcpInfo>);
+    static_assert(std::is_trivially_copy_constructible_v<topology::CongestionSample>
+                  && std::is_trivially_destructible_v<topology::CongestionSample>);
+    static_assert(!std::is_trivially_copyable_v<topology::CongestionSample>,
+                  "a refined field keeps bytes from becoming a sample");
+    static_assert(!std::is_default_constructible_v<topology::CongestionTelemetryWorker<2, 8>>);
 
     std::printf("test_congestion_telemetry:\n");
     test_names_and_admission();

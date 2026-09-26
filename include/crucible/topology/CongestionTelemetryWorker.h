@@ -1,17 +1,18 @@
 #pragma once
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/Observation.h>
-#include <crucible/safety/_Pinned.h>
 #include <crucible/topology/CongestionTelemetry.h>
+#include <fixy/Ctx.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <meta>
+#include <memory>
 #include <span>
 #include <type_traits>
 
@@ -32,18 +33,20 @@ enum class CongestionMetricSlot : std::uint32_t {
 
 inline constexpr std::uint32_t kCongestionMetricBase = 0x43430000u;
 // One observation for each slot.
-inline constexpr std::size_t kCongestionObservationCount = std::meta::enumerators_of(^^CongestionMetricSlot).size();
+inline constexpr std::size_t kCongestionObservationCount = ::foundation::reflect::enum_count<CongestionMetricSlot>;
 
 using CongestionObservationSet = std::array<::crucible::observe::ObservationSnapshot, kCongestionObservationCount>;
 using CongestionObservationBatch = std::array<::crucible::observe::Observation, kCongestionObservationCount>;
 
 template <class Ctx>
 concept CtxFitsCongestionTelemetryStart =
-    effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 template <class Ctx>
 concept CtxFitsCongestionTelemetryHarvest =
-    effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
 [[nodiscard]] constexpr std::uint32_t congestion_metric_id(std::uint16_t link_slot,
                                                            CongestionMetricSlot slot) noexcept {
@@ -98,7 +101,16 @@ inline void publish_congestion(
 }
 
 template <std::size_t MaxLinks, std::size_t MaxFlows>
-class CongestionTelemetryWorker : public safety::Pinned<CongestionTelemetryWorker<MaxLinks, MaxFlows>> {
+class CongestionTelemetryWorker;
+
+// The only door into a worker.  An Init-row context mints it; a
+// background worker then records into it.
+template <std::size_t MaxLinks, std::size_t MaxFlows, class Ctx>
+    requires CtxFitsCongestionTelemetryStart<Ctx>
+[[nodiscard]] constexpr CongestionTelemetryWorker<MaxLinks, MaxFlows> mint_congestion_telemetry_worker(Ctx const&) noexcept;
+
+template <std::size_t MaxLinks, std::size_t MaxFlows>
+class CongestionTelemetryWorker : public ::foundation::Pinned<CongestionTelemetryWorker<MaxLinks, MaxFlows>> {
     static_assert(MaxLinks > 0, "CongestionTelemetryWorker requires link slots");
     static_assert(MaxFlows > 0, "CongestionTelemetryWorker requires flow slots");
 
@@ -112,27 +124,26 @@ class CongestionTelemetryWorker : public safety::Pinned<CongestionTelemetryWorke
     std::array<Slot, MaxLinks> slots_{};
     topology::TelemetrySchedule schedule_{};
 
-    [[nodiscard]] constexpr Slot* find(cog::CogIdentity const& nic) noexcept {
-        for (auto& slot : slots_) {
-            if (slot.occupied && slot.nic.uuid == nic.uuid) {
-                return &slot;
-            }
-        }
-        return nullptr;
-    }
+    template <std::size_t Links, std::size_t Flows, class Ctx>
+        requires CtxFitsCongestionTelemetryStart<Ctx>
+    friend constexpr CongestionTelemetryWorker<Links, Flows> mint_congestion_telemetry_worker(Ctx const&) noexcept;
 
-    [[nodiscard]] constexpr Slot const* find(cog::CogIdentity const& nic) const noexcept {
-        for (auto const& slot : slots_) {
+    constexpr CongestionTelemetryWorker() noexcept = default;
+
+    // The started slot of this NIC, or nullptr.  One lookup serves the
+    // const and the mutable callers.
+    template <class Self>
+    [[nodiscard]] constexpr auto find(this Self& self, cog::CogIdentity const& nic) noexcept
+        -> decltype(std::addressof(self.slots_[0])) {
+        for (auto& slot : self.slots_) {
             if (slot.occupied && slot.nic.uuid == nic.uuid) {
-                return &slot;
+                return std::addressof(slot);
             }
         }
         return nullptr;
     }
 
 public:
-    constexpr CongestionTelemetryWorker() noexcept = default;
-
     template <class Ctx>
         requires CtxFitsCongestionTelemetryStart<Ctx>
     [[nodiscard]] constexpr std::expected<void, topology::TelemetryError>
@@ -203,9 +214,8 @@ public:
 
 template <std::size_t MaxLinks, std::size_t MaxFlows, class Ctx>
     requires CtxFitsCongestionTelemetryStart<Ctx>
-[[nodiscard]] constexpr CongestionTelemetryWorker<MaxLinks, MaxFlows>
-mint_congestion_telemetry_worker(Ctx const&) noexcept {
-    return {};
+[[nodiscard]] constexpr CongestionTelemetryWorker<MaxLinks, MaxFlows> mint_congestion_telemetry_worker(Ctx const&) noexcept {
+    return CongestionTelemetryWorker<MaxLinks, MaxFlows>{};
 }
 
 static_assert(std::is_trivially_copyable_v<CongestionObservationBatch>);
@@ -225,9 +235,11 @@ static_assert(
         return true;
     }(),
     "congestion_observations does not give observation i the metric id of slot i.");
-static_assert(CtxFitsCongestionTelemetryStart<effects::ColdInitCtx>);
-static_assert(!CtxFitsCongestionTelemetryStart<effects::BgDrainCtx>);
-static_assert(CtxFitsCongestionTelemetryHarvest<effects::BgDrainCtx>);
-static_assert(!CtxFitsCongestionTelemetryHarvest<effects::HotFgCtx>);
+static_assert(!std::is_default_constructible_v<CongestionTelemetryWorker<1, 1>>,
+              "the worker is reached only through mint_congestion_telemetry_worker");
+static_assert(CtxFitsCongestionTelemetryStart<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsCongestionTelemetryStart<::fixy::BgDrainCtx>);
+static_assert(CtxFitsCongestionTelemetryHarvest<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsCongestionTelemetryHarvest<::fixy::HotFgCtx>);
 
 }  // namespace crucible::topology

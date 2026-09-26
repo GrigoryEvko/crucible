@@ -3,20 +3,22 @@
 #include <crucible/Platform.h>
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <limits>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::topology {
 
+// foundation::reflect::enum_name gives the log spelling of both enums.
 enum class CongestionMode : std::uint8_t {
     Open = 0,
     Disorder = 1,
@@ -41,17 +43,14 @@ enum class TelemetryError : std::uint8_t {
     DeadlineOverflow,
 };
 
-[[nodiscard]] std::string_view congestion_mode_name(CongestionMode mode) noexcept;
-[[nodiscard]] std::string_view telemetry_error_name(TelemetryError error) noexcept;
-
-using PositiveBandwidthBps = safety::Positive<std::uint64_t>;
-using PositiveMicroseconds = safety::Positive<std::uint64_t>;
-using PositiveWindowBytes = safety::Positive<std::uint32_t>;
-using PositiveSamplePeriodNs = safety::Positive<std::uint64_t>;
+using PositiveBandwidthBps = ::fixy::Positive<std::uint64_t>;
+using PositiveMicroseconds = ::fixy::Positive<std::uint64_t>;
+using PositiveWindowBytes = ::fixy::Positive<std::uint32_t>;
+using PositiveSamplePeriodNs = ::fixy::Positive<std::uint64_t>;
 
 struct BbrFields {
-    PositiveBandwidthBps btl_bw_bps{std::uint64_t{1}};
-    PositiveMicroseconds rt_prop_us{std::uint64_t{1}};
+    PositiveBandwidthBps btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
+    PositiveMicroseconds rt_prop_us = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
     std::uint32_t pacing_gain_q8 = 256;
     std::uint32_t cwnd_gain_q8 = 256;
 };
@@ -67,10 +66,10 @@ struct DctcpFields {
 // thing: topology::CongestionState in TopologyGraph.h.
 struct CongestionSample {
     cntp::CcAlgorithm algorithm = cntp::CcAlgorithm::Custom;
-    PositiveBandwidthBps btl_bw_bps{std::uint64_t{1}};
-    PositiveMicroseconds rt_prop_us{std::uint64_t{1}};
-    PositiveWindowBytes cwnd_bytes{std::uint32_t{1}};
-    PositiveWindowBytes ssthresh_bytes{std::uint32_t{1}};
+    PositiveBandwidthBps btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
+    PositiveMicroseconds rt_prop_us = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
+    PositiveWindowBytes cwnd_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    PositiveWindowBytes ssthresh_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
     std::uint32_t retrans_count = 0;
     std::uint32_t lost_count = 0;
     std::uint32_t in_flight_bytes = 0;
@@ -85,7 +84,10 @@ struct CongestionSample {
     bool has_dctcp = false;
 };
 
-using TcpInfoSnapshot = safety::Tagged<CongestionSample, safety::source::TcpInfo>;
+// A sample that the kernel reported through TCP_INFO.  harvest_socket is
+// the producer; a test that needs a sample names the source with
+// mint_tagged.
+using TcpInfoSnapshot = ::fixy::Tagged<CongestionSample, ::fixy::tags::source::TcpInfo>;
 
 struct CongestionAggregate {
     cog::Uuid nic_uuid{};
@@ -113,25 +115,22 @@ struct CongestionDrift {
 };
 
 struct TelemetrySchedule {
-    PositiveSamplePeriodNs active_period_ns{std::uint64_t{1000000000}};
-    PositiveSamplePeriodNs idle_period_ns{std::uint64_t{10000000000}};
+    PositiveSamplePeriodNs active_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000000000});
+    PositiveSamplePeriodNs idle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{10000000000});
 };
 
+// A zero period is refused by the branch below, so the checked mint that
+// follows it never fires.
 [[nodiscard]] constexpr std::expected<PositiveSamplePeriodNs, TelemetryError>
 admit_sample_period_ns(std::uint64_t ns) noexcept {
     if (ns == 0) {
         return std::unexpected(TelemetryError::DeadlineOverflow);
     }
-    return PositiveSamplePeriodNs{ns, typename PositiveSamplePeriodNs::Trusted{}};
+    return ::fixy::mint_refined<::fixy::positive>(ns);
 }
 
 [[nodiscard]] constexpr bool is_nic_cog(cog::CogIdentity const& identity) noexcept {
     return identity.kind == cog::CogKind::NicPort || identity.kind == cog::CogKind::NicCard;
-}
-
-[[nodiscard]] constexpr std::expected<TcpInfoSnapshot, TelemetryError>
-tag_tcp_info_for_test(CongestionSample state) noexcept {
-    return TcpInfoSnapshot{state};
 }
 
 [[nodiscard, gnu::hot]] std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd) noexcept;
@@ -162,6 +161,12 @@ static_assert(sizeof(PositiveBandwidthBps) == sizeof(std::uint64_t));
 static_assert(sizeof(PositiveMicroseconds) == sizeof(std::uint64_t));
 static_assert(sizeof(PositiveWindowBytes) == sizeof(std::uint32_t));
 static_assert(sizeof(TcpInfoSnapshot) == sizeof(CongestionSample));
-static_assert(std::is_trivially_copyable_v<CongestionSample>);
+// A refined field keeps no byte route into it, so a sample is not
+// trivially copyable.  Its copies stay trivial, so a sample still passes
+// by value in registers and copies with no constructor call.
+static_assert(std::is_trivially_copy_constructible_v<CongestionSample>
+              && std::is_trivially_destructible_v<CongestionSample>);
+static_assert(std::is_trivially_copy_constructible_v<TcpInfoSnapshot>
+              && std::is_trivially_destructible_v<TcpInfoSnapshot>);
 
 }  // namespace crucible::topology

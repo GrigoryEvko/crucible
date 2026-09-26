@@ -6830,20 +6830,38 @@ crucible_neg_compile_effects_test(neg_path_swap_commit_fg_ctx
 crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
   "constraints not satisfied|SessionResource|PathSwapSessionResource")
 
-# GAPS-123 — topology/CongestionTelemetry.h TCP_INFO feedback loop.
-#   * neg_congestion_telemetry_raw_fd_harvest: live harvest requires
-#     an admitted SocketFd, not a raw int.
-#   * neg_congestion_telemetry_raw_state_aggregate: per-link aggregation
-#     accepts tagged TcpInfoSnapshot values, not raw CongestionSample.
-#   * neg_congestion_telemetry_worker_fg_record: rt-owned telemetry updates
-#     are Bg-row work and cannot run in the foreground hot path.
-crucible_neg_compile_test(neg_congestion_telemetry_raw_fd_harvest
-  "could not convert|no matching function|SocketFd|Refined")
-crucible_neg_compile_test(neg_congestion_telemetry_raw_state_aggregate
-  "could not convert|no matching function|TcpInfoSnapshot|Tagged")
+# ─── topology::CongestionTelemetry and its worker ────────────────────
+#
+#   * neg_congestion_telemetry_raw_fd_harvest — a live harvest takes an
+#     admitted SocketFd, not a raw int.
+#   * neg_congestion_telemetry_raw_state_aggregate — aggregation takes
+#     samples tagged as coming from TCP_INFO, not raw CongestionSample.
+#   * neg_congestion_telemetry_worker_fg_record — recording is background
+#     work, so the foreground hot-path context is refused.
+#   * neg_congestion_telemetry_worker_mint_bg_ctx — only an Init-row
+#     context mints the worker.
+#   * neg_congestion_telemetry_worker_mint_non_ctx — an int in the context
+#     slot is refused by the IsExecCtx constraint.
+#   * neg_congestion_telemetry_worker_direct_construct — the worker's
+#     constructor is private, so the mint is the only door.
+crucible_neg_compile_multi_test(neg_congestion_telemetry_raw_fd_harvest
+  "could not convert .3. from .int. to .crucible::cntp::SocketFd."
+  "fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>")
+crucible_neg_compile_multi_test(neg_congestion_telemetry_raw_state_aggregate
+  "could not convert .std::span<crucible::topology::CongestionSample, 1>\\(samples\\)."
+  "to .span<const fixy::Tagged<crucible::topology::CongestionSample, fixy::tags::source::TcpInfo>,")
 crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_fg_record
-  "constraints.*not satisfied"
-    "CtxFitsCongestionTelemetryHarvest|Bg")
+  "no matching function for call to .crucible::topology::CongestionTelemetryWorker<1, 1>::record_link\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
+  "required for the satisfaction of .CtxFitsCongestionTelemetryHarvest<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_topology_test(neg_congestion_telemetry_worker_mint_bg_ctx
+  "no matching function for call to .mint_congestion_telemetry_worker<1, 1>\\(fixy::BgDrainCtx&\\)"
+  "required for the satisfaction of .CtxFitsCongestionTelemetryStart<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_topology_test(neg_congestion_telemetry_worker_mint_non_ctx
+  "no matching function for call to .mint_congestion_telemetry_worker<1, 1>\\(int\\)"
+  "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = int\\]")
+crucible_neg_compile_topology_test(neg_congestion_telemetry_worker_direct_construct
+  "is private within this context"
+  "CongestionTelemetryWorker<MaxLinks, MaxFlows>::CongestionTelemetryWorker\\(\\) \\[with long unsigned int MaxLinks = 1; long unsigned int MaxFlows = 1\\]")
 
 # GAPS-124 — cntp/IncastControl.h incast mitigation substrate.
 #   * neg_incast_raw_fd_configure: socket tuning requires admitted SocketFd.

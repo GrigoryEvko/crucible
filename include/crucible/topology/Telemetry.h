@@ -89,8 +89,7 @@ struct NicTelemetrySnapshot {
                                               safety::Stale<DeclaredQdiscBacklog>::semiring_type::bottom()};
     safety::Stale<DeclaredSysctlSnapshot> sysctl{DeclaredSysctlSnapshot{SysctlSnapshot{}},
                                                  safety::Stale<DeclaredSysctlSnapshot>::semiring_type::bottom()};
-    safety::Stale<TcpInfoSnapshot> tcp{TcpInfoSnapshot{CongestionSample{}},
-                                       safety::Stale<TcpInfoSnapshot>::semiring_type::bottom()};
+    safety::Stale<TcpInfoSnapshot> tcp{TcpInfoSnapshot{}, safety::Stale<TcpInfoSnapshot>::semiring_type::bottom()};
     safety::Stale<DeclaredNicThermalSample> thermal{DeclaredNicThermalSample{NicThermalSample{}},
                                                     safety::Stale<DeclaredNicThermalSample>::semiring_type::bottom()};
     safety::Tagged<double, safety::source::Calibrated> effective_bandwidth_bps{0.0};
