@@ -681,7 +681,7 @@ add_test(NAME fixy_hw_discipline_self_test
 add_test(NAME fixy_hw_discipline
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.py)
 set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
-    LABELS "ci_guard"
+    LABELS "ci_guard;ast"
     SKIP_RETURN_CODE 3)
 # The hardening grant set.  scripts/check-syscall-grant-coverage.py
 # derives the system calls that the hardening apply path issues from the

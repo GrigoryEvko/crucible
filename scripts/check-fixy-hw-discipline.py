@@ -54,12 +54,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402  (the path insert above has to come first)
 
 ROOTS = ("include", "src")
-CPP_SUFFIXES = (".h", ".hpp", ".cpp", ".cc")
 ROWS_FILE = "test/test_hardware_axis_pins.cpp"
 ROW_TEMPLATE = ("hw_axis_pins", "pinned")
 SUPERSEDED_PREFIX = "_"
-PREPROC_ARMS = frozenset({"preproc_if", "preproc_ifdef", "preproc_else", "preproc_elif", "preproc_elifdef"})
-NAME_LEAVES = ("namespace_identifier", "type_identifier", "identifier")
+PREPROC_ARMS = ("preproc_if", "preproc_ifdef", "preproc_else", "preproc_elif", "preproc_elifdef")
+OPERAND_NAMES = ("qualified_identifier", "namespace_identifier", "type_identifier", "identifier")
 
 # The kinds that exit 1: the tree lost a claim, or the guard cannot read it.
 LOST = frozenset({"missing-rows", "parse", "missing-block", "dead-block"})
@@ -83,68 +82,19 @@ class Row:
     from_root: bool
 
 
-def under_preprocessor(node: tsast.Node) -> bool:
-    """Report whether a preprocessor conditional encloses a node.
-
-    Args:
-        node: The node in question
-
-    Returns:
-        True when a conditional arm lies between the node and the root
-    """
-    owner = node.parent
-    while owner is not None:
-        if owner.type in PREPROC_ARMS:
-            return True
-        owner = owner.parent
-    return False
-
-
-def namespace_parts(node: tsast.Node) -> list[str]:
-    """Return the name parts that one namespace definition adds.
+def defined_name(node: tsast.Node) -> tuple[str, ...]:
+    """Return the full name of the namespace that a definition opens, from the root.
 
     Args:
         node: A namespace_definition
 
     Returns:
-        The parts, or `(anonymous)` for an unnamed namespace
+        The name parts, for example ("crucible", "detail", "swiss_hw").  An
+        anonymous namespace is "".
     """
     name = node.child_by_field("name")
-    if name is None:
-        return ["(anonymous)"]
-    if name.type == "nested_namespace_specifier":
-        return [part.text for part in name.descendants("namespace_identifier")]
-    return [name.text]
-
-
-def qualified_name(node: tsast.Node) -> str:
-    """Return the qualified name of a namespace definition, from the root.
-
-    Args:
-        node: A namespace_definition
-
-    Returns:
-        The name, for example `crucible::detail::swiss_hw`
-    """
-    parts = namespace_parts(node)
-    owner = node.parent
-    while owner is not None:
-        if owner.type == "namespace_definition":
-            parts = namespace_parts(owner) + parts
-        owner = owner.parent
-    return "::".join(parts)
-
-
-def leaf_parts(node: tsast.Node) -> list[str]:
-    """Return the identifier leaves of a name, in source order.
-
-    Args:
-        node: A qualified name or one of its parts
-
-    Returns:
-        The identifier texts
-    """
-    return [leaf.text for leaf in node.descendants(*NAME_LEAVES)]
+    parts = tsast.qualified_parts(name) if name is not None else None
+    return tsast.namespace_path(node) + (parts[1] if parts is not None else ("",))
 
 
 def row_of(assertion: tsast.Node) -> Row | None:
@@ -171,11 +121,12 @@ def row_of(assertion: tsast.Node) -> Row | None:
         return None
     arguments = template.child_by_field("arguments")
     reflected = next(iter(arguments.children_of_type("reflect_expression")), None) if arguments else None
-    if reflected is None:
+    # descendants() walks in source order, so the first name is the outermost one.
+    operand = next(reflected.descendants(*OPERAND_NAMES), None) if reflected is not None else None
+    parts = tsast.qualified_parts(operand) if operand is not None else None
+    if parts is None:
         return None
-    operand = next(iter(reflected.descendants("qualified_identifier")), None)
-    from_root = operand is not None and operand.child_by_field("scope") is None
-    return Row("::".join(leaf_parts(reflected)), assertion.line, from_root)
+    return Row("::".join(parts[1]), assertion.line, parts[0])
 
 
 def read_rows(root: Path) -> tuple[list[Row], list[Finding]]:
@@ -218,8 +169,7 @@ def scanned_files(root: Path) -> list[Path]:
             continue
         for path in base.rglob("*"):
             rel = path.relative_to(root)
-            if path.suffix in CPP_SUFFIXES and path.is_file() and not path.name.startswith(SUPERSEDED_PREFIX) \
-                    and rel.as_posix() not in tsast.UNPARSEABLE:
+            if tsast.is_in_cpp_scope(rel) and path.is_file() and not path.name.startswith(SUPERSEDED_PREFIX):
                 found.append(rel)
     return sorted(found)
 
@@ -248,8 +198,10 @@ def check(root: Path) -> list[Finding]:
                                                   f"  {tree.diagnostic}"))
             continue
         for node in tree.find("namespace_definition"):
-            if namespace_parts(node)[-1].endswith("_hw"):
-                blocks.setdefault(qualified_name(node), []).append((rel, node.line, under_preprocessor(node)))
+            name = defined_name(node)
+            if name[-1].endswith("_hw"):
+                dead = node.ancestor_of_type(*PREPROC_ARMS) is not None
+                blocks.setdefault("::".join(name), []).append((rel, node.line, dead))
 
     listed: set[str] = set()
     for row in rows:
