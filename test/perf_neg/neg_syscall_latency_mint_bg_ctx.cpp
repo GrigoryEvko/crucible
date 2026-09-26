@@ -2,17 +2,17 @@
 //
 // mint_syscall_latency rejects BgDrainCtx.  That context claims
 // Row<Bg, Alloc> and carries neither IO nor Block, and the gate demands
-// all three of Alloc, IO and Block.  SyscallLatency::load() attaches a
-// BPF program to raw_syscalls sys_enter and sys_exit and maps the
-// per-CPU histogram, and the bpf(BPF_PROG_LOAD) call waits on the
-// kernel verifier.
+// all three of Alloc, IO and Block.  SyscallLatency::load() calls
+// bpf(BPF_PROG_LOAD), which waits on the kernel verifier.  The second
+// argument is a valid startup load context, so the gate is the one
+// reason that the compiler rejects the call.
 
 #include <crucible/perf/SyscallLatency.h>
+#include <fixy/Ctx.h>
 
 int main() {
-    auto hub =
-        crucible::perf::mint_syscall_latency(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()},
-                                             ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    auto hub = crucible::perf::mint_syscall_latency(::fixy::BgDrainCtx{::foundation::effects::testing::bg()},
+                                                    ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;
 }

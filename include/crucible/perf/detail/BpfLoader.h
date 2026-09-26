@@ -1,7 +1,7 @@
 #pragma once
 
-#include <crucible/handles/_Once.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/handle/Once.h>
 
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
@@ -26,9 +26,9 @@ struct Kernel {};
 struct BpfMap {};
 }  // namespace source
 
-using Tgid = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Tid = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Fd = ::crucible::safety::Tagged<int, source::BpfMap>;
+using Tgid = ::fixy::Tagged<uint32_t, source::Kernel>;
+using Tid = ::fixy::Tagged<uint32_t, source::Kernel>;
+using Fd = ::fixy::Tagged<int, source::BpfMap>;
 
 static_assert(sizeof(Tgid) == sizeof(uint32_t), "Tagged<uint32_t, source::Kernel> must be the same width as "
                                                 "uint32_t.  The empty trust-lattice element must collapse "
@@ -36,14 +36,16 @@ static_assert(sizeof(Tgid) == sizeof(uint32_t), "Tagged<uint32_t, source::Kernel
 static_assert(sizeof(Tid) == sizeof(uint32_t));
 static_assert(sizeof(Fd) == sizeof(int));
 
-[[nodiscard]] inline Tgid current_tgid() noexcept { return Tgid{static_cast<uint32_t>(::getpid())}; }
-
-[[nodiscard]] inline Tid current_tid() noexcept {
-    return Tid{static_cast<uint32_t>(::syscall(
-        SYS_gettid))};  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; gettid is identity-only, no capability
+[[nodiscard]] inline Tgid current_tgid() noexcept {
+    return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::getpid()));
 }
 
-[[nodiscard]] inline Fd map_fd(struct bpf_map* m) noexcept { return Fd{bpf_map__fd(m)}; }
+[[nodiscard]] inline Tid current_tid() noexcept {
+    return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::syscall(
+        SYS_gettid)));  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; gettid is identity-only, no capability
+}
+
+[[nodiscard]] inline Fd map_fd(struct bpf_map* m) noexcept { return ::fixy::mint_tagged<source::BpfMap>(bpf_map__fd(m)); }
 
 // A function-local static in an inline function has one instance
 // across every translation unit that includes this header, so the
@@ -67,8 +69,8 @@ static_assert(sizeof(Fd) == sizeof(int));
 
 // libbpf prints to stderr by default, which is loud on a host without
 // CAP_BPF, so every libbpf line passes through this gate instead.
-// safety::Once carries the one-shot flag rather than std::call_once,
-// whose pthread backing this path does not need.
+// fixy::handle::Once carries the one-shot flag rather than
+// std::call_once, whose pthread backing this path does not need.
 
 inline int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
     if (!verbose()) return 0;
@@ -76,7 +78,7 @@ inline int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args)
 }
 
 inline void install_libbpf_log_cb_once() noexcept {
-    static ::crucible::safety::Once once;
+    static ::fixy::handle::Once once;
     once.call([] { libbpf_set_print(libbpf_log_cb); });
 }
 

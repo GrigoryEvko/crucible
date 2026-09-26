@@ -8,9 +8,10 @@
 // capability permits none of them either.
 
 #include <crucible/perf/SenseHub.h>
+#include <fixy/Ctx.h>
 
 int main() {
-    auto hub = crucible::perf::mint_sense_hub(crucible::effects::HotFgCtx{},
+    auto hub = crucible::perf::mint_sense_hub(::foundation::effects::testing::foreground(),
                                               ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;

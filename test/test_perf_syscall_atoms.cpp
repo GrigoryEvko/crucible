@@ -1,6 +1,8 @@
-// Each perf hub carries a type-level list of the privileged syscalls its
-// load path issues.  The list is an audit trail, and it is only worth
-// anything while it still matches the syscalls actually made.
+// Each perf hub load issues bpf(), perf_event_open() and mmap().  The row
+// that the context gate of each mint demands must contain the effect row
+// that each of these three calls lifts to.  A gate that stops short of one
+// of them would let a context reach a mint that makes a call the context
+// does not claim.
 
 #include <crucible/perf/LockContention.h>
 #include <crucible/perf/PmuSample.h>
@@ -9,13 +11,12 @@
 #include <crucible/perf/SenseHub.h>
 #include <crucible/perf/SyscallLatency.h>
 #include <crucible/perf/SyscallTpBtf.h>
+#include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
 
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 
-#include <cstdint>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -23,7 +24,7 @@ namespace {
 
 namespace sc = ::fixy::atom::syscall;
 namespace fe = ::foundation::effects;
-namespace eff = ::crucible::effects;
+namespace perf = ::crucible::perf;
 
 // The ordinals are append-only: an existing one keeps its value forever,
 // so a federation cache key that hashed a syscall id never drifts.
@@ -45,80 +46,65 @@ static_assert(!std::is_same_v<sc::per<sc::SyscallId::perf_event_open>, sc::per<s
 using PrivilegeRow = fe::Row<fe::Effect::IO, fe::Effect::Block>;
 using MemoryMappingRow = fe::Row<fe::Effect::IO, fe::Effect::Block>;
 
-// Every hub names the same three calls in the same order.
-template <class HubAtoms>
-[[nodiscard]] consteval bool names_bpf_perf_event_open_and_mmap_() noexcept {
-    // A && chain instantiates every element type, so a shorter list must
-    // leave before the chain names an index it does not have.
-    if constexpr (std::tuple_size_v<HubAtoms> != 3) {
-        return false;
-    } else {
-        return std::is_same_v<std::tuple_element_t<0, HubAtoms>, sc::per<sc::SyscallId::bpf>>
-            && std::is_same_v<std::tuple_element_t<1, HubAtoms>, sc::per<sc::SyscallId::perf_event_open>>
-            && std::is_same_v<std::tuple_element_t<2, HubAtoms>, sc::per<sc::SyscallId::mmap>>
-            && std::is_same_v<fe::lift_row_t<std::tuple_element_t<0, HubAtoms>>, PrivilegeRow>
-            && std::is_same_v<fe::lift_row_t<std::tuple_element_t<1, HubAtoms>>, PrivilegeRow>
-            && std::is_same_v<fe::lift_row_t<std::tuple_element_t<2, HubAtoms>>, MemoryMappingRow>;
-    }
+static_assert(std::is_same_v<fe::lift_row_t<sc::per<sc::SyscallId::bpf>>, PrivilegeRow>);
+static_assert(std::is_same_v<fe::lift_row_t<sc::per<sc::SyscallId::perf_event_open>>, PrivilegeRow>);
+static_assert(std::is_same_v<fe::lift_row_t<sc::per<sc::SyscallId::mmap>>, MemoryMappingRow>);
+
+// The row a gate demands holds the lifted row of every call the load
+// makes.
+template <class RequiredRow>
+[[nodiscard]] consteval bool covers_the_load_calls_() noexcept {
+    return fe::Subrow<fe::lift_row_t<sc::per<sc::SyscallId::bpf>>, RequiredRow>
+        && fe::Subrow<fe::lift_row_t<sc::per<sc::SyscallId::perf_event_open>>, RequiredRow>
+        && fe::Subrow<fe::lift_row_t<sc::per<sc::SyscallId::mmap>>, RequiredRow>;
 }
 
-static_assert(names_bpf_perf_event_open_and_mmap_<::crucible::perf::sense_hub_syscall_atoms>());
-static_assert(names_bpf_perf_event_open_and_mmap_<::crucible::perf::pmu_sample_syscall_atoms>());
-static_assert(names_bpf_perf_event_open_and_mmap_<::crucible::perf::lock_contention_syscall_atoms>());
-static_assert(names_bpf_perf_event_open_and_mmap_<::crucible::perf::sched_switch_syscall_atoms>());
-static_assert(names_bpf_perf_event_open_and_mmap_<::crucible::perf::sched_tp_btf_syscall_atoms>());
-static_assert(names_bpf_perf_event_open_and_mmap_<::crucible::perf::syscall_tp_btf_syscall_atoms>());
-static_assert(names_bpf_perf_event_open_and_mmap_<::crucible::perf::syscall_latency_syscall_atoms>());
+static_assert(covers_the_load_calls_<perf::sense_hub_required_row>());
+static_assert(covers_the_load_calls_<perf::pmu_sample_required_row>());
+static_assert(covers_the_load_calls_<perf::lock_contention_required_row>());
+static_assert(covers_the_load_calls_<perf::sched_switch_required_row>());
+static_assert(covers_the_load_calls_<perf::sched_tp_btf_required_row>());
+static_assert(covers_the_load_calls_<perf::syscall_tp_btf_required_row>());
+static_assert(covers_the_load_calls_<perf::syscall_latency_required_row>());
 
-// The check above refuses a list that differs.
-static_assert(!names_bpf_perf_event_open_and_mmap_<std::tuple<sc::per<sc::SyscallId::bpf>>>());
-static_assert(!names_bpf_perf_event_open_and_mmap_<
-              std::tuple<sc::per<sc::SyscallId::bpf>, sc::per<sc::SyscallId::mmap>,
-                         sc::per<sc::SyscallId::perf_event_open>>>());
+// The check above refuses a row that stops short of one call.
+static_assert(!covers_the_load_calls_<fe::Row<fe::Effect::Alloc, fe::Effect::IO>>());
+static_assert(!covers_the_load_calls_<fe::Row<>>());
 
-// A row that carries Block is the gate, because each load calls
-// bpf(BPF_PROG_LOAD) and waits on the kernel verifier.  An
-// initialization, background-drain or hot-foreground context is out of
-// bounds for every one of these mints.  The widened background context
-// below is the production shape.
-using BgProbeCtx =
-    eff::ExecCtx<eff::Bg, eff::ctx_numa::Local, eff::ctx_alloc::Heap, eff::ctx_heat::Cold, eff::ctx_resid::DRAM,
-                 eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+// Each load calls bpf(BPF_PROG_LOAD) and waits on the kernel verifier, so
+// the gate refuses every context whose row has no Block.  The startup
+// load context, the background load context and the test context claim
+// Block, and each gate admits all three.
+template <template <class> class Gate>
+[[nodiscard]] consteval bool admits_only_the_blocking_contexts_() noexcept {
+    return !Gate<::fixy::ColdInitCtx>::value && !Gate<::fixy::BgCompileCtx>::value
+        && !Gate<::fixy::BgDrainCtx>::value && !Gate<::fixy::HotFgCtx>::value
+        && Gate<::fixy::InitLoadCtx>::value && Gate<::fixy::BgLoadCtx>::value
+        && Gate<::fixy::TestRunnerCtx>::value;
+}
 
-static_assert(!::crucible::perf::CtxFitsSenseHubMint<eff::ColdInitCtx>);
-static_assert(!::crucible::perf::CtxFitsSenseHubMint<eff::BgDrainCtx>);
-static_assert(!::crucible::perf::CtxFitsSenseHubMint<eff::HotFgCtx>);
-static_assert(::crucible::perf::CtxFitsSenseHubMint<BgProbeCtx>);
+template <class Ctx>
+using sense_hub_gate = std::bool_constant<perf::CtxFitsSenseHubMint<Ctx>>;
+template <class Ctx>
+using pmu_sample_gate = std::bool_constant<perf::CtxFitsPmuSampleMint<Ctx>>;
+template <class Ctx>
+using lock_contention_gate = std::bool_constant<perf::CtxFitsLockContentionMint<Ctx>>;
+template <class Ctx>
+using sched_switch_gate = std::bool_constant<perf::CtxFitsSchedSwitchMint<Ctx>>;
+template <class Ctx>
+using sched_tp_btf_gate = std::bool_constant<perf::CtxFitsSchedTpBtfMint<Ctx>>;
+template <class Ctx>
+using syscall_tp_btf_gate = std::bool_constant<perf::CtxFitsSyscallTpBtfMint<Ctx>>;
+template <class Ctx>
+using syscall_latency_gate = std::bool_constant<perf::CtxFitsSyscallLatencyMint<Ctx>>;
 
-static_assert(!::crucible::perf::CtxFitsPmuSampleMint<eff::ColdInitCtx>);
-static_assert(!::crucible::perf::CtxFitsPmuSampleMint<eff::BgDrainCtx>);
-static_assert(!::crucible::perf::CtxFitsPmuSampleMint<eff::HotFgCtx>);
-static_assert(::crucible::perf::CtxFitsPmuSampleMint<BgProbeCtx>);
-
-static_assert(!::crucible::perf::CtxFitsLockContentionMint<eff::ColdInitCtx>);
-static_assert(!::crucible::perf::CtxFitsLockContentionMint<eff::BgDrainCtx>);
-static_assert(!::crucible::perf::CtxFitsLockContentionMint<eff::HotFgCtx>);
-static_assert(::crucible::perf::CtxFitsLockContentionMint<BgProbeCtx>);
-
-static_assert(!::crucible::perf::CtxFitsSchedSwitchMint<eff::ColdInitCtx>);
-static_assert(!::crucible::perf::CtxFitsSchedSwitchMint<eff::BgDrainCtx>);
-static_assert(!::crucible::perf::CtxFitsSchedSwitchMint<eff::HotFgCtx>);
-static_assert(::crucible::perf::CtxFitsSchedSwitchMint<BgProbeCtx>);
-
-static_assert(!::crucible::perf::CtxFitsSchedTpBtfMint<eff::ColdInitCtx>);
-static_assert(!::crucible::perf::CtxFitsSchedTpBtfMint<eff::BgDrainCtx>);
-static_assert(!::crucible::perf::CtxFitsSchedTpBtfMint<eff::HotFgCtx>);
-static_assert(::crucible::perf::CtxFitsSchedTpBtfMint<BgProbeCtx>);
-
-static_assert(!::crucible::perf::CtxFitsSyscallTpBtfMint<eff::ColdInitCtx>);
-static_assert(!::crucible::perf::CtxFitsSyscallTpBtfMint<eff::BgDrainCtx>);
-static_assert(!::crucible::perf::CtxFitsSyscallTpBtfMint<eff::HotFgCtx>);
-static_assert(::crucible::perf::CtxFitsSyscallTpBtfMint<BgProbeCtx>);
-
-static_assert(!::crucible::perf::CtxFitsSyscallLatencyMint<eff::ColdInitCtx>);
-static_assert(!::crucible::perf::CtxFitsSyscallLatencyMint<eff::BgDrainCtx>);
-static_assert(!::crucible::perf::CtxFitsSyscallLatencyMint<eff::HotFgCtx>);
-static_assert(::crucible::perf::CtxFitsSyscallLatencyMint<BgProbeCtx>);
+static_assert(admits_only_the_blocking_contexts_<sense_hub_gate>());
+static_assert(admits_only_the_blocking_contexts_<pmu_sample_gate>());
+static_assert(admits_only_the_blocking_contexts_<lock_contention_gate>());
+static_assert(admits_only_the_blocking_contexts_<sched_switch_gate>());
+static_assert(admits_only_the_blocking_contexts_<sched_tp_btf_gate>());
+static_assert(admits_only_the_blocking_contexts_<syscall_tp_btf_gate>());
+static_assert(admits_only_the_blocking_contexts_<syscall_latency_gate>());
 
 }  // namespace
 

@@ -2,10 +2,11 @@
 
 #include <crucible/perf/detail/BpfLoader.h>
 
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_OwnedMmap.h>
-#include <crucible/safety/_Pinned.h>
+#include <fixy/Mutation.h>
+#include <fixy/OwnedMmap.h>
+#include <fixy/os/Mmap.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Pinned.h>
 
 #include <sys/mman.h>
 
@@ -44,23 +45,20 @@ using ::crucible::perf::detail::verbose;
 }  // namespace
 
 // The distinct phantom tag makes one facade's ring buffer mapping unusable
-// as another facade's mapping at compile time.  The protection and sharing
-// types are residency-tier metadata that the mapping wrapper never
-// interprets.
+// as another facade's mapping at compile time.
 struct SyscallLatencyRingbufTag {};
-struct ReadOnlyProt {};
-struct SharedShare {};
 
-struct SyscallLatency::State : crucible::safety::NonMovable<SyscallLatency::State> {
+struct SyscallLatency::State : ::foundation::NonMovable<SyscallLatency::State> {
     struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
-    using TimelineMmap = ::crucible::safety::OwnedMmap<SyscallLatencyRingbufTag, ReadOnlyProt, SharedShare>;
+    using TimelineMmap =
+        ::fixy::OwnedMmap<SyscallLatencyRingbufTag, ::fixy::mmap::prot::ReadOnly, ::fixy::mmap::share::Shared>;
     std::optional<TimelineMmap> timeline_mmap{};
 
-    Fd total_syscalls_fd{-1};
+    Fd total_syscalls_fd = ::fixy::mint_tagged<source::BpfMap>(-1);
 
-    safety::Monotonic<size_t> attach_fail_cnt{0};
+    ::fixy::Monotonic<size_t> attach_fail_cnt = ::fixy::mint_monotonic<size_t>(0);
 
     State() = default;
 
@@ -175,14 +173,16 @@ std::optional<SyscallLatency> SyscallLatency::load(::fixy::InitLoadCtx const&) n
     const size_t page = static_cast<size_t>(page_l);
     const size_t bytes = sizeof(TimelineHeader) + TIMELINE_CAPACITY * sizeof(TimelineSyscallEvent);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
-    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, timeline_fd.value(), 0);
-    if (mmap_address == MAP_FAILED) {
+    auto mapped = State::TimelineMmap::map_region(::fixy::mmap::prot_bits_v<::fixy::mmap::prot::ReadOnly>,
+                                                  ::fixy::mmap::share_flags_v<::fixy::mmap::share::Shared>,
+                                                  timeline_fd.value(), mmap_len_bytes, 0);
+    if (!mapped) {
         report("mmap of syscall_timeline failed (apply CAP_BPF; "
                "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)",
-               errno);
+               mapped.error());
         return std::nullopt;
     }
-    state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
+    state->timeline_mmap.emplace(std::move(*mapped));
 
     if (struct bpf_map* ts = bpf_object__find_map_by_name(state->obj, "total_syscalls"); ts != nullptr) {
         state->total_syscalls_fd = map_fd(ts);
@@ -215,9 +215,9 @@ uint64_t SyscallLatency::total_syscalls() const noexcept {
     return value;
 }
 
-safety::Borrowed<const TimelineSyscallEvent, SyscallLatency> SyscallLatency::timeline_view() const noexcept {
+::fixy::Borrowed<const TimelineSyscallEvent, SyscallLatency> SyscallLatency::timeline_view() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) {
-        return safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>{};
+        return ::fixy::Borrowed<const TimelineSyscallEvent, SyscallLatency>{};
     }
     // The mapping is untyped byte storage, so the checked lifetime start begins
     // the typed array lifetime inside it.  The bit_cast drops volatile,
@@ -225,7 +225,7 @@ safety::Borrowed<const TimelineSyscallEvent, SyscallLatency> SyscallLatency::tim
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     auto* events = ::foundation::lifetime::start_as_array<TimelineSyscallEvent>(
         std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY).data();
-    return safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>{events, TIMELINE_CAPACITY};
+    return ::fixy::Borrowed<const TimelineSyscallEvent, SyscallLatency>{events, TIMELINE_CAPACITY};
 }
 
 uint64_t SyscallLatency::timeline_write_index() const noexcept {
@@ -238,14 +238,13 @@ uint64_t SyscallLatency::timeline_write_index() const noexcept {
     return hdr->write_idx;
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t> SyscallLatency::attached_programs() const noexcept {
-    using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};
+::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SyscallLatency::attached_programs() const noexcept {
+    return ::fixy::mint_refined<::fixy::bounded_above<8>>((state_ != nullptr) ? state_->links.size() : std::size_t{0});
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t> SyscallLatency::attach_failures() const noexcept {
-    using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get() : std::size_t{0}};
+::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SyscallLatency::attach_failures() const noexcept {
+    return ::fixy::mint_refined<::fixy::bounded_above<8>>((state_ != nullptr) ? state_->attach_fail_cnt.get()
+                                                                              : std::size_t{0});
 }
 
 SyscallLatency::Snapshot SyscallLatency::snapshot() const noexcept {

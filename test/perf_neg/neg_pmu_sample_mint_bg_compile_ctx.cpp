@@ -5,15 +5,16 @@
 // two of the three atoms the gate demands and fails on Block alone.
 //
 // This is a distinct mismatch class from the ColdInitCtx fixture: the
-// capability source is one the gate does admit, and the row is still
-// short.  The pair proves the gate reads the wait rather than the
-// capability source.  Widening this context to Row<Bg, Alloc, IO, Block>
-// is legal and is the production path.
+// capability source is a different one, and the row is short by the
+// same atom.  The pair proves the gate reads the wait rather than the
+// capability source.  The background load context claims Block on top
+// of this row, and the gate admits it.
 
 #include <crucible/perf/PmuSample.h>
+#include <fixy/Ctx.h>
 
 int main() {
-    auto hub = crucible::perf::mint_pmu_sample(crucible::effects::BgCompileCtx{::crucible::effects::testing::bg()},
+    auto hub = crucible::perf::mint_pmu_sample(::fixy::BgCompileCtx{::foundation::effects::testing::bg()},
                                                ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;

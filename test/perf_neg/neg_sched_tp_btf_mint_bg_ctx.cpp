@@ -2,15 +2,16 @@
 //
 // mint_sched_tp_btf rejects BgDrainCtx.  That context claims
 // Row<Bg, Alloc> and carries neither IO nor Block, and the gate demands
-// all three of Alloc, IO and Block.  SchedTpBtf::load() attaches a
-// CO-RE BPF program to the sched_switch raw tracepoint and maps the
-// per-CPU histogram, and the bpf(BPF_PROG_LOAD) call waits on the
-// kernel verifier.
+// all three of Alloc, IO and Block.  SchedTpBtf::load() calls
+// bpf(BPF_PROG_LOAD), which waits on the kernel verifier.  The second
+// argument is a valid startup load context, so the gate is the one
+// reason that the compiler rejects the call.
 
 #include <crucible/perf/SchedTpBtf.h>
+#include <fixy/Ctx.h>
 
 int main() {
-    auto hub = crucible::perf::mint_sched_tp_btf(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()},
+    auto hub = crucible::perf::mint_sched_tp_btf(::fixy::BgDrainCtx{::foundation::effects::testing::bg()},
                                                  ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;

@@ -2,19 +2,16 @@
 
 #include <crucible/perf/SchedSwitch.h>
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Borrowed.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Borrowed.h>
 #include <fixy/Ctx.h>
-#include <fixy/atoms/Syscall.h>
+#include <fixy/Refined.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>
 
 namespace crucible::perf {
 
@@ -67,18 +64,18 @@ public:
     // non-scalar element.  The kernel writes this memory while the
     // reader walks it, so read ts_ns through an acquire load of its
     // own and trust the rest of the slot only when ts_ns is non-zero.
-    [[nodiscard]] safety::Borrowed<const TimelineSchedEvent, SchedTpBtf> timeline_view() const noexcept;
+    [[nodiscard]] ::fixy::Borrowed<const TimelineSchedEvent, SchedTpBtf> timeline_view() const noexcept;
 
     // The index counts events forever, so the most recently written
     // slot is `(write_idx - 1) & TIMELINE_MASK`.
     [[nodiscard]] uint64_t timeline_write_index() const noexcept;
 
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
+    [[nodiscard]] ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
     // A non-zero count means this kernel carries no BTF type
     // information.  Set CRUCIBLE_PERF_VERBOSE=1 in the environment
     // for the detail.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
+    [[nodiscard]] ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
     SchedTpBtf(const SchedTpBtf&) = delete("SchedTpBtf owns unique BPF object + mmap — copying would double-close");
     SchedTpBtf&
@@ -101,37 +98,21 @@ private:
 // mmap traffic.  Alloc covers the state the load path takes from the
 // heap.
 //
-// An old-tree init context cannot pass this gate.  The permitted row of
-// the old-tree init capability is Row<Init, Alloc, IO> and carries no
-// Block, so that context widens no further than IO.  A background
-// context permits all three atoms and widens to them.  The second
-// argument is the startup load context that the load takes.
+// The startup load context and the background load context each claim
+// Block on top of Alloc and IO, so each passes this gate.  The cold init
+// context and the compile context stop at IO, and the gate refuses
+// both.  The second argument is the startup load context that the load
+// takes.
 
 using sched_tp_btf_required_row =
-    ::crucible::effects::Row<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::IO,
-                             ::crucible::effects::Effect::Block>;
+    ::foundation::effects::Row<::foundation::effects::Effect::Alloc, ::foundation::effects::Effect::IO,
+                               ::foundation::effects::Effect::Block>;
 
 template <class Ctx>
-concept CtxFitsSchedTpBtfMint = ::crucible::effects::IsExecCtx<Ctx>
-                             && ::crucible::effects::Subrow<sched_tp_btf_required_row, typename Ctx::row_type>;
+concept CtxFitsSchedTpBtfMint = ::foundation::effects::IsExecCtx<Ctx>
+                             && ::foundation::effects::Subrow<sched_tp_btf_required_row, typename Ctx::row_type>;
 
-// These atoms classify the privileged syscalls the load path issues.
-// They do not tighten the effect row.  The row gate above does that.
-using sched_tp_btf_syscall_atoms =
-    std::tuple<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::bpf>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::perf_event_open>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mmap>>;
-
-namespace detail::sched_tp_btf_syscall_check {
-namespace sc = ::fixy::atom::syscall;
-static_assert(sc::per<sc::SyscallId::bpf>::family == sc::SyscallFamily::Privilege);
-static_assert(sc::per<sc::SyscallId::perf_event_open>::family == sc::SyscallFamily::Privilege);
-static_assert(sc::per<sc::SyscallId::mmap>::family == sc::SyscallFamily::MemoryMapping);
-static_assert(std::tuple_size_v<sched_tp_btf_syscall_atoms> == 3,
-              "sched_tp_btf_syscall_atoms must list exactly 3 syscalls.");
-}  // namespace detail::sched_tp_btf_syscall_check
-
-template <::crucible::effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSchedTpBtfMint<Ctx>
 // §XXI carve-out: cx=alloc — the load path maps the timeline ring and
 // heap-allocates State.  Compile-time evaluation would lie about the
@@ -144,20 +125,22 @@ template <::crucible::effects::IsExecCtx Ctx>
 // BgCompileCtx both carry Alloc and IO, and the gate rejects both for
 // the same missing atom.  The gate reads the wait, not the capability
 // source.
-static_assert(!CtxFitsSchedTpBtfMint<::crucible::effects::ColdInitCtx>);
-static_assert(!CtxFitsSchedTpBtfMint<::crucible::effects::BgCompileCtx>);
-static_assert(!CtxFitsSchedTpBtfMint<::crucible::effects::BgDrainCtx>);
-static_assert(!CtxFitsSchedTpBtfMint<::crucible::effects::HotFgCtx>);
-static_assert(CtxFitsSchedTpBtfMint<::crucible::effects::TestRunnerCtx>);
+static_assert(!CtxFitsSchedTpBtfMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsSchedTpBtfMint<::fixy::BgCompileCtx>);
+static_assert(!CtxFitsSchedTpBtfMint<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsSchedTpBtfMint<::fixy::HotFgCtx>);
+static_assert(CtxFitsSchedTpBtfMint<::fixy::InitLoadCtx>);
+static_assert(CtxFitsSchedTpBtfMint<::fixy::BgLoadCtx>);
+static_assert(CtxFitsSchedTpBtfMint<::fixy::TestRunnerCtx>);
 
 // The two assertions below hold for a capability source rather than for
 // one named context, so a new alias on either side cannot evade them.
-static_assert(!::crucible::effects::Subrow<sched_tp_btf_required_row,
-                                          ::crucible::effects::cap_permitted_row_t<::crucible::effects::Init>>,
-              "The old-tree init capability permits Row<Init, Alloc, IO>, which does not contain every "
-              "atom this gate demands.  No widening takes an old-tree init context through this gate.");
-static_assert(::crucible::effects::Subrow<sched_tp_btf_required_row,
-                                          ::crucible::effects::cap_permitted_row_t<::crucible::effects::Bg>>,
+static_assert(::foundation::effects::Subrow<sched_tp_btf_required_row,
+                                            ::foundation::effects::cap_permitted_row_t<::foundation::effects::Init>>,
+              "The initialization capability must permit every atom this gate demands, or no startup "
+              "context could reach this mint.");
+static_assert(::foundation::effects::Subrow<sched_tp_btf_required_row,
+                                            ::foundation::effects::cap_permitted_row_t<::foundation::effects::Bg>>,
               "The background capability must permit every atom this gate demands, or no production "
               "context could reach this mint.");
 

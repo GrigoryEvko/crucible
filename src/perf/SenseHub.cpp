@@ -2,9 +2,10 @@
 
 #include <crucible/perf/detail/BpfLoader.h>
 
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_OwnedMmap.h>
-#include <crucible/safety/_Pinned.h>
+#include <fixy/Mutation.h>
+#include <fixy/OwnedMmap.h>
+#include <fixy/os/Mmap.h>
+#include <foundation/Pinned.h>
 
 #include <sys/mman.h>
 
@@ -45,21 +46,18 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
-struct SenseHub::State : crucible::safety::NonMovable<SenseHub::State> {
+struct SenseHub::State : ::foundation::NonMovable<SenseHub::State> {
     struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 64> links{};
 
     // The distinct phantom tag makes one facade's counter mapping unusable
-    // as another facade's mapping at compile time.  The protection and
-    // sharing types are residency metadata that the mapping wrapper never
-    // interprets.
+    // as another facade's mapping at compile time.
     struct SenseHubCountersTag {};
-    struct ReadOnlyProt {};
-    struct SharedShare {};
-    using CountersMmap = ::crucible::safety::OwnedMmap<SenseHubCountersTag, ReadOnlyProt, SharedShare>;
+    using CountersMmap =
+        ::fixy::OwnedMmap<SenseHubCountersTag, ::fixy::mmap::prot::ReadOnly, ::fixy::mmap::share::Shared>;
     std::optional<CountersMmap> counters_mmap{};
 
-    safety::Monotonic<size_t> attach_fail_cnt{0};
+    ::fixy::Monotonic<size_t> attach_fail_cnt = ::fixy::mint_monotonic<size_t>(0);
 
     State() = default;
 
@@ -196,14 +194,16 @@ std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const&) noexcept {
     const size_t page = static_cast<size_t>(page_l);
     const size_t bytes = NUM_COUNTERS * sizeof(uint64_t);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
-    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, counters_fd.value(), 0);
-    if (mmap_address == MAP_FAILED) {
+    auto mapped = State::CountersMmap::map_region(::fixy::mmap::prot_bits_v<::fixy::mmap::prot::ReadOnly>,
+                                                  ::fixy::mmap::share_flags_v<::fixy::mmap::share::Shared>,
+                                                  counters_fd.value(), mmap_len_bytes, 0);
+    if (!mapped) {
         report("mmap of counters map failed (apply CAP_BPF; "
                "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)",
-               errno);
+               mapped.error());
         return std::nullopt;
     }
-    state->counters_mmap.emplace(mmap_address, mmap_len_bytes);
+    state->counters_mmap.emplace(std::move(*mapped));
 
     if (!quiet() && state->attach_fail_cnt.get() != 0) {
         std::fprintf(stderr,
@@ -232,28 +232,27 @@ Snapshot SenseHub::read() const noexcept {
     return snapshot;
 }
 
-safety::Borrowed<const volatile uint64_t, SenseHub> SenseHub::counters_view() const noexcept {
+::fixy::Borrowed<const volatile uint64_t, SenseHub> SenseHub::counters_view() const noexcept {
     if (state_ == nullptr || !state_->counters_mmap) {
-        return safety::Borrowed<const volatile uint64_t, SenseHub>{};
+        return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{};
     }
-    return safety::Borrowed<const volatile uint64_t, SenseHub>{
+    return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{
         std::bit_cast<volatile uint64_t*>(state_->counters_mmap->data()), NUM_COUNTERS};
 }
 
-safety::Refined<safety::bounded_above<64>, std::size_t> SenseHub::attached_programs() const noexcept {
+::fixy::Refined<::fixy::bounded_above<64>, std::size_t> SenseHub::attached_programs() const noexcept {
     // The bound holds structurally: links is an inplace_vector of capacity
     // 64, so its size stays in [0, 64].  The Refined wrapper republishes that
     // bound in the type system, and a consumer relies on it without a
     // re-check.
-    using R = safety::Refined<safety::bounded_above<64>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};
+    return ::fixy::mint_refined<::fixy::bounded_above<64>>((state_ != nullptr) ? state_->links.size() : std::size_t{0});
 }
 
-safety::Refined<safety::bounded_above<64>, std::size_t> SenseHub::attach_failures() const noexcept {
+::fixy::Refined<::fixy::bounded_above<64>, std::size_t> SenseHub::attach_failures() const noexcept {
     // The two counters partition the same program-iteration loop.  Each pass
     // either records a failure here or pushes a link.
-    using R = safety::Refined<safety::bounded_above<64>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get() : std::size_t{0}};
+    return ::fixy::mint_refined<::fixy::bounded_above<64>>((state_ != nullptr) ? state_->attach_fail_cnt.get()
+                                                                               : std::size_t{0});
 }
 
 }  // namespace crucible::perf

@@ -2,10 +2,12 @@
 
 #include <crucible/perf/detail/BpfLoader.h>
 
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_OwnedMmap.h>
-#include <crucible/safety/_Pinned.h>
+#include <fixy/Mutation.h>
+#include <fixy/OwnedMmap.h>
+#include <fixy/Tagged.h>
+#include <fixy/os/Mmap.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Pinned.h>
 
 #include <linux/perf_event.h>
 #include <sys/ioctl.h>
@@ -50,7 +52,7 @@ using ::crucible::perf::detail::verbose;
 namespace local_source {
 struct PerfEvent {};
 }  // namespace local_source
-using PerfFd = ::crucible::safety::Tagged<int, local_source::PerfEvent>;
+using PerfFd = ::fixy::Tagged<int, local_source::PerfEvent>;
 static_assert(sizeof(PerfFd) == sizeof(int));
 
 // strtoull accepts a leading '-' and returns the negation in unsigned
@@ -145,7 +147,7 @@ static_assert(kEventSpecCount == 8, "Event spec table must hold one row per perf
 
 }  // namespace
 
-struct PmuSample::State : crucible::safety::NonMovable<PmuSample::State> {
+struct PmuSample::State : ::foundation::NonMovable<PmuSample::State> {
     struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
     // A perf_event fd must stay open until its link is destroyed, so the
@@ -153,16 +155,13 @@ struct PmuSample::State : crucible::safety::NonMovable<PmuSample::State> {
     std::inplace_vector<PerfFd, 8> perf_fds{};
 
     // The distinct phantom tag makes one facade's ring buffer mapping
-    // unusable as another facade's mapping at compile time.  The protection
-    // and sharing types are residency metadata that the mapping wrapper
-    // never interprets.
+    // unusable as another facade's mapping at compile time.
     struct PmuSampleRingbufTag {};
-    struct ReadOnlyProt {};
-    struct SharedShare {};
-    using TimelineMmap = ::crucible::safety::OwnedMmap<PmuSampleRingbufTag, ReadOnlyProt, SharedShare>;
+    using TimelineMmap =
+        ::fixy::OwnedMmap<PmuSampleRingbufTag, ::fixy::mmap::prot::ReadOnly, ::fixy::mmap::share::Shared>;
     std::optional<TimelineMmap> timeline_mmap{};
 
-    safety::Monotonic<size_t> attach_fail_cnt{0};
+    ::fixy::Monotonic<size_t> attach_fail_cnt = ::fixy::mint_monotonic<size_t>(0);
 
     State() = default;
 
@@ -290,7 +289,7 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const&) noexcept {
             }
             continue;
         }
-        const PerfFd perf_fd{static_cast<int>(fd_raw)};
+        const PerfFd perf_fd = ::fixy::mint_tagged<local_source::PerfEvent>(static_cast<int>(fd_raw));
 
         struct bpf_link* link = bpf_program__attach_perf_event(prog, perf_fd.value());
         const long lerr = libbpf_get_error(link);
@@ -333,7 +332,7 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const&) noexcept {
         report("pmu_sample_buf map not found in object (bytecode/header out of sync — rebuild)");
         return std::nullopt;
     }
-    const Fd timeline_fd{bpf_map__fd(timeline_map)};
+    const Fd timeline_fd = ::fixy::mint_tagged<source::BpfMap>(bpf_map__fd(timeline_map));
 
     const long page_l = ::sysconf(_SC_PAGESIZE);
     if (page_l <= 0) {
@@ -343,15 +342,17 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const&) noexcept {
     const size_t page = static_cast<size_t>(page_l);
     const size_t bytes = sizeof(PmuSampleHeader) + PMU_SAMPLE_CAPACITY * sizeof(PmuSampleEvent);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
-    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, timeline_fd.value(), 0);
-    if (mmap_address == MAP_FAILED) {
+    auto mapped = State::TimelineMmap::map_region(::fixy::mmap::prot_bits_v<::fixy::mmap::prot::ReadOnly>,
+                                                  ::fixy::mmap::share_flags_v<::fixy::mmap::share::Shared>,
+                                                  timeline_fd.value(), mmap_len_bytes, 0);
+    if (!mapped) {
         report("mmap of pmu_sample_buf failed (apply CAP_BPF; "
                "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)",
-               errno);
+               mapped.error());
         return std::nullopt;
     }
 
-    state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
+    state->timeline_mmap.emplace(std::move(*mapped));
 
     if (!quiet() && state->attach_fail_cnt.get() != 0) {
         std::fprintf(stderr,
@@ -365,9 +366,9 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const&) noexcept {
     return h;
 }
 
-safety::Borrowed<const PmuSampleEvent, PmuSample> PmuSample::timeline_view() const noexcept {
+::fixy::Borrowed<const PmuSampleEvent, PmuSample> PmuSample::timeline_view() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) {
-        return safety::Borrowed<const PmuSampleEvent, PmuSample>{};
+        return ::fixy::Borrowed<const PmuSampleEvent, PmuSample>{};
     }
     auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // The mapping is untyped byte storage, so the checked lifetime start begins
@@ -375,7 +376,7 @@ safety::Borrowed<const PmuSampleEvent, PmuSample> PmuSample::timeline_view() con
     // is well defined at runtime and forbidden only in a constant expression.
     auto* events = ::foundation::lifetime::start_as_array<PmuSampleEvent>(
         std::bit_cast<const uint8_t*>(base + sizeof(PmuSampleHeader)), PMU_SAMPLE_CAPACITY).data();
-    return safety::Borrowed<const PmuSampleEvent, PmuSample>{events, PMU_SAMPLE_CAPACITY};
+    return ::fixy::Borrowed<const PmuSampleEvent, PmuSample>{events, PMU_SAMPLE_CAPACITY};
 }
 
 uint64_t PmuSample::timeline_write_index() const noexcept {
@@ -388,14 +389,13 @@ uint64_t PmuSample::timeline_write_index() const noexcept {
     return hdr->write_idx;
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t> PmuSample::attached_programs() const noexcept {
-    using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};
+::fixy::Refined<::fixy::bounded_above<8>, std::size_t> PmuSample::attached_programs() const noexcept {
+    return ::fixy::mint_refined<::fixy::bounded_above<8>>((state_ != nullptr) ? state_->links.size() : std::size_t{0});
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t> PmuSample::attach_failures() const noexcept {
-    using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get() : std::size_t{0}};
+::fixy::Refined<::fixy::bounded_above<8>, std::size_t> PmuSample::attach_failures() const noexcept {
+    return ::fixy::mint_refined<::fixy::bounded_above<8>>((state_ != nullptr) ? state_->attach_fail_cnt.get()
+                                                                              : std::size_t{0});
 }
 
 PmuSample::Snapshot PmuSample::snapshot() const noexcept { return Snapshot{.samples = timeline_write_index()}; }

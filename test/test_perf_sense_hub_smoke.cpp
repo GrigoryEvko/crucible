@@ -131,10 +131,10 @@ int main() {
         const auto failures_refined = hub->attach_failures();
         static_assert(
             std::is_same_v<decltype(attached_refined),
-                           const crucible::safety::Refined<crucible::safety::bounded_above<64>, std::size_t>>);
+                           const ::fixy::Refined<::fixy::bounded_above<64>, std::size_t>>);
         static_assert(
             std::is_same_v<decltype(failures_refined),
-                           const crucible::safety::Refined<crucible::safety::bounded_above<64>, std::size_t>>);
+                           const ::fixy::Refined<::fixy::bounded_above<64>, std::size_t>>);
         const std::size_t attached = attached_refined.value();
         const std::size_t failures = failures_refined.value();
         // A hub with no programs at all is rejected by the loader, so a
@@ -159,7 +159,7 @@ int main() {
         const auto view = hub->counters_view();
         static_assert(
             std::is_same_v<decltype(view),
-                           const crucible::safety::Borrowed<const volatile std::uint64_t, crucible::perf::SenseHub>>);
+                           const ::fixy::Borrowed<const volatile std::uint64_t, crucible::perf::SenseHub>>);
         // The view must span exactly the whole counter array.  A
         // mismatch means the wrapper lost the count, since a wrongly
         // sized map would have been rejected by the verifier.

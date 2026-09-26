@@ -8,9 +8,10 @@
 // bpf(BPF_PROG_LOAD) call waits on the kernel verifier.
 
 #include <crucible/perf/SenseHub.h>
+#include <fixy/Ctx.h>
 
 int main() {
-    auto hub = crucible::perf::mint_sense_hub(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()},
+    auto hub = crucible::perf::mint_sense_hub(::fixy::BgDrainCtx{::foundation::effects::testing::bg()},
                                               ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     (void)hub;
     return 0;
