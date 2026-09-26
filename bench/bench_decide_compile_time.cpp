@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// CONTRACT-130 cost-regression bench for the crucible::decide
-// predicate catalog (CONTRACT-020 family).
+// Cost-regression bench for the foundation::decide predicate catalog.
 //
 // Why a bench?  Every `decide::Procedure(...)` is `constexpr` and the
 // production discipline embeds it inside `CRUCIBLE_PRE(...)` /
@@ -47,18 +46,19 @@
 #include <cstdio>
 #include <span>
 
-#include <crucible/safety/_Decide.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/effects/Row.h>
 
 #include "bench_harness.h"
 
-namespace dc = crucible::decide;
-namespace eff = crucible::effects;
+namespace dc = ::foundation::decide;
+namespace eff = ::foundation::effects;
 
 // ── Row instances for row_subset<P, C>() ──────────────────────────
 //
 // row_subset is parametric in two row types; we instantiate one
 // canonical Subrow case (Payload ⊆ Ctx) so the bench covers the
-// is_subrow_v fold path.  effects::Row<...> is a phantom carrier —
+// is_subrow_v fold path.  eff::Row<...> is a phantom carrier —
 // no runtime state — so the call resolves to a single bool constant
 // folded under -O3.  We still measure to confirm the foldability.
 
@@ -67,9 +67,9 @@ using CtxRow = eff::Row<eff::Effect::Bg, eff::Effect::Alloc>;
 
 // ── TierTag for tier_replaces — CipherTier is the canonical tag ──
 //
-// CipherTierTag is one of "Crucible's chain-tier enums" mentioned
-// in Decide.h:1160 — the procedure docstring lists it as the
-// production cite slot.  Use the Hot/Warm/Cold ordinals.
+// The procedure docstring in foundation/contracts/Decide.h names the
+// cipher tiers as its production cite slot.  Use the Hot/Warm/Cold
+// ordinals.
 
 enum class CipherBenchTier : std::uint8_t {
     Cold = 0,
@@ -81,8 +81,8 @@ namespace {
 
 // Sequence inputs reused across all span-quantified procedures.
 // Sized at 64 elements — the production cite for strictly_increasing
-// (Cipher::store step_id sequence, CONTRACT-107) saw similar lengths
-// in steady state, so the bench tracks a representative window.
+// (the step_id sequence of Cipher::store) saw similar lengths in
+// steady state, so the bench tracks a representative window.
 constexpr std::size_t kSeqLen = 64;
 
 }  // namespace
@@ -287,7 +287,7 @@ int main() {
         bench::run("decide::tier_replaces<CipherBenchTier>",
                    [&] {
                        // Hot-replaces-Warm: the canonical promotion case
-                       // exercised at CipherTierPromotion sites (CONTRACT-070).
+                       // exercised at the CipherTierPromotion sites.
                        bool r = dc::tier_replaces<CipherBenchTier>(CipherBenchTier::Hot, CipherBenchTier::Warm);
                        bench::do_not_optimize(r);
                    }),

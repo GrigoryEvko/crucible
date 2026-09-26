@@ -51,7 +51,6 @@ bench/bench_cipher.cpp
 bench/bench_concurrent_queues.cpp
 bench/bench_concurrent_saturation.cpp
 bench/bench_content_hash.cpp
-bench/bench_decide_compile_time.cpp
 bench/bench_diag_emission.cpp
 bench/bench_dispatch.cpp
 bench/bench_fusion.cpp
