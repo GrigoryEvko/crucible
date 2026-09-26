@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/cog/FitsCog.h>
-#include <crucible/effects/_Concurrent.h>
+#include <foundation/effects/Concurrent.h>
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/safety/_Tagged.h>
@@ -250,10 +250,12 @@ concept CommFusionRecipeAllowed =
 template <class ComputeNode, class CommNode, CommFusionPattern Pattern, cog::CogKind Cog>
 concept CommFusionEligible =
     ir::Ir001NodeLike<ComputeNode> && ir::Ir001NodeLike<CommNode>
-    && effects::IsConcurrentRow<typename ComputeNode::row_type> && effects::IsConcurrentRow<typename CommNode::row_type>
-    && effects::ConcurrentlySchedulable<typename ComputeNode::row_type, typename CommNode::row_type>
+    && ::foundation::effects::IsConcurrentRow<typename ComputeNode::row_type>
+    && ::foundation::effects::IsConcurrentRow<typename CommNode::row_type>
+    && ::foundation::effects::ConcurrentlySchedulable<typename ComputeNode::row_type, typename CommNode::row_type>
     && pattern_accepts_kind_pair<Pattern, ComputeNode::kind, CommNode::kind>()
-    && cog::FitsCog<effects::concurrent_row_sum_t<typename ComputeNode::row_type, typename CommNode::row_type>, Cog>;
+    && cog::FitsCog<
+        ::foundation::effects::concurrent_row_sum_t<typename ComputeNode::row_type, typename CommNode::row_type>, Cog>;
 
 [[nodiscard]] constexpr bool runtime_recipe_allows_pattern(net::DeclaredNetworkRecipeConstraints constraints,
                                                            CommFusionPattern pattern) noexcept {

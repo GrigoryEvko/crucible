@@ -2,8 +2,8 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/effects/_Concurrent.h>
-#include <crucible/effects/_Resources.h>
+#include <foundation/effects/Concurrent.h>
+#include <foundation/effects/Resources.h>
 
 #include <concepts>
 #include <cstdint>
@@ -36,8 +36,8 @@ struct cog_max_capacity<CogKind::Gpu> {
     // constexpr rather than consteval so a runtime caller can walk
     // every axis through this accessor with non-constant arguments.
     // The compile-time gate forces constant evaluation on its own.
-    static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
-        using effects::ResourceKind;
+    static constexpr std::uint64_t for_kind(::foundation::effects::ResourceKind k) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (k) {
             case ResourceKind::Sm:
                 return 320ULL;  // largest shipped die is 256, plus headroom
@@ -74,8 +74,8 @@ struct cog_max_capacity<CogKind::Gpu> {
 
 template <>
 struct cog_max_capacity<CogKind::NicPort> {
-    static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
-        using effects::ResourceKind;
+    static constexpr std::uint64_t for_kind(::foundation::effects::ResourceKind k) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (k) {
             case ResourceKind::PcieBw:
                 return 0ULL;
@@ -101,8 +101,8 @@ struct cog_max_capacity<CogKind::NicPort> {
 
 template <>
 struct cog_max_capacity<CogKind::NvSwitch> {
-    static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
-        using effects::ResourceKind;
+    static constexpr std::uint64_t for_kind(::foundation::effects::ResourceKind k) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (k) {
             case ResourceKind::SwitchEgressBw:
                 return 32ULL * 1024 * 1024 * 1024 * 1024;
@@ -124,8 +124,8 @@ struct cog_max_capacity<CogKind::NvSwitch> {
 // socket.
 template <>
 struct cog_max_capacity<CogKind::CpuCore> {
-    static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
-        using effects::ResourceKind;
+    static constexpr std::uint64_t for_kind(::foundation::effects::ResourceKind k) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (k) {
             case ResourceKind::CpuCore:
                 return 1ULL;  // the core is the atom
@@ -143,8 +143,8 @@ struct cog_max_capacity<CogKind::CpuCore> {
 
 template <>
 struct cog_max_capacity<CogKind::CpuSocket> {
-    static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
-        using effects::ResourceKind;
+    static constexpr std::uint64_t for_kind(::foundation::effects::ResourceKind k) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (k) {
             case ResourceKind::CpuCore:
                 return 256ULL;
@@ -167,8 +167,8 @@ struct cog_max_capacity<CogKind::CpuSocket> {
 // channel has nothing a row can ask it for.
 template <>
 struct cog_max_capacity<CogKind::DramChannel> {
-    static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
-        using effects::ResourceKind;
+    static constexpr std::uint64_t for_kind(::foundation::effects::ResourceKind k) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (k) {
             default:
                 return 0ULL;
@@ -177,7 +177,7 @@ struct cog_max_capacity<CogKind::DramChannel> {
 };
 
 template <CogKind K>
-concept HasCogCapacity = requires(effects::ResourceKind axis) {
+concept HasCogCapacity = requires(::foundation::effects::ResourceKind axis) {
     { cog_max_capacity<K>::for_kind(axis) } -> std::same_as<std::uint64_t>;
 };
 
@@ -185,12 +185,12 @@ namespace detail {
 
 template <typename Row, CogKind K>
 [[nodiscard]] consteval bool evaluate_row_fits_cog() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^effects::ResourceKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^::foundation::effects::ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        constexpr effects::ResourceKind axis = [:en:];
-        constexpr std::uint64_t demand = effects::concurrent_row_value_v<axis, Row>;
+        constexpr ::foundation::effects::ResourceKind axis = [:en:];
+        constexpr std::uint64_t demand = ::foundation::effects::concurrent_row_value_v<axis, Row>;
         constexpr std::uint64_t ceiling = cog_max_capacity<K>::for_kind(axis);
         if (demand > ceiling) {
             return false;
@@ -209,7 +209,7 @@ inline constexpr bool row_fits_cog_v = evaluate_row_fits_cog<Row, K>();
 // runtime helper below answers "can this one measured Cog run it".
 // Neither replaces the other.
 template <typename Row, CogKind K>
-concept FitsCog = effects::IsConcurrentRow<Row> && HasCogCapacity<K> && detail::row_fits_cog_v<Row, K>;
+concept FitsCog = ::foundation::effects::IsConcurrentRow<Row> && HasCogCapacity<K> && detail::row_fits_cog_v<Row, K>;
 
 namespace detail {
 
@@ -221,8 +221,8 @@ struct caps_runtime_capacity;
 template <>
 struct caps_runtime_capacity<CogKind::Gpu> {
     [[nodiscard]] static constexpr std::uint64_t for_kind(GpuTargetCaps const& caps,
-                                                          effects::ResourceKind axis) noexcept {
-        using effects::ResourceKind;
+                                                          ::foundation::effects::ResourceKind axis) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (axis) {
             case ResourceKind::Sm:
                 return std::uint64_t{caps.sm_count.value()};
@@ -257,8 +257,8 @@ struct caps_runtime_capacity<CogKind::Gpu> {
 template <>
 struct caps_runtime_capacity<CogKind::NicPort> {
     [[nodiscard]] static constexpr std::uint64_t for_kind(NicPortTargetCaps const& caps,
-                                                          effects::ResourceKind axis) noexcept {
-        using effects::ResourceKind;
+                                                          ::foundation::effects::ResourceKind axis) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (axis) {
             case ResourceKind::NicQ:
                 return std::uint64_t{caps.max_tx_queues.value()} + std::uint64_t{caps.max_rx_queues.value()};
@@ -281,8 +281,8 @@ struct caps_runtime_capacity<CogKind::NicPort> {
 template <>
 struct caps_runtime_capacity<CogKind::NvSwitch> {
     [[nodiscard]] static constexpr std::uint64_t for_kind(NvSwitchTargetCaps const& caps,
-                                                          effects::ResourceKind axis) noexcept {
-        using effects::ResourceKind;
+                                                          ::foundation::effects::ResourceKind axis) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (axis) {
             case ResourceKind::SwitchEgressBw:
                 return caps.aggregate_bandwidth_bytes_per_sec.value();
@@ -299,8 +299,8 @@ struct caps_runtime_capacity<CogKind::NvSwitch> {
 template <>
 struct caps_runtime_capacity<CogKind::CpuCore> {
     [[nodiscard]] static constexpr std::uint64_t for_kind(CpuCoreTargetCaps const& caps,
-                                                          effects::ResourceKind axis) noexcept {
-        using effects::ResourceKind;
+                                                          ::foundation::effects::ResourceKind axis) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (axis) {
             case ResourceKind::CpuCore:
                 return 1ULL;
@@ -315,8 +315,8 @@ struct caps_runtime_capacity<CogKind::CpuCore> {
 template <>
 struct caps_runtime_capacity<CogKind::CpuSocket> {
     [[nodiscard]] static constexpr std::uint64_t for_kind(CpuSocketTargetCaps const& caps,
-                                                          effects::ResourceKind axis) noexcept {
-        using effects::ResourceKind;
+                                                          ::foundation::effects::ResourceKind axis) noexcept {
+        using ::foundation::effects::ResourceKind;
         switch (axis) {
             case ResourceKind::CpuCore:
                 return std::uint64_t{caps.core_count.value()};
@@ -335,7 +335,7 @@ struct caps_runtime_capacity<CogKind::CpuSocket> {
 template <>
 struct caps_runtime_capacity<CogKind::DramChannel> {
     [[nodiscard]] static constexpr std::uint64_t for_kind(DramChannelTargetCaps const& /*caps*/,
-                                                          effects::ResourceKind /*axis*/) noexcept {
+                                                          ::foundation::effects::ResourceKind /*axis*/) noexcept {
         return 0ULL;
     }
 };
@@ -343,15 +343,15 @@ struct caps_runtime_capacity<CogKind::DramChannel> {
 }  // namespace detail
 
 template <typename Row, CogKind K>
-    requires effects::IsConcurrentRow<Row> && HasCogCapacity<K>
+    requires ::foundation::effects::IsConcurrentRow<Row> && HasCogCapacity<K>
 [[nodiscard]] constexpr bool fits_cog_caps_runtime(caps_for_t<K> const& caps) noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^effects::ResourceKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^::foundation::effects::ResourceKind));
     bool fits = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        constexpr effects::ResourceKind axis = [:en:];
-        constexpr std::uint64_t demand = effects::concurrent_row_value_v<axis, Row>;
+        constexpr ::foundation::effects::ResourceKind axis = [:en:];
+        constexpr std::uint64_t demand = ::foundation::effects::concurrent_row_value_v<axis, Row>;
         if (demand > 0) {
             const std::uint64_t capacity = detail::caps_runtime_capacity<K>::for_kind(caps, axis);
             if (demand > capacity) {
@@ -398,7 +398,7 @@ static_assert(HasCaps<CogKind::PsuRail> == HasCogCapacity<CogKind::PsuRail>);
 // somebody first calls the runtime helper on it, far from the
 // omission. These assertions move that failure back to the table.
 template <CogKind K>
-inline constexpr bool has_caps_runtime_capacity_v = requires(caps_for_t<K> const& caps, effects::ResourceKind axis) {
+inline constexpr bool has_caps_runtime_capacity_v = requires(caps_for_t<K> const& caps, ::foundation::effects::ResourceKind axis) {
     { detail::caps_runtime_capacity<K>::for_kind(caps, axis) } -> std::same_as<std::uint64_t>;
 };
 static_assert(has_caps_runtime_capacity_v<CogKind::Gpu>);
@@ -414,81 +414,81 @@ static_assert(!has_caps_runtime_capacity_v<CogKind::Datacenter>);
 // A specialisation that returns zero on every axis rejects every row
 // forever, which is almost always a mistake. DRAM channels are the one
 // deliberate case, so they are absent from this list.
-static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(effects::ResourceKind::Sm) > 0);
-static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(effects::ResourceKind::HbmBytes) > 0);
-static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(effects::ResourceKind::CpuCore) > 0);
-static_assert(cog_max_capacity<CogKind::CpuSocket>::for_kind(effects::ResourceKind::CpuCore) > 0);
-static_assert(cog_max_capacity<CogKind::NicPort>::for_kind(effects::ResourceKind::NicQp) > 0);
-static_assert(cog_max_capacity<CogKind::NvSwitch>::for_kind(effects::ResourceKind::SwitchEgressBw) > 0);
+static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(::foundation::effects::ResourceKind::Sm) > 0);
+static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(::foundation::effects::ResourceKind::HbmBytes) > 0);
+static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(::foundation::effects::ResourceKind::CpuCore) > 0);
+static_assert(cog_max_capacity<CogKind::CpuSocket>::for_kind(::foundation::effects::ResourceKind::CpuCore) > 0);
+static_assert(cog_max_capacity<CogKind::NicPort>::for_kind(::foundation::effects::ResourceKind::NicQp) > 0);
+static_assert(cog_max_capacity<CogKind::NvSwitch>::for_kind(::foundation::effects::ResourceKind::SwitchEgressBw) > 0);
 
-static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(effects::ResourceKind::NicQp) == 0);
-static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(effects::ResourceKind::SwitchEgressBw) == 0);
-static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(effects::ResourceKind::CpuCore) == 0);
-static_assert(cog_max_capacity<CogKind::NicPort>::for_kind(effects::ResourceKind::Sm) == 0);
-static_assert(cog_max_capacity<CogKind::NicPort>::for_kind(effects::ResourceKind::HbmBytes) == 0);
-static_assert(cog_max_capacity<CogKind::NvSwitch>::for_kind(effects::ResourceKind::Sm) == 0);
-static_assert(cog_max_capacity<CogKind::NvSwitch>::for_kind(effects::ResourceKind::NicQp) == 0);
-static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(effects::ResourceKind::Sm) == 0);
-static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(effects::ResourceKind::NicQp) == 0);
+static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(::foundation::effects::ResourceKind::NicQp) == 0);
+static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(::foundation::effects::ResourceKind::SwitchEgressBw) == 0);
+static_assert(cog_max_capacity<CogKind::Gpu>::for_kind(::foundation::effects::ResourceKind::CpuCore) == 0);
+static_assert(cog_max_capacity<CogKind::NicPort>::for_kind(::foundation::effects::ResourceKind::Sm) == 0);
+static_assert(cog_max_capacity<CogKind::NicPort>::for_kind(::foundation::effects::ResourceKind::HbmBytes) == 0);
+static_assert(cog_max_capacity<CogKind::NvSwitch>::for_kind(::foundation::effects::ResourceKind::Sm) == 0);
+static_assert(cog_max_capacity<CogKind::NvSwitch>::for_kind(::foundation::effects::ResourceKind::NicQp) == 0);
+static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(::foundation::effects::ResourceKind::Sm) == 0);
+static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(::foundation::effects::ResourceKind::NicQp) == 0);
 
-using H100ComputeRow = effects::ConcurrentRow<effects::SmBudget<132>, effects::HbmBytes<80000000000ULL>>;
+using H100ComputeRow = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<132>, ::foundation::effects::HbmBytes<80000000000ULL>>;
 static_assert(FitsCog<H100ComputeRow, CogKind::Gpu>);
 
-using NicAllReduceRow = effects::ConcurrentRow<effects::NicQp<4>, effects::NicCq<4>, effects::NicMr<8>>;
+using NicAllReduceRow = ::foundation::effects::ConcurrentRow<::foundation::effects::NicQp<4>, ::foundation::effects::NicCq<4>, ::foundation::effects::NicMr<8>>;
 static_assert(FitsCog<NicAllReduceRow, CogKind::NicPort>);
 
 using SwitchRow =
-    effects::ConcurrentRow<effects::SwitchEgressBw<400000000000ULL>, effects::SwitchBufferCells<32 * 1024>>;
+    ::foundation::effects::ConcurrentRow<::foundation::effects::SwitchEgressBw<400000000000ULL>, ::foundation::effects::SwitchBufferCells<32 * 1024>>;
 static_assert(FitsCog<SwitchRow, CogKind::NvSwitch>);
 
-using SocketRow = effects::ConcurrentRow<effects::CpuCoreBudget<64>, effects::LlcBytes<128 * 1024 * 1024>>;
+using SocketRow = ::foundation::effects::ConcurrentRow<::foundation::effects::CpuCoreBudget<64>, ::foundation::effects::LlcBytes<128 * 1024 * 1024>>;
 static_assert(FitsCog<SocketRow, CogKind::CpuSocket>);
 
 // A row that asks for nothing satisfies every axis vacuously.
-static_assert(FitsCog<effects::ConcurrentRow<>, CogKind::Gpu>);
-static_assert(FitsCog<effects::ConcurrentRow<>, CogKind::NicPort>);
-static_assert(FitsCog<effects::ConcurrentRow<>, CogKind::NvSwitch>);
+static_assert(FitsCog<::foundation::effects::ConcurrentRow<>, CogKind::Gpu>);
+static_assert(FitsCog<::foundation::effects::ConcurrentRow<>, CogKind::NicPort>);
+static_assert(FitsCog<::foundation::effects::ConcurrentRow<>, CogKind::NvSwitch>);
 
-using OversubscribedSmRow = effects::ConcurrentRow<effects::SmBudget<999>>;
+using OversubscribedSmRow = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<999>>;
 static_assert(!FitsCog<OversubscribedSmRow, CogKind::Gpu>);
 
-using OversubscribedHbmRow = effects::ConcurrentRow<effects::HbmBytes<512ULL * 1024 * 1024 * 1024>>;
+using OversubscribedHbmRow = ::foundation::effects::ConcurrentRow<::foundation::effects::HbmBytes<512ULL * 1024 * 1024 * 1024>>;
 static_assert(!FitsCog<OversubscribedHbmRow, CogKind::Gpu>);
 
-using ConcurrentOverSubRow = effects::concurrent_row_sum_t<effects::ConcurrentRow<effects::SmBudget<200>>,
-                                                           effects::ConcurrentRow<effects::SmBudget<200>>>;
+using ConcurrentOverSubRow = ::foundation::effects::concurrent_row_sum_t<::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<200>>,
+                                                           ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<200>>>;
 static_assert(!FitsCog<ConcurrentOverSubRow, CogKind::Gpu>);
-static_assert(effects::concurrent_row_value_v<effects::ResourceKind::Sm, ConcurrentOverSubRow> == 400);
+static_assert(::foundation::effects::concurrent_row_value_v<::foundation::effects::ResourceKind::Sm, ConcurrentOverSubRow> == 400);
 
 // A demand on an axis the kind does not expose fails, because that
 // axis has a ceiling of zero.
-using NicDemandOnGpu = effects::ConcurrentRow<effects::NicQp<4>>;
+using NicDemandOnGpu = ::foundation::effects::ConcurrentRow<::foundation::effects::NicQp<4>>;
 static_assert(!FitsCog<NicDemandOnGpu, CogKind::Gpu>);
 
-using GpuDemandOnNic = effects::ConcurrentRow<effects::SmBudget<4>>;
+using GpuDemandOnNic = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<4>>;
 static_assert(!FitsCog<GpuDemandOnNic, CogKind::NicPort>);
 
-using SwitchDemandOnCpu = effects::ConcurrentRow<effects::SwitchEgressBw<100000000000ULL>>;
+using SwitchDemandOnCpu = ::foundation::effects::ConcurrentRow<::foundation::effects::SwitchEgressBw<100000000000ULL>>;
 static_assert(!FitsCog<SwitchDemandOnCpu, CogKind::CpuSocket>);
 
 static_assert(!FitsCog<H100ComputeRow, CogKind::PsuRail>);
 static_assert(!FitsCog<H100ComputeRow, CogKind::BmcSensor>);
 static_assert(!FitsCog<H100ComputeRow, CogKind::OpticalTransceiver>);
-static_assert(!FitsCog<effects::ConcurrentRow<>, CogKind::PsuRail>);
+static_assert(!FitsCog<::foundation::effects::ConcurrentRow<>, CogKind::PsuRail>);
 
 // A single budget tag is not a row, and neither is a plain type.
 static_assert(!FitsCog<int, CogKind::Gpu>);
-static_assert(!FitsCog<effects::resource::SmBudget<32>, CogKind::Gpu>);
+static_assert(!FitsCog<::foundation::effects::resource::SmBudget<32>, CogKind::Gpu>);
 
 // A row that exactly saturates a ceiling still admits, because some
 // Cog of that kind has exactly that capacity.
-using SaturateGpuSm = effects::ConcurrentRow<effects::SmBudget<320>>;
+using SaturateGpuSm = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<320>>;
 static_assert(FitsCog<SaturateGpuSm, CogKind::Gpu>);
 
-using SaturateGpuHbm = effects::ConcurrentRow<effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
+using SaturateGpuHbm = ::foundation::effects::ConcurrentRow<::foundation::effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
 static_assert(FitsCog<SaturateGpuHbm, CogKind::Gpu>);
 
-using OneOverGpuSm = effects::ConcurrentRow<effects::SmBudget<321>>;
+using OneOverGpuSm = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<321>>;
 static_assert(!FitsCog<OneOverGpuSm, CogKind::Gpu>);
 
 }  // namespace detail::fits_cog_self_test

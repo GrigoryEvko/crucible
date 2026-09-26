@@ -6,9 +6,9 @@ namespace phase = crucible::forge::_wip::phases::comm;
 namespace ir = crucible::forge::ir001;
 
 using ComputeNode = ir::Ir001Node<ir::Ir001OpKind::Gemm, ir::TensorPort,
-                                  crucible::effects::ConcurrentRow<crucible::effects::SmBudget<1>>>;
+                                  ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>>;
 using SendNode = ir::Ir001Node<ir::Ir001OpKind::SendAsync, ir::PointToPointAttrs,
-                               crucible::effects::ConcurrentRow<crucible::effects::NvlinkBandwidth<1>>>;
+                               ::foundation::effects::ConcurrentRow<::foundation::effects::NvlinkBandwidth<1>>>;
 
 int main() {
     auto constraints = crucible::forge::recipes::query_constraints(crucible::NumericalRecipe{});

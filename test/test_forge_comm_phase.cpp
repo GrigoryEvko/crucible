@@ -14,10 +14,11 @@ namespace net = crucible::forge::recipes;
 
 namespace {
 
-using ComputeRow = crucible::effects::ConcurrentRow<crucible::effects::SmBudget<16>, crucible::effects::HbmBytes<4096>,
-                                                    crucible::effects::HbmBandwidth<4096>>;
-using CommRow =
-    crucible::effects::ConcurrentRow<crucible::effects::NvlinkBandwidth<4096>, crucible::effects::HbmBandwidth<4096>>;
+using ComputeRow = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<16>,
+                                                        ::foundation::effects::HbmBytes<4096>,
+                                                        ::foundation::effects::HbmBandwidth<4096>>;
+using CommRow = ::foundation::effects::ConcurrentRow<::foundation::effects::NvlinkBandwidth<4096>,
+                                                     ::foundation::effects::HbmBandwidth<4096>>;
 
 using ComputeNode = ir::Ir001Node<ir::Ir001OpKind::Gemm, ir::TensorPort, ComputeRow>;
 using SendNode = ir::Ir001Node<ir::Ir001OpKind::SendAsync, ir::PointToPointAttrs, CommRow>;

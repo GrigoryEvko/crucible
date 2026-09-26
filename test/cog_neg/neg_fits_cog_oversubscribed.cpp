@@ -43,11 +43,11 @@
 // / "GAPS-191" pointing at the call site below.
 
 #include <crucible/cog/FitsCog.h>
-#include <crucible/effects/_Resources.h>
-#include <crucible/effects/_Concurrent.h>
+#include <foundation/effects/Concurrent.h>
+#include <foundation/effects/Resources.h>
 
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
+namespace effects = ::foundation::effects;
 
 // Mock of the future GAPS-188 mint_cog_mimic / GAPS-810 partition
 // optimiser scheduling shape: a function templated on a row-typed

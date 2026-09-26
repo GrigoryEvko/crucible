@@ -57,11 +57,11 @@
 // "PsuRail" / "GAPS-191" pointing at the call site below.
 
 #include <crucible/cog/FitsCog.h>
-#include <crucible/effects/_Resources.h>
-#include <crucible/effects/_Concurrent.h>
+#include <foundation/effects/Concurrent.h>
+#include <foundation/effects/Resources.h>
 
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
+namespace effects = ::foundation::effects;
 
 // Mock of the future GAPS-188 / GAPS-810 scheduling shape: a function
 // templated on a row-typed budget AND a CogKind atom, constrained on

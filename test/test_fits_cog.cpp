@@ -6,16 +6,16 @@
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/FitsCog.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/effects/_Concurrent.h>
-#include <crucible/effects/_Resources.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Concurrent.h>
+#include <foundation/effects/Resources.h>
+#include <foundation/effects/Row.h>
 
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
 
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
+namespace effects = ::foundation::effects;
 
 static void test_has_cog_capacity_substrate_admit() {
     static_assert(cog::HasCogCapacity<cog::CogKind::Gpu>);
