@@ -1,12 +1,14 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
-// HS14 fixture for GAPS-132. GPUDirect plans cannot carry a null GPU
-// virtual address; null must be rejected at the refinement boundary.
+// A GPUDirect plan cannot carry a null GPU virtual address.  The checked
+// mint of the alias refuses zero in a constant evaluation.
 
 #include <crucible/cntp/_wip/GpuDirect.h>
 
+#include <cstdint>
+
 namespace gd = crucible::cntp::_wip::gpu_direct;
 
-constexpr gd::GpuVirtualAddress bad_address{std::uintptr_t{0}};
+constexpr gd::GpuVirtualAddress bad_address = ::fixy::mint_refined<::fixy::non_zero>(std::uintptr_t{0});
 
 int main() { return static_cast<int>(bad_address.value()); }

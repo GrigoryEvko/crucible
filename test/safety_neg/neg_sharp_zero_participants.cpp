@@ -1,12 +1,14 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
-// HS14 fixture for GAPS-133. A SHARP fabric plan cannot have an empty
-// participant set; zero is rejected at the refinement boundary.
+// A SHARP fabric plan has at least one participant.  The checked mint of
+// the alias refuses zero in a constant evaluation.
 
 #include <crucible/cntp/_wip/Sharp.h>
 
+#include <cstdint>
+
 namespace shp = crucible::cntp::_wip::sharp;
 
-constexpr shp::SharpParticipantCount bad_count{std::uint16_t{0}};
+constexpr shp::SharpParticipantCount bad_count = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{0});
 
 int main() { return static_cast<int>(bad_count.value()); }

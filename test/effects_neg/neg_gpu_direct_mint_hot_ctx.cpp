@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
 // A GPUDirect memory-region plan is minted at initialization.  The
-// background drain context owns no Init effect, so the mint refuses it.
+// foreground context claims no effect, so the mint refuses it.
 
 #include <crucible/cntp/_wip/GpuDirect.h>
 #include <fixy/Ctx.h>
@@ -22,8 +22,8 @@ int main() {
     cog::NicPortTargetCaps nic_caps{};
     nic_caps.features.set(cog::NicFeature::GpuDirectRdma);
 
-    ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
-    auto result = gd::mint_gpu_direct_mr_plan(bg, gpu, gpu_caps, nic, nic_caps, gd::PeerPlacement{},
+    const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
+    auto result = gd::mint_gpu_direct_mr_plan(hot, gpu, gpu_caps, nic, nic_caps, gd::PeerPlacement{},
                                               *gd::admit_gpu_virtual_address(0x1000u),
                                               *gd::admit_gpu_direct_bytes(4096));
     return result.has_value() ? 0 : 1;

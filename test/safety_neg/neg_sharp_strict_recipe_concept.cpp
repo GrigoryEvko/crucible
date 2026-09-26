@@ -1,8 +1,7 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
-// HS14 fixture for GAPS-133. BITEXACT_STRICT recipes require a fixed
-// reduction order and cannot enter the SHARP compile-time eligibility
-// lane.
+// A BITEXACT_STRICT recipe fixes its reduction order, and a switch reduces
+// in its own order.  sharp_recipe_laws refuses the recipe.
 
 #include <crucible/cntp/_wip/Sharp.h>
 
@@ -14,10 +13,7 @@ struct StrictRecipe {
     static constexpr crucible::ReductionDeterminism determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
 };
 
-template <class R>
-    requires shp::SharpEligibleRecipe<R>
-constexpr bool accepts_sharp_recipe() {
-    return true;
+int main() {
+    constexpr shp::SharpRecipeLaws laws = shp::sharp_recipe_laws<StrictRecipe>();
+    return laws.associative ? 0 : 1;
 }
-
-static_assert(accepts_sharp_recipe<StrictRecipe>());

@@ -4483,6 +4483,17 @@ crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
     "__builtin_trap\\(\\).* is not a constant expression"
     "mint_refined<(fixy::)?refined_algebra::AllOf<(fixy::)?IsPowerOfTwo\\(\\), (fixy::)?BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(33\\)")
 
+# cog/OffloadTarget.h, the one check that a Cog can carry an offload.
+#   * neg_offload_target_feature_of_other_schema: a feature names a bit of
+#     the schema of its own enum.
+#   * neg_offload_target_no_kind: an offload names a kind of Cog.
+crucible_neg_compile_cog_test(neg_offload_target_feature_of_other_schema
+    "no matching function for call to .validate_offload_target<crucible::cog::GpuFeature::GpuDirectRdma, crucible::cog::CogKind::NvSwitch>\\("
+    "required for the satisfaction of .AdvertisesFeatureOf<Caps, Feature>. \\[with Caps = crucible::cog::NvSwitchTargetCaps")
+crucible_neg_compile_cog_test(neg_offload_target_no_kind
+    "no matching function for call to .validate_offload_target<crucible::cog::SwitchFeature::P4>\\("
+    "the expression .sizeof \\.\\.\\. \\(\\(Kinds \\.\\.\\.\\)\\) > 0 \\[with Kinds = \\{\\}\\]. evaluated to .false.")
+
 # ─── #66 ledger/Ledger.h HS14 fixtures ────────────────────────────
 #
 # Two fixtures pinning the two halves of CtxFitsLedgerStore, so a
@@ -7168,79 +7179,143 @@ crucible_neg_compile_multi_test(neg_roce_pause_counters_hot_ctx
   "no matching function for call to .query_pfc_pause_counters\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >, crucible::cntp::NicInterfaceName&\\)."
   "required for the satisfaction of .CtxFitsFileMint<Ctx, fixy::atom::fs::mode<fixy::fs::open_mode::ReadOnly> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# GAPS-132 — cntp/_wip/GpuDirect.h GPUDirect RDMA / Storage substrate.
-#   * neg_gpu_direct_null_address: GPU virtual address must be non-null.
-#   * neg_gpu_direct_zero_bytes: registered/transfer size must be positive.
-#   * neg_gpu_direct_raw_plan_register: MR registration requires tagged intent.
-#   * neg_gpu_direct_mint_bg_ctx: GPUDirect plan minting is Init-row work.
-crucible_neg_compile_test(neg_gpu_direct_null_address
-  "contract|precondition|non_zero|predicate|static assertion")
-crucible_neg_compile_test(neg_gpu_direct_zero_bytes
-  "contract|precondition|positive|predicate|static assertion")
-crucible_neg_compile_test(neg_gpu_direct_raw_plan_register
-  "could not convert|no matching function|DeclaredGpuDirectMrPlan|Tagged")
+# cntp/_wip/GpuDirect.h, the GPUDirect RDMA and Storage scaffold.  Each
+# fixture names the call that fails and the reason.
+#   * neg_gpu_direct_null_address: a GPU virtual address is not null.
+#   * neg_gpu_direct_zero_bytes: a region or a transfer covers a byte.
+#   * neg_gpu_direct_raw_plan_register: a registration takes a declared
+#     plan.
+#   * neg_gpu_direct_mint_bg_ctx, neg_gpu_direct_mint_hot_ctx: a region
+#     plan is minted at initialization.
+#   * neg_gpu_direct_storage_bg_ctx, neg_gpu_direct_storage_hot_ctx: a
+#     storage plan is minted at initialization.
+crucible_neg_compile_multi_test(neg_gpu_direct_null_address
+  "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_gpu_direct_zero_bytes
+  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), long unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_gpu_direct_raw_plan_register
+  "could not convert .plan. from .const crucible::cntp::_wip::gpu_direct::GpuDirectMrPlan. to .crucible::cntp::_wip::gpu_direct::DeclaredGpuDirectMrPlan."
+  "aka .fixy::Tagged<crucible::cntp::_wip::gpu_direct::GpuDirectMrPlan, crucible::cntp::_wip::gpu_direct::wip_source::GpuDirect>.")
 crucible_neg_compile_effects_test(neg_gpu_direct_mint_bg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsGpuDirectMint|Init")
+  "no matching function for call to .mint_gpu_direct_mr_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
+  "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_gpu_direct_mint_hot_ctx
+  "no matching function for call to .mint_gpu_direct_mr_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
+  "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_effects_test(neg_gpu_direct_storage_bg_ctx
+  "no matching function for call to .mint_gpu_direct_storage_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
+  "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_gpu_direct_storage_hot_ctx
+  "no matching function for call to .mint_gpu_direct_storage_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
+  "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# GAPS-133 — cntp/_wip/Sharp.h in-network reduction substrate.
-#   * neg_sharp_zero_participants: SHARP fabric participants are positive.
-#   * neg_sharp_raw_plan_dispatch: dispatch requires tagged Sharp intent.
-#   * neg_sharp_strict_recipe_concept: BITEXACT_STRICT cannot enter SHARP.
-#   * neg_sharp_mint_bg_ctx: fabric context minting is Init-row work.
-#   * neg_sharp_dispatch_init_ctx: all-reduce dispatch is Bg-row work.
-crucible_neg_compile_test(neg_sharp_zero_participants
-  "contract|precondition|positive|predicate|static assertion")
-crucible_neg_compile_test(neg_sharp_raw_plan_dispatch
-  "could not convert|no matching function|DeclaredSharpFabricPlan|Tagged")
-crucible_neg_compile_test(neg_sharp_strict_recipe_concept
-  "constraints not satisfied|SharpEligibleRecipe|BITEXACT_STRICT|determinism")
+# cntp/_wip/Sharp.h, the in-network reduction scaffold.  Each fixture names
+# the call that fails and the reason.
+#   * neg_sharp_zero_participants: a fabric plan has a participant.
+#   * neg_sharp_raw_plan_dispatch: a dispatch takes a declared plan.
+#   * neg_sharp_strict_recipe_concept, neg_sharp_non_commutative_recipe:
+#     the recipe laws refuse a recipe with a fixed order and one that does
+#     not commute.
+#   * neg_sharp_mint_bg_ctx, neg_sharp_mint_hot_ctx: a fabric plan is
+#     minted at initialization.
+#   * neg_sharp_context_bg_ctx, neg_sharp_context_hot_ctx: a SHARP context
+#     is minted at initialization.
+#   * neg_sharp_dispatch_init_ctx, neg_sharp_dispatch_hot_ctx: an
+#     all-reduce is background work.
+crucible_neg_compile_multi_test(neg_sharp_zero_participants
+  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), short unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_sharp_raw_plan_dispatch
+  "could not convert .plan. from .const crucible::cntp::_wip::sharp::SharpFabricPlan. to .crucible::cntp::_wip::sharp::DeclaredSharpFabricPlan."
+  "aka .fixy::Tagged<crucible::cntp::_wip::sharp::SharpFabricPlan, crucible::cntp::_wip::sharp::wip_source::Sharp>.")
+crucible_neg_compile_multi_test(neg_sharp_strict_recipe_concept
+  "no matching function for call to .sharp_recipe_laws<StrictRecipe>\\(\\)."
+  "the expression .\\(Recipe::determinism\\) != crucible::ReductionDeterminism::BITEXACT_STRICT \\[with Recipe = StrictRecipe\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_sharp_non_commutative_recipe
+  "no matching function for call to .sharp_recipe_laws<NonCommutativeRecipe>\\(\\)."
+  "the expression .Recipe::commutative \\[with Recipe = NonCommutativeRecipe\\]. evaluated to .false.")
 crucible_neg_compile_effects_test(neg_sharp_mint_bg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsSharpMint|Init")
+  "no matching function for call to .mint_sharp_fabric_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, "
+  "required for the satisfaction of .CtxFitsSharpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_sharp_mint_hot_ctx
+  "no matching function for call to .mint_sharp_fabric_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, "
+  "required for the satisfaction of .CtxFitsSharpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_effects_test(neg_sharp_context_bg_ctx
+  "no matching function for call to .mint_sharp_context\\(fixy::BgDrainCtx&, fixy::Tagged<crucible::cntp::_wip::sharp::SharpFabricPlan, crucible::cntp::_wip::sharp::wip_source::Sharp>&\\)."
+  "required for the satisfaction of .CtxFitsSharpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_sharp_context_hot_ctx
+  "no matching function for call to .mint_sharp_context\\(const fixy::HotFgCtx&, fixy::Tagged<crucible::cntp::_wip::sharp::SharpFabricPlan, crucible::cntp::_wip::sharp::wip_source::Sharp>&\\)."
+  "required for the satisfaction of .CtxFitsSharpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_effects_test(neg_sharp_dispatch_init_ctx
-  "constraints.*not satisfied"
-    "CtxFitsSharpDispatch|Bg")
+  "no matching function for call to .crucible::cntp::_wip::sharp::SharpReducer::allreduce_via_sharp\\(fixy::ColdInitCtx&, "
+  "required for the satisfaction of .CtxFitsSharpDispatch<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
+crucible_neg_compile_effects_test(neg_sharp_dispatch_hot_ctx
+  "no matching function for call to .crucible::cntp::_wip::sharp::SharpReducer::allreduce_via_sharp\\(const fixy::HotFgCtx&, "
+  "required for the satisfaction of .CtxFitsSharpDispatch<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# GAPS-144 — cntp/_wip/Doca.h DPU / SmartNIC offload substrate.
-#   * neg_doca_zero_program_id: DOCA program IDs reserve zero.
-#   * neg_doca_zero_image_bytes: offload images must be non-empty.
-#   * neg_doca_zero_queue_depth: DPU queues must have positive depth.
-#   * neg_doca_raw_plan_deploy: deploy requires tagged DOCA intent.
-#   * neg_doca_mint_bg_ctx: deployment-plan minting is Init-row work.
-#   * neg_doca_send_init_ctx: DPU communication is Bg-row work.
-crucible_neg_compile_test(neg_doca_zero_program_id
-  "contract|precondition|non_zero|predicate|static assertion")
-crucible_neg_compile_test(neg_doca_zero_image_bytes
-  "contract|precondition|positive|predicate|static assertion")
-crucible_neg_compile_test(neg_doca_zero_queue_depth
-  "contract|precondition|positive|predicate|static assertion")
-crucible_neg_compile_test(neg_doca_raw_plan_deploy
-  "could not convert|no matching function|DeclaredDocaDeployPlan|Tagged")
+# cntp/_wip/Doca.h, the DPU offload scaffold.  Each fixture names the call
+# that fails and the reason.
+#   * neg_doca_zero_program_id: a program ID reserves zero.
+#   * neg_doca_zero_image_bytes: a program image is not empty.
+#   * neg_doca_zero_queue_depth: a DPU queue holds at least one entry.
+#   * neg_doca_raw_plan_deploy: a deploy takes a declared plan.
+#   * neg_doca_mint_bg_ctx, neg_doca_mint_hot_ctx: a plan is minted at
+#     initialization.
+#   * neg_doca_send_init_ctx, neg_doca_recv_hot_ctx: the channel is used
+#     from background work.
+crucible_neg_compile_multi_test(neg_doca_zero_program_id
+  "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_doca_zero_image_bytes
+  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), long unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_doca_zero_queue_depth
+  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), short unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_doca_raw_plan_deploy
+  "could not convert .raw. from .const crucible::cntp::_wip::doca::DocaDeployPlan. to .crucible::cntp::_wip::doca::DeclaredDocaDeployPlan."
+  "aka .fixy::Tagged<crucible::cntp::_wip::doca::DocaDeployPlan, crucible::cntp::_wip::doca::wip_source::DocaOffload>.")
 crucible_neg_compile_effects_test(neg_doca_mint_bg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsDocaMint|Init")
+  "no matching function for call to .mint_doca_deploy_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::doca::DocaOffloadSpec&\\)."
+  "required for the satisfaction of .CtxFitsDocaMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_doca_mint_hot_ctx
+  "no matching function for call to .mint_doca_deploy_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::doca::DocaOffloadSpec&\\)."
+  "required for the satisfaction of .CtxFitsDocaMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_effects_test(neg_doca_send_init_ctx
-  "constraints.*not satisfied"
-    "CtxFitsDocaComm|Bg")
+  "no matching function for call to .crucible::cntp::_wip::doca::DpuCommChannel::send_to_dpu\\(fixy::ColdInitCtx&, std::array<std::byte, 1>&\\)."
+  "required for the satisfaction of .CtxFitsDocaComm<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
+crucible_neg_compile_effects_test(neg_doca_recv_hot_ctx
+  "no matching function for call to .crucible::cntp::_wip::doca::DpuCommChannel::recv_from_dpu\\(const fixy::HotFgCtx&, std::array<std::byte, 8>&\\)."
+  "required for the satisfaction of .CtxFitsDocaComm<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# GAPS-145 — cntp/_wip/P4.h programmable switch dataplane substrate.
-#   * neg_p4_zero_program_id: P4 program IDs reserve zero.
-#   * neg_p4_zero_source_bytes: admitted P4 source/program artifacts are non-empty.
-#   * neg_p4_zero_tcam_entries: switch TCAM budget requests are positive.
-#   * neg_p4_raw_program_deploy: deployment requires tagged P4 intent.
-#   * neg_p4_mint_bg_ctx: program minting is Init-row work.
-crucible_neg_compile_test(neg_p4_zero_program_id
-  "contract|precondition|non_zero|predicate|static assertion")
-crucible_neg_compile_test(neg_p4_zero_source_bytes
-  "contract|precondition|positive|predicate|static assertion")
-crucible_neg_compile_test(neg_p4_zero_tcam_entries
-  "contract|precondition|positive|predicate|static assertion")
-crucible_neg_compile_test(neg_p4_raw_program_deploy
-  "could not convert|no matching function|DeclaredP4Program|Tagged")
+# cntp/_wip/P4.h, the programmable switch scaffold.  Each fixture names the
+# call that fails and the reason.
+#   * neg_p4_zero_program_id: a program ID reserves zero.
+#   * neg_p4_zero_source_bytes: a program source is not empty.
+#   * neg_p4_zero_tcam_entries: a TCAM budget asks for an entry.
+#   * neg_p4_raw_program_deploy: a deploy takes a declared program.
+#   * neg_p4_mint_bg_ctx, neg_p4_mint_hot_ctx: a program is minted at
+#     initialization.
+crucible_neg_compile_multi_test(neg_p4_zero_program_id
+  "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_p4_zero_source_bytes
+  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), long unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_p4_zero_tcam_entries
+  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), unsigned int>\\(0\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_p4_raw_program_deploy
+  "could not convert .raw. from .const crucible::cntp::_wip::p4::P4ProgramSpec. to .crucible::cntp::_wip::p4::DeclaredP4Program."
+  "aka .fixy::Tagged<crucible::cntp::_wip::p4::P4ProgramSpec, crucible::cntp::_wip::p4::wip_source::P4Compiled>.")
 crucible_neg_compile_effects_test(neg_p4_mint_bg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsP4Mint|Init")
+  "no matching function for call to .mint_p4_program\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::p4::P4ProgramSpec&\\)."
+  "required for the satisfaction of .CtxFitsP4Mint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_p4_mint_hot_ctx
+  "no matching function for call to .mint_p4_program\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::p4::P4ProgramSpec&\\)."
+  "required for the satisfaction of .CtxFitsP4Mint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
 # GAPS-148 — cntp/Tcam.h hardware ACL / flow-rule substrate.
 #   * neg_tcam_zero_entry_count: TCAM table capacities are positive.

@@ -1,4 +1,5 @@
 #include <crucible/cntp/_wip/Sharp.h>
+#include <fixy/Ctx.h>
 
 #include <array>
 #include <cassert>
@@ -6,10 +7,10 @@
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace cog = crucible::cog;
-namespace eff = crucible::effects;
-namespace saf = crucible::safety;
+namespace fe = ::foundation::effects;
 namespace shp = crucible::cntp::_wip::sharp;
 
 namespace {
@@ -74,32 +75,37 @@ void test_admission_and_names() {
 }
 
 void test_fabric_plan_minting() {
-    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
-                                            *shp::admit_sharp_participant_count(8));
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, shp::DeclaredSharpFabricPlan>);
     assert(plan->value().participant_count.value() == 8);
 
     auto no_cap = switch_caps();
     no_cap.features.unset(cog::SwitchFeature::Sharp);
-    auto missing_cap = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), no_cap,
-                                                   *shp::admit_sharp_participant_count(8));
+    auto missing_cap =
+        shp::mint_sharp_fabric_plan(init, switch_identity(), no_cap, *shp::admit_sharp_participant_count(8));
     assert(!missing_cap.has_value());
     assert(missing_cap.error() == shp::SharpError::MissingSwitchSharpCapability);
 
     auto wrong_kind = switch_identity();
     wrong_kind.kind = cog::CogKind::NicPort;
-    auto non_switch = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, wrong_kind, switch_caps(),
-                                                  *shp::admit_sharp_participant_count(8));
+    auto non_switch = shp::mint_sharp_fabric_plan(init, wrong_kind, switch_caps(), *shp::admit_sharp_participant_count(8));
     assert(!non_switch.has_value());
     assert(non_switch.error() == shp::SharpError::NonSwitchCog);
+
+    auto zero = switch_identity();
+    zero.uuid = cog::Uuid{};
+    auto zero_switch = shp::mint_sharp_fabric_plan(init, zero, switch_caps(), *shp::admit_sharp_participant_count(8));
+    assert(!zero_switch.has_value());
+    assert(zero_switch.error() == shp::SharpError::ZeroSwitchCog);
 
     std::printf("  test_fabric_plan_minting: PASSED\n");
 }
 
 void test_recipe_eligibility() {
-    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
-                                            *shp::admit_sharp_participant_count(8));
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
 
     auto eligible = shp::eligibility_check(recipe(crucible::ReductionDeterminism::BITEXACT_TC),
@@ -127,8 +133,9 @@ void test_recipe_eligibility() {
 }
 
 void test_dispatch_boundary() {
-    auto plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
-                                            *shp::admit_sharp_participant_count(8));
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
+    auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
 
     std::array<float, 4> input{1.0f, 2.0f, 3.0f, 4.0f};
@@ -139,7 +146,7 @@ void test_dispatch_boundary() {
     assert(unavailable->value().fallback == shp::SharpFallback::RingOrTree);
     assert(unavailable->value().element_count == input.size());
 
-    auto deferred_plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
+    auto deferred_plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(),
                                                      *shp::admit_sharp_participant_count(8), true);
     assert(deferred_plan.has_value());
     auto deferred =
@@ -147,7 +154,14 @@ void test_dispatch_boundary() {
     assert(deferred.has_value());
     assert(deferred->value().fallback == shp::SharpFallback::RingOrTree);
 
-    auto backend_plan = shp::mint_sharp_fabric_plan(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), switch_caps(),
+    auto deferred_context = shp::mint_sharp_context(init, *deferred_plan);
+    assert(!deferred_context.has_value());
+    assert(deferred_context.error() == shp::SharpError::DispatchDeferred);
+    auto unloaded_context = shp::mint_sharp_context(init, *plan);
+    assert(!unloaded_context.has_value());
+    assert(unloaded_context.error() == shp::SharpError::RuntimeUnavailable);
+
+    auto backend_plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(),
                                                     *shp::admit_sharp_participant_count(8), true, true);
     assert(backend_plan.has_value());
     auto backend =
@@ -167,13 +181,23 @@ void test_dispatch_boundary() {
     assert(!shape.has_value());
     assert(shape.error() == shp::SharpError::OutputShapeMismatch);
 
-    auto context = shp::mint_sharp_context(eff::ColdInitCtx{::crucible::effects::testing::init()}, *backend_plan);
+    auto context = shp::mint_sharp_context(init, *backend_plan);
     assert(context.has_value());
+    assert(context->peek().switch_uuid() == switch_identity().uuid);
+    assert(context->peek().participant_count().value() == 8);
     shp::SharpReducer reducer{std::move(*context)};
-    auto reduced = reducer.allreduce_via_sharp(eff::BgDrainCtx{::crucible::effects::testing::bg()}, input, output, recipe(),
-                                               shp::sharp_recipe_laws<GoodRecipe>(), *backend_plan);
+    auto reduced =
+        reducer.allreduce_via_sharp(bg, input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), *backend_plan);
     assert(!reduced.has_value());
     assert(reduced.error() == shp::SharpError::VendorBackendUnavailable);
+
+    auto other_plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(),
+                                                  *shp::admit_sharp_participant_count(4), true, true);
+    assert(other_plan.has_value());
+    auto mismatch =
+        reducer.allreduce_via_sharp(bg, input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), *other_plan);
+    assert(!mismatch.has_value());
+    assert(mismatch.error() == shp::SharpError::ParticipantCountMismatch);
 
     std::printf("  test_dispatch_boundary: PASSED\n");
 }
@@ -185,12 +209,17 @@ int main() {
     static_assert(sizeof(shp::DeclaredSharpFabricPlan) == sizeof(shp::SharpFabricPlan));
     static_assert(sizeof(shp::DeclaredSharpDispatch) == sizeof(shp::SharpDispatchResult));
     static_assert(std::same_as<shp::DeclaredSharpFabricPlan::tag_type, shp::wip_source::Sharp>);
-    static_assert(shp::CtxFitsSharpMint<eff::ColdInitCtx>);
-    static_assert(!shp::CtxFitsSharpMint<eff::BgDrainCtx>);
-    static_assert(shp::CtxFitsSharpDispatch<eff::BgDrainCtx>);
-    static_assert(!shp::CtxFitsSharpDispatch<eff::ColdInitCtx>);
-    static_assert(std::is_trivially_copyable_v<shp::SharpFabricPlan>);
+    static_assert(shp::CtxFitsSharpMint<::fixy::ColdInitCtx>);
+    static_assert(!shp::CtxFitsSharpMint<::fixy::BgDrainCtx>);
+    static_assert(!shp::CtxFitsSharpMint<::fixy::HotFgCtx>);
+    static_assert(shp::CtxFitsSharpDispatch<::fixy::BgDrainCtx>);
+    static_assert(!shp::CtxFitsSharpDispatch<::fixy::ColdInitCtx>);
+    static_assert(!shp::CtxFitsSharpDispatch<::fixy::HotFgCtx>);
+    static_assert(std::is_trivially_copy_constructible_v<shp::SharpFabricPlan>);
     static_assert(std::is_trivially_copyable_v<shp::SharpDispatchResult>);
+    static_assert(!std::is_default_constructible_v<shp::DeclaredSharpFabricPlan>);
+    static_assert(!std::is_copy_constructible_v<shp::SharpContextHandle>);
+    static_assert(!std::is_constructible_v<shp::SharpContextHandle, cog::Uuid, shp::SharpParticipantCount, bool, bool>);
 
     std::printf("test_cntp_sharp:\n");
     test_admission_and_names();

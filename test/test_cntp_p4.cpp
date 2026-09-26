@@ -1,4 +1,5 @@
 #include <crucible/cntp/_wip/P4.h>
+#include <fixy/Ctx.h>
 
 #include <cassert>
 #include <concepts>
@@ -7,9 +8,8 @@
 #include <type_traits>
 
 namespace cog = crucible::cog;
-namespace eff = crucible::effects;
+namespace fe = ::foundation::effects;
 namespace p4 = crucible::cntp::_wip::p4;
-namespace saf = crucible::safety;
 
 namespace {
 
@@ -46,32 +46,39 @@ void test_admission_and_names() {
     assert(p4::p4_program_kind_name(p4::P4ProgramKind::SharpAssist) == std::string_view{"SharpAssist"});
 
     assert(p4::admit_p4_program_id(9).has_value());
-    assert(!p4::admit_p4_program_id(0).has_value());
-    assert(!p4::admit_p4_source_bytes(0).has_value());
-    assert(!p4::admit_p4_tcam_entries(0).has_value());
-    assert(!p4::admit_p4_stage_count(0).has_value());
-    assert(!p4::admit_p4_register_width_bits(0).has_value());
+    assert(p4::admit_p4_program_id(0).error() == p4::P4Error::InvalidProgramId);
+    assert(p4::admit_p4_source_bytes(0).error() == p4::P4Error::InvalidSourceBytes);
+    assert(p4::admit_p4_tcam_entries(0).error() == p4::P4Error::InvalidTcamEntries);
+    assert(p4::admit_p4_stage_count(0).error() == p4::P4Error::InvalidStageCount);
+    assert(p4::admit_p4_register_width_bits(0).error() == p4::P4Error::InvalidRegisterWidthBits);
+    assert(p4::admit_p4_resource_budget(1, 0, 1).error() == p4::P4Error::InvalidStageCount);
 
     std::printf("  test_admission_and_names: PASSED\n");
 }
 
 void test_program_minting() {
-    auto program = p4::mint_p4_program(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), p4_caps(), program_spec());
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    auto program = p4::mint_p4_program(init, switch_identity(), p4_caps(), program_spec());
     assert(program.has_value());
     assert(program->value().budget.tcam_entries.value() == 128);
 
     auto no_cap = p4_caps();
     no_cap.features.unset(cog::SwitchFeature::P4);
-    auto missing_cap = p4::mint_p4_program(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), no_cap, program_spec());
+    auto missing_cap = p4::mint_p4_program(init, switch_identity(), no_cap, program_spec());
     assert(!missing_cap.has_value());
     assert(missing_cap.error() == p4::P4Error::MissingP4Capability);
 
-    auto wrong_kind =
-        p4::mint_p4_program(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(cog::CogKind::NicCard), p4_caps(), program_spec());
+    auto wrong_kind = p4::mint_p4_program(init, switch_identity(cog::CogKind::NicCard), p4_caps(), program_spec());
     assert(!wrong_kind.has_value());
     assert(wrong_kind.error() == p4::P4Error::NonSwitchCog);
 
-    auto over_budget = p4::mint_p4_program(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), p4_caps(64), program_spec());
+    auto zero = switch_identity();
+    zero.uuid = cog::Uuid{};
+    auto zero_switch = p4::mint_p4_program(init, zero, p4_caps(), program_spec());
+    assert(!zero_switch.has_value());
+    assert(zero_switch.error() == p4::P4Error::ZeroSwitchCog);
+
+    auto over_budget = p4::mint_p4_program(init, switch_identity(), p4_caps(64), program_spec());
     assert(!over_budget.has_value());
     assert(over_budget.error() == p4::P4Error::TcamBudgetExceeded);
 
@@ -79,31 +86,34 @@ void test_program_minting() {
 }
 
 void test_deploy_boundary() {
-    auto compiler_missing = p4::mint_p4_program(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), p4_caps(), program_spec());
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    auto compiler_missing = p4::mint_p4_program(init, switch_identity(), p4_caps(), program_spec());
     assert(compiler_missing.has_value());
     auto missing = p4::deploy_p4_program(switch_identity(), p4_caps(), *compiler_missing);
     assert(!missing.has_value());
     assert(missing.error() == p4::P4Error::CompilerUnavailable);
 
-    auto compile_deferred = p4::mint_p4_program(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), p4_caps(), program_spec(true));
+    auto compile_deferred = p4::mint_p4_program(init, switch_identity(), p4_caps(), program_spec(true));
     assert(compile_deferred.has_value());
     auto deferred = p4::deploy_p4_program(switch_identity(), p4_caps(), *compile_deferred);
     assert(!deferred.has_value());
     assert(deferred.error() == p4::P4Error::CompileDeferred);
 
-    auto deploy_deferred =
-        p4::mint_p4_program(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), p4_caps(), program_spec(true, true));
+    auto deploy_deferred = p4::mint_p4_program(init, switch_identity(), p4_caps(), program_spec(true, true));
     assert(deploy_deferred.has_value());
     auto deployment = p4::deploy_p4_program(switch_identity(), p4_caps(), *deploy_deferred);
     assert(!deployment.has_value());
     assert(deployment.error() == p4::P4Error::DeploymentDeferred);
 
-    auto backend_plan =
-        p4::mint_p4_program(eff::ColdInitCtx{::crucible::effects::testing::init()}, switch_identity(), p4_caps(), program_spec(true, true, true));
+    auto backend_plan = p4::mint_p4_program(init, switch_identity(), p4_caps(), program_spec(true, true, true));
     assert(backend_plan.has_value());
     auto backend = p4::force_p4_vendor_boundary(switch_identity(), p4_caps(), *backend_plan);
     assert(!backend.has_value());
     assert(backend.error() == p4::P4Error::VendorBackendUnavailable);
+
+    auto smaller_switch = p4::deploy_p4_program(switch_identity(), p4_caps(64), *backend_plan);
+    assert(!smaller_switch.has_value());
+    assert(smaller_switch.error() == p4::P4Error::TcamBudgetExceeded);
 
     std::printf("  test_deploy_boundary: PASSED\n");
 }
@@ -115,13 +125,16 @@ int main() {
     static_assert(sizeof(p4::P4SourceBytes) == sizeof(std::uint64_t));
     static_assert(sizeof(p4::P4TcamEntries) == sizeof(std::uint32_t));
     static_assert(sizeof(p4::DeclaredP4Program) == sizeof(p4::P4ProgramSpec));
-    static_assert(sizeof(p4::OwnedP4Deployment) == sizeof(p4::P4DeploymentHandle));
     static_assert(std::same_as<p4::DeclaredP4Program::tag_type, p4::wip_source::P4Compiled>);
-    static_assert(p4::CtxFitsP4Mint<eff::ColdInitCtx>);
-    static_assert(!p4::CtxFitsP4Mint<eff::BgDrainCtx>);
-    static_assert(std::is_trivially_copyable_v<p4::P4ResourceBudget>);
-    static_assert(std::is_trivially_copyable_v<p4::P4ProgramSpec>);
-    static_assert(std::is_trivially_copyable_v<p4::P4DeploymentHandle>);
+    static_assert(p4::CtxFitsP4Mint<::fixy::ColdInitCtx>);
+    static_assert(!p4::CtxFitsP4Mint<::fixy::BgDrainCtx>);
+    static_assert(!p4::CtxFitsP4Mint<::fixy::HotFgCtx>);
+    static_assert(std::is_trivially_copy_constructible_v<p4::P4ResourceBudget>);
+    static_assert(std::is_trivially_copy_constructible_v<p4::P4ProgramSpec>);
+    static_assert(!std::is_copy_constructible_v<p4::P4DeploymentHandle>);
+    static_assert(!std::is_default_constructible_v<p4::DeclaredP4Program>);
+    static_assert(!std::is_constructible_v<p4::P4DeploymentHandle, cog::Uuid, p4::P4ProgramId, p4::P4ProgramKind,
+                                           p4::P4ResourceBudget>);
 
     std::printf("test_cntp_p4:\n");
     test_admission_and_names();

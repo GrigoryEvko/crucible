@@ -95,12 +95,12 @@ apply to the row.
 | `mint_credit_flow_control` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_custom_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_dctcp_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_doca_deploy_plan` | `include/crucible/cntp/_wip/Doca.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_doca_deploy_plan` | `include/crucible/cntp/_wip/Doca.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_fountain_decoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_fountain_encoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_gossip_multicast_plan` | `include/crucible/cntp/GossipMulticast.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_gpu_direct_mr_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_gpu_direct_storage_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_gpu_direct_mr_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| `mint_gpu_direct_storage_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_incast_controller` | `include/crucible/cntp/IncastControlRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_ktls_crypto_info` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
@@ -108,7 +108,7 @@ apply to the row.
 | `mint_ktls_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
 | `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_p4_program` | `include/crucible/cntp/_wip/P4.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_p4_program` | `include/crucible/cntp/_wip/P4.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 5 |
 | `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 7 |
 | `mint_quic_config` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 7 |
@@ -117,8 +117,8 @@ apply to the row.
 | `mint_resource_limit` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_resource_pressure` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_roce_config` | `include/crucible/cntp/RoceConfig.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_sharp_context` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_sharp_fabric_plan` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| `mint_sharp_context` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
+| `mint_sharp_fabric_plan` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
 | `mint_tc_flow_class` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_tc_program` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
@@ -362,5 +362,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 99 | 52 | 38 | 9 | 0 | 90 | 21 |
+| old (`include/crucible/`) | 99 | 52 | 38 | 9 | 0 | 90 | 16 |
 | new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |

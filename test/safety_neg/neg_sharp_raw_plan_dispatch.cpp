@@ -1,7 +1,8 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
-// HS14 fixture for GAPS-133. SHARP dispatch requires a
-// _wip::sharp::wip_source::Sharp-declared fabric plan, not a raw aggregate.
+// A SHARP dispatch takes a declared fabric plan, and mint_sharp_fabric_plan
+// is the one function that makes one.  A plan built by hand does not
+// convert.
 
 #include <crucible/cntp/_wip/Sharp.h>
 
@@ -12,8 +13,11 @@ namespace shp = crucible::cntp::_wip::sharp;
 int main() {
     std::array<float, 1> input{1.0f};
     std::array<float, 1> output{};
-    crucible::NumericalRecipe recipe{};
-    shp::SharpFabricPlan plan{};
+    const crucible::NumericalRecipe recipe{};
+    const shp::SharpFabricPlan plan{
+        .fabric_switch = {},
+        .participant_count = *shp::admit_sharp_participant_count(8),
+    };
     auto result = shp::dispatch_sharp_allreduce(input, output, recipe,
                                                 shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
     return result.has_value() ? 0 : 1;

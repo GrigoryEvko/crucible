@@ -1,5 +1,7 @@
 #include <crucible/cntp/_wip/GpuDirect.h>
 
+#include <utility>
+
 namespace crucible::cntp::_wip::gpu_direct {
 
 std::string_view gpu_direct_error_name(GpuDirectError error) noexcept {
@@ -62,7 +64,7 @@ std::string_view mr_access_flag_name(MrAccessFlag flag) noexcept {
     }
 }
 
-std::expected<GpuDirectMrHandle, GpuDirectError>
+std::expected<OwnedGpuDirectMr, GpuDirectError>
 GpuDirectMrRegistry::register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept {
     auto const& raw = plan.value();
     if (raw.gpu.uuid.is_zero()) {
@@ -89,21 +91,22 @@ GpuDirectMrRegistry::register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept 
     return std::unexpected(GpuDirectError::VendorBackendUnavailable);
 }
 
-std::expected<void, GpuDirectError> GpuDirectMrRegistry::deregister_gpu_memory(GpuDirectMrHandle handle) noexcept {
-    if (handle.gpu_uuid.is_zero() || handle.nic_uuid.is_zero()) {
+std::expected<void, GpuDirectError> GpuDirectMrRegistry::deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept {
+    const GpuDirectMrHandle handle = std::move(memory).consume();
+    if (handle.gpu_uuid().is_zero() || handle.nic_uuid().is_zero()) {
         return std::unexpected(GpuDirectError::ZeroPeerCog);
     }
     return std::unexpected(GpuDirectError::VendorBackendUnavailable);
 }
 
-std::expected<GpuDirectMrHandle, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept {
+std::expected<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept {
     GpuDirectMrRegistry registry{};
     return registry.register_gpu_memory(plan);
 }
 
-std::expected<void, GpuDirectError> deregister_gpu_memory(GpuDirectMrHandle handle) noexcept {
+std::expected<void, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept {
     GpuDirectMrRegistry registry{};
-    return registry.deregister_gpu_memory(handle);
+    return registry.deregister_gpu_memory(std::move(memory));
 }
 
 std::expected<void, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept {

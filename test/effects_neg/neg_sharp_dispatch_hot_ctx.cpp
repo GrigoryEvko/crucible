@@ -1,8 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
-// A SHARP all-reduce is background work.  The initialization context can
-// mint the plan and the context, and it owns no Bg effect, so the dispatch
-// refuses it.
+// A SHARP all-reduce is background work.  The foreground context claims no
+// effect, so the dispatch refuses it.
 
 #include <crucible/cntp/_wip/Sharp.h>
 #include <fixy/Ctx.h>
@@ -28,7 +27,8 @@ int main() {
     std::array<float, 1> output{};
     const crucible::NumericalRecipe recipe{};
     shp::SharpReducer reducer{std::move(*context)};
-    auto result = reducer.allreduce_via_sharp(init, input, output, recipe,
+    const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
+    auto result = reducer.allreduce_via_sharp(hot, input, output, recipe,
                                               shp::SharpRecipeLaws{.associative = true, .commutative = true}, *plan);
     return result.has_value() ? 0 : 1;
 }

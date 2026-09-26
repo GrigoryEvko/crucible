@@ -1,12 +1,14 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
-// HS14 fixture for GAPS-132. A GPUDirect MR or storage transfer must
-// cover a positive byte count.
+// A GPUDirect memory region or storage transfer covers at least one byte.
+// The checked mint of the alias refuses zero in a constant evaluation.
 
 #include <crucible/cntp/_wip/GpuDirect.h>
 
+#include <cstdint>
+
 namespace gd = crucible::cntp::_wip::gpu_direct;
 
-constexpr gd::GpuDirectByteCount bad_bytes{std::uint64_t{0}};
+constexpr gd::GpuDirectByteCount bad_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{0});
 
 int main() { return static_cast<int>(bad_bytes.value()); }

@@ -38,9 +38,5 @@
 
 # ── cntp/ ──────────────────────────────────────────────────────
 include/crucible/cntp/Tcam.h
-include/crucible/cntp/_wip/Doca.h
-include/crucible/cntp/_wip/GpuDirect.h
 include/crucible/cntp/_wip/KtlsOffload.h
-include/crucible/cntp/_wip/P4.h
-include/crucible/cntp/_wip/Sharp.h
 include/crucible/cntp/_wip/Wireguard.h

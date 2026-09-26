@@ -6,17 +6,18 @@
 
 #include <crucible/NumericalRecipe.h>
 #include <crucible/cog/CogIdentity.h>
+#include <crucible/cog/OffloadTarget.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Linear.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Ctx.h>
+#include <fixy/Qtt.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <concepts>
 #include <expected>
 #include <span>
 #include <string_view>
@@ -77,32 +78,67 @@ struct SharpDispatchResult {
     std::uint64_t element_count = 0;
 };
 
-using SharpParticipantCount = safety::Positive<std::uint16_t>;
-using DeclaredSharpDispatch = safety::Tagged<SharpDispatchResult, wip_source::Sharp>;
+using SharpParticipantCount = ::fixy::Positive<std::uint16_t>;
+using DeclaredSharpDispatch = ::fixy::Tagged<SharpDispatchResult, wip_source::Sharp>;
 
+// The participant count takes no default, so a plan names the count that
+// its caller admitted and no plan exists before it.
 struct SharpFabricPlan {
     cog::CogIdentity fabric_switch{};
-    SharpParticipantCount participant_count{std::uint16_t{1}};
+    SharpParticipantCount participant_count;
     bool runtime_loaded = false;
     bool allow_backend_dispatch = false;
 };
 
-using DeclaredSharpFabricPlan = safety::Tagged<SharpFabricPlan, wip_source::Sharp>;
+// mint_sharp_fabric_plan is the one function that returns a declared plan.
+using DeclaredSharpFabricPlan = ::fixy::Tagged<SharpFabricPlan, wip_source::Sharp>;
 
-struct SharpContextHandle {
-    cog::Uuid switch_uuid{};
-    SharpParticipantCount participant_count{std::uint16_t{1}};
-    bool runtime_loaded = false;
-    bool allow_backend_dispatch = false;
+template <class Ctx>
+concept CtxFitsSharpMint = ::foundation::effects::IsExecCtx<Ctx>
+                        && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+
+template <class Ctx>
+concept CtxFitsSharpDispatch = ::foundation::effects::IsExecCtx<Ctx>
+                            && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
+
+class SharpContextHandle;
+using SharpContext = ::fixy::Linear<SharpContextHandle>;
+
+// The handle of a SHARP context on one switch.  The constructor is private
+// and mint_sharp_context is its one door.  A handle names one context, so it
+// moves and does not copy: a copy would let a second owner be minted from
+// the first.
+class SharpContextHandle {
+public:
+    SharpContextHandle(SharpContextHandle const&) = delete("a SHARP context handle names one context");
+    SharpContextHandle& operator=(SharpContextHandle const&) = delete("a SHARP context handle names one context");
+    SharpContextHandle(SharpContextHandle&&) noexcept = default;
+    SharpContextHandle& operator=(SharpContextHandle&&) noexcept = default;
+    ~SharpContextHandle() = default;
+
+    [[nodiscard]] constexpr cog::Uuid switch_uuid() const noexcept { return switch_uuid_; }
+    [[nodiscard]] constexpr SharpParticipantCount participant_count() const noexcept { return participant_count_; }
+    [[nodiscard]] constexpr bool runtime_loaded() const noexcept { return runtime_loaded_; }
+    [[nodiscard]] constexpr bool allow_backend_dispatch() const noexcept { return allow_backend_dispatch_; }
+
+private:
+    constexpr SharpContextHandle(cog::Uuid switch_uuid, SharpParticipantCount participant_count, bool runtime_loaded,
+                                 bool allow_backend_dispatch) noexcept
+        : switch_uuid_{switch_uuid},
+          participant_count_{participant_count},
+          runtime_loaded_{runtime_loaded},
+          allow_backend_dispatch_{allow_backend_dispatch} {}
+
+    template <class Ctx>
+        requires CtxFitsSharpMint<Ctx>
+    friend constexpr std::expected<SharpContext, SharpError> mint_sharp_context(Ctx const&,
+                                                                                DeclaredSharpFabricPlan plan) noexcept;
+
+    cog::Uuid switch_uuid_{};
+    SharpParticipantCount participant_count_;
+    bool runtime_loaded_ = false;
+    bool allow_backend_dispatch_ = false;
 };
-
-using SharpContext = safety::Linear<SharpContextHandle>;
-
-template <class Ctx>
-concept CtxFitsSharpMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
-
-template <class Ctx>
-concept CtxFitsSharpDispatch = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
 
 template <class Recipe>
 concept DeclaresAssociative = requires {
@@ -141,24 +177,20 @@ concept SharpEligibleRecipe =
 
 [[nodiscard]] constexpr std::expected<SharpParticipantCount, SharpError>
 admit_sharp_participant_count(std::uint16_t count) noexcept {
-    if (count == 0u) {
-        return std::unexpected(SharpError::EmptyParticipantSet);
-    }
-    return SharpParticipantCount{count, typename SharpParticipantCount::Trusted{}};
+    return ::fixy::admit_refined<::fixy::positive>(count, SharpError::EmptyParticipantSet);
 }
 
+// SHARP reduces inside a switch whose capabilities advertise it.
+inline constexpr cog::OffloadTargetRefusals<SharpError> sharp_target_refusals{
+    .undiscovered = SharpError::ZeroSwitchCog,
+    .wrong_kind = SharpError::NonSwitchCog,
+    .missing_feature = SharpError::MissingSwitchSharpCapability,
+};
+
 [[nodiscard]] constexpr std::expected<void, SharpError>
-validate_sharp_switch(cog::CogIdentity fabric_switch, cog::NvSwitchTargetCaps const& caps) noexcept {
-    if (fabric_switch.uuid.is_zero()) {
-        return std::unexpected(SharpError::ZeroSwitchCog);
-    }
-    if (fabric_switch.kind != cog::CogKind::NvSwitch) {
-        return std::unexpected(SharpError::NonSwitchCog);
-    }
-    if (!caps.features.test(cog::SwitchFeature::Sharp)) {
-        return std::unexpected(SharpError::MissingSwitchSharpCapability);
-    }
-    return {};
+validate_sharp_switch(cog::CogIdentity const& fabric_switch, cog::NvSwitchTargetCaps const& caps) noexcept {
+    return cog::validate_offload_target<cog::SwitchFeature::Sharp, cog::CogKind::NvSwitch>(fabric_switch, caps,
+                                                                                          sharp_target_refusals);
 }
 
 [[nodiscard]] constexpr std::expected<void, SharpError> validate_sharp_recipe(SharpRecipeLaws laws,
@@ -204,38 +236,44 @@ template <class Recipe>
     };
 }
 
-[[nodiscard]] constexpr std::expected<DeclaredSharpFabricPlan, SharpError>
-validate_sharp_fabric_plan(SharpFabricPlan plan, cog::NvSwitchTargetCaps const& caps) noexcept {
+// The refined count already holds this bound.  The check reads it again,
+// so a count that entered through mint_refined_trusted is still refused
+// here.
+[[nodiscard]] constexpr std::expected<void, SharpError>
+validate_sharp_fabric_plan(SharpFabricPlan const& plan, cog::NvSwitchTargetCaps const& caps) noexcept {
     auto switch_valid = validate_sharp_switch(plan.fabric_switch, caps);
     if (!switch_valid.has_value()) {
-        return std::unexpected(switch_valid.error());
+        return switch_valid;
     }
     if (plan.participant_count.value() == 0u) {
         return std::unexpected(SharpError::EmptyParticipantSet);
     }
-    return DeclaredSharpFabricPlan{plan};
+    return {};
 }
 
 template <class Ctx>
     requires CtxFitsSharpMint<Ctx>
 [[nodiscard]] constexpr std::expected<DeclaredSharpFabricPlan, SharpError>
-mint_sharp_fabric_plan(Ctx const&, cog::CogIdentity fabric_switch, cog::NvSwitchTargetCaps caps,
+mint_sharp_fabric_plan(Ctx const&, cog::CogIdentity fabric_switch, cog::NvSwitchTargetCaps const& caps,
                        SharpParticipantCount participant_count, bool runtime_loaded = false,
                        bool allow_backend_dispatch = false) noexcept {
-    return validate_sharp_fabric_plan(
-        SharpFabricPlan{
-            .fabric_switch = fabric_switch,
-            .participant_count = participant_count,
-            .runtime_loaded = runtime_loaded,
-            .allow_backend_dispatch = allow_backend_dispatch,
-        },
-        caps);
+    const SharpFabricPlan plan{
+        .fabric_switch = fabric_switch,
+        .participant_count = participant_count,
+        .runtime_loaded = runtime_loaded,
+        .allow_backend_dispatch = allow_backend_dispatch,
+    };
+    auto valid = validate_sharp_fabric_plan(plan, caps);
+    if (!valid.has_value()) {
+        return std::unexpected(valid.error());
+    }
+    return ::fixy::mint_tagged<wip_source::Sharp>(plan);
 }
 
 template <class Ctx>
     requires CtxFitsSharpMint<Ctx>
-[[nodiscard]] constexpr std::expected<SharpContext, SharpError>
-mint_sharp_context(Ctx const&, DeclaredSharpFabricPlan plan) noexcept {
+[[nodiscard]] constexpr std::expected<SharpContext, SharpError> mint_sharp_context(Ctx const&,
+                                                                                  DeclaredSharpFabricPlan plan) noexcept {
     auto const& raw = plan.value();
     if (!raw.runtime_loaded) {
         return std::unexpected(SharpError::RuntimeUnavailable);
@@ -243,12 +281,12 @@ mint_sharp_context(Ctx const&, DeclaredSharpFabricPlan plan) noexcept {
     if (!raw.allow_backend_dispatch) {
         return std::unexpected(SharpError::DispatchDeferred);
     }
-    return SharpContext{SharpContextHandle{
-        .switch_uuid = raw.fabric_switch.uuid,
-        .participant_count = raw.participant_count,
-        .runtime_loaded = raw.runtime_loaded,
-        .allow_backend_dispatch = raw.allow_backend_dispatch,
-    }};
+    return ::fixy::mint_linear<SharpContextHandle>(SharpContextHandle{
+        raw.fabric_switch.uuid,
+        raw.participant_count,
+        raw.runtime_loaded,
+        raw.allow_backend_dispatch,
+    });
 }
 
 [[nodiscard]] constexpr std::expected<DeclaredSharpDispatch, SharpError>
@@ -257,23 +295,24 @@ eligibility_check(NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredS
     if (!recipe_valid.has_value()) {
         return std::unexpected(recipe_valid.error());
     }
-    return DeclaredSharpDispatch{SharpDispatchResult{
+    return ::fixy::mint_tagged<wip_source::Sharp>(SharpDispatchResult{
         .fallback = SharpFallback::None,
         .participant_count = plan.value().participant_count.value(),
         .element_count = 0,
-    }};
+    });
 }
 
 [[nodiscard]] constexpr DeclaredSharpDispatch fallback_dispatch(SharpError reason, DeclaredSharpFabricPlan plan,
                                                                 std::uint64_t element_count = 0) noexcept {
-    return DeclaredSharpDispatch{SharpDispatchResult{
+    return ::fixy::mint_tagged<wip_source::Sharp>(SharpDispatchResult{
         .fallback = fallback_for_ineligible(reason),
         .participant_count = plan.value().participant_count.value(),
         .element_count = element_count,
-    }};
+    });
 }
 
-class SharpReducer : public safety::Pinned<SharpReducer> {
+// A reducer takes a SHARP context, and only mint_sharp_context makes one.
+class SharpReducer : public ::foundation::Pinned<SharpReducer> {
     SharpContext context_;
 
 public:
@@ -292,14 +331,14 @@ public:
             return std::unexpected(eligible.error());
         }
         auto const& handle = context_.peek();
-        if (handle.switch_uuid != plan.value().fabric_switch.uuid
-            || handle.participant_count.value() != plan.value().participant_count.value()) {
+        if (handle.switch_uuid() != plan.value().fabric_switch.uuid
+            || handle.participant_count().value() != plan.value().participant_count.value()) {
             return std::unexpected(SharpError::ParticipantCountMismatch);
         }
-        if (!handle.runtime_loaded) {
+        if (!handle.runtime_loaded()) {
             return std::unexpected(SharpError::RuntimeUnavailable);
         }
-        if (!handle.allow_backend_dispatch) {
+        if (!handle.allow_backend_dispatch()) {
             return std::unexpected(SharpError::DispatchDeferred);
         }
         return std::unexpected(SharpError::VendorBackendUnavailable);
@@ -313,13 +352,22 @@ dispatch_sharp_allreduce(std::span<const float> input, std::span<float> output, 
 static_assert(sizeof(SharpParticipantCount) == sizeof(std::uint16_t));
 static_assert(sizeof(DeclaredSharpFabricPlan) == sizeof(SharpFabricPlan));
 static_assert(sizeof(DeclaredSharpDispatch) == sizeof(SharpDispatchResult));
-static_assert(sizeof(SharpContext) == sizeof(SharpContextHandle));
-static_assert(CtxFitsSharpMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsSharpMint<effects::BgDrainCtx>);
-static_assert(CtxFitsSharpDispatch<effects::BgDrainCtx>);
-static_assert(!CtxFitsSharpDispatch<effects::ColdInitCtx>);
+static_assert(::fixy::qtt_consume_tracked || sizeof(SharpContext) == sizeof(SharpContextHandle));
+static_assert(CtxFitsSharpMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsSharpMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsSharpDispatch<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsSharpDispatch<::fixy::ColdInitCtx>);
 static_assert(std::is_trivially_copyable_v<SharpDispatchResult>);
-static_assert(std::is_trivially_copyable_v<SharpFabricPlan>);
-static_assert(std::is_trivially_copyable_v<SharpContextHandle>);
+// A refined member makes a plan not trivially copyable, because no byte
+// route may build a refined value.  A copy still costs what copying the
+// bytes costs.
+static_assert(std::is_trivially_copy_constructible_v<SharpFabricPlan>
+              && std::is_trivially_destructible_v<SharpFabricPlan>);
+// No declared plan exists before its count, and no context handle exists
+// outside mint_sharp_context or beside the one it names.
+static_assert(!std::is_default_constructible_v<DeclaredSharpFabricPlan>);
+static_assert(!std::is_constructible_v<SharpContextHandle, cog::Uuid, SharpParticipantCount, bool, bool>);
+static_assert(!std::is_copy_constructible_v<SharpContextHandle>
+              && std::is_nothrow_move_constructible_v<SharpContextHandle>);
 
 }  // namespace crucible::cntp::_wip::sharp

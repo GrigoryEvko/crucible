@@ -1,27 +1,24 @@
+// NEGATIVE-COMPILE TEST.  This file must fail to compile.
+//
+// A send over the DPU channel is background work.  The initialization
+// context owns no Bg effect, so the send refuses it.  A channel exists only
+// for an offload that a DPU runs, so the fixture takes one by reference.
+
 #include <crucible/cntp/_wip/Doca.h>
+#include <fixy/Ctx.h>
 
 #include <array>
 #include <cstddef>
 
-int main() {
-    namespace cog = crucible::cog;
-    namespace doca = crucible::cntp::_wip::doca;
-    namespace eff = crucible::effects;
+namespace doca = crucible::cntp::_wip::doca;
 
-    doca::OwnedDocaOffload offload{doca::DocaOffloadHandle{
-        .dpu_uuid = cog::Uuid{1, 2},
-        .program_id = *doca::admit_doca_program_id(1),
-        .kind = doca::DocaOffloadKind::SwimGossip,
-        .queue_depth = *doca::admit_doca_queue_depth(1),
-    }};
-    doca::DpuCommChannel channel{
-        std::move(offload),
-        doca::DocaChannelConfig{
-            .max_payload_bytes = *doca::admit_doca_payload_bytes(1),
-        },
-    };
+int send_from_init(doca::DpuCommChannel& channel);
+
+int send_from_init(doca::DpuCommChannel& channel) {
     std::array<std::byte, 1> payload{};
-    auto sent = channel.send_to_dpu(eff::ColdInitCtx{::crucible::effects::testing::init()}, payload);
-    (void)sent;
-    return 0;
+    ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
+    auto sent = channel.send_to_dpu(init, payload);
+    return sent.has_value() ? 0 : 1;
 }
+
+int main() { return 0; }

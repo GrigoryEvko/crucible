@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
-// A P4 program is minted at initialization.  The background drain context
-// owns no Init effect, so the mint refuses it.
+// A P4 program is minted at initialization.  The foreground context claims
+// no effect, so the mint refuses it.
 
 #include <crucible/cntp/_wip/P4.h>
 #include <fixy/Ctx.h>
@@ -22,7 +22,7 @@ int main() {
         .source_bytes = *p4::admit_p4_source_bytes(1),
         .budget = *p4::admit_p4_resource_budget(1, 1, 1),
     };
-    ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
-    auto program = p4::mint_p4_program(bg, sw, caps, spec);
+    const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
+    auto program = p4::mint_p4_program(hot, sw, caps, spec);
     return program.has_value() ? 0 : 1;
 }
