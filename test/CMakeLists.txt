@@ -6084,37 +6084,33 @@ crucible_neg_compile_test(neg_symbol_table_add_raw_symbol_id
 crucible_neg_compile_test(neg_symbol_table_add_cross_tag
   "no match for|cannot convert|no viable|could not convert|Tagged|External|FromInternal")
 
-# WRAP-Transaction-4 (#1063) — TransactionLog<N>'s ring-storage triple
-# (entries_ + head_ + count_) is now fixy::CyclicBuffer<Transaction,
-# N>.  The migration's positive-power-of-2 capacity invariant is
-# enforced at the TransactionLog<N> instantiation by TWO gates; the
-# two fixtures (per HS14) exercise one distinct mismatch class each:
-#   * _non_power_of_two (N = 7) — caught by BOTH the class-body
-#     static_assert("N must be a power of 2") AND CyclicBuffer's
-#     requires-clause.  A masked cursor over a non-power-of-2 ring
-#     would alias logical positions onto one physical slot.
-#   * _zero_capacity (N = 0) — SLIPS PAST the static_assert
-#     (`0 & (0u-1u) == 0` is vacuously a power of two) and is caught
-#     ONLY by CyclicBuffer's `requires (N > 0 ...)`.  Witnesses that
-#     the migration STRENGTHENED the contract — the old hand-rolled
-#     `entries_[0]` carried no N > 0 gate.
-# (The retired _count_above_cap / _count_uint32_max fixtures targeted
-#  the removed CountCounter alias; the BoundedMonotonic fill-counter
-#  bound they pinned is now structurally guaranteed inside CyclicBuffer
-#  and covered by neg_pre_macro_bounded_monotonic_bump_at_max.)
-crucible_neg_compile_test(neg_transaction_log_non_power_of_two
-  "power of 2|constraints not satisfied|static assertion")
-crucible_neg_compile_test(neg_transaction_log_zero_capacity
-  "constraints not satisfied|required from")
+# The ring storage of TransactionLog<N> is fixy::CyclicBuffer<Transaction,
+# N>, and two gates hold the positive power-of-two capacity:
+#   * _non_power_of_two (N = 7): the class-body static_assert and the
+#     requires-clause of CyclicBuffer both refuse it.  A masked cursor over
+#     a non-power-of-two ring aliases two logical positions onto one slot.
+#   * _zero_capacity (N = 0): the static_assert admits it, because
+#     `0 & (0u - 1u)` is 0, and only `requires (N > 0 ...)` of CyclicBuffer
+#     refuses it.
+# The bound of the fill counter lives inside CyclicBuffer, and
+# neg_pre_macro_bounded_monotonic_bump_at_max covers it.
+crucible_neg_compile_multi_test(neg_transaction_log_non_power_of_two
+  "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be a power of 2"
+  "the expression .\\(N & N - 1\\) == 0 \\[with N = 7\\]. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_transaction_log_zero_capacity
+  "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<class T, long unsigned int N>  requires  N > 0"
+  "the expression .N > 0 \\[with N = 0\\]. evaluated to .false.")
 
-# WRAP-Transaction-2 (#1061) — Transaction::region is committed via
-# Tagged<RegionNode*, source::Arena>.  Raw RegionNode* and loaded
-# serialized-region provenance must fail at the commit boundary.
-crucible_neg_compile_test(neg_transaction_region_raw_pointer
-  "no match|no known conversion|cannot convert|could not convert")
+# TransactionLog::commit takes the region as
+# fixy::Tagged<RegionNode*, source::Arena>.  A raw RegionNode* and a region
+# under the Loaded tag, which deserialize_region returns, both fail at the
+# commit boundary.
+crucible_neg_compile_multi_test(neg_transaction_region_raw_pointer
+  "neg_transaction_region_raw_pointer.cpp:31:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
+  "\\{aka .fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_multi_test(neg_transaction_region_loaded_cross_tag
-  "cannot convert .const fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Loaded>. to .crucible::Transaction::ArenaRegion."
-  "neg_transaction_region_loaded_cross_tag.cpp:30")
+  "neg_transaction_region_loaded_cross_tag.cpp:33:33: error: cannot convert"
+  ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
 
 # WRAP-Lower-4 (#934) — lower_trace_to_graph requires Recorded/Replayed
 # TraceGraph provenance and propagates that source to the returned Graph.
@@ -6133,29 +6129,41 @@ crucible_neg_compile_test(neg_lower_trace_graph_alloc_only_row
 crucible_neg_compile_test(neg_lower_trace_graph_bg_only_row
   "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
 
-# WRAP-Transaction-1 (#1060) — Transaction::step_id raw uint64_t →
-# safety::Monotonic<uint64_t>.  HS14 mandate: ≥2 negative-compile
-# fixtures per soundness gate, each demonstrating a distinct mismatch
-# class:
-#   * neg_transaction_step_id_assign_from_raw — WRITE-side gate (no
-#     operator=(uint64_t) on Monotonic; raw assignment rejected).
-#   * neg_transaction_step_id_advance_retrograde — ADVANCE-side gate
-#     (advance(smaller) violates lattice_type::leq pre-clause at
-#     consteval, poisoning the surrounding constant evaluation).
-crucible_neg_compile_test(neg_transaction_step_id_assign_from_raw
-  "no match for|cannot convert|no viable|deleted|operator=")
-crucible_neg_compile_test(neg_transaction_step_id_advance_retrograde
-  "contract|Monotonic|not a constant|non-constant|constexpr|leq")
+# Transaction::step_id is fixy::Monotonic<uint64_t>.
+#   * neg_transaction_step_id_assign_from_raw: Monotonic has no assignment
+#     from uint64_t, so a raw write does not compile.
+#   * neg_transaction_step_id_advance_retrograde: an advance to a smaller
+#     value breaks the precondition of advance in a constant evaluation.
+crucible_neg_compile_multi_test(neg_transaction_step_id_assign_from_raw
+  "neg_transaction_step_id_assign_from_raw.cpp:19:29: error: no match for .operator=."
+  "\\(operand types are .fixy::Monotonic<long unsigned int, std::less<long unsigned int> >. and .uint64_t.")
+crucible_neg_compile_multi_test(neg_transaction_step_id_advance_retrograde
+  "in .constexpr. expansion of .tx.crucible::Transaction::step_id.fixy::Monotonic<long unsigned int, std::less<long unsigned int> >::advance\\(50\\)."
+  "error: .__builtin_trap\\(\\). is not a constant expression")
+
+# The log holds a monotonic clock reader, so CtxFitsTransactionLog admits
+# only a context whose row claims Bg, Init or Test.
+#   * neg_transaction_log_foreground_ctx: the foreground context.
+#   * neg_transaction_log_bg_cap_without_bg_row: a background capability
+#     with a row that claims Alloc alone.
+crucible_neg_compile_multi_test(neg_transaction_log_foreground_ctx
+  "neg_transaction_log_foreground_ctx.cpp:24:89: error: no matching function for call to .crucible::TransactionLog<16, Owner>::TransactionLog"
+  "required for the satisfaction of .CtxFitsTransactionLog<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_multi_test(neg_transaction_log_bg_cap_without_bg_row
+  "neg_transaction_log_bg_cap_without_bg_row.cpp:29:55: error: no matching function for call to .crucible::TransactionLog<16, Owner>::TransactionLog"
+  "required for the satisfaction of .CtxFitsTransactionLog<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc> >\\]")
 
 # The transaction log has one owner.  Each member takes the owner proof,
 # a call with no proof does not compile, and a proof that could travel to
 # a second thread is refused as an owner.  The publish-stage proof is
 # built by the background thread alone, and neither bit_cast nor the
 # checked lifetime start can make one from bytes.
-crucible_neg_compile_test(neg_transaction_log_rollback_without_owner
-  "no matching function for call to .*rollback|candidate expects 1 argument")
-crucible_neg_compile_test(neg_transaction_log_copyable_owner
-  "OwnerProof|constraints not satisfied|template constraint failure")
+crucible_neg_compile_multi_test(neg_transaction_log_rollback_without_owner
+  "neg_transaction_log_rollback_without_owner.cpp:26:23: error: no matching function for call to .crucible::TransactionLog<16, Owner>::rollback\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+crucible_neg_compile_multi_test(neg_transaction_log_copyable_owner
+  "neg_transaction_log_copyable_owner.cpp:16:47: error: template constraint failure for .template<unsigned int N, class Owner>  requires  OwnerProof<Owner> class crucible::TransactionLog."
+  "the expression .!\\(is_copy_constructible_v<P>\\) \\[with P = CopyableOwner\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_publish_stage_built_outside
   "PublishStage\\(\\)[^\\n]*private within this context|is private within this context")
 crucible_neg_compile_test(neg_publish_stage_forged_by_bit_cast
@@ -7397,26 +7405,19 @@ crucible_neg_compile_multi_test(neg_content_hash_default_construct
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonZero\\(\\), crucible::ContentHash>\\(crucible::ContentHash\\(\\)\\)")
 
-# ─── WRAP-Transaction-6 #1065 neg-compile tests ─────────────────────
-#
-# active_tx_ field migrates from raw `Transaction*` to
-# `safety::Tagged<Transaction*, source::Ring>`.  The Ring source tag
-# encodes "this pointer was obtained from a fixed-capacity ring's
-# inline slot pool, valid for the log's lifetime" — distinct from
-# Arena-owned and from generic Borrowed<T, Owner>.  Two fixtures per
-# HS14 mandate, demonstrating distinct mismatch classes:
-#   * neg_active_tx_ptr_raw_assignment — provenance BYPASS.  Catches
-#     `active_tx_ = some_tx` (implicit raw-pointer admission) without
-#     the explicit `ActiveTxPtr{some_tx}` ctor.  Rejected by Tagged's
-#     `explicit` ctor.
-#   * neg_active_tx_ptr_cross_source_assignment — provenance
-#     LAUNDERING.  Catches `Tagged<T, source::Arena> → Tagged<T,
-#     source::Ring>` swap: both wrap `T*` but the Tag distinguishes
-#     them as nominally distinct types.
-crucible_neg_compile_test(neg_active_tx_ptr_raw_assignment
-  "no match|cannot convert|no viable|could not convert|explicit|constructor")
-crucible_neg_compile_test(neg_active_tx_ptr_cross_source_assignment
-  "no match|cannot convert|no viable|could not convert|Tagged|source")
+# The live-slot pointer of TransactionLog is
+# fixy::Tagged<Transaction*, source::Ring>: a pointer into the ring's inline
+# slots, valid for the log's lifetime.
+#   * neg_active_tx_ptr_raw_assignment: a raw pointer does not convert,
+#     because the constructor from the value is private.
+#   * neg_active_tx_ptr_cross_source_assignment: a pointer under the Arena
+#     tag does not convert, because no retag edge joins the two tags.
+crucible_neg_compile_multi_test(neg_active_tx_ptr_raw_assignment
+  "neg_active_tx_ptr_raw_assignment.cpp:27:25: error: conversion from .crucible::FakeTransaction\\*. to non-scalar type"
+  "\\{aka .fixy::Tagged<crucible::FakeTransaction\\*, fixy::tags::source::Ring>.\\} requested")
+crucible_neg_compile_multi_test(neg_active_tx_ptr_cross_source_assignment
+  "neg_active_tx_ptr_cross_source_assignment.cpp:27:20: error: conversion from"
+  ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Ring>. requested")
 
 # CrucibleContext's active region is a
 # `fixy::Tagged<const RegionNode*, tags::source::Vigil>`: a pointer that
@@ -7979,13 +7980,17 @@ crucible_neg_compile_test(neg_clock_source_cross_source_assign
 crucible_neg_compile_test(neg_clock_source_suspend_gate_rejects_monotonic
   "constraints not satisfied|no matching function|satisfies|arm_deadline")
 
-# ─── WRAP-Transaction-3 #1062 HS14 negative-compile fixtures ───────
-#   - neg_transaction_ts_ns_bare_u64_assign  (no implicit u64 → wrap)
-#   - neg_transaction_ts_ns_cross_source     (Boot ≠ Monotonic wrap)
-crucible_neg_compile_test(neg_transaction_ts_ns_bare_u64_assign
-  "conversion from|cannot convert|no viable|no match for")
-crucible_neg_compile_test(neg_transaction_ts_ns_cross_source
-  "conversion from|cannot convert|no viable|no match for")
+# Transaction::ts_ns holds an optional reading of the monotonic clock.
+#   - neg_transaction_ts_ns_bare_u64_assign: a bare integer is no reading,
+#     because the constructor of ClockSource from its value is private.
+#   - neg_transaction_ts_ns_cross_source: a boot clock reading is a distinct
+#     type from a monotonic one.
+crucible_neg_compile_multi_test(neg_transaction_ts_ns_bare_u64_assign
+  "neg_transaction_ts_ns_bare_u64_assign.cpp:18:32: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .uint64_t."
+  "error: .constexpr fixy::ClockSource<Source, T>::ClockSource\\(T\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic; T = long unsigned int\\]. is private within this context")
+crucible_neg_compile_multi_test(neg_transaction_ts_ns_cross_source
+  "neg_transaction_ts_ns_cross_source.cpp:25:33: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Boot>::result_type."
+  "error: no matching function for call to .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>::ClockSource\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\).")
 
 # ─── WRAP-Cipher-3 #886 HS14 negative-compile fixtures ─────────────
 #   - neg_cipher_obj_path_bare_string_assign  (no implicit string→Tagged)

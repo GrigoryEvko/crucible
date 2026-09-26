@@ -1,8 +1,10 @@
 #include <crucible/Transaction.h>
-#include <crucible/effects/_Capabilities.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
+#include <cstdint>
 #include <cstdio>
-#include <cstring>
+#include <type_traits>
 
 namespace {
 
@@ -62,12 +64,31 @@ static_assert(!crucible::OwnerProof<int>);
 
 using Log = crucible::TransactionLog<16, SoloOwner>;
 
+// The log reads the monotonic clock, so only a context off the replay-bound
+// foreground path builds one.
+static_assert(crucible::CtxFitsTransactionLog<::fixy::TestRunnerCtx>);
+static_assert(crucible::CtxFitsTransactionLog<::fixy::ColdInitCtx>);
+static_assert(crucible::CtxFitsTransactionLog<::fixy::BgDrainCtx>);
+static_assert(!crucible::CtxFitsTransactionLog<::fixy::HotFgCtx>);
+static_assert(!std::is_constructible_v<Log, ::fixy::HotFgCtx const&>);
+static_assert(!std::is_default_constructible_v<Log>);
+
+// A slot that the log never stamped holds no reading, and nothing builds a
+// reading from a raw integer.
+static_assert(!std::is_constructible_v<crucible::Transaction::Timestamp, std::uint64_t>);
+static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
+
+[[nodiscard]] crucible::Transaction::ArenaRegion arena_region(crucible::RegionNode* region) {
+    return ::fixy::mint_tagged<::fixy::tags::source::Arena>(region);
+}
+
 }  // namespace
 
 [[gnu::cold]] int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     const SoloOwner owner = SoloOwner::claim();
-    Log log;
+    Log log{ctx};
     crucible::Arena arena(1 << 12);
 
     crucible::TraceEntry ops[1]{};
@@ -99,14 +120,22 @@ using Log = crucible::TransactionLog<16, SoloOwner>;
 
     const crucible::ContentHash hash1 = region1->content_hash;
     const crucible::MerkleHash merkle1 = region1->merkle_hash;
-    const bool committed = log.commit(owner, tx1, crucible::Transaction::ArenaRegion{region1}, hash1, merkle1);
+    // The log stamped the transaction when it began it, and the stamp is a
+    // reading of the monotonic clock.
+    assert(tx1->ts_ns.has_value());
+    const std::uint64_t begun_at = tx1->ts_ns->peek();
+
+    const bool committed = log.commit(owner, tx1, arena_region(region1), hash1, merkle1);
     assert(committed);
     assert(tx1->status == crucible::TxStatus::COMMITTED);
     assert(tx1->content_hash == hash1);
     assert(tx1->merkle_root == merkle1);
     assert(tx1->region.value() == region1);
+    // The reader clamps, so a later stamp through the same log never reads
+    // earlier than a former one.
+    assert(tx1->ts_ns.has_value() && tx1->ts_ns->peek() >= begun_at);
 
-    const bool double_commit = log.commit(owner, tx1, crucible::Transaction::ArenaRegion{region1}, hash1, merkle1);
+    const bool double_commit = log.commit(owner, tx1, arena_region(region1), hash1, merkle1);
     assert(!double_commit && "commit on COMMITTED tx must return false");
 
     auto* prev = log.activate(owner, tx1);
@@ -123,7 +152,7 @@ using Log = crucible::TransactionLog<16, SoloOwner>;
 
     const crucible::ContentHash hash2 = region2->content_hash;
     const crucible::MerkleHash merkle2 = region2->merkle_hash;
-    assert(log.commit(owner, tx2, crucible::Transaction::ArenaRegion{region2}, hash2, merkle2));
+    assert(log.commit(owner, tx2, arena_region(region2), hash2, merkle2));
     assert(tx2->status == crucible::TxStatus::COMMITTED);
 
     auto* superseded = log.activate(owner, tx2);
@@ -151,7 +180,7 @@ using Log = crucible::TransactionLog<16, SoloOwner>;
         auto* r = crucible::make_region(test.alloc, arena, &e, 1);
         // Recomputed before the commit, for the reason given above.
         crucible::recompute_merkle(r);
-        assert(log.commit(owner, tx, crucible::Transaction::ArenaRegion{r}, r->content_hash, r->merkle_hash));
+        assert(log.commit(owner, tx, arena_region(r), r->content_hash, r->merkle_hash));
         (void)log.activate(owner, tx);
     }
     // The loop ends at 32, so the last transaction is the active one.

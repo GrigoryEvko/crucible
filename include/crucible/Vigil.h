@@ -162,7 +162,16 @@ public:
     // No persistence, no distributed context.
     [[gnu::cold]] Vigil() : Vigil(Config{}) {}
 
-    [[gnu::cold]] explicit Vigil(Config cfg) : cfg_(std::move(cfg)) {
+    // The constructor runs at process startup, so it opens the init door one
+    // time and hands that one context to every startup step below.
+    [[gnu::cold]] explicit Vigil(Config cfg)
+        : Vigil(std::move(cfg), ::fixy::InitLoadCtx{::foundation::effects::host::InitOwner::mint_init_context()}) {}
+
+private:
+    // The transaction log reads the monotonic clock, and the program load
+    // of the watchdog waits in the kernel for the verifier, so both take the
+    // startup load context.
+    [[gnu::cold]] Vigil(Config cfg, ::fixy::InitLoadCtx const& startup) : cfg_(std::move(cfg)), tx_log_{startup} {
         ring_ = std::make_unique<TraceRing>();
         ring_->reset();
 
@@ -186,11 +195,7 @@ public:
         // so on_region_ready can observe on the very first region transition
         // without a null check.  Attach failure is not an error here: every
         // observation then returns InsufficientData.
-        //
-        // The program load waits in the kernel for the verifier, so it takes
-        // the startup load context, which the init door gives.
         if (cfg_.enable_deadline_watchdog) {
-            const ::fixy::InitLoadCtx startup{::foundation::effects::host::InitOwner::mint_init_context()};
             senses_.emplace(
                 ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true}));
             wd_.emplace(::crucible::warden::mint_deadline_watchdog(startup, &*senses_, cfg_.watchdog_policy));
@@ -199,6 +204,7 @@ public:
         bg_.start(ring_.get(), meta_log_.get(), cfg_.rank, cfg_.world_size, cfg_.device_capability);
     }
 
+public:
     ~Vigil() = default;
 
     Vigil(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
@@ -592,7 +598,7 @@ private:
         // The merkle root goes through the checked accessor so the non-zero
         // invariant is witnessed at this call site: its precondition fires
         // here if the hash was never recomputed.
-        (void)tx_log_.commit(stage, tx, Transaction::ArenaRegion{region}, region->content_hash,
+        (void)tx_log_.commit(stage, tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(region), region->content_hash,
                              ::crucible::make_merkle_root(region->computed_merkle_hash()));
         (void)tx_log_.activate(stage, tx);
 

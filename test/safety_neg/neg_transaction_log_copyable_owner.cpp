@@ -11,7 +11,9 @@
 struct CopyableOwner {};
 
 int main() {
-    crucible::TransactionLog<16, CopyableOwner> log{};
+    // Naming the specialization is enough: the constraint is checked when
+    // the template-id is formed, before any constructor is chosen.
+    crucible::TransactionLog<16, CopyableOwner>* log = nullptr;
     (void)log;
     return 0;
 }

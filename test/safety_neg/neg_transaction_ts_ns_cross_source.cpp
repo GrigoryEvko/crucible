@@ -1,39 +1,27 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Transaction-3 #1062, mismatch class #2 of 2:
-// CROSS-SOURCE CLOCK ASSIGNMENT IS REJECTED.
+// Transaction::ts_ns must hold a reading of the monotonic clock.  A boot
+// clock reading counts time spent in suspend, and a wall clock reading
+// jumps when the system time is corrected, so either would break the
+// ordering that the log relies on.  Each clock source is a distinct
+// wrapper type, and no conversion joins two of them.
 //
-// Transaction::ts_ns must specifically carry the Monotonic source.
-// CLOCK_BOOTTIME (BootClockBytes) ticks across system suspend;
-// CLOCK_REALTIME (WallClockBytes) is NTP-jumpy and can move
-// backwards.  Either would corrupt the per-transaction monotonicity
-// invariant the log relies on for ordering and replay determinism.
-// Each ClockSource_v enumerator pins a distinct NTTP so the wrapper
-// types are unrelated — assignment between them is a compile-time
-// reject by the type system, not by a runtime check.
+// The fixture takes a real reading of the boot clock through a reader,
+// which is the only way to hold one.
 //
-// Distinct from the bare-u64 fixture which fails because the source
-// has NO wrap at all; here both sides ARE wrapped, but the source
-// lattice value disagrees.
-//
-// Expected diagnostic: no match for 'operator=' / cannot convert /
-// no viable / conversion from.
+// Companion: neg_transaction_ts_ns_bare_u64_assign.cpp refuses a bare
+// integer.
 
 #include <crucible/Transaction.h>
-#include <crucible/safety/_ClockSource.h>
-
-#include <cstdint>
+#include <fixy/Ctx.h>
+#include <fixy/os/Time.h>
+#include <foundation/effects/Effect.h>
 
 int main() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    const auto boot_reader = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(ctx);
+
     crucible::Transaction tx{};
-
-    // Mint a BootClockBytes<u64> witness (CLOCK_BOOTTIME provenance).
-    auto boot_bytes = ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::Boot, std::uint64_t>(42);
-
-    // Should FAIL: BootClockBytes<u64> and MonotonicClockBytes<u64>
-    // are unrelated wrapper types (distinct ClockSource_v NTTPs); no
-    // implicit conversion exists between them.
-    tx.ts_ns = boot_bytes;
-
+    tx.ts_ns = boot_reader.read();
     return 0;
 }

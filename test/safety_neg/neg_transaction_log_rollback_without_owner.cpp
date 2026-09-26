@@ -8,6 +8,8 @@
 // Expected diagnostic: no rollback overload that takes no argument.
 
 #include <crucible/Transaction.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 class Owner {
 public:
@@ -20,7 +22,7 @@ private:
 };
 
 int main() {
-    crucible::TransactionLog<16, Owner> log{};
+    crucible::TransactionLog<16, Owner> log{::fixy::TestRunnerCtx{::foundation::effects::testing::test()}};
     (void)log.rollback();
     return 0;
 }

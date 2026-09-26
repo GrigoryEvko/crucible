@@ -11,18 +11,19 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
-#include <crucible/fixy/_Source.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_ClockSource.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Post.h>
 #include <fixy/CyclicBuffer.h>
+#include <fixy/Mutation.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <fixy/os/ClockSource.h>
+#include <fixy/os/Time.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/effects/Ctx.h>
 
-#include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
+#include <optional>
 #include <type_traits>
 
 namespace crucible {
@@ -37,35 +38,42 @@ enum class TxStatus : uint8_t {
 };
 
 struct Transaction {
-    using ArenaRegion = ::crucible::fixy::wrap::Tagged<RegionNode*, ::crucible::fixy::tags::source::Arena>;
+    using ArenaRegion = ::fixy::Tagged<RegionNode*, ::fixy::tags::source::Arena>;
+
+    // The type pins which clock this reading came from. A wall clock jumps
+    // when the system time is corrected, and a boot clock counts time spent
+    // suspended. Either would make the ordering of these stamps meaningless.
+    using Timestamp = ::fixy::MonotonicClockBytes<std::uint64_t>;
 
     static_assert(sizeof(ArenaRegion) == sizeof(RegionNode*));
+    static_assert(sizeof(Timestamp) == sizeof(std::uint64_t),
+                  "a clock-source-tagged timestamp must be the size of the value it wraps");
 
     // Replay determinism rests on this, so the type rejects a write that goes
     // backwards or wraps. Recycling a slot deliberately returns it to zero
     // before the new value is set: per-transaction monotonicity restarts with
     // the slot, and it is the log's own fill counter that keeps the sequence
     // of slots ordered.
-    ::crucible::fixy::wrap::Monotonic<uint64_t> step_id{0};
+    ::fixy::Monotonic<uint64_t> step_id = ::fixy::mint_monotonic<uint64_t>(0);
     ContentHash content_hash;  // zero until the transaction commits
     MerkleHash merkle_root;  // zero until the transaction commits
-    ArenaRegion region{nullptr};  // null until the transaction commits
-    // The type pins which clock this reading came from. A wall clock jumps
-    // when the system time is corrected, and a boot clock counts time spent
-    // suspended. Either would make the ordering of these stamps meaningless.
-    ::crucible::safety::MonotonicClockBytes<std::uint64_t> ts_ns{};
+    ArenaRegion region = ::fixy::mint_tagged<::fixy::tags::source::Arena, RegionNode*>(nullptr);
+    // Empty until the log stamps the transaction.  Only a clock reader
+    // builds a reading, so a slot that the log never claimed holds none,
+    // and no default value can claim a time that no clock returned.
+    std::optional<Timestamp> ts_ns;
     TxStatus status = TxStatus::RECORDING;
     uint8_t pad[7]{};
 };
 
-static_assert(sizeof(Transaction) == 48, "Transaction layout must be 48 bytes");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Transaction);
-
-static_assert(
-    std::is_same_v<decltype(std::declval<Transaction>().ts_ns), ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
-    "a transaction timestamp must carry its monotonic-clock provenance");
-static_assert(sizeof(::crucible::safety::MonotonicClockBytes<std::uint64_t>) == sizeof(std::uint64_t),
-              "a clock-source-tagged timestamp must be the size of the value it wraps");
+// The reading is not trivially copyable, so no byte copy builds a
+// transaction that claims a time.  The empty state of the reading adds
+// eight bytes to the layout.
+static_assert(sizeof(Transaction) == 56, "Transaction layout must be 56 bytes");
+static_assert(std::is_same_v<decltype(std::declval<Transaction>().ts_ns), std::optional<Transaction::Timestamp>>,
+              "a transaction timestamp must carry its monotonic-clock provenance");
+static_assert(!std::is_trivially_copyable_v<Transaction>,
+              "a transaction must not be built from bytes, because its timestamp claims a clock read");
 
 // A proof that the caller is the one thread that owns some state. It is
 // empty, so it costs nothing at a call. It cannot be copied or moved, so a
@@ -86,6 +94,14 @@ concept OwnerProof = std::is_empty_v<P> && !std::is_copy_constructible_v<P> && !
                      && !std::is_default_constructible_v<P> && !std::is_trivially_copyable_v<P>
                      && !std::is_implicit_lifetime_v<P>;
 
+// The log stamps each transaction with the monotonic clock, and a clock
+// reader is minted only by a context that owns Bg, Init or Test.  So the
+// log is built only from such a context.  The foreground dispatch path is
+// replay-bound and reads no clock.
+template <typename Ctx>
+concept CtxFitsTransactionLog =
+    ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy::ClockSource_v::Monotonic>;
+
 // A pointer the log returns stays valid for as long as the ring has not
 // wrapped past the slot it points into, and it is the owner's to use: the
 // proof admits the call, and the pointer must stay on the owning thread.
@@ -101,7 +117,11 @@ public:
     // of failing, and never moves backwards.
     using Ring = ::fixy::CyclicBuffer<Transaction, N>;
 
-    TransactionLog() = default;
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsTransactionLog<Ctx>
+    explicit TransactionLog(Ctx const& ctx) noexcept
+        : clock_{::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx)} {}
+
     TransactionLog(const TransactionLog&) = delete("TransactionLog holds ring-internal pointers");
     TransactionLog& operator=(const TransactionLog&) = delete("TransactionLog holds ring-internal pointers");
     TransactionLog(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
@@ -115,12 +135,13 @@ public:
         // Set rather than assigned, so a later edit cannot reintroduce a write
         // that goes backwards.
         tx->step_id.advance(step_id);
-        tx->ts_ns = now_ns();
+        tx->ts_ns = clock_.read();
         // Reordering the claim and the reset would return a pointer into a
         // slot still holding the previous transaction.
         CRUCIBLE_POST(tx, tx != nullptr);
         CRUCIBLE_POST(tx, tx->status == TxStatus::RECORDING);
         CRUCIBLE_POST(tx, tx->step_id.get() == step_id);
+        CRUCIBLE_POST(tx, tx->ts_ns.has_value());
         return tx;
     }
 
@@ -134,7 +155,7 @@ public:
     [[nodiscard]] bool commit(Owner const&, Transaction* const tx, Transaction::ArenaRegion region,
                               ContentHash content_hash, MerkleHash merkle_root) noexcept pre(tx != nullptr)
         pre(region.value() != nullptr)
-        pre(::crucible::decide::is_non_zero(merkle_root)) {
+        pre(::foundation::decide::is_non_zero(merkle_root)) {
         // A contract predicate that reads through a parameter's pointee is
         // skipped when the compiler folds the body at compile time, so every
         // such check in this file runs from the body rather than a clause.
@@ -146,7 +167,7 @@ public:
         tx->content_hash = content_hash;
         tx->merkle_root = merkle_root;
         tx->status = TxStatus::COMMITTED;
-        tx->ts_ns = now_ns();
+        tx->ts_ns = clock_.read();
         // Dropping any one of these assignments leaves the field at the value
         // the slot was reset to, which reads as an uncommitted transaction.
         CRUCIBLE_POST(true, tx->status == TxStatus::COMMITTED);
@@ -167,13 +188,13 @@ public:
         Transaction* prev = nullptr;
         if (active_tx_.value() != nullptr) {
             active_tx_.value()->status = TxStatus::SUPERSEDED;
-            active_tx_.value()->ts_ns = now_ns();
+            active_tx_.value()->ts_ns = clock_.read();
             prev = active_tx_.value();
         }
 
         tx->status = TxStatus::ACTIVE;
-        tx->ts_ns = now_ns();
-        active_tx_ = ActiveTxPtr{tx};
+        tx->ts_ns = clock_.read();
+        active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring>(tx);
         // The displaced transaction must end up in the superseded state, since
         // that is what a rollback searches for.
         //
@@ -195,11 +216,11 @@ public:
 
         if (active_tx_.value() != nullptr) {
             active_tx_.value()->status = TxStatus::ROLLED_BACK;
-            active_tx_.value()->ts_ns = now_ns();
+            active_tx_.value()->ts_ns = clock_.read();
         }
         prev->status = TxStatus::ACTIVE;
-        prev->ts_ns = now_ns();
-        active_tx_ = ActiveTxPtr{prev};
+        prev->ts_ns = clock_.read();
+        active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring>(prev);
         return true;
     }
 
@@ -223,20 +244,8 @@ public:
     }
 
 private:
-    // The steady clock is the monotonic reading on the supported platforms.
-    // The mint only stamps that provenance onto it, so a stamp taken from any
-    // other clock cannot be assigned into a transaction.
-    [[nodiscard]] static auto now_ns() noexcept -> ::crucible::safety::MonotonicClockBytes<std::uint64_t> {
-        const auto tp = std::chrono::steady_clock::now();
-        const std::uint64_t raw = static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count());
-        return ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::Monotonic, std::uint64_t>(raw);
-    }
-
-    static_assert(std::is_same_v<decltype(now_ns()), ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
-                  "the timestamp source must return a monotonic-clock reading");
-    static_assert(sizeof(decltype(now_ns())) == sizeof(std::uint64_t),
-                  "a clock-source-tagged timestamp must be the size of the value it wraps");
+    static_assert(std::is_same_v<::fixy::time::MonotonicClock::result_type, Transaction::Timestamp>,
+                  "the log's clock reader must return the reading a transaction stores");
 
     // The live-slot pointer is not part of the ring: the ring's own cursor
     // says where the next write goes, and this says which past slot is
@@ -244,9 +253,15 @@ private:
     // and this pointer stays valid for the log's lifetime. Its tag records
     // that it came from a fixed-capacity ring's inline storage, which has a
     // different lifetime from an arena-owned or borrowed pointer.
-    using ActiveTxPtr = ::crucible::safety::Tagged<Transaction*, ::crucible::safety::source::Ring>;
+    using ActiveTxPtr = ::fixy::Tagged<Transaction*, ::fixy::tags::source::Ring>;
+    static_assert(sizeof(ActiveTxPtr) == sizeof(Transaction*) && alignof(ActiveTxPtr) == alignof(Transaction*),
+                  "a tagged transaction pointer must keep the layout of the pointer it wraps");
+
     Ring ring_{};
-    ActiveTxPtr active_tx_{nullptr};
+    ActiveTxPtr active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring, Transaction*>(nullptr);
+    // The reader clamps its readings, so two stamps through it never
+    // regress even when the clock steps backward.
+    ::fixy::time::MonotonicClock clock_;
 };
 
 // The ring composition adds nothing beyond its three members.
@@ -254,13 +269,5 @@ static_assert(sizeof(::fixy::CyclicBuffer<Transaction, 16>)
                   == sizeof(::fixy::FixedArray<Transaction, 16>) + sizeof(::fixy::Cyclic<std::size_t, 16>)
                          + sizeof(::fixy::BoundedMonotonic<std::size_t, 16>),
               "CyclicBuffer<Transaction, N> must stay a zero-overhead composition");
-
-// The tag must not add storage, or the whole log grows.
-static_assert(sizeof(::crucible::safety::Tagged<Transaction*, ::crucible::safety::source::Ring>)
-                  == sizeof(Transaction*),
-              "a tagged transaction pointer must be the size of the pointer it wraps");
-static_assert(alignof(::crucible::safety::Tagged<Transaction*, ::crucible::safety::source::Ring>)
-                  == alignof(Transaction*),
-              "a tagged transaction pointer must be aligned as the pointer it wraps");
 
 }  // namespace crucible
