@@ -19,7 +19,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/_Machine.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <atomic>
 #include <concepts>

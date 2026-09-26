@@ -4,7 +4,7 @@
 // phantom PermSet claims authority that no consumed Permission token
 // established.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 namespace proto = ::crucible::safety::proto;
 

@@ -15,7 +15,7 @@
 // Expected diagnostic: GCC emits the static_assert message with the
 // "[Protocol_Ill_Formed]" tag.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 namespace cp = crucible::safety::proto;
 

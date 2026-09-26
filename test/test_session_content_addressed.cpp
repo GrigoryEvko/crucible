@@ -3,7 +3,7 @@
 // variant over the same in-memory wire and shows the handles advance
 // identically, which is what protocol-level equivalence claims.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionContentAddressed.h>
 #include <crucible/sessions/_SessionMint.h>
 #include <crucible/sessions/_SessionSubtype.h>

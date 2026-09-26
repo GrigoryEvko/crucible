@@ -5,7 +5,7 @@
 // `= delete("...")` with a framework-controlled diagnostic carrying
 // the [DetachReason_Required] audit prefix.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <utility>
 

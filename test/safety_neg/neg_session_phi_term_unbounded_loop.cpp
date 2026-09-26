@@ -12,7 +12,7 @@
 // with the framework-controlled prefix
 // [PhiTermViolation_HasUnboundedLoop].
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionPhi.h>
 
 using namespace crucible::safety::proto;

@@ -28,7 +28,7 @@
 // fail the plain merge over branches that only the sender distinguishes.
 
 #include <crucible/Platform.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionContext.h>
 #include <crucible/sessions/_SessionCrash.h>
 

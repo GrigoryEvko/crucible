@@ -12,7 +12,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/_Secret.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionSubtype.h>
 
 #include <type_traits>

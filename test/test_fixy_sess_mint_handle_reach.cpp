@@ -3,10 +3,10 @@
 // friend declaration is otherwise silent here and fails only at a
 // faraway call site.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 #include <cstdint>
 #include <cstdio>

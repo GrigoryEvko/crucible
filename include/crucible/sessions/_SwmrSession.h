@@ -5,8 +5,8 @@
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_IsSwmrHandle.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_PermissionedSession.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionContentAddressed.h>
 #include <crucible/sessions/_SessionMint.h>
 #include <crucible/sessions/_SessionPermPayloads.h>

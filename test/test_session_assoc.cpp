@@ -3,7 +3,7 @@
 // from it, a refined context, and a run of the projected protocol on
 // handles whose types came out of the context by lookup.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionAssoc.h>
 #include <crucible/sessions/_SessionContext.h>
 #include <crucible/sessions/_SessionGlobal.h>

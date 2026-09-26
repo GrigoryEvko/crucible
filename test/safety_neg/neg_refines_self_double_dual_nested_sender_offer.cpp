@@ -20,7 +20,7 @@
 //   "static assertion failed"  |  "refines_self_and_double_dual"  |
 //   "is_dual_involutive"
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionPatterns.h>
 
 namespace proto = ::crucible::safety::proto;

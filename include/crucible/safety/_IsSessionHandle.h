@@ -4,7 +4,7 @@
 // succeeds for public inheritance. A handle that inherited the base privately
 // would read as not a session handle at all.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <cstddef>
 #include <type_traits>

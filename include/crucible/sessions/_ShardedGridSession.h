@@ -4,8 +4,8 @@
 #include <crucible/concurrent/_PermissionedShardedGrid.h>
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_PermissionGridGenerator.h>
-#include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_PermissionedSession.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionMint.h>
 
 #include <concepts>

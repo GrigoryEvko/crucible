@@ -6,7 +6,7 @@
 // body fires the `[Branch_Index_Out_Of_Range]` prefix instead of
 // GCC's generic "constraints not satisfied" message.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 using namespace crucible::safety::proto;
 

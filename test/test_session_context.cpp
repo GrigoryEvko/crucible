@@ -3,7 +3,7 @@
 // file wires the context against the protocol combinators for a two-session
 // scenario.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionContext.h>
 
 #include <cstdio>

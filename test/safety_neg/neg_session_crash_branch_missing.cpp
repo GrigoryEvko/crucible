@@ -4,7 +4,7 @@
 // where the Offer has no Recv<Crash<UnreliablePeer>, _> branch.
 // L8 SessionCrash.h's assertion helper fires.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 
 using namespace crucible::safety::proto;

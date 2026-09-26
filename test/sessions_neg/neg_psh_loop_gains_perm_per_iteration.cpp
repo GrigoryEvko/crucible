@@ -23,7 +23,7 @@
 //   ONE work-item is in flight at a time.  The type system makes
 //   this impossible to compile.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

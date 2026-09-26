@@ -4,7 +4,7 @@
 // requires the carrier continuation to expose a crash-recovery branch
 // for the unreliable recipient.  Recv<Ack, End> has no such branch.
 
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 using namespace crucible::safety::proto;
 

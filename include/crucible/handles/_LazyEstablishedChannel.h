@@ -3,7 +3,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/_Pinned.h>
 #include <crucible/handles/_PublishOnce.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <optional>
 #include <type_traits>

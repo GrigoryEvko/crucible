@@ -6,7 +6,7 @@
 // no continuation capability at all once the delegated endpoint is
 // already Stop.
 
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 #include <utility>
 

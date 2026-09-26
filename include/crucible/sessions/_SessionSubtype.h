@@ -6,7 +6,7 @@
 // stricter than a labeled formulation — reordering the branches of a Select or
 // an Offer is not a subtype even though it preserves the branch set.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionGrade.h>
 
 #include <cstddef>

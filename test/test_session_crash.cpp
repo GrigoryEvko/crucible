@@ -2,7 +2,7 @@
 // file adds is Stop driven as a handle state of its own, and the
 // dispatch pattern for an offer that carries a crash branch.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionMint.h>
 

@@ -4,7 +4,7 @@
 // runtime methods over an in-memory transport and then drives the
 // delegated handle to completion on the receiving side.
 
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 #include <crucible/sessions/_SessionMint.h>
 
 #include <cstdio>

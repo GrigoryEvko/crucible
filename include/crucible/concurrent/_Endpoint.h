@@ -11,7 +11,7 @@
 #include <crucible/concurrent/_SubstrateCtxFit.h>
 #include <crucible/concurrent/_SubstrateSessionBridge.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <optional>
 #include <type_traits>

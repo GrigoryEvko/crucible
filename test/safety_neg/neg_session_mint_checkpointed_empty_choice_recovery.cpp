@@ -27,7 +27,7 @@
 //   "static assertion failed"  |  "Empty_Choice_Combinator"  |
 //   "is_empty_choice"          |  "Select<>"
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 
 namespace proto = ::crucible::safety::proto;

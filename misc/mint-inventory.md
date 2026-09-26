@@ -175,12 +175,6 @@ apply to the row.
 | `mint_workload_profiler(Ctx const&,const Senses*,::crucible::effects::Init)` | `include/crucible/perf/WorkloadProfiler.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_workload_profiler(Ctx const&,const Senses*,::crucible::effects::Init,WorkloadProfiler::Config)` | `include/crucible/perf/WorkloadProfiler.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 
-## include/crucible/sessions/
-
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_session_handle` | `include/crucible/sessions/Session.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 25 |
-
 ## include/crucible/topology/
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
@@ -368,5 +362,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 103 | 51 | 43 | 9 | 0 | 94 | 41 |
+| old (`include/crucible/`) | 102 | 51 | 42 | 9 | 0 | 93 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 22 |

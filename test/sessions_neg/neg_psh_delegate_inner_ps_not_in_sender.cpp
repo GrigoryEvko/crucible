@@ -4,7 +4,7 @@
 // attempted with a delegated PSH whose ActualInnerPS does not match
 // the declared InnerPS.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 #include <utility>

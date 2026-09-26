@@ -26,7 +26,7 @@
 //   check is what enforces "X is in flight from sender to receiver",
 //   and that's the static_assert here.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

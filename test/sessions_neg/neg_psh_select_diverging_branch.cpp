@@ -31,7 +31,7 @@
 //   in the protocol type alone; you have to trace what each branch
 //   does to PS.  The type system forces the trace.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

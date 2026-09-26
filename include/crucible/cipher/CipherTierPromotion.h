@@ -7,7 +7,7 @@
 #include <crucible/Types.h>
 #include <crucible/safety/_CipherTier.h>
 #include <crucible/safety/_Decide.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 #include <concepts>
 #include <expected>

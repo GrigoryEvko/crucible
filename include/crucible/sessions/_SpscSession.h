@@ -2,8 +2,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
-#include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_PermissionedSession.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionMint.h>
 
 #include <type_traits>

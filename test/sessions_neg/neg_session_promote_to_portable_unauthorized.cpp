@@ -1,7 +1,7 @@
 // GAPS-068 fixture #6: a vendor-specific session cannot be promoted to
 // a Portable-required consumer without an explicit portable provider.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 namespace proto = ::crucible::safety::proto;
 

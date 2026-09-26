@@ -9,7 +9,7 @@
 // resolve.
 
 #include <crucible/bridges/_MachineSessionBridge.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <atomic>
 #include <cstdint>

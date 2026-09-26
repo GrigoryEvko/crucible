@@ -6,11 +6,11 @@
 // pattern whose natural shape is multiparty ships only its local projection.
 
 #include <crucible/Platform.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionSubtype.h>
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 #endif
 
 #include <cstddef>

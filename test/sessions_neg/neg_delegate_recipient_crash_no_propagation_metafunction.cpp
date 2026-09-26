@@ -5,7 +5,7 @@
 // delegated_crash_propagation how to classify it, the consteval
 // assertion rejects it at the declaration boundary.
 
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 using namespace crucible::safety::proto;
 

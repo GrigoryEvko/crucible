@@ -17,7 +17,7 @@
 //   "static assertion failed"  |  "Protocol_Ill_Formed"  |
 //   "is_well_formed"
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 namespace proto = ::crucible::safety::proto;
 

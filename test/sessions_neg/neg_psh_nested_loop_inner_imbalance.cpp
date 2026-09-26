@@ -33,7 +33,7 @@
 //   fails.  Reasoning about the right scope is the bug class users
 //   miss; the type system gets it right by construction.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

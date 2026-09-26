@@ -27,7 +27,7 @@
 // property are rejected, because refuting one of these properties has a
 // finite structural witness and confirming one in general does not.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <type_traits>
 

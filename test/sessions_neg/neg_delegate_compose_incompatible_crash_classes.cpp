@@ -4,7 +4,7 @@
 // CrashClass into composition.  An Abort-grade stopped endpoint cannot
 // satisfy a continuation position that explicitly requires NoThrow.
 
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 using namespace crucible::safety::proto;
 

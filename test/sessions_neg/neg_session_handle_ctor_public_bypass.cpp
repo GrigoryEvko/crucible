@@ -27,7 +27,7 @@
 // This fixture targets the Session.h Send<T, R> specialization.
 // Build MUST fail; diagnostic MUST contain "is private".
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <utility>
 

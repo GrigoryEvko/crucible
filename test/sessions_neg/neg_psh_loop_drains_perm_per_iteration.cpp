@@ -26,7 +26,7 @@
 //   review without tracing PS evolution by hand; the type system
 //   does the trace automatically.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

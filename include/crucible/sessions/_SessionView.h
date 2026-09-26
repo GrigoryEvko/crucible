@@ -27,10 +27,10 @@
 // it.  Anything further apart is the caller's to keep straight.
 
 #include <crucible/safety/_ScopedView.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 #include <cstdint>
 #include <type_traits>

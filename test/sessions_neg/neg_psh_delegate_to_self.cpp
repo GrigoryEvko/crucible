@@ -3,7 +3,7 @@
 // GAPS-058 fixture #4 — role-distinctness invariant for a global
 // carrier that tries to send a delegated endpoint to itself.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 using namespace crucible::safety::proto;
 

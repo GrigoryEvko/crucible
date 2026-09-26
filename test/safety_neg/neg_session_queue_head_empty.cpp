@@ -4,7 +4,7 @@
 // HeadQueue primary template fires a dependent_false_v
 // static_assert with a clear diagnostic on empty-queue access.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionQueue.h>
 
 using namespace crucible::safety::proto;

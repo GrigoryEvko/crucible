@@ -20,7 +20,7 @@
 // difference is the path through which the trait reaches the
 // dead end.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 using namespace crucible::safety::proto;
 

@@ -1,4 +1,4 @@
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <cstdio>
 

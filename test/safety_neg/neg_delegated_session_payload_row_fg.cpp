@@ -33,7 +33,7 @@
 //                       no matching function / EffectRowMismatch.
 
 #include <crucible/sessions/_SessionMint.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 namespace proto = ::crucible::safety::proto;
 namespace eff = ::crucible::effects;

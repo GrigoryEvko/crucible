@@ -4,7 +4,7 @@
 // L2 SessionContext.h's LookupContext<Context<>, ...> primary
 // specialisation fires its dependent-false static_assert.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionContext.h>
 
 using namespace crucible::safety::proto;

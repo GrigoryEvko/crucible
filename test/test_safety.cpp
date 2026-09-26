@@ -9,7 +9,7 @@
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <foundation/Platform.h>
 
 #include "test_assert.h"

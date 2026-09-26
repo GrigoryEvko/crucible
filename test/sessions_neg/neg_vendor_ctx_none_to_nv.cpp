@@ -4,7 +4,7 @@
 // weak provider. The PSH vendor-composition gate must reject it before any
 // lattice bottom rule can make it satisfy an NV consumer.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 namespace proto = ::crucible::safety::proto;
 

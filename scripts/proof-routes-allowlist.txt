@@ -58,5 +58,5 @@ src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<4>
 # tree ends by deletion.
 include/crucible/sessions/_SessionCheckpoint.h:friend-template-specialization:template<typename ProtoBase,typename ProtoRollback,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle<
 include/crucible/sessions/_SessionCrash.h:friend-template-specialization:template<CrashClass C,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle<
-include/crucible/sessions/SessionDelegate.h:friend-template-specialization:template<typename T,typename K,std::uint64_t MinEpoch,std::uint64_t MinGeneration,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
-include/crucible/sessions/SessionDelegate.h:friend-template-specialization:template<typename T,typename K,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
+include/crucible/sessions/_SessionDelegate.h:friend-template-specialization:template<typename T,typename K,std::uint64_t MinEpoch,std::uint64_t MinGeneration,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
+include/crucible/sessions/_SessionDelegate.h:friend-template-specialization:template<typename T,typename K,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2

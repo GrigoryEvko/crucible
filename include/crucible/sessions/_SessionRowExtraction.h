@@ -21,10 +21,10 @@
 #include <crucible/effects/_Capability.h>
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_EffectRow.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 #include <crucible/safety/_AllocClass.h>
 #include <crucible/safety/_Budgeted.h>
 #include <crucible/safety/_CipherTier.h>

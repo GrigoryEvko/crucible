@@ -37,7 +37,7 @@
 //   half-pair.  The type system traces the FULL body sequentially
 //   and reports the FINAL imbalance.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

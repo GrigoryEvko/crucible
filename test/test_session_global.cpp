@@ -3,7 +3,7 @@
 // each role's local type from it, open channels with those derived
 // types, and watch messages flow.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/_SessionMint.h>

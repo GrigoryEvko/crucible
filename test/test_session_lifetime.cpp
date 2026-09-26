@@ -2,10 +2,10 @@
 // and no death-test framework is available here.  Every case below
 // therefore drives a path that must NOT abort.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 #include <crucible/sessions/_SessionMint.h>
 
 #include <cstdio>

@@ -55,17 +55,14 @@ include/fixy/Mutation.h:is_writeoncenonnull  — the primary delegates to the Is
 include/fixy/ScopedView.h:is_scoped_view  — the primary delegates to the is_instance_of_v reflection query against ^^ScopedView, so the answer follows the template rather than a list.
 include/fixy/Tagged.h:retag_policy  — each specialisation became one edge in the fail-closed namespace tags::admitted_retags which the RetagAllowed concept reads, and retag consults the concept, so a specialisation of this struct now admits nothing.
 include/fixy/concurrent/PayloadRow.h:payload_row  — the specialisations for each wrapper became one reflection walk, detail::walk_payload_row, which refuses a payload that it cannot classify.  A layer above adds its own families through payload_row_under.
+include/fixy/session/Delegate.h:is_accept  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned over an Accept needs no specialisation.
+include/fixy/session/Delegate.h:is_delegate  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned over a Delegate needs no specialisation.
 include/fixy/session/Global.h:is_global_well_formed  — the seven specializations for each node became one fault walk, detail::fault_walk, and the one template asks that walk for GlobalFault::None.  The walk declares its primary and does not define it, so a node that no walk knows is a hard error.
-
-# NOT YET IN SCOPE, recorded so the next reader does not rediscover it.
-# include/fixy/session/Protocol.h:session_loop_ctx_rebind_inner would be a
-# thirteenth row.  The old tree specialises it twice, for EpochCtx and for
-# VendorCtx, and the new primary replaces the inner context outright.  It
-# is NOT a requirement today because its two old homes,
-# crucible/sessions/Session.h and crucible/sessions/PermissionedSession.h,
-# carry no underscore: the session port has not claimed them.  Marking a
-# header is what puts it under this guard, so this row becomes required
-# the moment the session port marks those two, and the header already
-# says EpochCtx drops in as one specialisation of each trait when it
-# lands.  A row written before then reads STALE, which is the guard
-# refusing to accept a sentence about a fold it cannot see.
+include/fixy/session/Protocol.h:compose_at_branch  — the specialisation for each combinator became one fold of the transition algebra, compose_at_choice_algebra, which reads the kind of each node from the protocol registry.
+include/fixy/session/Protocol.h:is_continue  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned needs no specialisation.
+include/fixy/session/Protocol.h:is_end  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned needs no specialisation.
+include/fixy/session/Protocol.h:is_loop  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned needs no specialisation.
+include/fixy/session/Protocol.h:is_offer  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned needs no specialisation.
+include/fixy/session/Protocol.h:is_recv  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned needs no specialisation.
+include/fixy/session/Protocol.h:is_select  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned needs no specialisation.
+include/fixy/session/Protocol.h:is_send  — the primary asks detail::head_is, a reflection query of the protocol registry under the registered wrappers, so a VendorPinned needs no specialisation.

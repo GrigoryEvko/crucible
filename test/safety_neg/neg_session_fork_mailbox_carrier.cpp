@@ -15,7 +15,7 @@
 
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 #include <crucible/sessions/_SessionGlobal.h>
 
 #include <type_traits>

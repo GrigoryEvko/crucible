@@ -38,8 +38,8 @@
 #include <crucible/handles/_OneShotFlag.h>
 #include <crucible/permissions/_PermissionInherit.h>
 #include <crucible/safety/_IsSessionHandle.h>
-#include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_PermissionedSession.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 
 #include <atomic>

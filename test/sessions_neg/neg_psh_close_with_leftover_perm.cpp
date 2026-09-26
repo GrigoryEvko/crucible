@@ -23,7 +23,7 @@
 //   protocol steps and forget to surrender ONE before End.  The
 //   type system catches the SUM at close, not at the missing step.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

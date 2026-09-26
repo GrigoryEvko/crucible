@@ -9,8 +9,8 @@
 // corresponding Accept hung forever waiting for an endpoint that was
 // never shipped.
 
-#include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_Session.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 using namespace crucible::safety::proto;
 

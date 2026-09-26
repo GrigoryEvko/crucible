@@ -47,7 +47,7 @@
 #include <crucible/effects/_Computation.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 #include <crucible/sessions/_SessionRowExtraction.h>
 
 #include <type_traits>

@@ -3,8 +3,8 @@
 // complete class.
 #include <crucible/Cipher.h>
 #include <crucible/bridges/_SessionPersistence.h>
-#include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_PermissionedSession.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionMint.h>
 
 #include "test_assert.h"

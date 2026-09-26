@@ -11,7 +11,7 @@
 // unchanged, so the caller receives the innermost cause rather than the
 // outermost shape.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionDiagnostic.h>

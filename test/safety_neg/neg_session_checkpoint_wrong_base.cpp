@@ -4,7 +4,7 @@
 // where P's actual base doesn't match ExpectedBase.  SessionCheckpoint.h's
 // helper fires a classified static_assert.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 
 using namespace crucible::safety::proto;

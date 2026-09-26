@@ -2,7 +2,7 @@
 // distinct vendor pins is rejected unless one side is genuinely
 // Portable in the provider position.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 namespace proto = ::crucible::safety::proto;
 

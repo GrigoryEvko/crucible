@@ -11,7 +11,7 @@
 #include <crucible/effects/_ExecCtx.h>
 #include <crucible/sessions/_CalendarGridSession.h>
 #include <crucible/sessions/_ChaseLevDequeSession.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionMint.h>
 #include <crucible/sessions/_ShardedCalendarGridSession.h>
 #include <crucible/sessions/_ShardedGridSession.h>

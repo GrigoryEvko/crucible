@@ -23,7 +23,7 @@
 // worth carrying properties across.
 
 #include <crucible/Platform.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionContext.h>
 #include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/_SessionSubtype.h>

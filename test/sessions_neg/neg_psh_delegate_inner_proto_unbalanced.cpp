@@ -3,7 +3,7 @@
 // GAPS-058 fixture #3 — DelegatedSession<P, InnerPS> where terminal P
 // cannot carry the declared non-empty InnerPS.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 #include <utility>

@@ -6,8 +6,8 @@
 
 #include <crucible/bridges/_CrashTransport.h>
 #include <crucible/bridges/_RecordingSessionHandle.h>
-#include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_PermissionedSession.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/handles/_OneShotFlag.h>
 #include <crucible/safety/_Pinned.h>

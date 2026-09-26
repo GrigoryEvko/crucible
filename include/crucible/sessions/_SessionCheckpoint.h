@@ -23,7 +23,7 @@
 // inside the base branch by hand.
 
 #include <crucible/Platform.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/_SessionSubtype.h>

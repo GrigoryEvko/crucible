@@ -23,7 +23,7 @@
 //   it as Returned to satisfy the protocol".  The type system blocks
 //   this — you can't return what you never had.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

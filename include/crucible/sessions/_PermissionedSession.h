@@ -27,10 +27,10 @@
 #include <crucible/permissions/_PermissionFork.h>
 #include <crucible/permissions/_PermSet.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 #include <crucible/sessions/_SessionGlobal.h>
 #include <crucible/sessions/_SessionPermPayloads.h>
 #include <crucible/sessions/_SessionSubtype.h>

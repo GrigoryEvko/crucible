@@ -3,7 +3,7 @@
 // GAPS-058 fixture #2 — Accept<DelegatedSession<P, InnerPS>, K>
 // attempted by a carrier PSH that already owns InnerPS.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 #include <utility>

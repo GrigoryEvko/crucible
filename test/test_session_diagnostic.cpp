@@ -4,7 +4,7 @@
 
 #include <crucible/sessions/_SessionDiagnostic.h>
 #include <crucible/sessions/_SessionSubtype.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <array>
 #include <cstdio>

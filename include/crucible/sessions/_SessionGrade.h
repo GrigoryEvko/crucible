@@ -11,7 +11,7 @@
 #include <crucible/safety/_NumaPlacement.h>
 #include <crucible/safety/_NumericalTier.h>
 #include <crucible/safety/_Vendor.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <cstdint>
 #include <string_view>

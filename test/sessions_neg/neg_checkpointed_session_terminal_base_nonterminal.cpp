@@ -40,7 +40,7 @@
 // Expected diagnostic family (matched by CMakeLists regex):
 //   "static assertion failed" / "static assertion" / "static_assert".
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 
 #include <type_traits>

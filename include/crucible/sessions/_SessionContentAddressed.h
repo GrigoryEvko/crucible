@@ -16,7 +16,7 @@
 // takes up the marking stays equivalent to the one that did not.
 
 #include <crucible/Platform.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionSubtype.h>
 
 #include <cstddef>

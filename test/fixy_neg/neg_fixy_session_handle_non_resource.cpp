@@ -20,7 +20,7 @@
 // Expected diagnostic: GCC emits the static_assert message with the
 // "[SessionResource_NotPinned]" tag.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 namespace cp = crucible::safety::proto;
 

@@ -4,7 +4,7 @@
 
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionAssoc.h>
 #include <crucible/sessions/_SessionContext.h>
 #include <crucible/sessions/_SessionGlobal.h>

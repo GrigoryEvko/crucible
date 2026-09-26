@@ -4,7 +4,7 @@
 // Recv<Crash<Recipient>, _> recovery branch.  This fixture deliberately
 // omits that branch; assert_every_offer_has_crash_branch_for must fail.
 
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 using namespace crucible::safety::proto;
 

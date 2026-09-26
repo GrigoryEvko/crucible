@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionAssoc.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionContentAddressed.h>
@@ -8,12 +8,12 @@
 #include <crucible/sessions/_SessionCT.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionDeclassify.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 #include <crucible/sessions/_SessionDiagnostic.h>
 #include <crucible/sessions/_SessionEventLog.h>
 #include <crucible/sessions/_FederationProtocol.h>
 #include <crucible/sessions/_SessionGlobal.h>
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 #include <crucible/sessions/_SessionMint.h>
 #include <crucible/sessions/_SessionPatterns.h>
 #include <crucible/sessions/_SessionPayloadSubsort.h>

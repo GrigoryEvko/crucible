@@ -4,7 +4,7 @@
 // yes only when that peer is the Offer's declared sender.  Everything
 // below turns on that single asymmetry.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 
 #include <cstdio>

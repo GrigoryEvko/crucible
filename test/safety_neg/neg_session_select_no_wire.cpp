@@ -7,7 +7,7 @@
 // a silent footgun where wire-based sessions advanced the local
 // handle without signalling the peer.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 using namespace crucible::safety::proto;
 

@@ -6,7 +6,7 @@
 #include <crucible/safety/_Pinned.h>
 #include <crucible/safety/_Refined.h>
 #include <crucible/safety/_Tagged.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 #include <array>
 #include <atomic>

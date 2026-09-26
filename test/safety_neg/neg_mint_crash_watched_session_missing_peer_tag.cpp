@@ -21,7 +21,7 @@
 //   or "couldn't infer template argument 'PeerTag'".
 
 #include <crucible/bridges/_CrashTransport.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionMint.h>
 
 namespace proto = crucible::safety::proto;

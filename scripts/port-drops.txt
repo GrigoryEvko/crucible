@@ -2048,6 +2048,60 @@ crucible/sessions/_SessionRowExtraction.h:payload_row_effect_t  — Dropped with
 crucible/sessions/_SessionRowExtraction.h:protocol_effect_row  → include/fixy/session/Handle.h  — Replaced by protocol_payload_row_t, the union of the payload rows of a protocol, and protocol_delivered_permission_row_t for the regions that it delivers.
 crucible/sessions/_SessionRowExtraction.h:protocol_effect_row_t  → include/fixy/session/Handle.h  — Replaced by protocol_payload_row_t.
 crucible/sessions/_SessionRowExtraction.h:runtime_smoke_test_payload_row  — Dropped. The tests of fixy/concurrent/PayloadRow.h exercise the payload walk, and no header of the new tree carries a smoke test that no one calls.
+crucible/sessions/_Session.h:EpochCtx  — Dropped, because no production file uses it. foundation/algebra/lattices/StrongCounterLattice.h holds the epoch and generation lattices that it read.
+crucible/sessions/_Session.h:is_dual_involutive  — Dropped. fixy/session/Protocol.h makes duality an involution on each registered combinator, and a Select or an Offer keeps its note under duality.
+crucible/sessions/_Session.h:is_dual_involutive_v  — Dropped with is_dual_involutive. The coherence check of the protocol registry refuses a registration whose dual is not an involution.
+crucible/sessions/_Session.h:session_epoch_threshold_valid_v  — Dropped with EpochCtx, whose thresholds it checked.
+crucible/sessions/_Session.h:session_loop_ctx_epoch_matches_v  — Dropped with EpochCtx, whose coordinates it compared.
+crucible/sessions/_Session.h:session_loop_ctx_epoch_satisfies_v  — Dropped with EpochCtx, whose coordinates it compared.
+crucible/sessions/_Session.h:session_loop_ctx_epoch_v  — Dropped with EpochCtx, whose epoch it read.
+crucible/sessions/_Session.h:session_loop_ctx_generation_v  — Dropped with EpochCtx, whose generation it read.
+crucible/sessions/_Session.h:session_loop_ctx_has_explicit_epoch_v  — Dropped with EpochCtx, whose presence it asked.
+crucible/sessions/_SessionDelegate.h:Accept_seq  — Dropped, because no production file names it. A protocol writes the same chain of heads with Accept of fixy/session/Protocol.h.
+crucible/sessions/_SessionDelegate.h:AcceptWithAck  — Dropped, because no production file names it. A protocol writes the same shape with Accept and Send of fixy/session/Protocol.h.
+crucible/sessions/_SessionDelegate.h:assert_accepts_from  → include/fixy/session/Delegate.h  — The concept AcceptsFrom states the check, and a static assertion on it names the fault at the site of the assertion.
+crucible/sessions/_SessionDelegate.h:assert_delegated_crash_propagates  — Dropped. The crash-stop theory of fixy/session/Crash.h has no delegation, and a crash-aware session refuses each protocol that delegates.
+crucible/sessions/_SessionDelegate.h:assert_delegates_to  → include/fixy/session/Delegate.h  — The concept DelegatesTo states the check, and a static assertion on it names the fault at the site of the assertion.
+crucible/sessions/_SessionDelegate.h:CanDelegate  — Dropped, because no production file asks it. Well-formedness of fixy/session/Protocol.h checks the delegated protocol of each head.
+crucible/sessions/_SessionDelegate.h:can_delegate_v  — Dropped with CanDelegate. Well-formedness of fixy/session/Protocol.h checks the delegated protocol of each head.
+crucible/sessions/_SessionDelegate.h:delegated_crash_propagation  — Dropped. The crash-stop theory of fixy/session/Crash.h has no delegation, so no classification of a crash after a hand-off is necessary.
+crucible/sessions/_SessionDelegate.h:delegated_crash_propagation_t  — Dropped with delegated_crash_propagation. A crash-aware session refuses each protocol that delegates.
+crucible/sessions/_SessionDelegate.h:Delegate_seq  — Dropped, because no production file names it. A protocol writes the same chain of heads with Delegate of fixy/session/Protocol.h.
+crucible/sessions/_SessionDelegate.h:DelegateWithAck  — Dropped, because no production file names it. A protocol writes the same shape with Delegate and Recv of fixy/session/Protocol.h.
+crucible/sessions/_SessionDelegate.h:EpochedAccept  — Dropped, because no production file uses the epoched hand-off.
+crucible/sessions/_SessionDelegate.h:EpochedDelegate  — Dropped, because no production file uses the epoched hand-off.
+crucible/sessions/_SessionDelegate.h:IllFormed  — Dropped with delegated_crash_propagation, one of whose three answers it was.
+crucible/sessions/_SessionDelegate.h:is_delegate_compatible  — Dropped, because no production file asks it. Well-formedness of fixy/session/Protocol.h checks the delegated protocol of each head.
+crucible/sessions/_SessionDelegate.h:is_delegate_compatible_v  — Dropped with is_delegate_compatible.
+crucible/sessions/_SessionDelegate.h:is_delegation_head_v  — Dropped, because no production file asks it. is_delegate_v and is_accept_v of fixy/session/Delegate.h name the two heads.
+crucible/sessions/_SessionDelegate.h:is_dual_involutive  — Dropped. fixy/session/Protocol.h registers the two delegation heads as dual steps, and the registry makes duality an involution on each registered combinator.
+crucible/sessions/_SessionDelegate.h:is_subtype_sync_structural  → include/fixy/session/Subtype.h  — The refinement preorder of foundation/algebra/Transition.h walks the delegation heads as steps. Their payload is invariant, so a head refines only a head that hands off the same protocol.
+crucible/sessions/_SessionDelegate.h:MustAbort  — Dropped with delegated_crash_propagation, one of whose three answers it was.
+crucible/sessions/_SessionDelegate.h:Recovers  — Dropped with delegated_crash_propagation, one of whose three answers it was.
+crucible/sessions/_SessionDelegate.h:Redelegate  — Dropped, because no production file names it. A protocol writes the same shape with Accept and Delegate of fixy/session/Protocol.h.
+crucible/sessions/_SessionDelegate.h:TransportForAccept  — Dropped with the handle steps of the delegation heads. A hand-off that runs is a Send of a DelegatedSession.
+crucible/sessions/_SessionDelegate.h:TransportForDelegate  — Dropped with the handle steps of the delegation heads. A hand-off that runs is a Send of a DelegatedSession.
+crucible/sessions/_PermissionedSession.h:assert_permissioned_session_vendor_compatible  — Dropped with VendorCtx. VendorPinned of fixy/session/Protocol.h states the vendor of a protocol, and well-formedness refuses a pin that names no vendor.
+crucible/sessions/_PermissionedSession.h:CarrierIsPerPairFifo  → include/fixy/session/Network.h  — CarrierImplements reads the network model of a carrier together with the global type, and a projection is accepted only where it is implementable.
+crucible/sessions/_PermissionedSession.h:LoopContext  → include/fixy/session/Handle.h  — PermLoopFrame records the Loop and the permission set at its entry, and a Continue checks the set against that frame.
+crucible/sessions/_PermissionedSession.h:loop_ctx_as_vendor_ctx_t  — Dropped with VendorCtx, whose loop context it built.
+crucible/sessions/_PermissionedSession.h:loop_ctx_epoch_satisfies_v  — Dropped with EpochCtx, whose coordinates it compared.
+crucible/sessions/_PermissionedSession.h:loop_ctx_epoch_v  — Dropped with EpochCtx, whose epoch it read.
+crucible/sessions/_PermissionedSession.h:loop_ctx_generation_v  — Dropped with EpochCtx, whose generation it read.
+crucible/sessions/_PermissionedSession.h:loop_ctx_has_explicit_epoch_v  — Dropped with EpochCtx, whose presence it asked.
+crucible/sessions/_PermissionedSession.h:loop_ctx_has_explicit_vendor_v  — Dropped with VendorCtx, whose presence it asked.
+crucible/sessions/_PermissionedSession.h:loop_ctx_inner_t  → include/fixy/session/Protocol.h  — session_loop_ctx_inner_t reads the inner loop context, and it is the one spelling of the traits that remain after the drop of the two wrappers.
+crucible/sessions/_PermissionedSession.h:loop_ctx_rebind_inner  → include/fixy/session/Protocol.h  — session_loop_ctx_rebind_inner replaces the inner loop context, and fixy/session/Handle.h specializes it for the brand of a session.
+crucible/sessions/_PermissionedSession.h:loop_ctx_rebind_inner_t  → include/fixy/session/Protocol.h  — session_loop_ctx_rebind_inner_t is the alias of the one trait that replaces the inner loop context.
+crucible/sessions/_PermissionedSession.h:loop_ctx_traits  → include/fixy/session/Protocol.h  — session_loop_ctx_traits holds the inner loop context, which is the one field that remains after the drop of VendorCtx and EpochCtx.
+crucible/sessions/_PermissionedSession.h:loop_ctx_vendor_satisfies_v  — Dropped with VendorCtx, whose vendor it compared.
+crucible/sessions/_PermissionedSession.h:loop_ctx_vendor_v  — Dropped with VendorCtx, whose vendor it read.
+crucible/sessions/_PermissionedSession.h:PermissionedSessionHandle  → include/fixy/session/Handle.h  — SessionHandle carries the permission set as its last template parameter, so one handle family serves the plain session and the permissioned session.
+crucible/sessions/_PermissionedSession.h:permissioned_session_vendor_compatible_v  — Dropped with VendorCtx, whose vendor it compared with the vendor of the protocol.
+crucible/sessions/_PermissionedSession.h:session_fork  — Dropped, because no production file uses it. mint_forked_channel of fixy/session/Handle.h forks a binary channel, and a multiparty binding asks CarrierImplements of fixy/session/Network.h.
+crucible/sessions/_PermissionedSession.h:session_vendor_satisfies_v  — Dropped with VendorCtx, whose vendor it compared.
+crucible/sessions/_PermissionedSession.h:VendorCtx  — Dropped, because no production file uses it. VendorPinned of fixy/session/Protocol.h declares the vendor of a protocol.
+crucible/sessions/_PermissionedSession.h:with_crash_check_or_detach  → include/fixy/session/CrashTransport.h  — CrashWatched wraps a session handle and applies the crash-stop rules at each step, so no caller checks a crash flag by hand.
 
 # ── sessions: global types, typing contexts, association and queues ────────
 crucible/sessions/_SessionAssoc.h:all_entries_refine_projection_v  → include/fixy/session/Projection.h  — Replaced by association_holds_v, which also compares the queue of each role with the queue of its projection.

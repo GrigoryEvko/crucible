@@ -17,11 +17,11 @@
 #include <crucible/permissions/_Permission.h>
 #include <crucible/safety/_IsVendor.h>
 #include <crucible/safety/_Pinned.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_SessionDelegate.h>
+#include <crucible/sessions/_PermissionedSession.h>
 #include <crucible/sessions/_SessionRowExtraction.h>
 
 #include <atomic>

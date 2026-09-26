@@ -4,7 +4,7 @@
 // construction would bypass ctx admission and local permission-flow
 // closure.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 namespace proto = ::crucible::safety::proto;
 

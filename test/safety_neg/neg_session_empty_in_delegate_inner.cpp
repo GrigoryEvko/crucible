@@ -18,8 +18,8 @@
 //
 // Expected diagnostic: [Empty_Choice_Combinator].
 
-#include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_Session.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 using namespace crucible::safety::proto;
 

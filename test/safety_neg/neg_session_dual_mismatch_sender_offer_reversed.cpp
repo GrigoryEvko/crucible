@@ -23,7 +23,7 @@
 //   "static assertion failed"  |  "Dual_Mismatch"  |
 //   "ensure_dual"
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 namespace proto = ::crucible::safety::proto;
 

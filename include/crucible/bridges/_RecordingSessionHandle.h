@@ -21,10 +21,10 @@
 #include <crucible/Platform.h>
 #include <crucible/bridges/_CrashTransport.h>
 #include <crucible/safety/_IsSessionHandle.h>
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionCrash.h>
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 #include <crucible/sessions/_SessionEventLog.h>
 
 #include <cstddef>

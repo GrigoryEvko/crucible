@@ -25,7 +25,7 @@
 //   equivalent to surrendering the permission; the type system
 //   forces the surrender to be EXPLICIT in the protocol.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 #include <source_location>
 

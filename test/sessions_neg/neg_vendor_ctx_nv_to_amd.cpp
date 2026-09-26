@@ -2,7 +2,7 @@
 // VendorLattice backend.  NV and AMD are mutually incomparable, so an
 // NV provider cannot satisfy an AMD consumer.
 
-#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/_PermissionedSession.h>
 
 namespace proto = ::crucible::safety::proto;
 

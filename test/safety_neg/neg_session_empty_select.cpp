@@ -7,7 +7,7 @@
 // minimum-subtype rule remains valid; only handle reification is
 // rejected).
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 
 using namespace crucible::safety::proto;
 

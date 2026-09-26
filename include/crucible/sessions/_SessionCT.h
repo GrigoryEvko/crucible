@@ -7,7 +7,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/_ConstantTime.h>
 #include <crucible/safety/_Secret.h>  // for DeclassificationPolicy concept
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionSubtype.h>
 
 #include <cstddef>

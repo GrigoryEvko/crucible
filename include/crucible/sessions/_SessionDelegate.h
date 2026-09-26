@@ -18,7 +18,7 @@
 // transfer.  The threshold is a compile-time admission fact on the recipient's
 // context and has no runtime representation here.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 #include <crucible/sessions/_SessionEventLog.h>
 

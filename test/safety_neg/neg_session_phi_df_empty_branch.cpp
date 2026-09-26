@@ -10,7 +10,7 @@
 // SessionPhi.h:assert_phi_df<P>() fires its classified static_assert
 // with the framework-controlled prefix [PhiDfViolation_HasEmptyBranch].
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionPhi.h>
 
 using namespace crucible::safety::proto;

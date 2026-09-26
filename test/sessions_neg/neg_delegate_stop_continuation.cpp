@@ -3,7 +3,7 @@
 // cannot recover K's continuation-side authority from an already
 // stopped delegated endpoint.
 
-#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/_SessionDelegate.h>
 
 #include <utility>
 

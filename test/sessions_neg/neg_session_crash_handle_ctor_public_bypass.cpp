@@ -22,7 +22,7 @@
 // detail::make_session_handle friended.  Build MUST fail; diagnostic
 // MUST contain "is private".
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCrash.h>
 
 #include <utility>

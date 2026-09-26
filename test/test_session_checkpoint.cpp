@@ -1,7 +1,7 @@
 // A checkpointed session is driven end to end here, over an in-memory
 // wire, once down the commit path and once down the rollback path.
 
-#include <crucible/sessions/Session.h>
+#include <crucible/sessions/_Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
 #include <crucible/sessions/_SessionMint.h>
 
