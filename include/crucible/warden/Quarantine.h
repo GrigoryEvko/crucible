@@ -9,18 +9,18 @@
 // a permission token.
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/observe/SyntheticProbe.h>
-#include <crucible/permissions/_Permission.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
 #include <crucible/topology/AsymmetricFailure.h>
 #include <crucible/topology/Health.h>
+#include <fixy/Bits.h>
+#include <fixy/Ctx.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <foundation/Pinned.h>
+#include <foundation/diag/Catalog.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/permissions/Permission.h>
 
 #include <array>
 #include <cstddef>
@@ -28,9 +28,12 @@
 #include <span>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::warden {
 
+// foundation::reflect::enum_name gives the log spelling of a state and
+// of a signal.
 enum class QuarantineState : std::uint8_t {
     Healthy = 0,
     Suspect = 1,
@@ -38,8 +41,6 @@ enum class QuarantineState : std::uint8_t {
     Recovered = 3,
     Permanent = 4,
 };
-
-[[nodiscard]] std::string_view quarantine_state_name(QuarantineState state) noexcept;
 
 enum class QuarantineSignal : std::uint32_t {
     HealthSuspect = 1u << 0,
@@ -55,9 +56,7 @@ enum class QuarantineSignal : std::uint32_t {
     OperatorOverride = 1u << 10,
 };
 
-[[nodiscard]] std::string_view quarantine_signal_name(QuarantineSignal signal) noexcept;
-
-struct QuarantineTransition : safety::diag::tag_base {
+struct QuarantineTransition : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "QuarantineTransition";
     static constexpr std::string_view description = "A Cog changed quarantine/routing-admission state.";
     static constexpr std::string_view remediation =
@@ -66,17 +65,23 @@ struct QuarantineTransition : safety::diag::tag_base {
 };
 
 namespace quarantine_tag {
-struct OperatorOverride {};
+
+// The authority of an operator to force a state.  The token itself does
+// no effect, so its row is empty.
+struct OperatorOverride {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
 }  // namespace quarantine_tag
 
-using PositiveRecoveryProbeCount = safety::Positive<std::uint16_t>;
-using PositiveNanoseconds = safety::Positive<std::uint64_t>;
+using PositiveRecoveryProbeCount = ::fixy::Positive<std::uint16_t>;
+using PositiveNanoseconds = ::fixy::Positive<std::uint64_t>;
 
 struct QuarantineConfig {
     topology::HealthScore suspect_at_or_below{900};
     topology::HealthScore quarantine_at_or_below{500};
-    PositiveRecoveryProbeCount recovery_probe_count{std::uint16_t{100}};
-    PositiveNanoseconds permanent_after_ns{std::uint64_t{3600000000000ull}};
+    PositiveRecoveryProbeCount recovery_probe_count = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{100});
+    PositiveNanoseconds permanent_after_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{3600000000000ull});
     std::uint32_t canary_load_ppm = 10000;
 };
 
@@ -84,7 +89,7 @@ struct QuarantineSnapshot {
     cog::Uuid cog_uuid{};
     QuarantineState state = QuarantineState::Healthy;
     topology::HealthScore health_score{};
-    safety::Bits<QuarantineSignal> signals{};
+    ::fixy::Bits<QuarantineSignal> signals{};
     std::uint16_t consecutive_recovery_probes = 0;
     std::uint32_t admitted_load_ppm = 1000000;
     std::uint64_t quarantine_since_ns = 0;
@@ -96,21 +101,30 @@ struct QuarantineEvent {
     QuarantineState from = QuarantineState::Healthy;
     QuarantineState to = QuarantineState::Healthy;
     topology::HealthScore health_score{};
-    safety::Bits<QuarantineSignal> signals{};
+    ::fixy::Bits<QuarantineSignal> signals{};
     std::uint16_t consecutive_recovery_probes = 0;
     std::uint32_t admitted_load_ppm = 1000000;
     std::uint64_t sequence = 0;
 };
 
+// Building a policy belongs to process startup.
 template <class Ctx>
-concept CtxFitsQuarantineMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsQuarantineMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
+// A health, failure or probe fact changes the state from a background
+// thread.  The hot foreground records nothing.
 template <class Ctx>
-concept CtxFitsQuarantineRecord = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+concept CtxFitsQuarantineRecord =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
 
+// An operator forces a state from startup or from a test.
 template <class Ctx>
 concept CtxFitsQuarantineOverride =
-    effects::IsExecCtx<Ctx> && effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Test>;
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Init, ::foundation::effects::Effect::Test>;
 
 namespace detail {
 
@@ -144,7 +158,17 @@ namespace detail {
 }  // namespace detail
 
 template <std::size_t MaxCogs, std::size_t MaxEvents = MaxCogs * 4>
-class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEvents>> {
+class QuarantinePolicy;
+
+// The one door: the constructor of the policy is private, and this mint
+// is its one friend.
+template <std::size_t MaxCogs, std::size_t MaxEvents = MaxCogs * 4, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsQuarantineMint<Ctx>
+[[nodiscard]] constexpr QuarantinePolicy<MaxCogs, MaxEvents> mint_quarantine_policy(Ctx const&,
+                                                                                    QuarantineConfig config = {}) noexcept;
+
+template <std::size_t MaxCogs, std::size_t MaxEvents>
+class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, MaxEvents>> {
     static_assert(MaxCogs > 0, "QuarantinePolicy requires Cog slots");
     static_assert(MaxEvents > 0, "QuarantinePolicy requires audit-event slots");
 
@@ -153,10 +177,10 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
         cog::Uuid cog_uuid{};
         QuarantineState state = QuarantineState::Healthy;
         topology::HealthScore health_score{};
-        safety::Bits<QuarantineSignal> signals{};
+        ::fixy::Bits<QuarantineSignal> signals{};
         std::uint16_t consecutive_recovery_probes = 0;
         std::uint64_t quarantine_since_ns = 0;
-        safety::Monotonic<std::uint64_t> sequence{0};
+        ::fixy::Monotonic<std::uint64_t> sequence = ::fixy::mint_monotonic<std::uint64_t>(0);
     };
 
     std::array<Slot, MaxCogs> slots_{};
@@ -164,6 +188,12 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
     std::size_t next_event_ = 0;
     std::size_t event_count_ = 0;
     QuarantineConfig config_{};
+
+    explicit constexpr QuarantinePolicy(QuarantineConfig config) noexcept : config_{config} {}
+
+    template <std::size_t Cogs, std::size_t Events, ::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsQuarantineMint<Ctx>
+    friend constexpr QuarantinePolicy<Cogs, Events> mint_quarantine_policy(Ctx const&, QuarantineConfig) noexcept;
 
     [[nodiscard]] constexpr Slot* find_or_insert(cog::CogIdentity const& id) noexcept {
         if (id.uuid.is_zero()) {
@@ -240,7 +270,7 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
     }
 
     [[nodiscard]] constexpr QuarantineState state_from_health(Slot const& slot, topology::HealthSnapshot const& health,
-                                                              safety::Bits<QuarantineSignal>& signals) const noexcept {
+                                                              ::fixy::Bits<QuarantineSignal>& signals) const noexcept {
         if (slot.state == QuarantineState::Permanent) {
             return QuarantineState::Permanent;
         }
@@ -267,11 +297,9 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
     }
 
 public:
-    explicit constexpr QuarantinePolicy(QuarantineConfig config = {}) noexcept : config_{config} {}
-
     [[nodiscard]] constexpr QuarantineConfig config() const noexcept { return config_; }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
     [[nodiscard]] constexpr bool on_health_event(Ctx const&, cog::CogIdentity const& cog,
                                                  topology::HealthSnapshot health, std::uint64_t now_ns) noexcept {
@@ -286,7 +314,7 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
     [[nodiscard]] constexpr bool on_asymmetric_failure(Ctx const&, cog::CogIdentity const& cog,
                                                        topology::FailureClass cls, std::uint64_t now_ns,
@@ -310,7 +338,7 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
     [[nodiscard]] constexpr bool record_recovery_probe(Ctx const&, cog::CogIdentity const& cog,
                                                        observe::ProbeOutcome outcome, std::uint64_t now_ns) noexcept {
@@ -338,7 +366,7 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
     [[nodiscard]] constexpr bool check_permanent_deadline(Ctx const&, cog::CogIdentity const& cog, std::uint64_t now_ns,
                                                           std::uint64_t sequence) noexcept {
@@ -358,10 +386,13 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    // The authority goes back to the caller with its own brand, so a
+    // caller holds one token across many overrides.
+    template <::foundation::effects::IsExecCtx Ctx, class Brand>
         requires CtxFitsQuarantineOverride<Ctx>
-    [[nodiscard]] constexpr safety::Permission<quarantine_tag::OperatorOverride>
-    operator_override(Ctx const&, safety::Permission<quarantine_tag::OperatorOverride>&& authority,
+    [[nodiscard]] constexpr ::foundation::permissions::Permission<quarantine_tag::OperatorOverride, Brand>
+    operator_override(Ctx const&,
+                      ::foundation::permissions::Permission<quarantine_tag::OperatorOverride, Brand>&& authority,
                       cog::CogIdentity const& cog, QuarantineState forced, std::uint64_t now_ns,
                       std::uint64_t sequence) noexcept {
         Slot* slot = find_or_insert(cog);
@@ -417,23 +448,27 @@ public:
     }
 };
 
-template <effects::IsExecCtx Ctx, std::size_t MaxCogs, std::size_t MaxEvents = MaxCogs * 4>
+template <std::size_t MaxCogs, std::size_t MaxEvents, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsQuarantineMint<Ctx>
-[[nodiscard]] constexpr QuarantinePolicy<MaxCogs, MaxEvents>
-mint_quarantine_policy(Ctx const&, QuarantineConfig config = {}) noexcept {
+[[nodiscard]] constexpr QuarantinePolicy<MaxCogs, MaxEvents> mint_quarantine_policy(Ctx const&,
+                                                                                    QuarantineConfig config) noexcept {
     return QuarantinePolicy<MaxCogs, MaxEvents>{config};
 }
 
-static_assert(safety::diag::is_diagnostic_class_v<QuarantineTransition>);
+static_assert(::foundation::diag::is_diagnostic_class_v<QuarantineTransition>);
 static_assert(std::is_trivially_copyable_v<QuarantineSnapshot>);
 static_assert(std::is_trivially_copyable_v<QuarantineEvent>);
 static_assert(sizeof(QuarantineEvent) <= 64);
-static_assert(CtxFitsQuarantineMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsQuarantineMint<effects::BgDrainCtx>);
-static_assert(CtxFitsQuarantineRecord<effects::BgDrainCtx>);
-static_assert(!CtxFitsQuarantineRecord<effects::HotFgCtx>);
-static_assert(CtxFitsQuarantineOverride<effects::ColdInitCtx>);
-static_assert(CtxFitsQuarantineOverride<effects::TestRunnerCtx>);
-static_assert(!CtxFitsQuarantineOverride<effects::BgDrainCtx>);
+static_assert(!std::is_default_constructible_v<QuarantinePolicy<2>>);
+static_assert(!std::is_constructible_v<QuarantinePolicy<2>, QuarantineConfig>,
+              "The constructor is private.  A policy comes only from mint_quarantine_policy.");
+static_assert(CtxFitsQuarantineMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsQuarantineMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsQuarantineRecord<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsQuarantineRecord<::fixy::HotFgCtx>);
+static_assert(!CtxFitsQuarantineRecord<::fixy::ColdInitCtx>);
+static_assert(CtxFitsQuarantineOverride<::fixy::ColdInitCtx>);
+static_assert(CtxFitsQuarantineOverride<::fixy::TestRunnerCtx>);
+static_assert(!CtxFitsQuarantineOverride<::fixy::BgDrainCtx>);
 
 }  // namespace crucible::warden

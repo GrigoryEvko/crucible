@@ -4604,27 +4604,48 @@ crucible_neg_compile_cog_test(neg_numa_nic_raw_node
     "could not convert .0. from .unsigned int."
     "to .crucible::cog::NumaNodeId.")
 
-# ─── HS14 fixtures for warden::Quarantine (GAPS-118 #1236) ────────
-#
-#   * neg_quarantine_mint_bg_ctx — only Init-row contexts mint the
-#     bounded policy carrier.
-#   * neg_quarantine_record_fg_ctx — hot foreground contexts cannot
-#     mutate quarantine state from health/probe facts.
-#   * neg_quarantine_override_missing_permission — operator override
-#     requires the explicit OperatorOverride Permission token.
-#   * neg_quarantine_zero_slots — policy state must have bounded slots.
+# warden/Quarantine.h, the quarantine policy of the Cogs.  Each fixture
+# pins the call or the class that is refused and the gate that refuses it.
+#   * mint_bg_ctx, mint_hot_fg_ctx: only a context that owns Init mints a
+#     policy.
+#   * direct_construct: the constructor is private, so the mint is the one
+#     door.
+#   * record_fg_ctx, record_init_ctx: only a context that owns Bg records a
+#     health, failure or probe fact.
+#   * override_bg_ctx, override_hot_fg_ctx: only a context that owns Init
+#     or Test forces a state.
+#   * override_missing_permission: a forced state needs the operator token.
+#   * zero_slots, zero_events: a policy has Cog slots and event slots.
 crucible_neg_compile_warden_test(neg_quarantine_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsQuarantineMint")
+    "no matching function for call to .mint_quarantine_policy<2>\\(fixy::BgDrainCtx\\)."
+    "required for the satisfaction of .CtxFitsQuarantineMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
+crucible_neg_compile_warden_test(neg_quarantine_mint_hot_fg_ctx
+    "no matching function for call to .mint_quarantine_policy<2>\\(const fixy::HotFgCtx&\\)."
+    "required for the satisfaction of .CtxFitsQuarantineMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
+crucible_neg_compile_warden_test(neg_quarantine_direct_construct
+    ".constexpr crucible::warden::QuarantinePolicy<MaxCogs, MaxEvents>::QuarantinePolicy\\(crucible::warden::QuarantineConfig\\) \\[with long unsigned int MaxCogs = 2. long unsigned int MaxEvents = 8\\]. is private within this context"
+    "declared private here")
 crucible_neg_compile_warden_test(neg_quarantine_record_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsQuarantineRecord")
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::on_health_event\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::topology::HealthSnapshot&, int\\)."
+    "required for the satisfaction of .CtxFitsQuarantineRecord<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
+crucible_neg_compile_warden_test(neg_quarantine_record_init_ctx
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::record_recovery_probe\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::observe::ProbeOutcome&, int\\)."
+    "required for the satisfaction of .CtxFitsQuarantineRecord<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
+crucible_neg_compile_warden_test(neg_quarantine_override_bg_ctx
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(fixy::BgDrainCtx, "
+    "required for the satisfaction of .CtxFitsQuarantineOverride<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
+crucible_neg_compile_warden_test(neg_quarantine_override_hot_fg_ctx
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(const fixy::HotFgCtx&, "
+    "required for the satisfaction of .CtxFitsQuarantineOverride<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_warden_test(neg_quarantine_override_missing_permission
-    "no matching function"
-    "operator_override|Permission")
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::warden::QuarantineState, int, int\\)."
+    "candidate expects 6 arguments, 5 provided")
 crucible_neg_compile_warden_test(neg_quarantine_zero_slots
-    "static assertion failed"
-    "QuarantinePolicy requires Cog slots|MaxCogs > 0")
+    "In instantiation of .class crucible::warden::QuarantinePolicy<0, 4>."
+    "static assertion failed: QuarantinePolicy requires Cog slots")
+crucible_neg_compile_warden_test(neg_quarantine_zero_events
+    "In instantiation of .class crucible::warden::QuarantinePolicy<2, 0>."
+    "static assertion failed: QuarantinePolicy requires audit-event slots")
 
 # ─── FIXY-U-084 §XXI Universal Mint Pattern for warden/ hubs ──────
 # Three new mints (mint_hardening / mint_hot_region_registry_handle /

@@ -61,6 +61,3 @@ include/crucible/cog/SrIov.h
 
 # ── topology/ ──────────────────────────────────────────────────
 include/crucible/topology/Telemetry.h
-
-# ── warden/ (1 file) ────────────────────────────────────────────
-include/crucible/warden/Quarantine.h

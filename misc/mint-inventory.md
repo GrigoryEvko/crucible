@@ -194,7 +194,7 @@ apply to the row.
 | `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
 | `mint_hardening` | `include/crucible/warden/Hardening.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
+| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 7 |
 
 ## include/fixy/
 
