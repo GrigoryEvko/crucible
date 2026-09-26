@@ -61,6 +61,9 @@ SYSCALLS = frozenset("""
     fsync fdatasync stat fstat lstat unlink rename mkdir rmdir fork vfork clone execve waitpid kill
     sigaction signal sigprocmask clock_gettime clock_settime nanosleep clock_nanosleep gettimeofday pipe pipe2 dup
     dup2 dup3 fcntl flock poll select pselect futex bpf getrandom getrlimit setrlimit chmod chown access faccessat
+    accept4 socketpair copy_file_range sendfile splice renameat renameat2 unlinkat linkat mkdirat fchmod fchown
+    ftruncate fallocate statx memfd_create mbind set_mempolicy get_mempolicy membarrier timerfd_create
+    sched_setscheduler sched_getscheduler setpriority getpriority getpid gettid
 """.split())
 # The names that no C++ identifier in this tree shares.  A syscall with an
 # ambiguous name (close, read, send, socket and the like) must be spelled
@@ -72,6 +75,9 @@ KERNEL_ONLY = frozenset("""
     writev fsync fdatasync fstat lstat unlink mkdir rmdir vfork execve waitpid sigaction sigprocmask
     clock_gettime clock_settime nanosleep clock_nanosleep gettimeofday pipe2 dup2 dup3 fcntl flock pselect futex
     bpf getrandom getrlimit setrlimit chmod chown faccessat
+    accept4 socketpair copy_file_range sendfile splice renameat renameat2 unlinkat linkat mkdirat fchmod fchown
+    ftruncate fallocate statx memfd_create mbind set_mempolicy get_mempolicy membarrier timerfd_create
+    sched_setscheduler sched_getscheduler setpriority getpriority getpid gettid
 """.split())
 assert KERNEL_ONLY <= SYSCALLS, "a kernel-only name is missing from SYSCALLS"
 
@@ -79,10 +85,10 @@ ROOTS = ("include", "src", "vessel")
 EXCLUDED = frozenset({"test", "bench", "examples", "third_party", "external", "vendor"})
 SUFFIXES = (".h", ".hh", ".hpp", ".cpp", ".cc", ".cxx", ".inl")
 ALLOWLIST = "scripts/syscall-capability-allowlist.txt"
-MARKER = re.compile(r"SYSCALL-CAP-OK:\s*\S")
+MARKER_WORD = "SYSCALL-CAP-OK"
+MARKER = re.compile(rf"{MARKER_WORD}:\s*\S")
 LEXICAL = re.compile(r"(?<![A-Za-z_0-9])::\s*(?P<global>[A-Za-z_]\w*)\s*\("
                      r"|(?<![A-Za-z_0-9:.>\s])(?<![A-Za-z_0-9:.>])\s*(?P<bare>[A-Za-z_]\w*)\s*\(")
-SYS_NAME = re.compile(r"\bSYS_([A-Za-z0-9_]+)")
 # The statements that bound where a marker comment counts.
 STATEMENTS = frozenset({"expression_statement", "return_statement", "declaration", "field_declaration",
                         "condition_clause", "init_statement", "for_range_loop", "throw_statement"})
@@ -99,8 +105,12 @@ class Site:
 
 
 def in_scope(rel: Path) -> bool:
-    """Return True when a path relative to the scan root is production code this guard reads."""
+    """Return True when a path relative to the scan root is production code this guard reads.
+
+    A file of tsast.UNPARSEABLE is not C++, so it is out of scope.
+    """
     return (rel.suffix in SUFFIXES and bool(rel.parts) and rel.parts[0] in ROOTS
+            and rel.as_posix() not in tsast.UNPARSEABLE
             and not any(part in EXCLUDED or part.startswith("build") for part in rel.parts[:-1]))
 
 
@@ -157,13 +167,42 @@ def lexical_names(text: str) -> list[tuple[int, str]]:
     return found
 
 
-def key_of(line: str) -> str:
-    """Return the content key of a source line: the text before its first //, trimmed."""
-    return line.split("//", 1)[0].strip()
+def key_of(lines: list[bytes], comments: list[tsast.Node], row: int) -> str:
+    """Return the content key of one row: its text with each comment node on it removed, trimmed.
+
+    A `//` inside a string literal is text, not a comment, so it stays in the
+    key.  Columns are byte offsets, as the parser reports them.
+    """
+    line = lines[row]
+    cuts = sorted((comment.start[1] if comment.start[0] == row else 0,
+                   comment.end[1] if comment.end[0] == row else len(line))
+                  for comment in comments if comment.start[0] <= row <= comment.end[0])
+    kept, position = bytearray(), 0
+    for first, last in cuts:
+        kept += line[position:max(position, first)]
+        position = max(position, last)
+    kept += line[position:]
+    return kept.decode("utf-8", "replace").strip()
 
 
-def scan(root: Path) -> tuple[list[Site], list[str]]:
-    """Find every unmarked syscall site under a scan root.
+def syscall_numbers(call: tsast.Node) -> set[str]:
+    """Return the x of each `SYS_x` identifier among the arguments of a call."""
+    arguments = call.child_by_field("arguments")
+    if arguments is None:
+        return set()
+    return {node.text[4:] for node in arguments.descendants("identifier") if node.text.startswith("SYS_")}
+
+
+@dataclass(frozen=True)
+class Marker:
+    """One marker comment that sits on no syscall site."""
+
+    path: str
+    line: int
+
+
+def scan(root: Path) -> tuple[list[Site], list[str], list[Marker]]:
+    """Find every unmarked syscall site and every dead marker under a scan root.
 
     Complexity: linear in the total size of the files in scope.
 
@@ -171,54 +210,50 @@ def scan(root: Path) -> tuple[list[Site], list[str]]:
         root: The scan root
 
     Returns:
-        The unmarked sites, and each parse failure
+        The unmarked sites, each parse failure, and each marker that exempts no site
     """
     sites: list[Site] = []
     failures: list[str] = []
+    dead: list[Marker] = []
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
-        source = tree.source.decode("utf-8", "replace")
-        lines = source.split("\n")
+        if tree.diagnostic is not None:
+            failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
+            continue
         # row -> syscall names, and row -> the rows its marker may sit on
         hits: dict[int, set[str]] = {}
         spans: dict[int, list[tuple[int, int]]] = {}
-        if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
+        for call in tree.find("call_expression"):
+            name = callee_name(call)
+            if name is None:
                 continue
-            for row, name in lexical_names(source):
+            callee = call.child_by_field("function")
+            row = callee.end[0] if callee is not None else call.start[0]
+            if name == "syscall":
+                hits.setdefault(row, set()).update(syscall_numbers(call) or {"syscall"})
+            else:
                 hits.setdefault(row, set()).add(name)
-                spans.setdefault(row, []).append((row, row))
-        else:
-            for call in tree.find("call_expression"):
-                name = callee_name(call)
-                if name is None:
-                    continue
-                callee = call.child_by_field("function")
-                row = callee.end[0] if callee is not None else call.start[0]
-                if name == "syscall":
-                    arguments = call.child_by_field("arguments")
-                    named = SYS_NAME.findall(arguments.text) if arguments is not None else []
-                    hits.setdefault(row, set()).update(named or ["syscall"])
-                else:
-                    hits.setdefault(row, set()).add(name)
-                spans.setdefault(row, []).append(statement_rows(call))
-            for body in tree.find("preproc_arg"):
-                for row, name in lexical_names(body.text):
-                    hits.setdefault(body.start[0] + row, set()).add(name)
-                    spans.setdefault(body.start[0] + row, []).append((body.start[0], body.end[0]))
-        comments: dict[int, list[str]] = {}
-        blanked, _ = blank(source)
-        for match in re.finditer(r"//[^\n]*|/\*.*?\*/", source, re.S):
-            # A match inside a literal is not a comment: the lexer blanked it.
-            if blanked[match.start()] == " ":
-                comments.setdefault(source.count("\n", 0, match.start()), []).append(match.group(0))
+            spans.setdefault(row, []).append(statement_rows(call))
+        for body in tree.find("preproc_arg"):
+            for row, name in lexical_names(body.text):
+                hits.setdefault(body.start[0] + row, set()).add(name)
+                spans.setdefault(body.start[0] + row, []).append((body.start[0], body.end[0]))
+        comments = list(tree.find("comment"))
+        lines = tree.source.split(b"\n")
+        markers: dict[int, list[tsast.Node]] = {}
+        for comment in comments:
+            if MARKER_WORD in comment.text:
+                markers.setdefault(comment.start[0], []).append(comment)
+        used: set[int] = set()
         for row in sorted(hits):
-            marked = any(MARKER.search(text) for first, last in spans[row]
-                         for probe in range(first, last + 1) for text in comments.get(probe, ()))
-            if not marked:
-                sites.append(Site(rel, row + 1, f"{rel}:{key_of(lines[row])}", frozenset(hits[row])))
-    return sites, failures
+            covering = [comment for first, last in spans[row] for probe in range(first, last + 1)
+                        for comment in markers.get(probe, ())]
+            used.update(comment.index for comment in covering)
+            if not any(MARKER.search(comment.text) for comment in covering):
+                sites.append(Site(rel, row + 1, f"{rel}:{key_of(lines, comments, row)}", frozenset(hits[row])))
+        dead.extend(Marker(rel, comment.line) for row in sorted(markers) for comment in markers[row]
+                    if comment.index not in used)
+    return sites, failures, dead
 
 
 def allowlist_keys(path: Path) -> list[str]:
@@ -245,7 +280,7 @@ def check(root: Path, emit: bool = False) -> int:
     Returns:
         0 clean, 1 on a violation or a parse failure, 2 on a stale entry
     """
-    sites, failures = scan(root)
+    sites, failures, dead = scan(root)
     keys = allowlist_keys(root / ALLOWLIST)
     admitted = set(keys)
     unlisted = [site for site in sites if site.key not in admitted]
@@ -272,7 +307,10 @@ def check(root: Path, emit: bool = False) -> int:
     for key in stale:
         print(f"SYSCALL-CAP stale: {key} — no live syscall call with this text in the file; remove the entry.",
               file=sys.stderr)
-    if stale:
+    for marker in dead:
+        print(f"SYSCALL-CAP dead marker: {marker.path}:{marker.line} — the {MARKER_WORD} comment sits on no "
+              f"syscall site, so it exempts nothing.  Delete it.", file=sys.stderr)
+    if stale or dead:
         return 2
     print("check-syscall-capability: clean — each syscall site is marked or listed, and no entry is stale.",
           file=sys.stderr)
@@ -332,6 +370,9 @@ def self_test() -> int:
         "inline bool probe() { if (::faccessat(0, nullptr, 0, 0) == 0)\n"                  # 33
         "    return true;  // SYSCALL-CAP-OK: marker on a one-statement body\n"            # 34
         "  return false; }\n"                                                              # 35
+        "inline long literal() { return ::write(1, \"a//b\", 3); }  // SYSCALL-CAP-OK: // in a literal\n"  # 36
+        "inline int nothing() { return 0; }  // SYSCALL-CAP-OK: a marker on no syscall\n"  # 37
+        "inline int widened() { return ::renameat2(0, nullptr, 0, nullptr, 0); }\n"        # 38
     )
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -344,20 +385,27 @@ def self_test() -> int:
         allow = root / ALLOWLIST
         allow.write_text("# fixture\nsrc/planted/Sys.cpp:inline int admitted() { return ::socket(2, 0, 0); }  "
                          "— effects::Init proof (fixture)\n", encoding="utf-8")
-        sites, broken = scan(root)
+        sites, broken, dead = scan(root)
         lines = {site.line for site in sites if site.path == "src/planted/Sys.cpp"}
         for line, label in ((2, "a global-scope call"), (9, "an unqualified kernel-only call"),
                             (10, "a call whose name and arguments span lines"), (12, "a raw syscall"),
                             (13, "a call in a macro body"), (22, "a marker with no reason"),
-                            (23, "a marker on a later statement"), (29, "a marker deeper in an if body")):
+                            (23, "a marker on a later statement"), (29, "a marker deeper in an if body"),
+                            (38, "a call of a syscall that the table gained with the dead-marker check")):
             expect(f"caught: {label}", line in lines)
         for line, label in ((4, "a marked call"), (6, "a call whose marker sits on its statement's last line"),
                             (14, "a line comment"), (15, "a block comment"), (16, "a string literal"),
                             (17, "a raw string"), (18, "a member function with a syscall's name"),
                             (19, "a declaration"), (20, "a member call"), (21, "a call through a namespace"),
                             (26, "a condition call marked on its body's opening line"),
-                            (33, "a condition call marked on its one-statement body")):
+                            (33, "a condition call marked on its one-statement body"),
+                            (36, "a marked call whose line holds // in a string literal")):
             expect(f"not caught: {label}", line not in lines, True)
+        dead_lines = {marker.line for marker in dead if marker.path == "src/planted/Sys.cpp"}
+        expect("a marker on a statement with no syscall is dead", 37 in dead_lines)
+        expect("a marker on a later statement or deeper in a body exempts nothing, so it is dead",
+               {24, 31} <= dead_lines)
+        expect("a marker that exempts a site is not dead", not dead_lines & {4, 7, 22, 27, 34, 36}, True)
         expect("a directory named test is out of scope", all(s.path != "src/test/Out.cpp" for s in sites), True)
         expect("the raw syscall names its SYS_ number",
                any(s.line == 12 and s.names == frozenset({"gettid"}) for s in sites))
