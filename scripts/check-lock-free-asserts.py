@@ -25,12 +25,14 @@ WHAT COUNTS AS AN ASSERT
     A static_assert of the file whose condition holds
     `<atomic of T>::is_always_lock_free`, alone or in a conjunction, with
     the same spellings as above.  One assert covers each atomic of the same
-    type in the file.  Two types match when their spellings match after
-    whitespace and a leading `std::` or `::std::` are removed.
+    type in the file.  Two types match when their spellings from the parse
+    tree match after a leading `std::` or `::std::` is removed, so white
+    space and comments inside a type do not matter.
 
 WHAT THE PARSER CANNOT READ
-    A macro body is raw text.  The guard lexes it with scripts/cxx_lex.py
-    and reports each `atomic<` or `atomic_ref<` in it, because a macro can
+    The type of an atomic in a macro body depends on the arguments of the
+    macro.  The guard reads the preprocessing tokens of each body and
+    reports each `atomic <` or `atomic_ref <` in it, because a macro can
     declare an atomic that the parser does not see.  A parse error in a
     file of the scope is a violation.
 
@@ -47,7 +49,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -56,18 +57,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 
 SCOPE = ("include/crucible/canopy", "include/crucible/cntp", "include/crucible/topology",
          "include/crucible/warden")
-SUFFIXES = (".h", ".hpp")
 ATOMIC_TEMPLATES = frozenset({"atomic", "atomic_ref"})
-# The standard aliases of std::atomic<T>, as alias name to T.
+# The standard aliases of std::atomic<T>, as alias name to T, spelled as
+# tsast.spelled spells a type: one space between two words.
 ATOMIC_ALIASES = {
-    "atomic_bool": "bool", "atomic_char": "char", "atomic_schar": "signedchar", "atomic_uchar": "unsignedchar",
-    "atomic_short": "short", "atomic_ushort": "unsignedshort", "atomic_int": "int", "atomic_uint": "unsignedint",
-    "atomic_long": "long", "atomic_ulong": "unsignedlong", "atomic_llong": "longlong",
-    "atomic_ullong": "unsignedlonglong", "atomic_char8_t": "char8_t", "atomic_char16_t": "char16_t",
+    "atomic_bool": "bool", "atomic_char": "char", "atomic_schar": "signed char", "atomic_uchar": "unsigned char",
+    "atomic_short": "short", "atomic_ushort": "unsigned short", "atomic_int": "int", "atomic_uint": "unsigned int",
+    "atomic_long": "long", "atomic_ulong": "unsigned long", "atomic_llong": "long long",
+    "atomic_ullong": "unsigned long long", "atomic_char8_t": "char8_t", "atomic_char16_t": "char16_t",
     "atomic_char32_t": "char32_t", "atomic_wchar_t": "wchar_t", "atomic_int8_t": "int8_t",
     "atomic_uint8_t": "uint8_t", "atomic_int16_t": "int16_t", "atomic_uint16_t": "uint16_t",
     "atomic_int32_t": "int32_t", "atomic_uint32_t": "uint32_t", "atomic_int64_t": "int64_t",
@@ -76,31 +76,41 @@ ATOMIC_ALIASES = {
     "atomic_uintmax_t": "uintmax_t",
 }
 LOCK_FREE_BY_DEFINITION = frozenset({"atomic_flag", "atomic_signed_lock_free", "atomic_unsigned_lock_free"})
-MARKER = re.compile(r"LOCK-FREE-OK:\s*\S")
-LEXICAL = re.compile(r"\batomic(?:_ref)?\s*<")
+MARKER = "LOCK-FREE-OK:"
 
 
-def normalize(text: str) -> str:
-    """Return a type spelling without whitespace and without a leading std qualifier."""
-    cleaned = re.sub(r"\s+", "", text)
+def normalize(node: tsast.Node) -> str:
+    """Return the spelling of a type from its tokens, without a leading std qualifier."""
+    cleaned = tsast.spelled(node)
     for prefix in ("::std::", "std::"):
         cleaned = cleaned.removeprefix(prefix)
     return cleaned
 
 
+def has_marker_reason(comment: tsast.Node) -> bool:
+    """Return True when a comment holds the marker followed by a reason that is not empty."""
+    text = comment.text
+    at = text.find(MARKER)
+    return at >= 0 and text[at + len(MARKER):].strip(" \t*/\n") != ""
+
+
 def qualifiers_before(node: tsast.Node) -> list[str]:
-    """Return the scope names that stand before a name or a scope in its qualified chain, outermost first."""
+    """Return the scope names that stand before a name or a scope in its qualified chain, outermost first.
+
+    Each scope is read as its leaf name, so a template scope gives its
+    template name and a decltype scope gives `?`.
+    """
     prefix: list[str] = []
     parent = node.parent
     if parent is None or parent.type != "qualified_identifier":
         return prefix
     if node.field == "name" and (scope := parent.child_by_field("scope")) is not None:
-        prefix.insert(0, scope.text.strip())
+        prefix.insert(0, tsast.leaf_name(scope) or "?")
     current = parent
     while current.field == "name" and current.parent is not None and current.parent.type == "qualified_identifier":
         scope = current.parent.child_by_field("scope")
         if scope is not None:
-            prefix.insert(0, scope.text.strip())
+            prefix.insert(0, tsast.leaf_name(scope) or "?")
         current = current.parent
     return prefix
 
@@ -122,7 +132,7 @@ def atomic_type(node: tsast.Node) -> str | None:
         if named is None or named.text not in ATOMIC_TEMPLATES or arguments is None or not std_or_bare(node):
             return None
         inner = [child for child in arguments.children if child.type != "comment"]
-        return normalize(inner[0].text) if len(inner) == 1 else None
+        return normalize(inner[0]) if len(inner) == 1 else None
     if node.type in ("type_identifier", "namespace_identifier") and node.text in ATOMIC_ALIASES \
             and std_or_bare(node):
         return ATOMIC_ALIASES[node.text]
@@ -151,13 +161,31 @@ def declaration_rows(node: tsast.Node) -> range:
     return range(top.start[0], top.end[0] + 1)
 
 
-def missing_in(tree: tsast.Tree) -> Iterator[tuple[int, str]]:
+def macro_atomics(body: tsast.MacroBody) -> Iterator[int]:
+    """Yield the row of each `atomic <` or `atomic_ref <` in the tokens of one macro body.
+
+    A comment and a string literal give no identifier token, so neither can
+    match.
+
+    Complexity: linear in the number of tokens of the body.
+    """
+    tokens = tsast.pp_tokens(body.text, body.first_row)
+    for index, token in enumerate(tokens[:-1]):
+        if token.kind == "identifier" and token.text in ATOMIC_TEMPLATES and tokens[index + 1].text == "<":
+            yield token.row
+
+
+def missing_in(tree: tsast.Tree, bodies: list[tsast.MacroBody]) -> Iterator[tuple[int, str]]:
     """Yield each atomic spelling of a parsed file whose type has no sibling assert, as (row, type).
 
     Complexity: linear in the number of nodes of the file.
+
+    Args:
+        tree: The parsed file
+        bodies: The macro bodies of the file
     """
     covered = asserted_types(tree)
-    marked = {node.start[0] for node in tree.find("comment") if MARKER.search(node.text)}
+    marked = {node.start[0] for node in tree.find("comment") if has_marker_reason(node)}
     for node in tree.find("template_type", "type_identifier"):
         if node.ancestor_of_type("static_assert_declaration") is not None:
             continue
@@ -167,37 +195,42 @@ def missing_in(tree: tsast.Tree) -> Iterator[tuple[int, str]]:
         if any(row in marked for row in declaration_rows(node)):
             continue
         yield node.start[0], value
-    for body in tree.find("preproc_arg"):
-        joined, joins = splice(body.text)
-        code, _ = blank(joined, blank_literals=True)
-        for match in LEXICAL.finditer(code):
-            row = body.start[0] + line_of(joined, joins, match.start()) - 1
+    for body in bodies:
+        for row in macro_atomics(body):
             if row not in marked:
                 yield row, "an atomic in a macro body"
 
 
 def scope_files(root: Path) -> list[Path]:
-    """Return the headers of the scope, sorted."""
+    """Return the C++ files of the scope, sorted."""
     found: list[Path] = []
     for top in SCOPE:
         base = root / top
         if base.is_dir():
-            found.extend(path for path in base.rglob("*") if path.is_file() and path.suffix in SUFFIXES)
+            found.extend(path for path in base.rglob("*")
+                         if path.is_file() and path.name.endswith(tsast.CPP_SUFFIXES))
     return sorted(found)
 
 
 def scan(root: Path) -> list[str]:
     """Find each atomic of the scope that has no sibling lock-free assert.
 
-    Complexity: linear in the total size of the headers in scope.
+    Complexity: linear in the total size of the files in scope.
     """
     violations: list[str] = []
+    trees: list[tsast.Tree] = []
     for tree in tsast.parse(scope_files(root), strict=False):
-        rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
+            rel = Path(tree.path).relative_to(root).as_posix()
             violations.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
-        for row, value in sorted(set(missing_in(tree))):
+        trees.append(tree)
+    bodies: dict[int, list[tsast.MacroBody]] = {}
+    for body in tsast.macro_bodies(trees):
+        bodies.setdefault(id(body.define.tree), []).append(body)
+    for tree in trees:
+        rel = Path(tree.path).relative_to(root).as_posix()
+        for row, value in sorted(set(missing_in(tree, bodies.get(id(tree), [])))):
             violations.append(f"{rel}:{row + 1}: std::atomic<{value}> has no sibling "
                               f"static_assert(std::atomic<{value}>::is_always_lock_free) in the file.")
     return violations
@@ -263,11 +296,22 @@ def self_test() -> int:
         ("    other::atomic<float> foreign_{};", False, "an atomic of another namespace"),
         ("    // std::atomic<double> in_comment_;", False, "a comment"),
         ('    const char* text = "std::atomic<double>";', False, "a string literal"),
+        ("    std::atomic<Twin</*k*/int, int>> commented_arg_{};", False,
+         "a comment inside a template argument of a covered type"),
+        ("    std::atomic<float> block_marked_{0};  /* LOCK-FREE-OK: */", True,
+         "a block comment marker with no reason"),
+        ("    std::atomic<unsigned int> spelled_{0};", False, "a type covered through the spelling of its alias"),
+        ("    std::atomic<long long> foreign_assert_{0};", True, "a type whose only assert names another atomic"),
         ("};", None, ""),
         ("#define ATOMIC_IN_MACRO(T) std::atomic<T> macro_field_", True, "a macro body"),
+        ("#define SPLIT_MACRO(T) std::atomic /* a comment */ <T> split_field_", True,
+         "a macro body that a block comment splits"),
         ("static_assert(std::atomic<std::uint64_t>::is_always_lock_free, \"covered\");", False, "the assert itself"),
         ("static_assert(::std::atomic<std::uint32_t>::is_always_lock_free && sizeof(int) == 4);", None, ""),
         ("static_assert(std::atomic_int64_t::is_always_lock_free);", None, ""),
+        ("static_assert(std::atomic<Twin<int, int>>::is_always_lock_free);", None, ""),
+        ("static_assert(std::atomic_uint::is_always_lock_free);", None, ""),
+        ("static_assert(other::atomic<long long>::is_always_lock_free);", None, ""),
         ("}", None, ""),
     ]
     with tempfile.TemporaryDirectory() as work:
