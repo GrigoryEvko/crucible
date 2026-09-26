@@ -4510,6 +4510,16 @@ crucible_neg_compile_ledger_test(neg_ledger_view_init_ctx_cannot_block
     "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsLedgerStore")
 
+# The host probe reads procfs and sysfs, so CtxFitsHostProbe admits a
+# context only when it owns IO and Block.  The foreground context owns
+# neither, and the startup context owns IO but not Block.
+crucible_neg_compile_ledger_test(neg_host_probe_hot_fg_ctx
+    "no matching function for call to .probe_host_facts\\(const fixy::HotFgCtx&\\)."
+    "required for the satisfaction of .CtxFitsHostProbe<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_ledger_test(neg_host_probe_init_ctx_cannot_block
+    "no matching function for call to .probe_competence\\(const fixy::ColdInitCtx&\\)."
+    "required for the satisfaction of .CtxFitsHostProbe<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
+
 # ─── #67 ledger/RefreshDaemon.h HS14 fixtures ─────────────────────
 #
 # Three fixtures pinning the three conjuncts of CtxFitsRefreshDaemon

@@ -69,8 +69,12 @@ namespace {
 
 // ── Fingerprint ───────────────────────────────────────────────────────
 
+// The probes read procfs and sysfs, so they take a context that admits IO
+// and Block.  The test runner context admits both.
+constexpr ::fixy::TestRunnerCtx probe_ctx{::foundation::effects::testing::test()};
+
 void test_fingerprint_is_stable_and_complete() {
-    const ledger::HostFacts facts = ledger::probe_host_facts();
+    const ledger::HostFacts facts = ledger::probe_host_facts(probe_ctx);
     const ledger::HostFingerprint first = ledger::fold_fingerprint(facts);
     const ledger::HostFingerprint second = ledger::fold_fingerprint(facts);
 
@@ -81,13 +85,13 @@ void test_fingerprint_is_stable_and_complete() {
 
     // A re-probe of an unchanged host must land on the same key too.
     // This is the property the whole cache rests on.
-    assert(ledger::probe_host_fingerprint() == first);
+    assert(ledger::probe_host_fingerprint(probe_ctx) == first);
 
     std::printf("  test_fingerprint_is_stable_and_complete:   PASSED\n");
 }
 
 void test_fingerprint_halves_are_independent() {
-    ledger::HostFacts facts = ledger::probe_host_facts();
+    ledger::HostFacts facts = ledger::probe_host_facts(probe_ctx);
     const ledger::HostFingerprint baseline = ledger::fold_fingerprint(facts);
 
     // A microcode roll is a hardware change: it can make an instruction
@@ -129,7 +133,7 @@ void test_fingerprint_reuses_the_cogmimic_projection() {
     // The stable half must move when the CogMimic caps class moves. If it
     // did not, two Cogs that CogMimic considers binary-incompatible could
     // share ledger entries, which is the drift this reuse exists to stop.
-    const ledger::HostFacts facts = ledger::probe_host_facts();
+    const ledger::HostFacts facts = ledger::probe_host_facts(probe_ctx);
     const cog::CpuSocketTargetCaps socket = ledger::to_socket_caps(facts);
 
     cog::CpuSocketTargetCaps other = socket;

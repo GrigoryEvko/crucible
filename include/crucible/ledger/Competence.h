@@ -25,6 +25,7 @@
 #include <crucible/ledger/HostFingerprint.h>
 #include <fixy/Bits.h>
 #include <fixy/concurrent/Topology.h>
+#include <foundation/effects/Ctx.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -174,26 +175,34 @@ static_assert(std::is_trivially_copyable_v<CompetenceReport>);
     return std::string_view{into.data(), written};
 }
 
+// Each probe below reads procfs or sysfs, so each takes a context that
+// admits the read, the gate of HostFingerprint.h.
 namespace competence_detail {
 
 // The set of CPUs the kernel currently has online, as a sorted list.
-[[nodiscard]] inline std::vector<int> read_online_cpus() noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline std::vector<int> read_online_cpus(Ctx const& ctx) noexcept {
     fingerprint_detail::SmallFileBuffer buffer{};
     return ::fixy::concurrent::topology_detail::parse_cpu_list_(
-        fingerprint_detail::read_small_file("/sys/devices/system/cpu/online", buffer));
+        fingerprint_detail::read_small_file(ctx, "/sys/devices/system/cpu/online", buffer));
 }
 
-[[nodiscard]] inline std::vector<int> read_isolated_cpus() noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline std::vector<int> read_isolated_cpus(Ctx const& ctx) noexcept {
     fingerprint_detail::SmallFileBuffer buffer{};
     return ::fixy::concurrent::topology_detail::parse_cpu_list_(
-        fingerprint_detail::read_small_file("/sys/devices/system/cpu/isolated", buffer));
+        fingerprint_detail::read_small_file(ctx, "/sys/devices/system/cpu/isolated", buffer));
 }
 
 // The one-minute load average, scaled by 1000 so the report stays integral
 // and so a stored entry has no float to round differently on read-back.
-[[nodiscard]] inline std::uint32_t read_load_average_milli() noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline std::uint32_t read_load_average_milli(Ctx const& ctx) noexcept {
     fingerprint_detail::SmallFileBuffer buffer{};
-    const std::string_view loadavg = fingerprint_detail::read_small_file("/proc/loadavg", buffer);
+    const std::string_view loadavg = fingerprint_detail::read_small_file(ctx, "/proc/loadavg", buffer);
     if (loadavg.empty()) {
         return 0u;
     }
@@ -214,9 +223,12 @@ namespace competence_detail {
     return static_cast<std::uint32_t>(std::min<std::uint64_t>(milli, 0xFFFFFFFFull));
 }
 
-[[nodiscard]] inline std::int32_t read_perf_event_paranoid() noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline std::int32_t read_perf_event_paranoid(Ctx const& ctx) noexcept {
     fingerprint_detail::SmallFileBuffer buffer{};
-    const std::string_view text = fingerprint_detail::read_small_file("/proc/sys/kernel/perf_event_paranoid", buffer);
+    const std::string_view text =
+        fingerprint_detail::read_small_file(ctx, "/proc/sys/kernel/perf_event_paranoid", buffer);
     if (text.empty()) {
         // Absent means the subsystem is not built in, which is at least as
         // restrictive as the highest setting.
@@ -234,15 +246,17 @@ namespace competence_detail {
 // still online. Any non-zero count means the isolated core is not actually
 // alone: its sibling can be scheduled onto at any moment and will contend
 // for the same front end.
-[[nodiscard]] inline std::uint32_t count_online_siblings_of(std::span<const int> isolated,
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline std::uint32_t count_online_siblings_of(Ctx const& ctx, std::span<const int> isolated,
                                                             std::span<const int> online) noexcept {
     std::uint32_t contended = 0;
     char path[160]{};
     for (const int isolated_cpu : isolated) {
         std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", isolated_cpu);
         fingerprint_detail::SmallFileBuffer buffer{};
-        const std::vector<int> siblings =
-            ::fixy::concurrent::topology_detail::parse_cpu_list_(fingerprint_detail::read_small_file(path, buffer));
+        const std::vector<int> siblings = ::fixy::concurrent::topology_detail::parse_cpu_list_(
+            fingerprint_detail::read_small_file(ctx, path, buffer));
         for (const int sibling : siblings) {
             if (sibling == isolated_cpu) {
                 continue;
@@ -258,13 +272,15 @@ namespace competence_detail {
 // True when every cpufreq policy names the performance governor. A host
 // with no cpufreq at all answers false, which is the conservative reading:
 // absence of evidence that the clock is pinned is not evidence that it is.
-[[nodiscard]] inline bool all_policies_are_performance() noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline bool all_policies_are_performance(Ctx const& ctx) noexcept {
     char path[160]{};
     bool saw_any_policy = false;
     for (unsigned policy_index = 0; policy_index < 256u; ++policy_index) {
         std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpufreq/policy%u/scaling_governor", policy_index);
         fingerprint_detail::SmallFileBuffer buffer{};
-        const std::string_view governor = fingerprint_detail::read_small_file(path, buffer);
+        const std::string_view governor = fingerprint_detail::read_small_file(ctx, path, buffer);
         if (governor.empty()) {
             break;
         }
@@ -323,23 +339,25 @@ namespace competence_detail {
     return defects;
 }
 
-[[nodiscard]] inline CompetenceReport probe_competence() noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline CompetenceReport probe_competence(Ctx const& ctx) noexcept {
     const ::fixy::concurrent::Topology::Snapshot topology = ::fixy::concurrent::Topology::instance().snapshot();
-    const std::vector<int> isolated = competence_detail::read_isolated_cpus();
-    const std::vector<int> online = competence_detail::read_online_cpus();
+    const std::vector<int> isolated = competence_detail::read_isolated_cpus(ctx);
+    const std::vector<int> online = competence_detail::read_online_cpus(ctx);
 
     CompetenceReport report{};
     report.isolated_core_count = static_cast<std::uint32_t>(isolated.size());
-    report.online_sibling_count = competence_detail::count_online_siblings_of(isolated, online);
-    report.load_average_milli = competence_detail::read_load_average_milli();
+    report.online_sibling_count = competence_detail::count_online_siblings_of(ctx, isolated, online);
+    report.load_average_milli = competence_detail::read_load_average_milli(ctx);
     report.allowed_cpu_count = static_cast<std::uint32_t>(topology.process_cpu_count);
     report.machine_cpu_count = static_cast<std::uint32_t>(topology.num_smt_threads);
-    report.perf_event_paranoid = competence_detail::read_perf_event_paranoid();
-    report.governor_is_performance = competence_detail::all_policies_are_performance();
+    report.perf_event_paranoid = competence_detail::read_perf_event_paranoid(ctx);
+    report.governor_is_performance = competence_detail::all_policies_are_performance(ctx);
 
     // Read from the same place the fingerprint's policy half reads, so the
     // two never disagree about what the clock is doing.
-    const HostFacts facts = probe_host_facts();
+    const HostFacts facts = probe_host_facts(ctx);
     report.scaling_min_freq_khz = facts.scaling_min_freq_khz;
     report.scaling_max_freq_khz = facts.scaling_max_freq_khz;
 

@@ -228,8 +228,8 @@ struct RefreshDaemonConfig {
 class RefreshDaemon {
 public:
     // The daemon keeps the background context that its mint hands to it.  The
-    // commit in run_one_cycle acts under that context, so the daemon never
-    // holds more authority than the caller that started it.
+    // probe and the commit in run_one_cycle act under that context, so the
+    // daemon never holds more authority than the caller that started it.
     RefreshDaemon(::foundation::effects::Bg const& bg, RefreshDaemonConfig config, HostFacts facts,
                   HostFingerprint fingerprint, Ledger seed) noexcept
         : bg_{bg}, config_{config}, facts_{facts}, fingerprint_{fingerprint}, working_{std::move(seed)} {
@@ -322,7 +322,8 @@ public:
             return report;
         }
 
-        const CompetenceReport competence = probe_competence();
+        const LedgerIoCtx io_ctx{bg_};
+        const CompetenceReport competence = probe_competence(io_ctx);
         // The seed came either from seed_ledger, which stamps this
         // fingerprint, or from load_ledger, which refuses a file whose
         // record disagrees with the name it was found under. A mismatch
@@ -337,7 +338,6 @@ public:
         CycleReport report = refresh_when_fit(working_, config_.wanted, config_.registry, competence, now);
 
         if (report.result == CycleResult::Admitted) {
-            const LedgerIoCtx io_ctx{bg_};
             if (!commit_ledger(io_ctx, working_).has_value()) {
                 report.result = CycleResult::CommitFailed;
             }
@@ -425,9 +425,9 @@ template <::foundation::effects::IsExecCtx Ctx>
     // pause on a host that cannot measure, and there is no safe way to
     // continue from it.
     pre(config.schedule.is_well_formed()) pre(!config.registry.empty()) {
-    const HostFacts facts = probe_host_facts();
+    const HostFacts facts = probe_host_facts(ctx);
     const HostFingerprint fingerprint = fold_fingerprint(facts);
-    const CompetenceReport competence = probe_competence();
+    const CompetenceReport competence = probe_competence(ctx);
 
     // Start from what is on disk for this fingerprint, or from a clean
     // ledger carrying this host's identity. A fingerprint change is never

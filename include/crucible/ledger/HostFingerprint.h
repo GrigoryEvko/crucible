@@ -35,11 +35,15 @@
 // check-detsafe-ledger.py asserts the include closure stays disjoint.
 
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/concurrent/_Topology.h>
-#include <crucible/handles/_FileHandle.h>
 #include <crucible/mimic/CogMimic.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Bits.h>
+#include <fixy/Ctx.h>
+#include <fixy/Path.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <fixy/concurrent/Topology.h>
+#include <fixy/os/Fs.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Hash.h>
 
 #if defined(__aarch64__)
@@ -53,6 +57,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -101,10 +106,16 @@ static_assert(std::is_trivially_copyable_v<HostFingerprint>);
 // ── Small text reads ──────────────────────────────────────────────────
 //
 // Everything the probe needs sits in procfs or sysfs as a short text
-// file. The read goes through safety::open_read / read_full rather than
-// a file stream: the descriptor surface is already covered by the
-// syscall-capability allowlist, it never throws, and the bound is
-// explicit. A failure yields an empty view, which folds as absence.
+// file. The read goes through fixy::fs::mint_file and read_full rather
+// than a file stream: the open and the read can park the caller on the
+// kernel, so they take a context that admits IO and Block, they never
+// throw, and the bound is explicit. A failure yields an empty view, which
+// folds as absence.
+
+// The gate of every probe that reads a file: the context must admit the
+// read-only open of fixy::fs.
+template <class Ctx>
+concept CtxFitsHostProbe = ::fixy::fs::CtxFitsFileMint<Ctx, ::fixy::fs::read_only>;
 
 namespace fingerprint_detail {
 
@@ -113,16 +124,28 @@ inline constexpr std::size_t kSmallFileBytes = 4096;
 using SmallFileBuffer = std::array<char, kSmallFileBytes>;
 
 // Reads at most kSmallFileBytes and trims trailing whitespace. The view
-// borrows `into`, so `into` must outlive every use of the result.
-[[nodiscard]] inline std::string_view read_small_file(const char* path, SmallFileBuffer& into) noexcept {
-    auto opened = safety::open_read(path);
+// borrows `into`, so `into` must outlive every use of the result. The
+// path is a literal or a literal with a number in it, and it still takes
+// the traversal check, because that check is the one way to a path the
+// open accepts.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline std::string_view read_small_file(Ctx const& ctx, const char* path, SmallFileBuffer& into) noexcept {
+    auto sanitized =
+        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{path}));
+    if (!sanitized.has_value()) {
+        return {};
+    }
+    auto opened = ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*sanitized));
     if (!opened.has_value()) {
         return {};
     }
+    const ::fixy::fs::OwnedFd file = std::move(*opened).consume();
     // as_writable_bytes rather than a pointer cast: reinterpret_cast is
     // banned tree-wide, and the span form carries the bound along with the
     // retyping instead of re-deriving it.
-    auto filled = safety::read_full(*opened, std::as_writable_bytes(std::span<char>{into.data(), into.size() - 1u}));
+    auto filled =
+        ::fixy::fs::read_full(ctx, file, std::as_writable_bytes(std::span<char>{into.data(), into.size() - 1u}));
     if (!filled.has_value()) {
         return {};
     }
@@ -250,7 +273,7 @@ struct HostFacts {
     // Zero on a host with no scalable vector unit.
     std::uint16_t sve_vector_length_bits = 0;
 
-    safety::Bits<cog::CpuFeature> isa_features{};
+    ::fixy::Bits<cog::CpuFeature> isa_features{};
 
     // ── Volatile: operator policy ──
     std::uint64_t governor_digest = 0;  // folded over every cpufreq policy
@@ -277,8 +300,8 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
 // compiled for, which is the distinction that matters: a binary built for
 // x86-64-v3 running on a v4 part must still learn that AVX-512 exists.
 
-[[nodiscard]] inline safety::Bits<cog::CpuFeature> probe_isa_features() noexcept {
-    safety::Bits<cog::CpuFeature> features{};
+[[nodiscard]] inline ::fixy::Bits<cog::CpuFeature> probe_isa_features() noexcept {
+    ::fixy::Bits<cog::CpuFeature> features{};
 #if defined(__x86_64__) || defined(__i386__)
     if (__builtin_cpu_supports("avx2")) features.set(cog::CpuFeature::Avx2);
     if (__builtin_cpu_supports("avx512f")) features.set(cog::CpuFeature::Avx512);
@@ -331,12 +354,14 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
 // Bits, not bytes: the vector-length register is specified in bits and
 // reporting it in the unit the architecture uses removes one conversion
 // from every comparison. Zero when the host has no scalable vector unit.
-[[nodiscard]] inline std::uint16_t probe_sve_vector_length_bits() noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline std::uint16_t probe_sve_vector_length_bits([[maybe_unused]] Ctx const& ctx) noexcept {
 #if defined(__aarch64__)
     fingerprint_detail::SmallFileBuffer buffer{};
     // The kernel reports the default length in BYTES.
     const std::string_view text =
-        fingerprint_detail::read_small_file("/proc/sys/abi/sve_default_vector_length", buffer);
+        fingerprint_detail::read_small_file(ctx, "/proc/sys/abi/sve_default_vector_length", buffer);
     const std::uint64_t bytes = fingerprint_detail::parse_unsigned(text, 0u);
     if (bytes == 0u || bytes > 256u) {
         return 0u;
@@ -349,14 +374,17 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
 
 // ── The probe ─────────────────────────────────────────────────────────
 
-[[nodiscard]] inline HostFacts probe_host_facts() noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline HostFacts probe_host_facts(Ctx const& ctx) noexcept {
     namespace probe = fingerprint_detail;
+    using ::fixy::concurrent::Topology;
 
     HostFacts facts{};
-    const concurrent::Topology::Snapshot topology = concurrent::Topology::instance().snapshot();
+    const Topology::Snapshot topology = Topology::instance().snapshot();
 
-    probe::copy_into(facts.cpu_vendor, concurrent::Topology::instance().cpu_vendor());
-    probe::copy_into(facts.cpu_model, concurrent::Topology::instance().cpu_model_name());
+    probe::copy_into(facts.cpu_vendor, Topology::instance().cpu_vendor());
+    probe::copy_into(facts.cpu_model, Topology::instance().cpu_model_name());
 
     facts.l1d_bytes = static_cast<std::uint32_t>(topology.l1d_per_core_bytes);
     facts.l1i_bytes = static_cast<std::uint32_t>(topology.l1i_per_core_bytes);
@@ -367,8 +395,8 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
     facts.hw_thread_count = static_cast<std::uint16_t>(topology.num_smt_threads);
     facts.numa_node_count = static_cast<std::uint8_t>(topology.numa_nodes);
     facts.page_size_bytes = static_cast<std::uint32_t>(topology.page_size_bytes);
-    facts.l3_instance_count = static_cast<std::uint16_t>(concurrent::Topology::instance().l3_groups().size());
-    facts.was_probed_from_sysfs = (topology.source == concurrent::Topology::Source::Sysfs);
+    facts.l3_instance_count = static_cast<std::uint16_t>(Topology::instance().l3_groups().size());
+    facts.was_probed_from_sysfs = (topology.source == Topology::Source::Sysfs);
 
     // The full matrix, not just the node count: two hosts with four nodes
     // each can have different hop costs, and a verdict about a remote
@@ -379,7 +407,7 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
         for (int from_node = 0; from_node < node_count; ++from_node) {
             for (int to_node = 0; to_node < node_count; ++to_node) {
                 const std::uint64_t distance =
-                    static_cast<std::uint64_t>(concurrent::Topology::instance().numa_distance(from_node, to_node));
+                    static_cast<std::uint64_t>(Topology::instance().numa_distance(from_node, to_node));
                 accumulator = probe::mix(accumulator, distance);
             }
         }
@@ -387,7 +415,7 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
     }
 
     facts.isa_features = probe_isa_features();
-    facts.sve_vector_length_bits = probe_sve_vector_length_bits();
+    facts.sve_vector_length_bits = probe_sve_vector_length_bits(ctx);
 
     // Stepping and microcode come from procfs. A microcode roll can change
     // which instruction is fast without changing anything else the probe
@@ -395,7 +423,7 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
     // update most likely to invalidate it.
     {
         probe::SmallFileBuffer buffer{};
-        const std::string_view cpuinfo = probe::read_small_file("/proc/cpuinfo", buffer);
+        const std::string_view cpuinfo = probe::read_small_file(ctx, "/proc/cpuinfo", buffer);
         facts.cpu_family =
             static_cast<std::uint32_t>(probe::parse_unsigned(probe::procfs_field(cpuinfo, "cpu family"), 0u));
         facts.cpu_model_number =
@@ -425,7 +453,7 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
         for (unsigned policy_index = 0; policy_index < 256u; ++policy_index) {
             std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpufreq/policy%u/scaling_governor",
                           policy_index);
-            const std::string_view governor = probe::read_small_file(path, buffer);
+            const std::string_view governor = probe::read_small_file(ctx, path, buffer);
             if (governor.empty()) {
                 // Policy numbering is dense from zero, so the first gap is
                 // the end. A host with no cpufreq at all leaves the seeds
@@ -438,15 +466,15 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
             std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpufreq/policy%u/energy_performance_preference",
                           policy_index);
             epp_accumulator =
-                probe::mix(epp_accumulator, probe::fold_bytes(probe::read_small_file(path, field_buffer)));
+                probe::mix(epp_accumulator, probe::fold_bytes(probe::read_small_file(ctx, path, field_buffer)));
 
             std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpufreq/policy%u/scaling_min_freq",
                           policy_index);
-            min_freq = std::max(min_freq, probe::parse_unsigned(probe::read_small_file(path, field_buffer), 0u));
+            min_freq = std::max(min_freq, probe::parse_unsigned(probe::read_small_file(ctx, path, field_buffer), 0u));
 
             std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpufreq/policy%u/scaling_max_freq",
                           policy_index);
-            max_freq = std::max(max_freq, probe::parse_unsigned(probe::read_small_file(path, field_buffer), 0u));
+            max_freq = std::max(max_freq, probe::parse_unsigned(probe::read_small_file(ctx, path, field_buffer), 0u));
         }
         facts.governor_digest = governor_accumulator;
         facts.epp_digest = epp_accumulator;
@@ -458,9 +486,9 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
         probe::SmallFileBuffer enabled_buffer{};
         probe::SmallFileBuffer defrag_buffer{};
         const std::string_view enabled =
-            probe::read_small_file("/sys/kernel/mm/transparent_hugepage/enabled", enabled_buffer);
+            probe::read_small_file(ctx, "/sys/kernel/mm/transparent_hugepage/enabled", enabled_buffer);
         const std::string_view defrag =
-            probe::read_small_file("/sys/kernel/mm/transparent_hugepage/defrag", defrag_buffer);
+            probe::read_small_file(ctx, "/sys/kernel/mm/transparent_hugepage/defrag", defrag_buffer);
         facts.thp_digest = probe::mix(probe::fold_bytes(enabled), probe::fold_bytes(defrag));
     }
 
@@ -468,14 +496,14 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
         probe::SmallFileBuffer isolated_buffer{};
         probe::SmallFileBuffer nohz_buffer{};
         facts.isolated_cpu_digest =
-            probe::fold_bytes(probe::read_small_file("/sys/devices/system/cpu/isolated", isolated_buffer));
+            probe::fold_bytes(probe::read_small_file(ctx, "/sys/devices/system/cpu/isolated", isolated_buffer));
         facts.nohz_full_digest =
-            probe::fold_bytes(probe::read_small_file("/sys/devices/system/cpu/nohz_full", nohz_buffer));
+            probe::fold_bytes(probe::read_small_file(ctx, "/sys/devices/system/cpu/nohz_full", nohz_buffer));
     }
 
     {
         probe::SmallFileBuffer buffer{};
-        const std::string_view control = probe::read_small_file("/sys/devices/system/cpu/smt/control", buffer);
+        const std::string_view control = probe::read_small_file(ctx, "/sys/devices/system/cpu/smt/control", buffer);
         if (control == "off") {
             facts.smt_control = 1u;
         } else if (control == "on") {
@@ -505,7 +533,7 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
     core.l1d_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l1d_bytes);
     core.l1i_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l1i_bytes);
     core.l2_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l2_bytes);
-    core.features = ::fixy::Bits<cog::CpuFeature>::from_raw(facts.isa_features.raw());
+    core.features = facts.isa_features;
 
     cog::CpuSocketTargetCaps socket{};
     socket.core_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.physical_core_count);
@@ -513,7 +541,7 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
     socket.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(facts.l3_total_bytes);
     socket.numa_node_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint8_t>(facts.numa_node_count);
     socket.representative_core = core;
-    socket.features = ::fixy::Bits<cog::CpuFeature>::from_raw(facts.isa_features.raw());
+    socket.features = facts.isa_features;
     return socket;
 }
 
@@ -579,7 +607,11 @@ static_assert(std::is_trivially_copyable_v<HostFacts>);
     return HostFingerprint{.hardware = fold_hardware(facts), .policy = fold_policy(facts)};
 }
 
-[[nodiscard]] inline HostFingerprint probe_host_fingerprint() noexcept { return fold_fingerprint(probe_host_facts()); }
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline HostFingerprint probe_host_fingerprint(Ctx const& ctx) noexcept {
+    return fold_fingerprint(probe_host_facts(ctx));
+}
 
 // Why a stored entry no longer applies. The caller wants the distinction:
 // a hardware change means discard, a policy change means the operator
@@ -624,6 +656,13 @@ enum class FingerprintMatch : std::uint8_t {
 }
 
 namespace fingerprint_detail::self_test {
+
+// A probe reads files, so the context must admit IO and Block.  The
+// startup context admits IO without Block, and the foreground admits
+// nothing.
+static_assert(CtxFitsHostProbe<::fixy::BgLoadCtx> && CtxFitsHostProbe<::fixy::TestRunnerCtx>);
+static_assert(!CtxFitsHostProbe<::fixy::ColdInitCtx> && !CtxFitsHostProbe<::fixy::HotFgCtx>);
+static_assert(!CtxFitsHostProbe<int>);
 
 inline constexpr HostFingerprint s_unset{};
 static_assert(!s_unset.is_complete());

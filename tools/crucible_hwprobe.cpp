@@ -295,9 +295,9 @@ int main(int argc, char** argv) {
     // the background door, and scripts/ctx-bg-door-allowlist.txt lists it.
     constexpr ledger::LedgerIoCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
 
-    const ledger::HostFacts facts = ledger::probe_host_facts();
+    const ledger::HostFacts facts = ledger::probe_host_facts(ctx);
     const ledger::HostFingerprint fingerprint = ledger::fold_fingerprint(facts);
-    const CompetenceReport competence = ledger::probe_competence();
+    const CompetenceReport competence = ledger::probe_competence(ctx);
 
     print_host(facts, fingerprint, competence);
 

@@ -78,7 +78,6 @@ include/crucible/cntp/_wip/Wireguard.h
 include/crucible/cntp/dataplane/TcEbpf.h
 include/crucible/cog/NicConfig.h
 include/crucible/cog/SrIov.h
-include/crucible/ledger/HostFingerprint.h
 include/crucible/mimic/Semaphore.h
 include/crucible/topology/Pingmesh.h
 include/crucible/topology/Ptp.h

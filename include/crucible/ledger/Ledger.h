@@ -173,7 +173,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLedgerStore<Ctx>
 [[nodiscard]] inline LedgerView mint_ledger_view(  // MINT-PATTERN-OK: allocating
     Ctx const& ctx) noexcept {
-    return mint_ledger_view(ctx, probe_host_fingerprint());
+    return mint_ledger_view(ctx, probe_host_fingerprint(ctx));
 }
 
 // ── The write side, and the seam for #67 ──────────────────────────────
