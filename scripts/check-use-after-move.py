@@ -7,15 +7,15 @@ After `std::move(x)`, `std::forward<T>(x)`, `std::move_if_noexcept(x)`,
 `std::forward_like<T>(x)` or `static_cast<T&&>(x)`, the name `x` is spent.
 The qualifier of the callee does not matter, so `move(x)` after a
 using-declaration and `alias::move(x)` after a namespace alias are moves too.
-A macro may not move or forward at all: the walk reads the source with the
-preprocessor lines removed, so each use of such a macro would hide a move.  A later read of `x`, a second move of `x`, or a member
-of `x` is a use after move, unless an assignment to `x` comes first.  The
-guard checks each path through a function body: a move in one branch of
-an `if` does not spend the name in the other branch, a move that is
-followed by a return spends nothing after it, and a move inside a loop
-spends the name on the next iteration unless the loop declares or assigns
-the name again.  The guard reports the first use after each move, because
-the next uses of the same move are the same defect.
+A macro may not move or forward at all, because each use of such a macro
+would hide a move.  A later read of `x`, a second move of `x`, or a member of
+`x` is a use after move, unless an assignment to `x` comes first.  The guard
+checks each path through a function body: a move in one branch of an `if`
+does not spend the name in the other branch, a move that is followed by a
+return spends nothing after it, and a move inside a loop spends the name on
+the next iteration unless the loop declares or assigns the name again.  The
+guard reports the first use after each move, because the next uses of the
+same move are the same defect.
 
 Why
 ---
@@ -32,12 +32,12 @@ a defect, and a linear type is the case where the defect is silent.
 
 How it reads the source
 -----------------------
-The guard reads the tokens of each file after scripts/cxx_lex.py blanks
-the comments and the literals.  It finds each function body, each lambda
-body and each member-initializer list, and it walks the statements of a
-body as a control-flow tree: blocks, if and else, switch and case, the
-loops, try and catch, return, throw, break, continue and goto.  The
-state at each point is the set of names that may be spent.  Two paths
+The guard reads the parse tree of each file (scripts/tsast.py, the pinned
+tree-sitter kit).  It walks each function body, each lambda body and each
+member-initializer list as a control-flow tree: blocks, if and else, switch
+and case, the loops, try and catch, return, throw, break, continue and goto.
+The arms of a preprocessor conditional are two paths, so their states join.
+The state at each point is the set of names that may be spent.  Two paths
 join by union, so a name that one path spends stays spent after the join.
 
 A key is a name or a member path (a.b, a->b).  A move of a spends a and
@@ -51,12 +51,14 @@ from it twice, as it does for a loop.  An assignment through a[i] refills
 nothing, because it need not refill the spent element.  a.at(0) keys as a[0],
 a range for reads its range as a[*], and std::get<I>(t) keys as t[I].  A
 reference `T& r = x;` keys as x, so a move of r spends x, and a structured
-binding `auto& [b] = obj;` keys as obj.  An assignment to a key, or reset, clear, emplace or assign
-on it, restores it.  A declaration restores its name in the scope that
-declares it.  Uses in unevaluated operands (sizeof, alignof, decltype,
-noexcept, typeid, requires, static_assert) are not uses.
+binding `auto& [b] = obj;` keys as obj.  An assignment to a key, or reset,
+clear, emplace or assign on it, restores it.  A declaration restores its
+name in the scope that declares it.  Uses in unevaluated operands (sizeof,
+alignof, decltype, noexcept, typeid, requires, static_assert, a reflection)
+are not uses.
 
-Four shapes leave a name whole, and the self-test holds each one:
+Five shapes leave a name or its members whole, and the self-test holds each
+one:
 - A call whose name starts with try_ leaves its argument whole when it
   fails.  std::map::try_emplace states this rule.  So in
   `while (!ring.try_push(std::move(v)))` the loop body sees v live, and
@@ -68,6 +70,10 @@ Four shapes leave a name whole, and the self-test holds each one:
   is a move of other can only be a base, because C cannot hold a member of
   type C.  The base moves only its own subobject, so the next initializers
   can read other.member.  The body sees other as spent.
+- In a move assignment C& operator=(C&& other), a statement that is only
+  Base::operator=(std::move(other)) assigns a base, for the same reason.
+  The next statements can read other.member, and a later use of other as
+  a whole is a use after move.
 - static_cast<T&&>(x) for a scalar T, such as int, leaves x whole, because
   a scalar has no moved-from state.
 
@@ -80,11 +86,15 @@ later or never.  An init-capture runs where the lambda appears, so
 
 What it does not see, stated rather than implied
 ------------------------------------------------
+test/guard_attacks/use_after_move_evasions.cpp holds a function for each
+shape below that hides a real use after move, and its test fails when the
+guard learns one of them.
 - A move inside a function that takes T&.  The call does not say
   std::move, so the name stays live at the call site.  A call that passes
   std::move(x) to a T&& parameter spends x, although the callee can leave
   x whole.  An allowlist entry says why when it does.
-- A use through a pointer or a reference to a spent object.
+- A use through a pointer to a spent object, or through a reference that
+  is not bound to a plain name, such as a reference that a call returns.
 - A lambda that captures a name by reference, runs after the name is
   moved, and reads it.  The lambda body appears before the move in the
   source, so the guard reads it with the name live.
@@ -96,6 +106,8 @@ What it does not see, stated rather than implied
   that takes a parameter by value of a type that is not trivially
   copyable, breaks the try_ rule, and the guard does not see that.
 
+A file that does not parse is a finding, because the guard cannot read it.
+A file that tsast.UNPARSEABLE lists is out of scope, because it is not C++.
 Negative-compile fixtures (a test directory named neg or *_neg) are out of
 scope, because each one must fail to compile.
 
@@ -113,6 +125,7 @@ Exit codes
   1  a finding with no entry
   2  an entry with more findings admitted than found, a bad invocation,
      or a failed self-test
+  3  the pinned tree-sitter kit is not installed
 
 Usage
   check-use-after-move.py                 check the tree
@@ -126,7 +139,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import re
 import subprocess
 import sys
 import tempfile
@@ -136,40 +148,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cxx_lex import blank, line_of, splice  # noqa: E402
+import tsast  # noqa: E402
 
-SOURCE_SUFFIXES = {".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inl", ".ipp", ".tpp"}
 SCAN_ROOTS = ("include", "src", "test", "vessel", "tools")
 ALLOWLIST = "scripts/use-after-move-allowlist.txt"
+# The files one worker parses in one kit run.  A run costs a fixed start-up,
+# so a chunk amortises it, and the chunks spread over the workers.
+CHUNK = 96
 
-TOKEN = re.compile(r"""
-    (?P<id>[A-Za-z_][A-Za-z_0-9]*)
-  | (?P<num>\.?[0-9](?:[eEpP][+-]|['\w.])*)
-  | (?P<op>>>=|<<=|<=>|->\*|\.\.\.|::|->|\+\+|--|<<|>>|<=|>=|==|!=|&&|\|\||\+=|-=|\*=|/=|%=|&=|\|=|\^=|\^\^|\[:(?!:)|:\]|\.\*|[{}()\[\];,.<>=!~?:&|^+\-*/%#@$\\])
-""", re.X)
-
-OPEN = {"(": ")", "[": "]", "{": "}", "[:": ":]"}
-CLOSE = {v: k for k, v in OPEN.items()}
-
-KEYWORDS = frozenset("""
-    alignas alignof and asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class
-    co_await co_return co_yield compl concept const consteval constexpr constinit const_cast continue decltype
-    default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline
-    int long mutable namespace new noexcept not nullptr operator or private protected public register
-    reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch template
-    this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t
-    while xor pre post contract_assert final override
-""".split())
-UNEVALUATED = frozenset({"sizeof", "alignof", "decltype", "noexcept", "typeid", "static_assert", "alignas"})
-NOT_A_TYPE = frozenset({"return", "delete", "throw", "co_return", "co_await", "co_yield", "new", "case",
-                        "goto", "else", "do", "sizeof", "not", "and", "or"})
-REINIT_METHODS = frozenset({"reset", "clear", "emplace", "assign"})
 # The last component of a callee that gives an rvalue of its argument.  The
 # qualifier does not matter: std::move, ::std::move, a namespace alias and a
 # using-declaration all reach the same function.
 MOVE_CALLEES = frozenset({"move", "forward", "move_if_noexcept", "forward_like"})
-DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)")
-CLASS_KEYS = frozenset({"class", "struct", "union"})
+REINIT_METHODS = frozenset({"reset", "clear", "emplace", "assign"})
 # The words of a scalar type.  static_cast<int&&>(x) leaves x whole,
 # because a scalar has no moved-from state.
 SCALAR_TYPE_WORDS = frozenset("""
@@ -177,13 +168,36 @@ SCALAR_TYPE_WORDS = frozenset("""
     std :: byte size_t ptrdiff_t intptr_t uintptr_t int8_t int16_t int32_t int64_t uint8_t uint16_t uint32_t
     uint64_t
 """.split())
-
-
-@dataclass
-class Tok:
-    kind: str
-    text: str
-    off: int
+# Nodes whose operands are not evaluated, and nodes that name a type or a
+# scope rather than an object.  A name under one of them is never a use.
+NOT_EVALUATED = frozenset({
+    "sizeof_expression", "alignof_expression", "decltype", "noexcept_expression", "typeid_expression",
+    "requires_expression", "requires_clause", "static_assert_declaration", "reflect_expression",
+    "splice_expression", "splice_type_specifier", "type_descriptor", "template_argument_list",
+    "qualified_identifier", "namespace_identifier", "type_identifier", "primitive_type", "sized_type_specifier",
+    "field_identifier", "statement_identifier", "this", "comment", "number_literal", "string_literal",
+    "raw_string_literal", "char_literal", "concatenated_string", "user_defined_literal", "true", "false",
+    "nullptr", "preproc_arg", "preproc_def", "preproc_function_def", "preproc_call", "preproc_include",
+})
+# Statements that declare no local and evaluate nothing the walk tracks.
+INERT_STATEMENTS = frozenset({
+    "type_definition", "alias_declaration", "using_declaration", "static_assert_declaration",
+    "namespace_alias_definition", "friend_declaration", "template_declaration", "asm_statement", "comment",
+    "preproc_def", "preproc_function_def", "preproc_call", "preproc_include", "empty_statement",
+    "concept_definition", "class_specifier", "struct_specifier", "union_specifier", "enum_specifier",
+})
+CLASS_SPECIFIERS = frozenset({"class_specifier", "struct_specifier", "union_specifier", "enum_specifier"})
+PREPROC_CONDITIONALS = frozenset({"preproc_if", "preproc_ifdef", "preproc_elif", "preproc_elifdef"})
+LOOPS = frozenset({"while_statement", "for_statement", "for_range_loop", "expansion_statement"})
+# The suffix of the key that Base::operator=(std::move(p)) spends in a move
+# assignment.  The key p#base is reached by a use of p as a whole and by no
+# member of p, because the base assignment takes only the base subobject.
+BASE_MARK = "#base"
+# The declarator wrappers between a declaration and the name it declares.
+DECLARATOR_WRAPPERS = frozenset({
+    "init_declarator", "reference_declarator", "pointer_declarator", "array_declarator",
+    "attributed_declarator", "parenthesized_declarator",
+})
 
 
 @dataclass
@@ -199,42 +213,11 @@ class Finding:
         return f"{self.path}:{self.function}:{self.key}"
 
 
-def tokenize(text: str) -> list[Tok]:
-    """The tokens of blanked text, with preprocessor lines removed."""
-    lines = text.split("\n")
-    pos = 0
-    kept: list[str] = []
-    for line in lines:
-        kept.append(" " * len(line) if line.lstrip().startswith("#") else line)
-        pos += len(line) + 1
-    clean = "\n".join(kept)
-    toks: list[Tok] = []
-    for match in TOKEN.finditer(clean):
-        kind = match.lastgroup or "op"
-        toks.append(Tok(kind, match.group(0), match.start()))
-    return toks
-
-
-def match_brackets(toks: list[Tok]) -> list[int] | None:
-    """The index of the partner of each bracket, or None when the file does not balance."""
-    partner = [-1] * len(toks)
-    stack: list[int] = []
-    for i, tok in enumerate(toks):
-        if tok.text in OPEN:
-            stack.append(i)
-        elif tok.text in CLOSE:
-            if not stack or toks[stack[-1]].text != CLOSE[tok.text]:
-                return None
-            j = stack.pop()
-            partner[i] = j
-            partner[j] = i
-    return partner if not stack else None
-
-
 State = dict[str, int] | None  # spent key -> line of its move; None when no path reaches the point
 
 
 def join(a: State, b: State) -> State:
+    """Return the state after two paths meet: a key spent on either path is spent."""
     if a is None:
         return None if b is None else dict(b)
     if b is None:
@@ -245,18 +228,32 @@ def join(a: State, b: State) -> State:
     return out
 
 
-SEGMENT = re.compile(r"\*?[A-Za-z_]\w*|\.\w+|->\w+|\[[^\]]*\]")
+def segments(key: str) -> list[str]:
+    """Split a key into its name, its members (.m, ->m) and its subscripts ([0], [*])."""
+    parts: list[str] = []
+    k = 0
+    while k < len(key):
+        start = k
+        if key[k] == "[":
+            k = key.index("]", k) + 1
+        else:
+            if key.startswith("->", k):
+                k += 2
+            elif key[k] in ".*":
+                k += 1
+            while k < len(key) and key[k] not in ".[" and not key.startswith("->", k):
+                k += 1
+        parts.append(key[start:k])
+    return parts
 
 
 def reaches(spent: str, key: str) -> bool:
     """Whether key names the spent key or a part of it.
 
-    A key is a list of segments: a name, then members (.m, ->m) and subscripts
-    ([0] for an integer literal, [*] for any other index).  Two subscripts match
-    when they are equal or when either one is [*], because an index that is not
-    a literal can name any element.
+    Two subscripts match when they are equal or when either one is [*], because
+    an index that is not a literal can name any element.
     """
-    spent_parts, key_parts = SEGMENT.findall(spent), SEGMENT.findall(key)
+    spent_parts, key_parts = segments(spent), segments(key)
     if len(key_parts) < len(spent_parts):
         return False
     for mine, theirs in zip(spent_parts, key_parts):
@@ -270,12 +267,15 @@ def spent_prefix(state: dict[str, int], key: str) -> str | None:
     """The spent key that key names or reaches into, if any.
 
     A move through a dereference, std::move(*p), spends the key *p.  Then *p,
-    a member of *p and p->m reach into it, and p itself does not.
+    a member of *p and p->m reach into it, and p itself does not.  The key
+    p#base of a base assignment is reached by p alone.
     """
     for spent in state:
         if reaches(spent, key):
             return spent
         if spent.startswith("*") and key.startswith(spent[1:] + "->"):
+            return spent
+        if spent == key + BASE_MARK:
             return spent
     return None
 
@@ -287,7 +287,7 @@ def restore(state: dict[str, int], key: str) -> None:
     """
     def refilled(spent: str) -> bool:
         base = spent[1:] if spent.startswith("*") and not key.startswith("*") else spent
-        return base == key or base.startswith((key + ".", key + "->", key + "["))
+        return base == key or base.startswith((key + ".", key + "->", key + "[", key + BASE_MARK))
 
     for spent in [s for s in state if refilled(s)]:
         del state[spent]
@@ -298,23 +298,45 @@ def exchange(state: dict[str, int], left: str, right: str) -> None:
     moved: dict[str, int] = {}
     for spent in list(state):
         for source, target in ((left, right), (right, left)):
-            if spent == source or spent.startswith((source + ".", source + "->", source + "[")):
+            if spent == source or spent.startswith((source + ".", source + "->", source + "[", source + BASE_MARK)):
                 moved[target + spent[len(source):]] = state.pop(spent)
                 break
     state.update(moved)
 
 
-class Body:
+def named(node: tsast.Node) -> list[tsast.Node]:
+    """The children of a node, without its comments."""
+    return [child for child in node.children if child.type != "comment"]
+
+
+def leaf_name(node: tsast.Node | None) -> str | None:
+    """The last name of a callee or a declarator: f in f, ns::f, obj.f, f<T> and ns::f<T>."""
+    return None if node is None else tsast.leaf_name(node)
+
+
+def operator(node: tsast.Node) -> str:
+    """The first token that lies in a node outside its named children: . or -> of a member access, * or & of
+    a unary operator, & or && of a reference declarator."""
+    tokens = node.gap_tokens()
+    return tokens[0] if tokens else ""
+
+
+# The node types of a plain callee chain, such as ring.try_push, ring->try_push or this->q.try_push.
+PLAIN_CALLEE = frozenset({"identifier", "field_identifier", "namespace_identifier", "field_expression",
+                          "qualified_identifier", "this"})
+
+
+def is_plain_callee(node: tsast.Node) -> bool:
+    """Whether a callee is a chain of names and member accesses, with no call, subscript or template argument."""
+    return node.type in PLAIN_CALLEE and all(is_plain_callee(child) for child in named(node))
+
+
+class Walk:
     """The walk of one file: every function body, lambda body and initializer list in it."""
 
-    def __init__(self, path: str, text: str) -> None:
+    def __init__(self, tree: tsast.Tree, path: str) -> None:
+        self.tree = tree
         self.path = path
-        joined, self.joins = splice(text)
-        self.text, _ = blank(joined, blank_literals=True)
-        self.toks = tokenize(self.text)
-        partner = match_brackets(self.toks)
-        self.balanced = partner is not None
-        self.partner = partner or []
         self.findings: list[Finding] = []
         self.seen: set[tuple[str, str, int]] = set()
         self.function = "<file>"
@@ -326,279 +348,31 @@ class Body:
         # A reference or a structured binding in scope: name -> (the key of the
         # object it names, True for a structured binding).
         self.aliases: dict[str, tuple[str, bool]] = {}
+        # The parameter p while the body of a move assignment operator=(C&& p)
+        # is walked, and None in every other body.
+        self.assigned_from: str | None = None
 
     # ── helpers ──────────────────────────────────────────────────────
 
-    def line(self, i: int) -> int:
-        return line_of(self.text, self.joins, self.toks[i].off)
-
-    def t(self, i: int) -> str:
-        return self.toks[i].text if 0 <= i < len(self.toks) else ""
-
-    def report(self, i: int, key: str, what: str, spent: str, moved_at: int) -> None:
+    def report(self, node: tsast.Node, key: str, what: str, spent: str, moved_at: int) -> None:
         """Record the first use after one move.  Later uses of the same move are the same defect."""
         mark = (self.function, spent, moved_at)
         if mark in self.seen:
             return
         self.seen.add(mark)
-        self.findings.append(Finding(self.path, self.line(i), self.function, key, what, moved_at))
+        self.findings.append(Finding(self.path, node.line, self.function, key, what, moved_at))
 
-    def spend(self, state: dict[str, int], k: int, path: str) -> None:
-        """Spend path at the move at token k, and report a move of a path that a move spent before."""
+    def spend(self, state: dict[str, int], node: tsast.Node, path: str) -> None:
+        """Spend path at the move at node, and report a move of a path that a move spent before."""
         spent = spent_prefix(state, path)
         if spent is not None:
-            self.report(k, path, "second move", spent, state[spent])
+            self.report(node, path, "second move", spent, state[spent])
         if not self.hold_moves:
-            state[path] = self.line(k)
-
-    def skip_angle(self, i: int, hi: int) -> int:
-        """The index after a template argument list that opens at i."""
-        depth = 0
-        k = i
-        while k < hi:
-            text = self.t(k)
-            if text in OPEN:
-                k = self.partner[k] + 1
-                continue
-            if text == "<":
-                depth += 1
-            elif text == ">":
-                depth -= 1
-            elif text == ">>":
-                depth -= 2
-            elif text in (";", "{", "}"):
-                return k
-            k += 1
-            if depth <= 0:
-                return k
-        return k
-
-    # ── the declaration scope ────────────────────────────────────────
-
-    def scan_scope(self, lo: int, hi: int) -> None:
-        """Find the bodies in a namespace or a class body."""
-        start = lo
-        init_colon = -1
-        k = lo
-        while k < hi:
-            text = self.t(k)
-            if text == ";":
-                start, init_colon = k + 1, -1
-                k += 1
-                continue
-            if text in ("public", "private", "protected") and self.t(k + 1) == ":":
-                start, init_colon = k + 2, -1
-                k += 2
-                continue
-            if text == ":" and init_colon < 0 and self.decl_has_params(start, k):
-                init_colon = k
-            if text in ("(", "["):
-                k = self.partner[k] + 1
-                continue
-            if text != "{":
-                k += 1
-                continue
-            end = self.partner[k]
-            kind = self.classify(start, k, init_colon)
-            if kind == "namespace" or kind == "class":
-                self.scan_scope(k + 1, end)
-                start, init_colon = end + 1, -1
-            elif kind == "skip":
-                start, init_colon = end + 1, -1
-            elif kind == "meminit":
-                pass
-            elif kind == "function":
-                self.function = self.function_name(start, k)
-                state: State = {}
-                if init_colon >= 0:
-                    state = self.member_inits(start, init_colon, k, state)
-                self.walk_body(k, end, state)
-                self.function = "<file>"
-                start, init_colon = end + 1, -1
-            else:
-                self.function = self.function_name(start, k)
-                self.eval(start, end + 1, {}, [])
-                self.function = "<file>"
-                start, init_colon = end + 1, -1
-            k = end + 1
-
-    def member_inits(self, start: int, colon: int, brace: int, state: State) -> State:
-        """Walk the member-initializer list of the constructor declared from start to brace.
-
-        In a move constructor C(C&& other), an initializer whose whole argument is a move of
-        other can only be a base: a member of type C cannot exist inside C.  The base moves its
-        own subobject, so the next initializers can still read other.member.  The body sees
-        other as spent, as after any other move.
-        """
-        source = self.move_source(start, colon)
-        if source is None:
-            return self.eval(colon + 1, brace, state, [])
-        base_moved_at = None
-        for lo, hi in self.initializers(colon + 1, brace):
-            if self.moves_whole(lo, hi, source):
-                self.eval(lo, hi, state, [])
-                base_moved_at = base_moved_at or self.line(lo)
-            else:
-                state = self.eval(lo, hi, state, [])
-        if base_moved_at is not None and state is not None:
-            state = {**state, source: base_moved_at}
-        return state
-
-    def move_source(self, start: int, colon: int) -> str | None:
-        """The parameter name when the declaration from start to colon is a move constructor C(C&& p)."""
-        name = self.function_name(start, colon)
-        for k in range(start, colon):
-            if self.t(k) != name or self.t(k + 1) != "(":
-                continue
-            close = self.partner[k + 1]
-            i = k + 2
-            if self.t(i) != name:
-                return None
-            i += 1
-            if self.t(i) == "<":
-                i = self.skip_angle(i, close)
-            if self.t(i) != "&&" or self.toks[i + 1].kind != "id" or i + 2 != close:
-                return None
-            return self.t(i + 1)
-        return None
-
-    def initializers(self, lo: int, hi: int) -> list[tuple[int, int]]:
-        """The extent of each initializer in a member-initializer list."""
-        out: list[tuple[int, int]] = []
-        k = lo
-        while k < hi:
-            first = k
-            while k < hi and self.t(k) not in ("(", "{"):
-                k = self.skip_angle(k, hi) if self.t(k) == "<" else k + 1
-            if k >= hi:
-                break
-            end = self.partner[k] + 1
-            if self.t(end) == "...":
-                end += 1
-            out.append((first, end))
-            k = end + 1 if self.t(end) == "," else end
-        return out
-
-    def moves_whole(self, lo: int, hi: int, source: str) -> bool:
-        """Whether the argument of the initializer from lo to hi is exactly a move of source."""
-        close = hi - 2 if self.t(hi - 1) == "..." else hi - 1
-        m = self.partner[close] + 1
-        callee = m
-        while self.t(callee + 1) == "::" or self.t(callee) == "::":
-            callee += 1
-        if self.move_callee(callee, close) >= 0:
-            m = self.move_callee(callee, close)
-        elif self.t(m) == "static_cast" and self.t(m + 1) == "<":
-            m = self.skip_angle(m + 1, close)
-        else:
-            return False
-        return self.t(m) == "(" and self.t(m + 1) == source and m + 2 == close - 1 and self.t(m + 2) == ")"
-
-    def decl_has_params(self, lo: int, hi: int) -> bool:
-        return any(self.t(i) == "(" for i in range(lo, hi))
-
-    def classify(self, lo: int, brace: int, init_colon: int) -> str:
-        words = [self.t(i) for i in range(lo, brace)]
-        before = self.t(brace - 1)
-        if "namespace" in words or (words[:1] == ["extern"] and len(words) <= 2):
-            return "namespace"
-        if "concept" in words or before == "requires" or self.preceded_by_requires(lo, brace):
-            return "skip"
-        if "enum" in words and "(" not in words:
-            return "skip"
-        head = self.strip_template_head(lo, brace)
-        head_top = self.top_level(head, brace)
-        if before != ")" and any(word in CLASS_KEYS for word in head_top) and "=" not in head_top:
-            return "class"
-        if init_colon >= 0 and (self.toks[brace - 1].kind == "id" or before == ">") and before not in KEYWORDS:
-            return "meminit"
-        if "=" in head_top:
-            return "initializer"
-        if "(" in words:
-            return "function"
-        return "initializer"
-
-    def preceded_by_requires(self, lo: int, brace: int) -> bool:
-        k = brace - 1
-        if self.t(k) == ")":
-            k = self.partner[k] - 1
-            return self.t(k) == "requires"
-        return False
-
-    def strip_template_head(self, lo: int, hi: int) -> int:
-        k = lo
-        while k < hi and self.t(k) == "template" and self.t(k + 1) == "<":
-            k = self.skip_angle(k + 1, hi)
-        return k
-
-    def top_level(self, lo: int, hi: int) -> list[str]:
-        out: list[str] = []
-        k = lo
-        while k < hi:
-            text = self.t(k)
-            if text in OPEN:
-                k = self.partner[k] + 1
-                continue
-            out.append(text)
-            k += 1
-        return out
-
-    def function_name(self, lo: int, hi: int) -> str:
-        top = []
-        k = lo
-        while k < hi:
-            if self.t(k) in OPEN:
-                k = self.partner[k] + 1
-                continue
-            top.append(k)
-            k += 1
-        for i in top:
-            if self.t(i) == "=" and i > lo and self.toks[i - 1].kind == "id":
-                return self.t(i - 1)
-        k = lo
-        while k < hi:
-            if self.t(k) == "operator":
-                return "operator" + self.t(k + 1)
-            if self.t(k) == "(":
-                j = k - 1
-                name = self.t(j)
-                if self.toks[j].kind == "id" and name not in KEYWORDS:
-                    return ("~" + name) if self.t(j - 1) == "~" else name
-                if name == ">":
-                    depth, m = 0, j
-                    while m > lo:
-                        if self.t(m) == ">":
-                            depth += 1
-                        elif self.t(m) == "<":
-                            depth -= 1
-                            if depth == 0:
-                                break
-                        m -= 1
-                    if self.toks[m - 1].kind == "id":
-                        return self.t(m - 1)
-                k = self.partner[k] + 1
-                continue
-            if self.t(k) in OPEN:
-                k = self.partner[k] + 1
-                continue
-            k += 1
-        return "<anonymous>"
-
-    # ── statements ───────────────────────────────────────────────────
-
-    def walk_body(self, open_brace: int, close_brace: int, state: State) -> State:
-        """Walk one function or lambda body.  Its labels and gotos are its own."""
-        ctx: list[dict] = []
-        outer, self.goto_states = self.goto_states, {}
-        outer_aliases = dict(self.aliases)
-        try:
-            return self.block(open_brace, close_brace, state, ctx)
-        finally:
-            self.goto_states, self.aliases = outer, outer_aliases
+            state[path] = node.line
 
     def canon(self, path: str) -> str:
         """Return the key of a path, with a reference or a structured binding replaced by the object it names."""
-        parts = SEGMENT.findall(path)
+        parts = segments(path)
         if not parts or parts[0].lstrip("*") not in self.aliases:
             return path
         target = self.aliases[parts[0].lstrip("*")][0] + "".join(parts[1:])
@@ -606,65 +380,330 @@ class Body:
 
     def is_binding(self, path: str) -> bool:
         """Whether a path starts with the name of a structured binding."""
-        parts = SEGMENT.findall(path)
+        parts = segments(path)
         return bool(parts) and self.aliases.get(parts[0].lstrip("*"), ("", False))[1]
 
-    def index_segment(self, open_paren: int) -> str:
-        """Return [N] for a call whose one argument is an integer literal N, and [*] for any other."""
-        close = self.partner[open_paren]
-        literal = close == open_paren + 2 and self.toks[open_paren + 1].kind == "num"
-        return f"[{self.t(open_paren + 1)}]" if literal else "[*]"
+    def use(self, node: tsast.Node, state: dict[str, int], raw: str) -> None:
+        """Report a read of the path raw at node when a move spent it or a part of it."""
+        binding = self.is_binding(raw)
+        key = self.canon(raw)
+        if binding:
+            # A structured binding names a member of its object, and the walk does
+            # not know which one, so any spent key under the object counts.
+            under = next((s for s in state if reaches(key, s)), None)
+            if under is not None:
+                self.report(node, key, "use after move", under, state[under])
+                return
+        spent = spent_prefix(state, key)
+        if spent is not None:
+            self.report(node, key, "use after move", spent, state[spent])
 
-    def get_element(self, k: int, hi: int) -> tuple[str, int] | None:
-        """For get<I>(t) with its name at k and t a plain path, return the key t[I] and the index after the call."""
-        if self.t(k + 1) != "<" or self.t(k - 1) in (".", "->"):
-            return None
-        m = self.skip_angle(k + 1, hi)
-        if self.t(m) != "(" or self.toks[m + 1].kind != "id" or self.t(m + 1) in KEYWORDS:
-            return None
-        close = self.partner[m]
-        path, end = self.path_at(m + 1, close)
-        if end != close:
-            return None
-        return f"{self.canon(path)}[{''.join(self.t(i) for i in range(k + 2, m - 1))}]", close + 1
+    # ── paths ────────────────────────────────────────────────────────
 
-    def bind_aliases(self, lo: int, hi: int, names: list[tuple[str, int]]) -> None:
-        """Record the references and structured bindings that the declaration from lo to hi binds to a path.
+    def plain_path(self, node: tsast.Node) -> str | None:
+        """The member path that a node names, or None when it is not a name with members and literal indices.
 
-        `T& r = x;` makes r name x.  `auto& [a, b] = obj;` makes a and b name a
-        member of obj, and the walk keys each one as obj.  A copy is a new object
-        and binds nothing.
+        this->m and (*this).m are the member m.  Parentheses around a path do not
+        change it.  A subscript by an integer literal is part of the path.
         """
-        for name, _ in names:
-            self.aliases.pop(name, None)
-        for name, idx in names:
-            if self.t(idx - 1) in ("&", "&&") and self.t(idx + 1) == "=" and self.toks[idx + 2].kind == "id" \
-                    and self.t(idx + 2) not in KEYWORDS:
-                path, end = self.path_at(idx + 2, hi)
-                if end == hi:
-                    self.aliases[name] = (self.canon(path), False)
-        for i in range(lo, hi):
-            if self.t(i) == "[" and self.t(i - 1) in ("&", "&&") and self.t(i + 1) != "[":
-                close = self.partner[i]
-                if self.t(close + 1) == "=" and self.toks[close + 2].kind == "id" and self.t(close + 2) not in KEYWORDS:
-                    path, end = self.path_at(close + 2, hi)
-                    if end == hi:
-                        for m in range(i + 1, close):
-                            if self.toks[m].kind == "id":
-                                self.aliases[self.t(m)] = (self.canon(path), True)
-                break
-
-    def label_at(self, k: int) -> str | None:
-        """The name of the label that the statement at k declares, or None."""
-        if self.toks[k].kind == "id" and self.t(k) not in KEYWORDS and self.t(k + 1) == ":" and self.t(k + 2) != ":":
-            return self.t(k)
+        kind = node.type
+        if kind == "identifier":
+            return node.text
+        if kind == "parenthesized_expression":
+            inner = named(node)
+            return self.plain_path(inner[0]) if len(inner) == 1 else None
+        if kind == "field_expression":
+            argument = node.child_by_field("argument")
+            field = node.child_by_field("field")
+            if argument is None or field is None or field.type != "field_identifier":
+                return None
+            access = operator(node)
+            if argument.type == "this" and access == "->":
+                return field.text
+            if access == "." and self.is_dereferenced_this(argument):
+                return field.text
+            base = self.plain_path(argument)
+            return None if base is None else base + access + field.text
+        if kind == "subscript_expression":
+            argument = node.child_by_field("argument")
+            index = self.literal_index(node)
+            base = None if argument is None else self.plain_path(argument)
+            return None if base is None or index is None else f"{base}[{index}]"
         return None
 
-    def goto_after(self, label: str, lo: int, hi: int) -> bool:
-        """Whether a goto to label appears between lo and hi.  Complexity: O(hi - lo)."""
-        return any(self.t(i) == "goto" and self.t(i + 1) == label for i in range(lo, hi))
+    def is_dereferenced_this(self, node: tsast.Node) -> bool:
+        """Whether a node is (*this)."""
+        inner = named(node)
+        if node.type != "parenthesized_expression" or len(inner) != 1:
+            return False
+        pointer = inner[0]
+        target = pointer.child_by_field("argument")
+        return (pointer.type == "pointer_expression" and operator(pointer) == "*"
+                and target is not None and target.type == "this")
 
-    def block(self, open_brace: int, close_brace: int, state: State, ctx: list[dict]) -> State:
+    def literal_index(self, subscript: tsast.Node) -> str | None:
+        """The index of a subscript when it is one integer literal, or None."""
+        indices = subscript.child_by_field("indices")
+        items = [] if indices is None else named(indices)
+        if len(items) == 1 and items[0].type == "number_literal":
+            return items[0].text
+        return None
+
+    def index_segment(self, arguments: tsast.Node | None) -> str:
+        """Return [N] for a call whose one argument is an integer literal N, and [*] for any other."""
+        items = [] if arguments is None else named(arguments)
+        return f"[{items[0].text}]" if len(items) == 1 and items[0].type == "number_literal" else "[*]"
+
+    def deref_operand(self, node: tsast.Node) -> tsast.Node | None:
+        """The operand of a unary * at node, or None when node is not a dereference."""
+        if node.type == "pointer_expression" and operator(node) == "*":
+            return node.child_by_field("argument")
+        return None
+
+    def get_element(self, call: tsast.Node) -> str | None:
+        """For get<I>(t) with t a plain path, return the key t[I]; None for any other call."""
+        function = call.child_by_field("function")
+        if function is None or function.type == "field_expression":
+            return None
+        template = function.child_by_field("name") if function.type == "qualified_identifier" else function
+        if template is None or template.type != "template_function" or leaf_name(template) != "get":
+            return None
+        items = named(call.child_by_field("arguments"))
+        if len(items) != 1:
+            return None
+        path = self.plain_path(items[0])
+        if path is None:
+            return None
+        index = "".join(template.child_by_field("arguments").tokens()[1:-1])
+        return f"{self.canon(path)}[{index}]"
+
+    def move_argument(self, arguments: tsast.Node | None) -> str | None:
+        """The key inside std::move( ... ) when its one argument is a plain path or *path.
+
+        The move std::move(*p) spends the object that p reaches, so its key is *p.
+        A subscript by anything but an integer literal keys the whole array.
+        """
+        items = [] if arguments is None else named(arguments)
+        if len(items) != 1:
+            return None
+        node = items[0]
+        while node.type == "parenthesized_expression" and len(named(node)) == 1:
+            node = named(node)[0]
+        operand = self.deref_operand(node)
+        if operand is not None:
+            path = self.plain_path(operand)
+            return None if path is None else "*" + self.canon(path)
+        if node.type == "call_expression":
+            element = self.get_element(node)
+            if element is not None:
+                return element
+            function = node.child_by_field("function")
+            if function is not None and function.type == "field_expression" and leaf_name(function) == "at":
+                base = self.plain_path(function.child_by_field("argument"))
+                if base is not None:
+                    return self.canon(base) + self.index_segment(node.child_by_field("arguments"))
+            return None
+        if node.type == "subscript_expression" and self.literal_index(node) is None:
+            base = self.plain_path(node.child_by_field("argument"))
+            return None if base is None else self.canon(base) + "[*]"
+        path = self.plain_path(node)
+        return None if path is None else self.canon(path)
+
+    def move_callee(self, call: tsast.Node) -> bool:
+        """Whether a call is a move: its callee's last name is in MOVE_CALLEES and it is not a member call."""
+        function = call.child_by_field("function")
+        return (function is not None and function.type != "field_expression"
+                and leaf_name(function) in MOVE_CALLEES)
+
+    def element_of_get(self, call: tsast.Node) -> str | None:
+        """The index I when the move call is the first argument of get<I>( ... ), which moves element I."""
+        arguments = call.parent
+        if arguments is None or arguments.type != "argument_list" or named(arguments)[0].index != call.index:
+            return None
+        outer = arguments.parent
+        function = None if outer is None else outer.child_by_field("function")
+        if function is None or function.type == "field_expression":
+            return None
+        template = function.child_by_field("name") if function.type == "qualified_identifier" else function
+        if template is None or template.type != "template_function" or leaf_name(template) != "get":
+            return None
+        return "".join(template.child_by_field("arguments").tokens()[1:-1])
+
+    def rvalue_cast(self, call: tsast.Node) -> bool:
+        """Whether a call is static_cast<T&&>(x) for a T that is not a scalar."""
+        function = call.child_by_field("function")
+        if function is None or function.type != "template_function" or leaf_name(function) != "static_cast":
+            return False
+        words = function.child_by_field("arguments").tokens()
+        return len(words) >= 3 and words[-2] == "&&" and not all(word in SCALAR_TYPE_WORDS for word in words[1:-2])
+
+    # ── the file ─────────────────────────────────────────────────────
+
+    def run(self) -> list[Finding]:
+        """Walk every body in the file and return the findings."""
+        if self.tree.diagnostic is not None:
+            self.findings.append(Finding(self.path, 1, "<file>", "<parse-error>", "a file the kit cannot parse", 0))
+            return self.findings
+        self.macro_moves()
+        for function in self.tree.find("function_definition"):
+            if function.ancestor_of_type("requires_expression", "concept_definition") is not None:
+                continue
+            body = function.child_by_field("body")
+            if body is None:
+                continue
+            self.function = self.function_name(function)
+            if self.function == "operator=":
+                self.assigned_from = self.move_source(function, self.owner_class(function))
+            state: State = {}
+            initializers = function.children_of_type("field_initializer_list")
+            if initializers:
+                state = self.member_inits(function, initializers[0], state)
+            self.walk_body(body, state)
+            self.function = "<file>"
+            self.assigned_from = None
+        for lam in self.tree.find("lambda_expression"):
+            if lam.ancestor_of_type("function_definition", "lambda_expression", "requires_expression") is not None:
+                continue
+            owner = lam.ancestor_of_type("init_declarator")
+            self.function = leaf_name(owner.child_by_field("declarator")) if owner is not None else None
+            self.function = self.function or "<anonymous>"
+            self.lambda_expr(lam, {})
+            self.function = "<file>"
+        return self.findings
+
+    def macro_moves(self) -> None:
+        """Report each #define whose replacement list moves or forwards.
+
+        Each use of such a macro would hide a move from the walk, so a macro may
+        not move.  Complexity: linear in the length of the replacement lists.
+        """
+        for define in self.tree.find("preproc_def", "preproc_function_def"):
+            body = " ".join(child.text for child in define.children if child.field == "value")
+            words = [token.text for token in tsast.pp_tokens(body)]
+            for i, word in enumerate(words):
+                after = words[i + 1] if i + 1 < len(words) else ""
+                before = words[i - 1] if i > 0 else ""
+                if word in MOVE_CALLEES and after in ("(", "<") and before not in (".", "->"):
+                    name = define.child_by_field("name")
+                    self.findings.append(Finding(self.path, define.line, name.text if name else "<macro>", word,
+                                                 "move inside a macro", 0))
+                    break
+
+    def function_name(self, function: tsast.Node) -> str:
+        """The name of a function definition: its last name, ~X for a destructor, operatorX for an operator."""
+        return leaf_name(function.child_by_field("declarator")) or "<anonymous>"
+
+    def member_inits(self, function: tsast.Node, initializers: tsast.Node, state: State) -> State:
+        """Walk the member-initializer list of a constructor.
+
+        In a move constructor C(C&& other), an initializer whose whole argument is a move of
+        other can only be a base: a member of type C cannot exist inside C.  The base moves its
+        own subobject, so the next initializers can still read other.member.  The body sees
+        other as spent, as after any other move.
+        """
+        source = self.move_source(function, self.function_name(function))
+        base_moved_at = None
+        for initializer in initializers.children_of_type("field_initializer"):
+            arguments = [child for child in named(initializer) if child.type in ("argument_list", "initializer_list")]
+            if not arguments:
+                continue
+            if source is not None and self.moves_whole(arguments[0], source):
+                self.eval(arguments[0], state)
+                base_moved_at = base_moved_at or initializer.line
+            else:
+                state = self.eval(arguments[0], state)
+        if base_moved_at is not None and state is not None:
+            state = {**state, source: base_moved_at}
+        return state
+
+    def function_declarator(self, function: tsast.Node) -> tsast.Node | None:
+        """The function_declarator of a definition, under the reference or pointer declarator of its return type."""
+        node = function.child_by_field("declarator")
+        while node is not None and node.type != "function_declarator":
+            node = node.child_by_field("declarator")
+        return node
+
+    def owner_class(self, function: tsast.Node) -> str | None:
+        """The class of a member function: the scope of its qualified name, or the class around its definition."""
+        declarator = self.function_declarator(function)
+        name = None if declarator is None else declarator.child_by_field("declarator")
+        if name is not None and name.type == "qualified_identifier":
+            parts = tsast.qualified_parts(name)
+            return parts[1][-2] if parts is not None and len(parts[1]) >= 2 else None
+        enclosing = function.ancestor_of_type("class_specifier", "struct_specifier", "union_specifier")
+        return None if enclosing is None else leaf_name(enclosing.child_by_field("name"))
+
+    def move_source(self, function: tsast.Node, owner: str | None) -> str | None:
+        """The parameter p when the only parameter of a function is owner&& p, as in C(C&& p) and operator=(C&& p)."""
+        declarator = self.function_declarator(function)
+        parameters = None if declarator is None else declarator.child_by_field("parameters")
+        items = [] if parameters is None else named(parameters)
+        if owner is None or len(items) != 1 or items[0].type != "parameter_declaration":
+            return None
+        declarator = items[0].child_by_field("declarator")
+        if (leaf_name(items[0].child_by_field("type")) != owner or declarator is None
+                or declarator.type != "reference_declarator" or operator(declarator) != "&&"):
+            return None
+        inner = declarator.child_by_field("declarator") or (named(declarator) or [None])[0]
+        return inner.text if inner is not None and inner.type == "identifier" else None
+
+    def base_assignment(self, node: tsast.Node) -> bool:
+        """Whether an expression is Base::operator=(std::move(p)) in the body of a move assignment operator=(C&& p).
+
+        The qualified name reaches a base, because an unqualified operator= of the same class would
+        assign the whole object.  this->Base::operator=( ... ) is the same call.
+        """
+        if self.assigned_from is None or node.type != "call_expression":
+            return False
+        function = node.child_by_field("function")
+        if function is not None and function.type == "field_expression":
+            receiver = function.child_by_field("argument")
+            function = function.child_by_field("field") if receiver is not None and receiver.type == "this" else None
+        if function is None or function.type != "qualified_identifier" or leaf_name(function) != "operator=":
+            return False
+        arguments = node.child_by_field("arguments")
+        return arguments is not None and self.moves_whole(arguments, self.assigned_from)
+
+    def assign_base(self, call: tsast.Node, state: State) -> State:
+        """Walk Base::operator=(std::move(p)) and spend p#base.
+
+        The call takes only the base subobject of p, so the next statements can read p.member,
+        and a later use of p as a whole is a use after move.  A second base assignment is not
+        a use: the argument is checked against the state without p#base, as a second base
+        initializer of a move constructor is.
+        """
+        if state is None:
+            return None
+        marker = self.assigned_from + BASE_MARK
+        self.eval(call.child_by_field("arguments"), {key: line for key, line in state.items() if key != marker})
+        return {**state, marker: state.get(marker, call.line)}
+
+    def moves_whole(self, arguments: tsast.Node, source: str) -> bool:
+        """Whether an initializer's argument is exactly a move of the plain name source."""
+        items = named(arguments)
+        if len(items) != 1 or items[0].type != "call_expression":
+            return False
+        call = items[0]
+        if not (self.move_callee(call) or self.rvalue_cast(call)):
+            return False
+        inner = named(call.child_by_field("arguments"))
+        return len(inner) == 1 and inner[0].type == "identifier" and inner[0].text == source
+
+    # ── statements ───────────────────────────────────────────────────
+
+    def walk_body(self, body: tsast.Node, state: State) -> State:
+        """Walk one function or lambda body.  Its labels and gotos are its own."""
+        ctx: list[dict] = []
+        outer, self.goto_states = self.goto_states, {}
+        outer_aliases = dict(self.aliases)
+        try:
+            if body.type == "compound_statement":
+                return self.block(body, state, ctx)
+            return self.sub_stmt(body, state, ctx)
+        finally:
+            self.goto_states, self.aliases = outer, outer_aliases
+
+    def block(self, node: tsast.Node, state: State, ctx: list[dict]) -> State:
         """Walk a block.  A label that a later goto of the block targets is a loop head.
 
         As for a loop, the statements from the first such label on are walked twice: the
@@ -672,22 +711,30 @@ class Body:
         at each goto to it.
         """
         scope: dict[str, int | None] = {}
+        statements = named(node)
         head: tuple[int, State, dict] | None = None
-        k = open_brace + 1
-        while k < close_brace:
-            label = self.label_at(k)
-            if head is None and label is not None and self.goto_after(label, k, close_brace):
-                head = (k, state, dict(scope))
-            k, state = self.stmt(k, close_brace, state, ctx, scope)
+        for i, statement in enumerate(statements):
+            if head is None and statement.type == "labeled_statement" and self.goto_after(statement, node):
+                head = (i, state, dict(scope))
+            state = self.stmt(statement, state, ctx, scope)
         if head is not None:
-            k, state, scope = head
-            while k < close_brace:
-                k, state = self.stmt(k, close_brace, state, ctx, scope)
+            first, state, scope = head
+            for statement in statements[first:]:
+                state = self.stmt(statement, state, ctx, scope)
         for name in scope:
             self.aliases.pop(name, None)
         return self.close_scope(state, scope)
 
+    def goto_after(self, labeled: tsast.Node, block: tsast.Node) -> bool:
+        """Whether a goto to the label of labeled appears in block after it.  Complexity: O(size of block)."""
+        label = labeled.child_by_field("label")
+        if label is None:
+            return False
+        return any(jump.start > labeled.start and (target := jump.child_by_field("label")) is not None
+                   and target.text == label.text for jump in block.descendants("goto_statement"))
+
     def close_scope(self, state: State, scope: dict[str, int | None]) -> State:
+        """Leave a scope: its names are no longer spent, and a name it shadowed gets its outer state back."""
         if state is None:
             return None
         out = dict(state)
@@ -698,6 +745,7 @@ class Body:
         return out
 
     def declare(self, state: State, scope: dict[str, int | None], names: list[str]) -> State:
+        """Declare names in a scope: each one starts live, and its outer state waits for the scope's end."""
         if state is None:
             return None
         out = dict(state)
@@ -707,727 +755,659 @@ class Body:
             restore(out, name)
         return out
 
-    def stmt_end(self, k: int, hi: int) -> int:
-        """The index of the ; that ends the statement at k, or hi."""
-        while k < hi:
-            text = self.t(k)
-            if text == ";":
-                return k
-            if text in OPEN:
-                k = self.partner[k] + 1
-                continue
-            if text == "}":
-                return k
-            k += 1
-        return hi
-
-    def stmt(self, k: int, hi: int, state: State, ctx: list[dict], scope: dict) -> tuple[int, State]:
-        text = self.t(k)
-        if text == ";":
-            return k + 1, state
-        if text == "[" and self.t(k + 1) == "[":
-            return self.partner[k] + 1, state
-        if text == "{":
-            end = self.partner[k]
-            return end + 1, self.block(k, end, state, ctx)
-        if text == "if":
-            return self.if_stmt(k, hi, state, ctx, scope)
-        if text in ("while", "for") or (text == "template" and self.t(k + 1) == "for"):
-            return self.loop_stmt(k, hi, state, ctx, scope)
-        if text == "do":
-            return self.do_stmt(k, hi, state, ctx, scope)
-        if text == "switch":
-            return self.switch_stmt(k, hi, state, ctx, scope)
-        if text == "try":
-            return self.try_stmt(k, hi, state, ctx, scope)
-        if text in ("return", "co_return", "throw"):
-            end = self.stmt_end(k, hi)
-            self.eval(k + 1, end, state, [])
-            return end + 1, None
-        if text in ("break", "continue"):
-            end = self.stmt_end(k, hi)
+    def stmt(self, node: tsast.Node, state: State, ctx: list[dict], scope: dict) -> State:
+        """Walk one statement from a state and return the state after it."""
+        kind = node.type
+        if kind in INERT_STATEMENTS:
+            return state
+        if kind == "compound_statement":
+            return self.block(node, state, ctx)
+        if kind == "if_statement":
+            return self.if_stmt(node, state, ctx)
+        if kind in LOOPS:
+            return self.loop_stmt(node, state, ctx)
+        if kind == "do_statement":
+            return self.do_stmt(node, state, ctx)
+        if kind == "switch_statement":
+            return self.switch_stmt(node, state, ctx)
+        if kind == "try_statement":
+            return self.try_stmt(node, state, ctx)
+        if kind in ("return_statement", "co_return_statement", "throw_statement"):
+            for child in named(node):
+                state = self.eval(child, state)
+            return None
+        if kind == "expression_statement":
+            items = named(node)
+            if len(items) == 1 and items[0].type == "throw_expression":
+                for child in named(items[0]):
+                    state = self.eval(child, state)
+                return None
+            if len(items) == 1 and self.base_assignment(items[0]):
+                return self.assign_base(items[0], state)
+            for child in items:
+                state = self.eval(child, state)
+            return state
+        if kind in ("break_statement", "continue_statement"):
+            jump = "break" if kind == "break_statement" else "continue"
             for frame in reversed(ctx):
-                if text == "continue" and frame["kind"] != "loop":
+                if jump == "continue" and frame["kind"] != "loop":
                     continue
-                frame["break" if text == "break" else "continue"] = join(frame.get(
-                    "break" if text == "break" else "continue"), state)
+                frame[jump] = join(frame.get(jump), state)
                 break
-            return end + 1, None
-        if text == "goto":
-            label = self.t(k + 1)
-            self.goto_states[label] = join(self.goto_states.get(label), state)
-            return self.stmt_end(k, hi) + 1, None
-        if text in ("case", "default") and ctx and any(f["kind"] == "switch" for f in ctx):
-            m = k + 1
-            while m < hi and not (self.t(m) == ":" and self.t(m + 1) != ":"):
-                m = self.partner[m] + 1 if self.t(m) in OPEN else m + 1
-            frame = next(f for f in reversed(ctx) if f["kind"] == "switch")
-            if text == "default":
-                frame["has_default"] = True
-            return m + 1, join(state, frame["entry"])
-        if self.label_at(k) is not None:
+            return None
+        if kind == "goto_statement":
+            label = node.child_by_field("label")
+            if label is not None:
+                self.goto_states[label.text] = join(self.goto_states.get(label.text), state)
+            return None
+        if kind == "labeled_statement":
             # A label joins the state of each goto to it that the walk has passed.
             # A label that no walked goto reaches keeps a live state, since a goto
             # later in the body can still jump to it.
-            entered = join(state, self.goto_states.get(text))
-            return k + 2, entered if entered is not None else {}
-        if text in ("using", "typedef", "static_assert", "namespace", "asm", "friend"):
-            return self.stmt_end(k, hi) + 1, state
-        if text in CLASS_KEYS or text == "enum":
-            end = self.stmt_end(k, hi)
-            m = k
-            while m < end:
-                if self.t(m) == "{":
-                    if text != "enum":
-                        saved = self.function
-                        self.scan_scope(m + 1, self.partner[m])
-                        self.function = saved
-                    m = self.partner[m] + 1
+            label = node.child_by_field("label")
+            entered = join(state, self.goto_states.get(label.text) if label is not None else None)
+            state = entered if entered is not None else {}
+            for child in named(node):
+                if child.field != "label":
+                    state = self.stmt(child, state, ctx, scope)
+            return state
+        if kind == "attributed_statement":
+            for child in named(node):
+                if child.type != "attribute_declaration":
+                    state = self.stmt(child, state, ctx, scope)
+            return state
+        if kind == "declaration":
+            return self.declaration(node, state, scope)
+        if kind in PREPROC_CONDITIONALS:
+            return self.preproc_arms(node, state, lambda arm, entry: self.stmt(arm, entry, ctx, scope))
+        if kind == "case_statement":
+            for child in self.case_body(node):
+                state = self.stmt(child, state, ctx, scope)
+            return state
+        return self.eval(node, state)
+
+    def preproc_arms(self, node: tsast.Node, state: State, walk) -> State:
+        """Walk each arm of a preprocessor conditional from the same state, and join the arms.
+
+        One arm is compiled and the others are not, so the arms are paths.  A
+        conditional with no #else also has the path where no arm is compiled.
+        """
+        out: State = None
+        has_else = False
+        current: tsast.Node | None = node
+        while current is not None:
+            arm_state = state
+            for child in named(current):
+                if child.field in ("condition", "name", "alternative"):
                     continue
-                m = self.partner[m] + 1 if self.t(m) in OPEN else m + 1
-            return end + 1, state
-        end = self.stmt_end(k, hi)
-        names = self.declared_names(k, end)
-        state = self.eval(k, end, state, names)
-        state = self.declare(state, scope, [n for n, _ in names])
-        self.bind_aliases(k, end, names)
-        return end + 1, state
+                arm_state = walk(child, arm_state)
+            out = join(out, arm_state) if out is not None or arm_state is not None else None
+            alternative = current.child_by_field("alternative")
+            if alternative is None:
+                break
+            if alternative.type == "preproc_else":
+                arm_state = state
+                for child in named(alternative):
+                    arm_state = walk(child, arm_state)
+                out = join(out, arm_state)
+                has_else = True
+                break
+            current = alternative
+        return out if has_else else join(out, state)
 
-    def declared_names(self, lo: int, hi: int) -> list[tuple[str, int]]:
-        """The names a declaration between lo and hi introduces, with the index of each."""
-        out: list[tuple[str, int]] = []
-        k = lo
-        while k < hi:
-            text = self.t(k)
-            if text == "[" and k > lo and (self.t(k - 1) in ("auto", "&", "&&")) and self.t(k + 1) != "[":
-                end = self.partner[k]
-                out += [(self.t(m), m) for m in range(k + 1, end) if self.toks[m].kind == "id"]
-                k = end + 1
-                continue
-            if text in OPEN:
-                k = self.partner[k] + 1
-                continue
-            if (self.toks[k].kind == "id" and text not in KEYWORDS and k > lo
-                    and self.t(k + 1) in ("=", "{", "(", ";", ",", "[", ":") and self.t(k + 2) != ":"
-                    and self.t(k + 1) != "::"):
-                prev = self.toks[k - 1]
-                if ((prev.kind == "id" and prev.text not in NOT_A_TYPE) or prev.text in (">", ">>", "*", "&",
-                                                                                       "&&")):
-                    if not (prev.kind == "id" and self.t(k - 2) in (".", "->")):
-                        out.append((text, k))
-            k += 1
-        return out
+    def case_body(self, case: tsast.Node) -> list[tsast.Node]:
+        """The statements of a case, without its value."""
+        return [child for child in named(case) if child.field != "value"]
 
-    def header(self, open_paren: int, state: State, scope: dict) -> State:
-        """Evaluate a parenthesised header that can declare names, such as if (T x = f(); x)."""
-        close = self.partner[open_paren]
-        k = open_paren + 1
-        while k < close:
-            end = k
-            while end < close and self.t(end) != ";":
-                end = self.partner[end] + 1 if self.t(end) in OPEN else end + 1
-            names = self.declared_names(k, end)
-            state = self.eval(k, end, state, names)
-            state = self.declare(state, scope, [n for n, _ in names])
-            k = end + 1
+    def sub_stmt(self, node: tsast.Node | None, state: State, ctx: list[dict]) -> State:
+        """Walk a statement in a scope of its own."""
+        if node is None:
+            return state
+        scope: dict = {}
+        return self.close_scope(self.stmt(node, state, ctx, scope), scope)
+
+    def declared_names(self, declarator: tsast.Node | None) -> list[str]:
+        """The names a declarator introduces: its name, or each name of a structured binding."""
+        node = declarator
+        while node is not None and node.type in DECLARATOR_WRAPPERS:
+            inner = node.child_by_field("declarator")
+            if inner is None:
+                items = [child for child in named(node) if child.type not in ("type_qualifier", "attribute_declaration")]
+                inner = items[0] if items else None
+            node = inner
+        if node is None:
+            return []
+        if node.type == "identifier":
+            return [node.text]
+        if node.type == "structured_binding_declarator":
+            return [child.text for child in named(node) if child.type == "identifier"]
+        return []
+
+    def declaration(self, node: tsast.Node, state: State, scope: dict) -> State:
+        """Walk a declaration: evaluate each initializer, then declare the names and bind the references.
+
+        `T& r = x;` makes r name x.  `auto& [a, b] = obj;` makes a and b name a member
+        of obj, and the walk keys each one as obj.  A copy is a new object and binds
+        nothing.
+        """
+        declared: list[str] = []
+        bindings: list[tuple[list[str], str, bool]] = []
+        for child in node.children:
+            if child.field != "declarator":
+                continue
+            target, value = child, None
+            if child.type == "init_declarator":
+                target = child.child_by_field("declarator")
+                value = child.child_by_field("value")
+                if value is not None:
+                    state = self.eval(value, state)
+            if target is not None and target.type == "function_declarator":
+                continue
+            names = self.declared_names(target)
+            declared += names
+            if (target is not None and target.type == "reference_declarator" and value is not None
+                    and (path := self.plain_path(value)) is not None):
+                inner = target.child_by_field("declarator") or (named(target) or [None])[0]
+                binding = inner is not None and inner.type == "structured_binding_declarator"
+                bindings.append((names, self.canon(path), binding))
+        # A declaration in a condition keeps its value in the value field.
+        if node.parent is not None and node.parent.type == "condition_clause":
+            value = node.child_by_field("value")
+            if value is not None:
+                state = self.eval(value, state)
+        state = self.declare(state, scope, declared)
+        for name in declared:
+            self.aliases.pop(name, None)
+        for names, target, binding in bindings:
+            for name in names:
+                self.aliases[name] = (target, binding)
         return state
 
-    def sub_stmt(self, k: int, hi: int, state: State, ctx: list[dict]) -> tuple[int, State]:
-        scope: dict = {}
-        k, state = self.stmt(k, hi, state, ctx, scope)
-        return k, self.close_scope(state, scope)
-
-    def if_stmt(self, k: int, hi: int, state: State, ctx: list[dict], outer: dict) -> tuple[int, State]:
-        scope: dict = {}
-        k += 1
-        if self.t(k) == "constexpr":
-            k += 1
-        if self.t(k) == "!":
-            k += 1
-        if self.t(k) == "consteval":
-            k += 1
-            when_true = when_false = state
-        elif self.try_call(k + 1, self.partner[k]) is not None:
-            when_true, when_false = self.condition(k + 1, self.partner[k], state)
-            k = self.partner[k] + 1
-        else:
-            when_true = when_false = self.header(k, state, scope)
-            k = self.partner[k] + 1
-        k, then = self.sub_stmt(k, hi, when_true, ctx)
-        other = when_false
-        if self.t(k) == "else":
-            k, other = self.sub_stmt(k + 1, hi, when_false, ctx)
-        return k, self.close_scope(join(then, other), scope)
-
-    def loop_stmt(self, k: int, hi: int, state: State, ctx: list[dict], outer: dict) -> tuple[int, State]:
-        scope: dict = {}
-        if self.t(k) == "template":
-            k += 1
-        keyword = self.t(k)
-        paren = k + 1
-        close = self.partner[paren]
-        parts: list[tuple[int, int]] = []
-        m = paren + 1
-        while m <= close:
-            end = m
-            while end < close and self.t(end) != ";":
-                end = self.partner[end] + 1 if self.t(end) in OPEN else end + 1
-            parts.append((m, end))
-            m = end + 1
-        colon = -1
-        if keyword == "for" and len(parts) == 1:
-            m = paren + 1
-            while m < close:
-                if self.t(m) == ":" and self.t(m + 1) != ":":
-                    colon = m
-                    break
-                m = self.partner[m] + 1 if self.t(m) in OPEN else m + 1
-        body = close + 1
-        body_end, _ = self.sub_stmt_extent(body, hi)
-        loop_names: list[str] = []
-        if colon >= 0:
-            # A range for reads every element of its range, so a plain range path
-            # reads the key path[*], which matches any spent element key.
-            if state is not None and self.toks[colon + 1].kind == "id" and self.t(colon + 1) not in KEYWORDS:
-                range_path, range_end = self.path_at(colon + 1, close)
-                key = self.canon(range_path) + "[*]"
-                if range_end == close and (spent := spent_prefix(state, key)) is not None:
-                    self.report(colon + 1, key, "use after move", spent, state[spent])
-            state = self.eval(colon + 1, close, state, [])
-            loop_names = [n for n, _ in self.declared_names(paren + 1, colon)] or \
-                [self.t(i) for i in range(paren + 1, colon) if self.toks[i].kind == "id"][-1:]
-            cond_lo = cond_hi = incr_lo = incr_hi = -1
-        elif keyword == "for" and len(parts) == 3:
-            names = self.declared_names(*parts[0])
-            state = self.eval(parts[0][0], parts[0][1], state, names)
-            state = self.declare(state, scope, [n for n, _ in names])
-            cond_lo, cond_hi = parts[1]
-            incr_lo, incr_hi = parts[2]
-        else:
-            names = self.declared_names(paren + 1, close)
-            cond_lo, cond_hi = paren + 1, close
-            incr_lo = incr_hi = -1
-            loop_names = [n for n, _ in names]
-        entry = state
-        exit_state: State = None
-        head = entry
-        for _ in range(2):
-            leave = head
-            if cond_lo >= 0:
-                head, leave = self.condition(cond_lo, cond_hi, head)
-            exit_state = join(exit_state, leave)
-            frame = {"kind": "loop"}
-            ctx.append(frame)
-            inner = self.declare(head, scope, loop_names) if loop_names else head
-            _, tail = self.sub_stmt(body, hi, inner, ctx)
-            ctx.pop()
-            tail = join(tail, frame.get("continue"))
-            if incr_lo >= 0:
-                tail = self.eval(incr_lo, incr_hi, tail, [])
-            exit_state = join(exit_state, frame.get("break"))
-            head = join(entry, tail)
-        return body_end, self.close_scope(exit_state, scope)
-
-    def sub_stmt_extent(self, k: int, hi: int) -> tuple[int, None]:
-        """The index after the statement that starts at k, found without walking it."""
-        text = self.t(k)
-        if text == "{":
-            return self.partner[k] + 1, None
-        if text == "[" and self.t(k + 1) == "[":
-            return self.sub_stmt_extent(self.partner[k] + 1, hi)
-        if text == "if":
-            m = k + 1
-            while self.t(m) in ("constexpr", "!", "consteval"):
-                m += 1
-            if self.t(m) == "(":
-                m = self.partner[m] + 1
-            m, _ = self.sub_stmt_extent(m, hi)
-            if self.t(m) == "else":
-                m, _ = self.sub_stmt_extent(m + 1, hi)
-            return m, None
-        if text in ("while", "for", "switch") or (text == "template" and self.t(k + 1) == "for"):
-            m = k + 1 if text != "template" else k + 2
-            return self.sub_stmt_extent(self.partner[m] + 1, hi)
-        if text == "do":
-            m, _ = self.sub_stmt_extent(k + 1, hi)
-            return self.stmt_end(m, hi) + 1, None
-        if text == "try":
-            m = self.partner[k + 1] + 1
-            while self.t(m) == "catch":
-                m = self.partner[self.partner[m + 1] + 1] + 1
-            return m, None
-        return self.stmt_end(k, hi) + 1, None
-
-    def do_stmt(self, k: int, hi: int, state: State, ctx: list[dict], outer: dict) -> tuple[int, State]:
-        body = k + 1
-        body_end, _ = self.sub_stmt_extent(body, hi)
-        cond = body_end + 1
-        entry = state
-        exit_state: State = None
-        head = entry
-        for _ in range(2):
-            frame = {"kind": "loop"}
-            ctx.append(frame)
-            _, tail = self.sub_stmt(body, hi, head, ctx)
-            ctx.pop()
-            tail = join(tail, frame.get("continue"))
-            tail, leave = self.condition(cond + 1, self.partner[cond], tail)
-            exit_state = join(join(exit_state, leave), frame.get("break"))
-            head = join(entry, tail)
-        return self.stmt_end(body_end, hi) + 1, exit_state
-
-    def switch_stmt(self, k: int, hi: int, state: State, ctx: list[dict], outer: dict) -> tuple[int, State]:
-        scope: dict = {}
-        state = self.header(k + 1, state, scope)
-        body = self.partner[k + 1] + 1
-        if self.t(body) != "{":
-            return self.sub_stmt(body, hi, state, ctx)[0], self.close_scope(state, scope)
-        end = self.partner[body]
-        frame = {"kind": "switch", "entry": state, "has_default": False}
-        ctx.append(frame)
-        inner: State = None
-        block_scope: dict = {}
-        m = body + 1
-        while m < end:
-            m, inner = self.stmt(m, end, inner, ctx, block_scope)
-        ctx.pop()
-        inner = self.close_scope(inner, block_scope)
-        out = join(inner, frame.get("break"))
-        if not frame["has_default"]:
-            out = join(out, state)
-        return end + 1, self.close_scope(out, scope)
-
-    def try_stmt(self, k: int, hi: int, state: State, ctx: list[dict], outer: dict) -> tuple[int, State]:
-        body = k + 1
-        end = self.partner[body]
-        tried = self.block(body, end, state, ctx)
-        out = tried
-        m = end + 1
-        while self.t(m) == "catch":
-            paren = m + 1
-            handler = self.partner[paren] + 1
-            scope: dict = {}
-            names = [n for n, _ in self.declared_names(paren + 1, self.partner[paren])]
-            start = self.declare(join(state, tried), scope, names)
-            caught = self.block(handler, self.partner[handler], start, ctx)
-            out = join(out, self.close_scope(caught, scope))
-            m = self.partner[handler] + 1
-        return m, out
-
-    # ── expressions ──────────────────────────────────────────────────
-
-    def path_at(self, k: int, hi: int) -> tuple[str, int]:
-        """The member path that starts at k, and the index after it.
-
-        A subscript by an integer literal is part of the path, so a[0] and a[1] are two
-        keys.  A subscript by any other expression ends the path at the array, so a[i]
-        keys as the whole array a.
-        """
-        parts = [self.t(k)]
-        m = k + 1
-        while m + 1 < hi:
-            if self.t(m) in (".", "->") and self.toks[m + 1].kind == "id" and self.t(m + 2) != "(":
-                parts.append(self.t(m) + self.t(m + 1))
-                m += 2
-            elif self.t(m) == "[" and self.partner[m] == m + 2 and self.toks[m + 1].kind == "num":
-                parts.append(f"[{self.t(m + 1)}]")
-                m += 3
+    def header(self, clause: tsast.Node | None, state: State, scope: dict) -> State:
+        """Evaluate a condition clause that can declare names, such as if (T x = f(); x)."""
+        if clause is None:
+            return state
+        for child in named(clause):
+            if child.type == "init_statement":
+                for inner in named(child):
+                    state = (self.declaration(inner, state, scope) if inner.type == "declaration"
+                             else self.stmt(inner, state, [], scope))
+            elif child.type == "declaration":
+                state = self.declaration(child, state, scope)
             else:
-                break
-        return "".join(parts), m
+                state = self.eval(child, state)
+        return state
 
-    def member_of_this(self, k: int) -> int:
-        """The index of the member name after this-> or (*this). at k, or -1."""
-        if self.t(k) == "this" and self.t(k + 1) == "->" and self.toks[k + 2].kind == "id":
-            return k + 2
-        if (self.t(k) == "(" and self.t(k + 1) == "*" and self.t(k + 2) == "this" and self.t(k + 3) == ")"
-                and self.t(k + 4) == "." and self.toks[k + 5].kind == "id"):
-            return k + 5
-        return -1
-
-    def move_argument(self, open_paren: int) -> str | None:
-        """The path inside std::move( ... ) when the argument is a plain path or *path.
-
-        The move std::move(*p) spends the object that p reaches, so its key is *p.
-        Parentheses around the argument do not change its key, and this->m and
-        (*this).m key as m.  A subscript by anything but an integer literal keys
-        the whole array.
-        """
-        close = self.partner[open_paren]
-        k = open_paren + 1
-        while self.t(k) == "(" and self.partner[k] == close - 1:
-            k, close = k + 1, close - 1
-        deref = self.t(k) == "*"
-        if deref:
-            k += 1
-        if self.member_of_this(k) >= 0:
-            k = self.member_of_this(k)
-        if self.toks[k].kind != "id" or self.t(k) in KEYWORDS:
+    def condition_value(self, clause: tsast.Node | None) -> tsast.Node | None:
+        """The expression of a condition when it is the whole condition, with no declaration or initializer."""
+        if clause is None:
             return None
-        callee = k
-        while self.t(callee + 1) == "::" or self.t(callee) == "::":
-            callee += 1
-        if not deref and self.t(callee) == "get" and (element := self.get_element(callee, close + 1)) is not None:
-            return element[0] if element[1] == close else None
-        path, end = self.path_at(k, close)
-        path = self.canon(path)
-        if end < close and self.t(end) == "[" and self.partner[end] == close - 1:
-            path, end = path + "[*]", close
-        elif end < close and self.t(end) == "." and self.t(end + 1) == "at" and self.t(end + 2) == "(" \
-                and self.partner[end + 2] == close - 1:
-            path, end = path + self.index_segment(end + 2), close
-        if end != close:
-            return None
-        return "*" + path if deref else path
-
-    def move_callee(self, k: int, hi: int) -> int:
-        """The index of the ( of a move call whose callee name is at k, or -1.
-
-        The callee is a move when its last component is in MOVE_CALLEES, whatever
-        qualifies it.  A member call such as obj.move(x) is not a move of x.
-        """
-        if self.t(k) not in MOVE_CALLEES or self.t(k - 1) in (".", "->"):
-            return -1
-        m = k + 1
-        if self.t(m) == "<":
-            m = self.skip_angle(m, hi)
-        return m if self.t(m) == "(" else -1
-
-    def qualified_start(self, k: int) -> int:
-        """The index of the first token of the qualified name whose last component is at k."""
-        while self.t(k - 1) == "::":
-            if k < 2 or self.toks[k - 2].kind != "id" or self.t(k - 2) in KEYWORDS:
-                return k - 1
-            k -= 2
-        return k
-
-    def swap_arguments(self, open_paren: int) -> tuple[str, str] | None:
-        """The two paths of swap(a, b) when each argument is a plain path."""
-        close = self.partner[open_paren]
-        paths: list[str] = []
-        k = open_paren + 1
-        while k < close:
-            if self.toks[k].kind != "id" or self.t(k) in KEYWORDS:
+        if clause.type != "condition_clause":
+            node = clause
+        else:
+            items = named(clause)
+            if len(items) != 1 or items[0].field != "value" or items[0].type == "declaration":
                 return None
-            path, end = self.path_at(k, close)
-            paths.append(self.canon(path))
-            if end < close and self.t(end) != ",":
-                return None
-            k = end + 1
-        return (paths[0], paths[1]) if len(paths) == 2 else None
+            node = items[0]
+        while node.type == "parenthesized_expression" and len(named(node)) == 1:
+            node = named(node)[0]
+        return node
 
-    def try_call(self, lo: int, hi: int) -> bool | None:
-        """Whether the condition from lo to hi is !f(...), for one call f whose name starts with try_.
+    def try_call(self, node: tsast.Node | None) -> bool | None:
+        """Whether a condition is !f(...), for one call f whose name starts with try_.
 
         The result is True for !f(...), False for f(...), and None for any other condition.  The
         callee can be a member, as in !ring->try_push(std::move(v)).
         """
-        negated = self.t(lo) == "!"
-        start = lo + 1 if negated else lo
-        close = hi - 1
-        if close <= start or self.t(close) != ")":
+        if node is None:
             return None
-        open_paren = self.partner[close]
-        name = open_paren - 1
-        if self.toks[name].kind != "id" or not self.t(name).startswith("try_"):
+        negated = False
+        if node.type == "unary_expression" and operator(node) in ("!", "not"):
+            negated = True
+            node = node.child_by_field("argument")
+        if node is None or node.type != "call_expression":
             return None
-        chain_is_plain = all(self.toks[i].kind == "id" or self.t(i) in (".", "->", "::")
-                             for i in range(start, name))
-        return negated if chain_is_plain else None
+        function = node.child_by_field("function")
+        name = leaf_name(function)
+        if function is None or name is None or not name.startswith("try_") or not is_plain_callee(function):
+            return None
+        return negated
 
-    def condition(self, lo: int, hi: int, state: State) -> tuple[State, State]:
-        """The states where the condition from lo to hi is true and where it is false.
+    def condition(self, node: tsast.Node | None, state: State) -> tuple[State, State]:
+        """The states where a condition is true and where it is false.
 
         A function whose name starts with try_ leaves its argument whole when it fails, the rule
         that std::map::try_emplace states.  So a move into such a call spends the name only on
         the path where the call succeeded.
         """
-        negated = self.try_call(lo, hi)
+        if node is None:
+            return state, state
+        negated = self.try_call(node)
         if negated is None:
-            after = self.eval(lo, hi, state, [])
+            after = self.eval(node, state)
             return after, after
         self.hold_moves = True
-        failed = self.eval(lo, hi, state, [])
+        failed = self.eval(node, state)
         self.hold_moves = False
-        succeeded = self.eval(lo, hi, state, [])
+        succeeded = self.eval(node, state)
         return (failed, succeeded) if negated else (succeeded, failed)
 
-    def element_of_get(self, k: int) -> str | None:
-        """The index of std::get<I>( std::move(t) ), which moves element I of t and not t."""
-        if self.t(k - 1) != "(":
-            return None
-        close = self.partner[k - 1] if self.partner[k - 1] >= 0 else -1
-        j = k - 2
-        if self.t(j) != ">":
-            return None
-        depth, m = 0, j
-        while m > 0:
-            if self.t(m) == ">":
-                depth += 1
-            elif self.t(m) == "<":
-                depth -= 1
-                if depth == 0:
-                    break
-            m -= 1
-        if self.t(m - 1) != "get" or close < 0:
-            return None
-        return "".join(self.t(i) for i in range(m + 1, j))
+    def if_stmt(self, node: tsast.Node, state: State, ctx: list[dict]) -> State:
+        """Walk an if: the two branches start from the condition's true and false states."""
+        scope: dict = {}
+        clause = node.child_by_field("condition")
+        value = self.condition_value(clause)
+        if clause is None:
+            when_true = when_false = state
+        elif self.try_call(value) is not None:
+            when_true, when_false = self.condition(value, state)
+        else:
+            when_true = when_false = self.header(clause, state, scope)
+        then = self.sub_stmt(node.child_by_field("consequence"), when_true, ctx)
+        other = when_false
+        alternative = node.child_by_field("alternative")
+        if alternative is not None:
+            branch = [child for child in named(alternative)]
+            other = self.sub_stmt(branch[0] if branch else None, when_false, ctx)
+        return self.close_scope(join(then, other), scope)
 
-    def is_operand_end(self, i: int) -> bool:
-        tok = self.toks[i] if i >= 0 else None
-        if tok is None:
-            return False
-        if tok.kind == "id":
-            return tok.text not in KEYWORDS or tok.text in ("this", "true", "false", "nullptr")
-        return tok.kind == "num" or tok.text in (")", "]", ">")
-
-    def lambda_body(self, k: int, hi: int) -> int:
-        """The index of the { of the lambda that opens at the [ at k, or -1."""
-        m = self.partner[k] + 1
-        if self.t(m) == "<":
-            m = self.skip_angle(m, hi)
-        if self.t(m) == "(":
-            m = self.partner[m] + 1
-        while m < hi:
-            text = self.t(m)
-            if text == "{":
-                return m
-            if text in ("(", "["):
-                m = self.partner[m] + 1
-                continue
-            if text in (";", ",", ")", "]", "}", "="):
-                return -1
-            m += 1
-        return -1
-
-    def eval(self, lo: int, hi: int, state: State, decls: list[tuple[str, int]]) -> State:
-        """Walk the tokens of an expression or a declaration from lo to hi."""
-        if state is None:
-            return None
-        state = dict(state)
-        decl_at = {i for _, i in decls}
-        pending: list[str] = []
-        k = lo
-        while k < hi:
-            tok = self.toks[k]
-            text = tok.text
-            if text in UNEVALUATED and self.t(k + 1) == "(":
-                k = self.partner[k + 1] + 1
-                continue
-            if text == "sizeof" and self.t(k + 1) == "...":
-                k = self.partner[k + 2] + 1 if self.t(k + 2) == "(" else k + 2
-                continue
-            if text == "requires":
-                m = k + 1
-                if self.t(m) == "(":
-                    m = self.partner[m] + 1
-                if self.t(m) == "{":
-                    k = self.partner[m] + 1
-                    continue
-                k += 1
-                continue
-            if text == "[" and self.t(k + 1) == "[":
-                k = self.partner[k] + 1
-                continue
-            if text == "[" and not self.is_operand_end(k - 1):
-                body = self.lambda_body(k, hi)
-                if body >= 0:
-                    state = self.lambda_expr(k, body, state)
-                    k = self.partner[body] + 1
-                    continue
-            if tok.kind == "id" and (m := self.move_callee(k, hi)) >= 0:
-                path = self.move_argument(m)
-                element = self.element_of_get(self.qualified_start(k))
-                if path is not None and element is not None:
-                    path = f"{path}[{element}]"
+    def loop_stmt(self, node: tsast.Node, state: State, ctx: list[dict]) -> State:
+        """Walk a loop twice, so a move on one iteration meets a use on the next."""
+        scope: dict = {}
+        kind = node.type
+        body = node.child_by_field("body")
+        loop_names: list[str] = []
+        condition: tsast.Node | None = None
+        update: tsast.Node | None = None
+        if kind in ("for_range_loop", "expansion_statement"):
+            initializer = node.child_by_field("initializer")
+            if initializer is not None:
+                state = self.header_part(initializer, state, scope)
+            right = node.child_by_field("right")
+            if right is not None and state is not None:
+                # A range for reads every element of its range, so a plain range path
+                # reads the key path[*], which matches any spent element key.
+                path = self.plain_path(right)
                 if path is not None:
-                    self.spend(state, k, path)
-                    k = self.partner[m] + 1
-                    continue
-                k = m + 1
-                continue
-            if (member := self.member_of_this(k)) >= 0 and self.t(k - 1) not in (".", "->", "::"):
-                # this->m and (*this).m are the member m.  The walk resumes at m with no
-                # qualifier in front of it, so m is read as a plain name.
-                k = member
-                tok, text = self.toks[k], self.t(k)
-                anchored = True
+                    self.use(right, state, path + "[*]")
+                state = self.eval(right, state)
+            loop_names = self.declared_names(node.child_by_field("declarator"))
+        elif kind == "for_statement":
+            initializer = node.child_by_field("initializer")
+            if initializer is not None:
+                state = self.header_part(initializer, state, scope)
+            condition = node.child_by_field("condition")
+            update = node.child_by_field("update")
+        else:
+            clause = node.child_by_field("condition")
+            declarations = [] if clause is None else clause.children_of_type("declaration")
+            if declarations:
+                loop_names = [name for d in declarations for c in d.children if c.field == "declarator"
+                              for name in self.declared_names(c.child_by_field("declarator") or c)]
+            condition = clause
+        entry = state
+        exit_state: State = None
+        head = entry
+        for _ in range(2):
+            leave = head
+            if condition is not None:
+                value = self.condition_value(condition)
+                if value is not None:
+                    head, leave = self.condition(value, head)
+                else:
+                    head = leave = self.header(condition, head, {})
+            exit_state = join(exit_state, leave)
+            frame = {"kind": "loop"}
+            ctx.append(frame)
+            inner = self.declare(head, scope, loop_names) if loop_names else head
+            tail = self.sub_stmt(body, inner, ctx)
+            ctx.pop()
+            tail = join(tail, frame.get("continue"))
+            if update is not None:
+                tail = self.eval(update, tail)
+            exit_state = join(exit_state, frame.get("break"))
+            head = join(entry, tail)
+        return self.close_scope(exit_state, scope)
+
+    def header_part(self, node: tsast.Node, state: State, scope: dict) -> State:
+        """Walk the initializer of a for: a declaration declares into the loop scope, anything else is evaluated."""
+        if node.type == "declaration":
+            return self.declaration(node, state, scope)
+        if node.type == "init_statement":
+            for inner in named(node):
+                state = self.header_part(inner, state, scope)
+            return state
+        return self.eval(node, state)
+
+    def do_stmt(self, node: tsast.Node, state: State, ctx: list[dict]) -> State:
+        """Walk a do-while twice: the body runs first, then the condition."""
+        body = node.child_by_field("body")
+        condition = node.child_by_field("condition")
+        entry = state
+        exit_state: State = None
+        head = entry
+        for _ in range(2):
+            frame = {"kind": "loop"}
+            ctx.append(frame)
+            tail = self.sub_stmt(body, head, ctx)
+            ctx.pop()
+            tail = join(tail, frame.get("continue"))
+            tail, leave = self.condition(self.condition_value(condition), tail)
+            exit_state = join(join(exit_state, leave), frame.get("break"))
+            head = join(entry, tail)
+        return exit_state
+
+    def switch_stmt(self, node: tsast.Node, state: State, ctx: list[dict]) -> State:
+        """Walk a switch: each case starts from the join of the fall-through state and the entry state."""
+        scope: dict = {}
+        state = self.header(node.child_by_field("condition"), state, scope)
+        body = node.child_by_field("body")
+        if body is None or body.type != "compound_statement":
+            return self.close_scope(self.sub_stmt(body, state, ctx), scope)
+        frame = {"kind": "switch", "entry": state, "has_default": False}
+        ctx.append(frame)
+        inner: State = None
+        block_scope: dict = {}
+        for child in named(body):
+            if child.type == "case_statement":
+                if child.child_by_field("value") is None:
+                    frame["has_default"] = True
+                inner = join(inner, state)
+                for statement in self.case_body(child):
+                    inner = self.stmt(statement, inner, ctx, block_scope)
             else:
-                anchored = False
-            if text == "static_cast" and self.t(k + 1) == "<":
-                m = self.skip_angle(k + 1, hi)
-                scalar = all(self.t(i) in SCALAR_TYPE_WORDS for i in range(k + 2, m - 2))
-                if self.t(m - 2) == "&&" and self.t(m) == "(" and not scalar:
-                    path = self.move_argument(m)
-                    if path is not None:
-                        self.spend(state, k, path)
-                        k = self.partner[m] + 1
-                        continue
-                k = m
-                continue
-            if text == "swap" and self.t(k + 1) == "(" and self.t(k - 1) not in (".", "->"):
-                pair = self.swap_arguments(k + 1)
-                if pair is not None:
-                    exchange(state, *pair)
-                    k = self.partner[k + 1] + 1
-                    continue
-            if text == "get" and (element := self.get_element(k, hi)) is not None:
-                # std::get<I>(t) reads the element key t[I], whatever qualifies get.
-                key, after = element
-                spent = spent_prefix(state, key)
-                if spent is not None:
-                    self.report(k, key, "use after move", spent, state[spent])
-                k = after
-                continue
-            if tok.kind == "id" and text not in KEYWORDS and k not in decl_at:
-                prev = "" if anchored else self.t(k - 1)
-                if prev in (".", "->", "::") or self.t(k + 1) == "::":
-                    k += 1
-                    continue
-                if text == "this" or prev == "~":
-                    k += 1
-                    continue
-                path, end = self.path_at(k, hi)
-                through_binding = self.is_binding(path)
-                path = self.canon(path)
-                nxt = self.t(end)
-                # A unary * before the path, or a call of value() on it, reaches the object
-                # that the path holds, which is the key *path.
-                unary_deref = prev == "*" and not self.is_operand_end(k - 2)
-                value_call = nxt == "." and self.t(end + 1) == "value" and self.t(end + 2) == "("
-                if unary_deref or value_call:
-                    path = "*" + path
-                if prev == "&" and self.t(k - 2) == "(" and self.t(k - 3) in ("destroy_at", "construct_at"):
-                    pending.append(path)
-                    k = end
-                    continue
-                if nxt == "=":
-                    pending.append(path)
-                    k = end + 1
-                    continue
-                if nxt == "[" and self.t(end + 1) != "[":
-                    # A subscript that is not an integer literal can name any element,
-                    # so it reads the key path[*].  An assignment through it refills
-                    # one element, which need not be the spent one, so it refills
-                    # nothing.
-                    if self.t(self.partner[end] + 1) == "=":
-                        k = end
-                        continue
-                    path += "[*]"
-                if nxt == "." and self.t(end + 1) == "at" and self.t(end + 2) == "(":
-                    # a.at(0) is the element key a[0], and a.at(i) is a[*].
-                    path += self.index_segment(end + 2)
-                elif through_binding:
-                    # A structured binding names a member of its object, and the walk
-                    # does not know which one, so any spent key under the object counts.
-                    under = next((s for s in state if reaches(path, s)), None)
-                    if under is not None:
-                        self.report(k, path, "use after move", under, state[under])
-                        k = end
-                        continue
-                if nxt in (".", "->") and self.t(end + 1) in REINIT_METHODS and self.t(end + 2) == "(":
-                    pending.append(path)
-                    k = end + 2
-                    continue
-                if nxt in (".", "->") and self.t(end + 1) == "swap" and self.t(end + 2) == "(":
-                    other = self.move_argument(end + 2)
-                    if other is not None:
-                        exchange(state, path, other)
-                        k = self.partner[end + 2] + 1
-                        continue
-                spent = spent_prefix(state, path)
-                if spent is not None:
-                    self.report(k, path, "use after move", spent, state[spent])
-                k = end
-                continue
-            k += 1
+                inner = self.stmt(child, inner, ctx, block_scope)
+        ctx.pop()
+        inner = self.close_scope(inner, block_scope)
+        out = join(inner, frame.get("break"))
+        if not frame["has_default"]:
+            out = join(out, state)
+        return self.close_scope(out, scope)
+
+    def try_stmt(self, node: tsast.Node, state: State, ctx: list[dict]) -> State:
+        """Walk a try: each handler starts from the join of the entry state and the state after the try block."""
+        body = node.child_by_field("body")
+        tried = self.block(body, state, ctx) if body is not None else state
+        out = tried
+        for handler in node.children_of_type("catch_clause"):
+            scope: dict = {}
+            parameters = handler.child_by_field("parameters")
+            names = [name for p in ([] if parameters is None else named(parameters))
+                     for name in self.declared_names(p.child_by_field("declarator"))]
+            start = self.declare(join(state, tried), scope, names)
+            handler_body = handler.child_by_field("body")
+            caught = self.block(handler_body, start, ctx) if handler_body is not None else start
+            out = join(out, self.close_scope(caught, scope))
+        return out
+
+    # ── expressions ──────────────────────────────────────────────────
+
+    def eval(self, node: tsast.Node | None, state: State) -> State:
+        """Walk one expression from a state.  The assignments in it refill their keys at its end."""
+        if state is None or node is None:
+            return None if state is None else state
+        state = dict(state)
+        pending: list[str] = []
+        self.expr(node, state, pending)
         for path in pending:
             restore(state, path)
         return state
 
-    def lambda_expr(self, open_bracket: int, body: int, state: dict[str, int]) -> dict[str, int]:
-        """Walk the captures where the lambda appears, and its body as a new body."""
-        close = self.partner[open_bracket]
-        shadow: list[str] = []
-        k = open_bracket + 1
-        while k < close:
-            end = k
-            while end < close and self.t(end) != ",":
-                end = self.partner[end] + 1 if self.t(end) in OPEN else end + 1
-            part = [self.t(i) for i in range(k, end)]
-            if "=" in part and part[0] != "=":
-                eq = k + part.index("=")
-                name = self.t(eq - 1)
-                shadow.append(name)
-                state = self.eval(eq + 1, end, state, []) or {}
-            elif len(part) == 1 and self.toks[k].kind == "id" and part[0] not in KEYWORDS:
-                spent = spent_prefix(state, self.canon(part[0]))
+    def expr(self, node: tsast.Node, state: dict[str, int], pending: list[str]) -> None:
+        """Walk the operands of an expression in source order, reporting each use after move."""
+        kind = node.type
+        if kind in NOT_EVALUATED:
+            return
+        if kind == "identifier":
+            self.use(node, state, node.text)
+            return
+        if kind == "lambda_expression":
+            state.update(self.lambda_expr(node, state))
+            return
+        if kind == "call_expression":
+            self.call(node, state, pending)
+            return
+        if kind == "assignment_expression":
+            self.assignment(node, state, pending)
+            return
+        if kind in ("field_expression", "subscript_expression", "pointer_expression"):
+            self.access(node, state, pending)
+            return
+        if kind == "template_function":
+            name = node.child_by_field("name")
+            if name is not None:
+                self.expr(name, state, pending)
+            return
+        if kind in PREPROC_CONDITIONALS:
+            after = self.preproc_arms(node, state, lambda arm, entry: self.eval(arm, entry))
+            state.clear()
+            state.update(after or {})
+            return
+        if kind in ("cast_expression", "new_expression", "compound_literal_expression"):
+            for child in named(node):
+                if child.field != "type":
+                    self.expr(child, state, pending)
+            return
+        if kind == "initializer_pair":
+            value = node.child_by_field("value")
+            if value is not None:
+                self.expr(value, state, pending)
+            return
+        for child in named(node):
+            self.expr(child, state, pending)
+
+    def access(self, node: tsast.Node, state: dict[str, int], pending: list[str]) -> None:
+        """Walk a member access, a subscript or a unary * or &, and read the path it names."""
+        if node.type == "pointer_expression":
+            operand = node.child_by_field("argument")
+            if operand is None:
+                return
+            path = self.plain_path(operand) if operator(node) == "*" else None
+            if path is not None:
+                # A unary * reaches the object that the path holds, which is the key *path.
+                self.use(operand, state, "*" + path)
+            else:
+                self.expr(operand, state, pending)
+            return
+        if node.type == "subscript_expression":
+            argument = node.child_by_field("argument")
+            path = self.plain_path(node)
+            if path is not None:
+                self.use(node, state, path)
+                return
+            indices = node.child_by_field("indices")
+            if indices is not None:
+                self.expr(indices, state, pending)
+            base = None if argument is None else self.plain_path(argument)
+            if base is not None:
+                # A subscript that is not an integer literal can name any element,
+                # so it reads the key path[*].
+                self.use(argument, state, base + "[*]")
+            elif argument is not None:
+                self.expr(argument, state, pending)
+            return
+        path = self.plain_path(node)
+        if path is not None:
+            self.use(node, state, path)
+            return
+        argument = node.child_by_field("argument")
+        if argument is not None:
+            self.expr(argument, state, pending)
+
+    def receiver(self, callee: tsast.Node) -> str | None:
+        """The path of the object a member call is called on, obj in obj.f() and *p in p->... when it is plain."""
+        argument = callee.child_by_field("argument")
+        if argument is None:
+            return None
+        operand = self.deref_operand(argument)
+        if operand is not None:
+            path = self.plain_path(operand)
+            return None if path is None else "*" + path
+        return self.plain_path(argument)
+
+    def call(self, node: tsast.Node, state: dict[str, int], pending: list[str]) -> None:
+        """Walk a call: a move spends its argument, and the other shapes the rule names act on their keys."""
+        function = node.child_by_field("function")
+        arguments = node.child_by_field("arguments")
+        if self.move_callee(node) or self.rvalue_cast(node):
+            path = self.move_argument(arguments)
+            if path is not None:
+                element = self.element_of_get(node) if self.move_callee(node) else None
+                self.spend(state, function, f"{path}[{element}]" if element is not None else path)
+                return
+            if arguments is not None:
+                self.expr(arguments, state, pending)
+            return
+        name = leaf_name(function)
+        if function is not None and function.type != "field_expression":
+            if name == "swap" and arguments is not None:
+                items = named(arguments)
+                paths = [self.plain_path(item) for item in items]
+                if len(paths) == 2 and None not in paths:
+                    exchange(state, self.canon(paths[0]), self.canon(paths[1]))
+                    return
+            element = self.get_element(node)
+            if element is not None:
+                # std::get<I>(t) reads the element key t[I], whatever qualifies get.
+                spent = spent_prefix(state, element)
                 if spent is not None:
-                    self.report(k, part[0], "copy capture after move", spent, state[spent])
-            k = end + 1
-        m = close + 1
-        if self.t(m) == "<":
-            m = self.skip_angle(m, body)
-        if self.t(m) == "(":
-            params_close = self.partner[m]
-            for i in range(m + 1, params_close):
-                if self.toks[i].kind == "id" and self.t(i + 1) in (",", ")", "=", "["):
-                    shadow.append(self.t(i))
+                    self.report(node, element, "use after move", spent, state[spent])
+                return
+            if name in ("destroy_at", "construct_at") and arguments is not None:
+                items = named(arguments)
+                target = items[0] if items else None
+                if (target is not None and target.type == "pointer_expression" and operator(target) == "&"
+                        and (path := self.plain_path(target.child_by_field("argument"))) is not None):
+                    pending.append(self.canon(path))
+                    for item in items[1:]:
+                        self.expr(item, state, pending)
+                    return
+        if function is not None and function.type == "field_expression":
+            receiver = self.receiver(function)
+            if receiver is not None:
+                if name in REINIT_METHODS:
+                    pending.append(self.canon(receiver))
+                    if arguments is not None:
+                        self.expr(arguments, state, pending)
+                    return
+                if name == "swap":
+                    other = self.move_argument(arguments)
+                    if other is not None:
+                        exchange(state, self.canon(receiver), other)
+                        return
+                if name == "at":
+                    self.use(function, state, receiver + self.index_segment(arguments))
+                    if arguments is not None:
+                        self.expr(arguments, state, pending)
+                    return
+                if name == "value" and arguments is not None and not named(arguments):
+                    self.use(function, state, "*" + receiver if not receiver.startswith("*") else receiver)
+                    return
+                self.use(function, state, receiver)
+            else:
+                argument = function.child_by_field("argument")
+                if argument is not None:
+                    self.expr(argument, state, pending)
+        elif function is not None:
+            self.expr(function, state, pending)
+        if arguments is not None:
+            self.expr(arguments, state, pending)
+
+    def assignment(self, node: tsast.Node, state: dict[str, int], pending: list[str]) -> None:
+        """Walk an assignment.  A plain = refills its left key at the end of the expression.
+
+        An assignment through a[i] refills one element, which need not be the
+        spent one, so it refills nothing.  A compound assignment reads its left side.
+        """
+        left = node.child_by_field("left")
+        right = node.child_by_field("right")
+        if left is not None and tsast.operator_of(node) == "=":
+            operand = self.deref_operand(left)
+            path = self.plain_path(operand) if operand is not None else self.plain_path(left)
+            if path is not None:
+                pending.append(self.canon("*" + path if operand is not None else path))
+            elif (left.type == "subscript_expression" and (argument := left.child_by_field("argument")) is not None
+                  and self.plain_path(argument) is not None):
+                indices = left.child_by_field("indices")
+                if indices is not None:
+                    self.expr(indices, state, pending)
+            else:
+                self.expr(left, state, pending)
+        elif left is not None:
+            self.expr(left, state, pending)
+        if right is not None:
+            self.expr(right, state, pending)
+
+    def capture_entries(self, captures: tsast.Node) -> list[tuple[tsast.Node, bool]]:
+        """Each capture of a lambda, with True when it captures by reference."""
+        words = captures.tokens()
+        out: list[tuple[tsast.Node, bool]] = []
+        at = 1
+        for child in named(captures):
+            own = child.tokens()
+            found = next((i for i in range(at, len(words) - len(own) + 1) if words[i:i + len(own)] == own), None)
+            if found is None:
+                out.append((child, False))
+                continue
+            out.append((child, words[found - 1] == "&"))
+            at = found + len(own)
+        return out
+
+    def lambda_expr(self, node: tsast.Node, state: dict[str, int]) -> dict[str, int]:
+        """Walk the captures where the lambda appears, and its body as a new body."""
+        state = dict(state)
+        shadow: list[str] = []
+        captures = node.child_by_field("captures")
+        if captures is not None:
+            for child, by_reference in self.capture_entries(captures):
+                if child.type == "lambda_capture_initializer":
+                    left = child.child_by_field("left")
+                    right = child.child_by_field("right")
+                    if left is not None:
+                        shadow.append(left.text)
+                    if right is not None:
+                        state = self.eval(right, state) or {}
+                elif child.type == "identifier" and not by_reference:
+                    spent = spent_prefix(state, self.canon(child.text))
+                    if spent is not None:
+                        self.report(child, child.text, "copy capture after move", spent, state[spent])
+        declarator = node.child_by_field("declarator")
+        parameters = None if declarator is None else declarator.child_by_field("parameters")
+        for parameter in ([] if parameters is None else named(parameters)):
+            shadow += self.declared_names(parameter.child_by_field("declarator"))
         inner: State = dict(state)
         for name in shadow:
             restore(inner, name)
-        self.walk_body(body, self.partner[body], inner)
+        body = node.child_by_field("body")
+        if body is not None:
+            outer, self.assigned_from = self.assigned_from, None
+            try:
+                self.walk_body(body, inner)
+            finally:
+                self.assigned_from = outer
         return state
 
-    # ── the file ────────────────────────────────────────────────────
 
-    def macro_moves(self) -> None:
-        """Report each #define whose replacement list moves or forwards.
-
-        The walk reads the source with the preprocessor lines removed, so a move
-        inside a macro is invisible at each use of the macro.  A macro therefore
-        may not move.  Complexity: O(length of the text).
-        """
-        offset = 0
-        for line in self.text.split("\n"):
-            define = DEFINE.match(line)
-            if define is not None:
-                tokens = [m.group(0) for m in TOKEN.finditer(line, define.end())]
-                for i, token in enumerate(tokens):
-                    after = tokens[i + 1] if i + 1 < len(tokens) else ""
-                    before = tokens[i - 1] if i > 0 else ""
-                    if token in MOVE_CALLEES and after in ("(", "<") and before not in (".", "->"):
-                        self.findings.append(Finding(self.path, line_of(self.text, self.joins, offset),
-                                                     define.group(1), token, "move inside a macro", 0))
-                        break
-            offset += len(line) + 1
-
-    def run(self) -> list[Finding]:
-        if not self.balanced:
-            self.findings.append(Finding(self.path, 1, "<file>", "<unbalanced>", "unbalanced brackets", 0))
-            return self.findings
-        self.macro_moves()
-        self.scan_scope(0, len(self.toks))
-        return self.findings
-
-
-def scan_file(path: str, root: str) -> list[Finding]:
-    text = (Path(root) / path).read_text(encoding="utf-8", errors="replace")
-    return Body(path, text).run()
+def scan_trees(paths: list[str], display: dict[str, str] | None = None) -> list[Finding]:
+    """Parse the files in one kit run and walk each one.  Complexity: linear in the size of the files."""
+    findings: list[Finding] = []
+    for tree in tsast.parse([Path(p) for p in paths], strict=False):
+        key = str(tree.path)
+        findings += Walk(tree, (display or {}).get(key, key)).run()
+    return findings
 
 
 def tracked_sources(root: Path) -> list[str] | None:
-    """The source files under SCAN_ROOTS that git tracks or does not ignore, or None outside a checkout."""
+    """The C++ files under SCAN_ROOTS that git tracks or does not ignore, or None outside a checkout."""
     result = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard",
                              "--", *SCAN_ROOTS], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"check-use-after-move: git ls-files failed in {root}, so the guard cannot list the tree.  "
               f"Run it in a git checkout, or name the files.\n{result.stderr.strip()}", file=sys.stderr)
         return None
-    listed = result.stdout.split("\n")
     out = []
-    for rel in listed:
-        if not rel or Path(rel).suffix not in SOURCE_SUFFIXES:
+    for rel in result.stdout.split("\n"):
+        if not rel or not tsast.is_in_cpp_scope(rel):
             continue
         parts = Path(rel).parts
         if any(part == "neg" or part.endswith("_neg") for part in parts[:-1]):
@@ -1481,10 +1461,12 @@ def verdict(findings: list[Finding], admitted: Counter, errors: list[str], mode:
     return status
 
 
-def scan_tree(root: Path, files: list[str]) -> list[Finding]:
+def scan_tree(files: list[str]) -> list[Finding]:
+    """Walk the files in chunks, one kit run for each chunk, spread over the workers."""
+    chunks = [files[i:i + CHUNK] for i in range(0, len(files), CHUNK)]
     findings: list[Finding] = []
     with ProcessPoolExecutor(max_workers=16) as pool:
-        for result in pool.map(scan_file, files, [str(root)] * len(files), chunksize=16):
+        for result in pool.map(scan_trees, chunks):
             findings += result
     return findings
 
@@ -1513,10 +1495,9 @@ void must_catch_door(Token t) { lend(std::move(t), [&](auto const&) { take(std::
 void must_catch_switch(Token t, int k) { switch (k) { case 0: take(std::move(t)); case 1: read(t); break; } }
 void must_catch_self_argument(Token t) { consume(std::move(t), t); }
 struct Member { Token a; Token b; void must_catch_member_move() { take(std::move(a)); read(a); } };
-struct Ctor {
+struct must_catch_ctor {
     Token a; int n;
-    Ctor(Token t) : a{std::move(t)}, n{t.size} {}
-    void must_catch_ctor() {}
+    must_catch_ctor(Token t) : a{std::move(t)}, n{t.size} {}
 };
 void must_catch_static_cast(Token t) { take(static_cast<Token&&>(t)); read(t); }
 void must_catch_same_element(Tuple t) { take(std::get<1>(std::move(t))); take(std::get<1>(std::move(t))); }
@@ -1575,6 +1556,37 @@ void must_catch_through_reference(Token& token) { Token& alias = token; take(std
 void must_catch_reference_after_move(Token& token) { Token const& alias = token; take(std::move(token)); read(alias); }
 void must_catch_through_binding(Holder& h) { auto& [bound] = h; take(std::move(bound)); read(h.token); }
 void must_catch_binding_after_move(Holder& h) { auto& [bound] = h; take(std::move(h.token)); read(bound); }
+void must_catch_product_after_move(Token t, int n) { take(std::move(t)); auto z = n * t; }
+void must_catch_compare_after_move(Token t, int n) { take(std::move(t)); bool less = n > t; }
+template <class T> void must_catch_trailing_requires(T t) requires (sizeof(T) > 1) { take(std::move(t)); read(t); }
+struct Into {
+    Token t;
+    Token must_catch_into() && noexcept(true) requires (sizeof(Token) > 0) { take(std::move(t)); return std::move(t); }
+};
+struct must_catch_member_twice_after_base_assignment : Base {
+    Token r;
+    must_catch_member_twice_after_base_assignment& operator=(must_catch_member_twice_after_base_assignment&& other) {
+        Base::operator=(std::move(other));
+        r = std::move(other.r);
+        take(std::move(other.r));
+        return *this;
+    }
+};
+struct must_catch_whole_after_base_assignment : Base {
+    must_catch_whole_after_base_assignment& operator=(must_catch_whole_after_base_assignment&& other) {
+        Base::operator=(std::move(other));
+        consume(std::move(other));
+        return *this;
+    }
+};
+struct must_catch_member_after_unqualified_assignment {
+    Token r;
+    must_catch_member_after_unqualified_assignment& operator=(must_catch_member_after_unqualified_assignment&& other) {
+        operator=(std::move(other));
+        read(other.r);
+        return *this;
+    }
+};
 
 // Each must_accept function is correct, and a finding in it is a false alarm.
 void must_accept_reassign(Token t) { take(std::move(t)); t = Token{}; read(t); }
@@ -1618,6 +1630,24 @@ struct must_accept_base_move : Base {
 struct must_accept_two_bases : Left, Right {
     must_accept_two_bases(must_accept_two_bases&& other) : Left{std::move(other)}, Right{std::move(other)} {}
 };
+template <class R>
+struct must_accept_base_assignment : Left, Right {
+    Token r;
+    must_accept_base_assignment& operator=(must_accept_base_assignment&& other) noexcept requires (sizeof(R) > 0) {
+        if (this == &other) return *this;
+        Left::operator=(std::move(other));
+        this->Right::operator=(std::move(other));
+        r = std::move(other.r);
+        return *this;
+    }
+};
+struct must_accept_out_of_class_assignment : Base { Token r; };
+must_accept_out_of_class_assignment& must_accept_out_of_class_assignment::operator=(
+        must_accept_out_of_class_assignment&& other) {
+    Base::operator=(std::move(other));
+    r = std::move(other.r);
+    return *this;
+}
 template <class T> concept Moves = requires(T& t) { take(std::move(t)); take(std::move(t)); };
 #define must_accept_macro_plain(x) (x)
 #define must_accept_macro_member(x) (x).move(1)
@@ -1637,29 +1667,76 @@ void must_accept_by_value_binding(Holder h) { auto [bound] = h; take(std::move(b
 void must_accept_container_after_element(Vec& v, int i) { auto x = std::move(v[i]); v.erase(v.begin() + i); v.push_back(std::move(x)); }
 void must_accept_member_move_call(Mover m, Token t) { m.move(t); read(t); }
 void must_accept_algorithm_move(Token* first, Token* last, Token* out) { std::move(first, last, out); read(*first); }
+void must_accept_preprocessor_arms(Token t) {
+#if defined(ARM_A)
+    take(std::move(t));
+#else
+    take(std::move(t));
+#endif
+}
+void must_accept_reference_capture(Token t) { auto f = [&t] { read(t); }; take(std::move(t)); }
 '''
 
 
+FIXTURE_PREFIXES = ("must_catch_", "must_accept_")
+
+
+def fixtures(tree: tsast.Tree) -> list[tuple[str, int, int]]:
+    """Each fixture of the self-test tree, as (name, first line, last line).
+
+    A fixture is a function, a class or a macro whose name starts with a
+    fixture prefix.  A member function defined outside its class takes the
+    name of its class, so an out-of-class operator= is a fixture of the class.
+    """
+    walk = Walk(tree, "")
+    out: list[tuple[str, int, int]] = []
+    for node in tree.find("function_definition", "struct_specifier", "class_specifier", "preproc_def",
+                          "preproc_function_def"):
+        if node.type == "function_definition":
+            name = walk.function_name(node)
+            if not name.startswith(FIXTURE_PREFIXES):
+                name = walk.owner_class(node) or ""
+        else:
+            name_node = node.child_by_field("name")
+            name = "" if name_node is None else name_node.text
+        if name.startswith(FIXTURE_PREFIXES):
+            out.append((name, node.line, node.end[0] + 1))
+    return out
+
+
+def fixture_of(ranges: list[tuple[str, int, int]], line: int) -> str | None:
+    """The name of the innermost fixture whose lines hold line, or None."""
+    holders = [(last - first, name) for name, first, last in ranges if first <= line <= last]
+    return min(holders)[1] if holders else None
+
+
 def self_test() -> int:
-    body = Body("self_test.cpp", SELF_TEST_SOURCE)
-    findings = body.run()
-    by_function = Counter(f.function for f in findings)
-    caught = {name for name in re.findall(r"\b(must_catch_\w+)", SELF_TEST_SOURCE)}
-    accepted = {name for name in re.findall(r"\b(must_accept_\w+)", SELF_TEST_SOURCE)}
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "self_test.cpp"
+        source.write_text(SELF_TEST_SOURCE, encoding="utf-8")
+        tree = next(tsast.parse([source], strict=False))
+        findings = Walk(tree, "self_test.cpp").run()
+        ranges = fixtures(tree)
+    caught = {name for name, _, _ in ranges if name.startswith("must_catch_")}
+    accepted = {name for name, _, _ in ranges if name.startswith("must_accept_")}
+    by_fixture = Counter(fixture_of(ranges, f.line) or f.function for f in findings)
     failures = []
-    # The constructor fixture reports under the constructor's name.
-    expected_catch = (caught - {"must_catch_ctor"}) | {"Ctor"}
-    for name in sorted(expected_catch):
-        if by_function[name] == 0:
+    if tree.diagnostic is not None:
+        failures.append(f"the self-test source does not parse: {tree.diagnostic}")
+    for name in sorted(caught):
+        if by_fixture[name] == 0:
             failures.append(f"missed a real use after move in {name}")
     for name in sorted(accepted):
-        if by_function[name] != 0:
-            failures.append(f"false alarm in {name}: {[f.what + ' ' + f.key for f in findings if f.function == name]}")
-    if by_function["Moves"] or by_function["<file>"]:
+        if by_fixture[name] != 0:
+            failures.append(f"false alarm in {name}: "
+                            f"{[f.what + ' ' + f.key for f in findings if fixture_of(ranges, f.line) == name]}")
+    if by_fixture["Moves"] or by_fixture["<file>"]:
         failures.append("a requires-expression or a declaration outside a body was read as a use")
-    if by_function["must_catch_repeated_reads"] != 1:
+    if by_fixture["must_catch_repeated_reads"] != 1:
         failures.append("three reads after one move gave "
-                        f"{by_function['must_catch_repeated_reads']} findings, and one move is one finding")
+                        f"{by_fixture['must_catch_repeated_reads']} findings, and one move is one finding")
+    if len(caught) < 50 or len(accepted) < 50:
+        failures.append(f"the fixture names were not read from the tree ({len(caught)} caught, {len(accepted)} accepted)")
     # The allowlist admits a finding, and an entry above its count is stale.
     with tempfile.TemporaryDirectory() as tmp:
         allow = Path(tmp) / "allow.txt"
@@ -1679,28 +1756,37 @@ def self_test() -> int:
         admitted, errors = read_allowlist(allow)
         if not errors:
             failures.append("an entry with no reason above it was accepted")
+        # A file the kit cannot parse is a finding, not a silent pass.
+        broken = Path(tmp) / "broken.cpp"
+        broken.write_text("void f( { take(std::move(t)); read(t); \n", encoding="utf-8")
+        broken_tree = next(tsast.parse([broken], strict=False))
+        if not any(f.key == "<parse-error>" for f in Walk(broken_tree, "broken.cpp").run()):
+            failures.append("a file the kit cannot parse passed with no finding")
     for failure in failures:
         print(f"check-use-after-move: SELF-TEST FAILED: {failure}", file=sys.stderr)
     if failures:
         return 2
-    print(f"check-use-after-move: self-test passed ({len(expected_catch)} caught, {len(accepted)} accepted)")
+    print(f"check-use-after-move: self-test passed ({len(caught)} caught, {len(accepted)} accepted)")
     return 0
 
 
 def main(argv: list[str]) -> int:
-    sys.setrecursionlimit(50000)
     root = Path(__file__).resolve().parent.parent
-    if argv[:1] == ["--self-test"]:
-        return self_test()
-    mode = "list" if argv[:1] == ["--list"] else "check"
-    rest = argv[1:] if mode == "list" else argv
-    if rest and rest[0].startswith("-"):
-        print(__doc__, file=sys.stderr)
-        return 2
-    files = rest or tracked_sources(root)
-    if files is None:
-        return 2
-    findings = scan_tree(root, files)
+    try:
+        if argv[:1] == ["--self-test"]:
+            return self_test()
+        mode = "list" if argv[:1] == ["--list"] else "check"
+        rest = argv[1:] if mode == "list" else argv
+        if rest and rest[0].startswith("-"):
+            print(__doc__, file=sys.stderr)
+            return 2
+        files = rest or tracked_sources(root)
+        if files is None:
+            return 2
+        findings = scan_tree(files)
+    except tsast.KitMissing as exc:
+        print(f"check-use-after-move: {exc}", file=sys.stderr)
+        return 3
     admitted, errors = read_allowlist(root / ALLOWLIST)
     if rest:
         admitted = Counter({k: v for k, v in admitted.items() if k.split(":", 1)[0] in set(rest)})

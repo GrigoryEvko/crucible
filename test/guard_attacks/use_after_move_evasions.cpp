@@ -24,5 +24,37 @@ struct Token {
 };
 void sink(Token&&);
 void read(Token const&);
+void steal(Token& token);
+Token& same(Token& token);
+bool try_keep(Token token);
+
+void evade_move_through_callee(Token token) {
+    steal(token);
+    read(token);
+}
+
+void evade_use_through_pointer(Token token) {
+    Token* alias = &token;
+    sink(std::move(token));
+    read(*alias);
+}
+
+void evade_use_through_returned_reference(Token token) {
+    Token& alias = same(token);
+    sink(std::move(token));
+    read(alias);
+}
+
+void evade_late_reference_capture(Token token) {
+    auto later = [&token] { read(token); };
+    sink(std::move(token));
+    later();
+}
+
+void evade_try_that_moves_on_failure(Token token) {
+    if (!try_keep(std::move(token))) {
+        read(token);
+    }
+}
 
 }  // namespace use_after_move_evasions
