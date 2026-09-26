@@ -87,7 +87,21 @@ inline constexpr std::string_view kUnstableKeyIdentity =
 template <typename R>
 concept IsEffectRow = std::is_same_v<R, std::remove_cvref_t<R>> && ::foundation::effects::IsEffectRow<R>;
 
+// The row-aware calls sit beside the row-blind ones rather than
+// replacing them. Threading the row through the existing names is not
+// available: a new parameter without a default breaks every call
+// site, and one with a default silently re-reads an existing call,
+// binding the first argument type to the row position. So the two
+// families keep separate names, and their slots never alias, not even
+// for an empty row.
+//
+// Both families share one key fold and one slot template.  The row
+// position of the row-blind family holds a marker that is not an
+// effect row, so no row-aware call can name a row-blind slot.
+
 namespace detail {
+
+struct RowBlind {};
 
 // The seed folds the function's name and its type, and the name is
 // what does the real work. The type-derived identifier alone hashes
@@ -97,100 +111,74 @@ namespace detail {
 // unrelated compiled bodies would meet in one slot on the far side.
 // The type is folded in as well, so that two functions of the same
 // name in different scopes stay apart.
-template <auto FnPtr, typename... Args>
-    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
-[[nodiscard]] consteval std::uint64_t computation_cache_key_impl() noexcept {
+//
+// The combiner is order-sensitive, so the row step moves every
+// row-aware key away from the row-blind key, even for a row that
+// contributes zero.
+template <auto FnPtr, typename RowOrBlind, typename... Args>
+[[nodiscard]] consteval std::uint64_t cache_key_fold() noexcept {
     static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
     std::uint64_t k = ::foundation::reflect::stable_function_name_id<FnPtr>;
     k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_function_id<FnPtr>);
+    if constexpr (!std::is_same_v<RowOrBlind, RowBlind>) {
+        k = ::foundation::reflect::combine_ids(k, ::foundation::diag::row_hash_contribution_v<RowOrBlind>);
+    }
     ((k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_type_id<Args>)), ...);
     return k;
+}
+
+template <auto FnPtr, typename RowOrBlind, typename... Args>
+inline std::atomic<CompiledBody*> compiled_body_slot{nullptr};
+
+template <auto FnPtr, typename RowOrBlind, typename... Args>
+[[nodiscard]] CompiledBody* load_slot() noexcept {
+    return compiled_body_slot<FnPtr, RowOrBlind, Args...>.load(std::memory_order_acquire);
+}
+
+// The first writer wins and a later one is discarded in silence.
+template <auto FnPtr, typename RowOrBlind, typename... Args>
+void publish_slot(CompiledBody* body) noexcept {
+    CompiledBody* expected = nullptr;
+    compiled_body_slot<FnPtr, RowOrBlind, Args...>.compare_exchange_strong(expected, body, std::memory_order_acq_rel,
+                                                                           std::memory_order_acquire);
 }
 
 }  // namespace detail
 
 template <auto FnPtr, typename... Args>
     requires IsCacheableFunction<FnPtr>
-inline constexpr std::uint64_t computation_cache_key = detail::computation_cache_key_impl<FnPtr, Args...>();
+inline constexpr std::uint64_t computation_cache_key = detail::cache_key_fold<FnPtr, detail::RowBlind, Args...>();
 
-namespace detail {
-
-template <auto FnPtr, typename... Args>
-    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
-inline std::atomic<CompiledBody*> compiled_body_slot{nullptr};
-
-}  // namespace detail
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+inline constexpr std::uint64_t computation_cache_key_in_row = detail::cache_key_fold<FnPtr, Row, Args...>();
 
 template <auto FnPtr, typename... Args>
     requires IsCacheableFunction<FnPtr>
 [[nodiscard]] CompiledBody* lookup_computation_cache() noexcept {
-    return detail::compiled_body_slot<FnPtr, Args...>.load(std::memory_order_acquire);
+    return detail::load_slot<FnPtr, detail::RowBlind, Args...>();
 }
-
-// A null body would be indistinguishable from a miss, so it is
-// refused. The first writer wins and a later one is discarded in
-// silence, which means a caller that needs to know what is actually
-// cached looks it up again afterwards.
-
-template <auto FnPtr, typename... Args>
-    requires IsCacheableFunction<FnPtr>
-void insert_computation_cache(CompiledBody* body) noexcept pre(body != nullptr) {
-    CompiledBody* expected = nullptr;
-    detail::compiled_body_slot<FnPtr, Args...>.compare_exchange_strong(expected, body, std::memory_order_acq_rel,
-                                                                       std::memory_order_acquire);
-}
-
-// The row-aware calls sit beside the row-blind ones rather than
-// replacing them. Threading the row through the existing names is not
-// available: a new parameter without a default breaks every call
-// site, and one with a default silently re-reads an existing call,
-// binding the first argument type to the row position. So the two
-// families stay separate, and their slots never alias, not even for
-// an empty row.
-
-namespace detail {
-
-template <auto FnPtr, typename Row, typename... Args>
-    requires ::crucible::cipher::IsCacheableFunction<FnPtr> && ::crucible::cipher::IsEffectRow<Row>
-[[nodiscard]] consteval std::uint64_t computation_cache_key_in_row_impl() noexcept {
-    static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
-    std::uint64_t k = ::foundation::reflect::stable_function_name_id<FnPtr>;
-    k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_function_id<FnPtr>);
-    // The combiner is order-sensitive, so this fold differs from the
-    // row-blind one by the position of this step alone. Even a row
-    // contributing zero would still key elsewhere.
-    k = ::foundation::reflect::combine_ids(k, ::foundation::diag::row_hash_contribution_v<Row>);
-    ((k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_type_id<Args>)), ...);
-    return k;
-}
-
-}  // namespace detail
-
-template <auto FnPtr, typename Row, typename... Args>
-    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-inline constexpr std::uint64_t computation_cache_key_in_row =
-    detail::computation_cache_key_in_row_impl<FnPtr, Row, Args...>();
-
-namespace detail {
-
-template <auto FnPtr, typename Row, typename... Args>
-    requires ::crucible::cipher::IsCacheableFunction<FnPtr> && ::crucible::cipher::IsEffectRow<Row>
-inline std::atomic<CompiledBody*> compiled_body_slot_in_row{nullptr};
-
-}  // namespace detail
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 [[nodiscard]] CompiledBody* lookup_computation_cache_in_row() noexcept {
-    return detail::compiled_body_slot_in_row<FnPtr, Row, Args...>.load(std::memory_order_acquire);
+    return detail::load_slot<FnPtr, Row, Args...>();
+}
+
+// A null body would be indistinguishable from a miss, so it is
+// refused. A caller that needs to know what is actually cached looks
+// it up again after its insert.
+
+template <auto FnPtr, typename... Args>
+    requires IsCacheableFunction<FnPtr>
+void insert_computation_cache(CompiledBody* body) noexcept pre(body != nullptr) {
+    detail::publish_slot<FnPtr, detail::RowBlind, Args...>(body);
 }
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 void insert_computation_cache_in_row(CompiledBody* body) noexcept pre(body != nullptr) {
-    CompiledBody* expected = nullptr;
-    detail::compiled_body_slot_in_row<FnPtr, Row, Args...>.compare_exchange_strong(
-        expected, body, std::memory_order_acq_rel, std::memory_order_acquire);
+    detail::publish_slot<FnPtr, Row, Args...>(body);
 }
 
 // This evicts nothing. A slot lives as long as the program does, and
@@ -287,6 +275,8 @@ static_assert(!::crucible::cipher::IsEffectRow<::foundation::effects::Effect>);
 static_assert(!::crucible::cipher::IsEffectRow<::foundation::effects::Row<> const>,
               "a qualified row folds to zero, so the fence refuses it.");
 static_assert(!::crucible::cipher::IsEffectRow<::foundation::effects::Row<>&>);
+static_assert(!::crucible::cipher::IsEffectRow<::crucible::cipher::detail::RowBlind>,
+              "no row-aware call may name the row-blind family's slots.");
 
 static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>
                   != ::crucible::cipher::computation_cache_key_in_row<
