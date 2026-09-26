@@ -1,11 +1,11 @@
+// NEGATIVE-COMPILE TEST.  This file must fail to compile.
+//
+// A kTLS offload takes TLS 1.3 record secrets only.  The crypto mint refuses
+// a TLS 1.2 version at compile time.
+
 #include <crucible/cntp/_wip/KtlsOffload.h>
 
-// GAPS-146 fixture #1: kTLS offload consumes TLS 1.3 record secrets only.
-// A TLS 1.2 crypto-info mint cannot produce a declared kTLS request.
-//
-// The names live in `crucible::cntp::_wip`, not `crucible::cntp`.  With
-// the shorter using-directive every name in the body was undeclared, so
-// `SupportedKtlsVersion` never ran and this fixture witnessed nothing.
+#include <utility>
 
 int main() {
     using namespace crucible::cntp::_wip;

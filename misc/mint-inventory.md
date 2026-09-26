@@ -103,9 +103,9 @@ apply to the row.
 | `mint_gpu_direct_storage_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_incast_controller` | `include/crucible/cntp/IncastControlRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_ktls_crypto_info` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_ktls_offload_for_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_ktls_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_ktls_crypto_info` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
+| `mint_ktls_offload_for_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| `mint_ktls_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
 | `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_p4_program` | `include/crucible/cntp/_wip/P4.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
@@ -122,9 +122,9 @@ apply to the row.
 | `mint_tc_flow_class` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_tc_program` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_wireguard_config` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_wireguard_config_with_psk` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_wireguard_tunnel` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_wireguard_config` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
+| `mint_wireguard_config_with_psk` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
+| `mint_wireguard_tunnel` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_xdp_program` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 
 ## include/crucible/cog/
@@ -362,5 +362,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 99 | 52 | 38 | 9 | 0 | 90 | 16 |
+| old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 11 |
 | new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |

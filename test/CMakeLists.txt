@@ -7335,20 +7335,57 @@ crucible_neg_compile_effects_test(neg_tcam_mint_bg_ctx
   "constraints.*not satisfied"
     "CtxFitsTcamMint|Init")
 
-# GAPS-160 — cntp/_wip/Wireguard.h site-to-site VPN substrate.
-#   * neg_wireguard_zero_allowed_ips: peers must own at least one allowed CIDR.
-#   * neg_wireguard_raw_public_key_peer: peer admission requires tagged pubkeys.
-#   * neg_wireguard_private_key_copy: private keys are Secret and move-only.
-#   * neg_wireguard_mint_bg_ctx: tunnel minting is Init-row work.
-crucible_neg_compile_test(neg_wireguard_zero_allowed_ips
-  "constraints not satisfied|WireguardAllowedIpShape")
-crucible_neg_compile_test(neg_wireguard_raw_public_key_peer
-  "could not convert|no matching function|DeclaredWireguardPublicKey|Tagged")
-crucible_neg_compile_test(neg_wireguard_private_key_copy
-  "Secret<T> cannot be silently duplicated|use of deleted|deleted function")
+# cntp/_wip/Wireguard.h: the WireGuard tunnel scaffold with no kernel backend.
+#   * neg_wireguard_zero_allowed_ips: a peer owns at least one allowed CIDR.
+#   * neg_wireguard_raw_public_key_peer: a peer takes a tagged public key.
+#   * neg_wireguard_key_default_slot: a public key has no empty default.
+#   * neg_wireguard_key_bad_text: a public key is 43 base64 letters and "=".
+#   * neg_wireguard_private_key_copy: a private key is a Secret, move-only.
+#   * neg_wireguard_config_zero_peers, neg_wireguard_config_too_many_peers
+#     and the two psk forms: a config holds one to sixteen peers.
+#   * neg_wireguard_tunnel_direct_ctor, neg_wireguard_handle_direct_ctor:
+#     the mint is the only door to a tunnel and to its handle.
+#   * neg_wireguard_mint_bg_ctx, neg_wireguard_mint_hot_ctx: the tunnel mint
+#     needs a context that owns Init.
+crucible_neg_compile_multi_test(neg_wireguard_zero_allowed_ips
+  "no matching function for call to .declare_wireguard_peer\\("
+  "required for the satisfaction of .WireguardAllowedIpShape<N>. \\[with N = 0\\]")
+crucible_neg_compile_multi_test(neg_wireguard_raw_public_key_peer
+  "no matching function for call to .declare_wireguard_peer\\(const crucible::cntp::_wip::WireguardKeyChars&, "
+  "cannot convert .raw_key. .* to type .crucible::cntp::_wip::DeclaredWireguardPublicKey.")
+crucible_neg_compile_multi_test(neg_wireguard_key_default_slot
+  "no matching function for call to .fixy::Tagged<fixy::Refinement<crucible::cntp::_wip::IsWireguardKeyText\\(\\), std::array<char, 44>, false>, crucible::cntp::_wip::wip_source::Wireguard>::Tagged\\(<brace-enclosed initializer list>\\)."
+  "required for the satisfaction of .default_initializable<T>. \\[with T = fixy::Refinement<crucible::cntp::_wip::IsWireguardKeyText\\{\\}, std::array<char, 44>, false>\\]")
+crucible_neg_compile_multi_test(neg_wireguard_key_bad_text
+  "in .constexpr. expansion of .fixy::mint_refined<crucible::cntp::_wip::IsWireguardKeyText\\(\\), std::array<char, 44> >\\(crucible::cntp::_wip::WireguardKeyChars\\(\\)\\)."
+  "__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_wireguard_private_key_copy
+  "use of deleted function .fixy::Secret<T>::Secret\\(const fixy::Secret<T>&\\) \\[with T = crucible::cntp::_wip::WireguardSecretKeyBytes\\]."
+  "Secret<T> cannot be silently duplicated")
+crucible_neg_compile_multi_test(neg_wireguard_config_zero_peers
+  "no matching function for call to .mint_wireguard_config\\("
+  "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 0\\]")
+crucible_neg_compile_multi_test(neg_wireguard_config_too_many_peers
+  "no matching function for call to .mint_wireguard_config\\("
+  "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 17\\]")
+crucible_neg_compile_multi_test(neg_wireguard_psk_config_zero_peers
+  "no matching function for call to .mint_wireguard_config_with_psk\\("
+  "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 0\\]")
+crucible_neg_compile_multi_test(neg_wireguard_psk_config_too_many_peers
+  "no matching function for call to .mint_wireguard_config_with_psk\\("
+  "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 17\\]")
+crucible_neg_compile_multi_test(neg_wireguard_tunnel_direct_ctor
+  "converting to .crucible::cntp::_wip::WireguardTunnel<2>::MintKey. from initializer list would use explicit constructor"
+  "MintKey::MintKey\\(\\) \\[with unsigned char MaxPeers = 2\\]. is private within this context")
+crucible_neg_compile_multi_test(neg_wireguard_handle_direct_ctor
+  ".constexpr crucible::cntp::_wip::WireguardTunnelHandle::WireguardTunnelHandle\\(crucible::cntp::NicInterfaceName, crucible::cntp::_wip::DeclaredWireguardPublicKey, uint32_t\\). is private within this context"
+  "Wireguard.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_effects_test(neg_wireguard_mint_bg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsWireguardMint|Init")
+  "no matching function for call to .mint_wireguard_tunnel\\(fixy::BgDrainCtx&, "
+  "required for the satisfaction of .CtxFitsWireguardMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_wireguard_mint_hot_ctx
+  "no matching function for call to .mint_wireguard_tunnel\\(const fixy::HotFgCtx&, "
+  "required for the satisfaction of .CtxFitsWireguardMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
 # GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
@@ -7401,22 +7438,33 @@ crucible_neg_compile_multi_test(neg_quic_resumption_token_raw_length
   ".uint16_t crucible::cntp::_wip::QuicResumptionToken::size_. is private within this context"
   "QuicTransport.h:[0-9]+:[0-9]+: note: declared private here")
 
-# GAPS-146 — cntp/_wip/KtlsOffload.h kernel-TLS offload substrate.
-#   * neg_ktls_tls12_crypto: TLS 1.2 record secrets cannot be admitted.
-#   * neg_ktls_chacha_crypto: software ChaCha20 TLS suites are not kTLS AES-GCM.
-#   * neg_ktls_raw_crypto_offload: offload requests require tagged crypto info.
-# Name the satisfaction failure and the rejected argument together, on
-# the one line GCC prints them.  The previous alternation let the bare
-# token `TlsVersion::V12` carry the gate, and that token also appears in
-# the quoted source line — so while these two fixtures had the wrong
-# using-directive and every name in them was undeclared, the gates still
-# went green on the echo.
-crucible_neg_compile_test(neg_ktls_tls12_crypto
-  "required for the satisfaction of .SupportedKtlsVersion<Version>. .with Version = crucible::cntp::TlsVersion::V12.")
-crucible_neg_compile_test(neg_ktls_chacha_crypto
-  "required for the satisfaction of .KtlsAesGcmCipherSuite<Suite>. .with Suite = crucible::cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256.")
-crucible_neg_compile_test(neg_ktls_raw_crypto_offload
-  "could not convert|no matching function|DeclaredTlsCryptoInfo|Tagged")
+# cntp/_wip/KtlsOffload.h: the kernel TLS offload scaffold with no kernel
+# install.
+#   * neg_ktls_tls12_crypto: the crypto mint refuses TLS 1.2 secrets.
+#   * neg_ktls_chacha_crypto: the crypto mint refuses a ChaCha20 suite.
+#   * neg_ktls_raw_crypto_offload: an offload takes tagged crypto info.
+#   * neg_ktls_offload_bg_ctx: the offload mint needs a context that owns
+#     Init.
+#   * neg_ktls_socket_bg_ctx, neg_ktls_socket_hot_ctx: the socket mint needs
+#     a context that owns Init.
+crucible_neg_compile_multi_test(neg_ktls_tls12_crypto
+  "no matching function for call to .mint_ktls_crypto_info<crucible::cntp::TlsVersion::V12>\\("
+  "required for the satisfaction of .SupportedKtlsVersion<Version>. \\[with Version = crucible::cntp::TlsVersion::V12\\]")
+crucible_neg_compile_multi_test(neg_ktls_chacha_crypto
+  "no matching function for call to .mint_ktls_crypto_info<crucible::cntp::TlsVersion::V13, crucible::cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256>\\("
+  "required for the satisfaction of .KtlsAesGcmCipherSuite<Suite>. \\[with Suite = crucible::cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256\\]")
+crucible_neg_compile_multi_test(neg_ktls_raw_crypto_offload
+  "no matching function for call to .mint_ktls_offload_for_socket\\(fixy::ColdInitCtx&, "
+  "cannot convert .std::move<crucible::cntp::_wip::TlsCryptoInfo&>\\(raw\\). .* to type .crucible::cntp::_wip::DeclaredTlsCryptoInfo.")
+crucible_neg_compile_effects_test(neg_ktls_offload_bg_ctx
+  "no matching function for call to .mint_ktls_offload_for_socket\\(fixy::BgDrainCtx&, "
+  "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_ktls_socket_bg_ctx
+  "no matching function for call to .mint_ktls_socket\\(fixy::BgDrainCtx&, "
+  "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_effects_test(neg_ktls_socket_hot_ctx
+  "no matching function for call to .mint_ktls_socket\\(const fixy::HotFgCtx&, "
+  "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
 # cntp/Backpressure.h and cntp/BackpressureRuntime.h.  Each fixture names
 # the call that fails and the reason, so a fixture that fails for another

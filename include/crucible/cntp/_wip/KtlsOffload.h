@@ -5,10 +5,11 @@
 // it validates the request shape and then reports deferral or unavailability.
 
 #include <crucible/cntp/MtlsTransport.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Secret.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Ctx.h>
+#include <fixy/Secret.h>
+#include <fixy/Tagged.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
 
 #include <array>
 #include <concepts>
@@ -31,6 +32,11 @@ using ::crucible::cntp::admit_socket_fd;
 namespace wip_source {
 struct KtlsOffloaded {};
 }  // namespace wip_source
+
+// False: no TLS_TX or TLS_RX socket option is installed, so
+// enable_ktls_offload returns KernelInstallDeferred or KernelTlsUnavailable
+// for every request.
+inline constexpr bool kernel_install_implemented = false;
 
 enum class KtlsError : std::uint8_t {
     EmptyKey,
@@ -137,7 +143,7 @@ struct KtlsCryptoMaterial {
     }
 };
 
-using KtlsSecretMaterial = safety::Secret<KtlsCryptoMaterial>;
+using KtlsSecretMaterial = ::fixy::Secret<KtlsCryptoMaterial>;
 
 struct KtlsCryptoShape {
     std::uint8_t key_bytes = 0;
@@ -146,13 +152,17 @@ struct KtlsCryptoShape {
     std::uint8_t record_sequence_bytes = 0;
 };
 
+// The material is classified and takes no default, so no crypto info exists
+// before its caller hands over the key.
 struct TlsCryptoInfo {
     MtlsCipherSuite cipher = MtlsCipherSuite::TlsAes256GcmSha384;
     KtlsCryptoShape shape{};
     KtlsSecretMaterial material;
 };
 
-using DeclaredTlsCryptoInfo = safety::Tagged<TlsCryptoInfo, wip_source::KtlsOffloaded>;
+// mint_ktls_crypto_info is the one function that returns declared crypto
+// info.
+using DeclaredTlsCryptoInfo = ::fixy::Tagged<TlsCryptoInfo, wip_source::KtlsOffloaded>;
 
 struct KtlsOffloadRequest {
     SocketFd socket;
@@ -162,9 +172,18 @@ struct KtlsOffloadRequest {
     bool allow_kernel_install = false;
 };
 
-using DeclaredKtlsOffload = safety::Tagged<KtlsOffloadRequest, wip_source::KtlsOffloaded>;
+// mint_ktls_offload_for_socket is the one function that returns a declared
+// request.
+using DeclaredKtlsOffload = ::fixy::Tagged<KtlsOffloadRequest, wip_source::KtlsOffloaded>;
 
-class KtlsOffloadSocket : public safety::Pinned<KtlsOffloadSocket> {
+// A socket and an offload request are minted at initialization, as the
+// mTLS configuration that supplies their keys is.
+template <class Ctx>
+concept CtxFitsKtlsMint = ::foundation::effects::IsExecCtx<Ctx>
+                       && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+
+// The constructor is private and mint_ktls_socket is its one door.
+class KtlsOffloadSocket : public ::foundation::Pinned<KtlsOffloadSocket> {
 public:
     [[nodiscard]] SocketFd socket() const noexcept { return socket_; }
     [[nodiscard]] NicInterfaceName interface() const noexcept { return interface_; }
@@ -181,7 +200,9 @@ private:
     constexpr KtlsOffloadSocket(SocketFd socket, NicInterfaceName interface) noexcept
         : socket_{socket}, interface_{interface} {}
 
-    friend constexpr KtlsOffloadSocket mint_ktls_socket(effects::Init, SocketFd, NicInterfaceName) noexcept;
+    template <class Ctx>
+        requires CtxFitsKtlsMint<Ctx>
+    friend constexpr KtlsOffloadSocket mint_ktls_socket(Ctx const&, SocketFd, NicInterfaceName) noexcept;
 };
 
 [[nodiscard]] constexpr bool ktls_direction_valid(TlsOffloadDirection direction) noexcept {
@@ -254,33 +275,39 @@ mint_ktls_crypto_info(KtlsCryptoMaterial material) noexcept {
         .salt_bytes = material.salt_bytes,
         .record_sequence_bytes = material.record_sequence_bytes,
     };
-    return DeclaredTlsCryptoInfo{TlsCryptoInfo{
+    return ::fixy::mint_tagged<wip_source::KtlsOffloaded>(TlsCryptoInfo{
         .cipher = Suite,
         .shape = shape,
-        .material = KtlsSecretMaterial{std::move(material)},
-    }};
+        .material = ::fixy::mint_secret<KtlsCryptoMaterial>(std::move(material)),
+    });
 }
 
-[[nodiscard]] constexpr KtlsOffloadSocket mint_ktls_socket(effects::Init, SocketFd socket,
+template <class Ctx>
+    requires CtxFitsKtlsMint<Ctx>
+[[nodiscard]] constexpr KtlsOffloadSocket mint_ktls_socket(Ctx const&, SocketFd socket,
                                                            NicInterfaceName iface) noexcept {
     return KtlsOffloadSocket{socket, iface};
 }
 
+template <class Ctx>
+    requires CtxFitsKtlsMint<Ctx>
 [[nodiscard]] constexpr std::expected<DeclaredKtlsOffload, KtlsError>
-mint_ktls_offload_for_socket(effects::Init, SocketFd socket, NicInterfaceName iface, DeclaredTlsCryptoInfo crypto,
+mint_ktls_offload_for_socket(Ctx const&, SocketFd socket, NicInterfaceName iface, DeclaredTlsCryptoInfo crypto,
                              TlsOffloadDirection direction, bool allow_kernel_install = false) noexcept {
     if (!ktls_direction_valid(direction)) {
         return std::unexpected(KtlsError::InvalidDirection);
     }
-    return DeclaredKtlsOffload{KtlsOffloadRequest{
+    return ::fixy::mint_tagged<wip_source::KtlsOffloaded>(KtlsOffloadRequest{
         .socket = socket,
         .interface = iface,
         .direction = direction,
         .crypto = std::move(crypto),
         .allow_kernel_install = allow_kernel_install,
-    }};
+    });
 }
 
+// The mint already holds these bounds.  The check reads them again, so
+// crypto info that entered through mint_tagged alone is still refused here.
 [[nodiscard]] constexpr std::expected<void, KtlsError>
 validate_ktls_crypto_info(DeclaredTlsCryptoInfo const& crypto) noexcept {
     auto const& raw = crypto.value();
@@ -315,8 +342,13 @@ validate_ktls_offload(DeclaredKtlsOffload const& request) noexcept {
     return validate_ktls_crypto_info(raw.crypto);
 }
 
-[[nodiscard]] std::expected<void, KtlsError> enable_ktls_offload(KtlsOffloadSocket& socket,
-                                                                 DeclaredKtlsOffload const& request) noexcept;
+// This function is a stub. The deprecation attribute makes each call site
+// warn, so a caller sees the stub at compile time. A caller that means to
+// use the stub suppresses the warning around the call.
+[[nodiscard, deprecated("CRUCIBLE_STUB: no TLS_TX or TLS_RX socket option is installed. "
+                        "Returns KernelInstallDeferred or KernelTlsUnavailable")]]
+std::expected<void, KtlsError> enable_ktls_offload(KtlsOffloadSocket& socket,
+                                                   DeclaredKtlsOffload const& request) noexcept;
 
 static_assert(sizeof(KtlsSecretMaterial) == sizeof(KtlsCryptoMaterial));
 static_assert(std::is_trivially_copyable_v<KtlsCryptoShape>);
@@ -332,5 +364,12 @@ static_assert(KtlsAesGcmCipherSuite<MtlsCipherSuite::TlsAes256GcmSha384>);
 static_assert(!KtlsAesGcmCipherSuite<MtlsCipherSuite::TlsChacha20Poly1305Sha256>);
 static_assert(KtlsKeySizeForCipher<MtlsCipherSuite::TlsAes128GcmSha256, 16>);
 static_assert(!KtlsKeySizeForCipher<MtlsCipherSuite::TlsAes128GcmSha256, 32>);
+static_assert(CtxFitsKtlsMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsKtlsMint<::fixy::BgDrainCtx>);
+// No declared crypto info or request exists before its key and socket, and
+// no socket exists outside mint_ktls_socket.
+static_assert(!std::is_default_constructible_v<DeclaredTlsCryptoInfo>);
+static_assert(!std::is_default_constructible_v<DeclaredKtlsOffload>);
+static_assert(!std::is_constructible_v<KtlsOffloadSocket, SocketFd, NicInterfaceName>);
 
 }  // namespace crucible::cntp::_wip

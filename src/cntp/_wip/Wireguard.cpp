@@ -62,8 +62,8 @@ std::expected<void, WireguardError> apply_wireguard_peer_remove(DeclaredWireguar
     if (!config_valid.has_value()) {
         return std::unexpected(config_valid.error());
     }
-    for (std::uint8_t i = 0; i < config.value().peer_count; ++i) {
-        if (same_wireguard_key(config.value().peers[i].public_key.value(), peer.value())) {
+    for (WireguardPeer const& held : config.value().peers) {
+        if (same_wireguard_key(held.public_key, peer)) {
             return std::unexpected(WireguardError::BackendUnavailable);
         }
     }

@@ -33,13 +33,6 @@ mint_resource_limit|include/crucible/cntp/Backpressure.h
 mint_resource_pressure|include/crucible/cntp/Backpressure.h
 mint_tcam_table|include/crucible/cntp/Tcam.h
 
-# ── cntp/_wip ────────────────────────────────────────────────────────
-mint_ktls_offload_for_socket|include/crucible/cntp/_wip/KtlsOffload.h
-mint_ktls_socket|include/crucible/cntp/_wip/KtlsOffload.h
-mint_wireguard_config|include/crucible/cntp/_wip/Wireguard.h
-mint_wireguard_config_with_psk|include/crucible/cntp/_wip/Wireguard.h
-mint_wireguard_tunnel|include/crucible/cntp/_wip/Wireguard.h
-
 # ── observe ──────────────────────────────────────────────────────────
 mint_canopy_metrics_reader|include/crucible/observe/Metrics.h
 mint_keeper_metrics_reader|include/crucible/observe/Metrics.h

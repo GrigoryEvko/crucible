@@ -1,4 +1,5 @@
 #include <crucible/cntp/_wip/Wireguard.h>
+#include <fixy/Ctx.h>
 
 #include <array>
 #include <cassert>
@@ -9,8 +10,7 @@
 #include <utility>
 
 namespace cntp = crucible::cntp::_wip;
-namespace eff = crucible::effects;
-namespace saf = crucible::safety;
+namespace fe = ::foundation::effects;
 
 namespace {
 
@@ -99,7 +99,7 @@ void test_admission_and_names() {
 
 void test_config_and_backend_boundary() {
     auto config = config_one_peer();
-    assert(config.value().peer_count == 1);
+    assert(config.value().peers.size() == 1);
     assert(config.value().private_key.size() == kPrivateKey.size());
     assert(!config.value().has_preshared_key);
     assert(cntp::validate_wireguard_config(config).has_value());
@@ -140,11 +140,16 @@ void test_preshared_key_and_endpoint_validation() {
     assert(!endpoint.has_value());
     assert(endpoint.error() == cntp::WireguardError::InvalidEndpoint);
 
+    std::array<cntp::DeclaredWireguardPeer, 2> twice{peer_a(), peer_a()};
+    auto duplicate = cntp::mint_wireguard_config(iface(), port(), secret(kPrivateKey), twice);
+    assert(!duplicate.has_value());
+    assert(duplicate.error() == cntp::WireguardError::DuplicatePeer);
+
     std::printf("  test_preshared_key_and_endpoint_validation: PASSED\n");
 }
 
 void test_tunnel_plan_mutation() {
-    eff::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
     auto tunnel = cntp::mint_wireguard_tunnel<2>(init, config_one_peer());
     assert(tunnel.has_value());
     assert(tunnel->peer_count() == 1);
@@ -165,7 +170,8 @@ void test_tunnel_plan_mutation() {
 
     auto handle = tunnel->plan_handle();
     assert(handle.has_value());
-    assert(handle->peek().generation == tunnel->generation());
+    assert(handle->peek().generation() == tunnel->generation());
+    assert(cntp::same_wireguard_key(handle->peek().public_key(), pub(kPeerA)));
 
     auto removed = tunnel->remove_peer(pub(kPeerA));
     assert(removed.has_value());
@@ -176,22 +182,31 @@ void test_tunnel_plan_mutation() {
     assert(!missing.has_value());
     assert(missing.error() == cntp::WireguardError::PeerNotFound);
 
+    auto narrow = cntp::mint_wireguard_tunnel<1>(init, config_one_peer());
+    assert(narrow.has_value());
+    auto over_capacity = narrow->add_peer(peer_b());
+    assert(!over_capacity.has_value());
+    assert(over_capacity.error() == cntp::WireguardError::TooManyPeers);
+
     std::printf("  test_tunnel_plan_mutation: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    static_assert(sizeof(cntp::DeclaredWireguardPublicKey) == sizeof(cntp::WireguardKeyB64));
+    static_assert(sizeof(cntp::DeclaredWireguardPublicKey) == sizeof(cntp::WireguardKeyChars));
     static_assert(sizeof(cntp::WireguardPort) == sizeof(std::uint16_t));
     static_assert(sizeof(cntp::WireguardCidrPrefix) == sizeof(std::uint8_t));
-    static_assert(sizeof(cntp::OwnedWireguardTunnel) == sizeof(cntp::WireguardTunnelHandle));
     static_assert(
         std::same_as<cntp::DeclaredWireguardPublicKey::tag_type, crucible::cntp::_wip::wip_source::Wireguard>);
     static_assert(!std::copy_constructible<cntp::WireguardSecretKeyBytes>);
     static_assert(!std::copy_constructible<cntp::WireguardConfig>);
-    static_assert(cntp::CtxFitsWireguardMint<eff::ColdInitCtx>);
-    static_assert(!cntp::CtxFitsWireguardMint<eff::BgDrainCtx>);
+    static_assert(cntp::CtxFitsWireguardMint<::fixy::ColdInitCtx>);
+    static_assert(!cntp::CtxFitsWireguardMint<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsWireguardMint<::fixy::HotFgCtx>);
+    static_assert(!std::is_default_constructible_v<cntp::DeclaredWireguardPublicKey>);
+    static_assert(!std::is_constructible_v<cntp::WireguardTunnel<2>, cntp::DeclaredWireguardConfig>);
+    static_assert(!std::is_copy_constructible_v<cntp::WireguardTunnelHandle>);
 
     std::printf("test_cntp_wireguard:\n");
     test_admission_and_names();

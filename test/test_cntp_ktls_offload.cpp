@@ -1,22 +1,27 @@
 #include <crucible/cntp/_wip/KtlsOffload.h>
+#include <fixy/Ctx.h>
 
 #include <array>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdio>
 #include <span>
 #include <string_view>
 #include <type_traits>
 
-// These tests reach an entry point that is
+// These tests reach enable_ktls_offload, which is
 // [[deprecated("CRUCIBLE_STUB:...")]] until the live install path ships.
 // This is the authorised suppression of that warning.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
+static_assert(crucible::cntp::_wip::kernel_install_implemented == false,
+              "kernel_install_implemented flipped to true. Rewrite the live-tier test for this surface and "
+              "remove the deprecation from enable_ktls_offload in lockstep.");
+
 namespace cntp = crucible::cntp::_wip;
-namespace eff = crucible::effects;
-namespace saf = crucible::safety;
+namespace fe = ::foundation::effects;
 
 namespace {
 
@@ -78,6 +83,8 @@ void test_crypto_mint_and_validation() {
     assert(!wrong_size.has_value());
     assert(wrong_size.error() == cntp::KtlsError::InvalidKeySize);
 
+    // The test builds a declared value through mint_tagged, not through
+    // mint_ktls_crypto_info.  The check reads the cipher again and refuses it.
     cntp::TlsCryptoInfo forged_chacha{
         .cipher = cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256,
         .shape =
@@ -87,9 +94,9 @@ void test_crypto_mint_and_validation() {
                 .salt_bytes = 0,
                 .record_sequence_bytes = 0,
             },
-        .material = cntp::KtlsSecretMaterial{cntp::KtlsCryptoMaterial{}},
+        .material = ::fixy::mint_secret<cntp::KtlsCryptoMaterial>(),
     };
-    cntp::DeclaredTlsCryptoInfo tagged_forged_chacha{std::move(forged_chacha)};
+    auto tagged_forged_chacha = ::fixy::mint_tagged<cntp::wip_source::KtlsOffloaded>(std::move(forged_chacha));
     auto rejected_chacha = cntp::validate_ktls_crypto_info(tagged_forged_chacha);
     assert(!rejected_chacha.has_value());
     assert(rejected_chacha.error() == cntp::KtlsError::UnsupportedCipherSuite);
@@ -98,7 +105,7 @@ void test_crypto_mint_and_validation() {
 }
 
 void test_socket_request_and_deferred_enable() {
-    auto init = eff::testing::init();
+    ::fixy::ColdInitCtx init{fe::testing::init()};
     auto fd = cntp::admit_socket_fd(7);
     auto iface = cntp::NicInterfaceName::from("eth0");
     assert(fd.has_value());
@@ -125,6 +132,28 @@ void test_socket_request_and_deferred_enable() {
     assert(!enabled.has_value());
     assert(enabled.error() == cntp::KtlsError::KernelInstallDeferred);
 
+    auto other_fd = cntp::admit_socket_fd(8);
+    assert(other_fd.has_value());
+    auto other_material = cntp::admit_ktls_crypto_material(std::span{key}.first<32>(), std::span{iv}.first<12>(), {}, {});
+    assert(other_material.has_value());
+    auto other_crypto = cntp::mint_ktls_crypto_info(std::move(*other_material));
+    assert(other_crypto.has_value());
+    auto other_request = cntp::mint_ktls_offload_for_socket(init, *other_fd, *iface, std::move(*other_crypto),
+                                                            cntp::TlsOffloadDirection::Tx, true);
+    assert(other_request.has_value());
+    auto wrong_socket = cntp::enable_ktls_offload(socket, *other_request);
+    assert(!wrong_socket.has_value());
+    assert(wrong_socket.error() == cntp::KtlsError::KernelTlsUnavailable);
+
+    auto bad_direction = cntp::admit_ktls_crypto_material(std::span{key}.first<32>(), std::span{iv}.first<12>(), {}, {});
+    assert(bad_direction.has_value());
+    auto bad_direction_crypto = cntp::mint_ktls_crypto_info(std::move(*bad_direction));
+    assert(bad_direction_crypto.has_value());
+    auto refused = cntp::mint_ktls_offload_for_socket(init, *fd, *iface, std::move(*bad_direction_crypto),
+                                                      static_cast<cntp::TlsOffloadDirection>(0));
+    assert(!refused.has_value());
+    assert(refused.error() == cntp::KtlsError::InvalidDirection);
+
     std::printf("  test_socket_request_and_deferred_enable: PASSED\n");
 }
 
@@ -142,6 +171,11 @@ int main() {
     static_assert(!cntp::SupportedKtlsVersion<cntp::TlsVersion::V12>);
     static_assert(cntp::KtlsAesGcmCipherSuite<cntp::MtlsCipherSuite::TlsAes256GcmSha384>);
     static_assert(!cntp::KtlsAesGcmCipherSuite<cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256>);
+    static_assert(cntp::CtxFitsKtlsMint<::fixy::ColdInitCtx>);
+    static_assert(!cntp::CtxFitsKtlsMint<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsKtlsMint<::fixy::HotFgCtx>);
+    static_assert(!std::is_default_constructible_v<cntp::DeclaredTlsCryptoInfo>);
+    static_assert(!std::is_default_constructible_v<cntp::DeclaredKtlsOffload>);
 
     std::printf("test_cntp_ktls_offload:\n");
     test_names_and_material_admission();
