@@ -97,11 +97,12 @@ struct SpawnLeft {
 struct SpawnRight {
     using permission_row = Row<>;
 };
+struct SpawnBrand {};
 struct LeftBody {
-    void operator()(fp::Permission<SpawnLeft>, BgCtx const&) const noexcept {}
+    void operator()(fp::WriteView<SpawnLeft, SpawnBrand> const&, BgCtx const&) const noexcept {}
 };
 struct RightBody {
-    void operator()(fp::Permission<SpawnRight>, BgCtx const&) const noexcept {}
+    void operator()(fp::WriteView<SpawnRight, SpawnBrand> const&, BgCtx const&) const noexcept {}
 };
 
 // Roles, labels and global types for the global-type walks.
@@ -307,19 +308,21 @@ struct foundation::contracts::armed_instances<^^fp::detail::is_each_tag_distinct
                               fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight, w::SpawnLeft>>;
 };
 
-// A fork body takes the token of its own child and the context without
-// throwing.  Bodies in the wrong order, too few bodies, or a shape that
-// is not two tuples take nothing.
+// A fork body takes the view of its own child, under the parent's brand,
+// and the context without throwing.  Bodies in the wrong order, too few
+// bodies, or a shape that is not two tuples take nothing.  A body of
+// another brand and a body that asks for its token have fixtures of their
+// own in test/foundation/neg.
 template <>
 struct foundation::contracts::armed_instances<^^fp::detail::can_each_body_take_its_child> {
     using accepts = witnesses<fp::detail::can_each_body_take_its_child<
-        w::BgCtx, std::tuple<w::SpawnLeft, w::SpawnRight>, std::tuple<w::LeftBody, w::RightBody>>>;
+        w::BgCtx, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>, std::tuple<w::LeftBody, w::RightBody>>>;
     using refuses = witnesses<
-        fp::detail::can_each_body_take_its_child<w::BgCtx, std::tuple<w::SpawnLeft, w::SpawnRight>,
+        fp::detail::can_each_body_take_its_child<w::BgCtx, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
                                                  std::tuple<w::RightBody, w::LeftBody>>,
-        fp::detail::can_each_body_take_its_child<w::BgCtx, std::tuple<w::SpawnLeft, w::SpawnRight>,
+        fp::detail::can_each_body_take_its_child<w::BgCtx, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
                                                  std::tuple<w::LeftBody>>,
-        fp::detail::can_each_body_take_its_child<w::BgCtx, int, int>>;
+        fp::detail::can_each_body_take_its_child<w::BgCtx, w::SpawnBrand, int, int>>;
 };
 
 // ── fixy: the throws atom, spawn and io ─────────────────────────────
@@ -952,15 +955,19 @@ struct foundation::contracts::armed_instances<^^::fixy::concurrent::detail::can_
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::spawn::detail::can_ctx_fit_spawn> {
     using accepts = witnesses<::fixy::spawn::detail::can_ctx_fit_spawn<
-        w::BgCtx, w::SpawnWhole, std::tuple<w::SpawnLeft, w::SpawnRight>, std::tuple<w::LeftBody, w::RightBody>>>;
+        w::BgCtx, w::SpawnWhole, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
+        std::tuple<w::LeftBody, w::RightBody>>>;
     using refuses = witnesses<
-        ::fixy::spawn::detail::can_ctx_fit_spawn<fe::ExecCtx<>, w::SpawnWhole, std::tuple<w::SpawnLeft, w::SpawnRight>,
+        ::fixy::spawn::detail::can_ctx_fit_spawn<fe::ExecCtx<>, w::SpawnWhole, w::SpawnBrand,
+                                                 std::tuple<w::SpawnLeft, w::SpawnRight>,
                                                  std::tuple<w::LeftBody, w::RightBody>>,
-        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, std::tuple<w::SpawnLeft, w::SpawnRight>,
+        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
+                                                 std::tuple<w::SpawnLeft, w::SpawnRight>,
                                                  std::tuple<w::LeftBody, w::LeftBody>>,
-        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, std::tuple<w::SpawnRight, w::SpawnLeft>,
+        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
+                                                 std::tuple<w::SpawnRight, w::SpawnLeft>,
                                                  std::tuple<w::RightBody, w::LeftBody>>,
-        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, int, int>>;
+        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, int, int>>;
 };
 
 template <>

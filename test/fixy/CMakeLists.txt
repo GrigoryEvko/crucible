@@ -4040,7 +4040,7 @@ fixy_neg_compile_test(neg_canonicalize_for_wrong_rounding
 # mint_parallel_for by its context gate and by its body signature.
 fixy_neg_compile_test(neg_spawn_mint_spawn_ctx_lacks_bg
   "no matching function for call to .mint_spawn<\\{anonymous\\}::Left, \\{anonymous\\}::Right>\\("
-  "required for the satisfaction of .CtxFitsSpawn<Ctx, Parent, std::tuple<_Ts \\.\\.\\.>")
+  "required for the satisfaction of .CtxFitsSpawn<Ctx, Parent, Brand, std::tuple<_Ts \\.\\.\\.>")
 
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_lacks_bg
   "constraints not satisfied"

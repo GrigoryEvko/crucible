@@ -43,10 +43,10 @@ int main() {
     auto whole = perm::mint_permission_root<Whole>();
     auto back = s::mint_forked_channel<Proto, Left, Right>(
         eff::testing::foreground(), std::move(whole), Wire{}, Wire{},
-        [](auto head, perm::Permission<Left>, FgCtx const&) noexcept {
+        [](auto head, auto const& /*left_view*/, FgCtx const&) noexcept {
             return std::move(head).send(Msg{}, [](Wire&, Msg&) noexcept { return true; });
         },
-        [](auto head, perm::Permission<Right>, FgCtx const&) noexcept {
+        [](auto head, auto const& /*right_view*/, FgCtx const&) noexcept {
             auto [msg, at_end] = std::move(head).recv([](Wire&) noexcept -> std::optional<Msg> { return Msg{}; });
             (void)msg;
             return std::move(at_end);

@@ -41,8 +41,8 @@ using LeftProto = s::Send<Ping, s::Recv<Pong, s::End>>;
 using RightProto = s::Send<Pong, s::Recv<Ping, s::End>>;
 
 struct AnyBody {
-    template <typename Head, typename Perm>
-    auto operator()(Head head, Perm, BgCtx const&) noexcept {
+    template <typename Head, typename View>
+    auto operator()(Head head, View const&, BgCtx const&) noexcept {
         return head;
     }
 };

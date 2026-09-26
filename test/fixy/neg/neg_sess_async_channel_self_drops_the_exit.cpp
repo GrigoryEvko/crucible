@@ -45,8 +45,8 @@ using AwaitsStop = s::Loop<s::Offer<s::Recv<Job, s::Continue>, s::Recv<StopCmd, 
 using NeverStops = s::Loop<s::Select<s::Send<Job, s::Continue>>>;
 
 struct AnyBody {
-    template <typename Head, typename Perm>
-    auto operator()(Head head, Perm, BgCtx const&) noexcept {
+    template <typename Head, typename View>
+    auto operator()(Head head, View const&, BgCtx const&) noexcept {
         return head;
     }
 };

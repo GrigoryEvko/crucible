@@ -59,10 +59,10 @@ int main() {
     const BgCtx ctx{eff::testing::bg()};
     auto back = s::mint_forked_async_channel<LeftProto, RightProto, Left, Right>(
         ctx, perm::mint_permission_root<Whole>(), RingEnd{}, RingEnd{},
-        [](auto head, auto /*left_permission*/, BgCtx const&) noexcept {
+        [](auto head, auto const& /*left_view*/, BgCtx const&) noexcept {
             return std::move(head).send(IoWork{7}, [](RingEnd&, IoWork&) noexcept { return true; });
         },
-        [](auto head, auto /*right_permission*/, BgCtx const&) noexcept {
+        [](auto head, auto const& /*right_view*/, BgCtx const&) noexcept {
             auto [work, at_end] =
                 std::move(head).recv([](RingEnd&) noexcept -> std::optional<IoWork> { return IoWork{7}; });
             (void)work;

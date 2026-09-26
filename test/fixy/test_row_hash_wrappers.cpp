@@ -834,6 +834,7 @@ struct SwmrReaderTag {
     using permission_row = ::foundation::effects::Row<>;
 };
 struct SwmrReaderBrand {};
+struct PureRegionBrand {};
 using SwmrWitness = ::fixy::concurrent::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand>;
 
 using PureDet = fa::lattices::DetSafeLattice::At<fa::lattices::DetSafeTier::Pure>;
@@ -861,6 +862,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^fp::SharedPermissionPool, ^^fp::SharedPermissionPool<PureRegionTag, ::foundation::brand::DefaultBrand>},
     {^^fp::PermSet, ^^fp::PermSet<PureRegionTag>},
     {^^fp::ReadView, ^^fp::ReadView<PureRegionTag>},
+    {^^fp::WriteView, ^^fp::WriteView<PureRegionTag, PureRegionBrand>},
     {^^fp::ReadLoan, ^^fp::ReadLoan<PureRegionTag>},
     {^^fp::LentPermission, ^^fp::LentPermission<PureRegionTag>},
 

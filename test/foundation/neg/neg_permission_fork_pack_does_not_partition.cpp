@@ -30,7 +30,7 @@ int main() {
         // it claims; a fixture that failed to build its context
         // would never reach its own gate.
         BgCtx{::foundation::effects::testing::bg()}, std::move(whole),
-        [](::foundation::permissions::Permission<Left>, BgCtx const&) noexcept {},
-        [](::foundation::permissions::Permission<Right>, BgCtx const&) noexcept {});
+        [](auto const& /*left_view*/, BgCtx const&) noexcept {},
+        [](auto const& /*right_view*/, BgCtx const&) noexcept {});
     return 0;
 }

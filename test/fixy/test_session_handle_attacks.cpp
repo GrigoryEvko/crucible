@@ -543,7 +543,8 @@ Slot<RightHead> g_right_endpoint;
 Slot<RightDone> g_right_done;
 
 struct GiveAwayBody {
-    RightDone operator()(RightHead head, perm::Permission<attack_tags::Right>, BgCtx const&) noexcept {
+    template <typename Brand>
+    RightDone operator()(RightHead head, perm::WriteView<attack_tags::Right, Brand> const&, BgCtx const&) noexcept {
         g_right_endpoint.put(std::move(head));
         return g_right_done.take("the right body, for its End handle");
     }
@@ -571,8 +572,8 @@ template <Receive How, typename Head>
 // that only its other end can send.
 template <Receive How>
 struct TakesBothBody {
-    template <typename Head>
-    auto operator()(Head head, perm::Permission<attack_tags::Left>, BgCtx const&) noexcept {
+    template <typename Head, typename Brand>
+    auto operator()(Head head, perm::WriteView<attack_tags::Left, Brand> const&, BgCtx const&) noexcept {
         RightHead other = g_right_endpoint.take("the left body, for the right endpoint");
         auto [ping, done] = receive_ping<How>(std::move(head), "left recv");
         g_right_done.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
@@ -620,13 +621,15 @@ Slot<CycleDoneA> g_cycle_done_a;
 Slot<CycleDoneB> g_cycle_done_b;
 
 struct CycleRightA {
-    CycleDoneA operator()(CycleHeadA head, perm::Permission<attack_tags::Right>, BgCtx const&) noexcept {
+    template <typename Brand>
+    CycleDoneA operator()(CycleHeadA head, perm::WriteView<attack_tags::Right, Brand> const&, BgCtx const&) noexcept {
         g_cycle_endpoint_a.put(std::move(head));
         return g_cycle_done_a.take("session A's right body, for its End handle");
     }
 };
 struct CycleRightB {
-    CycleDoneB operator()(CycleHeadB head, perm::Permission<attack_tags::Right2>, BgCtx const&) noexcept {
+    template <typename Brand>
+    CycleDoneB operator()(CycleHeadB head, perm::WriteView<attack_tags::Right2, Brand> const&, BgCtx const&) noexcept {
         g_cycle_endpoint_b.put(std::move(head));
         return g_cycle_done_b.take("session B's right body, for its End handle");
     }
@@ -635,8 +638,8 @@ struct CycleRightB {
 // Session A's left end holds session B's right endpoint, and the other
 // way round.  Each waits on its own receive first.
 struct CycleLeftA {
-    template <typename Head>
-    auto operator()(Head head, perm::Permission<attack_tags::Left>, BgCtx const&) noexcept {
+    template <typename Head, typename Brand>
+    auto operator()(Head head, perm::WriteView<attack_tags::Left, Brand> const&, BgCtx const&) noexcept {
         CycleHeadB other = g_cycle_endpoint_b.take("session A's left body, for session B's endpoint");
         auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "A recv");
         g_cycle_done_b.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
@@ -647,8 +650,8 @@ struct CycleLeftA {
     }
 };
 struct CycleLeftB {
-    template <typename Head>
-    auto operator()(Head head, perm::Permission<attack_tags::Left2>, BgCtx const&) noexcept {
+    template <typename Head, typename Brand>
+    auto operator()(Head head, perm::WriteView<attack_tags::Left2, Brand> const&, BgCtx const&) noexcept {
         CycleHeadA other = g_cycle_endpoint_a.take("session B's left body, for session A's endpoint");
         auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "B recv");
         g_cycle_done_a.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {

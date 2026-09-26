@@ -27,10 +27,10 @@ struct Right {
 using FgCtx = ::foundation::effects::detail::ctx_witnesses::FgWitness;
 
 struct LeftBody {
-    void operator()(::foundation::permissions::Permission<Left>, FgCtx const&) const noexcept {}
+    void operator()(auto const& /*left_view*/, FgCtx const&) const noexcept {}
 };
 struct RightBody {
-    void operator()(::foundation::permissions::Permission<Right>, FgCtx const&) const noexcept {}
+    void operator()(auto const& /*right_view*/, FgCtx const&) const noexcept {}
 };
 }  // namespace
 

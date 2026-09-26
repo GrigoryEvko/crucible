@@ -119,20 +119,6 @@ class SharedPermissionGuard;
 template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SharedPermissionPool;
 
-// A friend declaration of a constrained function template must repeat
-// the constraint exactly, so the public fork mints cannot be friended
-// here without dragging their whole requires-clauses, and every type
-// those clauses name, into this header.  The class that runs a fork is
-// what this header names instead.  It is defined in PermissionFork.h, its
-// body is a private member whose only callers are the two fork mints,
-// and it is the only holder of the rebuild key.
-class PermissionForkRunner;
-
-namespace detail {
-class ForkRebuildKey;
-struct ForkRebuildAccess;
-}  // namespace detail
-
 // The declarative manifest of valid splits.  C++ has no orphan rule, so
 // a foreign translation unit can specialize this trait for a tag it does
 // not own and forge cross-region authority.  A manifest must therefore
@@ -591,8 +577,7 @@ mint_permission_combine_n(Args&&...) noexcept;
 // then builds one from any byte.  A key with any trivial constructor is
 // an implicit-lifetime type, and std::start_lifetime_as then builds one
 // over a buffer.  Neither route names a constructor, so neither sees
-// the access check below.  The same holds for the token and for
-// ForkRebuildKey.
+// the access check below.  The same holds for the token.
 class perm_mint_key {
     constexpr perm_mint_key() noexcept {}
 
@@ -631,10 +616,6 @@ private:
         requires PermissionCombineNArgs<Parent, Args...>
     friend constexpr Permission<Parent, detail::perm_brand_t<Args...[detail::leading_ctx_count<Args...>()]>>
     mint_permission_combine_n(Args&&...) noexcept;
-
-    // The soundness gate on the post-join rebuild is its own passkey,
-    // not this friendship, which only reaches the key.
-    friend struct ::foundation::permissions::detail::ForkRebuildAccess;
 };
 
 // ── The federation door ──────────────────────────────────────────────
@@ -694,8 +675,8 @@ public:
     using brand_type = Brand;
 
     // Holding the key is the proof of authority, and only the five
-    // mints and the post-join rebuild can make one, so this is the sole
-    // route to a Permission for every tag but a federation peer.
+    // mints can make one, so this is the sole route to a Permission for
+    // every tag but a federation peer.
     // Permission itself befriends nobody.  The constraint keeps a forged
     // split manifest from reaching a federation peer token through a
     // split or a combine.
@@ -913,102 +894,14 @@ mint_permission_combine_n(Args&&...) noexcept {
     return Permission<Parent, Brand>{perm_mint_key{}};
 }
 
-// Reissuing the parent after a structured join is sound because every
-// child callable consumed its child permission inside its own body and
-// the join completed before the rebuild.  No child permission remains
-// live, so the parent region is again exclusively available to the
-// joining scope.
-//
-// The passkey is what confines that reissue to the structured-join
-// primitives.  Its default constructor is private, so any other call
-// site fails to construct the key it would have to pass.
-
-namespace detail {
-
-class ForkRebuildKey {
-private:
-    // User-provided, as perm_mint_key's constructors are, so that no
-    // route builds a key without a constructor.
-    constexpr ForkRebuildKey() noexcept {}
-
-public:
-    constexpr ForkRebuildKey(const ForkRebuildKey&) noexcept {}
-
-private:
-
-    // PermissionForkRunner is the sole friend, and that friendship is the
-    // whole gate.  The runner builds the key in one private member, the
-    // fork body, which only mint_permission_fork and its inline sibling
-    // can call, and each of them takes the parent Permission by rvalue
-    // and consumes it at the split.  A caller holding the key has
-    // therefore already surrendered the very permission the rebuild
-    // hands back.
-    //
-    // An earlier shape of this friend was a nullary free function
-    // template at namespace scope, `rebuild_parent_after_fork_`.  It
-    // took no argument, carried no constraint, and was itself friended
-    // to build the key, so the chain was a closed loop whose entry point
-    // any translation unit could call:
-    // `detail::rebuild_parent_after_fork_<AnyTag>()` minted a Permission
-    // for a tag the caller did not own, with no manifest, no context and
-    // no token.  The shape after it was a free function that consumed the
-    // parent, but any translation unit could call it too, without the
-    // mints' constraints.  Keep the key's friend a class whose only
-    // builder of the key CONSUMES a Permission<Parent> and is reachable
-    // from the two mints alone.  A friend that takes nothing proves
-    // nothing, and a friend anyone can call gates nothing.
-    friend class ::foundation::permissions::PermissionForkRunner;
-};
-
-struct ForkRebuildAccess {
-    // rebuild carries no constraint on T because the proof lives in the
-    // key rather than here.  The only holder of a key is the fork body
-    // of PermissionForkRunner, which reached this point by consuming a
-    // Permission<Parent> at the split.  Constraining T here would
-    // restate that proof at a point which cannot see the children the
-    // parent was split into.  The brand is the consumed parent's, so
-    // the reissued token is the same identity that went in.
-    //
-    // That sentence holds only while the key's friend is a class whose
-    // one builder of the key consumes a parent permission and is reached
-    // through the two fork mints only.  It was false in an earlier
-    // shape, when the friend took no argument at all.
-    template <typename T, typename Brand>
-    [[nodiscard]] static constexpr Permission<T, Brand> rebuild(ForkRebuildKey) noexcept {
-        return Permission<T, Brand>{perm_mint_key{}};
-    }
-};
-
-}  // namespace detail
-
-// The access check here is genuine because this scope is befriended by
-// neither key.  Both assertions fail if the constructor they name
-// becomes public, and both are the only thing that would report it.
-//
-// ForkRebuildKey is the higher-stakes of the two: ForkRebuildAccess is a
-// public struct whose rebuild<T> is public and unconstrained, so this
-// private constructor is the whole of what stands between a caller and
-// a Permission for an arbitrary tag.  It had no assertion at all until
-// this one.
-static_assert(!std::is_default_constructible_v<detail::ForkRebuildKey>,
-              "The default constructor of ForkRebuildKey must not be public.  Only PermissionForkRunner "
-              "is friended to build one, and that friendship is the whole gate on "
-              "ForkRebuildAccess::rebuild.");
-static_assert(std::is_empty_v<detail::ForkRebuildKey>, "ForkRebuildKey must stay empty, so that passing it "
-                                                       "costs nothing.");
-
-// No route builds a key without a constructor.  std::bit_cast builds any
-// trivially copyable type from bytes, and std::start_lifetime_as builds
-// any implicit-lifetime type over a buffer, and neither names a
-// constructor, so neither meets the access check.  Each assertion fails
+// No route builds the key without a constructor.  std::bit_cast builds
+// any trivially copyable type from bytes, and std::start_lifetime_as
+// builds any implicit-lifetime type over a buffer, and neither names a
+// constructor, so neither meets the access check.  The assertion fails
 // if a constructor of the key becomes defaulted again.
 static_assert(!std::is_trivially_copyable_v<perm_mint_key> && !std::is_implicit_lifetime_v<perm_mint_key>,
               "perm_mint_key must have no trivial constructor, or std::bit_cast and std::start_lifetime_as "
               "build the key that mints every Permission.");
-static_assert(!std::is_trivially_copyable_v<detail::ForkRebuildKey>
-                  && !std::is_implicit_lifetime_v<detail::ForkRebuildKey>,
-              "ForkRebuildKey must have no trivial constructor, or std::bit_cast and std::start_lifetime_as "
-              "build the key that reissues a Permission for any tag.");
 
 // Fractional permissions generalize the binary own-or-not of plain
 // separation logic to a share `e ↦_p v` for 0 < p ≤ 1.  A share of 1 is
@@ -1530,8 +1423,8 @@ static_assert(!std::is_constructible_v<SharedPermission<seplog_test_tag, brand_a
 // A translation unit that holds no friendship cannot make a key, so it
 // cannot reach the constructor above however it spells the call.
 static_assert(!std::is_default_constructible_v<perm_mint_key>,
-              "The default constructor of perm_mint_key must not be public.  Only the five mints and the "
-              "post-join rebuild are friended to build one.");
+              "The default constructor of perm_mint_key must not be public.  Only the five mints are "
+              "friended to build one.");
 static_assert(std::is_empty_v<perm_mint_key>, "perm_mint_key must stay empty, so that passing it costs nothing.");
 
 [[nodiscard]] consteval bool every_canonical_tag_is_sound() noexcept {

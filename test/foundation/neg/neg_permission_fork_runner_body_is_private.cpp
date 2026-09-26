@@ -45,7 +45,7 @@ int main() {
     auto whole = ::foundation::permissions::mint_permission_root<Whole>();
     [[maybe_unused]] auto rebuilt = ::foundation::permissions::PermissionForkRunner::run_<true, Left, Right>(
         BgCtx{::foundation::effects::testing::bg()}, std::move(whole),
-        [](::foundation::permissions::Permission<Left>, BgCtx const&) noexcept {},
-        [](::foundation::permissions::Permission<Right>, BgCtx const&) noexcept {});
+        [](auto const& /*left_view*/, BgCtx const&) noexcept {},
+        [](auto const& /*right_view*/, BgCtx const&) noexcept {});
     return 0;
 }

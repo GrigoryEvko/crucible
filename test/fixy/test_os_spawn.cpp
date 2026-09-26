@@ -64,13 +64,20 @@ namespace {
 [[nodiscard]] int spawn_runs_every_child_and_returns_the_parent() {
     BgCtx ctx{eff::testing::bg()};
     auto whole = perm::mint_permission_root<Whole>();
+    using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
 
     std::atomic<int> ran{0};
 
+    // Each body borrows its child under the brand of the parent, and a
+    // body may spell that brand.
     auto rebuilt = spawn::mint_spawn<Left, Right>(
         ctx, dram_bound_budget(), std::move(whole),
-        [&ran](perm::Permission<Left>, BgCtx const&) noexcept { ran.fetch_add(1, std::memory_order_acq_rel); },
-        [&ran](perm::Permission<Right>, BgCtx const&) noexcept { ran.fetch_add(2, std::memory_order_acq_rel); });
+        [&ran](perm::WriteView<Left, WholeBrand> const&, BgCtx const&) noexcept {
+            ran.fetch_add(1, std::memory_order_acq_rel);
+        },
+        [&ran](perm::WriteView<Right, WholeBrand> const&, BgCtx const&) noexcept {
+            ran.fetch_add(2, std::memory_order_acq_rel);
+        });
 
     // 1 from the left body and 2 from the right: a total of 3 says both
     // ran, and says which one is missing if they did not.
@@ -100,8 +107,8 @@ namespace {
     std::array<std::thread::id, 2> inline_ids{};
     auto after_inline = spawn::mint_spawn<Left, Right>(
         ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, perm::mint_permission_root<Whole>(),
-        [&inline_ids](auto, BgCtx const&) noexcept { inline_ids[0] = std::this_thread::get_id(); },
-        [&inline_ids](auto, BgCtx const&) noexcept { inline_ids[1] = std::this_thread::get_id(); });
+        [&inline_ids](auto const&, BgCtx const&) noexcept { inline_ids[0] = std::this_thread::get_id(); },
+        [&inline_ids](auto const&, BgCtx const&) noexcept { inline_ids[1] = std::this_thread::get_id(); });
     (void)after_inline;
     if (inline_ids[0] != caller || inline_ids[1] != caller) {
         std::fprintf(stderr, "mint_spawn: a 64-byte budget must run both bodies on the calling thread\n");
@@ -111,8 +118,8 @@ namespace {
     std::array<std::thread::id, 2> spawned_ids{};
     auto after_spawn = spawn::mint_spawn<Left, Right>(
         ctx, dram_bound_budget(), perm::mint_permission_root<Whole>(),
-        [&spawned_ids](auto, BgCtx const&) noexcept { spawned_ids[0] = std::this_thread::get_id(); },
-        [&spawned_ids](auto, BgCtx const&) noexcept { spawned_ids[1] = std::this_thread::get_id(); });
+        [&spawned_ids](auto const&, BgCtx const&) noexcept { spawned_ids[0] = std::this_thread::get_id(); },
+        [&spawned_ids](auto const&, BgCtx const&) noexcept { spawned_ids[1] = std::this_thread::get_id(); });
     (void)after_spawn;
     if (spawned_ids[0] == caller || spawned_ids[1] == caller || spawned_ids[0] == spawned_ids[1]) {
         std::fprintf(stderr, "mint_spawn: a budget past L3 must run each body on a thread of its own\n");

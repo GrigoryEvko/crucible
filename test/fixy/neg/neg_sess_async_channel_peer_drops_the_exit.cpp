@@ -49,8 +49,8 @@ static_assert(s::is_subtype_async_v<AwaitsStop, s::dual_of_t<NeverStops>, RingEn
               "the check in one direction admits the pair");
 
 struct AnyBody {
-    template <typename Head, typename Perm>
-    auto operator()(Head head, Perm, BgCtx const&) noexcept {
+    template <typename Head, typename View>
+    auto operator()(Head head, View const&, BgCtx const&) noexcept {
         return head;
     }
 };

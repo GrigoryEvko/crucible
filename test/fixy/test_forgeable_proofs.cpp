@@ -55,6 +55,9 @@ struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
 
+// The brand of one region, for the proof templates that spell one.
+struct RegionBrand {};
+
 // A passkey chain is at most a key, a token that takes the key, and a
 // carrier that takes the token.  The bound stops a cycle of types whose
 // constructors take each other.
@@ -151,6 +154,7 @@ using BgBase = fe::detail::ContextBase<fe::Bg, fe::detail::ctx_mint::bg_key, fe:
 inline constexpr std::meta::info template_witnesses[] = {
     ^^fp::Permission<Region>,
     ^^fp::ReadView<Region>,
+    ^^fp::WriteView<Region, RegionBrand>,
     ^^fp::ReadLoan<Region>,
     ^^fp::LentPermission<Region>,
     ^^fp::SharedPermissionGuard<Region, ::foundation::brand::DefaultBrand>,

@@ -292,13 +292,13 @@ concept JoinPolicyGrantsCoherent =
 
 namespace detail {
 
-template <typename Ctx, typename Parent, typename ChildrenTuple, typename CallablesTuple>
+template <typename Ctx, typename Parent, typename Brand, typename ChildrenTuple, typename CallablesTuple>
 struct can_ctx_fit_spawn : std::false_type {};
 
-template <typename Ctx, typename Parent, typename... Children, typename... Callables>
-struct can_ctx_fit_spawn<Ctx, Parent, std::tuple<Children...>, std::tuple<Callables...>>
+template <typename Ctx, typename Parent, typename Brand, typename... Children, typename... Callables>
+struct can_ctx_fit_spawn<Ctx, Parent, Brand, std::tuple<Children...>, std::tuple<Callables...>>
     : std::bool_constant<perm::CtxFitsPermissionFork<Ctx, Parent, Children...>
-                         && perm::detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>,
+                         && perm::detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>,
                                                                          std::tuple<Callables...>>> {};
 
 // True when no callable's type carries the throws atom anywhere in its
@@ -311,14 +311,15 @@ inline constexpr bool no_callable_throws_v =
 
 // The two substrate gates are folded into one concept so the declaration
 // below carries a single requires clause.
-template <typename Ctx, typename Parent, typename ChildrenTuple, typename CallablesTuple>
-concept CtxFitsSpawn = detail::can_ctx_fit_spawn<Ctx, Parent, ChildrenTuple, CallablesTuple>::value;
+template <typename Ctx, typename Parent, typename Brand, typename ChildrenTuple, typename CallablesTuple>
+concept CtxFitsSpawn = detail::can_ctx_fit_spawn<Ctx, Parent, Brand, ChildrenTuple, CallablesTuple>::value;
 
 // The call returns once every child has joined.  The budget states the
 // bytes the children touch together, and the parallelism rule chooses
-// the arm from it, per deviation 5.
+// the arm from it, per deviation 5.  Each body borrows its child through
+// a WriteView of the parent's brand, as the fork lends it.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-    requires CtxFitsSpawn<Ctx, Parent, std::tuple<Children...>, std::tuple<std::decay_t<Callables>...>>
+    requires CtxFitsSpawn<Ctx, Parent, Brand, std::tuple<Children...>, std::tuple<std::decay_t<Callables>...>>
 [[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
                                                         perm::Permission<Parent, Brand>&& parent,
                                                         Callables&&... callables) noexcept {

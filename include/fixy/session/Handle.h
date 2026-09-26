@@ -2466,12 +2466,15 @@ template <typename Proto, typename Resource, typename Policy, typename Body>
 using forked_head_t =
     first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet, brand_ctx_t<Body>>;
 
-template <typename Body, typename Proto, typename Resource, typename Policy, typename Tag, typename Ctx>
+// The body borrows its side of the parent through the fork's view, of the
+// parent's brand.  It never holds the token, so it cannot keep the side
+// past the join.
+template <typename Body, typename Proto, typename Resource, typename Policy, typename Tag, typename Brand, typename Ctx>
 concept ForkedEndpointBody =
     std::is_nothrow_invocable_v<Body, forked_head_t<Proto, Resource, Policy, Body>,
-                                ::foundation::permissions::Permission<Tag>, Ctx const&>
+                                ::foundation::permissions::WriteView<Tag, Brand> const&, Ctx const&>
     && ClosesInSessionOf<std::invoke_result_t<Body, forked_head_t<Proto, Resource, Policy, Body>,
-                                              ::foundation::permissions::Permission<Tag>, Ctx const&>,
+                                              ::foundation::permissions::WriteView<Tag, Brand> const&, Ctx const&>,
                          Resource, Body>;
 
 }  // namespace detail
@@ -2504,9 +2507,9 @@ concept CtxFitsForkedChannel = WellFormedRunnableProtocol<Proto> && WellFormedRu
 // foundation's permission_fork.  The parent permission splits into
 // SelfTag and PeerTag.  The self body runs Proto over self_resource, and
 // the peer body runs the dual over peer_resource.  Each body gets its
-// endpoint, its child permission and the context, and must return its
-// endpoint at End.  The call returns the parent permission after the two
-// threads join.
+// endpoint, the fork's view of its child permission and the context, and
+// must return its endpoint at End.  The call returns the parent
+// permission after the two threads join.
 //
 // No thread holds the two endpoints when the mint makes them.  Each
 // endpoint exists in the thread that runs its body, so ownership is a
@@ -2520,8 +2523,8 @@ template <typename Proto, typename SelfTag, typename PeerTag, AbandonmentPolicy 
           typename SelfBody, typename PeerBody>
     requires CtxFitsForkedChannel<Ctx, Proto, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
           && SessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
-          && detail::ForkedEndpointBody<SelfBody, Proto, ResourceSelf, Policy, SelfTag, Ctx>
-          && detail::ForkedEndpointBody<PeerBody, dual_of_t<Proto>, ResourcePeer, Policy, PeerTag, Ctx>
+          && detail::ForkedEndpointBody<SelfBody, Proto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
+          && detail::ForkedEndpointBody<PeerBody, dual_of_t<Proto>, ResourcePeer, Policy, PeerTag, Brand, Ctx>
 // §XXI carve-out: cx=alloc — starting a thread is a kernel side effect.
 [[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
 mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
@@ -2608,8 +2611,8 @@ class SessionMintDoor final {
               typename PeerBody>
         requires CtxFitsForkedChannel<Ctx, Proto, Parent, SelfTag, PeerTag> && SessionResource<ResourceSelf>
               && SessionResource<ResourcePeer> && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
-              && detail::ForkedEndpointBody<SelfBody, Proto, ResourceSelf, Policy, SelfTag, Ctx>
-              && detail::ForkedEndpointBody<PeerBody, dual_of_t<Proto>, ResourcePeer, Policy, PeerTag, Ctx>
+              && detail::ForkedEndpointBody<SelfBody, Proto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
+              && detail::ForkedEndpointBody<PeerBody, dual_of_t<Proto>, ResourcePeer, Policy, PeerTag, Brand, Ctx>
     friend ::foundation::permissions::Permission<Parent, Brand>
     mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                         ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,
@@ -2650,12 +2653,12 @@ class SessionMintDoor final {
         // record of the other end.
         watch::endpoint_id endpoint = watch::endpoint_id::none;
 
-        template <typename Perm, typename Ctx>
-        void operator()(Perm permission, Ctx const& ctx) noexcept {
+        template <typename View, typename Ctx>
+        void operator()(View const& view, Ctx const& ctx) noexcept {
             auto head = HandleFactory::open_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
                                              detail::brand_ctx_t<Body>>(std::forward<Resource>(resource), loc,
                                                                         endpoint);
-            auto at_end = std::invoke(std::move(body), std::move(head), std::move(permission), ctx);
+            auto at_end = std::invoke(std::move(body), std::move(head), view, ctx);
             static_cast<void>(std::move(at_end).close());
         }
     };
@@ -2676,8 +2679,8 @@ class SessionMintDoor final {
               && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>
               && SessionResource<ResourceSelf> && SessionResource<ResourcePeer>
               && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
-              && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Ctx>
-              && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Ctx>
+              && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
+              && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>
     [[nodiscard]] static ::foundation::permissions::Permission<Parent, Brand>
     fork_channel_(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                   ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,

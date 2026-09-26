@@ -40,7 +40,7 @@ int main() {
     auto whole = ::foundation::permissions::mint_permission_root<Whole>();
     [[maybe_unused]] auto rebuilt = ::foundation::permissions::mint_permission_fork_inline<Left, Right>(
         ::foundation::effects::testing::foreground(), std::move(whole),
-        [](::foundation::permissions::Permission<Left>, FgCtx const&) noexcept {},
-        [](::foundation::permissions::Permission<Right>, FgCtx const&) noexcept {});
+        [](auto const& /*left_view*/, FgCtx const&) noexcept {},
+        [](auto const& /*right_view*/, FgCtx const&) noexcept {});
     return 0;
 }

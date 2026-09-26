@@ -82,8 +82,8 @@ template <typename SelfProto, typename PeerProto, typename SelfTag, typename Pee
     requires CtxFitsAsyncForkedChannel<Ctx, SelfProto, PeerProto, Parent, SelfTag, PeerTag, ResourceSelf, ResourcePeer>
           && SessionResource<ResourceSelf> && SessionResource<ResourcePeer>
           && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
-          && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Ctx>
-          && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Ctx>
+          && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
+          && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>
 // §XXI carve-out: cx=alloc — starting a thread is a kernel side effect.
 [[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
 mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
@@ -114,8 +114,8 @@ class AsyncChannelDoor final {
                                            ResourcePeer>
               && SessionResource<ResourceSelf> && SessionResource<ResourcePeer>
               && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
-              && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Ctx>
-              && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Ctx>
+              && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
+              && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>
     friend ::foundation::permissions::Permission<Parent, Brand>
     mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                               ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,

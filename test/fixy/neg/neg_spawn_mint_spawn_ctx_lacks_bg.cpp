@@ -36,7 +36,7 @@ int main() {
     FgCtx ctx{eff::testing::test()};
     auto whole = perm::mint_permission_root<Whole>();
     [[maybe_unused]] auto rebuilt = fixy::spawn::mint_spawn<Left, Right>(
-        ctx, fixy::concurrent::WorkBudget{}, std::move(whole), [](perm::Permission<Left>, FgCtx const&) noexcept {},
-        [](perm::Permission<Right>, FgCtx const&) noexcept {});
+        ctx, fixy::concurrent::WorkBudget{}, std::move(whole), [](auto const& /*left_view*/, FgCtx const&) noexcept {},
+        [](auto const& /*right_view*/, FgCtx const&) noexcept {});
     return 0;
 }

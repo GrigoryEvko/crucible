@@ -781,7 +781,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
 
     auto back = s::mint_forked_channel<Once, channel_tags::Self, channel_tags::Peer>(
         ctx, std::move(whole), SelfEnd{&pipe}, PeerEnd{&pipe},
-        [&seen_pong](auto head, ::foundation::permissions::Permission<channel_tags::Self>, BgCtx const&) noexcept {
+        [&seen_pong](auto head, auto const& /*self_view*/, BgCtx const&) noexcept {
             auto waits =
                 std::move(head).send(Ping{20}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
             auto [pong, done] =
@@ -789,7 +789,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
             seen_pong.store(pong.value, std::memory_order_release);
             return std::move(done);
         },
-        [](auto head, ::foundation::permissions::Permission<channel_tags::Peer>, BgCtx const&) noexcept {
+        [](auto head, auto const& /*peer_view*/, BgCtx const&) noexcept {
             auto [ping, sends] =
                 std::move(head).recv([](PeerEnd& e) noexcept { return try_take_as<Ping>(e.pipe->to_peer); });
             return std::move(sends).send(Pong{ping.value + 1},
@@ -1094,7 +1094,7 @@ struct PollBox {
 
     auto back = s::mint_forked_channel<Twice, channel_tags::Self, channel_tags::Peer>(
         ctx, ::foundation::permissions::mint_permission_root<channel_tags::Whole>(), SelfEnd{&pipe}, PeerEnd{&pipe},
-        [&](auto head, ::foundation::permissions::Permission<channel_tags::Self>, BgCtx const&) noexcept {
+        [&](auto head, auto const& /*self_view*/, BgCtx const&) noexcept {
             auto first_wait = std::move(head).send(1, send_to_peer);
             auto [first_reply, second_send] = std::move(first_wait).recv(to_self);
             auto second_wait = std::move(second_send).send(first_reply + 1, send_to_peer);
@@ -1102,7 +1102,7 @@ struct PollBox {
             total.store(second_reply, std::memory_order_release);
             return std::move(done);
         },
-        [&](auto head, ::foundation::permissions::Permission<channel_tags::Peer>, BgCtx const&) noexcept {
+        [&](auto head, auto const& /*peer_view*/, BgCtx const&) noexcept {
             auto [first, first_answer] = std::move(head).recv(to_peer);
             std::this_thread::sleep_for(late);
             auto second_wait = std::move(first_answer).send(first + 1, send_to_self);

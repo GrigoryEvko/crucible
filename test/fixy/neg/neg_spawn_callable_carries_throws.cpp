@@ -30,7 +30,7 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc
 
 template <typename Marker>
 struct MarkedBody {
-    void operator()(perm::Permission<Left>, BgCtx const&) const noexcept {}
+    void operator()(auto const& /*left_view*/, BgCtx const&) const noexcept {}
 };
 }  // namespace
 
@@ -46,6 +46,6 @@ int main() {
     auto whole = perm::mint_permission_root<Whole>();
     [[maybe_unused]] auto rebuilt = fixy::spawn::mint_spawn<Left, Right>(
         ctx, fixy::concurrent::WorkBudget{}, std::move(whole), MarkedBody<fixy::atom::ctrl::throws<SampleException>>{},
-        [](perm::Permission<Right>, BgCtx const&) noexcept {});
+        [](auto const& /*right_view*/, BgCtx const&) noexcept {});
     return 0;
 }

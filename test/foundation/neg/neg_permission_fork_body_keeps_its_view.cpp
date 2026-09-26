@@ -1,14 +1,12 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Each body holds its child's token under the caller's context, so the
-// context must admit the row of every child.  Here the parent is pure
-// and one child does IO, and the foreground context admits no IO.  The
-// fit concept of the inline arm refuses the call at its door and names
-// the children's check.
+// The view that the fork lends a body is the proof of its child, and it
+// ends with the body.  A body that could copy or move its view into
+// storage outside its frame would keep a proof past the join.  The view
+// has no copy and no move.
 //
-// Without that conjunct the call passes the door and fails later, inside
-// the body, at the split.  That failure names no fork, so the regexes
-// below tell the two apart.
+// The body below takes the view of its child and copies it into a static
+// local, which outlives the call.
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -25,7 +23,7 @@ struct Left {
     using permission_row = ::foundation::effects::Row<>;
 };
 struct Right {
-    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
+    using permission_row = ::foundation::effects::Row<>;
 };
 
 using FgCtx = ::foundation::effects::detail::ctx_witnesses::FgWitness;
@@ -39,10 +37,15 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 }  // namespace foundation::permissions
 
 int main() {
-    auto whole = ::foundation::permissions::mint_permission_root<Whole>();
-    [[maybe_unused]] auto rebuilt = ::foundation::permissions::mint_permission_fork_inline<Left, Right>(
+    namespace fp = ::foundation::permissions;
+    auto whole = fp::mint_permission_root<Whole>();
+    using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
+    [[maybe_unused]] auto rebuilt = fp::mint_permission_fork_inline<Left, Right>(
         ::foundation::effects::testing::foreground(), std::move(whole),
-        [](auto const& /*left_view*/, FgCtx const&) noexcept {},
+        [](fp::WriteView<Left, WholeBrand> const& left, FgCtx const&) noexcept {
+            static fp::WriteView<Left, WholeBrand> const kept{left};
+            (void)kept;
+        },
         [](auto const& /*right_view*/, FgCtx const&) noexcept {});
     return 0;
 }

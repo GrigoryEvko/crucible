@@ -282,22 +282,20 @@ foundation_neg_compile_test(neg_permission_forged_without_key
   "no matching function for call to"
   "Permission<.*ForgedTag>::Permission")
 
-# The post-join rebuild key is the whole gate on reissuing a parent, and
-# ForkRebuildAccess::rebuild<T> is public and unconstrained, so the key's
-# private constructor is what stands between a caller and a Permission
-# for an arbitrary tag.  The second regex proves the refusal names that
-# key and not some other private member.
-foundation_neg_compile_test(neg_permission_fork_rebuild_key_unreachable
-  "is private within this context"
-  "ForkRebuildKey")
-
-# The companion: the nullary door that made the parent forgeable from any
-# TU must stay deleted.  Its predecessor fixture asserted a name that had
-# already been renamed, so it proved a rename rather than a closure; this
-# one names the symbol that actually shipped.
-foundation_neg_compile_test(neg_permission_fork_rebuild_no_nullary_door
-  "is not a member of"
-  "rebuild_parent_after_fork_")
+# The fork keeps the child tokens and lends each body a view, so the
+# parent it combines after the join exists beside no live child.  A body
+# that asks for its token is refused at the door, a body that keeps its
+# view past its frame is refused at the copy, and a body that asks for the
+# view of another region of the tag is refused at the door.
+foundation_neg_compile_test(neg_permission_fork_body_takes_the_token
+  "constraints not satisfied"
+  "can_each_body_take_its_child_v<Ctx, Brand, std::tuple<[A-Za-z_]+ \\.\\.\\.>, std::tuple<Callables \\.\\.\\.> >.*evaluated to .false.")
+foundation_neg_compile_test(neg_permission_fork_body_keeps_its_view
+  "use of deleted function"
+  "a WriteView lives in the frame of its body. A copy could outlive the join")
+foundation_neg_compile_test(neg_permission_fork_body_of_another_region
+  "constraints not satisfied"
+  "can_each_body_take_its_child_v<Ctx, Brand, std::tuple<[A-Za-z_]+ \\.\\.\\.>, std::tuple<Callables \\.\\.\\.> >.*evaluated to .false.")
 
 # Route one: a context is not evidence of a capability, so naming a
 # specialization and building it from nothing is refused.  The
@@ -622,7 +620,7 @@ foundation_neg_compile_test(neg_permission_fork_split_witness_missing
   "has_split_pack_authoring_witness_v<Parent, Children \\.\\.\\.>.*evaluated to .false.")
 foundation_neg_compile_test(neg_permission_fork_body_may_throw
   "constraints not satisfied"
-  "can_each_body_take_its_child_v<Ctx, std::tuple<[A-Za-z_]+ \\.\\.\\.>, std::tuple<Callables \\.\\.\\.> >.*evaluated to .false.")
+  "can_each_body_take_its_child_v<Ctx, Brand, std::tuple<[A-Za-z_]+ \\.\\.\\.>, std::tuple<Callables \\.\\.\\.> >.*evaluated to .false.")
 
 # A manifest that lists one child twice passes the door, and the fork's
 # own check refuses it with a message that names the arm.

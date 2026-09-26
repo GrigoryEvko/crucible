@@ -208,8 +208,8 @@ std::atomic<int> g_right_received{0};
 std::atomic<std::uint32_t> g_live_in_left_body{0};
 
 struct LeftBody {
-    template <typename Head>
-    auto operator()(Head head, perm::Permission<async_tags::Left>, BgCtx const&) noexcept {
+    template <typename Head, typename Brand>
+    auto operator()(Head head, perm::WriteView<async_tags::Left, Brand> const&, BgCtx const&) noexcept {
         g_live_in_left_body.store(s::watch::live_count(), std::memory_order_relaxed);
         const auto send_ping = [deadline = Deadline{"the left send"}](LeftEnd& e, Ping& p) noexcept {
             return try_put(e.pipe->to_right, p.value, deadline);
@@ -224,8 +224,8 @@ struct LeftBody {
 };
 
 struct RightBody {
-    template <typename Head>
-    auto operator()(Head head, perm::Permission<async_tags::Right>, BgCtx const&) noexcept {
+    template <typename Head, typename Brand>
+    auto operator()(Head head, perm::WriteView<async_tags::Right, Brand> const&, BgCtx const&) noexcept {
         const auto send_pong = [deadline = Deadline{"the right send"}](RightEnd& e, Pong& p) noexcept {
             return try_put(e.pipe->to_left, p.value, deadline);
         };
