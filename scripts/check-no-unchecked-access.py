@@ -416,7 +416,7 @@ def walk_members(nodes: list[tsast.Node], accesses: frozenset[str],
     """
     for node in nodes:
         if node.type == "access_specifier":
-            accesses = frozenset({node.text.strip().rstrip(":").strip()})
+            accesses = frozenset({tsast.lexeme(node)})
         elif node.type in CONDITIONALS:
             accesses = walk_conditional(node, accesses, found)
         elif node.type in DECLARATIONS and accesses - {"public"}:

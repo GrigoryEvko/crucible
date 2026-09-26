@@ -364,7 +364,7 @@ def token_overrides(tokens: list[tsast.Token]) -> list[str]:
 
 def marked(tree: tsast.Tree, row: int) -> bool:
     """Return True when a comment on the row carries the marker and a reason."""
-    return any(f"{MARKER}:" in comment.text and comment.text.split(f"{MARKER}:", 1)[1].strip()
+    return any(tsast.prose_text(comment).partition(f"{MARKER}:")[2].strip()
                for comment in tsast.comments_by_row(tree).get(row, ()))
 
 

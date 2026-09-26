@@ -143,11 +143,6 @@ def _bounded(source: bytes, start: int, end: int, replacement: str) -> str:
     return text
 
 
-def _non_comment(node: tsast.Node) -> list[tsast.Node]:
-    """The children of a node that are not comments."""
-    return [child for child in node.children if child.type != "comment"]
-
-
 def _conjuncts(node: tsast.Node) -> list[tsast.Node]:
     """The leaves of a chain of && in a constraint, left to right.
 
@@ -155,7 +150,7 @@ def _conjuncts(node: tsast.Node) -> list[tsast.Node]:
     operands, so a comment beside `&&` does not hide the split."""
     if node.type in ("constraint_conjunction", "binary_expression") and tsast.operator_of(node) in ("&&", "and"):
         return _conjuncts(node.child_by_field("left")) + _conjuncts(node.child_by_field("right"))
-    inner = _non_comment(node)
+    inner = tsast.non_comment_children(node)
     if node.type == "parenthesized_expression" and len(inner) == 1:
         leaves = _conjuncts(inner[0])
         if len(leaves) > 1:
@@ -198,14 +193,14 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
                           source[start:end].decode("utf-8", errors="replace"), _words(node), _owner(node)))
 
     for clause in tree.find("requires_clause"):
-        constraint = _non_comment(clause)
+        constraint = tsast.non_comment_children(clause)
         if not constraint:
             continue
         for leaf in _conjuncts(constraint[-1]):
             add("requires", leaf, "true")
 
     for concept in tree.find("concept_definition"):
-        bodies = [child for child in _non_comment(concept) if child.field != "name"]
+        bodies = [child for child in tsast.non_comment_children(concept) if child.field != "name"]
         if bodies:
             for leaf in _conjuncts(bodies[-1]):
                 add("concept", leaf, "true")
@@ -232,7 +227,7 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
         callee = tsast.leaf_name(function)
         if callee in CALL_GATES:
             arguments = call.child_by_field("arguments")
-            listed = _non_comment(arguments) if arguments is not None else []
+            listed = tsast.non_comment_children(arguments) if arguments is not None else []
             if len(listed) > CALL_GATES[callee]:
                 add("contract", listed[CALL_GATES[callee]], "true")
         elif callee in SEAL_CALLS:
@@ -258,7 +253,7 @@ def find_gates(path: Path, repo_root: Path = REPO_ROOT) -> list[Gate]:
             continue
         if not _is_primary_template(struct):
             continue
-        for child in _non_comment(base):
+        for child in tsast.non_comment_children(base):
             spelled = tsast.qualified_parts(child)
             if spelled is not None and spelled[1] == ("std", "false_type"):
                 add("primary", child, "std::true_type")
