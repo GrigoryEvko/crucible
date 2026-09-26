@@ -12,7 +12,7 @@
 // that wants the proof pays for that footprint. Everyone else does not.
 
 #include <crucible/IterationDetector.h>
-#include <crucible/safety/_ScopedView.h>
+#include <fixy/ScopedView.h>
 
 #include <type_traits>
 
@@ -47,7 +47,7 @@ struct Steady {};
     return detector.signature_len.get() == IterationDetector::K;
 }
 
-static_assert(::crucible::safety::no_scoped_view_field_check<IterationDetector>(),
+static_assert(::fixy::no_scoped_view_field_check<IterationDetector>(),
               "IterationDetector must not contain a ScopedView field. A view is a non-owning witness bounded "
               "by its carrier's lifetime, and storing one as a member defeats that bound.");
 

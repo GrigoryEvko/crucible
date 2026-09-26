@@ -80,9 +80,6 @@ include/crucible/CallSiteTable.h
 include/crucible/Cipher.h
 include/crucible/CostModel.h
 include/crucible/CrucibleContext.h
-include/crucible/DimHash.h
-include/crucible/IterationDetector.h
-include/crucible/IterationDetectorState.h
 include/crucible/MerkleDag.h
 include/crucible/Philox.h
 include/crucible/PoolAllocator.h

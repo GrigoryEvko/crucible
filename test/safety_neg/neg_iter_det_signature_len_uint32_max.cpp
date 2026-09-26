@@ -1,40 +1,27 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: constructing IterationDetector::SignatureLen with
-// UINT32_MAX in a constexpr context (wide miss — full overflow).
+// Violation: minting IterationDetector::SignatureLen with UINT32_MAX in a
+// constexpr context (wide miss, the whole upper half-line).
 //
-// Per WRAP-IterDet-2 (#928), IterationDetector::SignatureLen is
-// safety::BoundedMonotonic<uint32_t, K> where K=5.  The ctor's pre
-// clause is `pre(!(T(Max) < initial))` i.e. `initial <= K`.  An
-// initial of UINT32_MAX = 4294967295 fires `!(5 < UINT32_MAX) ==
-// false` → contract violation → non-constant expression in constexpr
-// context → ill-formed.
+// IterationDetector::SignatureLen is ::fixy::BoundedMonotonic<uint32_t, K>
+// with K = 5, and its constructor carries pre(!(T(Max) < initial)).
+// UINT32_MAX makes the predicate false, and the constant evaluation fails.
 //
 // Companion fixture to neg_iter_det_signature_len_above_k.cpp:
-//   - That one is the boundary edge (= K+1=6, off-by-one).
-//   - This one is the wide miss (= UINT32_MAX, full domain) —
-//     catches "casting an unsigned counter to uint32_t and forgetting
-//     the bound", or a bit-flipped counter from corrupted memory, or
-//     a regression that drops the upper bound entirely (e.g. switches
-//     from BoundedMonotonic to plain Monotonic).
-//
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate,
-// each demonstrating a distinct mismatch class.  Different forbidden-
-// value classes (boundary edge vs wide miss) cover different drift
-// modes — see the companion fixture's docstring for the symmetric
-// rationale.
+//   - That one is the boundary edge (= K+1 = 6, off-by-one).
+//   - This one is the wide miss (= UINT32_MAX).  It catches an unsigned
+//     counter cast to uint32_t without the bound, a bit-flipped counter,
+//     or a regression that replaces BoundedMonotonic with plain
+//     Monotonic and loses the upper bound.
 
 #include <crucible/IterationDetector.h>
+#include <fixy/Mutation.h>
 
-#include <climits>
 #include <cstdint>
 
 int main() {
-    // Wide miss: UINT32_MAX = 4294967295 exercises the full upper
-    // half of the uint32_t range.  Catches any predicate that only
-    // filters specific magic values rather than the whole upper-bound
-    // half-line.
-    constexpr crucible::IterationDetector::SignatureLen bad{uint32_t{UINT32_MAX}};
+    constexpr crucible::IterationDetector::SignatureLen bad =
+        ::fixy::mint_bounded_monotonic<uint32_t, crucible::IterationDetector::K>(uint32_t{UINT32_MAX});
     (void)bad;
     return 0;
 }

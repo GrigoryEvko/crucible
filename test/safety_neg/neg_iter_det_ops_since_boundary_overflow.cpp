@@ -1,43 +1,29 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: calling .bump() on IterationDetector::OpsSinceBoundary
-// when current value is at numeric_limits<uint32_t>::max() — fires
-// Monotonic's overflow contract.
+// Violation: calling .bump() on IterationDetector::OpsSinceBoundary when
+// the value is numeric_limits<uint32_t>::max(), which fires Monotonic's
+// overflow precondition.
 //
-// Per WRAP-IterDet-3 (#929), IterationDetector::OpsSinceBoundary is
-// safety::Monotonic<uint32_t>.  Monotonic::bump() carries
-// pre(impl_.peek() != std::numeric_limits<T>::max()) so the increment
-// cannot wrap.  In constexpr context (constant evaluation), a
-// contract violation makes the expression non-constant per P1494R5
-// — using it where a constant is required is ill-formed.
+// IterationDetector::OpsSinceBoundary is ::fixy::Monotonic<uint32_t>.
+// Monotonic::bump() carries CRUCIBLE_PRE(current != numeric_limits<T>::max()),
+// so the increment cannot wrap.  In a constant evaluation the failed
+// precondition reaches a non-constant trap, and the evaluation fails.
 //
 // Companion fixture to neg_iter_det_ops_since_boundary_regression.cpp:
-//   - That one tests monotonicity (advance to smaller value).
-//   - This one tests overflow (bump at UINT32_MAX = wraparound edge).
-//     Catches a future regression that drops the overflow guard
-//     (e.g. switches to plain `value_++` without the != max() check),
-//     leaving the counter to silently wrap from UINT32_MAX → 0 —
-//     which would also be a monotonicity violation, but the bump()
-//     contract is the only line of defense at the type level.
-//
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
-// demonstrating a distinct mismatch class.  Different mutation paths
-// (advance vs bump) and different invariants (monotonicity vs
-// overflow) cover different drift modes; both fixtures together pin
-// the wrapper's contracts.
+//   - That one tests monotonicity (advance to a smaller value).
+//   - This one tests overflow (bump at UINT32_MAX).  A regression that
+//     drops the overflow guard lets the counter wrap to 0, which is also
+//     a monotonicity violation, but bump() is the only gate that sees it.
 
 #include <crucible/IterationDetector.h>
+#include <fixy/Mutation.h>
 
-#include <climits>
 #include <cstdint>
 
-// Constexpr function that triggers the overflow contract.  Calling it
-// in a constant-evaluated context (the constexpr local below) makes
-// the result non-constant, hence ill-formed.
 constexpr crucible::IterationDetector::OpsSinceBoundary make_bad() {
-    crucible::IterationDetector::OpsSinceBoundary m{uint32_t{UINT32_MAX}};
-    m.bump();  // pre: peek() != UINT32_MAX → false → contract failure
-    return m;
+    auto counter = ::fixy::mint_monotonic<uint32_t>(uint32_t{UINT32_MAX});
+    counter.bump();
+    return counter;
 }
 
 int main() {

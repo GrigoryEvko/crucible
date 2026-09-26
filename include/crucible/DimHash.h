@@ -12,7 +12,8 @@
 #include <crucible/Expr.h>
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
-#include <crucible/fixy/Wrap.h>
+#include <fixy/Bands.h>
+#include <fixy/Tagged.h>
 #include <foundation/Simd.h>
 
 #include <cstdint>
@@ -23,8 +24,8 @@ namespace crucible {
 // The value is reproducible from the descriptor's bytes, but it is not on
 // its own a key that may be persisted. The two wrappers make a consumer
 // acknowledge both before mixing or exporting the bits.
-using DimHash = ::crucible::fixy::wrap::Tagged<uint64_t, ::crucible::hash_family::FamilyB>;
-using DimHashDet = ::crucible::fixy::wrap::DetSafe<::crucible::fixy::wrap::DetSafeTier_v::Pure, DimHash>;
+using DimHash = ::fixy::Tagged<uint64_t, ::crucible::hash_family::FamilyB>;
+using DimHashDet = ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, DimHash>;
 
 static_assert(sizeof(DimHash) == sizeof(uint64_t), "Tagged<uint64_t, hash_family::FamilyB> must stay the width of "
                                                    "its payload so the dim hash stays register-sized");
@@ -36,7 +37,9 @@ static_assert(std::is_trivially_copyable_v<DimHashDet>);
 static_assert(std::is_standard_layout_v<DimHash>);
 static_assert(std::is_standard_layout_v<DimHashDet>);
 
-[[nodiscard]] inline constexpr DimHash dim_hash(uint64_t hash) noexcept { return DimHash{hash}; }
+[[nodiscard]] inline constexpr DimHash dim_hash(uint64_t hash) noexcept {
+    return ::fixy::mint_tagged<::crucible::hash_family::FamilyB>(hash);
+}
 
 [[nodiscard]] inline constexpr uint64_t raw_dim_hash(const DimHash& hash) noexcept { return hash.value(); }
 
@@ -86,7 +89,7 @@ namespace crucible::detail {
 }
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE DimHashDet dim_hash_simd_det(const TensorMeta& meta) noexcept {
-    return DimHashDet{dim_hash(dim_hash_simd(meta))};
+    return DimHashDet{dim_hash(dim_hash_simd(meta)), {}};
 }
 
 // The reference. A change to the algorithm has to land here and in the
@@ -101,7 +104,7 @@ namespace crucible::detail {
 }
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE DimHashDet dim_hash_scalar_det(const TensorMeta& meta) noexcept {
-    return DimHashDet{dim_hash(dim_hash_scalar(meta))};
+    return DimHashDet{dim_hash(dim_hash_scalar(meta)), {}};
 }
 
 }  // namespace crucible::detail

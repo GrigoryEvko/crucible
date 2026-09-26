@@ -1,4 +1,4 @@
-// WRAP-DimHash-1 (#910): dim_hash_*_det returns DimHashDet =
+// dim_hash_*_det returns DimHashDet =
 // DetSafe<Pure, Tagged<uint64_t, hash_family::FamilyB>>.
 //
 // This fixture provokes the raw-value fence: a bare uint64_t must not

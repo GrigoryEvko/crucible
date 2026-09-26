@@ -5882,19 +5882,21 @@ crucible_neg_compile_test(neg_graded_inject_on_coeffect
 crucible_neg_compile_test(neg_element_bytes_above_max
   "contract|bounded_above|not a constant|non-constant|constexpr")
 
-# WRAP-IterDet-1 (#927) — IterationDetector::match_pos_ wraps Refined<
-# bounded_above<MATCH_POS_MAX=K-1=4>, uint8_t>; constructing MatchPos{>4}
-# in constexpr context drives the bounded_above<4>(v) pre-clause through
-# constant evaluation.  Two fixtures cover distinct forbidden-value
-# classes per HS14:
+# IterationDetector::match_pos_ is the fixy Refined<bounded_above<
+# MATCH_POS_MAX = K-1 = 4>, uint8_t>, and mint_refined<kMatchPosBound> is
+# its one door.  Minting a value above 4 in a constant evaluation fails the
+# door's precondition.  Two fixtures cover distinct forbidden values:
 #   * _above_max — boundary edge (5 = K = smallest forbidden), catches
 #     off-by-one drift in MATCH_POS_MAX.
-#   * _uint8_max — wide miss (255 = uint8_t max), catches "lost narrowing"
-#     where a wider intermediate is truncated to uint8_t pre-assignment.
-crucible_neg_compile_test(neg_iter_det_match_pos_above_max
-  "contract|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_iter_det_match_pos_uint8_max
-  "contract|bounded_above|not a constant|non-constant|constexpr")
+#   * _uint8_max — wide miss (255 = uint8_t max), catches a wider
+#     intermediate truncated to uint8_t before the mint.
+# Each pins the door, the predicate and the refused value.
+crucible_neg_compile_multi_test(neg_iter_det_match_pos_above_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<4>\\(\\), unsigned char>\\(5\\)")
+crucible_neg_compile_multi_test(neg_iter_det_match_pos_uint8_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<4>\\(\\), unsigned char>\\(255\\)")
 
 # WRAP-CallSite-2 (#880) — CallSiteTable::Lineno = NonNegative<int32_t>
 # = Refined<non_negative, int32_t>; constructing Lineno{< 0} in
@@ -5927,62 +5929,56 @@ crucible_neg_compile_test(neg_call_site_filename_raw_string
 crucible_neg_compile_test(neg_call_site_filename_external_passback
   "no match for|cannot convert|no viable|could not convert|Tagged|External|Sanitized")
 
-# WRAP-IterDet-2 (#928) — IterationDetector::SignatureLen = safety::
-# BoundedMonotonic<uint32_t, K=5>; constructing SignatureLen{> K} in
-# constexpr context drives the `pre(!(T(Max) < initial))` clause
-# through constant evaluation.  Two fixtures per HS14:
+# IterationDetector::SignatureLen is the fixy BoundedMonotonic<uint32_t,
+# K = 5>.  Its constructor, reached only through mint_bounded_monotonic,
+# carries pre(!(T(Max) < initial)), and a value above K fails it in a
+# constant evaluation.  Two fixtures:
 #   * _above_k     — boundary edge (6 = K+1), catches off-by-one drift
-#     in the bound (e.g. `bounded_above<K-1>` vs `bounded_above<K>`).
-#   * _uint32_max  — wide miss (UINT32_MAX), catches "drop the upper
-#     bound" regression where BoundedMonotonic is replaced by plain
-#     Monotonic and the Max disappears entirely.
-crucible_neg_compile_test(neg_iter_det_signature_len_above_k
-  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_iter_det_signature_len_uint32_max
-  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+#     in the bound.
+#   * _uint32_max  — wide miss (UINT32_MAX), catches a regression that
+#     replaces BoundedMonotonic with plain Monotonic and loses the bound.
+# The diagnostic names the constructor's precondition in Mutation.h and
+# not the value, so each fixture pins the predicate site.
+crucible_neg_compile_multi_test(neg_iter_det_signature_len_above_k
+  "contract predicate is false in constant expression"
+  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+crucible_neg_compile_multi_test(neg_iter_det_signature_len_uint32_max
+  "contract predicate is false in constant expression"
+  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
 
-# WRAP-IterDet-3 (#929) — IterationDetector::OpsSinceBoundary =
-# safety::Monotonic<uint32_t>; advance(smaller) and bump() at
-# numeric_limits::max() drive the dual contracts (monotonicity +
-# overflow) through constant evaluation.  Two fixtures per HS14:
-#   * _regression — boundary edge (advance(5) from 10), catches
-#     drift where Monotonic's `>=` predicate weakens to `>`, silently
-#     admitting equal-value advances and (post-regression) backward
-#     writes.
-#   * _overflow   — wide miss (bump() at UINT32_MAX), catches
-#     "drop the overflow contract" regression where bump() loses its
-#     != max() check and silently wraps to 0.
-# The two fixtures together pin BOTH Monotonic mutation contracts at
-# the field's call-sites in IterationDetector.
-crucible_neg_compile_test(neg_iter_det_ops_since_boundary_regression
-  "contract|leq|Monotonic|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_iter_det_ops_since_boundary_overflow
-  "contract|max|Monotonic|not a constant|non-constant|constexpr")
+# IterationDetector::OpsSinceBoundary is the fixy Monotonic<uint32_t>.
+# advance(smaller) and bump() at numeric_limits::max() fail the two
+# mutation preconditions (monotonicity and overflow) in a constant
+# evaluation.  Two fixtures:
+#   * _regression — boundary edge (advance(5) from 10), catches a
+#     monotonicity predicate that weakens.
+#   * _overflow   — wide miss (bump() at UINT32_MAX), catches a bump()
+#     that loses its != max() check and wraps to 0.
+# Each pins the mutation that failed and the value it was given.
+crucible_neg_compile_multi_test(neg_iter_det_ops_since_boundary_regression
+  "__builtin_trap.*is not a constant expression"
+  "Monotonic<unsigned int, std::less<unsigned int> >::advance\\(5\\)")
+crucible_neg_compile_multi_test(neg_iter_det_ops_since_boundary_overflow
+  "__builtin_trap.*is not a constant expression"
+  "Monotonic<unsigned int, std::less<unsigned int> >::bump\\(\\)")
 
-# WRAP-IterDet-4 (#930) — IterationDetector typestate codification
-# via ScopedView.  iter_det_state::{Building, Steady} tags +
-# view_ok overloads encode signature_len.get()'s phase at the type
-# level so callers can witness state at compile time.  Two fixtures
-# per HS14 — distinct mismatch classes:
-#   * _view_steady_on_building — value-level pre at MINT TIME.
-#     Fires mint_view's `pre(view_ok(d, Steady))` on a Building-
-#     state detector at constexpr.  Catches drift where view_ok's
-#     Steady overload weakens to admit non-K signature_len, or where
-#     a caller mints a Steady view assuming the detector progressed
-#     past Building when in fact it hadn't.
-#   * _view_in_field — structural Tier-2 audit at FIELD AUDIT TIME.
-#     Fires no_scoped_view_field_check on a struct that embeds a
-#     ScopedView<IterationDetector, Steady> as a member.  Catches
-#     drift in contains_scoped_view's recursive wrapper-unwrap (a
-#     new container shape that escapes the audit), or a refactor
-#     that adds a "cached state proof" field somewhere.
-# The two fixtures together pin BOTH the value-level mint gate AND
-# the structural field-storage gate of WRAP-IterDet-4 — the
-# typestate's two distinct soundness witnesses.
-crucible_neg_compile_test(neg_iter_det_view_steady_on_building
-  "contract|view_ok|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_iter_det_view_in_field
-  "ScopedView|contains_scoped_view|no_scoped_view|static assertion")
+# The iter_det_state::{Building, Steady} tags and their view_ok overloads
+# give the detector's phase a type, so a caller can carry a witness of it.
+# Two fixtures, distinct mismatch classes:
+#   * _view_steady_on_building — the value-level precondition of
+#     ::fixy::mint_view on a Building detector at constant evaluation.
+#     Catches a Steady overload that admits a signature shorter than K,
+#     or a caller that mints the view before the detector left Building.
+#   * _view_in_field — the structural audit no_scoped_view_field_check
+#     on a class that holds a ScopedView<IterationDetector, Steady> as a
+#     member.  Catches a container shape the recursive unwrap misses, or
+#     a refactor that adds a cached view field.
+crucible_neg_compile_multi_test(neg_iter_det_view_steady_on_building
+  "contract predicate is false in constant expression"
+  "fixy/ScopedView.h:[0-9]+:[0-9]+: error: contract predicate")
+crucible_neg_compile_multi_test(neg_iter_det_view_in_field
+  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
+  "contains_scoped_view<OffendingContainer>\\(\\)")
 
 # WRAP-MerkleDag-6 (#942) — RegionNode::VariantCounter =
 # safety::Monotonic<uint32_t>; the field's structurally
@@ -6488,17 +6484,18 @@ crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_raw_uint64
 crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_cross_family
   "no match for|cannot convert|no viable|could not convert|operator=|Tagged|FamilyA|FamilyB")
 
-# WRAP-DimHash-1 (#910) — dim_hash_*_det returns
-# DetSafe<Pure, Tagged<uint64_t, hash_family::FamilyB>>.  Two HS14
-# fixtures cover both fences:
+# dim_hash_*_det returns the fixy DetSafe<Pure, Tagged<uint64_t,
+# hash_family::FamilyB>>.  Two fixtures cover both fences:
 #   * neg_dim_hash_raw_uint64 — raw uint64_t cannot enter the typed
 #     deterministic Family-B carrier.
 #   * neg_dim_hash_cross_family — Family-A values cannot substitute
 #     for process-local Family-B dim hashes.
-crucible_neg_compile_test(neg_dim_hash_raw_uint64
-  "cannot convert|no matching function|could not convert|DetSafe|DimHash|Tagged")
-crucible_neg_compile_test(neg_dim_hash_cross_family
-  "cannot convert|no matching function|could not convert|DetSafe|Tagged|FamilyA|FamilyB")
+crucible_neg_compile_multi_test(neg_dim_hash_raw_uint64
+  "could not convert .raw. from .const uint64_t."
+  "to .crucible::DimHashDet.")
+crucible_neg_compile_multi_test(neg_dim_hash_cross_family
+  "could not convert .persistent. from .Graded<\\[...\\],\\[...\\],Tagged<\\[...\\],crucible::hash_family::FamilyA>>."
+  "to .Graded<\\[...\\],\\[...\\],Tagged<\\[...\\],crucible::hash_family::FamilyB>>.")
 
 # observe/HdrHistogram.h keeps the recording boundary typed and the merge
 # geometry exact:

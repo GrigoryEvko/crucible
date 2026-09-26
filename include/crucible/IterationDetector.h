@@ -9,8 +9,9 @@
 #include <crucible/Expr.h>
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Post.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <foundation/contracts/Post.h>
 
 namespace crucible {
 
@@ -61,16 +62,18 @@ struct IterationDetector {
     // stored value never reaches K.
     static constexpr uint8_t MATCH_POS_MAX = static_cast<uint8_t>(K - 1);
 
-    using MatchPos = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<MATCH_POS_MAX>, uint8_t>;
+    // The one door into MatchPos is ::fixy::mint_refined<kMatchPosBound>(pos).
+    static constexpr auto kMatchPosBound = ::fixy::bounded_above<MATCH_POS_MAX>;
+    using MatchPos = ::fixy::Refined<kMatchPosBound, uint8_t>;
 
     // The length rises to K during signature collection and stops there. Only
     // reset() and restart_after_divergence() rewind it.
-    using SignatureLen = ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, K>;
+    using SignatureLen = ::fixy::BoundedMonotonic<uint32_t, K>;
 
     // Monotonic within one iteration and rewound at each boundary. The rewind
     // sites construct a fresh counter in place rather than assigning, because
     // assigning backwards is what the type forbids.
-    using OpsSinceBoundary = ::crucible::fixy::wrap::Monotonic<uint32_t>;
+    using OpsSinceBoundary = ::fixy::Monotonic<uint32_t>;
 
     // A period is refuted after this many breaks.
     static constexpr uint32_t BREAKS_TO_REFUTE = 2;
@@ -92,7 +95,7 @@ struct IterationDetector {
     // signature[0..i]. It lets the matcher find overlapping matches.
     uint8_t failure_[K]{};
 
-    MatchPos match_pos_{uint8_t{0}};
+    MatchPos match_pos_ = ::fixy::mint_refined<kMatchPosBound>(uint8_t{0});
 
     // True while a period is accepted.
     bool confirmed = false;
@@ -103,9 +106,9 @@ struct IterationDetector {
     // nothing about the period.
     bool phase_is_unique = false;
 
-    SignatureLen signature_len{0u};
-    OpsSinceBoundary ops_since_boundary{0u};
-    crucible::fixy::wrap::Monotonic<uint32_t> boundaries_detected{0};
+    SignatureLen signature_len = ::fixy::mint_bounded_monotonic<uint32_t, K>(0u);
+    OpsSinceBoundary ops_since_boundary = ::fixy::mint_monotonic<uint32_t>(0u);
+    ::fixy::Monotonic<uint32_t> boundaries_detected = ::fixy::mint_monotonic<uint32_t>(0u);
     uint32_t last_completed_len = 0;
 
     // Zero while no period is accepted.
@@ -243,15 +246,15 @@ private:
             h = 0;
         for (auto& f : failure_)
             f = 0;
-        match_pos_ = MatchPos{uint8_t{0}};
+        match_pos_ = ::fixy::mint_refined<kMatchPosBound>(uint8_t{0});
         confirmed = false;
         phase_is_unique = false;
         // Each counter runs backwards here, which is exactly what its type
         // refuses on assignment. Constructing a fresh one in place installs
         // the invariant again from zero.
-        std::construct_at(&ops_since_boundary, OpsSinceBoundary{0u});
-        std::construct_at(&signature_len, SignatureLen{0u});
-        std::construct_at(&boundaries_detected, crucible::fixy::wrap::Monotonic<uint32_t>{0});
+        std::construct_at(&ops_since_boundary, ::fixy::mint_monotonic<uint32_t>(0u));
+        std::construct_at(&signature_len, ::fixy::mint_bounded_monotonic<uint32_t, K>(0u));
+        std::construct_at(&boundaries_detected, ::fixy::mint_monotonic<uint32_t>(0u));
         last_completed_len = 0;
         period_ = 0;
         period_body_sum_ = 0;
@@ -305,7 +308,7 @@ private:
             failure_[i] = border;
         }
         // The signature itself is the first match.
-        match_pos_ = MatchPos{failure_[K - 1]};
+        match_pos_ = ::fixy::mint_refined<kMatchPosBound>(failure_[K - 1]);
         match_starts_.push_back(op_index + 1 - K);
         return false;
     }
@@ -320,10 +323,10 @@ private:
         if (matched == K) {
             // The border is at most K-1, which keeps the stored value inside
             // the bound the storage type demands.
-            match_pos_ = MatchPos{failure_[K - 1]};
+            match_pos_ = ::fixy::mint_refined<kMatchPosBound>(failure_[K - 1]);
             return true;
         }
-        match_pos_ = MatchPos{matched};
+        match_pos_ = ::fixy::mint_refined<kMatchPosBound>(matched);
         return false;
     }
 
@@ -442,7 +445,7 @@ private:
         // The K ops just received belong to the next iteration, so the
         // counter restarts at K. This is a rewind from an arbitrary larger
         // value, hence the in-place construction.
-        std::construct_at(&ops_since_boundary, OpsSinceBoundary{K});
+        std::construct_at(&ops_since_boundary, ::fixy::mint_monotonic<uint32_t>(K));
         boundaries_detected.bump();
         const uint64_t boundary = next_boundary_;
         next_boundary_ = boundary + period_;

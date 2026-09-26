@@ -6,7 +6,7 @@
 
 #include <crucible/IterationDetector.h>
 #include <crucible/IterationDetectorState.h>
-#include <crucible/safety/_ScopedView.h>
+#include <fixy/ScopedView.h>
 
 #include "test_assert.h"
 #include <cstdint>
@@ -429,7 +429,7 @@ void test_typestate_witness_minting() {
     // fixtures, and the two halves together bracket the mint's gate.
     using crucible::iter_det_state::Building;
     using crucible::iter_det_state::Steady;
-    using crucible::safety::mint_view;
+    using ::fixy::mint_view;
 
     IterationDetector d;
     assert(d.signature_len.get() == 0);

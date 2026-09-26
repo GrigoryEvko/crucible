@@ -1,39 +1,31 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // Violation: calling .advance(smaller) on IterationDetector::
-// OpsSinceBoundary in a constexpr context — fires Monotonic's
-// monotonicity contract.
+// OpsSinceBoundary in a constexpr context, which fires Monotonic's
+// monotonicity precondition.
 //
-// Per WRAP-IterDet-3 (#929), IterationDetector::OpsSinceBoundary is
-// safety::Monotonic<uint32_t>.  Monotonic::advance(new_value) carries
-// pre(lattice_type::leq(peek(), new_value)) — i.e. new_value must be
-// >= current.  In constexpr context (constant evaluation), a contract
-// violation makes the expression non-constant per P1494R5 — using it
-// where a constant is required is ill-formed.
+// IterationDetector::OpsSinceBoundary is ::fixy::Monotonic<uint32_t>.
+// Monotonic::advance(new_value) carries
+// CRUCIBLE_PRE(lattice_type::leq(current, new_value)), so new_value must
+// not be less than the current value.  In a constant evaluation the
+// failed precondition reaches a non-constant trap, and the evaluation
+// fails.
 //
 // Companion fixture to neg_iter_det_ops_since_boundary_overflow.cpp:
-//   - This one is the boundary edge (current=10, advance(5) → 5 < 10).
-//     Catches off-by-one drift in the monotonicity predicate (e.g.
-//     a future regression that uses `>` instead of `>=`).
-//   - That one is the wide miss (bump() at UINT32_MAX → overflow).
-//     Catches "drop the overflow contract" regression.
-//
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
-// demonstrating a distinct mismatch class.  Together they pin the
-// monotonicity AND overflow guards on this counter at the type-system
-// level.
+//   - This one is the boundary edge (current = 10, advance(5)).  It
+//     catches drift in the monotonicity predicate.
+//   - That one is the wide miss (bump() at UINT32_MAX), the overflow
+//     guard.
 
 #include <crucible/IterationDetector.h>
+#include <fixy/Mutation.h>
 
 #include <cstdint>
 
-// Constexpr function that triggers the monotonicity contract.  Calling
-// it in a constant-evaluated context (the constexpr local below) makes
-// the result non-constant, hence ill-formed.
 constexpr crucible::IterationDetector::OpsSinceBoundary make_bad() {
-    crucible::IterationDetector::OpsSinceBoundary m{uint32_t{10}};
-    m.advance(uint32_t{5});  // pre: 5 >= 10 → false → contract failure
-    return m;
+    auto counter = ::fixy::mint_monotonic<uint32_t>(uint32_t{10});
+    counter.advance(uint32_t{5});
+    return counter;
 }
 
 int main() {
