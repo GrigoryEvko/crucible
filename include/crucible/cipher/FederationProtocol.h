@@ -61,6 +61,7 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <cstddef>
@@ -201,31 +202,11 @@ enum class FederationError : std::uint8_t {
     OutputBufferTooSmall = 9,
 };
 
+// The name is the enumerator's identifier, read by reflection, so a new
+// error cannot be added without a name.  A value that no enumerator
+// holds prints "<unknown FederationError>".
 [[nodiscard]] inline constexpr std::string_view federation_error_name(FederationError e) noexcept {
-    switch (e) {
-        case FederationError::None:
-            return "None";
-        case FederationError::BadMagic:
-            return "BadMagic";
-        case FederationError::UnsupportedVersion:
-            return "UnsupportedVersion";
-        case FederationError::UniverseCardinalityTooHigh:
-            return "UniverseCardinalityTooHigh";
-        case FederationError::SentinelKey:
-            return "SentinelKey";
-        case FederationError::ZeroKey:
-            return "ZeroKey";
-        case FederationError::ReservedNonZero:
-            return "ReservedNonZero";
-        case FederationError::TruncatedHeader:
-            return "TruncatedHeader";
-        case FederationError::TruncatedPayload:
-            return "TruncatedPayload";
-        case FederationError::OutputBufferTooSmall:
-            return "OutputBufferTooSmall";
-        default:
-            return "<unknown FederationError>";
-    }
+    return ::foundation::reflect::enum_name(e);
 }
 
 // The rejection rules are checked in the body and reported, rather
