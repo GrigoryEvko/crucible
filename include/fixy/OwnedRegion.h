@@ -97,6 +97,19 @@ namespace detail {
 // The one door to a disjointness receipt.  Only mint_split holds it.
 struct split_mint_t {};
 
+// The first index of shard `index` when a split cuts `total` elements
+// into `shards` parts.  Each of the first total % shards parts holds one
+// element more than the other parts.  Shard i ends where shard i + 1
+// starts, shard 0 starts at 0 and shard `shards` starts at total.  So the
+// shards tile [0, total) with no gap and no overlap, and no start is past
+// total.  The arithmetic cannot wrap, because index * (total / shards)
+// is not more than total for an index that is not more than `shards`.
+[[nodiscard]] constexpr std::size_t shard_start(std::size_t total, std::size_t shards, std::size_t index) noexcept {
+    const std::size_t smaller_count = total / shards;
+    const std::size_t larger_shards = total % shards;
+    return index * smaller_count + (index < larger_shards ? index : larger_shards);
+}
+
 }  // namespace detail
 
 // The receipt a split writes: these shards came from one split of one
@@ -401,18 +414,6 @@ public:
 private:
     template <std::size_t N, typename SplitName, std::size_t... Is>
     auto split_into_impl_(std::index_sequence<Is...>) && noexcept;
-
-    // Returns the start offset and the length of shard i.
-    static constexpr std::pair<std::size_t, std::size_t> chunk_range_(std::size_t total, std::size_t n,
-                                                                      std::size_t i) noexcept {
-        if (n == 0) return {0, 0};
-        const std::size_t chunk = (total + n - 1) / n;
-        const std::size_t start = i * chunk;
-        if (start >= total) return {start, 0};
-        const std::size_t end_ = (i + 1) * chunk;
-        const std::size_t bound = (end_ > total) ? total : end_;
-        return {start, bound - start};
-    }
 };
 
 template <typename T, typename Tag, typename Brand>
@@ -476,9 +477,10 @@ auto OwnedRegion<T, Tag, Brand>::split_into_impl_(std::index_sequence<Is...>) &&
     using Witness = Disjoint<Tag, Brand, SplitName, N>;
     return SplitParts<Witness, Shards>{
         Witness{detail::split_mint_t{}},
-        Shards{OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>{base + chunk_range_(total, N, Is).first,
-                                                                chunk_range_(total, N, Is).second,
-                                                                std::move(std::get<Is>(sub_perms))}...}};
+        Shards{OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>{
+            base + detail::shard_start(total, N, Is),
+            detail::shard_start(total, N, Is + 1) - detail::shard_start(total, N, Is),
+            std::move(std::get<Is>(sub_perms))}...}};
 }
 
 // The detection surface of the old IsOwnedRegion.h.  One reflection
@@ -548,6 +550,29 @@ using OR_int_a = OwnedRegion<int, test_tag_a>;
 using OR_double_a = OwnedRegion<double, test_tag_a>;
 using OR_int_b = OwnedRegion<int, test_tag_b>;
 using OR_int_a_branded = OwnedRegion<int, test_tag_a, brand_a>;
+
+// The partition of a split tiles its region.  Over each total from 0 to
+// 64 and each shard count from 1 to 16: shard 0 starts at 0, the last
+// shard ends at the total, and the length of each shard is total / N or
+// one element more.  test/fixy/test_owned_region.cpp does the split and
+// the recombine at run time over the same grid.
+[[nodiscard]] consteval bool shard_starts_tile_every_total() noexcept {
+    for (std::size_t total = 0; total <= 64; ++total) {
+        for (std::size_t shards = 1; shards <= 16; ++shards) {
+            if (detail::shard_start(total, shards, 0) != 0) return false;
+            if (detail::shard_start(total, shards, shards) != total) return false;
+            for (std::size_t index = 0; index < shards; ++index) {
+                const std::size_t start = detail::shard_start(total, shards, index);
+                const std::size_t next = detail::shard_start(total, shards, index + 1);
+                if (next < start || next - start > total / shards + 1 || next - start < total / shards) return false;
+            }
+        }
+    }
+    return true;
+}
+static_assert(shard_starts_tile_every_total());
+static_assert(detail::shard_start(5, 4, 3) == 4, "5 elements into 4 shards puts the last shard at index 4");
+static_assert(detail::shard_start(~std::size_t{0}, 3, 3) == ~std::size_t{0}, "the largest total does not wrap");
 
 static_assert(is_owned_region_v<OR_int_a>);
 static_assert(is_owned_region_v<OR_double_a>);
