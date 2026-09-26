@@ -2,27 +2,33 @@
 
 #include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Stale.h>
+#include <fixy/Bits.h>
+#include <fixy/Ctx.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/Stale.h>
+#include <foundation/Pinned.h>
+#include <foundation/diag/Catalog.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
+#include <foundation/reflect/Instance.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
+#include <memory>
+#include <meta>
+#include <span>
 #include <string_view>
 #include <type_traits>
 
 namespace crucible::topology {
 
+// foundation::reflect::enum_name gives the log spelling of both enums.
 enum class HealthState : std::uint8_t {
     Healthy = 0,
     Suspect = 1,
@@ -30,8 +36,6 @@ enum class HealthState : std::uint8_t {
     Recovered = 3,
     Permanent = 4,
 };
-
-[[nodiscard]] std::string_view health_state_name(HealthState state) noexcept;
 
 enum class HealthIssue : std::uint32_t {
     PhiSuspect = 1u << 0,
@@ -48,9 +52,7 @@ enum class HealthIssue : std::uint32_t {
     MissingSample = 1u << 11,
 };
 
-[[nodiscard]] std::string_view health_issue_name(HealthIssue issue) noexcept;
-
-struct Health_Degraded : safety::diag::tag_base {
+struct Health_Degraded : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "Health_Degraded";
     static constexpr std::string_view description =
         "A Cog's composite health score crossed a configured risk threshold.";
@@ -60,7 +62,7 @@ struct Health_Degraded : safety::diag::tag_base {
         "isolate the Cog.";
 };
 
-using PositiveNanoseconds = safety::Positive<std::uint64_t>;
+using PositiveNanoseconds = ::fixy::Positive<std::uint64_t>;
 
 class [[nodiscard]] PhiMilli {
     std::uint32_t value_ = 0;
@@ -109,7 +111,7 @@ struct HealthPolicy {
     HealthScore suspect_below{750};
     HealthScore quarantine_below{400};
     HealthScore recovered_at_or_above{900};
-    PositiveNanoseconds expected_heartbeat_ns{std::uint64_t{1000000000}};
+    PositiveNanoseconds expected_heartbeat_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000000000});
     std::int32_t thermal_warn_millicelsius = 80000;
     std::int32_t thermal_critical_millicelsius = 90000;
     std::uint8_t clock_degraded_pct = 10;
@@ -126,18 +128,20 @@ struct ThermalSample {
     std::uint64_t sequence = 0;
 };
 
+using MonotoneCount = ::fixy::Monotonic<std::uint64_t>;
+
 struct EccCounters {
-    safety::Monotonic<std::uint64_t> corrected{0};
-    safety::Monotonic<std::uint64_t> uncorrected{0};
+    MonotoneCount corrected = ::fixy::mint_monotonic<std::uint64_t>(0);
+    MonotoneCount uncorrected = ::fixy::mint_monotonic<std::uint64_t>(0);
     std::uint64_t sequence = 0;
 };
 
 struct DropCounters {
-    safety::Monotonic<std::uint64_t> rx_packets{0};
-    safety::Monotonic<std::uint64_t> tx_packets{0};
-    safety::Monotonic<std::uint64_t> rx_dropped{0};
-    safety::Monotonic<std::uint64_t> tx_dropped{0};
-    safety::Monotonic<std::uint64_t> rx_fifo_errors{0};
+    MonotoneCount rx_packets = ::fixy::mint_monotonic<std::uint64_t>(0);
+    MonotoneCount tx_packets = ::fixy::mint_monotonic<std::uint64_t>(0);
+    MonotoneCount rx_dropped = ::fixy::mint_monotonic<std::uint64_t>(0);
+    MonotoneCount tx_dropped = ::fixy::mint_monotonic<std::uint64_t>(0);
+    MonotoneCount rx_fifo_errors = ::fixy::mint_monotonic<std::uint64_t>(0);
     std::uint64_t sequence = 0;
 };
 
@@ -151,7 +155,7 @@ struct HealthSnapshot {
     HealthState state = HealthState::Healthy;
     HealthScore score{};
     PhiMilli phi{};
-    safety::Bits<HealthIssue> issues{};
+    ::fixy::Bits<HealthIssue> issues{};
     std::uint32_t drop_rate_ppm = 0;
     std::uint32_t wear_used_ppm = 0;
     std::uint64_t sequence = 0;
@@ -162,21 +166,21 @@ struct HealthDeltaEvent {
     HealthState from = HealthState::Healthy;
     HealthState to = HealthState::Healthy;
     HealthScore score{};
-    safety::Bits<HealthIssue> issues{};
+    ::fixy::Bits<HealthIssue> issues{};
     std::uint64_t sequence = 0;
 };
 
 template <class Ctx>
-concept CtxFitsHealthMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsHealthMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
 template <class Ctx>
-concept CtxFitsHealthUpdate = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+concept CtxFitsHealthUpdate =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
 namespace detail {
-
-[[nodiscard]] constexpr bool same_uuid(cog::Uuid lhs, cog::Uuid rhs) noexcept {
-    return lhs.hi == rhs.hi && lhs.lo == rhs.lo;
-}
 
 [[nodiscard]] constexpr std::uint32_t clamp_u32(std::uint64_t value, std::uint32_t hi) noexcept {
     return value > hi ? hi : static_cast<std::uint32_t>(value);
@@ -217,10 +221,82 @@ namespace detail {
     return clamp_u32(weighted, std::numeric_limits<std::uint32_t>::max());
 }
 
-}  // namespace detail
+// The occupied slot that holds this peer, or nullptr.  One lookup serves
+// the detector and the scorer, and the const and the mutable callers.
+template <class Slots>
+[[nodiscard]] constexpr auto find_peer_slot(Slots& slots, cog::Uuid const& uuid) noexcept
+    -> decltype(std::addressof(*std::begin(slots))) {
+    for (auto& slot : slots) {
+        if (slot.occupied && slot.peer.uuid == uuid) {
+            return std::addressof(slot);
+        }
+    }
+    return nullptr;
+}
 
-template <std::size_t MaxPeers, std::size_t Window = 32>
-class PhiAccrualDetector : safety::Pinned<PhiAccrualDetector<MaxPeers, Window>> {
+// The slot of this peer, claimed from a free slot on first sight, or
+// nullptr when every slot holds another peer.
+template <class Slots>
+[[nodiscard]] constexpr auto claim_peer_slot(Slots& slots, cog::CogIdentity const& peer) noexcept
+    -> decltype(std::addressof(*std::begin(slots))) {
+    if (auto* found = find_peer_slot(slots, peer.uuid)) {
+        return found;
+    }
+    for (auto& slot : slots) {
+        if (!slot.occupied) {
+            slot.occupied = true;
+            slot.peer = peer;
+            return std::addressof(slot);
+        }
+    }
+    return nullptr;
+}
+
+template <class T>
+concept IsMonotoneCount = ::foundation::reflect::IsInstanceOf<T, ^^::fixy::Monotonic>;
+
+// The number of monotone counters in a counter struct.  A counter struct
+// with none would make no_counter_behind vacuously true, so it is refused.
+template <class Counters>
+[[nodiscard]] consteval std::size_t monotone_count_members() noexcept {
+    std::size_t count = 0;
+    for (std::meta::info member :
+         std::meta::nonstatic_data_members_of(^^Counters, std::meta::access_context::current())) {
+        if (std::meta::extract<bool>(std::meta::substitute(^^IsMonotoneCount, {std::meta::type_of(member)}))) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+// True when `sample` is a monotone counter behind its peer `stored`.  A
+// member of another type is not a counter, and is never behind.
+template <class Member>
+[[nodiscard]] constexpr bool is_counter_behind(Member const& sample, Member const& stored) noexcept {
+    if constexpr (IsMonotoneCount<Member>) {
+        typename Member::comparator_type const goes_backward{};
+        return goes_backward(sample.get(), stored.get());
+    } else {
+        return false;
+    }
+}
+
+// True when no monotone counter in `sample` is behind its peer in
+// `stored`.  The structured bindings take every member of the struct, so a
+// counter added to the struct is checked with no second list to keep in step.
+template <class Counters>
+[[nodiscard]] constexpr bool no_counter_behind(Counters const& sample, Counters const& stored) noexcept {
+    static_assert(monotone_count_members<Counters>() > 0,
+                  "no_counter_behind needs a struct with at least one monotone counter");
+    auto const& [... sample_members] = sample;
+    auto const& [... stored_members] = stored;
+    return !(is_counter_behind(sample_members, stored_members) || ...);
+}
+
+// Internal to the scorer: it owns the only instance, and the scorer's
+// mint is the only way to reach one.
+template <std::size_t MaxPeers, std::size_t Window>
+class PhiAccrualDetector : ::foundation::Pinned<PhiAccrualDetector<MaxPeers, Window>> {
     static_assert(MaxPeers > 0, "PhiAccrualDetector requires at least one peer slot");
     static_assert(Window >= 2, "PhiAccrualDetector needs at least two heartbeat intervals");
 
@@ -230,37 +306,12 @@ class PhiAccrualDetector : safety::Pinned<PhiAccrualDetector<MaxPeers, Window>> 
         std::array<std::uint64_t, Window> intervals{};
         std::uint16_t count = 0;
         std::uint16_t next = 0;
-        safety::Monotonic<std::uint64_t> last_heartbeat_ns{0};
-        safety::Monotonic<std::uint64_t> sequence{0};
+        MonotoneCount last_heartbeat_ns = ::fixy::mint_monotonic<std::uint64_t>(0);
+        MonotoneCount sequence = ::fixy::mint_monotonic<std::uint64_t>(0);
     };
 
     std::array<Slot, MaxPeers> slots_{};
     HealthPolicy policy_{};
-
-    [[nodiscard]] constexpr Slot* find_or_insert(cog::CogIdentity const& peer) noexcept {
-        for (auto& slot : slots_) {
-            if (slot.occupied && detail::same_uuid(slot.peer.uuid, peer.uuid)) {
-                return &slot;
-            }
-        }
-        for (auto& slot : slots_) {
-            if (!slot.occupied) {
-                slot.occupied = true;
-                slot.peer = peer;
-                return &slot;
-            }
-        }
-        return nullptr;
-    }
-
-    [[nodiscard]] constexpr Slot const* find(cog::CogIdentity const& peer) const noexcept {
-        for (auto const& slot : slots_) {
-            if (slot.occupied && detail::same_uuid(slot.peer.uuid, peer.uuid)) {
-                return &slot;
-            }
-        }
-        return nullptr;
-    }
 
     [[nodiscard]] constexpr std::uint64_t mean_interval_ns(Slot const& slot) const noexcept {
         if (slot.count == 0) {
@@ -274,18 +325,18 @@ class PhiAccrualDetector : safety::Pinned<PhiAccrualDetector<MaxPeers, Window>> 
                 total += slot.intervals[i];
             }
         }
-        std::uint64_t mean = static_cast<std::uint64_t>(total / slot.count);
+        std::uint64_t const mean = total / slot.count;
         return mean == 0 ? std::uint64_t{1} : mean;
     }
 
 public:
-    explicit constexpr PhiAccrualDetector(HealthPolicy policy = {}) noexcept : policy_{policy} {}
+    explicit constexpr PhiAccrualDetector(HealthPolicy policy) noexcept : policy_{policy} {}
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsHealthUpdate<Ctx>
     [[nodiscard]] constexpr bool record_heartbeat(Ctx const&, cog::CogIdentity const& peer, std::uint64_t observed_ns,
-                                                  std::uint64_t sequence = 0) noexcept {
-        Slot* slot = find_or_insert(peer);
+                                                  std::uint64_t sequence) noexcept {
+        Slot* slot = claim_peer_slot(slots_, peer);
         if (slot == nullptr) {
             return false;
         }
@@ -306,7 +357,7 @@ public:
     }
 
     [[nodiscard]] PhiMilli suspicion_phi(cog::CogIdentity const& peer, std::uint64_t now_ns) const noexcept {
-        Slot const* slot = find(peer);
+        Slot const* slot = find_peer_slot(slots_, peer.uuid);
         if (slot == nullptr || slot->last_heartbeat_ns.get() == 0) {
             return PhiMilli{0};
         }
@@ -326,8 +377,20 @@ public:
     }
 };
 
-template <std::size_t MaxPeers, std::size_t Window = 32, std::size_t MaxEvents = MaxPeers * 4>
-class CompositeHealthScorer : safety::Pinned<CompositeHealthScorer<MaxPeers, Window, MaxEvents>> {
+}  // namespace detail
+
+template <std::size_t MaxPeers, std::size_t Window, std::size_t MaxEvents>
+class CompositeHealthScorer;
+
+// The only door into a scorer.  An Init-row context mints it; a
+// background worker then feeds it samples.
+template <class Ctx, std::size_t MaxPeers, std::size_t Window = 32, std::size_t MaxEvents = MaxPeers * 4>
+    requires CtxFitsHealthMint<Ctx>
+[[nodiscard]] constexpr CompositeHealthScorer<MaxPeers, Window, MaxEvents> mint_topology_health(Ctx const&,
+                                                                                               HealthPolicy policy = {}) noexcept;
+
+template <std::size_t MaxPeers, std::size_t Window, std::size_t MaxEvents>
+class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeers, Window, MaxEvents>> {
     static_assert(MaxEvents > 0, "CompositeHealthScorer needs an event ring");
 
     struct Slot {
@@ -345,8 +408,8 @@ class CompositeHealthScorer : safety::Pinned<CompositeHealthScorer<MaxPeers, Win
         bool has_ecc = false;
         bool has_drops = false;
         bool has_wear = false;
-        safety::Monotonic<std::uint64_t> sequence{0};
-        safety::Monotonic<std::uint64_t> transition_count{0};
+        MonotoneCount sequence = ::fixy::mint_monotonic<std::uint64_t>(0);
+        MonotoneCount transition_count = ::fixy::mint_monotonic<std::uint64_t>(0);
     };
 
     std::array<Slot, MaxPeers> slots_{};
@@ -354,32 +417,39 @@ class CompositeHealthScorer : safety::Pinned<CompositeHealthScorer<MaxPeers, Win
     std::uint16_t next_event_ = 0;
     std::uint16_t event_count_ = 0;
     HealthPolicy policy_{};
-    PhiAccrualDetector<MaxPeers, Window> phi_;
+    detail::PhiAccrualDetector<MaxPeers, Window> phi_;
 
-    [[nodiscard]] constexpr Slot* find_or_insert(cog::CogIdentity const& peer) noexcept {
-        for (auto& slot : slots_) {
-            if (slot.occupied && detail::same_uuid(slot.peer.uuid, peer.uuid)) {
-                return &slot;
-            }
+    template <class Ctx, std::size_t Peers, std::size_t W, std::size_t Events>
+        requires CtxFitsHealthMint<Ctx>
+    friend constexpr CompositeHealthScorer<Peers, W, Events> mint_topology_health(Ctx const&,
+                                                                                HealthPolicy policy) noexcept;
+
+    explicit constexpr CompositeHealthScorer(HealthPolicy policy) noexcept : policy_{policy}, phi_{policy} {}
+
+    [[nodiscard]] constexpr Slot* claim(cog::CogIdentity const& peer) noexcept {
+        Slot* slot = detail::claim_peer_slot(slots_, peer);
+        if (slot != nullptr) {
+            slot->last_snapshot.cog_uuid = peer.uuid;
         }
-        for (auto& slot : slots_) {
-            if (!slot.occupied) {
-                slot.occupied = true;
-                slot.peer = peer;
-                slot.last_snapshot.cog_uuid = peer.uuid;
-                return &slot;
-            }
-        }
-        return nullptr;
+        return slot;
     }
 
-    [[nodiscard]] constexpr Slot const* find(cog::CogIdentity const& peer) const noexcept {
-        for (auto const& slot : slots_) {
-            if (slot.occupied && detail::same_uuid(slot.peer.uuid, peer.uuid)) {
-                return &slot;
-            }
-        }
-        return nullptr;
+    // The snapshot for a peer the scorer has no slot for: quarantined,
+    // scored zero and flagged as missing, one step stale.
+    [[nodiscard]] static constexpr ::fixy::Stale<HealthSnapshot> missing_snapshot(cog::CogIdentity const& peer,
+                                                                                std::uint64_t sequence) noexcept {
+        HealthSnapshot missing{};
+        missing.cog_uuid = peer.uuid;
+        missing.state = HealthState::Quarantined;
+        missing.score = HealthScore{0};
+        missing.issues.set(HealthIssue::MissingSample);
+        missing.sequence = sequence;
+        return ::fixy::Stale<HealthSnapshot>::at(missing, 1);
+    }
+
+    // How many sequence steps the slot's last sample lags `sequence`.
+    [[nodiscard]] static constexpr std::uint64_t lag_behind(Slot const& slot, std::uint64_t sequence) noexcept {
+        return sequence >= slot.sequence.get() ? sequence - slot.sequence.get() : 0;
     }
 
     constexpr void append_event(Slot& slot, HealthState from, HealthState to, HealthSnapshot const& snapshot) noexcept {
@@ -399,7 +469,7 @@ class CompositeHealthScorer : safety::Pinned<CompositeHealthScorer<MaxPeers, Win
     }
 
     [[nodiscard]] constexpr std::uint32_t thermal_risk(Slot const& slot,
-                                                       safety::Bits<HealthIssue>& issues) const noexcept {
+                                                       ::fixy::Bits<HealthIssue>& issues) const noexcept {
         if (!slot.has_thermal) {
             issues.set(HealthIssue::MissingSample);
             return 0;
@@ -424,7 +494,7 @@ class CompositeHealthScorer : safety::Pinned<CompositeHealthScorer<MaxPeers, Win
         return risk;
     }
 
-    [[nodiscard]] constexpr std::uint32_t ecc_risk(Slot const& slot, safety::Bits<HealthIssue>& issues) const noexcept {
+    [[nodiscard]] constexpr std::uint32_t ecc_risk(Slot const& slot, ::fixy::Bits<HealthIssue>& issues) const noexcept {
         if (!slot.has_ecc) {
             issues.set(HealthIssue::MissingSample);
             return 0;
@@ -442,7 +512,7 @@ class CompositeHealthScorer : safety::Pinned<CompositeHealthScorer<MaxPeers, Win
         return 0;
     }
 
-    [[nodiscard]] constexpr std::uint32_t drop_risk(Slot const& slot, safety::Bits<HealthIssue>& issues,
+    [[nodiscard]] constexpr std::uint32_t drop_risk(Slot const& slot, ::fixy::Bits<HealthIssue>& issues,
                                                     std::uint32_t& out_ppm) const noexcept {
         if (!slot.has_drops) {
             issues.set(HealthIssue::MissingSample);
@@ -468,7 +538,7 @@ class CompositeHealthScorer : safety::Pinned<CompositeHealthScorer<MaxPeers, Win
     }
 
     [[nodiscard]] constexpr std::uint32_t wear_risk(Slot const& slot,
-                                                    safety::Bits<HealthIssue>& issues) const noexcept {
+                                                    ::fixy::Bits<HealthIssue>& issues) const noexcept {
         if (!slot.has_wear) {
             return 0;
         }
@@ -507,24 +577,19 @@ class CompositeHealthScorer : safety::Pinned<CompositeHealthScorer<MaxPeers, Win
     }
 
 public:
-    explicit constexpr CompositeHealthScorer(HealthPolicy policy = {}) noexcept : policy_{policy}, phi_{policy} {}
-
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsHealthUpdate<Ctx>
     [[nodiscard]] constexpr bool record_heartbeat(Ctx const& ctx, cog::CogIdentity const& peer,
                                                   std::uint64_t observed_ns, std::uint64_t sequence = 0) noexcept {
-        return phi_.record_heartbeat(ctx, peer, observed_ns, sequence) && find_or_insert(peer) != nullptr;
+        return phi_.record_heartbeat(ctx, peer, observed_ns, sequence) && claim(peer) != nullptr;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsHealthUpdate<Ctx>
     [[nodiscard]] constexpr bool update_thermal(Ctx const&, cog::CogIdentity const& peer,
                                                 ThermalSample sample) noexcept {
-        Slot* slot = find_or_insert(peer);
-        if (slot == nullptr) {
-            return false;
-        }
-        if (!slot->sequence.try_advance(sample.sequence)) {
+        Slot* slot = claim(peer);
+        if (slot == nullptr || !slot->sequence.try_advance(sample.sequence)) {
             return false;
         }
         slot->thermal = sample;
@@ -532,18 +597,12 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsHealthUpdate<Ctx>
     [[nodiscard]] constexpr bool update_ecc(Ctx const&, cog::CogIdentity const& peer, EccCounters sample) noexcept {
-        Slot* slot = find_or_insert(peer);
-        if (slot == nullptr) {
-            return false;
-        }
-        if (sample.corrected.get() < slot->ecc.corrected.get()
-            || sample.uncorrected.get() < slot->ecc.uncorrected.get()) {
-            return false;
-        }
-        if (!slot->sequence.try_advance(sample.sequence)) {
+        Slot* slot = claim(peer);
+        if (slot == nullptr || !detail::no_counter_behind(sample, slot->ecc)
+            || !slot->sequence.try_advance(sample.sequence)) {
             return false;
         }
         slot->prior_ecc = slot->ecc;
@@ -552,21 +611,12 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsHealthUpdate<Ctx>
     [[nodiscard]] constexpr bool update_drops(Ctx const&, cog::CogIdentity const& peer, DropCounters sample) noexcept {
-        Slot* slot = find_or_insert(peer);
-        if (slot == nullptr) {
-            return false;
-        }
-        if (sample.rx_packets.get() < slot->drops.rx_packets.get()
-            || sample.tx_packets.get() < slot->drops.tx_packets.get()
-            || sample.rx_dropped.get() < slot->drops.rx_dropped.get()
-            || sample.tx_dropped.get() < slot->drops.tx_dropped.get()
-            || sample.rx_fifo_errors.get() < slot->drops.rx_fifo_errors.get()) {
-            return false;
-        }
-        if (!slot->sequence.try_advance(sample.sequence)) {
+        Slot* slot = claim(peer);
+        if (slot == nullptr || !detail::no_counter_behind(sample, slot->drops)
+            || !slot->sequence.try_advance(sample.sequence)) {
             return false;
         }
         slot->prior_drops = slot->drops;
@@ -575,13 +625,13 @@ public:
         return true;
     }
 
-    template <effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsHealthUpdate<Ctx>
     [[nodiscard]] constexpr bool update_wear(Ctx const&, cog::CogIdentity const& peer, WearSample sample) noexcept {
         if (sample.used_ppm > 1000000u) {
             return false;
         }
-        Slot* slot = find_or_insert(peer);
+        Slot* slot = claim(peer);
         if (slot == nullptr || !slot->sequence.try_advance(sample.sequence)) {
             return false;
         }
@@ -590,20 +640,14 @@ public:
         return true;
     }
 
-    [[nodiscard]] constexpr safety::Stale<HealthSnapshot> compute(cog::CogIdentity const& peer, std::uint64_t now_ns,
+    [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot> compute(cog::CogIdentity const& peer, std::uint64_t now_ns,
                                                                   std::uint64_t sequence) noexcept {
-        Slot* slot = find_or_insert(peer);
+        Slot* slot = claim(peer);
         if (slot == nullptr) {
-            HealthSnapshot missing{};
-            missing.cog_uuid = peer.uuid;
-            missing.issues.set(HealthIssue::MissingSample);
-            missing.score = HealthScore{0};
-            missing.state = HealthState::Quarantined;
-            missing.sequence = sequence;
-            return safety::Stale<HealthSnapshot>::at(missing, 1);
+            return missing_snapshot(peer, sequence);
         }
 
-        safety::Bits<HealthIssue> issues{};
+        ::fixy::Bits<HealthIssue> issues{};
         PhiMilli const phi = phi_.suspicion_phi(peer, now_ns);
         if (phi.raw() >= policy_.quarantine_phi.raw()) {
             issues.set(HealthIssue::PhiQuarantine);
@@ -645,31 +689,16 @@ public:
         }
         slot->last_snapshot = snapshot;
         (void)slot->sequence.try_advance(sequence);
-
-        std::uint64_t staleness = 0;
-        if (sequence >= slot->sequence.get()) {
-            staleness = sequence - slot->sequence.get();
-        }
-        return safety::Stale<HealthSnapshot>::at(snapshot, staleness);
+        return ::fixy::Stale<HealthSnapshot>::at(snapshot, lag_behind(*slot, sequence));
     }
 
-    [[nodiscard]] constexpr safety::Stale<HealthSnapshot> current(cog::CogIdentity const& peer,
+    [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot> current(cog::CogIdentity const& peer,
                                                                   std::uint64_t sequence) const noexcept {
-        Slot const* slot = find(peer);
+        Slot const* slot = detail::find_peer_slot(slots_, peer.uuid);
         if (slot == nullptr) {
-            HealthSnapshot missing{};
-            missing.cog_uuid = peer.uuid;
-            missing.state = HealthState::Quarantined;
-            missing.score = HealthScore{0};
-            missing.issues.set(HealthIssue::MissingSample);
-            missing.sequence = sequence;
-            return safety::Stale<HealthSnapshot>::at(missing, 1);
+            return missing_snapshot(peer, sequence);
         }
-        std::uint64_t staleness = 0;
-        if (sequence >= slot->sequence.get()) {
-            staleness = sequence - slot->sequence.get();
-        }
-        return safety::Stale<HealthSnapshot>::at(slot->last_snapshot, staleness);
+        return ::fixy::Stale<HealthSnapshot>::at(slot->last_snapshot, lag_behind(*slot, sequence));
     }
 
     [[nodiscard]] constexpr std::span<const HealthDeltaEvent> transition_events() const noexcept {
@@ -679,20 +708,24 @@ public:
     [[nodiscard]] constexpr std::uint16_t transition_event_count() const noexcept { return event_count_; }
 };
 
-template <effects::IsExecCtx Ctx, std::size_t MaxPeers, std::size_t Window = 32, std::size_t MaxEvents = MaxPeers * 4>
+template <class Ctx, std::size_t MaxPeers, std::size_t Window, std::size_t MaxEvents>
     requires CtxFitsHealthMint<Ctx>
-[[nodiscard]] constexpr CompositeHealthScorer<MaxPeers, Window, MaxEvents>
-mint_topology_health(Ctx const&, HealthPolicy policy = {}) noexcept {
+[[nodiscard]] constexpr CompositeHealthScorer<MaxPeers, Window, MaxEvents> mint_topology_health(Ctx const&,
+                                                                                               HealthPolicy policy) noexcept {
     return CompositeHealthScorer<MaxPeers, Window, MaxEvents>{policy};
 }
 
-static_assert(safety::diag::is_diagnostic_class_v<Health_Degraded>);
+static_assert(::foundation::diag::is_diagnostic_class_v<Health_Degraded>);
 static_assert(std::is_trivially_copyable_v<HealthSnapshot>);
 static_assert(std::is_trivially_destructible_v<HealthSnapshot>);
 static_assert(sizeof(HealthDeltaEvent) <= 64);
-static_assert(CtxFitsHealthMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsHealthMint<effects::BgDrainCtx>);
-static_assert(CtxFitsHealthUpdate<effects::BgDrainCtx>);
-static_assert(!CtxFitsHealthUpdate<effects::HotFgCtx>);
+static_assert(detail::monotone_count_members<EccCounters>() == 2);
+static_assert(detail::monotone_count_members<DropCounters>() == 5);
+static_assert(!std::is_constructible_v<CompositeHealthScorer<1, 2, 1>, HealthPolicy>,
+              "the scorer is reached only through mint_topology_health");
+static_assert(CtxFitsHealthMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsHealthMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsHealthUpdate<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsHealthUpdate<::fixy::HotFgCtx>);
 
 }  // namespace crucible::topology

@@ -367,7 +367,6 @@ add_library(crucible STATIC
   src/topology/AsymmetricFailure.cpp
   src/topology/CongestionTelemetry.cpp
   src/topology/Discovery.cpp
-  src/topology/Health.cpp
   src/topology/Pingmesh.cpp
   src/topology/Ptp.cpp
   src/topology/Telemetry.cpp

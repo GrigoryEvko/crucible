@@ -4915,24 +4915,29 @@ crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
     "constraint|constraints.*not satisfied"
     "DiscoveryShape|GAPS-111")
 
-# ─── HS14 fixtures for topology::Health (GAPS-113 #1219) ───────────
+# ─── topology::Health ─────────────────────────────────────────────────
 #
 #   * neg_topology_health_mint_bg_ctx — only Init-row contexts mint the
 #     bounded health substrate; Bg may update supplied facts but may not
 #     create the policy carrier.
+#   * neg_topology_health_direct_construct — the scorer's constructor is
+#     private, so the mint is the only door.
 #   * neg_topology_health_update_fg_ctx — hot foreground contexts cannot
 #     mutate heartbeat/thermal/ECC/drop/wear state.
 #   * neg_topology_health_raw_score — quarantine thresholds consume the
 #     HealthScore strong type, not raw integers.
 crucible_neg_compile_topology_test(neg_topology_health_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsHealthMint")
+    "no matching function for call to .mint_topology_health<fixy::BgDrainCtx, 2>"
+    "CtxFitsHealthMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
+crucible_neg_compile_topology_test(neg_topology_health_direct_construct
+    "is private within this context"
+    "CompositeHealthScorer<MaxPeers, Window, MaxEvents>::CompositeHealthScorer\\(crucible::topology::HealthPolicy\\)")
 crucible_neg_compile_topology_test(neg_topology_health_update_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsHealthUpdate")
+    "no matching function for call to .crucible::topology::CompositeHealthScorer<2, 32, 8>::update_thermal"
+    "CtxFitsHealthUpdate<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_topology_test(neg_topology_health_raw_score
-    "could not convert"
-    "invalid conversion|HealthScore")
+    "could not convert .0. from .int. to .crucible::topology::HealthScore."
+    "HealthScore")
 
 # ─── HS14 fixtures for topology::Telemetry (GAPS-112 #1218) ────────
 #

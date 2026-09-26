@@ -1,4 +1,5 @@
 #include <crucible/topology/Health.h>
+#include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
 
@@ -6,8 +7,7 @@
 #include <string_view>
 
 namespace cog = crucible::cog;
-namespace effects = crucible::effects;
-namespace safety = crucible::safety;
+namespace eff = ::fixy;
 namespace topology = crucible::topology;
 
 static cog::CogIdentity peer(std::uint64_t lo) {
@@ -20,7 +20,7 @@ static cog::CogIdentity peer(std::uint64_t lo) {
 
 static topology::HealthPolicy test_policy() {
     topology::HealthPolicy policy{};
-    policy.expected_heartbeat_ns = topology::PositiveNanoseconds{std::uint64_t{1000}};
+    policy.expected_heartbeat_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000});
     policy.suspect_phi = topology::PhiMilli{2000};
     policy.quarantine_phi = topology::PhiMilli{4000};
     policy.suspect_below = topology::HealthScore{700};
@@ -48,27 +48,27 @@ static topology::DropCounters drops(std::uint64_t packets, std::uint64_t dropped
     return counters;
 }
 
+// The log spelling of both enums comes from reflection.
 static void test_name_accessors() {
-    assert(topology::health_state_name(topology::HealthState::Quarantined) == std::string_view{"Quarantined"});
-    assert(topology::health_issue_name(topology::HealthIssue::DropRateCritical)
-           == std::string_view{"DropRateCritical"});
+    static_assert(::foundation::reflect::enum_name(topology::HealthState::Quarantined) == "Quarantined");
+    static_assert(::foundation::reflect::enum_name(topology::HealthIssue::DropRateCritical) == "DropRateCritical");
     std::printf("  test_name_accessors:              PASSED\n");
 }
 
 static void test_healthy_snapshot_is_stale_wrapped() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 4, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 4, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(1);
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 1000, 1));
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 2000, 2));
-    assert(scorer.update_thermal(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p,
+    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
+    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
+    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                  topology::ThermalSample{
                                      .temperature_millicelsius = 45000,
                                      .clock_degraded_pct = 0,
                                      .sequence = 3,
                                  }));
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 0, 4)));
-    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 0, 5)));
-    assert(scorer.update_wear(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 100000, .sequence = 6}));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 5)));
+    assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 100000, .sequence = 6}));
 
     auto snapshot = scorer.compute(p, 2500, 7);
     assert(snapshot.peek().state == topology::HealthState::Healthy);
@@ -83,14 +83,14 @@ static void test_healthy_snapshot_is_stale_wrapped() {
 }
 
 static void test_phi_delay_drives_suspect_state() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(2);
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 1000, 1));
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 2000, 2));
-    assert(scorer.update_thermal(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p,
+    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
+    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
+    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                  topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 3}));
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 0, 4)));
-    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 0, 5)));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 5)));
 
     auto snapshot = scorer.compute(p, 7000, 6);
     assert(snapshot.peek().phi.raw() >= test_policy().suspect_phi.raw());
@@ -104,20 +104,20 @@ static void test_phi_delay_drives_suspect_state() {
 }
 
 static void test_thermal_ecc_and_drops_degrade_score() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(3);
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 1000, 1));
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 2000, 2));
-    assert(scorer.update_thermal(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p,
+    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
+    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
+    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                  topology::ThermalSample{
                                      .temperature_millicelsius = 82000,
                                      .clock_degraded_pct = 12,
                                      .sequence = 3,
                                  }));
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 0, 4)));
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(8, 0, 5)));
-    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 0, 6)));
-    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(200000, 1200, 7)));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(8, 0, 5)));
+    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 6)));
+    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(200000, 1200, 7)));
 
     auto snapshot = scorer.compute(p, 2200, 8);
     assert(snapshot.peek().score.raw() < 900);
@@ -130,36 +130,36 @@ static void test_thermal_ecc_and_drops_degrade_score() {
 }
 
 static void test_counter_regression_is_rejected() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(33);
 
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(10, 0, 1)));
-    assert(!scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(9, 0, 2)));
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(11, 0, 2)));
-    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 10, 3)));
-    assert(!scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(90000, 10, 4)));
-    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(110000, 10, 4)));
-    assert(!scorer.update_wear(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
-    assert(scorer.update_wear(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 900000, .sequence = 5}));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(10, 0, 1)));
+    assert(!scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(9, 0, 2)));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(11, 0, 2)));
+    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 10, 3)));
+    assert(!scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(90000, 10, 4)));
+    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(110000, 10, 4)));
+    assert(!scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
+    assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 900000, .sequence = 5}));
     std::printf("  test_counter_regression_is_rejected: PASSED\n");
 }
 
 static void test_permanent_fault_is_sticky() {
-    auto scorer = topology::mint_topology_health<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{::crucible::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(4);
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 1000, 1));
-    assert(scorer.record_heartbeat(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, 2000, 2));
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 0, 3)));
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 1, 4)));
-    assert(scorer.update_thermal(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p,
+    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
+    assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 3)));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 1, 4)));
+    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                  topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 5}));
-    assert(scorer.update_drops(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, drops(100000, 0, 6)));
+    assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 6)));
 
     auto failed = scorer.compute(p, 2500, 7);
     assert(failed.peek().state == topology::HealthState::Permanent);
     assert(failed.peek().issues.test(topology::HealthIssue::UncorrectedEcc));
 
-    assert(scorer.update_ecc(effects::BgDrainCtx{::crucible::effects::testing::bg()}, p, ecc(0, 1, 8)));
+    assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 1, 8)));
     auto still_failed = scorer.compute(p, 2600, 9);
     assert(still_failed.peek().state == topology::HealthState::Permanent);
     assert(scorer.transition_event_count() == 1);
@@ -167,11 +167,11 @@ static void test_permanent_fault_is_sticky() {
 }
 
 int main() {
-    static_assert(topology::CtxFitsHealthMint<effects::ColdInitCtx>);
-    static_assert(!topology::CtxFitsHealthMint<effects::BgDrainCtx>);
-    static_assert(topology::CtxFitsHealthUpdate<effects::BgDrainCtx>);
-    static_assert(!topology::CtxFitsHealthUpdate<effects::HotFgCtx>);
-    static_assert(safety::diag::is_diagnostic_class_v<topology::Health_Degraded>);
+    static_assert(topology::CtxFitsHealthMint<eff::ColdInitCtx>);
+    static_assert(!topology::CtxFitsHealthMint<eff::BgDrainCtx>);
+    static_assert(topology::CtxFitsHealthUpdate<eff::BgDrainCtx>);
+    static_assert(!topology::CtxFitsHealthUpdate<eff::HotFgCtx>);
+    static_assert(::foundation::diag::is_diagnostic_class_v<topology::Health_Degraded>);
 
     std::printf("test_topology_health: 6 groups\n");
     test_name_accessors();

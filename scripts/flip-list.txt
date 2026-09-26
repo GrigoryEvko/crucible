@@ -98,7 +98,6 @@ include/crucible/topology/AsymmetricFailure.h
 include/crucible/topology/CongestionTelemetry.h
 include/crucible/topology/CongestionTelemetryWorker.h
 include/crucible/topology/Discovery.h
-include/crucible/topology/Health.h
 include/crucible/topology/Pingmesh.h
 include/crucible/topology/Ptp.h
 include/crucible/topology/Telemetry.h
