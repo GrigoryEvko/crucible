@@ -1,11 +1,11 @@
-// Worked example demonstrating the GAPS-004 BPF observability surface
-// through the `crucible::perf::Senses` aggregator (#1285).
+// Worked example demonstrating the BPF observability surface through the
+// `crucible::perf::Senses` aggregator.
 //
 // What this bench measures, end-to-end:
 //
 //   (A) ONE-SHOT load cost: `Senses::load_all()` and `load_subset()`.  Both
 //       are libbpf-bound; expected wall-clock is ~50-200 ms per program ×
-//       7 programs (5 legacy + 2 BTF GAPS-004f) for the verifier + attach +
+//       7 programs (5 legacy + 2 BTF-typed) for the verifier + attach +
 //       mmap path — total in the ~300-1500 ms range with the BTF facades
 //       loaded.  Printed as a banner — NOT a bench-iteration body.
 //       Putting libbpf load into a `.measure(...)` loop would be a
@@ -66,6 +66,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <meta>
 #include <thread>
 #include <utility>
 
@@ -89,13 +90,14 @@ using steady = std::chrono::steady_clock;
 }
 
 void print_coverage(const crucible::perf::CoverageReport& cov) {
-    // GAPS-004g-AUDIT-4: denominator is 7 (5 legacy facades + 2 BTF
-    // variants per GAPS-004f), not 5.  The "/5" was correct at GAPS-004y
-    // ship time but never updated when SchedTpBtf+SyscallTpBtf were added
-    // to the aggregator (commit d165811).
-    std::printf("  attached: %zu/7", cov.attached_count());
+    // The denominator is the number of facade flags in CoverageReport,
+    // read by reflection, so a facade added to the aggregator moves it.
+    static constexpr std::size_t kFacadeCount =
+        std::meta::nonstatic_data_members_of(^^crucible::perf::CoverageReport, std::meta::access_context::current())
+            .size();
+    std::printf("  attached: %zu/%zu", cov.attached_count(), kFacadeCount);
     if (cov.attached_count() == 0) {
-        // Coverage 0/7 is the most common surprise.  Tell the user how to
+        // No attached facade is the most common surprise.  Tell the user how to
         // fix it instead of leaving them to grep.  Two recovery paths:
         //   • make bench-caps  (one-time, sticky until rebuild)
         //   • sudo ./bench_perf_loader  (per-invocation)
@@ -200,10 +202,9 @@ int main() {
                 bench::do_not_optimize(p);
             });
         }(),
-        // GAPS-004g-AUDIT-4: BTF-typed facades (GAPS-004f) had no
-        // accessor bench.  Same shape as the legacy facades — single
-        // optional-bit load — so cost is sub-ns identical, but the
-        // omission left the API-surface coverage incomplete.
+        // The BTF-typed facades.  Same shape as the legacy facades —
+        // single optional-bit load — so the cost is the same sub-ns load,
+        // and the bench covers the whole accessor surface.
         [&] {
             return bench::run("senses.sched_tp_btf()", [&] {
                 const auto* p = s.sched_tp_btf();

@@ -15,7 +15,7 @@
 #      the items of a list as `#1` and `#2`.  It also ignores five or more
 #      digits, because a six-digit color such as #374151 is not a task.
 #   2. A tracker tag: the FIXY-U-, FIXY-V-, FIXY-FOUND-, FOUND-, GAPS-,
-#      SEPLOG-, CONTRACT-, METX-, WRAP- and BC- families, the lowercase
+#      SEPLOG-, CONTRACT-, METX-, WRAP-, BC- and PERF- families, the lowercase
 #      fixy-A5-016 and fix-18 forms, the short U-002 and V-073 forms, and
 #      the CR-05 audit form.
 #   3. A stage label: a dotted stage such as A13.2 or A10.x, the phrase
@@ -44,9 +44,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # The trees that obey the rule.  The old tree under include/crucible is
-# frozen, so the guard does not scan it.  test/fixy and test/foundation
-# include their CMakeLists.txt.
-SCAN_DIRS=(include/foundation include/fixy test/foundation test/fixy scripts vessel)
+# frozen, so the guard does not scan it.  test/fixy, test/foundation and
+# bench include their CMakeLists.txt.
+SCAN_DIRS=(include/foundation include/fixy test/foundation test/fixy scripts vessel bench)
 
 # The build files outside those trees that obey the rule.
 #
@@ -74,6 +74,7 @@ branches=(
     '\bMETX-[A-Z0-9]'
     '\bWRAP-(?:\*|[A-Z][A-Za-z]*(?:-[A-Za-z]+)*-[0-9]+)'
     '\bBC-[0-9]+\b'
+    '\bPERF-[0-9]'
     '\bCR-[0-9]{2}\b'
     '\bfixy-[A-Z]+[0-9]*-(?:[0-9]+\b|\*|X{3}\b)'
     '\bfix-[0-9]+\b'
@@ -97,7 +98,7 @@ Usage:
   check-no-coordination-refs.sh -h | --help  # usage
 
 Scope:
-  include/foundation include/fixy test/foundation test/fixy scripts vessel
+  include/foundation include/fixy test/foundation test/fixy scripts vessel bench
   CMakeLists.txt .github/workflows/ci.yml
 USAGE
 }
@@ -159,8 +160,9 @@ self_test() {
 // Part of Phase F6.
 // Filed as #1519.
 // The gate of GAPS-096.
+// The fast path of PERF-2.
 PLANTED
-    local planted_count=18
+    local planted_count=19
 
     # Negative controls.  Nothing in these two files is a breadcrumb.
     cat >"$tmp_root/include/foundation/PlantedClean.h" <<'CLEAN'
@@ -183,9 +185,13 @@ printf '%#08x\n' 255
 [[ "x" =~ [#0-9] ]]
 SHELL
 
-    # A scope control.  The old tree is out of scope, so the scan does not
-    # report this line.
+    # Scope controls.  The old tree is out of scope, so the scan does not
+    # report its line.  The bench tree is in scope, so the scan reports its
+    # line, and the look-alike beside it scans clean.
     printf '// Folded at #147.\n' >"$tmp_root/include/crucible/PlantedOld.h"
+    mkdir -p "$tmp_root/bench"
+    printf '// Lifted to harness scope at GAPS-004y.\n// AVX-512 and x86-64 are not tags.\n' \
+        >"$tmp_root/bench/planted_bench.cpp"
 
     # The build files.  The root CMakeLists.txt and the CI workflow are in
     # scope, and test/CMakeLists.txt is out of scope until the old tests go.
@@ -227,10 +233,16 @@ SHELL
         cat "$out" >&2
         return 2
     fi
-    printf 'check-no-coordination-refs --self-test: all %d planted references and both build-file references reported, as expected.\n' "$planted_count"
+    if ! rg -q '^bench/planted_bench\.cpp:1:' "$out" || rg -q '^bench/planted_bench\.cpp:2:' "$out"; then
+        printf 'check-no-coordination-refs --self-test: FAIL — the bench tree gave the wrong verdict: its breadcrumb must be reported and its look-alike must not.\n' >&2
+        cat "$out" >&2
+        return 2
+    fi
+    printf 'check-no-coordination-refs --self-test: all %d planted references, both build-file references and the bench reference reported, as expected.\n' "$planted_count"
 
     # The clean arm.  Without the breadcrumbs the same tree scans clean.
     rm -f "$tmp_root/include/fixy/PlantedBreadcrumbs.h" "$tmp_root/CMakeLists.txt" "$tmp_root/.github/workflows/ci.yml"
+    printf '// AVX-512 and x86-64 are not tags.\n' >"$tmp_root/bench/planted_bench.cpp"
     rc=0
     CRUCIBLE_COORD_REFS_TEST_ROOT="$tmp_root" bash "${BASH_SOURCE[0]}" >"$out" 2>/dev/null || rc=$?
     if (( rc != 0 )); then

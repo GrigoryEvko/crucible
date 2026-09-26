@@ -70,9 +70,8 @@
 #include <crucible/perf/SenseHub.h>
 #include <crucible/perf/SchedSwitch.h>
 // Senses aggregator — single entry point for senses_instance() below.
-// Lifted to harness scope by GAPS-004y wire-in (2026-05-04) so every
-// bench shares one Senses singleton instead of separate SenseHub +
-// SchedSwitch loaders.
+// Every bench shares one Senses singleton instead of separate SenseHub
+// and SchedSwitch loaders.
 #include <crucible/perf/Senses.h>
 #endif
 
@@ -142,7 +141,7 @@ static_assert(sizeof(CpuId) == sizeof(int));
 #endif
 }
 
-// ── FIXY-V-196: RdtscPinned witness + pinned-overload rdtsc primitives ─
+// ── RdtscPinned witness + pinned-overload rdtsc primitives ───────────
 //
 // Modern x86 has invariant_tsc, so cross-core TSC reads ARE comparable
 // in absolute value — but a thread that migrates BETWEEN the rdtsc_start
@@ -163,7 +162,7 @@ static_assert(sizeof(CpuId) == sizeof(int));
 // startup-time Timer calibration / overhead measurement (pre-pin) and
 // for ad-hoc external benches that don't run the harness affinity path.
 //
-// safety::CpuPinned<Mask, Posture, Unit> (V-187) requires Mask as an
+// safety::CpuPinned<Mask, Posture, Unit> requires Mask as an
 // NTTP — fits production code where the target core is compile-time
 // chosen, but bench's `warden::select_hot_cpu` picks the target at
 // runtime.  RdtscPinned is the dynamic-mask analogue specifically for
@@ -411,9 +410,6 @@ namespace detail {
 // ── BPF perf::Senses accessor (shared aggregator singleton) ───────
 //
 // Single entry point for every BPF program the harness consumes.
-// Replaces the prior bpf_instance() + sched_switch_instance() pair
-// (GAPS-004y closing wire-in, 2026-05-04 — the docblock at the top
-// of this file noted the sweep was deferred; this is that sweep).
 //
 // All Runs in the same process share one loaded set of BPF programs
 // via crucible::perf::Senses — the kernel tracepoints stay attached
@@ -494,10 +490,10 @@ struct Percentiles {
         p.p99_9 = percentile_interp(ns_samples, 0.999);
         p.p99_99 = percentile_interp(ns_samples, 0.9999);
 
-        // FIXY-V-096: Welford's one-pass online algorithm + IEEE 754
-        // binary64 (double) accumulators.  Two simultaneous fixes:
+        // Welford's one-pass online algorithm with IEEE 754 binary64
+        // (double) accumulators, for two reasons:
         //
-        // (1) Numerical stability.  The previous 2-pass formula
+        // (1) Numerical stability.  The two-pass formula
         //     var = (Σx² − (Σx)²/n) / (n−1) catastrophically cancels
         //     when σ² ≪ μ² — the common case for bench timing where
         //     mean=50ns σ=5ns gives Σx²≈n·2500 minus (Σx)²/n≈n·2500
@@ -964,7 +960,7 @@ private:
             print_scaled_(out, v, f.unit);
         }
         // SchedSwitch off-CPU top-K — appended inline (same line) as
-        // the SenseHub deltas, post-GAPS-004b-AUDIT (#1289).  Dense
+        // the SenseHub deltas.  Dense
         // answer to "WHICH preempts cost the most during this bench
         // window".  SenseHub already shows aggregate `preempt`/`yield`
         // counts and total `wait`/`sleep` ns; the top-K shows the
@@ -1061,8 +1057,8 @@ struct Compare {
     // i+1 through j+1. Simultaneously accumulate the tie-correction
     // sum T = Σ(tᵢ³ − tᵢ), where tᵢ is each tie-group's size; used
     // below to adjust sigma for ties.
-    // FIXY-V-096: accumulators in `double` (IEEE 754 binary64) instead
-    // of `long double` — `long double` is 80-bit on x86 but 64-bit on
+    // The accumulators are `double` (IEEE 754 binary64), not
+    // `long double` — `long double` is 80-bit on x86 but 64-bit on
     // AArch64; same rank-sum input would produce bit-different sigma
     // across the fleet.  `double` precision is sufficient: for the
     // worst-case n=10⁴ the maximum tie_sum ≤ N³ ≈ 8·10¹² fits in
@@ -1217,7 +1213,7 @@ public:
         const uint64_t ovh = Timer::overhead_cycles();
         const size_t S = samples_ ? samples_ : env_samples_();
 
-        // FIXY-V-196: mint the RdtscPinned witness immediately after
+        // Mint the RdtscPinned witness immediately after
         // sched_setaffinity (or warden hardening apply) — the proof
         // travels by const-ref through the measurement loop and
         // auto_batch_; calls to rdtsc_start/end go through the
@@ -1287,7 +1283,7 @@ public:
         const auto wall0 = std::chrono::steady_clock::now();
 
         for (size_t i = 0; i < S; ++i) {
-            // FIXY-V-196: pinned-overload form — the witness's existence
+            // The pinned-overload form — the witness's existence
             // proves a sched_setaffinity (or hardening apply) ran above
             // and the thread has not migrated since.
             const uint64_t t0 = rdtsc_start(pin_witness);
@@ -1386,7 +1382,7 @@ public:
         if (hub != nullptr) {
             r.bpf_delta = bpf_post - bpf_pre;
             // attached_programs() returns Refined<bounded_above<64>, size_t>
-            // post-GAPS-004a — the type carries a structural ≤64 bound that
+            // — the type carries a structural ≤64 bound that
             // matches inplace_vector<bpf_link*, 64>'s capacity.  Unwrap with
             // .value() for the raw count expected by the bench Report
             // struct (kept as plain size_t for printf-friendly emission).
@@ -1416,9 +1412,8 @@ public:
                     const uint64_t global_idx = sched_post_idx - 1 - i;
                     const uint32_t slot = static_cast<uint32_t>(global_idx & ::crucible::perf::TIMELINE_MASK);
                     // Acquire load on ts_ns pairs with the BPF program's
-                    // compiler barrier before the ts_ns store (post-
-                    // GAPS-004b-AUDIT).  ts_ns == 0 → producer hasn't
-                    // committed this slot yet; skip.
+                    // compiler barrier before the ts_ns store.  ts_ns == 0
+                    // → the producer has not committed this slot; skip.
                     const uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
                     if (ts == 0) continue;
                     ++r.sched_offcpu_count;
@@ -1586,7 +1581,7 @@ private:
     // the terminator fired ~30 cycles early. Add `ovh` to the threshold
     // so the real body cost crosses 1000, not body+overhead.
     //
-    // FIXY-V-196: takes `RdtscPinned const&` so the auto-tune pilot
+    // Takes `RdtscPinned const&` so the auto-tune pilot
     // loops use the pinned-overload TSC reads — same discipline as
     // the main measurement loop.  auto_batch_ runs *after* pin_() so
     // a witness is always available at the call site (measure()).

@@ -14,11 +14,10 @@
 # Usage: `cmake --build --preset bench --target bench-caps`
 # See the target's own comment block for rationale + caveats.
 
-# eBPF sense hub: previously compiled+embedded here as
-# `crucible_bench_bpf`.  As of GAPS-004a (2026-05-03) the substrate
-# moved to include/crucible/perf/SenseHub.h + src/perf/SenseHub.cpp,
-# and is bundled into the production `crucible_perf` static library
-# wired by the root CMakeLists.txt via cmake/CrucibleBpf.cmake.
+# eBPF sense hub: the substrate lives in include/crucible/perf/SenseHub.h
+# and src/perf/SenseHub.cpp, and is bundled into the production
+# `crucible_perf` static library wired by the root CMakeLists.txt via
+# cmake/CrucibleBpf.cmake.
 # Bench targets get the loader transitively when they link
 # `crucible` — no per-bench BPF wiring needed below.
 #

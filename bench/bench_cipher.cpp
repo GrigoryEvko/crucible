@@ -29,7 +29,7 @@
     return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
 }
 
-// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+// Cipher::open() takes Path<source::External>.
 using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 using namespace crucible;
