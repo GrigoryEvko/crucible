@@ -145,4 +145,3 @@ src/cog/NumaNic.cpp
 src/observe/SdcDetect.cpp
 src/topology/Ptp.cpp
 tools/dump_row_hashes.cpp
-vessel/torch/vessel_api_typed.h

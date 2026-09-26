@@ -59,8 +59,8 @@
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
-#include <crucible/fixy/_Source.h>
-#include <crucible/fixy/Wrap.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 #include <bit>
 #include <cstddef>
@@ -73,12 +73,12 @@ namespace crucible::vessel {
 
 // ── Vigil typed handle ────────────────────────────────────────────
 //
-// TypedHandle and TypedMeta use the Tagged of the include/crucible tree,
-// because the vessel tests, their negative-compile fixtures and two
-// benches name the same types.  The data pointer of a meta is the
-// ExternalDataPtr of TensorMeta, which is a ::fixy Tagged.
+// ABIBoundary names where a value came from, so mint_tagged builds a
+// value under it.  A check that the value passed reaches Sanitized only
+// by retag along the catalog edge.  The data pointer of a meta is the
+// ExternalDataPtr of TensorMeta, another ::fixy Tagged.
 
-using TypedHandle = fixy::wrap::Tagged<Vigil*, fixy::tags::source::ABIBoundary>;
+using TypedHandle = ::fixy::Tagged<Vigil*, ::fixy::tags::source::ABIBoundary>;
 
 static_assert(sizeof(TypedHandle) == sizeof(CrucibleHandle));
 static_assert(alignof(TypedHandle) == alignof(CrucibleHandle));
@@ -86,7 +86,7 @@ static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
 
 // ── TensorMeta typed view ─────────────────────────────────────────
 
-using TypedMeta = fixy::wrap::Tagged<const TensorMeta*, fixy::tags::source::ABIBoundary>;
+using TypedMeta = ::fixy::Tagged<const TensorMeta*, ::fixy::tags::source::ABIBoundary>;
 
 static_assert(sizeof(TypedMeta) == sizeof(const CrucibleMeta*));
 static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
@@ -94,11 +94,11 @@ static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
 
 // ── Layout-compat invariants for CrucibleMeta ↔ TensorMeta ────────
 //
-// These are the ABI claim that justifies the `reinterpret_cast` in
+// These are the ABI claim that justifies the `bit_cast` in
 // `as_meta_typed` below: a `const CrucibleMeta*` and a
 // `const TensorMeta*` point at the same byte sequence.  If any
 // assertion fires, the C struct is out of sync with the C++ struct —
-// at which point `reinterpret_cast` becomes UB and the FFI is
+// at which point a read through the cast pointer is UB and the FFI is
 // shovelling garbage to the recording pipeline.  Pinned at the typed
 // helper because this header is the single home for the layout cast.
 static_assert(sizeof(CrucibleMeta) == sizeof(crucible::TensorMeta), "CrucibleMeta size must match TensorMeta");
@@ -157,7 +157,7 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 
 [[nodiscard]] CRUCIBLE_HOT TypedHandle as_vigil_typed(CrucibleHandle handle) noexcept {
     detail::assert_plausible_vigil_handle(handle);
-    return TypedHandle{static_cast<Vigil*>(handle)};
+    return ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(static_cast<Vigil*>(handle));
 }
 
 [[nodiscard]] CRUCIBLE_HOT CrucibleHandle from_typed(TypedHandle handle) noexcept {
@@ -184,7 +184,7 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
     // and does not apply — TensorMeta carries member initializers, so
     // its default constructor is not trivial and the type is not an
     // implicit-lifetime type.
-    return TypedMeta{std::bit_cast<const crucible::TensorMeta*>(metas)};
+    return ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(std::bit_cast<const crucible::TensorMeta*>(metas));
 }
 
 [[nodiscard]] CRUCIBLE_HOT const CrucibleMeta* metas_from_typed(TypedMeta typed) noexcept {

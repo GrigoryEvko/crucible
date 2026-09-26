@@ -9,9 +9,11 @@
 // different class instantiations with no implicit conversion between
 // them.  A refactor that loosens the helper to accept
 // `Tagged<const TensorMeta*, AnyTag>` would let provenance from raw
-// FFI bytes (External) silently masquerade as the validated
-// ABIBoundary provenance the dispatch path expects.  This fixture
-// witnesses that the type system rejects the laundering attempt.
+// FFI bytes (External) silently masquerade as the ABIBoundary
+// provenance the dispatch path expects.  This fixture witnesses that
+// the type system rejects the laundering attempt.  Both tags come from
+// the ::fixy tree, so the refusal is the tag mismatch and not a
+// mismatch between the two trees.
 //
 // Pairs with neg_vessel_typed_handle_wrong_tag.cpp — the two together
 // pin both directions of the typed Vessel ABI helper API.
@@ -21,18 +23,17 @@
 #include "../../vessel/torch/vessel_api_typed.h"
 
 #include <crucible/TensorMeta.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 using crucible::TensorMeta;
-using crucible::safety::Tagged;
-using crucible::safety::source::External;
 using crucible::vessel::metas_from_typed;
 
 int main() {
-    // Construct a `Tagged<const TensorMeta*, External>` — same payload
-    // type as TypedMeta but a DIFFERENT tag, so a different type
-    // entirely.
-    Tagged<const TensorMeta*, External> wrong_tag{nullptr};
+    // Build a `Tagged<const TensorMeta*, External>` through the one door
+    // — same payload type as TypedMeta but a DIFFERENT tag, so a
+    // different type entirely.
+    auto wrong_tag = ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const TensorMeta*>(nullptr));
 
     // Should FAIL: metas_from_typed expects TypedMeta
     // (Tagged<const TensorMeta*, ABIBoundary>), not

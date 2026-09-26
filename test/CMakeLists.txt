@@ -12327,7 +12327,7 @@ crucible_neg_compile_test(neg_diag_mint_diagnostic_non_tag_base_class
 # refactor "promoting" the helper to accept any Tagged<Vigil*, *> would
 # turn red here.  Closes the audit's GAPS-094 HS14 deficit.
 crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
-    "no match for|cannot convert|no matching function|could not convert")
+    "could not convert .wrong_tag. from .*source::External.* to .*source::ABIBoundary")
 
 # ─── GAPS-095 — Vessel ABI typed-meta direction fence ─────────────
 #
@@ -12337,7 +12337,7 @@ crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
 # launder as ABIBoundary-tagged metas — same architectural rationale
 # as the handle fence above, applied to the meta-array entry point.
 crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
-    "no match for|cannot convert|no matching function|could not convert")
+    "could not convert .wrong_tag. from .*source::External.* to .*source::ABIBoundary")
 
 # ─── GAPS-096 — Vessel typed-accessor provenance fences ────────────
 #

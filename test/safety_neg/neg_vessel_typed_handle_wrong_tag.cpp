@@ -8,7 +8,9 @@
 // Tagged<T, Tag> is parameterized by Tag — different tags produce
 // different class instantiations, with no implicit conversion between
 // them.  This fixture witnesses that the type system rejects the
-// wrong-direction flow at the C-ABI boundary helper.
+// wrong-direction flow at the C-ABI boundary helper.  Both tags come
+// from the ::fixy tree, so the refusal is the tag mismatch and not a
+// mismatch between the two trees.
 //
 // Concrete bug-class this catches: a refactor that "promotes" the
 // helper to accept any Tagged<Vigil*, AnyTag> would let provenance
@@ -20,16 +22,16 @@
 
 #include "../../vessel/torch/vessel_api_typed.h"
 
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
-using crucible::safety::Tagged;
-using crucible::safety::source::External;
 using crucible::vessel::from_typed;
 
 int main() {
-    // Construct a `Tagged<Vigil*, External>` — same payload type as
-    // TypedHandle but a DIFFERENT tag, so a different type entirely.
-    Tagged<crucible::Vigil*, External> wrong_tag{nullptr};
+    // Build a `Tagged<Vigil*, External>` through the one door — same
+    // payload type as TypedHandle but a DIFFERENT tag, so a different
+    // type entirely.
+    auto wrong_tag = ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<crucible::Vigil*>(nullptr));
 
     // Should FAIL: from_typed expects TypedHandle (Tagged<Vigil*,
     // ABIBoundary>), not Tagged<Vigil*, External>.  No converting

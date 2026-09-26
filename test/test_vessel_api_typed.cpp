@@ -4,6 +4,8 @@
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
 #include <crucible/safety/_Tagged.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 #include <array>
 #include <bit>
@@ -25,14 +27,12 @@ using crucible::vessel::TypedSchemaName;
 // The tag is phantom, so the typed wrapper must add no storage at the
 // ABI boundary.  A failure here means the wrapper costs something.
 
-static_assert(
-    std::is_same_v<TypedHandle, crucible::safety::Tagged<crucible::Vigil*, crucible::safety::source::ABIBoundary>>);
+static_assert(std::is_same_v<TypedHandle, ::fixy::Tagged<crucible::Vigil*, ::fixy::tags::source::ABIBoundary>>);
 static_assert(sizeof(TypedHandle) == sizeof(CrucibleHandle));
 static_assert(alignof(TypedHandle) == alignof(CrucibleHandle));
 static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
 
-static_assert(std::is_same_v<
-              TypedMeta, crucible::safety::Tagged<const crucible::TensorMeta*, crucible::safety::source::ABIBoundary>>);
+static_assert(std::is_same_v<TypedMeta, ::fixy::Tagged<const crucible::TensorMeta*, ::fixy::tags::source::ABIBoundary>>);
 static_assert(sizeof(TypedMeta) == sizeof(const CrucibleMeta*));
 static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
 static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
@@ -40,10 +40,14 @@ static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
 // Two tags make two distinct classes with no conversion between them.
 // That is what stops a value from crossing the boundary under the wrong
 // provenance.
-static_assert(!std::is_convertible_v<crucible::safety::Tagged<crucible::Vigil*, crucible::safety::source::External>,
-                                     TypedHandle>);
-static_assert(!std::is_convertible_v<
-              crucible::safety::Tagged<const crucible::TensorMeta*, crucible::safety::source::External>, TypedMeta>);
+static_assert(!std::is_convertible_v<::fixy::Tagged<crucible::Vigil*, ::fixy::tags::source::External>, TypedHandle>);
+static_assert(
+    !std::is_convertible_v<::fixy::Tagged<const crucible::TensorMeta*, ::fixy::tags::source::External>, TypedMeta>);
+
+// The boundary tag names a source, so the one door admits it.  The tag
+// a check earns is not mintable, so no helper here can claim it.
+static_assert(::fixy::MintableTag<::fixy::tags::source::ABIBoundary>);
+static_assert(!::fixy::MintableTag<::fixy::tags::source::Sanitized>);
 
 // A typed data pointer collapses to the bare pointer width.  A typed
 // schema name wraps a borrowed span, and the tag collapses around it
