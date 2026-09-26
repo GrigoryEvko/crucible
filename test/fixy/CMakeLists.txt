@@ -3892,6 +3892,35 @@ endif()
 set_property(SOURCE test_fp_polynomial_contracted.cpp APPEND PROPERTY
   COMPILE_DEFINITIONS CRUCIBLE_TEST_FP_CONTRACTED=1)
 
+# A constant evaluation that reaches a domain precondition of the
+# polynomials stops at its consteval trap.  Three fixtures refuse angles
+# outside one turn, at sin_poly, cos_poly and reduce_quarter_pi, and three
+# refuse arguments of log_poly that are not positive normal floats.
+fixy_neg_compile_test(neg_fp_sin_poly_past_one_turn
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::fp::sin_poly\\(6\\.28318596e\\+0f\\)."
+  "fixy/fp/Polynomial\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_fp_cos_poly_of_nan
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::fp::cos_poly\\(std::numeric_limits<float>::quiet_NaN\\(\\)\\)."
+  "fixy/fp/Polynomial\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_fp_reduce_quarter_pi_past_int32
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::fp::reduce_quarter_pi\\(-1\\.0e\\+10f\\)."
+  "fixy/fp/Polynomial\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_fp_log_poly_of_zero
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::fp::log_poly\\(0\\.0f\\)."
+  "fixy/fp/Polynomial\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_fp_log_poly_of_negative
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::fp::log_poly\\(-2\\.0e\\+0f\\)."
+  "fixy/fp/Polynomial\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_fp_log_poly_of_subnormal
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::fp::log_poly\\(std::numeric_limits<float>::denorm_min\\(\\)\\)."
+  "fixy/fp/Polynomial\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+
 # test_os_spinlock acquires and releases through every door of the spin
 # gate and the blocking gate, and wakes a waiter that sleeps on the
 # blocking gate.  The cells that prove a door is CLOSED are the eight

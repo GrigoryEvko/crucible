@@ -6,10 +6,10 @@
 // unspecified, and implementations disagree in the last few units in the
 // last place, so one input pair yields different bytes on different
 // platforms. Every operation below is +, -, *, a fused multiply-add,
-// sqrt, a sign copy, a comparison, a conversion or a bit_cast. IEEE 754
-// requires the fused multiply-add and sqrt to be correctly rounded, so
-// std::fma and std::sqrt are the two library calls that give the same
-// bits everywhere.
+// sqrt, an absolute value, a sign copy, a comparison, a conversion or a
+// bit_cast. IEEE 754 requires the fused multiply-add and sqrt to be
+// correctly rounded, so std::fma and std::sqrt are the two library calls
+// that give the same bits everywhere.
 //
 // Every product that feeds a sum is one std::fma. The compiler may fuse
 // a written a * b + c into one operation under -ffp-contract=on or
@@ -57,12 +57,22 @@
 //  5. Every product that feeds a sum is an explicit std::fma, where the
 //     old header wrote a * b + c and let the contraction flag decide the
 //     rounding.  The pinned pair at the foot of this header moved with it.
+//
+//  6. log_poly, reduce_quarter_pi, sin_poly and cos_poly state their
+//     domains as preconditions.  The old header stated the domain of
+//     log_poly in a comment only.  The old reduction accepted every float
+//     and converted the nearest multiple of pi/2 to int32, which is
+//     undefined behaviour past about 3.4e9 and for an infinity or a NaN.
+//     The angle domain is one turn, where the answer is accurate.
+
+#include <foundation/contracts/Pre.h>
 
 #include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <utility>
 
 namespace fixy::fp {
@@ -117,8 +127,13 @@ inline constexpr std::array<float, 5> kCosSeries{
 
 }  // namespace detail
 
-// The caller must pass a value above zero.
-//
+// The domain of log_poly: a finite float above zero that is not
+// subnormal.  The reduction reads the exponent field as the exponent and
+// restores the implicit leading one of the significand.  A zero, a
+// subnormal, an infinity and a NaN each break that reading, and the sign
+// bit is masked away, so each would give a wrong value, not a trap.
+[[nodiscard]] constexpr bool is_positive_normal(float value) noexcept { return std::isnormal(value) && value > 0.0f; }
+
 // Splitting the argument into 2^e * m leaves m in [1, 2), and the second
 // reduction to [sqrt(2)/2, sqrt(2)] is what keeps the series usable.
 // Without it the offset u = m - 1 approaches 1 just below a power of
@@ -128,6 +143,8 @@ inline constexpr std::array<float, 5> kCosSeries{
 // Measured against double precision over every positive normal float,
 // the seven terms are within 8.4e-5 of the true value.
 [[nodiscard]] constexpr float log_poly(float value) noexcept {
+    CRUCIBLE_PRE(is_positive_normal(value));
+
     const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
     const std::int32_t biased_exponent = static_cast<std::int32_t>((bits >> 23) & 0xFFu);
     std::int32_t exponent = biased_exponent - 127;
@@ -149,12 +166,33 @@ inline constexpr std::array<float, 5> kCosSeries{
     return std::fma(static_cast<float>(exponent), ln2, log_mantissa);
 }
 
+// One turn, 2*pi as a float.  It is exactly four times the float pi/2 of
+// the reduction, and it is the largest angle box_muller_polynomial makes.
+inline constexpr float kOneTurn = 0x1.921FB6p+2f;
+
+// The domain of reduce_quarter_pi, sin_poly and cos_poly: an angle within
+// one turn of zero.  Every angle has an equivalent there, and a caller
+// with a larger angle must reduce it with the precision it needs.
+//
+// The reduction subtracts a multiple of one float constant for pi/2,
+// whose error is about 4.4e-8, so its error grows with the multiple.  The
+// multiple is at most 4 within one turn.  Measured against double
+// precision over every float in the domain, sin_poly and cos_poly are
+// within 2.0e-7 of the true value.  Past one turn the error doubles with
+// each binade, to 0.46 at 2^24.  Past 2^24 * pi/2 the float of the
+// multiple rounds, and past about 3.4e9 the multiple overflows int32 and
+// the conversion is undefined behaviour.  An infinity is outside the
+// domain, and so is a NaN, because every comparison with a NaN is false.
+[[nodiscard]] constexpr bool is_within_one_turn(float angle) noexcept { return std::fabs(angle) <= kOneTurn; }
+
 struct ReduceResult {
     float reduced = 0.0f;
     std::int32_t quadrant = 0;
 };
 
 [[nodiscard]] constexpr ReduceResult reduce_quarter_pi(float angle) noexcept {
+    CRUCIBLE_PRE(is_within_one_turn(angle));
+
     const float two_over_pi = 0x1.45F306p-1f;  // 2/pi
     const float pi_over_two = 0x1.921FB6p+0f;  // pi/2
 
@@ -188,6 +226,8 @@ struct ReduceResult {
 }
 
 [[nodiscard]] constexpr float sin_poly(float angle) noexcept {
+    CRUCIBLE_PRE(is_within_one_turn(angle));
+
     const ReduceResult reduction = reduce_quarter_pi(angle);
     const float sine = sin_in_quarter(reduction.reduced);
     const float cosine = cos_in_quarter(reduction.reduced);
@@ -208,6 +248,8 @@ struct ReduceResult {
 }
 
 [[nodiscard]] constexpr float cos_poly(float angle) noexcept {
+    CRUCIBLE_PRE(is_within_one_turn(angle));
+
     const ReduceResult reduction = reduce_quarter_pi(angle);
     const float sine = sin_in_quarter(reduction.reduced);
     const float cosine = cos_in_quarter(reduction.reduced);
@@ -228,7 +270,9 @@ struct ReduceResult {
 [[nodiscard]] constexpr std::pair<float, float> box_muller_polynomial(std::uint32_t u1_raw,
                                                                       std::uint32_t u2_raw) noexcept {
     // The added one moves a raw word of zero off the bottom of the
-    // range, which keeps the argument of the logarithm above zero.
+    // range. The first uniform is then a positive normal float in
+    // [2^-32, 1], which is the domain of log_poly.  The second uniform is
+    // at most 1, so the angle is at most one turn.
     const float two_pow_neg32 = 0x1.0p-32f;
     const float first_uniform = (static_cast<float>(u1_raw) + 1.0f) * two_pow_neg32;
     const float second_uniform = (static_cast<float>(u2_raw) + 1.0f) * two_pow_neg32;
@@ -236,8 +280,7 @@ struct ReduceResult {
     const float minus_two_log = -2.0f * log_poly(first_uniform);
     const float radius = std::sqrt(minus_two_log);
 
-    const float two_pi = 0x1.921FB6p+2f;  // 2*pi
-    const float theta = two_pi * second_uniform;
+    const float theta = kOneTurn * second_uniform;
 
     return {radius * cos_poly(theta), radius * sin_poly(theta)};
 }
@@ -303,11 +346,45 @@ static_assert(reduce_quarter_pi(0x1.921FB6p+0f).quadrant == 1, "pi/2 lands in qu
 static_assert(reduce_quarter_pi(0x1.921FB6p+1f).quadrant == 2, "pi lands in quadrant 2.");
 
 // The mask is what makes the four switch arms exhaustive, so the cell
-// that says so reads the mask rather than trusting the comment: a large
-// argument still reports a quadrant in range.
-static_assert(reduce_quarter_pi(1.0e6f).quadrant >= 0 && reduce_quarter_pi(1.0e6f).quadrant <= 3,
-              "the quadrant is masked to two bits, so no input can reach the unreachable arm.");
-static_assert(reduce_quarter_pi(-1.0e6f).quadrant >= 0 && reduce_quarter_pi(-1.0e6f).quadrant <= 3,
-              "the same holds for a large negative argument.");
+// that says so reads the mask rather than trusting the comment: a
+// negative multiple still reports a quadrant in range.
+static_assert(reduce_quarter_pi(-0x1.921FB6p+0f).quadrant == 3,
+              "-pi/2 is the multiple -1, and the mask must map it to quadrant 3.");
+
+// One turn is exactly four float pi/2, so it reduces to zero in quadrant
+// 0 at both signs.
+static_assert(reduce_quarter_pi(kOneTurn).quadrant == 0 && bits_of(reduce_quarter_pi(kOneTurn).reduced) == 0u);
+static_assert(reduce_quarter_pi(-kOneTurn).quadrant == 0 && bits_of(reduce_quarter_pi(-kOneTurn).reduced) == 0u);
+
+// ── The domains ─────────────────────────────────────────────────────
+//
+// One turn is admitted at both signs, and the next float up is refused,
+// so the bound is exact.  test/fixy/neg/neg_fp_* reach each precondition
+// in a constant evaluation.
+
+static_assert(bits_of(kOneTurn) == bits_of(4.0f * 0x1.921FB6p+0f), "one turn must be exactly four float pi/2.");
+static_assert(is_within_one_turn(kOneTurn) && is_within_one_turn(-kOneTurn));
+static_assert(!is_within_one_turn(0x1.921FB8p+2f) && !is_within_one_turn(-0x1.921FB8p+2f),
+              "the first float past one turn must be refused.");
+static_assert(!is_within_one_turn(std::numeric_limits<float>::infinity()));
+static_assert(!is_within_one_turn(std::numeric_limits<float>::quiet_NaN()));
+
+// The extreme raw words keep box_muller_polynomial inside both domains:
+// each call below would stop at a precondition otherwise.  The largest
+// word gives a uniform of exactly 1 and an angle of exactly one turn, so
+// the radius is -0 and the pair is two negative zeros.
+static_assert(std::isfinite(box_muller_polynomial(0u, 0u).first)
+              && std::isfinite(box_muller_polynomial(0u, 0u).second));
+static_assert(bits_of(box_muller_polynomial(0xFFFFFFFFu, 0xFFFFFFFFu).first) == bits_of(-0.0f));
+static_assert(bits_of(box_muller_polynomial(0xFFFFFFFFu, 0xFFFFFFFFu).second) == bits_of(-0.0f));
+
+static_assert(is_positive_normal(std::numeric_limits<float>::min()));
+static_assert(is_positive_normal(std::numeric_limits<float>::max()));
+static_assert(!is_positive_normal(0.0f) && !is_positive_normal(-0.0f));
+static_assert(!is_positive_normal(-1.0f));
+static_assert(!is_positive_normal(std::numeric_limits<float>::denorm_min()),
+              "a subnormal is refused: the reduction reads its exponent field as a normal exponent.");
+static_assert(!is_positive_normal(std::numeric_limits<float>::infinity()));
+static_assert(!is_positive_normal(std::numeric_limits<float>::quiet_NaN()));
 
 }  // namespace fixy::fp::detail::polynomial_self_test
