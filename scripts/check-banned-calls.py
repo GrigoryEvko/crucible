@@ -112,8 +112,8 @@ SPAWN_NAMES = frozenset({
 })
 SPAWN_TOKEN = re.compile(r"(?:(?P<scope>[A-Za-z_]\w*)?\s*(?P<access>::|\.|->)\s*)?\b(?P<name>"
                          + "|".join(sorted(SPAWN_NAMES, key=len, reverse=True)) + r")\b")
-# A call of the CMake function that registers one fixy-only directory.
-FIXY_ONLY_DIRECTORY = re.compile(r"^[ \t]*crucible_register_fixy_only_directory\([ \t]*([^)\s]+)[ \t]*\)", re.M)
+# The data file that lists the fixy-only directories, one per line.
+FIXY_ONLY_PATHS = "scripts/fixy-only-paths.txt"
 
 
 @dataclass(frozen=True)
@@ -320,17 +320,21 @@ def _spawn_token_is_use(match: re.Match[str]) -> bool:
 
 
 def _band3_roots(root: Path) -> tuple[str, ...]:
-    """Return each fixy-only include/crucible directory that CMakeLists.txt registers, and its src/ twin.
+    """Return each fixy-only include/crucible directory that scripts/fixy-only-paths.txt lists, and its src/ twin.
+
+    The file holds one repository-relative directory per line.  A `#` starts
+    a comment, and a blank line is skipped.
 
     Args:
         root: The scan root
 
     Returns:
-        The repo-relative directories, or () when the registry names none
+        The repo-relative directories, or () when the list names none
     """
-    cmake = root / "CMakeLists.txt"
-    listed = FIXY_ONLY_DIRECTORY.findall(cmake.read_text(encoding="utf-8")) if cmake.is_file() else []
-    subsystems = [Path(rel).name for rel in listed if Path(rel).parent == Path("include/crucible")]
+    listing = root / FIXY_ONLY_PATHS
+    lines = listing.read_text(encoding="utf-8").splitlines() if listing.is_file() else []
+    listed = [line.split("#", 1)[0].strip() for line in lines]
+    subsystems = [Path(rel).name for rel in listed if rel and Path(rel).parent == Path("include/crucible")]
     return tuple(f"{top}/{name}" for name in subsystems for top in ("include/crucible", "src"))
 
 
@@ -699,9 +703,9 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         for rel, text in (
-            ("CMakeLists.txt", "crucible_register_fixy_only_directory(examples/fn)\n"
-                               "# crucible_register_fixy_only_directory(include/crucible/commented)\n"
-                               "crucible_register_fixy_only_directory(include/crucible/cntp)\n"),
+            (FIXY_ONLY_PATHS, "examples/fn\n"
+                              "# include/crucible/commented\n"
+                              "include/crucible/cntp  # a trailing comment\n"),
             ("include/crucible/cntp/Streams.h", stream_fixture),
             ("src/cntp/streams.cpp", "void g() { std::ifstream src_twin{\"x\"}; }\n"),
             ("include/crucible/cntp/test/planted.h", "void g() { std::ifstream band_test_dir{\"x\"}; }\n"),
@@ -808,14 +812,13 @@ def self_test() -> int:
         expect("process spawn: an allowlist row keyed by content admits its site",
                "Allowlist key: src/planted/Spawn.cpp:inline int admitted()" not in report.getvalue(), True)
 
-        registry = (root / "CMakeLists.txt").read_text(encoding="utf-8")
-        (root / "CMakeLists.txt").write_text("crucible_register_fixy_only_directory(examples/fn)\n",
-                                             encoding="utf-8")
+        registry = (root / FIXY_ONLY_PATHS).read_text(encoding="utf-8")
+        (root / FIXY_ONLY_PATHS).write_text("examples/fn\n", encoding="utf-8")
         unregistered_hits, unregistered_failures = scan(root, stream_ban)
         expect("a registry with no band-3 directory fails the ban",
                not unregistered_hits
                and any("has no root directory" in failure for failure in unregistered_failures), True)
-        (root / "CMakeLists.txt").write_text(registry, encoding="utf-8")
+        (root / FIXY_ONLY_PATHS).write_text(registry, encoding="utf-8")
 
         expect("the full check reports violations", check(root) == 1)
 

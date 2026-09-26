@@ -23,16 +23,8 @@
 #       scripts/fixy-discipline-allowlist.txt and migrates as the
 #       per-tag fixy::wrap surfaces stabilize.
 #
-# Opt-in surface (CMakeLists.txt CRUCIBLE_FIXY_ONLY_PATHS GLOBAL
-# property is the single source of truth; CMake
-# emits the list to ${CMAKE_BINARY_DIR}/fixy-only-paths.txt at
-# configure and this script consumes that file when present.  The
-# hardcoded fallback array below handles pre-configure CI and
-# standalone scans; CMake configure verifies the two lists agree.)
-# Current set (the band-3 directories):
-#   examples/fn/, test/fixy_neg/
-#   include/crucible/{cntp,canopy,cog,topology,forge,mimic,observe,warden}/
-#   src/{cntp,canopy,cog,topology,forge,mimic,observe,warden}/
+# Opt-in surface: scripts/fixy-only-paths.txt lists the directories,
+# one per line, and it is the only list.
 #
 # Exempt — fixy/ itself defines the aggregator and substrate
 # defines the slot types, so both refer to the raw safety::* spellings
@@ -110,78 +102,23 @@ Suppression:
 USAGE
 }
 
-# ── Greenfield opt-ins ────────────────────────────────────────────────
-# Authoritative list lives in CMakeLists.txt under the GLOBAL property
-# CRUCIBLE_FIXY_ONLY_PATHS.  At configure time CMake
-# materializes the list to ${CMAKE_BINARY_DIR}/fixy-only-paths.txt; when
-# that file exists (CI runs after configure / regular dev iteration),
-# the script consumes it directly.  When absent (pre-configure CI,
-# standalone scans, freshly-cloned tree), the script falls back to the
-# hardcoded mirror below — verified at CMake configure time to agree
-# with the authoritative list (warning fires on drift).
-#
-# Adding a new band-3 directory:
-#   1. crucible_register_fixy_only_directory(<path>) in CMakeLists.txt
-#      beside the other CRUCIBLE_FIXY_ONLY_PATHS registrations.
-#   2. Mirror the same path into the array below (presentational order
-#      doesn't matter — the configure-time drift check is set-equality).
-#   3. Re-configure to regenerate fixy-only-paths.txt + verify mirror
-#      agreement.
-#
-# Band-3 directories.  fixy.md §5.3 names cntp/, canopy/, cog/,
-# topology/, forge/, mimic/, observe/, warden/ as "fixy-only from
-# 17 May 2026 onward".  Each is added
-# below for both include/ and src/ trees so the safety::fn::Fn<
-# reach-past-the-umbrella gate fires on any future raw instantiation
-# (current site count in these dirs: 0 — allowlist stays empty;
-# CI catches new regressions).  Wider substrate types (Refined,
-# Tagged, Linear, etc.) remain on the original safety:: spelling
-# inside band-3 dirs until their fixy:: re-export migration lands.
-CRUCIBLE_FIXY_ONLY_PATHS=(
-    examples/fn
-    test/fixy_neg
-    include/crucible/cntp
-    include/crucible/canopy
-    include/crucible/cog
-    include/crucible/topology
-    include/crucible/forge
-    include/crucible/mimic
-    include/crucible/observe
-    include/crucible/warden
-    src/cntp
-    src/canopy
-    src/cog
-    src/topology
-    src/forge
-    src/mimic
-    src/observe
-    src/warden
-)
-
-# ── Load the authoritative list from the generated file if present ──
-# Order of resolution (first hit wins):
-#   1. CRUCIBLE_FIXY_ONLY_PATHS_FILE env var — explicit path override.
-#   2. ${root}/build/fixy-only-paths.txt — default in-tree CMake output.
-#   3. Hardcoded array above — pre-configure / standalone fallback.
-#
-# The generated file is one path per line; blank lines and lines
-# beginning with '#' are ignored (so the header banner CMake writes
-# is skipped).  Loading this AFTER the hardcoded array means a drift-
-# free build produces identical CRUCIBLE_FIXY_ONLY_PATHS; a divergent
-# tree warns at configure time AND reflects the CMake authority here.
-_paths_file_candidate="${CRUCIBLE_FIXY_ONLY_PATHS_FILE:-$root/build/fixy-only-paths.txt}"
-if [[ -f "$_paths_file_candidate" ]]; then
-    _generated_paths=()
-    while IFS= read -r _line; do
-        [[ -z "$_line" || "$_line" =~ ^# ]] && continue
-        _generated_paths+=("$_line")
-    done < "$_paths_file_candidate"
-    if [[ ${#_generated_paths[@]} -gt 0 ]]; then
-        CRUCIBLE_FIXY_ONLY_PATHS=("${_generated_paths[@]}")
-    fi
-    unset _generated_paths _line
+# ── The fixy-only directories ────────────────────────────────────────
+# scripts/fixy-only-paths.txt lists them, one repository-relative
+# directory per line.  A `#` starts a comment, and a blank line is
+# skipped.  CRUCIBLE_FIXY_ONLY_PATHS_FILE names another file, for the
+# self-test.
+_paths_file="${CRUCIBLE_FIXY_ONLY_PATHS_FILE:-$root/scripts/fixy-only-paths.txt}"
+if [[ ! -f "$_paths_file" ]]; then
+    printf 'check-fixy-discipline: %s is missing, so no directory is under fixy discipline.\n' "$_paths_file" >&2
+    exit 2
 fi
-unset _paths_file_candidate
+CRUCIBLE_FIXY_ONLY_PATHS=()
+while IFS= read -r _line; do
+    _line="${_line%%#*}"
+    _line="${_line//[[:space:]]/}"
+    [[ -n "$_line" ]] && CRUCIBLE_FIXY_ONLY_PATHS+=("$_line")
+done < "$_paths_file"
+unset _paths_file _line
 
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;

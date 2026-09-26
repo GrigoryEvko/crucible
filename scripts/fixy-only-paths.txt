@@ -1,0 +1,28 @@
+# scripts/fixy-only-paths.txt — the directories under fixy discipline.
+#
+# scripts/check-fixy-discipline.py reads this file and scans exactly these
+# directories.  Code under them spells substrate types through the fixy
+# umbrella, and a raw crucible::safety spelling of the aggregator or of a
+# Tier-1 wrapper fails the scan.  One repository-relative directory per line.
+# A `#` starts a comment, and blank lines are ignored.
+#
+# The band-3 directories hold the runtime modules that were fixy-only from
+# their first line.  examples/fn and test/fixy_neg show and test the umbrella.
+examples/fn
+test/fixy_neg
+include/crucible/cntp
+include/crucible/canopy
+include/crucible/cog
+include/crucible/topology
+include/crucible/forge
+include/crucible/mimic
+include/crucible/observe
+include/crucible/warden
+src/cntp
+src/canopy
+src/cog
+src/topology
+src/forge
+src/mimic
+src/observe
+src/warden
