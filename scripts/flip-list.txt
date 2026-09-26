@@ -90,8 +90,6 @@ include/crucible/cntp/_wip/Wireguard.h
 include/crucible/cntp/dataplane/TcEbpf.h
 include/crucible/cntp/dataplane/Xdp.h
 include/crucible/cog/NicConfig.h
-include/crucible/cog/NicOffloadAudit.h
-include/crucible/cog/NumaNic.h
 include/crucible/cog/SrIov.h
 include/crucible/ledger/HostFingerprint.h
 include/crucible/mimic/Semaphore.h
@@ -108,6 +106,4 @@ include/crucible/topology/TopologyGraph.h
 include/crucible/warden/DeadlineWatchdog.h
 include/crucible/warden/Quarantine.h
 src/cntp/RoceConfig.cpp
-src/cog/NicOffloadAudit.cpp
-src/cog/NumaNic.cpp
 src/topology/Ptp.cpp

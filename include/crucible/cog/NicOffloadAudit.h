@@ -3,20 +3,28 @@
 // A read-only audit of a NIC against a policy. The facts are gathered
 // elsewhere and handed in, so nothing here queries or changes the
 // device. The same facts and policy always yield the same report.
+//
+// foundation::reflect::enum_name gives the name of each enumerator.
 
+#include <crucible/cog/AuditFindings.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Bits.h>
+#include <fixy/Refined.h>
+#include <foundation/diag/Catalog.h>
 
 #include <cstdint>
 #include <string_view>
 
 namespace crucible::cog {
 
-using PositiveQueueCount = safety::Positive<std::uint16_t>;
-using PositiveByteCount = safety::Positive<std::uint64_t>;
+using PositiveQueueCount = ::fixy::Positive<std::uint16_t>;
+using PositiveByteCount = ::fixy::Positive<std::uint64_t>;
+
+// The floor of every count. A fact or a policy field starts here until
+// the caller supplies a measured or chosen value.
+inline constexpr PositiveQueueCount single_queue = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+inline constexpr PositiveByteCount single_byte = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1});
 
 enum class NicRssHash : std::uint8_t {
     Unknown = 0,
@@ -25,21 +33,6 @@ enum class NicRssHash : std::uint8_t {
     Crc32 = 3,
 };
 
-[[nodiscard]] constexpr std::string_view nic_rss_hash_name(NicRssHash h) noexcept {
-    switch (h) {
-        case NicRssHash::Unknown:
-            return "Unknown";
-        case NicRssHash::Toeplitz:
-            return "Toeplitz";
-        case NicRssHash::Xor:
-            return "Xor";
-        case NicRssHash::Crc32:
-            return "Crc32";
-        default:
-            return "<unknown NicRssHash>";
-    }
-}
-
 enum class NicTxQdisc : std::uint8_t {
     Unknown = 0,
     Fq = 1,
@@ -47,23 +40,6 @@ enum class NicTxQdisc : std::uint8_t {
     Pfifo = 3,
     Mq = 4,
 };
-
-[[nodiscard]] constexpr std::string_view nic_tx_qdisc_name(NicTxQdisc q) noexcept {
-    switch (q) {
-        case NicTxQdisc::Unknown:
-            return "Unknown";
-        case NicTxQdisc::Fq:
-            return "Fq";
-        case NicTxQdisc::FqCodel:
-            return "FqCodel";
-        case NicTxQdisc::Pfifo:
-            return "Pfifo";
-        case NicTxQdisc::Mq:
-            return "Mq";
-        default:
-            return "<unknown NicTxQdisc>";
-    }
-}
 
 enum class NicAuditIssue : std::uint32_t {
     WrongCogKind = 1u << 0,
@@ -85,54 +61,7 @@ enum class NicAuditIssue : std::uint32_t {
     BusyPollMissing = 1u << 16,
 };
 
-[[nodiscard]] constexpr std::string_view nic_audit_issue_name(NicAuditIssue issue) noexcept {
-    switch (issue) {
-        case NicAuditIssue::WrongCogKind:
-            return "WrongCogKind";
-        case NicAuditIssue::UnsupportedRequiredOffload:
-            return "UnsupportedRequiredOffload";
-        case NicAuditIssue::MissingRequiredOffload:
-            return "MissingRequiredOffload";
-        case NicAuditIssue::MissingPerformanceOffload:
-            return "MissingPerformanceOffload";
-        case NicAuditIssue::TxQueueCountMisconfigured:
-            return "TxQueueCountMisconfigured";
-        case NicAuditIssue::RxQueueCountMisconfigured:
-            return "RxQueueCountMisconfigured";
-        case NicAuditIssue::RssDisabled:
-            return "RssDisabled";
-        case NicAuditIssue::RssSpreadTooNarrow:
-            return "RssSpreadTooNarrow";
-        case NicAuditIssue::RssHashNotToeplitz:
-            return "RssHashNotToeplitz";
-        case NicAuditIssue::RssFourTupleMissing:
-            return "RssFourTupleMissing";
-        case NicAuditIssue::IrqSpreadTooNarrow:
-            return "IrqSpreadTooNarrow";
-        case NicAuditIssue::IrqRemoteNuma:
-            return "IrqRemoteNuma";
-        case NicAuditIssue::RmemMaxBelowBdp:
-            return "RmemMaxBelowBdp";
-        case NicAuditIssue::WmemMaxBelowBdp:
-            return "WmemMaxBelowBdp";
-        case NicAuditIssue::NetdevBudgetTooSmall:
-            return "NetdevBudgetTooSmall";
-        case NicAuditIssue::TxQdiscNotFq:
-            return "TxQdiscNotFq";
-        case NicAuditIssue::BusyPollMissing:
-            return "BusyPollMissing";
-        default:
-            return "<unknown NicAuditIssue>";
-    }
-}
-
-enum class NicAuditSeverity : std::uint8_t {
-    Pass = 0,
-    Warn = 1,
-    Error = 2,
-};
-
-struct NicOffload_Misconfigured : safety::diag::tag_base {
+struct NicOffload_Misconfigured : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "NicOffload_Misconfigured";
     static constexpr std::string_view description = "A NIC startup audit found an offload, queue, RSS, IRQ, sysctl, "
                                                     "qdisc, or busy-poll setting that cannot deliver the declared "
@@ -144,14 +73,14 @@ struct NicOffload_Misconfigured : safety::diag::tag_base {
 };
 
 struct NicOffloadAuditFacts {
-    safety::Bits<NicFeature> enabled_offloads{};
-    PositiveQueueCount configured_tx_queues{std::uint16_t{1}};
-    PositiveQueueCount configured_rx_queues{std::uint16_t{1}};
-    PositiveQueueCount rss_distinct_rx_queues{std::uint16_t{1}};
-    PositiveQueueCount irq_distinct_local_cores{std::uint16_t{1}};
-    PositiveByteCount rmem_max_bytes{std::uint64_t{1}};
-    PositiveByteCount wmem_max_bytes{std::uint64_t{1}};
-    PositiveQueueCount netdev_budget_packets{std::uint16_t{1}};
+    ::fixy::Bits<NicFeature> enabled_offloads{};
+    PositiveQueueCount configured_tx_queues = single_queue;
+    PositiveQueueCount configured_rx_queues = single_queue;
+    PositiveQueueCount rss_distinct_rx_queues = single_queue;
+    PositiveQueueCount irq_distinct_local_cores = single_queue;
+    PositiveByteCount rmem_max_bytes = single_byte;
+    PositiveByteCount wmem_max_bytes = single_byte;
+    PositiveQueueCount netdev_budget_packets = single_queue;
     std::uint32_t busy_poll_us = 0;
     NicRssHash rss_hash = NicRssHash::Unknown;
     NicTxQdisc tx_qdisc = NicTxQdisc::Unknown;
@@ -160,19 +89,19 @@ struct NicOffloadAuditFacts {
 };
 
 struct NicOffloadAuditPolicy {
-    safety::Bits<NicFeature> required_offloads{
+    ::fixy::Bits<NicFeature> required_offloads{
         NicFeature::Tso,
         NicFeature::Gso,
         NicFeature::Gro,
         NicFeature::Rss,
     };
-    safety::Bits<NicFeature> performance_offloads{};
-    PositiveQueueCount min_tx_queues{std::uint16_t{1}};
-    PositiveQueueCount min_rx_queues{std::uint16_t{1}};
-    PositiveQueueCount min_rss_queues{std::uint16_t{1}};
-    PositiveQueueCount min_irq_local_cores{std::uint16_t{1}};
-    PositiveByteCount expected_bdp_bytes{std::uint64_t{1}};
-    PositiveQueueCount min_netdev_budget_packets{std::uint16_t{64}};
+    ::fixy::Bits<NicFeature> performance_offloads{};
+    PositiveQueueCount min_tx_queues = single_queue;
+    PositiveQueueCount min_rx_queues = single_queue;
+    PositiveQueueCount min_rss_queues = single_queue;
+    PositiveQueueCount min_irq_local_cores = single_queue;
+    PositiveByteCount expected_bdp_bytes = single_byte;
+    PositiveQueueCount min_netdev_budget_packets = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{64});
     std::uint32_t min_busy_poll_us = 0;
     bool require_rss = true;
     bool require_toeplitz = true;
@@ -182,36 +111,14 @@ struct NicOffloadAuditPolicy {
     bool low_latency_profile = false;
 };
 
-struct NicOffloadAuditReport {
-    safety::Bits<NicAuditIssue> issues{};
-    NicAuditSeverity severity = NicAuditSeverity::Pass;
-    safety::Bits<NicFeature> missing_required_offloads{};
-    safety::Bits<NicFeature> unsupported_required_offloads{};
-    safety::Bits<NicFeature> missing_performance_offloads{};
-
-    [[nodiscard]] constexpr bool passes() const noexcept { return severity == NicAuditSeverity::Pass && issues.none(); }
-
-    [[nodiscard]] constexpr bool has(NicAuditIssue issue) const noexcept { return issues.test(issue); }
+struct NicOffloadAuditReport : AuditFindings<NicAuditIssue> {
+    ::fixy::Bits<NicFeature> missing_required_offloads{};
+    ::fixy::Bits<NicFeature> unsupported_required_offloads{};
+    ::fixy::Bits<NicFeature> missing_performance_offloads{};
 };
 
 template <CogKind K>
 concept NicOffloadAuditableCog = (K == CogKind::NicPort) && HasCaps<K>;
-
-namespace detail {
-
-[[nodiscard]] constexpr safety::Bits<NicFeature> difference(safety::Bits<NicFeature> lhs,
-                                                            safety::Bits<NicFeature> rhs) noexcept {
-    return safety::Bits<NicFeature>::from_raw(lhs.raw() & ~rhs.raw());
-}
-
-constexpr void raise(NicOffloadAuditReport& report, NicAuditIssue issue, NicAuditSeverity severity) noexcept {
-    report.issues.set(issue);
-    if (static_cast<std::uint8_t>(severity) > static_cast<std::uint8_t>(report.severity)) {
-        report.severity = severity;
-    }
-}
-
-}  // namespace detail
 
 template <CogKind K>
     requires NicOffloadAuditableCog<K>
@@ -221,23 +128,22 @@ template <CogKind K>
     NicOffloadAuditReport report{};
 
     if (identity.kind != CogKind::NicPort) {
-        detail::raise(report, NicAuditIssue::WrongCogKind, NicAuditSeverity::Error);
+        report.raise(NicAuditIssue::WrongCogKind, AuditSeverity::Error);
     }
 
-    report.unsupported_required_offloads =
-        detail::difference(policy.required_offloads, safety::Bits<NicFeature>::from_raw(caps.features.raw()));
+    report.unsupported_required_offloads = policy.required_offloads & ~caps.features;
     if (report.unsupported_required_offloads.any()) {
-        detail::raise(report, NicAuditIssue::UnsupportedRequiredOffload, NicAuditSeverity::Error);
+        report.raise(NicAuditIssue::UnsupportedRequiredOffload, AuditSeverity::Error);
     }
 
-    report.missing_required_offloads = detail::difference(policy.required_offloads, facts.enabled_offloads);
+    report.missing_required_offloads = policy.required_offloads & ~facts.enabled_offloads;
     if (report.missing_required_offloads.any()) {
-        detail::raise(report, NicAuditIssue::MissingRequiredOffload, NicAuditSeverity::Error);
+        report.raise(NicAuditIssue::MissingRequiredOffload, AuditSeverity::Error);
     }
 
-    report.missing_performance_offloads = detail::difference(policy.performance_offloads, facts.enabled_offloads);
+    report.missing_performance_offloads = policy.performance_offloads & ~facts.enabled_offloads;
     if (report.missing_performance_offloads.any()) {
-        detail::raise(report, NicAuditIssue::MissingPerformanceOffload, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::MissingPerformanceOffload, AuditSeverity::Warn);
     }
 
     auto const max_tx = caps.max_tx_queues.value();
@@ -245,48 +151,48 @@ template <CogKind K>
     auto const tx = facts.configured_tx_queues.value();
     auto const rx = facts.configured_rx_queues.value();
     if (tx < policy.min_tx_queues.value() || (max_tx != 0 && tx > max_tx)) {
-        detail::raise(report, NicAuditIssue::TxQueueCountMisconfigured,
-                      max_tx != 0 && tx > max_tx ? NicAuditSeverity::Error : NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::TxQueueCountMisconfigured,
+                     max_tx != 0 && tx > max_tx ? AuditSeverity::Error : AuditSeverity::Warn);
     }
     if (rx < policy.min_rx_queues.value() || (max_rx != 0 && rx > max_rx)) {
-        detail::raise(report, NicAuditIssue::RxQueueCountMisconfigured,
-                      max_rx != 0 && rx > max_rx ? NicAuditSeverity::Error : NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::RxQueueCountMisconfigured,
+                     max_rx != 0 && rx > max_rx ? AuditSeverity::Error : AuditSeverity::Warn);
     }
 
     if (policy.require_rss && !facts.enabled_offloads.test(NicFeature::Rss)) {
-        detail::raise(report, NicAuditIssue::RssDisabled, NicAuditSeverity::Error);
+        report.raise(NicAuditIssue::RssDisabled, AuditSeverity::Error);
     }
     if (facts.rss_distinct_rx_queues.value() < policy.min_rss_queues.value()) {
-        detail::raise(report, NicAuditIssue::RssSpreadTooNarrow, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::RssSpreadTooNarrow, AuditSeverity::Warn);
     }
     if (policy.require_toeplitz && facts.rss_hash != NicRssHash::Toeplitz) {
-        detail::raise(report, NicAuditIssue::RssHashNotToeplitz, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::RssHashNotToeplitz, AuditSeverity::Warn);
     }
     if (policy.require_four_tuple_hash && !facts.rss_four_tuple_hash) {
-        detail::raise(report, NicAuditIssue::RssFourTupleMissing, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::RssFourTupleMissing, AuditSeverity::Warn);
     }
 
     if (facts.irq_distinct_local_cores.value() < policy.min_irq_local_cores.value()) {
-        detail::raise(report, NicAuditIssue::IrqSpreadTooNarrow, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::IrqSpreadTooNarrow, AuditSeverity::Warn);
     }
     if (policy.require_numa_local_irqs && !facts.irq_handlers_numa_local) {
-        detail::raise(report, NicAuditIssue::IrqRemoteNuma, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::IrqRemoteNuma, AuditSeverity::Warn);
     }
 
     if (facts.rmem_max_bytes.value() < policy.expected_bdp_bytes.value()) {
-        detail::raise(report, NicAuditIssue::RmemMaxBelowBdp, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::RmemMaxBelowBdp, AuditSeverity::Warn);
     }
     if (facts.wmem_max_bytes.value() < policy.expected_bdp_bytes.value()) {
-        detail::raise(report, NicAuditIssue::WmemMaxBelowBdp, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::WmemMaxBelowBdp, AuditSeverity::Warn);
     }
     if (facts.netdev_budget_packets.value() < policy.min_netdev_budget_packets.value()) {
-        detail::raise(report, NicAuditIssue::NetdevBudgetTooSmall, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::NetdevBudgetTooSmall, AuditSeverity::Warn);
     }
     if (policy.require_fq_qdisc && facts.tx_qdisc != NicTxQdisc::Fq) {
-        detail::raise(report, NicAuditIssue::TxQdiscNotFq, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::TxQdiscNotFq, AuditSeverity::Warn);
     }
     if (policy.low_latency_profile && facts.busy_poll_us < policy.min_busy_poll_us) {
-        detail::raise(report, NicAuditIssue::BusyPollMissing, NicAuditSeverity::Warn);
+        report.raise(NicAuditIssue::BusyPollMissing, AuditSeverity::Warn);
     }
 
     return report;

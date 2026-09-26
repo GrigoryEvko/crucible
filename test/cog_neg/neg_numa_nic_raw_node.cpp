@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #2 for GAPS-194. NUMA nodes are carried as NumaNodeId,
-// not raw integers, so unknown/sentinel handling stays centralized and
-// raw topology numbers cannot silently cross the verifier API.
+// A NUMA node is a NumaNodeId, and its constructor from an integer is
+// explicit. A raw topology number does not convert, so the unknown
+// sentinel stays in one place.
 
 #include <crucible/cog/NumaNic.h>
 

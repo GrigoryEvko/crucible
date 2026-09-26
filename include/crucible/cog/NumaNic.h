@@ -4,20 +4,26 @@
 // the same NUMA node as the work they serve. The facts are gathered
 // elsewhere and handed in. Nothing here steers an interrupt or writes
 // a packet-steering map.
+//
+// foundation::reflect::enum_name gives the name of each enumerator.
 
+#include <crucible/cog/AuditFindings.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/warden/CpuTopology.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Diagnostic.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Refined.h>
+#include <foundation/diag/Catalog.h>
 
 #include <cstdint>
 #include <string_view>
 
 namespace crucible::cog {
 
-using PositiveAffinityCount = safety::Positive<std::uint16_t>;
+using PositiveAffinityCount = ::fixy::Positive<std::uint16_t>;
+
+// The floor of every count. A fact or a policy field starts here until
+// the caller supplies a measured or chosen value.
+inline constexpr PositiveAffinityCount single_affinity = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
 
 class [[nodiscard]] NumaNodeId {
     std::uint16_t value_ = UINT16_MAX;
@@ -59,44 +65,7 @@ enum class NumaNicIssue : std::uint32_t {
     GpuDirectPeerRemote = 1u << 11,
 };
 
-[[nodiscard]] constexpr std::string_view numa_nic_issue_name(NumaNicIssue issue) noexcept {
-    switch (issue) {
-        case NumaNicIssue::WrongCogKind:
-            return "WrongCogKind";
-        case NumaNicIssue::NicNumaUnknown:
-            return "NicNumaUnknown";
-        case NumaNicIssue::TargetNumaUnknown:
-            return "TargetNumaUnknown";
-        case NumaNicIssue::NicRemoteFromTarget:
-            return "NicRemoteFromTarget";
-        case NumaNicIssue::IrqAffinityUnknown:
-            return "IrqAffinityUnknown";
-        case NumaNicIssue::IrqSpreadTooNarrow:
-            return "IrqSpreadTooNarrow";
-        case NumaNicIssue::IrqRemoteFromTarget:
-            return "IrqRemoteFromTarget";
-        case NumaNicIssue::RpsAffinityUnknown:
-            return "RpsAffinityUnknown";
-        case NumaNicIssue::RpsRemoteFromTarget:
-            return "RpsRemoteFromTarget";
-        case NumaNicIssue::XpsAffinityUnknown:
-            return "XpsAffinityUnknown";
-        case NumaNicIssue::XpsRemoteFromTarget:
-            return "XpsRemoteFromTarget";
-        case NumaNicIssue::GpuDirectPeerRemote:
-            return "GpuDirectPeerRemote";
-        default:
-            return "<unknown NumaNicIssue>";
-    }
-}
-
-enum class NumaNicSeverity : std::uint8_t {
-    Pass = 0,
-    Warn = 1,
-    Error = 2,
-};
-
-struct NumaNic_Misaligned : safety::diag::tag_base {
+struct NumaNic_Misaligned : ::foundation::diag::tag_base {
     static constexpr std::string_view name = "NumaNic_Misaligned";
     static constexpr std::string_view description = "NIC queue, IRQ, RPS, XPS, or peer placement is not NUMA-local "
                                                     "to the target runtime placement.";
@@ -108,14 +77,14 @@ struct NumaNic_Misaligned : safety::diag::tag_base {
 struct NumaNicFacts {
     NumaNodeId nic_node = NumaNodeId::unknown();
     NumaNodeId target_node = NumaNodeId::unknown();
-    PositiveAffinityCount irq_handlers{std::uint16_t{1}};
-    PositiveAffinityCount irq_handlers_on_target_node{std::uint16_t{1}};
-    PositiveAffinityCount rx_queues{std::uint16_t{1}};
-    PositiveAffinityCount rx_queues_on_target_node{std::uint16_t{1}};
-    PositiveAffinityCount tx_queues{std::uint16_t{1}};
-    PositiveAffinityCount tx_queues_on_target_node{std::uint16_t{1}};
-    PositiveAffinityCount gpu_direct_peers{std::uint16_t{1}};
-    PositiveAffinityCount gpu_direct_peers_on_target_node{std::uint16_t{1}};
+    PositiveAffinityCount irq_handlers = single_affinity;
+    PositiveAffinityCount irq_handlers_on_target_node = single_affinity;
+    PositiveAffinityCount rx_queues = single_affinity;
+    PositiveAffinityCount rx_queues_on_target_node = single_affinity;
+    PositiveAffinityCount tx_queues = single_affinity;
+    PositiveAffinityCount tx_queues_on_target_node = single_affinity;
+    PositiveAffinityCount gpu_direct_peers = single_affinity;
+    PositiveAffinityCount gpu_direct_peers_on_target_node = single_affinity;
     bool irq_affinity_known = false;
     bool rps_affinity_known = false;
     bool xps_affinity_known = false;
@@ -124,7 +93,7 @@ struct NumaNicFacts {
 
 struct NumaNicPolicy {
     NumaNodeId target_node = NumaNodeId::unknown();
-    PositiveAffinityCount min_local_irq_handlers{std::uint16_t{1}};
+    PositiveAffinityCount min_local_irq_handlers = single_affinity;
     bool require_nic_on_target_node = true;
     bool require_irq_affinity_known = true;
     bool require_rps_affinity_known = true;
@@ -136,14 +105,8 @@ struct NumaNicPolicy {
     bool strict_unknown_topology = true;
 };
 
-struct NumaNicReport {
-    safety::Bits<NumaNicIssue> issues{};
-    NumaNicSeverity severity = NumaNicSeverity::Pass;
+struct NumaNicReport : AuditFindings<NumaNicIssue> {
     NumaNodeId effective_target_node = NumaNodeId::unknown();
-
-    [[nodiscard]] constexpr bool passes() const noexcept { return severity == NumaNicSeverity::Pass && issues.none(); }
-
-    [[nodiscard]] constexpr bool has(NumaNicIssue issue) const noexcept { return issues.test(issue); }
 };
 
 template <CogKind K>
@@ -151,15 +114,8 @@ concept NumaNicAuditableCog = (K == CogKind::NicPort) && HasCaps<K>;
 
 namespace detail {
 
-constexpr void raise(NumaNicReport& report, NumaNicIssue issue, NumaNicSeverity severity) noexcept {
-    report.issues.set(issue);
-    if (static_cast<std::uint8_t>(severity) > static_cast<std::uint8_t>(report.severity)) {
-        report.severity = severity;
-    }
-}
-
-[[nodiscard]] constexpr NumaNicSeverity unknown_severity(NumaNicPolicy const& policy) noexcept {
-    return policy.strict_unknown_topology ? NumaNicSeverity::Error : NumaNicSeverity::Warn;
+[[nodiscard]] constexpr AuditSeverity unknown_severity(NumaNicPolicy const& policy) noexcept {
+    return policy.strict_unknown_topology ? AuditSeverity::Error : AuditSeverity::Warn;
 }
 
 }  // namespace detail
@@ -173,50 +129,50 @@ template <CogKind K>
     NumaNicReport report{};
 
     if (identity.kind != CogKind::NicPort) {
-        detail::raise(report, NumaNicIssue::WrongCogKind, NumaNicSeverity::Error);
+        report.raise(NumaNicIssue::WrongCogKind, AuditSeverity::Error);
     }
 
     report.effective_target_node = policy.target_node.is_unknown() ? facts.target_node : policy.target_node;
 
     if (facts.nic_node.is_unknown()) {
-        detail::raise(report, NumaNicIssue::NicNumaUnknown, detail::unknown_severity(policy));
+        report.raise(NumaNicIssue::NicNumaUnknown, detail::unknown_severity(policy));
     }
     if (report.effective_target_node.is_unknown()) {
-        detail::raise(report, NumaNicIssue::TargetNumaUnknown, detail::unknown_severity(policy));
+        report.raise(NumaNicIssue::TargetNumaUnknown, detail::unknown_severity(policy));
     }
 
     if (policy.require_nic_on_target_node && !facts.nic_node.is_unknown() && !report.effective_target_node.is_unknown()
         && facts.nic_node != report.effective_target_node) {
-        detail::raise(report, NumaNicIssue::NicRemoteFromTarget, NumaNicSeverity::Error);
+        report.raise(NumaNicIssue::NicRemoteFromTarget, AuditSeverity::Error);
     }
 
     if (policy.require_irq_affinity_known && !facts.irq_affinity_known) {
-        detail::raise(report, NumaNicIssue::IrqAffinityUnknown, detail::unknown_severity(policy));
+        report.raise(NumaNicIssue::IrqAffinityUnknown, detail::unknown_severity(policy));
     }
     if (facts.irq_handlers_on_target_node.value() < policy.min_local_irq_handlers.value()) {
-        detail::raise(report, NumaNicIssue::IrqSpreadTooNarrow, NumaNicSeverity::Warn);
+        report.raise(NumaNicIssue::IrqSpreadTooNarrow, AuditSeverity::Warn);
     }
     if (policy.require_all_irqs_local && facts.irq_handlers_on_target_node.value() < facts.irq_handlers.value()) {
-        detail::raise(report, NumaNicIssue::IrqRemoteFromTarget, NumaNicSeverity::Warn);
+        report.raise(NumaNicIssue::IrqRemoteFromTarget, AuditSeverity::Warn);
     }
 
     if (policy.require_rps_affinity_known && !facts.rps_affinity_known) {
-        detail::raise(report, NumaNicIssue::RpsAffinityUnknown, detail::unknown_severity(policy));
+        report.raise(NumaNicIssue::RpsAffinityUnknown, detail::unknown_severity(policy));
     }
     if (policy.require_all_rps_local && facts.rx_queues_on_target_node.value() < facts.rx_queues.value()) {
-        detail::raise(report, NumaNicIssue::RpsRemoteFromTarget, NumaNicSeverity::Warn);
+        report.raise(NumaNicIssue::RpsRemoteFromTarget, AuditSeverity::Warn);
     }
 
     if (policy.require_xps_affinity_known && !facts.xps_affinity_known) {
-        detail::raise(report, NumaNicIssue::XpsAffinityUnknown, detail::unknown_severity(policy));
+        report.raise(NumaNicIssue::XpsAffinityUnknown, detail::unknown_severity(policy));
     }
     if (policy.require_all_xps_local && facts.tx_queues_on_target_node.value() < facts.tx_queues.value()) {
-        detail::raise(report, NumaNicIssue::XpsRemoteFromTarget, NumaNicSeverity::Warn);
+        report.raise(NumaNicIssue::XpsRemoteFromTarget, AuditSeverity::Warn);
     }
 
     if (policy.require_gpu_direct_peers_local && facts.gpu_direct_peer_numa_known
         && facts.gpu_direct_peers_on_target_node.value() < facts.gpu_direct_peers.value()) {
-        detail::raise(report, NumaNicIssue::GpuDirectPeerRemote, NumaNicSeverity::Warn);
+        report.raise(NumaNicIssue::GpuDirectPeerRemote, AuditSeverity::Warn);
     }
 
     return report;

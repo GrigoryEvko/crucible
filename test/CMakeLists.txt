@@ -4577,35 +4577,29 @@ crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
     "constraint|constraints.*not satisfied"
     "FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
 
-# ─── GAPS-140 cog/NicOffloadAudit.h soundness gates (HS14) ─────────
-#
-# Two fixtures, two distinct mismatch classes:
-# * neg_nic_offload_audit_rejects_gpu — SUBSTRATE-KIND gate.
-#   NicOffloadAuditableCog<K> only admits CogKind::NicPort; a GPU has
-#   no TSO/GSO/GRO/RSS audit surface.
-# * neg_nic_offload_audit_raw_required_offloads — TYPE gate.
-#   required_offloads is Bits<NicFeature>, not a raw integer mask, so
-#   wrong-universe feature masks cannot silently cross the policy API.
+# cog/NicOffloadAudit.h, the read-only NIC offload audit.
+#   * neg_nic_offload_audit_rejects_gpu: the audit refuses a kind other
+#     than a NIC port in its constraint.
+#   * neg_nic_offload_audit_raw_required_offloads: a raw integer mask does
+#     not convert to the typed offload set.
 crucible_neg_compile_cog_test(neg_nic_offload_audit_rejects_gpu
-    "constraint|constraints.*not satisfied"
-    "NicOffloadAuditableCog|audit_gate|GAPS-140")
+    "no matching function for call to .audit_nic_offloads<crucible::cog::CogKind::Gpu>"
+    "required for the satisfaction of .NicOffloadAuditableCog<K>. \\[with K = crucible::cog::CogKind::Gpu\\]")
 crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
-    "cannot convert|could not convert"
-    "Bits|NicFeature|GAPS-140")
+    "could not convert .1. from .unsigned int."
+    "to .fixy::Bits<crucible::cog::NicFeature>.")
 
-# ─── GAPS-194 cog/NumaNic.h soundness gates (HS14) ─────────────────
-#
-# Two fixtures, two distinct mismatch classes:
-# * neg_numa_nic_rejects_gpu — SUBSTRATE-KIND gate.
-#   NumaNicAuditableCog<K> only admits CogKind::NicPort.
-# * neg_numa_nic_raw_node — TYPE gate.
-#   NUMA nodes are NumaNodeId, not raw integers.
+# cog/NumaNic.h, the read-only NUMA placement check of a NIC.
+#   * neg_numa_nic_rejects_gpu: the check refuses a kind other than a NIC
+#     port in its constraint.
+#   * neg_numa_nic_raw_node: a raw integer does not convert to a NUMA
+#     node id.
 crucible_neg_compile_cog_test(neg_numa_nic_rejects_gpu
-    "constraint|constraints.*not satisfied"
-    "NumaNicAuditableCog|audit_gate|GAPS-194")
+    "no matching function for call to .verify_numa_pinning<crucible::cog::CogKind::Gpu>"
+    "required for the satisfaction of .NumaNicAuditableCog<K>. \\[with K = crucible::cog::CogKind::Gpu\\]")
 crucible_neg_compile_cog_test(neg_numa_nic_raw_node
-    "cannot convert|could not convert"
-    "NumaNodeId|GAPS-194")
+    "could not convert .0. from .unsigned int."
+    "to .crucible::cog::NumaNodeId.")
 
 # ─── HS14 fixtures for warden::Quarantine (GAPS-118 #1236) ────────
 #

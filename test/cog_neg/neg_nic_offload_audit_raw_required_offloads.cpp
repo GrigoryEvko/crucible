@@ -1,9 +1,8 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #2 for GAPS-140. Required offloads are typed as
-// safety::Bits<NicFeature>; a raw integer mask must not enter the
-// policy surface, or TSO/GSO/GRO/RSS checks could silently consume a
-// mask from the wrong feature universe.
+// A policy names its required offloads as a fixy::Bits<NicFeature>. A
+// raw integer mask does not convert, so a mask from a different feature
+// enum cannot reach the offload checks.
 
 #include <crucible/cog/NicOffloadAudit.h>
 
