@@ -77,8 +77,6 @@ src/cntp/Pacing.cpp:if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO, &rcv_tim
 src/cntp/Pacing.cpp:const auto sent = ::send(nl.get(), &request, sizeof(request), 0);  — effects::IO via query_active_qdisc (NETLINK send RTM_GETQDISC dump)
 src/cntp/Pacing.cpp:const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0);  — effects::IO+Block via query_active_qdisc (NETLINK recv, SO_RCVTIMEO-bounded)
 src/cntp/Pacing.cpp:::setsockopt(fd.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &value, static_cast<socklen_t>(sizeof(value)));  — effects::IO via set_socket_pacing_rate (setsockopt SO_MAX_PACING_RATE)
-src/cntp/RoceConfig.cpp:LocalFd fd{::open(path, O_RDONLY | O_CLOEXEC)};  — effects::IO via read_counter_file (open /sys/class/net/<iface>/statistics counter, LocalFd-owned)
-src/cntp/RoceConfig.cpp:const auto nread = ::read(fd.get(), bytes.data(), bytes.size() - 1u);  — effects::IO via read_counter_file (read sysfs pause-frame counter)
 src/fixy/_Fs.cpp:const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  — effects::IO via open_dirfd → do_open_dirfd_impl (O_DIRECTORY|O_NOFOLLOW dirfd open)
 src/perf/PmuSample.cpp:return ::syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags);  — effects::Init via perf_event_open_syscall (raw SYS_perf_event_open)
 src/perf/ProcGauges.cpp:r = ::close(fd_);  — effects::Bg via ScopedFd::close_ (close on RAII drop)

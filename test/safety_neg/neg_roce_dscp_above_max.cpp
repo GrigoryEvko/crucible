@@ -1,11 +1,10 @@
-#include <crucible/cntp/RoceConfig.h>
+// A DSCP is a 6-bit value, so 64 does not satisfy the template clause of
+// the config mint.
 
-// GAPS-125 fixture #2: RoCE DSCP is a 6-bit value. Values above 63
-// cannot mint a declared RoCE config.
+#include <crucible/cntp/RoceConfig.h>
 
 int main() {
     auto iface = crucible::cntp::NicInterfaceName::from("eth0");
     auto config = crucible::cntp::mint_roce_config<0b00001000, 64>(*iface);
-    (void)config;
-    return 0;
+    return config.value().enable_pfc ? 0 : 1;
 }

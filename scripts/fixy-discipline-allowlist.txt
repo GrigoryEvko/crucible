@@ -45,7 +45,6 @@ include/crucible/cntp/ConnectionPoolRuntime.h
 include/crucible/cntp/Fountain.h
 include/crucible/cntp/OverlayMulticast.h
 include/crucible/cntp/PathSwap.h
-include/crucible/cntp/RoceConfig.h
 include/crucible/cntp/Tcam.h
 include/crucible/cntp/dataplane/TcEbpf.h
 include/crucible/cntp/_wip/Doca.h

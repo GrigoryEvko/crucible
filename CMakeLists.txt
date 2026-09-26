@@ -352,7 +352,6 @@ add_library(crucible STATIC
   src/cntp/PathSwap.cpp
   src/cntp/Pacing.cpp
   src/cntp/_wip/QuicTransport.cpp
-  src/cntp/RoceConfig.cpp
   src/cntp/_wip/Sharp.cpp
   src/cntp/Tcam.cpp
   src/cntp/_wip/Wireguard.cpp
