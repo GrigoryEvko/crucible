@@ -9,8 +9,8 @@
 #include <cstdint>
 
 int main() {
-    using Raw = crucible::safety::Saturated<std::uint64_t>;
-    using ClockReadBytes = crucible::safety::DetSafe<crucible::safety::DetSafeTier_v::MonotonicClockRead, Raw>;
+    using Raw = ::fixy::Saturated<std::uint64_t>;
+    using ClockReadBytes = ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, Raw>;
 
     crucible::TensorMeta meta{};
     meta.ndim = 0;

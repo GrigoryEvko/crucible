@@ -1,41 +1,27 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: calling .advance(smaller) on RegionNode::VariantCounter
-// in a constexpr context — fires Monotonic's monotonicity contract.
+// Violation: calling .advance(smaller) on RegionNode::VariantCounter,
+// which fires Monotonic's monotonicity precondition.
 //
-// Per WRAP-MerkleDag-6 (#942), RegionNode::variant_id is
-// safety::Monotonic<uint32_t> (alias `RegionNode::VariantCounter`).
-// Monotonic::advance(new_value) carries
-// pre(lattice_type::leq(peek(), new_value)) — i.e. new_value must be
-// >= current.  In constexpr context (constant evaluation), a contract
-// violation makes the expression non-constant per P1494R5 — using it
-// where a constant is required is ill-formed.
+// RegionNode::VariantCounter is ::fixy::Monotonic<uint32_t>.  Variants are
+// registered in increasing order, so the active id only moves forward.
+// advance(new_value) carries CRUCIBLE_PRE(lattice_type::leq(current,
+// new_value)).  In a constant evaluation the failed precondition reaches a
+// non-constant trap, and the evaluation fails.
 //
 // Companion fixture to neg_merkle_dag_variant_id_overflow.cpp:
-//   - This one is the boundary edge (current=10, advance(5) → 5 < 10).
-//     Catches off-by-one drift in the monotonicity predicate (e.g.
-//     a future regression that uses `>` instead of `>=`).
-//   - That one is the wide miss (bump() at UINT32_MAX → overflow).
-//     Catches "drop the overflow contract" regression.
-//
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
-// demonstrating a distinct mismatch class.  Together they pin the
-// monotonicity AND overflow guards on RegionNode::variant_id at the
-// type-system level — enforcing the "variant_id never goes backward"
-// invariant the original set_variant comment intended but had no
-// type-level witness for.
+//   - This one is the boundary edge (current = 10, advance(5)).
+//   - That one is the wide miss (bump() at UINT32_MAX).
 
 #include <crucible/MerkleDag.h>
+#include <fixy/Mutation.h>
 
 #include <cstdint>
 
-// Constexpr function that triggers the monotonicity contract.  Calling
-// it in a constant-evaluated context (the constexpr local below) makes
-// the result non-constant, hence ill-formed.
 constexpr crucible::RegionNode::VariantCounter make_bad() {
-    crucible::RegionNode::VariantCounter m{uint32_t{10}};
-    m.advance(uint32_t{5});  // pre: 5 >= 10 → false → contract failure
-    return m;
+    auto counter = ::fixy::mint_monotonic<uint32_t>(uint32_t{10});
+    counter.advance(uint32_t{5});
+    return counter;
 }
 
 int main() {

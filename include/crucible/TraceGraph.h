@@ -133,7 +133,7 @@ struct TraceGraph {
     // sentinel branches on the op count first and reads the field directly.
     [[nodiscard]] ValidContentHash computed_content_hash() const noexcept
         pre(::crucible::decide::is_non_zero(content_hash)) {
-        return ValidContentHash{content_hash};
+        return ::fixy::mint_refined<::fixy::non_zero>(content_hash);
     }
 };
 

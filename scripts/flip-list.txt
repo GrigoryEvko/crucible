@@ -72,7 +72,6 @@ include/crucible/CallSiteTable.h
 include/crucible/Cipher.h
 include/crucible/CostModel.h
 include/crucible/CrucibleContext.h
-include/crucible/MerkleDag.h
 include/crucible/Philox.h
 include/crucible/PoolAllocator.h
 include/crucible/RegionCache.h

@@ -444,7 +444,7 @@ crucible_test(test_atomic_snapshot_wait)
 crucible_test(test_cipher_wait)
 crucible_test(test_cipher_publish_tier)
 crucible_test(test_cipher_tier_promotion)
-crucible_test(test_kernel_cache_residency_heat)
+crucible_test(test_kernel_cache_levels)
 crucible_test(test_trace_ring_hot_path)
 crucible_test(test_cipher_commit_lifetime)
 crucible_test(test_atomic_snapshot_mem_order)
@@ -6012,28 +6012,21 @@ crucible_neg_compile_multi_test(neg_iter_det_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "contains_scoped_view<OffendingContainer>\\(\\)")
 
-# WRAP-MerkleDag-6 (#942) — RegionNode::VariantCounter =
-# safety::Monotonic<uint32_t>; the field's structurally
-# monotonic-forward lifecycle (0 → some non-zero N; subsequent
-# set_variant calls must monotonically advance) is now witnessed at
-# the type level.  Same companion-pair shape as the IterDet trio
-# above (#927/#928/#929) and CKernel-2 (#890):
-#   * _regression — boundary edge (current=10, advance(5) → 5 < 10).
-#     Catches off-by-one drift in Monotonic's leq predicate (e.g. a
-#     refactor that uses `>` instead of `>=`, silently admitting a
-#     downgrade from variant 10 to variant 9).
-#   * _overflow   — wide miss (bump() at UINT32_MAX), catches
-#     "drop the overflow contract" regression where bump() loses its
-#     != max() check and silently wraps 4294967295 → 0 (which would
-#     also break the monotonic invariant; the bump() contract is the
-#     only type-level defense).
-# The two fixtures together pin BOTH Monotonic mutation contracts at
-# RegionNode::variant_id's call-sites — the WRAP-MerkleDag-6 promise
-# that variant selection cannot go backward at the type level.
-crucible_neg_compile_test(neg_merkle_dag_variant_id_regression
-  "contract|leq|Monotonic|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_merkle_dag_variant_id_overflow
-  "contract|max|Monotonic|not a constant|non-constant|constexpr")
+# RegionNode::VariantCounter is the fixy Monotonic<uint32_t>: the active
+# variant moves from 0 to some non-zero id and only forward after that.
+# Two fixtures, the same shape as the detector's counter above:
+#   * _regression — boundary edge (current = 10, advance(5)).  Catches a
+#     monotonicity predicate that weakens and admits a downgrade.
+#   * _overflow   — wide miss (bump() at UINT32_MAX).  Catches a bump()
+#     that loses its != max() check and wraps to 0, which would claim
+#     that no variant is selected.
+# Each pins the mutation that failed and the value it was given.
+crucible_neg_compile_multi_test(neg_merkle_dag_variant_id_regression
+  "__builtin_trap.*is not a constant expression"
+  "Monotonic<unsigned int, std::less<unsigned int> >::advance\\(5\\)")
+crucible_neg_compile_multi_test(neg_merkle_dag_variant_id_overflow
+  "__builtin_trap.*is not a constant expression"
+  "Monotonic<unsigned int, std::less<unsigned int> >::bump\\(\\)")
 
 # ValidCKernelIdRaw is Refined<bounded_above<NUM_KERNELS - 1>, uint8_t>.
 # It is the gate at each widening of a uint8_t to a CKernelId.  The door
@@ -6195,29 +6188,22 @@ crucible_neg_compile_test(neg_publish_stage_forged_by_bit_cast
 crucible_neg_compile_test(neg_publish_stage_forged_by_lifetime_start
   "ImplicitLifetimeThroughout|constraints not satisfied")
 
-# WRAP-Serialize-6 (#1015) — ValidTraceNodeKindRaw =
-#   safety::Refined<safety::bounded_above<TraceNodeKind::TERMINAL>, uint8_t>
-# pinning the typed gate at every uint8_t → TraceNodeKind widening
-# site (Cipher deserialize via Serialize::read_header is the canonical
-# example).  HS14 mandate: ≥2 negative-compile fixtures per soundness
-# gate, each demonstrating a distinct mismatch class.
-#
-#   * neg_trace_node_kind_above_terminal.cpp — boundary edge
-#     (= TERMINAL + 1, off-by-one).  Catches drift where the bound
-#     widens from `bounded_above<TERMINAL>` to `bounded_above<TERMINAL+K>`
-#     for some K >= 1, silently admitting a byte that names no valid
-#     TraceNodeKind enumerator.
-#   * neg_trace_node_kind_uint8_max.cpp — wide miss (= UINT8_MAX).
-#     Catches "drop the bound entirely" regression where
-#     ValidTraceNodeKindRaw degenerates from
-#     `Refined<bounded_above<TERMINAL>, uint8_t>` into a plain
-#     `uint8_t` typedef; under that drift any byte is silently accepted
-#     at construction and the type-system gate that fires before any
-#     DAG traversal call ever lands disappears.
-crucible_neg_compile_test(neg_trace_node_kind_above_terminal
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_trace_node_kind_uint8_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+# ValidTraceNodeKindRaw is the fixy Refined<bounded_above<TERMINAL>,
+# uint8_t>, minted through kValidTraceNodeKindBound at every uint8_t to
+# TraceNodeKind widening site (Serialize::read_header is the canonical
+# one).  Two fixtures, distinct mismatch classes:
+#   * neg_trace_node_kind_above_terminal — boundary edge (= TERMINAL + 1).
+#     Catches a bound that widens past TERMINAL and admits a byte that
+#     names no enumerator.
+#   * neg_trace_node_kind_uint8_max — wide miss (= UINT8_MAX).  Catches a
+#     refinement that degenerates into a plain uint8_t.
+# Each pins the door, the bound and the refused value.
+crucible_neg_compile_multi_test(neg_trace_node_kind_above_terminal
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(\\(\\(uint8_t\\)\\(\\(\\(int\\)\\(\\(uint8_t\\)crucible::TraceNodeKind::TERMINAL\\)\\) \\+ 1\\)\\)\\)")
+crucible_neg_compile_multi_test(neg_trace_node_kind_uint8_max
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(255\\)")
 
 # WRAP-Serialize-4 (#1013) — CDAG_VERSION =
 #   safety::Tagged<uint32_t, source::FormatVersion>.  Disk-read
@@ -7212,19 +7198,18 @@ crucible_neg_compile_test(neg_cipher_head_zero_literal
 crucible_neg_compile_test(neg_cipher_head_default_construct
   "contract|Refined|non_zero|not a constant|non-constant|constexpr")
 
-# ─── #937 WRAP-MerkleDag-1 neg-compile tests ────────────────────────
+# ─── ValidMerkleRoot neg-compile tests ──────────────────────────────
 #
-# Per #937, ValidMerkleRoot is safety::Refined<safety::non_zero,
-# MerkleHash> and gates the parameter to Tx::commit (defense-in-depth
-# alongside computed_merkle_hash() accessor).  MerkleHash{0} is the
+# ValidMerkleRoot is the fixy Refined<non_zero, MerkleHash> and gates the
+# parameter to Tx::commit (defense-in-depth alongside the
+# computed_merkle_hash() accessor).  MerkleHash{0} is the
 # structural sentinel for "subtree never built" — committing it
 # would (1) corrupt tx_log's step-by-merkle invariant (a fresh
 # Transaction's merkle_root field is also MerkleHash{}), (2) collide
 # with TERMINAL leaves in dag_diff equality short-circuits, and (3)
 # propagate as a no-op replay key into federation round-trip flows.
 #
-# Two fixtures per HS14 mandate, demonstrating distinct mismatch
-# classes (mirroring the WRAP-Cipher-1 pattern above):
+# Two fixtures, distinct mismatch classes:
 #   * neg_merkle_root_zero_literal — explicit-literal mismatch
 #     (= MerkleHash{uint64_t{0}}).  Catches drift where a caller
 #     hand-spells a zero MerkleHash literal.
@@ -7238,16 +7223,17 @@ crucible_neg_compile_test(neg_cipher_head_default_construct
 # at the call site at compile-time via the typed alias path; the
 # existing pre clause catches it at runtime if a caller bypasses the
 # typed path.
-crucible_neg_compile_test(neg_merkle_root_zero_literal
-  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_merkle_root_default_construct
-  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+crucible_neg_compile_multi_test(neg_merkle_root_zero_literal
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsNonZero\\(\\), crucible::MerkleHash>\\(crucible::MerkleHash\\(0\\)\\)")
+crucible_neg_compile_multi_test(neg_merkle_root_default_construct
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsNonZero\\(\\), crucible::MerkleHash>\\(crucible::MerkleHash\\(\\)\\)")
 
-# ─── PROD-WRAP-6 #535 neg-compile tests ─────────────────────────────
+# ─── ValidContentHash neg-compile tests ─────────────────────────────
 #
-# Per PROD-WRAP-6 (#535), ValidContentHash is
-# safety::Refined<safety::non_zero, ContentHash> declared in
-# MerkleDag.h alongside ValidMerkleRoot.  ContentHash{0} is the
+# ValidContentHash is the fixy Refined<non_zero, ContentHash>, declared
+# in MerkleDag.h beside ValidMerkleRoot.  ContentHash{0} is the
 # structural sentinel for "this region was never folded by
 # compute_content_hash" — empty regions legitimately carry it
 # (make_region with num_ops==0), but it is never a valid
@@ -7258,9 +7244,8 @@ crucible_neg_compile_test(neg_merkle_root_default_construct
 #   * LoopNode::computed_body_content_hash (MerkleDag.h)
 #   * TraceGraph::computed_content_hash (TraceGraph.h)
 #
-# Two fixtures per HS14 mandate, mirroring the ValidMerkleRoot
-# fixture pair (the predicate non_zero is the same; only the strong-
-# hash family differs):
+# Two fixtures, mirroring the ValidMerkleRoot pair (the predicate
+# non_zero is the same; only the strong-hash family differs):
 #   * neg_content_hash_zero_literal — explicit-literal mismatch
 #     (= ContentHash{uint64_t{0}}).  Catches caller-typed-zero drift.
 #   * neg_content_hash_default_construct — NSDMI-default wide miss
@@ -7274,10 +7259,12 @@ crucible_neg_compile_test(neg_merkle_root_default_construct
 # the construction call; the pre clause catches it at the accessor
 # body's entry.  Both layers must reject for the type-level
 # invariant and the runtime path to disagree.
-crucible_neg_compile_test(neg_content_hash_zero_literal
-  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_content_hash_default_construct
-  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+crucible_neg_compile_multi_test(neg_content_hash_zero_literal
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsNonZero\\(\\), crucible::ContentHash>\\(crucible::ContentHash\\(0\\)\\)")
+crucible_neg_compile_multi_test(neg_content_hash_default_construct
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<IsNonZero\\(\\), crucible::ContentHash>\\(crucible::ContentHash\\(\\)\\)")
 
 # ─── WRAP-Transaction-6 #1065 neg-compile tests ─────────────────────
 #

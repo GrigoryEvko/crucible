@@ -367,8 +367,8 @@ inline Header read_header(Reader& r) {
     Header h{};
     h.magic = r.r<uint32_t>();
     h.version = ExternalCdagVersion{r.r<uint32_t>()};
-    h.kind = make_trace_node_kind(ValidTraceNodeKindRaw{
-        r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>)});
+    h.kind = make_trace_node_kind(::fixy::mint_refined<kValidTraceNodeKindBound>(
+        r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>)));
     uint8_t pad7[7]{};
     r.read_zero_pad(pad7);
     h.merkle_hash = MerkleHash{r.r<uint64_t>()};
@@ -653,7 +653,7 @@ inline Header read_header(Reader& r) {
     // The counter is reconstructed rather than advanced. The value on disk may
     // be zero, meaning no variant had been selected when the region was
     // written, and advancing to zero is exactly what the counter forbids.
-    std::construct_at(&node->variant_id, RegionNode::VariantCounter{variant_id});
+    std::construct_at(&node->variant_id, ::fixy::mint_monotonic<uint32_t>(variant_id));
     node->plan = plan;
     return LoadedRegionNode{node};
 }

@@ -11,15 +11,20 @@
 #include <crucible/StorageNbytes.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
-#include <crucible/fixy/Handle.h>
-#include <crucible/fixy/Perm.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Pre.h>
-
 #include <crucible/Types.h>
+#include <fixy/Bands.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/Saturated.h>
+#include <fixy/Tagged.h>
+#include <fixy/handle/PublishOnce.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
+#include <foundation/permissions/Permission.h>
 
 #include <array>
 #include <atomic>
@@ -96,7 +101,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
 // overflows, returns false — neither case can support a disjointness claim.
 template <std::size_t MaxLive>
 [[nodiscard]] constexpr bool live_intervals_disjoint_at(std::span<const TensorSlot> slots, OpIndex op) noexcept {
-    std::array<decide::Interval<std::uint64_t>, MaxLive> live{};
+    std::array<::foundation::decide::Interval<std::uint64_t>, MaxLive> live{};
     std::size_t n = 0;
     const std::uint32_t t = op.raw();
     for (TensorSlot const& s : slots) {
@@ -105,12 +110,13 @@ template <std::size_t MaxLive>
         const std::uint32_t death = s.death_op.raw();
         if (birth <= t && t <= death) {
             if (n >= MaxLive) return false;
-            if (!decide::no_overflow_sum(s.offset_bytes, s.nbytes)) return false;
+            if (!::foundation::decide::no_overflow_sum(s.offset_bytes, s.nbytes)) return false;
             live[n] = {.lo = s.offset_bytes, .hi = s.offset_bytes + s.nbytes};
             ++n;
         }
     }
-    return decide::intervals_pairwise_disjoint(std::span<const decide::Interval<std::uint64_t>>(live.data(), n));
+    return ::foundation::decide::intervals_pairwise_disjoint(
+        std::span<const ::foundation::decide::Interval<std::uint64_t>>(live.data(), n));
 }
 
 // The storage span is the sum of the per-dimension extents, not the largest
@@ -135,7 +141,7 @@ template <std::size_t MaxLive>
 // after its own screen, and re-checking ndim on that path would charge the
 // check twice for a value the caller already vouched for.
 [[nodiscard]] constexpr ::fixy::Saturated<uint64_t> compute_storage_nbytes(ExternalTensorMeta meta)
-    pre(::crucible::decide::in_range<std::uint8_t>(meta.value().ndim, std::uint8_t{0}, std::uint8_t{8})) {
+    pre(::foundation::decide::in_range<std::uint8_t>(meta.value().ndim, std::uint8_t{0}, std::uint8_t{8})) {
     return detail::compute_storage_nbytes_scalar(meta);
 }
 
@@ -175,37 +181,37 @@ struct TraceEntry {
     SlotId* input_slot_ids = nullptr;
     SlotId* output_slot_ids = nullptr;
 
-    [[nodiscard]] fixy::wrap::Borrowed<const TensorMeta, TraceEntry> input_span() const CRUCIBLE_LIFETIMEBOUND {
-        return input_metas ? fixy::wrap::Borrowed<const TensorMeta, TraceEntry>{input_metas, num_inputs}
-                           : fixy::wrap::Borrowed<const TensorMeta, TraceEntry>{};
+    [[nodiscard]] ::fixy::Borrowed<const TensorMeta, TraceEntry> input_span() const CRUCIBLE_LIFETIMEBOUND {
+        return input_metas ? ::fixy::Borrowed<const TensorMeta, TraceEntry>{input_metas, num_inputs}
+                           : ::fixy::Borrowed<const TensorMeta, TraceEntry>{};
     }
-    [[nodiscard]] fixy::wrap::Borrowed<TensorMeta, TraceEntry> input_span() CRUCIBLE_LIFETIMEBOUND {
-        return input_metas ? fixy::wrap::Borrowed<TensorMeta, TraceEntry>{input_metas, num_inputs}
-                           : fixy::wrap::Borrowed<TensorMeta, TraceEntry>{};
+    [[nodiscard]] ::fixy::Borrowed<TensorMeta, TraceEntry> input_span() CRUCIBLE_LIFETIMEBOUND {
+        return input_metas ? ::fixy::Borrowed<TensorMeta, TraceEntry>{input_metas, num_inputs}
+                           : ::fixy::Borrowed<TensorMeta, TraceEntry>{};
     }
-    [[nodiscard]] fixy::wrap::Borrowed<const TensorMeta, TraceEntry> output_span() const CRUCIBLE_LIFETIMEBOUND {
-        return output_metas ? fixy::wrap::Borrowed<const TensorMeta, TraceEntry>{output_metas, num_outputs}
-                            : fixy::wrap::Borrowed<const TensorMeta, TraceEntry>{};
+    [[nodiscard]] ::fixy::Borrowed<const TensorMeta, TraceEntry> output_span() const CRUCIBLE_LIFETIMEBOUND {
+        return output_metas ? ::fixy::Borrowed<const TensorMeta, TraceEntry>{output_metas, num_outputs}
+                            : ::fixy::Borrowed<const TensorMeta, TraceEntry>{};
     }
-    [[nodiscard]] fixy::wrap::Borrowed<TensorMeta, TraceEntry> output_span() CRUCIBLE_LIFETIMEBOUND {
-        return output_metas ? fixy::wrap::Borrowed<TensorMeta, TraceEntry>{output_metas, num_outputs}
-                            : fixy::wrap::Borrowed<TensorMeta, TraceEntry>{};
+    [[nodiscard]] ::fixy::Borrowed<TensorMeta, TraceEntry> output_span() CRUCIBLE_LIFETIMEBOUND {
+        return output_metas ? ::fixy::Borrowed<TensorMeta, TraceEntry>{output_metas, num_outputs}
+                            : ::fixy::Borrowed<TensorMeta, TraceEntry>{};
     }
-    [[nodiscard]] fixy::wrap::Borrowed<const int64_t, TraceEntry> scalar_span() const CRUCIBLE_LIFETIMEBOUND {
-        return scalar_args ? fixy::wrap::Borrowed<const int64_t, TraceEntry>{scalar_args, num_scalar_args}
-                           : fixy::wrap::Borrowed<const int64_t, TraceEntry>{};
+    [[nodiscard]] ::fixy::Borrowed<const int64_t, TraceEntry> scalar_span() const CRUCIBLE_LIFETIMEBOUND {
+        return scalar_args ? ::fixy::Borrowed<const int64_t, TraceEntry>{scalar_args, num_scalar_args}
+                           : ::fixy::Borrowed<const int64_t, TraceEntry>{};
     }
-    [[nodiscard]] fixy::wrap::Borrowed<const OpIndex, TraceEntry> trace_index_span() const CRUCIBLE_LIFETIMEBOUND {
-        return input_trace_indices ? fixy::wrap::Borrowed<const OpIndex, TraceEntry>{input_trace_indices, num_inputs}
-                                   : fixy::wrap::Borrowed<const OpIndex, TraceEntry>{};
+    [[nodiscard]] ::fixy::Borrowed<const OpIndex, TraceEntry> trace_index_span() const CRUCIBLE_LIFETIMEBOUND {
+        return input_trace_indices ? ::fixy::Borrowed<const OpIndex, TraceEntry>{input_trace_indices, num_inputs}
+                                   : ::fixy::Borrowed<const OpIndex, TraceEntry>{};
     }
-    [[nodiscard]] fixy::wrap::Borrowed<const SlotId, TraceEntry> input_slot_span() const CRUCIBLE_LIFETIMEBOUND {
-        return input_slot_ids ? fixy::wrap::Borrowed<const SlotId, TraceEntry>{input_slot_ids, num_inputs}
-                              : fixy::wrap::Borrowed<const SlotId, TraceEntry>{};
+    [[nodiscard]] ::fixy::Borrowed<const SlotId, TraceEntry> input_slot_span() const CRUCIBLE_LIFETIMEBOUND {
+        return input_slot_ids ? ::fixy::Borrowed<const SlotId, TraceEntry>{input_slot_ids, num_inputs}
+                              : ::fixy::Borrowed<const SlotId, TraceEntry>{};
     }
-    [[nodiscard]] fixy::wrap::Borrowed<const SlotId, TraceEntry> output_slot_span() const CRUCIBLE_LIFETIMEBOUND {
-        return output_slot_ids ? fixy::wrap::Borrowed<const SlotId, TraceEntry>{output_slot_ids, num_outputs}
-                               : fixy::wrap::Borrowed<const SlotId, TraceEntry>{};
+    [[nodiscard]] ::fixy::Borrowed<const SlotId, TraceEntry> output_slot_span() const CRUCIBLE_LIFETIMEBOUND {
+        return output_slot_ids ? ::fixy::Borrowed<const SlotId, TraceEntry>{output_slot_ids, num_outputs}
+                               : ::fixy::Borrowed<const SlotId, TraceEntry>{};
     }
 };
 
@@ -246,10 +252,12 @@ enum class TraceNodeKind : uint8_t {
 // A kind byte recovered from persisted state is untrusted.  A byte past
 // TERMINAL widens to an enumerator that no switch arm matches and that every
 // equality test against a real kind falls through, so control flow goes
-// silently wrong instead of failing.  Constructing this refinement is the
-// validation point, and make_trace_node_kind consumes the proof.
-using ValidTraceNodeKindRaw = ::crucible::fixy::wrap::Refined<
-    ::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>, uint8_t>;
+// silently wrong instead of failing.  Minting this refinement is the
+// validation point, and make_trace_node_kind consumes the proof.  The one
+// door is ::fixy::mint_refined<kValidTraceNodeKindBound>(byte).
+inline constexpr auto kValidTraceNodeKindBound = ::fixy::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>;
+
+using ValidTraceNodeKindRaw = ::fixy::Refined<kValidTraceNodeKindBound, uint8_t>;
 
 [[nodiscard, gnu::const]] inline constexpr TraceNodeKind make_trace_node_kind(ValidTraceNodeKindRaw raw) noexcept {
     return static_cast<TraceNodeKind>(raw.value());
@@ -269,9 +277,9 @@ struct TraceNode {
     // accessor makes "the hash is computed" a precondition instead.  It spells
     // the return type out because the alias for it needs MerkleHash complete
     // and so is declared below.
-    [[nodiscard]] crucible::fixy::wrap::Refined<crucible::fixy::wrap::non_zero, MerkleHash>
-    computed_merkle_hash() const noexcept pre(::crucible::decide::is_non_zero(merkle_hash)) {
-        return crucible::fixy::wrap::Refined<crucible::fixy::wrap::non_zero, MerkleHash>{merkle_hash};
+    [[nodiscard]] ::fixy::Refined<::fixy::non_zero, MerkleHash>
+    computed_merkle_hash() const noexcept pre(::foundation::decide::is_non_zero(merkle_hash)) {
+        return ::fixy::mint_refined<::fixy::non_zero>(merkle_hash);
     }
 };
 
@@ -283,7 +291,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceNode);
 // both hashing to zero compare equal, so a zero root is accepted as proof of
 // equivalence with anything.  A caller that persists or transmits a root
 // takes this witness instead.
-using ValidMerkleRoot = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::non_zero, MerkleHash>;
+using ValidMerkleRoot = ::fixy::Refined<::fixy::non_zero, MerkleHash>;
 
 [[nodiscard, gnu::const]] inline constexpr MerkleHash make_merkle_root(ValidMerkleRoot raw) noexcept {
     return raw.value();
@@ -294,7 +302,7 @@ using ValidMerkleRoot = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::
 // hash is a key it must be non-zero: two unrelated regions that both lack a
 // computed hash would otherwise share a cache slot, and a zero mixed into a
 // parent merkle hash is a no-op that hides the missing body.
-using ValidContentHash = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::non_zero, ContentHash>;
+using ValidContentHash = ::fixy::Refined<::fixy::non_zero, ContentHash>;
 
 [[nodiscard, gnu::const]] inline constexpr ContentHash make_content_hash(ValidContentHash raw) noexcept {
     return raw.value();
@@ -306,7 +314,7 @@ struct RegionNode : TraceNode {
     // One writer publishes the compiled kernel once and every reader
     // acquire-loads it.  sizeof(PublishOnce<T*>) equals sizeof(atomic<T*>),
     // so the 80-byte layout below holds.
-    crucible::fixy::handle::PublishOnce<CompiledKernel> compiled;
+    ::fixy::handle::PublishOnce<CompiledKernel> compiled;
 
     TraceEntry* ops = nullptr;
     uint32_t num_ops = 0;
@@ -323,8 +331,8 @@ struct RegionNode : TraceNode {
     // carries a larger id and the counter only ever moves forward.  The
     // counter is unbounded rather than capped, because the ceiling is the
     // runtime cache population and not a compile-time table size.
-    using VariantCounter = ::crucible::fixy::wrap::Monotonic<uint32_t>;
-    VariantCounter variant_id{0u};
+    using VariantCounter = ::fixy::Monotonic<uint32_t>;
+    VariantCounter variant_id = ::fixy::mint_monotonic<uint32_t>(0u);
 
     MemoryPlan* plan = nullptr;  // null until liveness analysis runs
 
@@ -341,14 +349,14 @@ struct RegionNode : TraceNode {
     // built from zero ops hashes to zero by design, and this accessor
     // refuses that case: those callers read content_hash directly.
     [[nodiscard]] ValidContentHash computed_content_hash() const noexcept
-        pre(::crucible::decide::is_non_zero(content_hash)) {
-        return ValidContentHash{content_hash};
+        pre(::foundation::decide::is_non_zero(content_hash)) {
+        return ::fixy::mint_refined<::fixy::non_zero>(content_hash);
     }
 
     // There is no way back to zero.  The non-zero gate sits on this boundary
     // rather than only inside the counter so that a caller passing zero is
     // reported against set_variant.
-    void set_variant(uint32_t new_id) noexcept pre(::crucible::decide::is_non_zero(new_id)) {
+    void set_variant(uint32_t new_id) noexcept pre(::foundation::decide::is_non_zero(new_id)) {
         variant_id.advance(new_id);
         CRUCIBLE_POST(0, variant_id.get() == new_id);
     }
@@ -421,8 +429,8 @@ struct LoopNode : TraceNode {
     // factory for a LoopNode folds a non-empty body chain, so zero means the
     // body was never populated.
     [[nodiscard]] ValidContentHash computed_body_content_hash() const noexcept
-        pre(::crucible::decide::is_non_zero(body_content_hash)) {
-        return ValidContentHash{body_content_hash};
+        pre(::foundation::decide::is_non_zero(body_content_hash)) {
+        return ::fixy::mint_refined<::fixy::non_zero>(body_content_hash);
     }
 };
 
@@ -525,7 +533,7 @@ public:
     // zero would produce the same hash as the NoRecipe path — exactly the
     // confusion the parameter exists to prevent.  UINT64_MAX is reserved as
     // the end-of-region marker and can never be a real recipe hash.
-    explicit ContentHashFold(const NumericalRecipe& recipe) noexcept pre(::crucible::decide::is_non_zero(recipe.hash))
+    explicit ContentHashFold(const NumericalRecipe& recipe) noexcept pre(::foundation::decide::is_non_zero(recipe.hash))
         pre(!recipe.hash.is_sentinel()) {
         [[assume(recipe.hash.raw() != 0)]];
         [[assume(recipe.hash.raw() != UINT64_MAX)]];
@@ -600,7 +608,7 @@ private:
 
 [[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops,
                                                                  const NumericalRecipe* recipe = nullptr) noexcept
-    pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
+    pre(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash))
         pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
     ContentHashFold fold =
         (recipe == nullptr) ? ContentHashFold{ContentHashFold::NoRecipe{}} : ContentHashFold{*recipe};
@@ -695,8 +703,25 @@ private:
 // pair, which wastes space and loses nothing.
 class CRUCIBLE_OWNER KernelCache {
 public:
-    struct KernelCompileTag {};
+    // A slot write touches only the slot's three atomics in memory, so the
+    // writer token incurs no effect.
+    struct KernelCompileTag {
+        using permission_row = ::foundation::effects::Row<>;
+    };
     struct KernelCacheReaderTag {};
+
+    // The three levels of the cache, ordered by portability: the
+    // vendor-neutral form, the form for one vendor family, and the
+    // compiled bytes for one chip.  A value read from or published to a
+    // level carries that level as its provenance tag.  The levels are not
+    // residency classes, and no level stands in for another, so the tags
+    // have no conversion between them.
+    struct VendorNeutralLevel {};
+    struct VendorFamilyLevel {};
+    struct ChipLevel {};
+
+    template <typename Level, typename T>
+    using AtLevel = ::fixy::Tagged<T, Level>;
 
     struct KernelCacheSlotSnapshot {
         uint64_t content_hash = 0;
@@ -730,9 +755,10 @@ public:
 
         class WriterHandle {
             KernelCacheSlot* slot_ = nullptr;
-            [[no_unique_address]] fixy::perm::Permission<writer_tag> perm_;
+            [[no_unique_address]] ::foundation::permissions::Permission<writer_tag> perm_;
 
-            constexpr WriterHandle(KernelCacheSlot& slot, fixy::perm::Permission<writer_tag>&& perm) noexcept
+            constexpr WriterHandle(KernelCacheSlot& slot,
+                                   ::foundation::permissions::Permission<writer_tag>&& perm) noexcept
                 : slot_{&slot}, perm_{std::move(perm)} {}
 
             friend class KernelCacheSlot;
@@ -749,7 +775,7 @@ public:
             constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
 
             void publish(snapshot_type const& snapshot) noexcept
-                pre(::crucible::decide::is_non_zero(snapshot.content_hash)) pre(snapshot.kernel != nullptr) {
+                pre(::foundation::decide::is_non_zero(snapshot.content_hash)) pre(snapshot.kernel != nullptr) {
                 // The content hash is already claimed by CAS before this
                 // endpoint exists.  The two stores must stay in this order:
                 // the kernel store is what makes the row visible to readers.
@@ -800,7 +826,7 @@ public:
             }
         };
 
-        [[nodiscard]] WriterHandle writer(fixy::perm::Permission<writer_tag>&& perm) noexcept {
+        [[nodiscard]] WriterHandle writer(::foundation::permissions::Permission<writer_tag>&& perm) noexcept {
             return WriterHandle{*this, std::move(perm)};
         }
 
@@ -819,7 +845,7 @@ public:
         }
 
         [[nodiscard]] CRUCIBLE_INLINE bool try_claim_content_hash(uint64_t& expected, uint64_t desired) noexcept
-            pre(::crucible::decide::is_non_zero(desired)) {
+            pre(::foundation::decide::is_non_zero(desired)) {
             return content_hash_.compare_exchange_strong(expected, desired, std::memory_order_acq_rel);
         }
 
@@ -851,7 +877,7 @@ public:
     explicit KernelCache(uint32_t capacity = 4096)
         // A power of two makes `(slot + probe) & mask` the wrap-around, and
         // the 2^31 ceiling keeps `slot_index + probe` inside uint32_t.
-        pre(::crucible::decide::is_power_of_two_le<std::uint32_t>(capacity, std::uint32_t{1u << 31}))
+        pre(::foundation::decide::is_power_of_two_le<std::uint32_t>(capacity, std::uint32_t{1u << 31}))
         : capacity_(capacity) {
         // The clause above is armed in a release build as well as a debug
         // one: the release preset evaluates contracts under the `observe`
@@ -895,7 +921,7 @@ public:
     // because RowHash{0} is a real key that can coexist with any other.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash,
                                                                                 RowHash row_hash) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash)) {
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash)) {
         [[assume(content_hash.raw() != 0)]];
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
@@ -935,8 +961,8 @@ public:
     // guard: RowHash{0} is a real key.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] std::expected<void, InsertError>
     insert(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash))
-            pre(::crucible::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash))
+            pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
         const uint32_t mask = capacity_ - 1;
@@ -946,7 +972,7 @@ public:
             uint64_t expected = 0;
             // A successful CAS claims the slot for this thread.
             if (entry.try_claim_content_hash(expected, lookup_hash)) {
-                auto writer = entry.writer(fixy::perm::mint_permission_root<KernelCompileTag>());
+                auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
                 writer.publish(KernelCacheSlotSnapshot{
                     .content_hash = lookup_hash,
                     .row_hash = lookup_row,
@@ -973,7 +999,8 @@ public:
                         // Variant update: the row stays pinned and only the
                         // kernel changes, so a concurrent reader observes one
                         // kernel or the other and both are valid.
-                        auto writer = entry.writer(fixy::perm::mint_permission_root<KernelCompileTag>());
+                        auto writer =
+                            entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
                         writer.publish_kernel_variant(kernel);
                         return {};
                     }
@@ -983,75 +1010,77 @@ public:
         return std::unexpected(InsertError::TableFull);
     }
 
-    // The cache is three tiers: L1 is the vendor-neutral working set held in
-    // memory, L2 the per-vendor-family store, L3 the per-chip archive of
-    // compiled bytes.  Only L1 has a backing store.  The other two exist at
-    // the type level so call sites already speak in tiers.  Their lookups
-    // find nothing and their publishes report NotYetImplemented, which is
-    // what a caller must branch on — a vacuous success would let a path that
-    // depends on persistence miss every later lookup in silence.
+    // The cache has three levels, ordered by portability: L1 holds the
+    // vendor-neutral form, L2 the form for one vendor family, and L3 the
+    // compiled bytes for one chip.  Only L1 has a backing store, the table
+    // above.  The other two exist at the type level so call sites already
+    // name a level.  Their lookups find nothing and their publishes report
+    // NotYetImplemented, which is what a caller must branch on.  A vacuous
+    // success would let a path that depends on persistence miss every later
+    // lookup in silence.
     //
-    // Pinning the tier in the return type is what stops a value read from the
-    // cold archive being handed to a path that requires a resident one.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] fixy::wrap::residency_heat::Hot<CompiledKernel*>
+    // The level in the return type stops a value from one level from being
+    // handed to a path that requires another.  The level is where the value
+    // came from, not how near it is to the core, so it is a provenance tag
+    // and not a residency class.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] AtLevel<VendorNeutralLevel, CompiledKernel*>
     lookup_l1(ContentHash content_hash, RowHash row_hash) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash)) {
-        return fixy::wrap::residency_heat::Hot<CompiledKernel*>{lookup(content_hash, row_hash)};
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash)) {
+        return ::fixy::mint_tagged<VendorNeutralLevel>(lookup(content_hash, row_hash));
     }
 
-    // The preconditions on the two tiers below match L1's even though the
+    // The preconditions on the two levels below match L1's even though the
     // bodies ignore their arguments: a backing store added later inherits the
     // contract, whereas relaxing it later would have to be renegotiated at
     // every call site.
-    [[nodiscard]] fixy::wrap::residency_heat::Warm<CompiledKernel*> lookup_l2(ContentHash content_hash,
-                                                                              RowHash /*row_hash*/) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash)) {
+    [[nodiscard]] AtLevel<VendorFamilyLevel, CompiledKernel*> lookup_l2(ContentHash content_hash,
+                                                                        RowHash /*row_hash*/) const noexcept
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash)) {
         (void)content_hash;
-        return fixy::wrap::residency_heat::Warm<CompiledKernel*>{nullptr};
+        return ::fixy::mint_tagged<VendorFamilyLevel>(static_cast<CompiledKernel*>(nullptr));
     }
 
-    [[nodiscard]] fixy::wrap::residency_heat::Cold<CompiledKernel*> lookup_l3(ContentHash content_hash,
-                                                                              RowHash /*row_hash*/) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash)) {
+    [[nodiscard]] AtLevel<ChipLevel, CompiledKernel*> lookup_l3(ContentHash content_hash,
+                                                                RowHash /*row_hash*/) const noexcept
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash)) {
         (void)content_hash;
-        return fixy::wrap::residency_heat::Cold<CompiledKernel*>{nullptr};
+        return ::fixy::mint_tagged<ChipLevel>(static_cast<CompiledKernel*>(nullptr));
     }
 
     // A caller derives row_hash by projecting a typed effect row, so that the
     // cache key stays expressible in the row vocabulary.  A literal RowHash
     // is accepted for the row-blind baseline of RowHash{0}.
     //
-    // Both hash guards are needed here and on the two tiers below: UINT64_MAX
+    // Both hash guards are needed here and on the two levels below: UINT64_MAX
     // is non-zero, and zero is not the reserved sentinel.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
-    fixy::wrap::residency_heat::Hot<std::expected<void, InsertError>>
+    AtLevel<VendorNeutralLevel, std::expected<void, InsertError>>
     publish_l1(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::crucible::decide::is_non_zero(content_hash))
-            pre(::crucible::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
-        return fixy::wrap::residency_heat::Hot<std::expected<void, InsertError>>{
-            insert(content_hash, row_hash, kernel)};
+        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash))
+            pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
+        return ::fixy::mint_tagged<VendorNeutralLevel>(insert(content_hash, row_hash, kernel));
     }
 
     [[nodiscard]]
-    fixy::wrap::residency_heat::Warm<std::expected<void, InsertError>>
+    AtLevel<VendorFamilyLevel, std::expected<void, InsertError>>
     publish_l2(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept
-        pre(::crucible::decide::is_non_zero(content_hash)) pre(::crucible::decide::not_sentinel_hash(content_hash))
-            pre(kernel != nullptr) {
+        pre(::foundation::decide::is_non_zero(content_hash))
+            pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
         (void)content_hash;
         (void)kernel;
-        return fixy::wrap::residency_heat::Warm<std::expected<void, InsertError>>{
-            std::unexpected(InsertError::NotYetImplemented)};
+        return ::fixy::mint_tagged<VendorFamilyLevel>(
+            std::expected<void, InsertError>{std::unexpected(InsertError::NotYetImplemented)});
     }
 
     [[nodiscard]]
-    fixy::wrap::residency_heat::Cold<std::expected<void, InsertError>>
+    AtLevel<ChipLevel, std::expected<void, InsertError>>
     publish_l3(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept
-        pre(::crucible::decide::is_non_zero(content_hash)) pre(::crucible::decide::not_sentinel_hash(content_hash))
-            pre(kernel != nullptr) {
+        pre(::foundation::decide::is_non_zero(content_hash))
+            pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
         (void)content_hash;
         (void)kernel;
-        return fixy::wrap::residency_heat::Cold<std::expected<void, InsertError>>{
-            std::unexpected(InsertError::NotYetImplemented)};
+        return ::fixy::mint_tagged<ChipLevel>(
+            std::expected<void, InsertError>{std::unexpected(InsertError::NotYetImplemented)});
     }
 
     // Relaxed: an informational counter that nothing orders against.
@@ -1062,7 +1091,7 @@ public:
     // to UINT32_MAX on an unconstructed cache.
     [[nodiscard]] SlotState diag_slot_state(uint32_t slot_index) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(capacity_ > 0u);
-        CRUCIBLE_PRE(::crucible::decide::in_range<uint32_t>(slot_index, 0u, capacity_ - 1u));
+        CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(slot_index, 0u, capacity_ - 1u));
         const KernelCacheSlot& entry = table_[slot_index];
         return classify_(entry.content_hash_.load(std::memory_order_acquire),
                          entry.kernel_.load(std::memory_order_acquire));
@@ -1125,7 +1154,7 @@ private:
 // kernel to either caller.
 [[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops) noexcept
-    pre(::crucible::decide::valid_span(num_ops, ops)) {
+    pre(::foundation::decide::valid_span(num_ops, ops)) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -1139,15 +1168,15 @@ private:
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(node, node->ops == ops);
     CRUCIBLE_POST(node, node->num_ops == num_ops);
-    CRUCIBLE_POST(node, ::crucible::decide::implies(num_ops > 0u, node->content_hash.raw() != 0));
+    CRUCIBLE_POST(node, ::foundation::decide::implies(num_ops > 0u, node->content_hash.raw() != 0));
     return node;
 }
 
 // For a caller that has already folded the hash while streaming the ops.
 [[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops, ContentHash precomputed_hash) noexcept
-    pre(::crucible::decide::valid_span(num_ops, ops))
-        pre(::crucible::decide::is_non_zero(precomputed_hash) || num_ops == 0) {
+    pre(::foundation::decide::valid_span(num_ops, ops))
+        pre(::foundation::decide::is_non_zero(precomputed_hash) || num_ops == 0) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -1169,8 +1198,8 @@ private:
 // than accepted, because the overload above already covers that case.
 [[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
                                              uint32_t num_ops, const NumericalRecipe* recipe) noexcept
-    pre(::crucible::decide::valid_span(num_ops, ops)) pre(recipe != nullptr)
-        pre(::crucible::decide::is_non_zero(recipe->hash)) pre(!recipe->hash.is_sentinel()) {
+    pre(::foundation::decide::valid_span(num_ops, ops)) pre(recipe != nullptr)
+        pre(::foundation::decide::is_non_zero(recipe->hash)) pre(!recipe->hash.is_sentinel()) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -1182,7 +1211,7 @@ private:
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(node, node->ops == ops);
     CRUCIBLE_POST(node, node->num_ops == num_ops);
-    CRUCIBLE_POST(node, ::crucible::decide::implies(num_ops > 0u, node->content_hash.raw() != 0));
+    CRUCIBLE_POST(node, ::foundation::decide::implies(num_ops > 0u, node->content_hash.raw() != 0));
     return node;
 }
 
@@ -1199,7 +1228,7 @@ private:
 [[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode* body,
                                          ContentHash body_content_hash, FeedbackEdge* feedback, uint16_t num_feedback,
                                          LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept
-    pre(body != nullptr) pre(::crucible::decide::valid_span(num_feedback, feedback))
+    pre(body != nullptr) pre(::foundation::decide::valid_span(num_feedback, feedback))
     // A convergence distance is a finite number that cannot be negative, and
     // every bit of epsilon reaches the termination hash through a bit_cast,
     // so two loops that behave identically would otherwise hash differently.
@@ -1307,7 +1336,7 @@ inline void recompute_merkle(TraceNode* node) {
 // different things.
 [[nodiscard]] inline TraceNode* find_merge_point(std::span<TraceEntry> new_ops, TraceNode* existing_continuation,
                                                  const NumericalRecipe* recipe)
-    pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
+    pre(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash))
         pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
     constexpr uint32_t MAX_REGIONS = 1024;
     RegionNode* existing_regions[MAX_REGIONS];
@@ -1362,7 +1391,7 @@ inline void recompute_merkle(TraceNode* node) {
                                             int64_t old_guard_value, int64_t new_guard_value, Guard guard,
                                             TraceNode* existing_suffix, const NumericalRecipe* recipe)
     pre(divergence_point != nullptr) pre(old_guard_value != new_guard_value)
-        pre(recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
+        pre(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash))
             pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
     auto* new_region =
         (recipe == nullptr) ? make_region(a, arena, new_ops, new_n) : make_region(a, arena, new_ops, new_n, recipe);
