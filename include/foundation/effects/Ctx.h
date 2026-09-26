@@ -362,8 +362,9 @@ public:
     }
 
     // The part that inlines is a relaxed load, a comparison and a branch.
-    // The claim and the failure report sit out of line and cold.
-    [[nodiscard]] CRUCIBLE_INLINE constexpr auto mint_producer_context() noexcept
+    // The claim and the failure report sit out of line and cold.  The body
+    // reads the thread identity and an atomic, so it is not constexpr.
+    [[nodiscard]] CRUCIBLE_INLINE auto mint_producer_context() noexcept  // MINT-PATTERN-OK: reads the thread id
         -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
         const auto current_tid = std::this_thread::get_id();
         if (holder_.load(std::memory_order_relaxed) != current_tid) [[unlikely]]
