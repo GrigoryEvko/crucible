@@ -99,42 +99,30 @@ struct AfXdpConfig {
 
 using DeclaredAfXdpConfig = ::fixy::Tagged<AfXdpConfig, ::fixy::tags::source::AfXdp>;
 
-namespace detail::af_xdp {
-
-// The one admission shape: refuse a value the predicate rejects with the
-// error the caller names, and mint the refined value for one it admits.
-template <auto Pred>
-[[nodiscard]] constexpr std::expected<::fixy::Refined<Pred, std::uint32_t>, AfXdpError>
-admit(std::uint32_t value, AfXdpError refusal) noexcept {
-    if (!Pred(value)) {
-        return std::unexpected(refusal);
-    }
-    return ::fixy::mint_refined<Pred>(value);
-}
-
-}  // namespace detail::af_xdp
+// Each admission refuses a value the predicate rejects with the error it
+// names, and mints the refined value for one it admits.
 
 [[nodiscard]] constexpr std::expected<AfXdpIfIndex, AfXdpError> admit_af_xdp_ifindex(std::uint32_t ifindex) noexcept {
-    return detail::af_xdp::admit<::fixy::positive>(ifindex, AfXdpError::InvalidIfIndex);
+    return ::fixy::admit_refined<::fixy::positive>(ifindex, AfXdpError::InvalidIfIndex);
 }
 
 [[nodiscard]] constexpr std::expected<AfXdpQueueId, AfXdpError> admit_af_xdp_queue_id(std::uint32_t queue_id) noexcept {
-    return detail::af_xdp::admit<af_xdp_queue_id_range>(queue_id, AfXdpError::InvalidQueueId);
+    return ::fixy::admit_refined<af_xdp_queue_id_range>(queue_id, AfXdpError::InvalidQueueId);
 }
 
 [[nodiscard]] constexpr std::expected<AfXdpFrameSize, AfXdpError>
 admit_af_xdp_frame_size(std::uint32_t bytes) noexcept {
-    return detail::af_xdp::admit<af_xdp_frame_bytes>(bytes, AfXdpError::InvalidFrameSize);
+    return ::fixy::admit_refined<af_xdp_frame_bytes>(bytes, AfXdpError::InvalidFrameSize);
 }
 
 [[nodiscard]] constexpr std::expected<AfXdpFrameCount, AfXdpError>
 admit_af_xdp_frame_count(std::uint32_t frames) noexcept {
-    return detail::af_xdp::admit<af_xdp_ring_depth>(frames, AfXdpError::InvalidFrameCount);
+    return ::fixy::admit_refined<af_xdp_ring_depth>(frames, AfXdpError::InvalidFrameCount);
 }
 
 [[nodiscard]] constexpr std::expected<AfXdpRingEntries, AfXdpError>
 admit_af_xdp_ring_entries(std::uint32_t entries) noexcept {
-    return detail::af_xdp::admit<af_xdp_ring_depth>(entries, AfXdpError::InvalidRingSize);
+    return ::fixy::admit_refined<af_xdp_ring_depth>(entries, AfXdpError::InvalidRingSize);
 }
 
 // Two powers of two multiply to a power of two, so the product needs no

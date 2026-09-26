@@ -159,40 +159,28 @@ struct CalibrationResult {
     CalibratedValue<std::uint16_t> entry_count{};
 };
 
-namespace detail {
-
-// Every admission below is one refinement door: the predicate runs, a
-// refused value reports its own error, and an admitted one is minted
-// through the checked door.
-template <auto Pred, typename T>
-[[nodiscard]] constexpr std::expected<::fixy::Refined<Pred, T>, CalibrationError>
-admit_refined(T value, CalibrationError refusal) noexcept {
-    if (!Pred(value)) {
-        return std::unexpected(refusal);
-    }
-    return ::fixy::mint_refined<Pred>(value);
-}
-
-}  // namespace detail
+// Every admission below is one refinement door, ::fixy::admit_refined:
+// the predicate runs, a refused value reports its own error, and an
+// admitted one is minted through the checked door.
 
 [[nodiscard]] constexpr std::expected<CalibrationIterations, CalibrationError>
 admit_calibration_iterations(std::uint32_t iterations) noexcept {
-    return detail::admit_refined<calibration_iterations_bound>(iterations, CalibrationError::InvalidIterations);
+    return ::fixy::admit_refined<calibration_iterations_bound>(iterations, CalibrationError::InvalidIterations);
 }
 
 [[nodiscard]] constexpr std::expected<WarmupIterations, CalibrationError>
 admit_warmup_iterations(std::uint32_t iterations) noexcept {
-    return detail::admit_refined<warmup_iterations_bound>(iterations, CalibrationError::InvalidWarmupIterations);
+    return ::fixy::admit_refined<warmup_iterations_bound>(iterations, CalibrationError::InvalidWarmupIterations);
 }
 
 [[nodiscard]] constexpr std::expected<TrimBasisPoints, CalibrationError>
 admit_trim_basis_points(std::uint16_t basis_points) noexcept {
-    return detail::admit_refined<trim_basis_points_bound>(basis_points, CalibrationError::InvalidTrimBasisPoints);
+    return ::fixy::admit_refined<trim_basis_points_bound>(basis_points, CalibrationError::InvalidTrimBasisPoints);
 }
 
 [[nodiscard]] constexpr std::expected<RuntimeBudgetMs, CalibrationError>
 admit_runtime_budget_ms(std::uint32_t runtime_ms) noexcept {
-    return detail::admit_refined<runtime_budget_ms_bound>(runtime_ms, CalibrationError::InvalidRuntimeBudgetMs);
+    return ::fixy::admit_refined<runtime_budget_ms_bound>(runtime_ms, CalibrationError::InvalidRuntimeBudgetMs);
 }
 
 // The count arrives as the width a bench harness counts in, so the range
@@ -203,23 +191,23 @@ admit_sample_count(std::uint32_t samples) noexcept {
     if (samples > std::numeric_limits<std::uint16_t>::max()) {
         return std::unexpected(CalibrationError::InvalidSampleCount);
     }
-    return detail::admit_refined<measured_sample_count>(static_cast<std::uint16_t>(samples),
+    return ::fixy::admit_refined<measured_sample_count>(static_cast<std::uint16_t>(samples),
                                                         CalibrationError::InvalidSampleCount);
 }
 
 [[nodiscard]] constexpr std::expected<CalibrationLatencyQuantiles, CalibrationError>
 admit_latency_quantiles(LatencyQuantiles q) noexcept {
-    return detail::admit_refined<calibration_quantiles_valid>(q, CalibrationError::InvalidLatencyQuantiles);
+    return ::fixy::admit_refined<calibration_quantiles_valid>(q, CalibrationError::InvalidLatencyQuantiles);
 }
 
 [[nodiscard]] constexpr std::expected<CalibratedThroughput, CalibrationError>
 admit_throughput_per_sec(double throughput) noexcept {
-    return detail::admit_refined<finite_positive_throughput>(throughput, CalibrationError::InvalidThroughput);
+    return ::fixy::admit_refined<finite_positive_throughput>(throughput, CalibrationError::InvalidThroughput);
 }
 
 [[nodiscard]] constexpr std::expected<DriftBasisPoints, CalibrationError>
 admit_drift_basis_points(std::uint16_t basis_points) noexcept {
-    return detail::admit_refined<drift_basis_points_bound>(basis_points, CalibrationError::InvalidDriftBasisPoints);
+    return ::fixy::admit_refined<drift_basis_points_bound>(basis_points, CalibrationError::InvalidDriftBasisPoints);
 }
 
 [[nodiscard]] constexpr bool should_recalibrate(DriftSignal signal) noexcept {

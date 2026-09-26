@@ -820,6 +820,15 @@ fixy_neg_compile_test(neg_refined_mint_predicate_not_invocable
   "constraints not satisfied"
   "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = .*; T = int\\]")
 
+# The fallible door carries the same predicate gate as the checked mint,
+# and it takes its refusal as a scoped enum only.
+fixy_neg_compile_test(neg_refined_admit_predicate_not_invocable
+  "no matching function for call to .admit_refined<fixy::non_null>\\(int, Refusal\\)."
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = fixy::IsNonNull\\{\\}; T = int\\]")
+fixy_neg_compile_test(neg_refined_admit_refusal_not_scoped_enum
+  "no matching function for call to .admit_refined<fixy::positive>\\(int, int\\)."
+  "the expression .is_scoped_enum_v<Error> \\[with Error = int\\]. evaluated to .false.")
+
 # The sealed checked mint reaches the same consteval trap through its
 # own door.
 fixy_neg_compile_test(neg_refined_sealed_mint_predicate_fails_at_consteval
