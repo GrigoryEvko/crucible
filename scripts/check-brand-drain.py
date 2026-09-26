@@ -31,13 +31,14 @@ WHAT READS THE SITES
     The guard reads the parse tree of the pinned tree-sitter kit
     (scripts/tsast.py).  It reads each template_type and template_function
     node that names a branded template, and the named arguments of its
-    list.  A comment, a string literal and a raw string hold no node.  A
-    list on several lines is one node.  A macro body is one preproc_arg of
-    raw text, and a file in tsast.UNPARSEABLE has no tree.  The guard reads
-    those with the lexer of scripts/cxx_lex.py, and it counts the arguments
-    of each list itself.  The guard cannot read a list there that does not
-    close, and that list fails.  An alias counts one time, at the alias, and
-    not at each use.
+    list.  An argument names the erased brand when its own final name is
+    DefaultBrand, so Wrap<DefaultBrand> in the brand position is a brand of
+    its own.  A comment, a string literal and a raw string hold no node.  A
+    list on several lines is one node.  The body of each #define is parsed
+    as a fragment (tsast.macro_bodies), and its sites are read from that
+    tree.  A body that does not parse and spells a branded name followed by
+    `<` is unreadable, and it fails.  An alias counts one time, at the
+    alias, and not at each use.
 
 Usage
     check-brand-drain.py              compare the tree with the ledger
@@ -55,7 +56,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -63,7 +63,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402
 import tsast  # noqa: E402
 
 ROOTS = ("include/foundation", "include/fixy", "test/foundation", "test/fixy")
@@ -71,8 +70,8 @@ TEMPLATE_ROOT = "include"
 LEDGER = "scripts/brand-drain.txt"
 SUFFIXES = (".h", ".cpp")
 BRAND_PARAMETER = "Brand"
+ERASED_BRAND = "DefaultBrand"
 SUPERSEDED_PREFIX = "_"
-ERASED = re.compile(r"\bDefaultBrand\b")
 LEDGER_HEADER = (
     "# scripts/brand-drain.txt — the sites on the erased brand, one count per\n"
     "# file.  scripts/check-brand-drain.py reads this ledger.  A count can only\n"
@@ -103,39 +102,18 @@ class Site:
     name: str
 
 
-def argument_count(text: str, start: int) -> tuple[int | None, int]:
-    """Count the top-level arguments of the list that opens at text[start] == '<'.
+def names_erased_brand(node: tsast.Node) -> bool:
+    """Return True when a template argument or a parameter default is the erased brand itself.
 
-    `->` does not close the list, and a bracketed argument keeps its commas.
-    The count is incorrect for a comparison inside the list.  The parse tree
-    prevents that error, so this count reads only raw text.
-
-    Complexity: linear in the length of the list.
-
-    Returns:
-        (count, index of the closing '>'), or (None, start) when the list does not close
+    The final name of the node decides, so `::foundation::brand::DefaultBrand`
+    counts, and `Wrap<DefaultBrand>` is a brand of its own.  A type_descriptor
+    is read through its `type` field.
     """
-    depth, count, index = 0, 1, start
-    while index < len(text):
-        char = text[index]
-        if char == "<":
-            depth += 1
-        elif char == ">" and not (index > 0 and text[index - 1] == "-"):
-            depth -= 1
-            if depth == 0:
-                return count, index
-        elif char == "," and depth == 1:
-            count += 1
-        elif char in "([{":
-            close = {"(": ")", "[": "]", "{": "}"}[char]
-            inner = 1
-            index += 1
-            while index < len(text) and inner:
-                inner += (text[index] == char) - (text[index] == close)
-                index += 1
-            continue
-        index += 1
-    return None, start
+    target = node.child_by_field("type") if node.type == "type_descriptor" else node
+    if target is None:
+        return False
+    parts = tsast.qualified_parts(target)
+    return parts is not None and parts[1][-1:] == (ERASED_BRAND,)
 
 
 def parameter_name(node: tsast.Node) -> str | None:
@@ -150,13 +128,10 @@ def parameter_name(node: tsast.Node) -> str | None:
     return None
 
 
-def parameter_default(node: tsast.Node) -> str:
-    """Return the default argument text of one template parameter, or an empty string."""
-    for field in ("default_type", "default_value"):
-        value = node.child_by_field(field)
-        if value is not None:
-            return value.text
-    return ""
+def defaults_to_erased_brand(node: tsast.Node) -> bool:
+    """Return True when the default of one template parameter is the erased brand."""
+    default = node.child_by_field("default_type")
+    return default is not None and names_erased_brand(default)
 
 
 def declared_template(declaration: tsast.Node) -> str | None:
@@ -175,7 +150,7 @@ def declared_template(declaration: tsast.Node) -> str | None:
 def branded_templates(root: Path) -> tuple[dict[str, int], list[str]]:
     """Derive each branded template under include/ and the position of its brand.
 
-    Complexity: linear in the size of the files that hold the bytes `Brand`.
+    Complexity: linear in the size of the headers under include/.
 
     Returns:
         The position of the brand for each template name, and one line for
@@ -186,24 +161,23 @@ def branded_templates(root: Path) -> tuple[dict[str, int], list[str]]:
     """
     base = root / TEMPLATE_ROOT
     files = sorted(path for path in base.rglob("*") if path.is_file() and path.suffix in SUFFIXES
-                   and not path.name.startswith(SUPERSEDED_PREFIX) and b"Brand" in path.read_bytes()) \
+                   and not path.name.startswith(SUPERSEDED_PREFIX) and tsast.is_in_cpp_scope(path.relative_to(root))) \
         if base.is_dir() else []
     positions: dict[str, set[int]] = {}
     failures: list[str] = []
     for tree in tsast.parse(files, strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                failures.append(f"{rel}: the parser cannot read this file.  Its branded templates are unknown")
+            failures.append(f"{rel}: the parser cannot read this file.  Its branded templates are unknown")
             continue
         for declaration in tree.find("template_declaration"):
             name = declared_template(declaration)
             parameters = declaration.child_by_field("parameters")
             if name is None or parameters is None:
                 continue
-            listed = [child for child in parameters.children if child.type != "comment"]
+            listed = [child for child in parameters.children if not tsast.is_comment(child)]
             for index, parameter in enumerate(listed):
-                if parameter_name(parameter) == BRAND_PARAMETER or ERASED.search(parameter_default(parameter)):
+                if parameter_name(parameter) == BRAND_PARAMETER or defaults_to_erased_brand(parameter):
                     positions.setdefault(name, set()).add(index)
                     break
     branded: dict[str, int] = {}
@@ -216,36 +190,45 @@ def branded_templates(root: Path) -> tuple[dict[str, int], list[str]]:
     return branded, failures
 
 
-def lexical_sites(text: str, path: str, first_row: int, branded: dict[str, int]) -> tuple[list[Site], list[Site]]:
-    """Return the sites and the unreadable lists of raw text, read with the lexer."""
-    if not branded:
-        return [], []
-    blanked, _ = cxx_lex.blank(text, blank_literals=True)
-    pattern = re.compile(r"\b(" + "|".join(map(re.escape, sorted(branded))) + r")\s*<")
-    sites, unreadable = [], []
-    for match in pattern.finditer(blanked):
-        name = match.group(1)
-        row = first_row + blanked.count("\n", 0, match.start())
-        count, end = argument_count(blanked, match.end() - 1)
-        if count is None:
-            unreadable.append(Site(path, row, name))
-        elif count <= branded[name] or ERASED.search(blanked[match.end():end]):
-            sites.append(Site(path, row, name))
-    return sites, unreadable
-
-
-def tree_sites(tree: tsast.Tree, path: str, branded: dict[str, int]) -> list[Site]:
-    """Return the sites that the parse tree of one file holds."""
-    sites = []
+def tree_site_nodes(tree: tsast.Tree, branded: dict[str, int]) -> list[tuple[tsast.Node, str]]:
+    """Return each spelling of a branded template in one tree that stops at or before the brand or names DefaultBrand."""
+    found = []
     for node in tree.find("template_type", "template_function"):
         name = node.child_by_field("name")
         arguments = node.child_by_field("arguments")
         if name is None or arguments is None or name.text not in branded:
             continue
-        named = [child for child in arguments.children if child.type != "comment"]
-        if len(named) <= branded[name.text] or any(ERASED.search(child.text) for child in named):
-            sites.append(Site(path, node.start[0] + 1, name.text))
-    return sites
+        named = [child for child in arguments.children if not tsast.is_comment(child)]
+        if len(named) <= branded[name.text] or any(names_erased_brand(child) for child in named):
+            found.append((node, name.text))
+    return found
+
+
+def unreadable_body(body: tsast.MacroBody, branded: dict[str, int]) -> str | None:
+    """Return a branded name that a macro body spells before `<` without a template node in its parse, or None.
+
+    A body is a fragment, so `Permission<x` can parse as a comparison.  When
+    the preprocessing tokens hold more `Name <` pairs of a branded name than
+    the parse holds template nodes of that name, the parse did not read a
+    list the tokens show, and the guard fails closed rather than guess its
+    arguments.  A body that does not parse at all has no template node, so
+    every such pair in it counts.
+    """
+    tokens = tsast.pp_tokens(body.text, body.first_row)
+    spelled: dict[str, int] = {}
+    for token, following in zip(tokens, tokens[1:]):
+        if token.kind == "identifier" and token.text in branded and following.text == "<":
+            spelled[token.text] = spelled.get(token.text, 0) + 1
+    read: dict[str, int] = {}
+    if body.is_parsed:
+        for node in body.root.descendants("template_type", "template_function"):
+            name = node.child_by_field("name")
+            if name is not None and name.text in branded:
+                read[name.text] = read.get(name.text, 0) + 1
+    for name in sorted(spelled):
+        if spelled[name] > read.get(name, 0):
+            return name
+    return None
 
 
 def scan(root: Path, roots: tuple[str, ...] = ROOTS) -> tuple[list[Site], list[Site], list[str]]:
@@ -259,22 +242,21 @@ def scan(root: Path, roots: tuple[str, ...] = ROOTS) -> tuple[list[Site], list[S
                    for path in (root / top).rglob("*") if path.is_file() and path.suffix in SUFFIXES)
     sites: list[Site] = []
     unreadable: list[Site] = []
+    parsed: list[tsast.Tree] = []
     for tree in tsast.parse(files, strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
-        source = tree.source.decode("utf-8", "replace")
         if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                failures.append(f"{rel}: the parser cannot read this file.  Its sites are unknown")
-                continue
-            found, lost = lexical_sites(source, rel, 1, branded)
-            sites += found
-            unreadable += lost
+            failures.append(f"{rel}: the parser cannot read this file.  Its sites are unknown")
             continue
-        sites += tree_sites(tree, rel, branded)
-        for body in tree.find("preproc_arg"):
-            found, lost = lexical_sites(body.text, rel, body.start[0] + 1, branded)
-            sites += found
-            unreadable += lost
+        parsed.append(tree)
+        sites += [Site(rel, node.start[0] + 1, name) for node, name in tree_site_nodes(tree, branded)]
+    for body in tsast.macro_bodies(parsed):
+        rel = Path(body.define.tree.path).relative_to(root).as_posix()
+        name = unreadable_body(body, branded)
+        if name is not None:
+            unreadable.append(Site(rel, body.define.start[0] + 1, name))
+        elif body.is_parsed:
+            sites += [Site(rel, body.origin(node)[0] + 1, name) for node, name in tree_site_nodes(body.tree, branded)]
     return sites, unreadable, failures
 
 
@@ -391,6 +373,10 @@ def self_test() -> int:
         "Late<Tag> late;\n"                                         # site
         "Late<Tag, int> late_but_erased;\n"                         # site
         "Late<Tag, int, Fresh> late_branded;\n"
+        "Permission<Tag, Wrap<DefaultBrand>> wrapped_brand;\n"
+        "Permission<Tag, Wrap</* DefaultBrand */ int>> brand_comment_inside;\n"
+        "#define SPLIT_ERASED(x) Permission<x, /* a comment splits the body */ \\\n"  # site
+        "    DefaultBrand> split_erased\n"
     )
     # The branded templates, declared outside the roots of the sites.  Novel,
     # Renamed, Handle and Late are named nowhere else in this script.
@@ -430,7 +416,7 @@ def self_test() -> int:
         expect("a template with no brand is not branded", "Plain" not in branded, True)
         sites, unreadable, parse_failures = scan(root)
         rows = sorted(site.row for site in sites)
-        expect("fifteen sites in the planted header", len(sites) == 15 and not unreadable and not parse_failures)
+        expect("sixteen sites in the planted header", len(sites) == 16 and not unreadable and not parse_failures)
         for row, label in ((3, "a bare spelling"), (4, "a qualified spelling"), (5, "DefaultBrand named"),
                            (11, "an erased region"), (14, "a list over two lines"),
                            (16, "a spelling inside a template argument"), (17, "an erased spelling in an expression"),
@@ -440,13 +426,16 @@ def self_test() -> int:
                            (25, "a template whose defaulted brand has another name"),
                            (26, "an alias template with a brand"),
                            (28, "a spelling that stops two places before the brand"),
-                           (29, "a spelling that stops one place before the brand")):
+                           (29, "a spelling that stops one place before the brand"),
+                           (33, "an erased brand in a macro body that a block comment splits over two lines")):
             expect(f"counted: {label}", row in rows)
         for row, label in ((6, "a branded spelling"), (8, "a line comment"), (9, "a block comment"),
                            (10, "a string literal"), (12, "a branded list over two lines"),
                            (18, "a generic brand parameter"), (20, "a branded macro body"),
                            (22, "DefaultBrand only in a comment of a branded list"),
-                           (27, "a template with no brand"), (30, "a spelling that names the brand after a default")):
+                           (27, "a template with no brand"), (30, "a spelling that names the brand after a default"),
+                           (31, "DefaultBrand as the argument of another template in the brand position"),
+                           (32, "DefaultBrand only in a comment inside a nested argument")):
             expect(f"not counted: {label}", row not in rows, True)
         expect("a file outside the roots is not read", all(site.path == "include/fixy/Planted.h" for site in sites),
                True)
@@ -457,21 +446,21 @@ def self_test() -> int:
                 code = action()
             return code, buffer.getvalue()
 
-        ledger.write_text("include/fixy/Planted.h\t15\n", encoding="utf-8")
+        ledger.write_text("include/fixy/Planted.h\t16\n", encoding="utf-8")
         expect("a ledger that matches passes", captured(lambda: check(root, ledger))[0] == 0)
-        ledger.write_text("include/fixy/Planted.h\t14\n", encoding="utf-8")
+        ledger.write_text("include/fixy/Planted.h\t15\n", encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
-        expect("one more site than the ledger permits fails", code == 1 and "NEW SITE  include/fixy/Planted.h: 15"
+        expect("one more site than the ledger permits fails", code == 1 and "NEW SITE  include/fixy/Planted.h: 16"
                in report, True)
         clash = root / "include/crucible/Clash.h"
         clash.write_text("template <class A, class B, class Brand = ::foundation::brand::DefaultBrand> class Novel;\n",
                          encoding="utf-8")
-        ledger.write_text("include/fixy/Planted.h\t15\n", encoding="utf-8")
+        ledger.write_text("include/fixy/Planted.h\t16\n", encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
         expect("two templates of one name with the brand at two positions fail",
                code == 1 and "Novel: two primary templates" in report, True)
         clash.unlink()
-        ledger.write_text("include/fixy/Planted.h\t17\n", encoding="utf-8")
+        ledger.write_text("include/fixy/Planted.h\t18\n", encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
         expect("a ledger above the tree is stale", code == 2 and "STALE" in report, True)
         ledger.write_text("", encoding="utf-8")
@@ -481,7 +470,7 @@ def self_test() -> int:
         ledger.write_text("include/fixy/Planted.h nine\n", encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
         expect("a malformed row fails", code != 0 and "MALFORMED" in report, True)
-        ledger.write_text("include/fixy/Planted.h\t15\ninclude/fixy/Planted.h\t40\n", encoding="utf-8")
+        ledger.write_text("include/fixy/Planted.h\t16\ninclude/fixy/Planted.h\t40\n", encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
         expect("a second row for one file fails", code != 0 and "DUPLICATE line 2" in report, True)
         expect("--refresh writes a ledger that passes",
