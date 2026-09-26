@@ -7,7 +7,7 @@ int main() {
     Hist h;
     std::uint64_t raw = 10;
 
-    // GAPS-135: record() accepts only the Refined in-range value type.
-    // A raw external latency sample must be validated at the boundary.
+    // record() accepts only the refined in-range value type.  A raw
+    // external latency sample passes checked_value() at the boundary.
     h.record(raw);
 }

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/_PermissionedSpscChannel.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Refined.h>
+#include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <foundation/ThreadLocalRef.h>
 
 #include <array>
@@ -92,7 +92,7 @@ public:
     // round trip, bandwidth before the first byte, queue depth on an idle
     // descriptor. Excluding zero would need a sentinel bucket or a guard at
     // every call site.
-    using value_type = safety::Refined<safety::in_range<std::uint64_t{0}, MaxValue>, std::uint64_t>;
+    using value_type = ::fixy::Refined<::fixy::in_range<std::uint64_t{0}, MaxValue>, std::uint64_t>;
 
     struct EncodedBucket {
         std::uint32_t index;
@@ -125,7 +125,11 @@ public:
     HdrHistogram(const HdrHistogram&) = delete;
     HdrHistogram& operator=(const HdrHistogram&) = delete;
 
-    [[nodiscard]] static constexpr value_type checked_value(std::uint64_t value) noexcept { return value_type{value}; }
+    // The one door into value_type.  The predicate runs here, so a sample
+    // above MaxValue stops at the boundary rather than in a bucket index.
+    [[nodiscard]] static constexpr value_type checked_value(std::uint64_t value) noexcept {
+        return ::fixy::mint_refined<::fixy::in_range<std::uint64_t{0}, MaxValue>>(value);
+    }
 
     CRUCIBLE_HOT void record(value_type value) noexcept {
         const std::size_t index = layout_type::counts_index(value.value());
@@ -340,6 +344,10 @@ public:
     ConcurrentHdrHistogram(const ConcurrentHdrHistogram&) = delete;
     ConcurrentHdrHistogram& operator=(const ConcurrentHdrHistogram&) = delete;
 
+    [[nodiscard]] static constexpr value_type checked_value(std::uint64_t value) noexcept {
+        return histogram_type::checked_value(value);
+    }
+
     CRUCIBLE_HOT void record(value_type value) noexcept { shards_[thread_shard_()].record(value); }
 
     CRUCIBLE_HOT void record_on_shard(std::size_t shard, value_type value) noexcept {
@@ -386,6 +394,7 @@ private:
 template <typename H>
 concept HdrHistogramCompatible = requires(H& h, const H& ch, typename H::value_type value) {
     typename H::value_type;
+    { H::checked_value(std::uint64_t{}) } noexcept -> std::same_as<typename H::value_type>;
     { H::significant_digits } -> std::convertible_to<std::uint8_t>;
     { H::max_trackable_value } -> std::convertible_to<std::uint64_t>;
     { h.record(value) } noexcept -> std::same_as<void>;
@@ -402,6 +411,7 @@ concept ConcurrentHdrCompatible =
     requires(H& h, const H& ch, typename H::value_type value, typename H::histogram_type& out) {
         typename H::value_type;
         typename H::histogram_type;
+        { H::checked_value(std::uint64_t{}) } noexcept -> std::same_as<typename H::value_type>;
         { h.record(value) } noexcept -> std::same_as<void>;
         { ch.total_count() } noexcept -> std::same_as<std::uint64_t>;
         { ch.merge_into(out) } noexcept -> std::same_as<void>;
@@ -412,7 +422,7 @@ template <typename H>
 concept HdrCompatible = HdrHistogramCompatible<H> || ConcurrentHdrCompatible<H>;
 
 template <std::uint8_t Significant, std::uint64_t MaxValue, std::size_t Capacity, typename UserTag>
-using HdrRecordChannel = concurrent::PermissionedSpscChannel<std::uint64_t, Capacity, UserTag>;
+using HdrRecordChannel = ::fixy::concurrent::PermissionedSpscChannel<std::uint64_t, Capacity, UserTag>;
 
 template <HdrCompatible H, typename ConsumerHandle>
 std::size_t drain_record_stream(H& hist, ConsumerHandle& consumer,
@@ -423,7 +433,7 @@ std::size_t drain_record_stream(H& hist, ConsumerHandle& consumer,
         if (!sample) {
             break;
         }
-        hist.record(typename H::value_type{*sample});
+        hist.record(H::checked_value(*sample));
         ++drained;
     }
     return drained;

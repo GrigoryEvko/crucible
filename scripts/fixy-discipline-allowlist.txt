@@ -87,8 +87,7 @@ include/crucible/forge/_wip/Phases/Comm.h
 include/crucible/mimic/CogMimic.h
 include/crucible/mimic/_wip/network/Backend.h
 
-# ── observe/ (3 files) ──────────────────────────────────────────
-include/crucible/observe/HdrHistogram.h
+# ── observe/ (2 files) ──────────────────────────────────────────
 include/crucible/observe/Metrics.h
 include/crucible/observe/SdcDetect.h
 

@@ -163,7 +163,6 @@ include/crucible/ledger/Verdict.h
 include/crucible/mimic/CogMimic.h
 include/crucible/mimic/Semaphore.h
 include/crucible/mimic/_wip/network/Backend.h
-include/crucible/observe/HdrHistogram.h
 include/crucible/observe/Metrics.h
 include/crucible/observe/Observation.h
 include/crucible/observe/SdcDetect.h

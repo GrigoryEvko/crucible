@@ -6500,10 +6500,10 @@ crucible_neg_compile_test(neg_dim_hash_raw_uint64
 crucible_neg_compile_test(neg_dim_hash_cross_family
   "cannot convert|no matching function|could not convert|DetSafe|Tagged|FamilyA|FamilyB")
 
-# GAPS-135 — observe/HdrHistogram.h keeps the recording boundary typed
-# and the merge geometry exact:
+# observe/HdrHistogram.h keeps the recording boundary typed and the merge
+# geometry exact:
 #   * neg_hdr_histogram_record_raw_uint64 — raw external samples cannot
-#     bypass Refined<in_range<1, MaxValue>, uint64_t>.
+#     bypass fixy::Refined<in_range<0, MaxValue>, uint64_t>.
 #   * neg_hdr_histogram_merge_cross_config — histograms with different
 #     significant-digit layouts cannot be merged.
 crucible_neg_compile_test(neg_hdr_histogram_record_raw_uint64

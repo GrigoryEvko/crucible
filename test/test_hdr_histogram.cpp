@@ -286,10 +286,10 @@ int main() {
 
     using Channel = crucible::observe::HdrRecordChannel<2, 1000000, 8, HistStreamTag>;
     Channel channel;
-    auto whole = crucible::safety::mint_permission_root<typename Channel::whole_tag>();
+    auto whole = ::foundation::permissions::mint_permission_root<typename Channel::whole_tag>();
     auto [producer_perm, consumer_perm] =
-        crucible::safety::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(
-            std::move(whole));
+        ::foundation::permissions::mint_permission_split<typename Channel::producer_tag,
+                                                         typename Channel::consumer_tag>(std::move(whole));
     auto producer = channel.producer(std::move(producer_perm));
     auto consumer = channel.consumer(std::move(consumer_perm));
 
