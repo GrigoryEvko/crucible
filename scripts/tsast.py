@@ -189,6 +189,42 @@ _SPLICE = re.compile(r"\\\r?\n")
 _DIRECTIVE = re.compile(r"#[ \t]*([^\W\d]\w*)")
 
 
+def _scan(spliced: str, *, directives: bool) -> Iterator[tuple[str, str, int]]:
+    """Yield (kind, text, start offset) for each token of text that has no line splices.
+
+    Complexity: O(n) in the length of the text.
+
+    Args:
+        spliced: Source text after phase 2
+        directives: As for _lex()
+
+    Yields:
+        One triple for each token.  Space and comments give none.
+    """
+    pos = 0
+    length = len(spliced)
+    while pos < length:
+        if directives and spliced[pos] == "#":
+            directive = _DIRECTIVE.match(spliced, pos)
+            if directive is not None:
+                yield "directive", "#" + directive.group(1), pos
+                pos = directive.end()
+                continue
+        # `<::` is `<` then `::` unless a third `:` or a `>` follows.  The
+        # same rule keeps `[::` from forming a splice opener.
+        if spliced.startswith(("<::", "[::"), pos) and spliced[pos + 3:pos + 4] not in (":", ">", "]"):
+            yield "punctuator", spliced[pos], pos
+            pos += 1
+            continue
+        match = _LEXER.match(spliced, pos)
+        assert match is not None  # the `other` alternative matches any character
+        # lastgroup names the outer group, so a raw string reports `raw`.
+        kind = match.lastgroup
+        if kind not in ("space", "line_comment", "block_comment"):
+            yield "string" if kind == "raw" else str(kind), match.group(0), pos
+        pos = match.end()
+
+
 def _lex(text: str, first_row: int, *, directives: bool) -> list[Token]:
     """Split source text into tokens, after the line splices of phase 2.
 
@@ -231,30 +267,7 @@ def _lex(text: str, first_row: int, *, directives: bool) -> list[Token]:
         original = offset + (shifts[index - 1] if index else 0)
         return first_row + bisect_right(newlines, original - 1)
 
-    tokens: list[Token] = []
-    pos = 0
-    length = len(spliced)
-    while pos < length:
-        if directives and spliced[pos] == "#":
-            directive = _DIRECTIVE.match(spliced, pos)
-            if directive is not None:
-                tokens.append(Token("directive", "#" + directive.group(1), row_of(pos)))
-                pos = directive.end()
-                continue
-        # `<::` is `<` then `::` unless a third `:` or a `>` follows.  The
-        # same rule keeps `[::` from forming a splice opener.
-        if spliced.startswith(("<::", "[::"), pos) and spliced[pos + 3:pos + 4] not in (":", ">", "]"):
-            tokens.append(Token("punctuator", spliced[pos], row_of(pos)))
-            pos += 1
-            continue
-        match = _LEXER.match(spliced, pos)
-        assert match is not None  # the `other` alternative matches any character
-        # lastgroup names the outer group, so a raw string reports `raw`.
-        kind = match.lastgroup
-        if kind not in ("space", "line_comment", "block_comment"):
-            tokens.append(Token("string" if kind == "raw" else str(kind), match.group(0), row_of(pos)))
-        pos = match.end()
-    return tokens
+    return [Token(kind, token, row_of(start)) for kind, token, start in _scan(spliced, directives=directives)]
 
 
 def pp_tokens(text: str, first_row: int = 0) -> list[Token]:
@@ -491,6 +504,18 @@ class Node:
             The token texts in order
         """
         return self.tokens(skip=lambda _child: True)
+
+    def __eq__(self, other: object) -> bool:
+        """Say whether two views name the same node of the same tree.
+
+        Each walk makes new view objects, so identity (`is`) never compares
+        nodes.  Equality does.
+        """
+        return isinstance(other, Node) and other.tree is self.tree and other.index == self.index
+
+    def __hash__(self) -> int:
+        """Return a hash that agrees with __eq__, so a node can key a dict or join a set."""
+        return hash((id(self.tree), self.index))
 
     def __repr__(self) -> str:
         """Return a short form that names the file and the line."""
@@ -760,26 +785,31 @@ def is_in_cpp_scope(path: Path | str) -> bool:
     return text.endswith(CPP_SUFFIXES) and text not in UNPARSEABLE
 
 
-def cpp_files(*roots: str, include_unparseable: bool = False) -> list[Path]:
-    """Return every C++ file under the given repo-relative roots, sorted.
+def cpp_files(*roots: str | Path, include_unparseable: bool = False) -> list[Path]:
+    """Return every C++ file under the given roots, sorted.
 
-    Sorted order makes a gate's report stable across runs, which DetSafe needs.
+    A root is a repo-relative directory name, or an absolute directory such
+    as the scratch tree of a self-test.  A file under the repository comes
+    back repo-relative, and a file outside it comes back absolute, so parse()
+    reads either.  Sorted order makes a gate's report stable across runs,
+    which DetSafe needs.
 
     Args:
-        roots: Repo-relative directory names, for example "include"
+        roots: Directory names, repo-relative or absolute
         include_unparseable: When true, keep the files that UNPARSEABLE lists.
             Only the gate that proves the roster exact needs them.
 
     Returns:
-        The matching paths, relative to the repo root, in sorted order
+        The matching paths, in sorted order
     """
     found: list[Path] = []
     for root in roots:
-        base = REPO_ROOT / root
+        base = Path(root) if Path(root).is_absolute() else REPO_ROOT / root
         if not base.is_dir():
             continue
         for suffix in CPP_SUFFIXES:
-            found.extend(p.relative_to(REPO_ROOT) for p in base.rglob(f"*{suffix}"))
+            for path in base.rglob(f"*{suffix}"):
+                found.append(path.relative_to(REPO_ROOT) if path.is_relative_to(REPO_ROOT) else path)
     if not include_unparseable:
         found = [p for p in found if p.as_posix() not in UNPARSEABLE]
     return sorted(found)
@@ -852,9 +882,25 @@ _DECLARATORS = frozenset({
 })
 
 
-def _named_non_comment(node: Node) -> list[Node]:
-    """Return the named children of a node that are not comments."""
+def non_comment_children(node: Node) -> list[Node]:
+    """Return the named children of a node that are not comments, in source order.
+
+    Args:
+        node: Any node
+
+    Returns:
+        The direct named children, without the comment nodes
+    """
     return [child for child in node.children if child.type != "comment"]
+
+
+def _leaf_text(node: Node) -> str:
+    """Return the text of a one-token leaf with each line splice removed.
+
+    A backslash-newline inside a name is gone after phase 2, so `led\\<newline>ger`
+    is the name `ledger`.
+    """
+    return _SPLICE.sub("", node.text)
 
 
 def leaf_name(node: Node) -> str | None:
@@ -872,14 +918,14 @@ def leaf_name(node: Node) -> str | None:
     """
     kind = node.type
     if kind in _NAME_LEAVES:
-        return node.text
+        return _leaf_text(node)
     if kind in _SPELLED_NAMES:
         return spelled(node)
     if kind in ("qualified_identifier", *_TEMPLATE_NAMES):
         name = node.child_by_field("name")
         return None if name is None else leaf_name(name)
     if kind in ("dependent_name", "dependent_type", "parenthesized_declarator", "variadic_declarator"):
-        inner = _named_non_comment(node)
+        inner = non_comment_children(node)
         return leaf_name(inner[-1]) if inner else None
     if kind == "field_expression":
         field = node.child_by_field("field")
@@ -895,7 +941,7 @@ def leaf_name(node: Node) -> str | None:
 
 def _starts_with_scope_operator(node: Node) -> bool:
     """Say whether a node begins with `::`, before its first named child."""
-    named = _named_non_comment(node)
+    named = non_comment_children(node)
     end = named[0].start if named else node.end
     head = _lex(node.tree.slice(node.start, end), node.start[0], directives=False)
     return bool(head) and head[0].text == "::"
@@ -918,14 +964,14 @@ def qualified_parts(node: Node) -> tuple[bool, tuple[str, ...]] | None:
     """
     kind = node.type
     if kind in _NAME_LEAVES:
-        return (False, (node.text,))
+        return (False, (_leaf_text(node),))
     if kind in _SPELLED_NAMES:
         return (False, (spelled(node),))
     if kind in _TEMPLATE_NAMES:
         name = node.child_by_field("name")
         return None if name is None else qualified_parts(name)
     if kind in ("dependent_name", "dependent_type"):
-        inner = _named_non_comment(node)
+        inner = non_comment_children(node)
         return qualified_parts(inner[-1]) if inner else None
     if kind == "qualified_identifier":
         scope = node.child_by_field("scope")
@@ -943,7 +989,7 @@ def qualified_parts(node: Node) -> tuple[bool, tuple[str, ...]] | None:
         return (scope_parts[0], scope_parts[1] + name_parts[1])
     if kind == "nested_namespace_specifier":
         parts: list[str] = []
-        for child in _named_non_comment(node):
+        for child in non_comment_children(node):
             inner = qualified_parts(child)
             if inner is None:
                 return None
@@ -1068,7 +1114,7 @@ def namespace_aliases(tree: Tree) -> list[NamespaceAlias]:
     found: list[NamespaceAlias] = []
     for node in tree.find("namespace_alias_definition"):
         name = node.child_by_field("name")
-        targets = [child for child in _named_non_comment(node) if child.field != "name"]
+        targets = [child for child in non_comment_children(node) if child.field != "name"]
         if name is None or not targets:
             continue
         parts = qualified_parts(targets[0])
@@ -1180,7 +1226,7 @@ def using_names(tree: Tree) -> list[UsingDecl]:
         direct = node.gap_tokens()
         kind = "namespace" if "namespace" in direct else "enum" if "enum" in direct else "declaration"
         scope = _scope_of(node)
-        for child in _named_non_comment(node):
+        for child in non_comment_children(node):
             parts = qualified_parts(child)
             if parts is None:
                 continue
@@ -1277,17 +1323,17 @@ def _attributes_of(holder: Node) -> Iterator[Attribute]:
             if name is None:
                 continue
             lists = attribute.children_of_type("argument_list")
-            arguments = _named_non_comment(lists[0]) if lists else []
+            arguments = non_comment_children(lists[0]) if lists else []
             yield Attribute(prefix.text if prefix is not None else shared, name.text, arguments, attribute)
     elif holder.type == "attribute_specifier":
         for argument_list in holder.children_of_type("argument_list"):
-            for item in _named_non_comment(argument_list):
+            for item in non_comment_children(argument_list):
                 if item.type == "call_expression":
                     function = item.child_by_field("function")
                     lists = item.children_of_type("argument_list")
                     name_text = None if function is None else leaf_name(function)
                     if name_text is not None:
-                        yield Attribute("gnu", name_text, _named_non_comment(lists[0]) if lists else [], item)
+                        yield Attribute("gnu", name_text, non_comment_children(lists[0]) if lists else [], item)
                 else:
                     name_text = leaf_name(item)
                     if name_text is not None:
@@ -1382,6 +1428,35 @@ def prose_nodes(tree: Tree) -> Iterator[Node]:
     yield from tree.find("comment", "string_literal", "raw_string_literal")
 
 
+_PROSE_TYPES = frozenset({
+    "comment", "string_literal", "raw_string_literal", "string_content", "raw_string_content",
+    "char_literal", "system_lib_string",
+})
+
+
+def prose_text(node: Node) -> str:
+    """Return the text of a prose node: a comment or a string literal.
+
+    A guard may read the words of a comment or a string with a regex, because
+    prose has no C++ structure to lose.  A guard reads that text through this
+    function, never through Node.text, so scripts/check-guard-engines.py can
+    tell a prose read from a regex over code.
+
+    Args:
+        node: A comment, string_literal, raw_string_literal, their content
+            nodes, a char_literal or a system_lib_string
+
+    Returns:
+        The node's source text
+
+    Raises:
+        ValueError: If the node is code, not prose
+    """
+    if node.type not in _PROSE_TYPES:
+        raise ValueError(f"prose_text() reads prose only, and a {node.type} node is code: {node!r}")
+    return node.text
+
+
 def comments_by_row(tree: Tree) -> dict[int, list[Node]]:
     """Map each zero-based row to the comment nodes that occupy it.
 
@@ -1467,13 +1542,13 @@ def has_marker(stmt: Node, marker: str, *, rows_above: int = 0) -> bool:
     last = _statement_last_row(stmt)
     for row in range(first, last + 1):
         for comment in rows.get(row, ()):
-            if comment.start[0] == row and marker in comment.text:
+            if comment.start[0] == row and marker in prose_text(comment):
                 return True
     row = first - 1
     remaining = rows_above
     # A row above counts only while it holds comments and no code.
     while remaining > 0 and row >= 0 and row in rows and site_key(tree, row) == "":
-        if any(marker in comment.text for comment in rows[row]):
+        if any(marker in prose_text(comment) for comment in rows[row]):
             return True
         remaining -= 1
         row -= 1
@@ -1551,7 +1626,7 @@ def _function_declarator(node: Node) -> Node | None:
             return None
         inner = current.child_by_field("declarator")
         if inner is None and current.type == "parenthesized_declarator":
-            named = _named_non_comment(current)
+            named = non_comment_children(current)
             inner = named[0] if named else None
         current = inner
     return current
@@ -1677,7 +1752,7 @@ def _declarations_of(item: Node, ns: tuple[str, ...]) -> Iterator[Declaration]:
     """Yield the Declarations of one namespace-scope item."""
     kind = item.type
     if kind == "template_declaration":
-        for inner in _named_non_comment(item):
+        for inner in non_comment_children(item):
             if inner.field != "parameters" and inner.type != "requires_clause":
                 yield from _declarations_of(inner, ns)
         return
@@ -1731,7 +1806,7 @@ def _declarations_of(item: Node, ns: tuple[str, ...]) -> Iterator[Declaration]:
         yield Declaration(ns, "" if name_node is None else name_node.text, "namespace_alias", False, item)
         return
     if kind == "using_declaration" and "namespace" not in item.gap_tokens():
-        for child in _named_non_comment(item):
+        for child in non_comment_children(item):
             parts = qualified_parts(child)
             if parts is not None and parts[1]:
                 yield Declaration(ns, parts[1][-1], "using", False, item, parts[1][:-1])
@@ -1759,7 +1834,7 @@ def _walk_namespace_scope(container: Node) -> Iterator[Declaration]:
     The recursion depth is the nesting depth of namespaces, linkage bodies
     and preprocessor arms, which stays small.
     """
-    for item in _named_non_comment(container):
+    for item in non_comment_children(container):
         if item.type in _CONTAINERS:
             yield from _walk_namespace_scope(item)
         elif item.type in ("namespace_definition", "linkage_specification"):
@@ -1792,7 +1867,7 @@ class TemplateDecl(NamedTuple):
 
 def _template_item(template: Node) -> Node | None:
     """Return the declaration that a template_declaration introduces."""
-    for child in _named_non_comment(template):
+    for child in non_comment_children(template):
         if child.field == "parameters" or child.type == "requires_clause":
             continue
         return child
@@ -1823,7 +1898,7 @@ def specializations(tree: Tree) -> Iterator[TemplateDecl]:
         if item is None or item.type == "template_declaration":
             continue
         params = template.child_by_field("parameters")
-        has_params = params is not None and bool(_named_non_comment(params))
+        has_params = params is not None and bool(non_comment_children(params))
         name_node: Node | None
         if item.type in (*_CLASS_SPECIFIERS, "enum_specifier"):
             kind = "class"
@@ -1915,7 +1990,14 @@ def macro_parameters(define: Node) -> tuple[str, ...]:
 class MacroBody(NamedTuple):
     """The replacement list of one `#define`, parsed as C++.
 
-    tree is the parse of the body inside a wrapper, and root is the node of
+    text is the body as the file spells it, with its line splices, so
+    pp_tokens(text, first_row) gives each token its row in the file.  joined
+    is the same body after phase 2, with each splice removed, and it is what
+    the tree parses.  Rows run from first_row to last_row, the row of the
+    last token.  define.end is not the last row: the kit ends a definition
+    node at column 0 of the row after it.
+
+    tree is the parse of joined inside a wrapper, and root is the node of
     that tree whose children are the body's own nodes, so a walk from root
     never meets the wrapper.  When no wrapper parses clean, tree.diagnostic
     is set: the body is not C++ on its own, for example because it uses `#`
@@ -1928,14 +2010,21 @@ class MacroBody(NamedTuple):
     name: str
     params: tuple[str, ...]
     text: str
+    joined: str
     tree: Tree
     root: Node
     first_row: int
     first_col: int
+    last_row: int
     wrapper_rows: int
+    positions: tuple[tuple[int, int], ...]
 
     def origin(self, node: Node) -> tuple[int, int]:
-        """Map a node of the body's parse back to a zero-based (row, column) in the file.
+        """Map a node of the body's parse back to a zero-based (row, byte column) in the file.
+
+        joined has no line splices, so one of its rows can span several file
+        rows.  positions holds the file position of each character of joined,
+        and the node start is looked up there.
 
         Args:
             node: A node of self.tree
@@ -1945,12 +2034,18 @@ class MacroBody(NamedTuple):
         """
         row, col = node.start
         body_row = row - self.wrapper_rows
-        if body_row < 0:
+        lines = self.joined.split("\n")
+        if body_row < 0 or body_row >= len(lines):
             # A node of the wrapper itself: report the start of the body.
             return (self.first_row, self.first_col)
-        if body_row == 0:
-            return (self.first_row, self.first_col + col)
-        return (self.first_row + body_row, col)
+        offset = sum(len(line) + 1 for line in lines[:body_row])
+        used = 0
+        for char in lines[body_row]:
+            if used >= col:
+                break
+            used += len(char.encode("utf-8"))
+            offset += 1
+        return self.positions[min(offset, len(self.positions) - 1)]
 
     @property
     def is_parsed(self) -> bool:
@@ -1972,6 +2067,64 @@ _WRAPPERS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _remove_splices(raw: str, start: tuple[int, int]) -> tuple[str, tuple[tuple[int, int], ...]]:
+    """Remove the line splices from a body and record the file position of each kept character.
+
+    Complexity: O(n) in the length of the body.
+
+    Args:
+        raw: The body text as the file holds it
+        start: The zero-based (row, byte column) of its first character
+
+    Returns:
+        (text without splices, one file position for each character of it
+        and one more for its end)
+    """
+    kept: list[str] = []
+    positions: list[tuple[int, int]] = []
+    row, col = start
+    index = 0
+    length = len(raw)
+    while index < length:
+        splice = _SPLICE.match(raw, index)
+        if splice is not None:
+            row += 1
+            col = 0
+            index = splice.end()
+            continue
+        char = raw[index]
+        kept.append(char)
+        positions.append((row, col))
+        if char == "\n":
+            row += 1
+            col = 0
+        else:
+            col += len(char.encode("utf-8"))
+        index += 1
+    positions.append((row, col))
+    return "".join(kept), tuple(positions)
+
+
+def _last_token_row(joined: str, positions: tuple[tuple[int, int], ...], first_row: int) -> int:
+    """Return the file row of the last character of the last token of a body.
+
+    Complexity: O(n) in the length of the body.
+
+    Args:
+        joined: The body after phase 2
+        positions: The file position of each character of joined
+        first_row: The row to give when the body has no token
+
+    Returns:
+        The zero-based row.  A token that a splice cuts ends on a later row
+        than the one it starts on, and the later row is the one given.
+    """
+    end = 0
+    for _kind, token, start in _scan(joined, directives=False):
+        end = start + len(token)
+    return positions[end - 1][0] if end else first_row
+
+
 def _body_root(tree: Tree, root_type: str) -> Node:
     """Return the node whose children are a wrapped body's own nodes."""
     if root_type == "translation_unit":
@@ -1985,9 +2138,11 @@ def macro_bodies(trees: Iterable[Tree]) -> list[MacroBody]:
 
     The value of a definition can span several preproc_arg nodes, because a
     block comment splits it.  The body is the text from the first value to
-    the last one, with each line splice replaced by one space, so every
-    position keeps its row and its column.  The arguments of #pragma, #error
-    and #warning are not definitions, so they never appear.
+    the last one.  The parse reads it with each line splice removed as phase
+    2 removes it, so a name split by a splice is one name, and
+    MacroBody.origin() maps a position back through the removed splices.
+    The arguments of #pragma, #error and #warning are not definitions, so
+    they never appear.
 
     Each body is tried as a class member list, then as a translation unit,
     then as a block.  Every body of one stage goes to the kit in one parse.
@@ -2000,7 +2155,7 @@ def macro_bodies(trees: Iterable[Tree]) -> list[MacroBody]:
     Returns:
         One MacroBody for each definition that has a value, in source order
     """
-    pending: list[tuple[Node, str, tuple[str, ...], str, int, int]] = []
+    pending: list[tuple[Node, str, tuple[str, ...], str, str, int, int, tuple[tuple[int, int], ...]]] = []
     for tree in trees:
         for define in tree.find("preproc_def", "preproc_function_def"):
             values = [child for child in define.children if child.field == "value"]
@@ -2008,26 +2163,27 @@ def macro_bodies(trees: Iterable[Tree]) -> list[MacroBody]:
                 continue
             name = define.child_by_field("name")
             text = tree.slice(values[0].start, values[-1].end)
-            text = _SPLICE.sub(lambda match: " " + match.group(0)[1:], text)
-            pending.append((define, "" if name is None else name.text, macro_parameters(define),
-                            text, values[0].start[0], values[0].start[1]))
+            joined, positions = _remove_splices(text, values[0].start)
+            pending.append((define, "" if name is None else _leaf_text(name), macro_parameters(define),
+                            text, joined, values[0].start[0], values[0].start[1], positions))
     results: dict[int, MacroBody] = {}
     remaining = list(range(len(pending)))
     for stage, (root_type, prefix, suffix) in enumerate(_WRAPPERS):
         if not remaining:
             break
         last = stage == len(_WRAPPERS) - 1
-        items = [(f"macro-{index}", prefix + pending[index][3] + suffix) for index in remaining]
+        items = [(f"macro-{index}", prefix + pending[index][4] + suffix) for index in remaining]
         still: list[int] = []
         for index, tree in zip(remaining, parse_texts(items), strict=True):
             if tree.diagnostic is not None and not last:
                 still.append(index)
                 continue
-            define, name, params, text, row, col = pending[index]
+            define, name, params, text, joined, row, col, positions = pending[index]
             # The label is not a file.  A report names define.tree.path and origin().
             tree.path = Path(f"{define.tree.path}:{row + 1}:{name}")
-            results[index] = MacroBody(define, name, params, text, tree, _body_root(tree, root_type),
-                                       row, col, prefix.count("\n"))
+            results[index] = MacroBody(define, name, params, text, joined, tree, _body_root(tree, root_type),
+                                       row, col, _last_token_row(joined, positions, row),
+                                       prefix.count("\n"), positions)
         remaining = still
     return [results[index] for index in range(len(pending))]
 
@@ -2316,6 +2472,34 @@ def _self_test_helpers(
     )
     check("a batch of readable paths gives one tree for each", len(list(parse([one, three]))) == 2)
 
+    # Node identity, the public child filter and absolute roots.
+    same = parse_text("same.cpp", "int f(int /*c*/ x);\n")
+    first_view = next(same.find("parameter_declaration"))
+    second_view = next(same.find("parameter_declaration"))
+    check(
+        "two views of one node are equal and hash equal, so a set holds one",
+        first_view == second_view and hash(first_view) == hash(second_view)
+        and len({first_view, second_view}) == 1 and first_view is not second_view,
+    )
+    check(
+        "two different nodes are not equal",
+        first_view != first_view.parent and first_view != next(same.find("identifier")),
+        negative=True,
+    )
+    check(
+        "non_comment_children leaves the comment out",
+        [child.type for child in non_comment_children(first_view)] == ["primitive_type", "identifier"],
+    )
+    planted = work / "planted"
+    (planted / "sub").mkdir(parents=True)
+    (planted / "a.h").write_text("int a;\n", encoding="utf-8")
+    (planted / "sub" / "b.cpp").write_text("int b;\n", encoding="utf-8")
+    (planted / "prog.bpf.c").write_text("int c;\n", encoding="utf-8")
+    check(
+        "cpp_files takes an absolute root, keeps the suffix policy and gives absolute paths",
+        cpp_files(planted) == [planted / "a.h", planted / "sub" / "b.cpp"],
+    )
+
     # Tokens and spellings.
     tokens_tree = parse_text(
         "tokens.cpp",
@@ -2533,6 +2717,14 @@ def _self_test_helpers(
         "prose_nodes gives comments and strings, not code",
         '"a//b"' in prose_texts and not any("test_value" in text for text in prose_texts),
     )
+    first_comment = next(prose_tree.find("comment"))
+    code_refused = ""
+    try:
+        prose_text(next(prose_tree.find("identifier")))
+    except ValueError as exc:
+        code_refused = str(exc)
+    check("prose_text reads a comment", prose_text(first_comment).startswith("/* one"))
+    check("prose_text refuses a code node", "reads prose only" in code_refused, negative=True)
     calls_by_name = {parts[-1]: node for parts, node in calls(prose_tree)}
     head_stmt = enclosing_statement(calls_by_name["cond"])
     check(
@@ -2731,6 +2923,72 @@ def _self_test_macros(check: Callable[..., None], parse_text: Callable[[str, str
         not any("tsast_macro_wrapper" in node.text
                 for body in bodies.values() for node in body.root.descendants("identifier", "type_identifier")),
         negative=True,
+    )
+
+    split_tree = parse_text(
+        "splitname.cpp",
+        "#define OWNER struct host::In\\\nitOwner { int field; };\n"
+        "int crucible::led\\\nger::entry = 0;\n",
+    )
+    split_bodies = macro_bodies([split_tree])
+    split_class = [node for node in split_bodies[0].root.descendants("struct_specifier")] if split_bodies else []
+    split_name = split_class[0].child_by_field("name") if split_class else None
+    check(
+        "a splice inside a name in a macro body joins the name, so the class body is seen",
+        len(split_class) == 1 and split_class[0].child_by_field("body") is not None
+        and split_name is not None and qualified_parts(split_name) == (False, ("host", "InitOwner")),
+    )
+    check(
+        "origin maps a node after a removed splice to its row and column in the file",
+        len(split_class) == 1 and split_bodies[0].origin(split_class[0].child_by_field("body")) == (1, 8),
+    )
+    spliced_decl = [node for node in split_tree.find("qualified_identifier")
+                    if node.parent is not None and node.parent.type != "qualified_identifier"]
+    check(
+        "qualified_parts and leaf_name join a splice inside a leaf name",
+        len(spliced_decl) == 1 and qualified_parts(spliced_decl[0]) == (False, ("crucible", "ledger", "entry"))
+        and leaf_name(spliced_decl[0]) == "entry",
+    )
+
+    rows_tree = parse_text(
+        "macrorows.cpp",
+        "#define OPENAT(dir, path) ::open\\\nat(dir, path, 0)\n"
+        "// marker on the row after the definition\n"
+        "#define ONE_ROW(x) (x + 1) // trailing note\n"
+        "#define TAIL value_\\\nend\n",
+    )
+    rows = {body.name: body for body in macro_bodies([rows_tree])}
+    openat = rows.get("OPENAT")
+    openat_tokens = [] if openat is None else pp_tokens(openat.text, openat.first_row)
+    check(
+        "a splice inside a name in a macro body gives one token with its file row",
+        openat is not None and ("identifier", "openat", 0) in openat_tokens
+        and "open" not in [token.text for token in openat_tokens],
+    )
+    openat_calls = [] if openat is None else [
+        qualified_parts(call.child_by_field("function")) for call in openat.root.descendants("call_expression")
+    ]
+    check(
+        "the parse of a spliced body calls the joined name",
+        (True, ("openat",)) in openat_calls,
+    )
+    check(
+        "last_row is the row of the last token of a body that spans two rows",
+        openat is not None and openat.first_row == 0 and openat.last_row == 1,
+    )
+    check(
+        "last_row is not the row after the definition, where the definition node ends",
+        openat is not None and openat.define.end[0] == 2 and openat.last_row != openat.define.end[0],
+        negative=True,
+    )
+    check(
+        "last_row of a one-row body is its first row, and a trailing comment adds no row",
+        "ONE_ROW" in rows and rows["ONE_ROW"].last_row == rows["ONE_ROW"].first_row == 3,
+    )
+    check(
+        "last_row of a body whose last token a splice cuts is the row the token ends on",
+        "TAIL" in rows and rows["TAIL"].last_row == 5
+        and [token.text for token in pp_tokens(rows["TAIL"].text)] == ["value_end"],
     )
 
     names = token_qualified_names(pp_tokens("::crucible::safety::X y = a::template b<int>::c; A<T>::z", 3))

@@ -253,7 +253,10 @@ class Store:
         """
         if name.startswith("<"):
             return None
-        absolute = os.path.normpath(os.path.join(directory, name))
+        # The root is resolved, so the name is resolved too: a database entry
+        # whose directory goes through a symbolic link names files under the
+        # root by another path, and a plain join would put them outside it.
+        absolute = os.path.realpath(os.path.join(directory, name))
         return absolute[len(self.prefix):] if absolute.startswith(self.prefix) else None
 
     def text(self, digest: str) -> str:
@@ -512,6 +515,18 @@ def self_test() -> int:
         expect("a chunk's line gives the source line of its text", lines == [3])
         expect("a unit lists each header it read, one that adds no line too",
                {"shared.h", "quiet.h"} <= cold[0].dependencies and "quiet.h" not in cold[1].dependencies)
+        link = Path(scratch + "-link")
+        link.symlink_to(root, target_is_directory=True)
+        try:
+            database.write_text(json.dumps([{"directory": str(link), "file": "a.cpp",
+                                             "command": f"{compiler} -std=c++20 -c a.cpp -o a.o"}]))
+            linked = list(Store(database, root).units())
+            expect("an entry whose directory is a symbolic link still lists its dependencies and chunks",
+                   linked[0].failure is None and {"shared.h", "quiet.h"} <= linked[0].dependencies
+                   and any(chunk.path == "a.cpp" for chunk in linked[0].chunks))
+        finally:
+            link.unlink()
+        write_db(["a.cpp", "b.cpp"])
         expanded = list(expanded_files(Store(database, root)))
         expect("expanded_files gives a file two units expand the same way one time",
                [path for path, _text in expanded].count("shared.h") == 1
