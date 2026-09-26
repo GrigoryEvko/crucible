@@ -57,9 +57,6 @@ bench/bench_spsc_session.cpp
 bench/bench_swmr_session.cpp
 fuzz/boundary/old_tree.h
 fuzz/property/prop_callsite_table_dedup.cpp
-fuzz/property/prop_expr_pool_intern.cpp
-fuzz/property/prop_memory_plan_no_overlap.cpp
-fuzz/property/prop_trace_graph_csr.cpp
 include/crucible/BackgroundThread.h
 include/crucible/CallSiteTable.h
 include/crucible/Cipher.h

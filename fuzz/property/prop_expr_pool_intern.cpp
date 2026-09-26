@@ -72,7 +72,7 @@
 #include <crucible/Ops.h>
 #include <crucible/SymbolTable.h>
 #include <crucible/Types.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <array>
@@ -242,7 +242,7 @@ struct Resolved {
 // comment for the full rationale).
 [[nodiscard]] bool check_plan(const Plan& p) noexcept {
     using namespace crucible;
-    auto test = effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     // Smallest legal capacity forces the pool to rehash while interning
     // even a tiny user set (the ~258 preseeded int singletons already
     // push the table past its 87.5% load factor).  Rehash-during-insert

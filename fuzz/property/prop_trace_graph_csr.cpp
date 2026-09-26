@@ -36,7 +36,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/TraceGraph.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <array>
@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
             Edge in_edges[kMaxEdges]{};
             materialize(spec, in_edges);
 
-            auto test = crucible::effects::testing::test();
+            auto test = ::foundation::effects::testing::test();
             Arena arena{1 << 16};
             TraceGraph graph{};
             build_csr(test.alloc, arena, &graph, in_edges, num_edges, num_ops);

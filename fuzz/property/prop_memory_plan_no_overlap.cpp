@@ -53,7 +53,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/Types.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstdint>
@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
             TensorSlot slots1[kMaxSlots]{};
             const uint32_t max_death = materialize(set, slots1);
 
-            auto test = crucible::effects::testing::test();
+            auto test = ::foundation::effects::testing::test();
             BackgroundThread bt1;
             auto* plan1 = bt1.compute_memory_plan(test.alloc, slots1, num_slots);
 
