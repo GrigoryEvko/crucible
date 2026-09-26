@@ -268,11 +268,44 @@ int main() {{
 # ── The walk ───────────────────────────────────────────────────────────
 
 
+NAME_LEAVES = frozenset({"identifier", "type_identifier", "field_identifier", "namespace_identifier",
+                         "operator_name", "destructor_name"})
+NAME_WRAPPERS = frozenset({"qualified_identifier", "template_type", "template_function", "template_method"})
+
+
 def last_name(node: tsast.Node | None) -> str:
-    """Return the last name segment of a type or declarator node, with no template arguments."""
-    if node is None:
+    """Return the last name segment of a type or declarator node, with no template arguments.
+
+    The walk follows the `name` field through each qualified name and each
+    template-id, so a comment or a line break inside the spelling cannot
+    change the result.  A shape with no name, such as a primitive type or
+    decltype, gives the empty string.
+    """
+    while node is not None and node.type in NAME_WRAPPERS:
+        node = node.child_by_field("name")
+    if node is None or node.type not in NAME_LEAVES:
         return ""
-    return qualify(re.sub(r"\s+", "", node.text)).rsplit("::", 1)[-1]
+    return "".join(node.text.split())
+
+
+def returns_expected_of(member: tsast.Node, declarator: tsast.Node, name: str) -> bool:
+    """Report whether a member function returns `expected<name, ...>`, in the leading or the trailing type.
+
+    The first template argument must name the class itself.  An argument
+    such as `Self::Inner` names a nested class, so it does not count.
+    """
+    roots = [node for node in (member.child_by_field("type"), *declarator.children_of_type("trailing_return_type"))
+             if node is not None]
+    for root in roots:
+        for found in [root, *root.descendants("template_type")]:
+            if found.type != "template_type" or last_name(found) != "expected":
+                continue
+            arguments = found.child_by_field("arguments")
+            listed = [child for child in arguments.children if child.type != "comment"] if arguments else []
+            if listed and listed[0].type == "type_descriptor" and listed[0].child_by_field("declarator") is None \
+                    and last_name(listed[0].child_by_field("type")) == name:
+                return True
+    return False
 
 
 def members(body: tsast.Node) -> list[tsast.Node]:
@@ -317,13 +350,6 @@ def is_reference(parameter: tsast.Node) -> bool:
     """Report whether a parameter is declared as a reference."""
     declarator = parameter.child_by_field("declarator")
     return declarator is not None and declarator.type in ("reference_declarator", "abstract_reference_declarator")
-
-
-def return_text(member: tsast.Node, declarator: tsast.Node) -> str:
-    """Return the leading and the trailing return type of a member function, joined."""
-    leading = member.child_by_field("type")
-    trailing = declarator.children_of_type("trailing_return_type")
-    return " ".join([leading.text if leading is not None else ""] + [node.text for node in trailing])
 
 
 def is_static(member: tsast.Node) -> bool:
@@ -412,7 +438,7 @@ def class_shapes(node: tsast.Node, name: str) -> Shapes:
             deleted = bool(member.children_of_type("delete_method_clause"))
             if access != "public" and not copies and not deleted:
                 shapes.closed_constructor = True
-        elif is_static(member) and re.search(rf"\bexpected\s*<\s*{re.escape(name)}\b", return_text(member, declarator)):
+        elif is_static(member) and returns_expected_of(member, declarator, name):
             shapes.mark("strong", member.line)
     return shapes
 
@@ -656,6 +682,13 @@ def self_test() -> int:
             "struct Factory {\n"
             "    static auto open_path(int) noexcept -> std::expected<Factory, int>;\n"
             "};\n"
+            "struct LeadingFactory {\n"
+            "    static std::expected<LeadingFactory, int> open(int) noexcept;\n"
+            "};\n"
+            "struct NestedResult {\n"
+            "    struct Inner {};\n"
+            "    static auto make() noexcept -> std::expected<NestedResult::Inner, int>;\n"
+            "};\n"
             "struct plain_key {};\n"
             "class Handle {\n"
             "    Handle(int) noexcept;\n"
@@ -700,6 +733,7 @@ def self_test() -> int:
                 ("planted::RawString", "a class whose raw string holds braces"),
                 ("planted::Passkey", "a passkey constructor over two lines"),
                 ("planted::Factory", "a static factory with a trailing expected return"),
+                ("planted::LeadingFactory", "a static factory with a leading expected return"),
                 ("planted::plain_key", "a passkey type"),
                 ("planted::Handle", "a type friend beside a private constructor"),
                 ("planted::Opener", "a named friend function beside a private constructor"),
@@ -711,6 +745,7 @@ def self_test() -> int:
                 ("planted::OwnSpecializations", "a template that befriends its own specializations"),
                 ("planted::Vocabulary", "an operator and a swap friend"),
                 ("planted::CopyOnly", "a type friend beside a copy and a deleted constructor"),
+                ("planted::NestedResult", "a static function that returns an expected of a nested class"),
                 ("planted::InComment", "a class in a comment")):
             expect(f"not counted: {label}", name not in found)
 
